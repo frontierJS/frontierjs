@@ -1,0 +1,82 @@
+{
+  "name": "@frontierjs/litestone",
+  "version": "1.0.0",
+  "description": "SQLite ORM for Bun — schema-first, type-safe, zero dependencies",
+  "type": "module",
+  "license": "MIT",
+  "author": "FrontierJS",
+  "homepage": "https://github.com/frontierjs/litestone",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierjs/litestone.git"
+  },
+  "keywords": [
+    "sqlite",
+    "bun",
+    "orm",
+    "database",
+    "schema",
+    "migrations",
+    "query-builder",
+    "type-safe",
+    "litestream",
+    "json-schema",
+    "row-level-security",
+    "policies",
+    "soft-delete",
+    "fts5"
+  ],
+  "bin": {
+    "litestone": "./src/tools/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    },
+    "./migrate": {
+      "import": "./src/core/migrate.js"
+    },
+    "./migrations": {
+      "import": "./src/core/migrations.js"
+    },
+    "./parser": {
+      "import": "./src/core/parser.js"
+    },
+    "./ddl": {
+      "import": "./src/core/ddl.js"
+    },
+    "./testing": {
+      "import": "./src/testing.js",
+      "types": "./src/testing.d.ts"
+    },
+    "./types": {
+      "import": "./src/tools/typegen.js"
+    },
+    "./storage": {
+      "import": "./src/storage/index.js"
+    },
+    "./external-ref": {
+      "import": "./src/plugins/external-ref.js"
+    }
+  },
+  "main": "./src/index.js",
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "scripts": {
+    "dev": "bun src/tools/cli.js",
+    "test": "bun test test/",
+    "test:watch": "bun test --watch test/",
+    "test:smoke": "bun test test/cli-smoke.test.ts"
+  },
+  "types": "./src/index.d.ts"
+}

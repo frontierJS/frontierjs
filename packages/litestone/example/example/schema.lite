@@ -1,0 +1,164 @@
+/// schema.lite — Litestone example schema
+/// Demonstrates: enums, functions, @generated, soft delete, FTS5, relations
+///
+/// Run:  bun seed.ts          — seed example.db
+///       bun seed.ts --studio — seed + open studio
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Plan {
+  starter
+  pro
+  enterprise
+}
+
+enum Role {
+  admin
+  member
+  viewer
+}
+
+enum LeadStatus {
+  active
+  converted
+  archived
+}
+
+// ─── Functions ────────────────────────────────────────────────────────────────
+// Define once — reusable SQL expressions that expand to GENERATED ALWAYS AS columns.
+// Use {paramName} to reference fields — no quote escaping needed.
+
+function slug(text: Text): Text {
+  @@expr("lower(trim(replace(replace(replace({text}, ' ', '-'), '.', ''), ',', '')))")
+}
+
+function fullName(first: Text, last: Text): Text {
+  @@expr("trim(COALESCE({first}, '') || ' ' || COALESCE({last}, ''))")
+}
+
+function initials(first: Text, last: Text): Text {
+  @@expr("upper(substr(COALESCE({first},'?'),1,1)) || upper(substr(COALESCE({last},'?'),1,1))")
+}
+
+function discounted(price: Integer, pct: Real): Integer {
+  @@expr("CAST({price} * (1.0 - {pct}) AS INTEGER)")
+}
+
+// ─── Accounts ─────────────────────────────────────────────────────────────────
+
+model accounts {
+  id        Integer  @id
+  name      Text
+  slug      Text     @slug(name)         // STORED generated column — queryable + indexable
+  plan      Plan     @default(starter)   // enum with CHECK constraint
+  meta      Json?                        // auto-parsed to/from JSON
+  createdAt DateTime @default(now())     // auto-validated ISO-8601
+
+  @@index([slug])
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+// deletedAt = soft delete — all reads add WHERE deletedAt IS NULL automatically
+// All @@index entries get WHERE "deletedAt" IS NULL (partial indexes)
+
+model users {
+  id          Integer   @id
+  account     accounts  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId   Integer
+  email       Text      @unique @email @lower    // @lower transform before write
+  firstName   Text?     @trim
+  lastName    Text?     @trim
+  displayName Text      @fullName(firstName, lastName)   // generated full name
+  initials    Text      @initials(firstName, lastName)   // generated initials
+  isAdmin     Boolean   @default(false)           // stored as 0/1, returned as true/false
+  role        Role      @default(member)
+  prefs       Json?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  @@index([accountId])
+  @@index([email])
+  @@index([displayName])   // index on generated column — WHERE displayName LIKE works
+}
+
+// ─── Products ─────────────────────────────────────────────────────────────────
+
+model products {
+  id        Integer  @id
+  account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId Integer
+  name      Text
+  slug      Text     @slug(name)          // same function, different model
+  price     Integer
+  discount  Real     @default(0.0)
+  salePrice Integer  @discounted(price, discount)  // computed from two fields
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  @@index([slug])
+  @@index([salePrice])
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+
+model leads {
+  id        Integer    @id
+  account   accounts   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId Integer
+  firstName Text?      @trim
+  lastName  Text?      @trim
+  fullName  Text       @fullName(firstName, lastName)
+  email     Text?      @email
+  phone     Text?
+  status    LeadStatus @default(active)
+  score     Real?      @gte(0) @lte(100)
+  notes     Text?
+  createdAt DateTime   @default(now())
+  deletedAt DateTime?
+
+  @@index([accountId])
+  @@index([status])
+  @@index([fullName])
+}
+
+// ─── Messages ─────────────────────────────────────────────────────────────────
+// @@fts generates a messages_fts virtual table + 3 sync triggers automatically
+// db.messages.search('hello world') works out of the box
+
+model messages {
+  id        Integer  @id
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Integer
+  account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId Integer
+  title     Text?
+  body      Text
+  channel   Text     @default("email")
+  isRead    Boolean  @default(false)
+  sentAt    DateTime @default(now())
+  deletedAt DateTime?
+
+  @@fts([body, title])
+  @@index([userId])
+  @@index([accountId])
+  @@index([channel])
+}
+
+// ─── Audit logs ───────────────────────────────────────────────────────────────
+// No deletedAt — hard deletes only (audit records should never be soft-deleted)
+
+model audit_logs {
+  id         Integer  @id
+  account    accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId  Integer
+  userId     Integer?
+  action     Text
+  resource   Text
+  resourceId Integer?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([accountId])
+  @@index([action])
+  @@index([createdAt])
+}

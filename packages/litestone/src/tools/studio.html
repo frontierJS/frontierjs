@@ -1,0 +1,4418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Litestone Studio</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --bg:      #0a0a0b;
+  --surface: #111113;
+  --border:  #1e1e22;
+  --border2: #2a2a30;
+  --text:    #e8e8f0;
+  --muted:   #5a5a6e;
+  --accent:  #4af2a1;
+  --accent2: #7c6aff;
+  --danger:  #ff4d6d;
+  --warn:    #f7b731;
+  --mono:    'JetBrains Mono', monospace;
+  --sans:    'Syne', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--mono);
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  height: 48px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.logo {
+  font-family: var(--sans);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.logo span { color: var(--muted); font-weight: 400; }
+
+.db-path {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 3px 8px;
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.header-stats {
+  margin-left: auto;
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.stat-val { color: var(--text); }
+
+.db-filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+.db-pill {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.1s, background 0.1s, border-color 0.1s;
+  line-height: 1.4;
+}
+.db-pill:hover { color: var(--text); border-color: var(--accent); }
+.db-pill.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+}
+.db-pill .db-pill-driver {
+  font-size: 9px;
+  opacity: 0.7;
+  margin-left: 3px;
+}
+
+/* ── Layout ── */
+.app {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 220px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-section {
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 10px 14px 6px;
+}
+
+.table-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.1s;
+  border-left: 2px solid transparent;
+}
+.table-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.table-item.active {
+  color: var(--accent);
+  background: rgba(74,242,161,0.05);
+  border-left-color: var(--accent);
+}
+
+.table-count {
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--border);
+  padding: 1px 5px;
+  border-radius: 10px;
+}
+.table-item.active .table-count { color: var(--accent); background: rgba(74,242,161,0.1); }
+
+.soft-badge {
+  font-size: 9px;
+  color: var(--accent2);
+  background: rgba(124,106,255,0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.1s;
+  border-left: 2px solid transparent;
+}
+.nav-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.nav-item.active { color: var(--accent2); border-left-color: var(--accent2); }
+.nav-item svg { flex-shrink: 0; }
+
+/* ── Main content ── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.tab {
+  padding: 10px 14px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  letter-spacing: 0.05em;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+/* ── Panel ── */
+.panel { flex: 1; overflow: auto; padding: 0; display: none; flex-direction: column; }
+.panel.active { display: flex; }
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--border2);
+  background: var(--border);
+  color: var(--text);
+  transition: all 0.1s;
+  letter-spacing: 0.03em;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: rgba(74,242,161,0.1); border-color: rgba(74,242,161,0.4); color: var(--accent); }
+.btn.primary:hover { background: rgba(74,242,161,0.2); }
+.btn.danger { background: rgba(255,77,109,0.1); border-color: rgba(255,77,109,0.4); color: var(--danger); }
+
+.search-input {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 5px 10px;
+  border-radius: 4px;
+  width: 200px;
+  outline: none;
+}
+.search-input:focus { border-color: var(--accent2); }
+.search-input::placeholder { color: var(--muted); }
+
+.spacer { flex: 1; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── Data grid ── */
+.data-grid-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border2);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+thead th:hover { color: var(--text); }
+thead th .col-type {
+  font-weight: 400;
+  color: var(--border2);
+  margin-left: 4px;
+  font-size: 9px;
+  text-transform: none;
+}
+thead th .sort-arrow { margin-left: 4px; opacity: 0; }
+thead th:hover .sort-arrow, thead th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
+
+tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.05s;
+}
+tbody tr:hover { background: rgba(255,255,255,0.02); }
+tbody tr.selected { background: rgba(74,242,161,0.04); }
+
+tbody td {
+  padding: 7px 12px;
+  color: var(--text);
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.cell-null  { color: var(--muted); font-style: italic; }
+.cell-bool-t{ color: var(--accent); }
+.cell-bool-f{ color: var(--muted); }
+.cell-num   { color: #7dd3fc; font-variant-numeric: tabular-nums; }
+.cell-json  { color: var(--accent2); cursor: pointer; }
+.cell-date  { color: var(--warn); cursor: help; }
+.cell-id    { color: var(--muted); font-size: 11px; }
+.cell-del   { text-decoration: line-through; opacity: 0.4; }
+
+/* ── Schema panel ── */
+.schema-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+
+.schema-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.schema-card-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.schema-card-name {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.schema-badges { display: flex; gap: 4px; }
+.badge {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.badge-strict  { background: rgba(74,242,161,0.1);  color: var(--accent); }
+.badge-soft    { background: rgba(124,106,255,0.1); color: var(--accent2); }
+.badge-fts     { background: rgba(247,183,49,0.1);  color: var(--warn); }
+
+.schema-field {
+  display: flex;
+  align-items: center;
+  padding: 5px 14px;
+  font-size: 11px;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.schema-field:last-child { border-bottom: none; }
+.field-name { color: var(--text); min-width: 110px; }
+.field-type { color: var(--accent2); font-size: 10px; }
+.field-attrs { color: var(--muted); font-size: 10px; display: flex; gap: 4px; flex-wrap: wrap; }
+.field-attr { background: var(--border); padding: 1px 5px; border-radius: 3px; }
+
+/* ── SQL editor ── */
+.sql-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.sql-editor-wrap {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.sql-editor {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 12px;
+  border-radius: 4px;
+  width: 100%;
+  height: 100px;
+  resize: vertical;
+  outline: none;
+  line-height: 1.6;
+  tab-size: 2;
+}
+.sql-editor:focus { border-color: var(--accent2); }
+
+.sql-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sql-results { flex: 1; overflow: auto; }
+
+.sql-error {
+  padding: 12px 16px;
+  color: var(--danger);
+  font-size: 12px;
+  background: rgba(255,77,109,0.05);
+  border-bottom: 1px solid rgba(255,77,109,0.2);
+}
+
+/* ── Migrations panel ── */
+.migrations-panel { padding: 16px; gap: 16px; display: flex; flex-direction: column; overflow: auto; }
+
+.migration-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.migration-status-row + .migration-status-row { margin-top: 4px; }
+
+.status-applied  { color: var(--accent); }
+.status-pending  { color: var(--warn); }
+.status-orphaned { color: var(--danger); }
+.status-modified { color: var(--danger); }
+
+.mig-time { color: var(--muted); font-size: 10px; margin-left: auto; }
+
+.diff-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.diff-block-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.diff-sql {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 12px 14px;
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.7;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.diff-sql .sql-kw  { color: #ff9580; }
+.diff-sql .sql-tbl { color: var(--accent); }
+.diff-sql .sql-col { color: #7dd3fc; }
+.diff-sql .sql-cmt { color: var(--muted); }
+
+/* ── Stats panel ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+}
+.stat-card-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.stat-card-value {
+  font-family: var(--sans);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.stat-card-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.stats-db-section {
+  grid-column: 1 / -1;
+  margin-bottom: 4px;
+}
+.stats-db-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.stats-db-driver {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* ── Loading / empty ── */
+.loading, .empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--muted);
+  font-size: 12px;
+  gap: 8px;
+}
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Inline row editing ── */
+td.cell-editing { padding: 0 !important; }
+td.cell-editing input, td.cell-editing textarea {
+  width: 100%; height: 100%; min-height: 28px;
+  padding: 4px 6px; margin: 0; box-sizing: border-box;
+  background: var(--surface); color: var(--text);
+  border: 2px solid var(--accent); border-radius: 0; outline: none;
+  font: inherit; font-size: 12px;
+}
+.new-row-bar {
+  display: none; gap: 6px; padding: 8px 12px;
+  background: var(--surface); border-top: 1px solid var(--border);
+  flex-wrap: wrap; align-items: center;
+}
+.new-row-bar.open { display: flex; }
+.new-row-bar input {
+  flex: 1; min-width: 80px; max-width: 160px;
+  padding: 4px 7px; font-size: 11px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border2); border-radius: 4px; outline: none;
+}
+.new-row-bar input:focus { border-color: var(--accent); }
+.new-row-bar label { font-size: 10px; color: var(--muted); }
+.new-row-field { display: flex; flex-direction: column; gap: 2px; }
+.edit-btn { background: none; border: 1px solid var(--border2); color: var(--muted); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 11px; }
+.edit-btn:hover { color: var(--text); border-color: var(--text); }
+.edit-btn.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+/* ── DB badge on table items ── */
+.table-db-badge {
+  font-size: 9px; font-weight: 600; letter-spacing: .04em;
+  color: var(--muted); opacity: .6; margin-left: 4px; flex-shrink: 0;
+}
+.table-item.active .table-db-badge { opacity: .8; }
+
+/* ── Auth picker ── */
+.auth-select {
+  width: 100%; padding: 5px 7px; border-radius: 5px; font-size: 12px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border2);
+  cursor: pointer; outline: none;
+}
+.auth-select:focus { border-color: var(--accent); }
+
+/* ── JSON inline expand ── */
+.cell-json { cursor: pointer; }
+.cell-json .json-preview { opacity: .55; font-size: 11px; }
+.cell-json .json-full {
+  display: none;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+.cell-json.open .json-preview { display: none; }
+.cell-json.open .json-full   { display: block; }
+
+
+/* ── REPL panel ── */
+.repl-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+.repl-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.repl-entry { border-bottom: 1px solid var(--border); }
+
+.repl-input-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 14px 6px;
+}
+.repl-prompt { color: var(--accent); font-size: 12px; margin-top: 1px; flex-shrink: 0; }
+.repl-code   { color: var(--text); white-space: pre-wrap; word-break: break-all; flex: 1; }
+
+.repl-output { padding: 6px 14px 10px 32px; }
+.repl-result-rows { overflow-x: auto; }
+.repl-result-scalar { color: var(--accent2); }
+.repl-result-null   { color: var(--muted); font-style: italic; }
+.repl-result-error  { color: var(--danger); white-space: pre-wrap; }
+.repl-result-json   {
+  color: var(--text);
+  white-space: pre;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.repl-elapsed { color: var(--muted); font-size: 10px; margin-top: 4px; }
+
+/* ── REPL SQL log ── */
+.sql-log {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 11px;
+}
+.sql-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+.sql-log-header:hover { color: var(--text); }
+.sql-log-header .sql-log-title { font-weight: 600; text-transform: uppercase; }
+.sql-log-body { display: none; }
+.sql-log-body.open { display: block; }
+.sql-log-item {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+}
+.sql-log-item:last-child { border-bottom: none; }
+.sql-log-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+.sql-log-op {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 3px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+}
+.sql-log-model {
+  font-size: 10px;
+  color: var(--text);
+  font-weight: 500;
+}
+.sql-log-db {
+  font-size: 10px;
+  color: var(--muted);
+}
+.sql-log-dur {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: auto;
+}
+.sql-log-dur.slow { color: var(--warn); }
+.sql-log-dur.very-slow { color: var(--danger); }
+.sql-log-rows {
+  font-size: 10px;
+  color: var(--muted);
+}
+.sql-log-sql {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+  background: var(--bg);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-top: 4px;
+}
+/* SQL keyword highlighting */
+.sql-kw  { color: var(--accent2); font-weight: 600; }
+.sql-tbl { color: var(--accent); }
+.sql-val { color: var(--warn); }
+.sql-cmt { color: var(--muted); font-style: italic; }
+
+.repl-input-bar {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  flex-shrink: 0;
+}
+.repl-input-prompt { color: var(--accent); font-size: 13px; margin-top: 4px; flex-shrink: 0; }
+.repl-textarea {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  resize: none;
+  outline: none;
+  line-height: 1.6;
+  min-height: 22px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.repl-run-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid rgba(74,242,161,.4);
+  background: rgba(74,242,161,.1);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.repl-hint {
+  padding: 6px 14px;
+  font-size: 10px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.repl-hint code { color: var(--accent2); }
+
+
+/* ── REPL autocomplete ── */
+.repl-autocomplete {
+  position: absolute;
+  bottom: 100%;
+  left: 32px;
+  right: 64px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  box-shadow: 0 -4px 16px rgba(0,0,0,.4);
+  overflow: hidden;
+  z-index: 100;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.repl-ac-item {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-family: var(--mono);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.repl-ac-item:hover,
+.repl-ac-item.active { background: rgba(74,242,161,.08); }
+.repl-ac-item .ac-label { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.repl-ac-item .ac-type  { color: var(--muted); font-size: 10px; flex-shrink: 0; }
+.repl-input-bar { position: relative; }
+
+
+/* ── Sort ── */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { background: rgba(255,255,255,.04); }
+th.sort-active { color: var(--accent); }
+.sort-arrow { float: right; opacity: .4; font-size: 10px; margin-left: 4px; }
+th.sort-active .sort-arrow { opacity: 1; }
+
+/* ── Auto-generated model badge ── */
+.er-auto-badge {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--border2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* ── Schema.lite editor panel ── */
+.lite-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.lite-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface);
+}
+.lite-toolbar-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: var(--mono);
+}
+.lite-toolbar-path {
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.lite-status {
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.lite-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.lite-status-dot.ok    { background: #3fb950; }
+.lite-status-dot.error { background: var(--danger); }
+.lite-status-dot.warn  { background: var(--warn); }
+.lite-status-dot.dirty { background: var(--accent2); }
+.lite-editor-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+.lite-editor {
+  flex: 1;
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 16px;
+  box-sizing: border-box;
+  tab-size: 2;
+  overflow-y: auto;
+}
+.lite-errors {
+  border-top: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  padding: 8px 14px;
+  max-height: 120px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.lite-error-item {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--danger);
+  padding: 2px 0;
+}
+.lite-warn-item {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--warn);
+  padding: 2px 0;
+}
+
+/* ── Sticky header ── */
+.data-grid-wrap { overflow: auto; }
+.data-grid-wrap table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); }
+
+/* ── Row selected ── */
+tr.row-selected td { background: rgba(74,242,161,.05); }
+
+/* ── Copy button ── */
+.copy-btn {
+  opacity: 0;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 4px;
+  transition: opacity .1s;
+  vertical-align: middle;
+}
+td:hover .copy-btn { opacity: 1; }
+
+/* ── FK jump ── */
+.cell-fk {
+  color: var(--accent2);
+  cursor: pointer;
+  text-decoration: none;
+}
+.cell-fk:hover { text-decoration: underline; }
+.fk-arrow { opacity: .5; font-size: 10px; }
+
+/* ── Bool ── */
+.cell-bool-t { color: var(--accent); }
+.cell-bool-f { color: var(--muted); }
+
+/* ── Null ── */
+.cell-null { color: var(--border2); font-size: 11px; }
+
+/* ── Export button ── */
+.export-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+}
+.export-btn:hover { color: var(--text); border-color: var(--muted); }
+
+/* ── Row count badge in sidebar ── */
+.nav-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--border);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+
+
+/* ── ER Diagram ── */
+.er-wrap {
+  width: 100%; height: 100%; overflow: auto; position: relative;
+  background: var(--bg);
+}
+.er-canvas {
+  position: relative;
+  min-width: 100%; min-height: 100%;
+}
+.er-svg {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.er-table {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  min-width: 180px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.3);
+  cursor: grab;
+  user-select: none;
+  z-index: 2;
+}
+.er-table:active { cursor: grabbing; }
+.er-table-header {
+  padding: 8px 12px;
+  background: rgba(74,242,161,.08);
+  border-bottom: 1px solid var(--border2);
+  border-radius: 8px 8px 0 0;
+  display: flex; align-items: center; gap: 8px;
+}
+.er-table-name {
+  font-size: 12px; font-weight: 600;
+  color: var(--accent); font-family: var(--mono);
+}
+/* Per-database color theming on ER cards */
+.er-db-main     { --er-accent: #4af2a1; }   /* green — default */
+.er-db-1        { --er-accent: #7dd3fc; }   /* blue */
+.er-db-2        { --er-accent: #f9a8d4; }   /* pink */
+.er-db-3        { --er-accent: #fde68a; }   /* yellow */
+.er-db-4        { --er-accent: #c4b5fd; }   /* purple */
+.er-db-jsonl    { --er-accent: #6ee7b7; }   /* teal */
+.er-db-logger   { --er-accent: #fb923c; }   /* orange */
+[class*="er-db-"] .er-table-header { background: color-mix(in srgb, var(--er-accent) 12%, transparent); border-bottom-color: color-mix(in srgb, var(--er-accent) 25%, transparent); }
+[class*="er-db-"] .er-table { border-color: color-mix(in srgb, var(--er-accent) 30%, var(--border2)); }
+[class*="er-db-"] .er-table-name { color: var(--er-accent); }
+[class*="er-db-"] .er-link { stroke: var(--er-accent); }
+[class*="er-db-"] .er-link-dot { fill: var(--er-accent); }
+.er-db-label {
+  font-size: 9px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; padding: 2px 6px; border-radius: 3px;
+  background: color-mix(in srgb, var(--er-accent) 18%, transparent);
+  color: var(--er-accent); margin-left: auto; flex-shrink: 0;
+}
+.er-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: 11px; font-family: var(--mono);
+}
+.er-row:last-child { border-bottom: none; }
+.er-row-pk   { color: var(--accent2); }
+.er-row-fk   { color: var(--accent); }
+.er-row-name { flex: 1; color: var(--text); }
+.er-row-type { color: var(--muted); font-size: 10px; }
+.er-row-icon { font-size: 9px; width: 12px; flex-shrink: 0; }
+.er-link { stroke: var(--accent); stroke-width: 1.5; fill: none; opacity: .5; }
+.er-link-dot { fill: var(--accent); }
+.er-controls {
+  position: absolute; bottom: 16px; right: 16px; z-index: 10;
+  display: flex; gap: 6px;
+}
+.er-btn {
+  background: var(--surface); border: 1px solid var(--border2);
+  color: var(--muted); border-radius: 4px; padding: 4px 8px;
+  font-size: 11px; cursor: pointer; font-family: var(--mono);
+}
+.er-btn:hover { color: var(--text); }
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── Notifications ── */
+.toast {
+  position: fixed;
+  bottom: 20px; right: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 12px;
+  z-index: 200;
+  transform: translateY(60px);
+  opacity: 0;
+  transition: all 0.2s;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.ok   { border-color: rgba(74,242,161,0.4); color: var(--accent); }
+.toast.err  { border-color: rgba(255,77,109,0.4); color: var(--danger); }
+
+/* ── Transform panel ── */
+.transform-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.transform-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.transform-toolbar input, .transform-toolbar select {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  outline: none;
+}
+.transform-toolbar input:focus, .transform-toolbar select:focus {
+  border-color: var(--accent2);
+}
+.transform-toolbar label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.transform-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.transform-steps {
+  width: 300px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.transform-steps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.step-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+.step-card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  cursor: grab;
+  user-select: none;
+  position: relative;
+  transition: border-color .15s;
+}
+.step-card:hover { border-color: var(--border2); }
+.step-card.selected { border-color: var(--accent2); }
+.step-card.dragging { opacity: .4; }
+.step-card.drag-over { border-color: var(--accent); border-style: dashed; }
+.step-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.step-type-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--border2);
+  color: var(--muted);
+}
+.step-type-badge.scope    { background: #1a2e1a; color: #4af2a1; }
+.step-type-badge.filter   { background: #1a1a2e; color: #7c6aff; }
+.step-type-badge.drop     { background: #2e1a1a; color: #ff4d6d; }
+.step-type-badge.keep     { background: #2e2a1a; color: #f7b731; }
+.step-type-badge.mask     { background: #2a1a2e; color: #d4a0ff; }
+.step-type-badge.redact   { background: #2e1a1a; color: #ff8a65; }
+.step-type-badge.limit    { background: #1a2a2e; color: #64d8ff; }
+.step-type-badge.sample   { background: #1e2a1a; color: #80ff80; }
+.step-type-badge.shard    { background: #2e2a1a; color: #ffd700; }
+.step-type-badge.set      { background: #1a2a28; color: #64ffd8; }
+.step-type-badge.rename   { background: #252535; color: #a0b0ff; }
+.step-desc {
+  font-size: 11px;
+  color: var(--text);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.step-del {
+  position: absolute;
+  top: 6px; right: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity .1s;
+}
+.step-card:hover .step-del { opacity: 1; }
+.step-del:hover { color: var(--danger); }
+
+.add-step-row {
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.add-step-row select {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  outline: none;
+}
+.add-step-btn {
+  background: var(--accent2);
+  border: none;
+  color: white;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.add-step-btn:hover { opacity: .85; }
+
+.transform-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.step-editor {
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 110px;
+}
+.step-editor-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.step-editor-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.step-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.step-field label {
+  font-size: 10px;
+  color: var(--muted);
+}
+.step-field input, .step-field select {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  outline: none;
+  min-width: 140px;
+}
+.step-field input:focus, .step-field select:focus {
+  border-color: var(--accent2);
+}
+.step-editor-hint {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.transform-output {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.transform-output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.transform-output-tabs {
+  display: flex;
+  gap: 0;
+}
+.output-tab {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  padding: 4px 10px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+.output-tab.active { color: var(--accent); border-color: var(--accent); }
+.output-tab:hover:not(.active) { color: var(--text); }
+.transform-output-actions {
+  display: flex;
+  gap: 6px;
+}
+.transform-run-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.transform-run-btn:hover { opacity: .85; }
+.transform-run-btn:disabled { opacity: .4; cursor: not-allowed; }
+.transform-preview-btn {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.transform-preview-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+.transform-code-view {
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+  color: var(--text);
+}
+.transform-log-view {
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
+  font-size: 11px;
+  line-height: 1.7;
+  font-family: var(--mono);
+}
+.log-line { margin-bottom: 2px; }
+.log-line.ok    { color: var(--accent); }
+.log-line.err   { color: var(--danger); }
+.log-line.dim   { color: var(--muted); }
+.log-line.step  { color: var(--text); font-weight: 600; margin-top: 8px; }
+.log-empty { color: var(--muted); font-style: italic; }
+
+/* syntax highlight tokens */
+.tk-kw     { color: #7c6aff; }
+.tk-fn     { color: #4af2a1; }
+.tk-str    { color: #f7b731; }
+.tk-cmt    { color: var(--muted); }
+.tk-tbl    { color: #64d8ff; }
+.tk-op     { color: #ff8a65; }
+
+/* ── Performance panel ── */
+.perf-panel { display:flex; flex-direction:column; height:100%; overflow:hidden; }
+.perf-body { display:flex; flex:1; min-height:0; overflow:hidden; }
+.perf-left {
+  width:260px; flex-shrink:0; border-right:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.perf-right { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+
+.perf-section-header {
+  font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--muted); padding:10px 14px 6px; flex-shrink:0;
+  border-bottom:1px solid var(--border);
+}
+.perf-section-body { overflow-y:auto; flex:1; padding:8px 0; }
+
+/* advisor items */
+.advisor-item {
+  display:flex; align-items:flex-start; gap:8px;
+  padding:8px 12px; border-bottom:1px solid var(--border); cursor:pointer;
+  transition:background .1s;
+}
+.advisor-item:hover { background:var(--surface); }
+.advisor-item.active { background:rgba(74,242,161,.05); border-left:2px solid var(--accent2); }
+.advisor-dot {
+  width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:3px;
+}
+.advisor-dot.red    { background:#ff4d6d; box-shadow:0 0 6px #ff4d6d88; }
+.advisor-dot.yellow { background:#f7b731; box-shadow:0 0 6px #f7b73188; }
+.advisor-dot.green  { background:#4af2a1; box-shadow:0 0 6px #4af2a188; }
+.advisor-dot.blue   { background:#64d8ff; box-shadow:0 0 6px #64d8ff88; }
+.advisor-label { font-size:11px; color:var(--text); line-height:1.4; }
+.advisor-sub   { font-size:10px; color:var(--muted); margin-top:2px; }
+
+/* query analyzer */
+.perf-query-area {
+  padding:10px 14px; border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.perf-query-textarea {
+  width:100%; background:var(--bg); border:1px solid var(--border2);
+  color:var(--text); font-family:var(--mono); font-size:11px;
+  padding:8px 10px; border-radius:4px; resize:vertical; min-height:72px;
+  outline:none; line-height:1.6;
+}
+.perf-query-textarea:focus { border-color:var(--accent2); }
+.perf-query-actions {
+  display:flex; gap:8px; margin-top:8px; align-items:center;
+}
+.perf-analyze-btn {
+  background:var(--accent2); color:#fff; border:none; font-family:var(--mono);
+  font-size:11px; font-weight:600; padding:5px 14px; border-radius:4px;
+  cursor:pointer;
+}
+.perf-analyze-btn:hover { opacity:.85; }
+.perf-analyze-btn:disabled { opacity:.4; cursor:not-allowed; }
+.perf-hint { font-size:10px; color:var(--muted); }
+
+.perf-results { flex:1; overflow-y:auto; padding:12px 14px; }
+
+/* plan nodes */
+.plan-node {
+  display:flex; gap:10px; align-items:flex-start;
+  padding:10px 12px; margin-bottom:8px; border-radius:6px;
+  border:1px solid var(--border2); background:var(--surface);
+}
+.plan-rating {
+  font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+  padding:3px 6px; border-radius:3px; flex-shrink:0; margin-top:1px;
+}
+.plan-rating.red    { background:#3d1520; color:#ff4d6d; }
+.plan-rating.yellow { background:#3d2e0a; color:#f7b731; }
+.plan-rating.green  { background:#0d2e1a; color:#4af2a1; }
+.plan-node-body { flex:1; min-width:0; }
+.plan-detail    { font-size:11px; color:var(--text); word-break:break-all; margin-bottom:4px; }
+.plan-advice    { font-size:10px; color:var(--muted); line-height:1.5; }
+.plan-advice b  { color:var(--warn); font-weight:600; }
+
+/* missing index cards */
+.missing-index {
+  padding:10px 12px; margin-bottom:8px; border-radius:6px;
+  border:1px solid var(--border2); background:var(--surface);
+}
+.missing-index-header { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.missing-index-table  { font-size:11px; color:#64d8ff; font-weight:600; }
+.missing-index-col    { font-size:11px; color:#f7b731; }
+.missing-index-body   { font-size:10px; color:var(--muted); line-height:1.5; }
+.missing-index-sql    {
+  font-size:10px; color:var(--accent); background:var(--bg);
+  border:1px solid var(--border2); border-radius:3px;
+  padding:4px 8px; margin-top:6px; word-break:break-all;
+}
+.copy-sql-btn {
+  float:right; background:none; border:none; color:var(--muted);
+  cursor:pointer; font-size:11px; padding:0 4px;
+}
+.copy-sql-btn:hover { color:var(--accent); }
+.perf-empty { color:var(--muted); font-size:11px; font-style:italic; padding:16px; text-align:center; }
+.perf-tabs { display:flex; border-bottom:1px solid var(--border); flex-shrink:0; }
+.perf-tab {
+  font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--muted); padding:8px 14px; cursor:pointer;
+  border-bottom:2px solid transparent; transition:color .15s, border-color .15s;
+}
+.perf-tab.active { color:var(--accent); border-color:var(--accent); }
+.perf-tab:hover:not(.active) { color:var(--text); }
+.perf-score-bar {
+  display:flex; align-items:center; gap:8px; margin-bottom:16px;
+  padding:10px 12px; background:var(--surface); border-radius:6px;
+  border:1px solid var(--border2);
+}
+.perf-score-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+.perf-score-pips  { display:flex; gap:3px; }
+.pip { width:14px; height:14px; border-radius:2px; background:var(--border2); }
+.pip.red    { background:#ff4d6d; }
+.pip.yellow { background:#f7b731; }
+.pip.green  { background:#4af2a1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Litestone <span>Studio</span></div>
+  <div class="db-path" id="dbPath">—</div>
+  <div class="db-filter-pills" id="dbFilterPills" style="display:none"></div>
+  <div class="header-stats">
+    <span><span class="stat-val" id="hdrSize">—</span> size</span>
+    <span><span class="stat-val" id="hdrPages">—</span> pages</span>
+    <span><span class="stat-val" id="hdrCache">—</span> cached</span>
+  </div>
+</header>
+
+<div class="app">
+  <nav class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Acting as</div>
+      <select class="auth-select" id="authSelect" onchange="onAuthChange(this.value)">
+        <option value="">⚡ System (no policies)</option>
+      </select>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Tables</div>
+      <div id="tableList"></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Tools</div>
+      <div class="nav-item active" id="navBrowse" onclick="showTool('browse')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Browse
+      </div>
+      <div class="nav-item" id="navQuery" onclick="showTool('query')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        SQL Query
+      </div>
+      <div class="nav-item" id="navSchema" onclick="showTool('schema')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        Schema
+      </div>
+      <div class="nav-item" id="navMigrations" onclick="showTool('migrations')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+        Migrations
+      </div>
+      <div class="nav-item" id="navStats" onclick="showTool('stats')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Stats
+      </div>
+      <div class="nav-item" id="navRepl" onclick="showTool('repl')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        REPL
+      </div>
+      <div class="nav-item" id="navTransform" onclick="showTool('transform')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+        Transform
+      </div>
+      <div class="nav-item" id="navPerf" onclick="showTool('perf')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Performance
+      </div>
+      <div class="nav-item" id="navLite" onclick="showTool('lite')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        schema.lite
+      </div>
+    </div>
+  </nav>
+
+  <div class="main">
+
+    <!-- Browse panel -->
+    <div class="panel active" id="panelBrowse">
+      <div class="toolbar">
+        <span style="font-size:12px;color:var(--muted)" id="browseTableLabel">Select a table →</span>
+        <input class="search-input" id="browseSearch" placeholder="Filter rows..." oninput="filterRows()" />
+        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="showDeleted" onchange="loadTable(currentTable)" style="accent-color:var(--accent2)">
+          show deleted
+        </label>
+        <div class="spacer"></div>
+        <button class="edit-btn" onclick="openNewRow()" title="Insert a new row" id="btnNewRow" style="display:none">＋ Row</button>
+        <button class="edit-btn danger" onclick="deleteSelectedRow()" title="Delete selected row" id="btnDeleteRow" style="display:none;opacity:.5" disabled>🗑</button>
+        <button class="export-btn" onclick="exportCSV()" title="Export current view as CSV">⬇ CSV</button>
+        <button class="export-btn" onclick="exportJSON()" title="Export current view as JSON">⬇ JSON</button>
+        <div class="pagination">
+          <button class="btn" onclick="prevPage()">←</button>
+          <span id="pageInfo">—</span>
+          <button class="btn" onclick="nextPage()">→</button>
+        </div>
+      </div>
+      <div class="data-grid-wrap" id="dataGrid">
+        <div class="empty">Select a table to browse</div>
+      </div>
+      <div class="new-row-bar" id="newRowBar"></div>
+    </div>
+
+    <!-- SQL Query panel -->
+    <div class="panel" id="panelQuery">
+      <div class="sql-panel" style="display:flex;flex-direction:column;height:100%">
+        <div class="sql-editor-wrap">
+          <textarea class="sql-editor" id="sqlEditor" placeholder="SELECT * FROM users LIMIT 50" spellcheck="false"></textarea>
+        </div>
+        <div class="sql-controls">
+          <button class="btn primary" onclick="runSQL()">▶ Run  <span style="color:var(--muted)">Ctrl+Enter</span></button>
+          <button class="btn" onclick="clearSQL()">Clear</button>
+          <div class="spacer"></div>
+          <span id="sqlStatus" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+        <div id="sqlError" class="sql-error" style="display:none"></div>
+        <div class="sql-results" id="sqlResults">
+          <div class="empty">Write a query and press Run</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Schema panel -->
+    <div class="panel" id="panelSchema" style="padding:0;overflow:hidden">
+      <div class="er-wrap" id="erWrap">
+        <div class="er-canvas" id="erCanvas">
+          <svg class="er-svg" id="erSvg"></svg>
+        </div>
+      </div>
+      <div class="er-controls">
+        <button class="er-btn" onclick="erLayout()">⟳ Reset layout</button>
+        <button class="er-btn" onclick="erFitAll()">⊡ Fit all</button>
+      </div>
+    </div>
+
+    <!-- Schema.lite editor panel -->
+    <div class="panel" id="panelLite" style="padding:0">
+      <div class="lite-panel">
+        <div class="lite-toolbar">
+          <span class="lite-toolbar-title">schema.lite</span>
+          <span class="lite-toolbar-path" id="liteSchemaPath">—</span>
+          <div class="lite-status" id="liteStatus">
+            <div class="lite-status-dot" id="liteStatusDot"></div>
+            <span id="liteStatusText">—</span>
+          </div>
+          <button class="er-btn" onclick="liteSave()" id="liteSaveBtn" disabled>Save</button>
+          <button class="er-btn" onclick="liteReload()">↺ Reload</button>
+        </div>
+        <div class="lite-editor-wrap">
+          <textarea class="lite-editor" id="liteEditor" spellcheck="false"
+            placeholder="Loading schema…"></textarea>
+          <div class="lite-errors" id="liteErrors" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Migrations panel -->
+    <div class="panel" id="panelMigrations">
+      <div class="migrations-panel" id="migPanel">
+        <div class="loading"><div class="spinner"></div> Loading…</div>
+      </div>
+    </div>
+
+    <!-- REPL panel -->
+    <div class="panel" id="panelRepl">
+      <div class="repl-panel">
+        <div class="repl-hint">
+          <span>Litestone query REPL — <code>db</code> is your client</span>
+          <span>Examples: <code>db.users.findMany()</code> &nbsp;·&nbsp; <code>db.users.count()</code> &nbsp;·&nbsp; <code>sys.users.findMany()</code> <span style="opacity:.5">(sys bypasses policies)</span></span>
+          <span style="margin-left:auto"><kbd style="background:var(--border);padding:1px 5px;border-radius:3px">Tab</kbd> complete &nbsp; <kbd style="background:var(--border);padding:1px 5px;border-radius:3px">↑↓</kbd> history &nbsp; <kbd style="background:var(--border);padding:1px 5px;border-radius:3px">Shift+Enter</kbd> run</span>
+        </div>
+        <div class="repl-history" id="replHistory">
+          <div class="empty" id="replEmpty" style="margin-top:40px">Run your first query above</div>
+        </div>
+        <div class="repl-input-bar">
+          <div class="repl-autocomplete" id="replAC" style="display:none"></div>
+          <span class="repl-input-prompt">›</span>
+          <textarea
+            class="repl-textarea"
+            id="replInput"
+            rows="1"
+            placeholder="db.users.findMany({ limit: 10 })"
+            spellcheck="false"
+            autocomplete="off"
+            spellcheck="false"
+            oninput="replOnInput(this)"
+            onkeydown="replKeydown(event)"
+          ></textarea>
+          <button class="repl-run-btn" onclick="runRepl()">▶ Run</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats panel -->
+    <div class="panel" id="panelStats">
+      <div class="stats-grid" id="statsGrid">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- Transform panel -->
+    <div class="panel" id="panelTransform">
+      <div class="transform-panel">
+
+        <!-- Toolbar: source db + output path -->
+        <div class="transform-toolbar">
+          <label>Source DB</label>
+          <input type="text" id="txSrcDb" placeholder="./production.db" style="width:220px"
+            oninput="txSrcDbChanged()" />
+          <label>Output</label>
+          <input type="text" id="txOutPath" placeholder="./output/" style="width:160px" />
+          <label>Filename</label>
+          <input type="text" id="txFilename" placeholder="(row) => `tenant-${row.id}.db`" style="width:220px"
+            oninput="txUpdateCode()" />
+        </div>
+
+        <div class="transform-body">
+
+          <!-- Left: step list -->
+          <div class="transform-steps">
+            <div class="transform-steps-header">
+              <span>Pipeline steps</span>
+              <span id="txStepCount" style="color:var(--accent)">0 steps</span>
+            </div>
+            <div class="step-list" id="txStepList"></div>
+            <div class="add-step-row">
+              <select id="txStepType">
+                <optgroup label="Row ops">
+                  <option value="scope">scope — filter + FK cascade</option>
+                  <option value="filter">filter — filter rows</option>
+                  <option value="limit">limit — first N rows</option>
+                  <option value="sample">sample — random N rows</option>
+                </optgroup>
+                <optgroup label="Column ops">
+                  <option value="drop-col">drop columns</option>
+                  <option value="keep">keep columns</option>
+                  <option value="mask">mask a column</option>
+                  <option value="set">set/add a column</option>
+                  <option value="rename">rename a column</option>
+                  <option value="redact">redact SECRETS/PII</option>
+                </optgroup>
+                <optgroup label="Table ops">
+                  <option value="drop-table">drop a table</option>
+                  <option value="truncate">truncate a table</option>
+                  <option value="drop-except">drop all except...</option>
+                </optgroup>
+                <optgroup label="Pipeline">
+                  <option value="shard">shard — split per row</option>
+                </optgroup>
+              </select>
+              <button class="add-step-btn" onclick="txAddStep()">+ Add</button>
+            </div>
+          </div>
+
+          <!-- Right: step editor + code/log output -->
+          <div class="transform-right">
+
+            <!-- Step editor (shows config for selected step) -->
+            <div class="step-editor" id="txEditor">
+              <div class="step-editor-title">Step editor</div>
+              <div class="step-editor-fields" id="txEditorFields">
+                <span style="color:var(--muted);font-size:11px">Select a step to edit it</span>
+              </div>
+            </div>
+
+            <!-- Code / log tabs -->
+            <div class="transform-output">
+              <div class="transform-output-header">
+                <div class="transform-output-tabs">
+                  <div class="output-tab active" id="txTabCode" onclick="txShowTab('code')">Config</div>
+                  <div class="output-tab" id="txTabLog"  onclick="txShowTab('log')">Output log</div>
+                </div>
+                <div class="transform-output-actions">
+                  <button class="transform-preview-btn" onclick="txPreview()">Preview</button>
+                  <button class="transform-run-btn" id="txRunBtn" onclick="txRun()">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Run
+                  </button>
+                </div>
+              </div>
+              <pre class="transform-code-view" id="txCodeView"></pre>
+              <div class="transform-log-view" id="txLogView" style="display:none"></div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Performance panel -->
+    <div class="panel" id="panelPerf">
+      <div class="perf-panel">
+        <div class="perf-tabs">
+          <div class="perf-tab active" id="perfTabAdvisor" onclick="perfShowTab('advisor')">Schema Advisor</div>
+          <div class="perf-tab" id="perfTabQuery" onclick="perfShowTab('query')">Query Analyzer</div>
+        </div>
+
+        <!-- Schema Advisor tab -->
+        <div id="perfAdvisorView" style="display:flex;flex:1;min-height:0;overflow:hidden;">
+          <div class="perf-body" style="width:100%">
+            <div class="perf-left">
+              <div class="perf-section-header">Issues <span id="perfIssueCount" style="color:var(--accent)"></span></div>
+              <div class="perf-section-body" id="perfIssueList">
+                <div class="perf-empty">Loading...</div>
+              </div>
+            </div>
+            <div class="perf-right">
+              <div class="perf-results" id="perfIssueDetail">
+                <div class="perf-empty">Select an issue to see details and the suggested fix</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Query Analyzer tab -->
+        <div id="perfQueryView" style="display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden;">
+          <div class="perf-query-area">
+            <textarea class="perf-query-textarea" id="perfQueryInput"
+              placeholder="SELECT * FROM users WHERE email = 'alice@example.com'"
+              onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();perfAnalyze()}"></textarea>
+            <div class="perf-query-actions">
+              <button class="perf-analyze-btn" id="perfAnalyzeBtn" onclick="perfAnalyze()">Analyze</button>
+              <span class="perf-hint">Ctrl+Enter to analyze · Uses EXPLAIN QUERY PLAN</span>
+            </div>
+          </div>
+          <div class="perf-results" id="perfQueryResults">
+            <div class="perf-empty">Enter a SQL query above and click Analyze</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api'
+let currentTable = null
+let currentCursor = null
+let prevCursors   = []
+let allRows       = []
+let filteredRows  = []
+let sortCol       = null
+let sortDir       = 1   // 1 = asc, -1 = desc
+let schema        = null
+let softDeleteMap = {}
+let multiDb       = false
+let databases     = []   // [{ name, driver }] from /api/info
+let activeDbFilter = null   // null = All; string = filter to that db name
+let currentAuth   = null  // null = asSystem(), object = $setAuth(user)
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+
+async function api(path, body, method) {
+  const isGet = method === 'GET' || (!body && !method)
+  const res = await fetch(API + path, isGet ? {} : {
+    method: method ?? 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  })
+  return res.json()
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+async function boot() {
+  const info = await api('/info')
+  multiDb   = info.multiDb   || false
+  databases = info.databases || []
+
+  // Header path — show "Multi-DB" when schema has multiple databases
+  document.getElementById('dbPath').textContent = multiDb
+    ? `Multi-DB (${databases.length} databases)`
+    : (info.dbPath || '—')
+
+  schema        = info.schema
+  softDeleteMap = info.softDelete || {}
+
+  // Header stats
+  const s = info.stats || {}
+  document.getElementById('hdrSize').textContent  = fmtBytes(s.size  || 0)
+  document.getElementById('hdrPages').textContent = (s.pageCount || 0).toLocaleString()
+  document.getElementById('hdrCache').textContent = (s.cacheSize || {read:0}).read + ' stmts'
+
+  // DB filter pills in header (multi-DB only) + table list
+  renderDbFilterPills()
+  renderTableList(info.counts)
+
+  // Schema cards
+  renderSchema()
+
+  // Load users into auth picker
+  loadAuthUsers()
+}
+
+
+// ── Row editing ───────────────────────────────────────────────────────────────
+
+function getIdField() {
+  if (!schema || !currentTable) return 'id'
+  const model = schema.models.find(m => m.name === currentTable)
+  return model?.fields.find(f => f.attributes?.some(a => a.kind === 'id'))?.name ?? 'id'
+}
+
+function getEditableFields() {
+  if (!schema || !currentTable) return []
+  const model = schema.models.find(m => m.name === currentTable)
+  if (!model) return []
+  return model.fields.filter(f =>
+    f.type.kind !== 'relation' &&
+    !f.attributes?.some(a => ['computed', 'generated', 'funcCall', 'id', 'guarded', 'secret', 'encrypted'].includes(a.kind))
+  )
+}
+
+function startCellEdit(e, tr, row) {
+  // Don't edit special cells
+  const td = e.target.closest('td')
+  if (!td) return
+  const col = td.dataset.col
+  if (!col) return
+  const field = schema?.models.find(m => m.name === currentTable)?.fields.find(f => f.name === col)
+  if (!field || field.type.kind === 'relation') return
+  if (field.attributes?.some(a => ['computed','generated','funcCall','id','guarded','secret','encrypted'].includes(a.kind))) return
+
+  // Don't re-edit if already editing
+  if (td.classList.contains('cell-editing')) return
+
+  const originalContent = td.innerHTML
+  const currentVal = row[col]
+  const isJson = field.type.name === 'Json' || field.type.array
+
+  td.classList.add('cell-editing')
+  if (isJson) {
+    const ta = document.createElement('textarea')
+    ta.rows = 3; ta.style.resize = 'vertical'
+    ta.value = currentVal == null ? '' : JSON.stringify(currentVal, null, 2)
+    td.innerHTML = ''; td.appendChild(ta); ta.focus(); ta.select()
+    const save = async () => {
+      let val
+      try { val = ta.value.trim() === '' ? null : JSON.parse(ta.value) }
+      catch { toast('Invalid JSON', 'err'); td.classList.remove('cell-editing'); td.innerHTML = originalContent; return }
+      await saveCellEdit(tr, row, col, val, td, originalContent)
+    }
+    ta.onblur = save
+    ta.onkeydown = e => { if (e.key === 'Escape') { td.classList.remove('cell-editing'); td.innerHTML = originalContent } }
+  } else {
+    const inp = document.createElement('input')
+    inp.type = field.type.name === 'Boolean' ? 'checkbox' : 'text'
+    if (inp.type === 'checkbox') {
+      inp.checked = !!currentVal
+    } else {
+      inp.value = currentVal == null ? '' : String(currentVal)
+    }
+    td.innerHTML = ''; td.appendChild(inp); inp.focus()
+    if (inp.type !== 'checkbox') inp.select()
+    const saveScalar = async () => {
+      let val
+      if (inp.type === 'checkbox') val = inp.checked
+      else if (inp.value.trim() === '') val = null
+      else if (field.type.name === 'Integer') val = parseInt(inp.value) || null
+      else if (field.type.name === 'Real') val = parseFloat(inp.value) || null
+      else val = inp.value
+      await saveCellEdit(tr, row, col, val, td, originalContent)
+    }
+    inp.onblur = saveScalar
+    inp.onkeydown = e => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur() }
+      if (e.key === 'Escape') { td.classList.remove('cell-editing'); td.innerHTML = originalContent }
+    }
+  }
+}
+
+async function saveCellEdit(tr, row, col, newVal, td, originalContent) {
+  const idField = getIdField()
+  const where   = { [idField]: row[idField] }
+  if (newVal === row[col]) { td.classList.remove('cell-editing'); td.innerHTML = originalContent; return }
+  try {
+    const res = await api('/row/update', { table: currentTable, where, data: { [col]: newVal }, auth: currentAuth })
+    if (res.error) throw new Error(res.error)
+    td.classList.remove('cell-editing')
+    // Update allRows in place so subsequent renders are accurate
+    const rowIdx = allRows.findIndex(r => r[idField] === row[idField])
+    if (rowIdx !== -1) allRows[rowIdx] = { ...allRows[rowIdx], ...res.row ?? { [col]: newVal } }
+    toast(`Saved`, 'ok')
+    loadTablePage()
+  } catch (e) {
+    toast(e.message, 'err')
+    td.classList.remove('cell-editing')
+    td.innerHTML = originalContent
+  }
+}
+
+async function deleteSelectedRow() {
+  const tr = document.querySelector('#dataGrid tr.row-selected')
+  if (!tr || !tr.dataset.rowJson) return
+  const row     = JSON.parse(tr.dataset.rowJson)
+  const idField = getIdField()
+  const where   = { [idField]: row[idField] }
+  const isSoft  = softDeleteMap[currentTable]
+  if (!confirm(`Delete this row?${isSoft ? ' (soft delete — sets deletedAt)' : ''}`)) return
+  try {
+    const res = await api('/row/delete', { table: currentTable, where, soft: isSoft, auth: currentAuth })
+    if (res.error) throw new Error(res.error)
+    toast('Deleted', 'ok')
+    document.getElementById('btnDeleteRow').disabled = true
+    document.getElementById('btnDeleteRow').style.opacity = '.5'
+    loadTablePage()
+  } catch (e) { toast(e.message, 'err') }
+}
+
+function openNewRow() {
+  const bar    = document.getElementById('newRowBar')
+  const fields = getEditableFields()
+  if (!fields.length) return
+
+  bar.innerHTML = ''
+  const inputs = {}
+  for (const f of fields) {
+    const wrap = document.createElement('div')
+    wrap.className = 'new-row-field'
+    const label = document.createElement('label')
+    label.textContent = f.name + (f.type.optional ? '' : ' *')
+    const inp = document.createElement('input')
+    inp.placeholder = f.type.name.toLowerCase()
+    inp.dataset.field = f.name
+    inputs[f.name] = inp
+    wrap.appendChild(label); wrap.appendChild(inp)
+    bar.appendChild(wrap)
+  }
+  const saveBtn   = document.createElement('button')
+  saveBtn.className = 'btn primary'; saveBtn.textContent = 'Insert'
+  saveBtn.onclick = () => saveNewRow(inputs)
+  const cancelBtn = document.createElement('button')
+  cancelBtn.className = 'btn'; cancelBtn.textContent = 'Cancel'
+  cancelBtn.onclick   = closeNewRow
+  bar.appendChild(saveBtn); bar.appendChild(cancelBtn)
+  bar.classList.add('open')
+  Object.values(inputs)[0]?.focus()
+}
+
+function closeNewRow() {
+  const bar = document.getElementById('newRowBar')
+  if (bar) { bar.classList.remove('open'); bar.innerHTML = '' }
+}
+
+async function saveNewRow(inputs) {
+  const data = {}
+  const fields = getEditableFields()
+  for (const f of fields) {
+    const v = inputs[f.name]?.value.trim()
+    if (!v) continue
+    if (f.type.name === 'Integer') data[f.name] = parseInt(v) || null
+    else if (f.type.name === 'Real') data[f.name] = parseFloat(v) || null
+    else if (f.type.name === 'Boolean') data[f.name] = v === 'true' || v === '1'
+    else if (f.type.name === 'Json') { try { data[f.name] = JSON.parse(v) } catch { toast('Invalid JSON in ' + f.name, 'err'); return } }
+    else data[f.name] = v
+  }
+  try {
+    const res = await api('/row/create', { table: currentTable, data, auth: currentAuth })
+    if (res.error) throw new Error(res.error)
+    toast('Row created', 'ok')
+    closeNewRow()
+    loadTablePage()
+  } catch (e) { toast(e.message, 'err') }
+}
+
+// ── Auth picker ──────────────────────────────────────────────────────────────
+
+let _authUsers = []   // cache of loaded user objects indexed by select value
+
+function onAuthChange(val) {
+  const user = val ? _authUsers[parseInt(val)] ?? null : null
+  setAuth(user)
+}
+
+function setAuth(user) {
+  currentAuth = user
+  if (currentTable) loadTablePage()
+}
+
+async function loadAuthUsers() {
+  const data = await api('/auth-users').catch(() => ({ users: [] }))
+  if (!data.users?.length) return
+
+  _authUsers = data.users
+  const sel = document.getElementById('authSelect')
+
+  // Optional group label showing which model we loaded from
+  if (data.modelName && data.modelName !== 'users') {
+    const grp = document.createElement('optgroup')
+    grp.label = data.modelName
+    sel.appendChild(grp)
+  }
+
+  data.users.forEach((user, i) => {
+    const name = user.displayName ?? user.name ?? user.email ?? user.username ?? `#${user.id}`
+    const sub  = user.role ? ` (${user.role})` : ''
+    const opt  = document.createElement('option')
+    opt.value       = String(i)
+    opt.textContent = `${name}${sub}`
+    sel.appendChild(opt)
+  })
+}
+
+// ── DB filter pills ──────────────────────────────────────────────────────────
+
+function renderDbFilterPills() {
+  const container = document.getElementById('dbFilterPills')
+  if (!container) return
+
+  if (!multiDb || !databases.length) {
+    container.style.display = 'none'
+    return
+  }
+
+  container.style.display = 'flex'
+  container.innerHTML = ''
+
+  // "All" pill
+  const allPill = document.createElement('div')
+  allPill.className = 'db-pill' + (activeDbFilter === null ? ' active' : '')
+  allPill.textContent = 'All'
+  allPill.onclick = () => setDbFilter(null)
+  container.appendChild(allPill)
+
+  // One pill per database
+  for (const db of databases) {
+    const pill = document.createElement('div')
+    pill.className = 'db-pill' + (activeDbFilter === db.name ? ' active' : '')
+    const driverLabel = db.driver && db.driver !== 'sqlite'
+      ? `<span class="db-pill-driver">${db.driver}</span>` : ''
+    pill.innerHTML = db.name + driverLabel
+    pill.onclick = () => setDbFilter(db.name)
+    container.appendChild(pill)
+  }
+}
+
+function setDbFilter(name) {
+  activeDbFilter = name
+  renderDbFilterPills()
+  // Re-render table list with cached counts (stored on the list element)
+  const list = document.getElementById('tableList')
+  renderTableList(list._counts)
+}
+
+function renderTableList(counts) {
+  const list = document.getElementById('tableList')
+  if (!list) return
+  list._counts = counts   // cache for filter re-renders
+  list.innerHTML = ''
+
+  const models = schema?.models || []
+
+  if (activeDbFilter !== null) {
+    // Filtered: show only tables belonging to the active database
+    const filtered = models.filter(m => {
+      const dbAttr = m.attributes?.find(a => a.kind === 'db')
+      return (dbAttr?.name ?? 'main') === activeDbFilter
+    })
+    for (const model of filtered) appendTableItem(list, model, counts)
+  } else if (multiDb && databases.length) {
+    // All databases — flat list, no group labels (pills in header handle context)
+    for (const model of models) appendTableItem(list, model, counts)
+  } else {
+    // Single-DB
+    for (const model of models) appendTableItem(list, model, counts)
+  }
+}
+
+function appendTableItem(list, model, counts) {
+  const isSoft = softDeleteMap[model.name]
+  const cnt    = counts?.[model.name] ?? '?'
+  const dbAttr = model.attributes?.find(a => a.kind === 'db')
+  const dbName = dbAttr?.name ?? 'main'
+  const dbBadge = multiDb && dbName !== 'main' ? `<span class="table-db-badge">${dbName}</span>` : ''
+  const div    = document.createElement('div')
+  div.className = 'table-item'
+  div.innerHTML = `
+    ${model.name}${isSoft ? '<span class="soft-badge">soft</span>':''}${dbBadge}
+    <span class="table-count">${cnt}</span>`
+  div.dataset.table = model.name
+  div.onclick = () => { selectTable(model.name); showTool('browse') }
+  list.appendChild(div)
+}
+
+// ── Table select ──────────────────────────────────────────────────────────────
+
+function selectTable(name) {
+  currentTable  = name
+  currentCursor = null
+  prevCursors   = []
+  // Resolve model + db info once — used by both edit buttons and browse label
+  const model   = schema?.models.find(m => m.name === name)
+  const dbAttr  = model?.attributes?.find(a => a.kind === 'db')
+  const dbName  = dbAttr?.name ?? 'main'
+  const dbDef   = databases.find(d => d.name === dbName)
+  const isJsonl = dbDef?.driver === 'jsonl' || dbDef?.driver === 'logger'
+  // Show/hide edit buttons — hide for JSONL/logger tables (append-only)
+  document.getElementById('btnNewRow').style.display    = name ? '' : 'none'
+  document.getElementById('btnDeleteRow').style.display = (name && !isJsonl) ? '' : 'none'
+  document.getElementById('btnDeleteRow').disabled = true
+  document.getElementById('btnDeleteRow').style.opacity = '.5'
+  closeNewRow()
+  document.querySelectorAll('.table-item').forEach(el => {
+    el.classList.toggle('active', el.textContent.trim().startsWith(name))
+  })
+  const label = multiDb ? `${name} · ${dbName}` : name
+  document.getElementById('browseTableLabel').textContent = label
+  loadTable(name)
+}
+
+async function loadTable(name) {
+  if (!name) return
+  document.getElementById('dataGrid').innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>'
+
+  const withDeleted = document.getElementById('showDeleted').checked
+
+  const data = await api('/table', { table: name, cursor: currentCursor, withDeleted, auth: currentAuth })
+  allRows      = data.items || []
+  filteredRows = allRows
+
+  renderTable(data.columns, allRows)
+  document.getElementById('pageInfo').textContent =
+    `${allRows.length} rows${data.hasMore ? ' (more →)' : ''}`
+
+  // Store next cursor
+  window._nextCursor = data.nextCursor
+  window._hasMore    = data.hasMore
+  // Update row count badge in sidebar
+  const badge = document.querySelector(`[data-table="${currentTable}"] .nav-count`)
+  if (badge) badge.textContent = allRows.length + (data.hasMore ? '+' : '')
+}
+
+// Alias — reload the current page of the current table
+function loadTablePage() { loadTable(currentTable) }
+
+// ── Render table ──────────────────────────────────────────────────────────────
+
+function sortedRows(rows) {
+  if (!sortCol) return rows
+  return [...rows].sort((a, b) => {
+    const av = a[sortCol], bv = b[sortCol]
+    if (av === null || av === undefined) return 1
+    if (bv === null || bv === undefined) return -1
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sortDir
+    return String(av).localeCompare(String(bv)) * sortDir
+  })
+}
+
+function clickSort(col) {
+  if (sortCol === col) {
+    sortDir = sortDir === 1 ? -1 : 1
+  } else {
+    sortCol = col
+    sortDir = 1
+  }
+  renderTable(null, filteredRows.length ? filteredRows : allRows)
+}
+
+function renderTable(columns, rows) {
+  if (!rows.length) {
+    document.getElementById('dataGrid').innerHTML = '<div class="empty">No rows</div>'
+    return
+  }
+
+  const cols    = columns || Object.keys(rows[0])
+  const display = sortedRows(rows)
+  const fkCols  = getFKCols()
+  const dateCols = getDateCols()
+  let html = '<table><thead><tr>'
+  for (const col of cols) {
+    const typeInfo = getColType(col)
+    const arrow = sortCol === col ? (sortDir === 1 ? ' ↑' : ' ↓') : ''
+    const active = sortCol === col ? ' sort-active' : ''
+    html += `<th class="sortable${active}" onclick="clickSort('${col}')">`
+    html += `${esc(col)}<span class="col-type">${typeInfo}</span>`
+    html += `<span class="sort-arrow">${arrow || '↕'}</span></th>`
+  }
+  html += '</tr></thead><tbody>'
+
+  for (const row of display) {
+    const isDeleted = row.deletedAt != null
+    const rowJson   = esc(JSON.stringify(row))
+    html += `<tr class="${isDeleted?'cell-del':''}" onclick="rowClick(event, this, ${rowJson})" ondblclick="startCellEdit(event, this, ${rowJson})">`
+    for (const col of cols) {
+      html += `<td data-col="${esc(col)}">${formatCell(row[col], col, fkCols[col], dateCols)}</td>`
+    }
+    html += '</tr>'
+  }
+
+  html += '</tbody></table>'
+  document.getElementById('dataGrid').innerHTML = html
+}
+
+function getFKCols() {
+  if (!schema) return {}
+  const model = schema.models.find(m => m.name === currentTable)
+  if (!model) return {}
+  const map = {}
+  for (const field of model.fields) {
+    const rel = field.attributes.find(a => a.kind === 'relation')
+    if (rel?.fields) {
+      // rel.fields is the FK column, rel.references is the target column
+      const fkName = Array.isArray(rel.fields) ? rel.fields[0] : rel.fields
+      map[fkName] = { table: field.type.name, col: Array.isArray(rel.references) ? rel.references[0] : rel.references }
+    }
+  }
+  return map
+}
+
+// Returns a Set of column names that have the @date attribute —
+// used by formatCell to show date-only hover formatting (no time component)
+function getDateCols() {
+  if (!schema) return new Set()
+  const model = schema.models.find(m => m.name === currentTable)
+  if (!model) return new Set()
+  const cols = new Set()
+  for (const field of model.fields) {
+    if (field.attributes.some(a => a.kind === 'date')) cols.add(field.name)
+  }
+  return cols
+}
+
+function rowClick(e, tr, row) {
+  // Don't intercept clicks on cell-specific elements
+  if (e.target.closest('.cell-json') || e.target.closest('.cell-fk') || e.target.closest('.copy-btn')) return
+  if (e.target.closest('td.cell-editing')) return
+  // Toggle highlight
+  document.querySelectorAll('#dataGrid tr.row-selected').forEach(el => el.classList.remove('row-selected'))
+  tr.classList.add('row-selected')
+  tr.dataset.rowJson = JSON.stringify(row)
+  const btn = document.getElementById('btnDeleteRow')
+  if (btn && !btn.style.display.includes('none')) {
+    btn.disabled = false; btn.style.opacity = '1'
+  }
+}
+
+function getColType(col) {
+  if (!schema) return ''
+  const model = schema.models.find(m => m.name === currentTable)
+  if (!model) return ''
+  const field = model.fields.find(f => f.name === col)
+  return field ? field.type.name.toLowerCase() : ''
+}
+
+function formatCell(val, col, fkTarget, dateCols) {
+  const copy = v => `<span class="copy-btn" title="Copy" onclick="event.stopPropagation();copyCell(${JSON.stringify(String(v))})">⎘</span>`
+  if (val === null || val === undefined) return '<span class="cell-null">∅</span>'
+  if (typeof val === 'boolean') return val
+    ? '<span class="cell-bool-t">✓ true</span>'
+    : '<span class="cell-bool-f">✗ false</span>'
+  // @date fields — show raw YYYY-MM-DD, hover shows day name + long date
+  if (dateCols?.has(col)) {
+    const hover = fmtDateOnly(String(val))
+    return `<span class="cell-date" title="${esc(hover)}">${esc(String(val))}</span>`
+  }
+  // DateTime fields — show raw ISO, hover shows formatted + relative
+  if (col === 'createdAt' || col === 'updatedAt' || col === 'deletedAt' || col.endsWith('At'))
+    return `<span class="cell-date" title="${esc(fmtDateDisplay(String(val)) + '  ·  ' + fmtRelative(String(val)))}">${esc(String(val))}</span>`
+  if (typeof val === 'number') {
+    if (fkTarget) {
+      return `<span class="cell-fk" title="Jump to ${fkTarget.table}" onclick="event.stopPropagation();jumpToFK('${fkTarget.table}','${fkTarget.col}',${JSON.stringify(val)})">${val} <span class="fk-arrow">→</span></span>`
+    }
+    return `<span class="cell-num">${val.toLocaleString()}</span>${copy(val)}`
+  }
+  if (col === 'id' || col.endsWith('Id') || col.endsWith('_id')) {
+    if (fkTarget && val != null) {
+      return `<span class="cell-fk" title="Jump to ${fkTarget.table}" onclick="event.stopPropagation();jumpToFK('${fkTarget.table}','${fkTarget.col}',${JSON.stringify(val)})">${esc(String(val))} <span class="fk-arrow">→</span></span>`
+    }
+    return `<span class="cell-id">${esc(String(val))}</span>${copy(val)}`
+  }
+  if (typeof val === 'object') {
+    const preview = JSON.stringify(val).slice(0, 60)
+    const full    = esc(JSON.stringify(val, null, 2))
+    return `<span class="cell-json" onclick="event.stopPropagation();this.classList.toggle('open')">{…} <span class="json-preview">${esc(preview)}${preview.length >= 60 ? '…' : ''}</span><span class="json-full">${full}</span></span>`
+  }
+  const s = String(val)
+  const display = esc(s.length > 80 ? s.slice(0, 80) + '…' : s)
+  return `<span>${display}</span>${copy(val)}`
+}
+
+function fmtDateDisplay(s) {
+  if (!s) return s
+  try {
+    const d = new Date(s)
+    if (isNaN(d)) return s
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  } catch { return s }
+}
+
+// For @date fields (YYYY-MM-DD) — show day name + long form on hover
+// Uses T12:00:00 to avoid midnight UTC shifting the day in negative-offset TZs
+function fmtDateOnly(s) {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  try {
+    const d = new Date(`${s}T12:00:00`)
+    if (isNaN(d)) return s
+    return d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  } catch { return s }
+}
+
+function fmtRelative(s) {
+  if (!s) return s
+  try {
+    const d = new Date(s)
+    if (isNaN(d)) return s
+    const diff = new Date() - d
+    const abs  = Math.abs(diff)
+    if (abs < 60000)    return 'just now'
+    if (abs < 3600000)  return Math.round(diff / 60000) + 'm ago'
+    if (abs < 86400000) return Math.round(diff / 3600000) + 'h ago'
+    return Math.round(diff / 86400000) + 'd ago'
+  } catch { return s }
+}
+
+// keep fmtDate as alias for any other callers
+function fmtDate(s) { return fmtDateDisplay(s) }
+
+function copyCell(val) {
+  navigator.clipboard?.writeText(val).catch(() => {})
+  toast('Copied', 'ok')
+}
+
+function jumpToFK(table, col, val) {
+  selectTable(table)
+  // Wait for table to load then jump to matching row
+  setTimeout(() => {
+    const input = document.getElementById('browseSearch')
+    input.value = String(val)
+    filterRows()
+    toast(`Showing ${col} = ${val} in ${table}`, 'ok')
+  }, 300)
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+// ── Pagination ────────────────────────────────────────────────────────────────
+
+function nextPage() {
+  if (!window._hasMore) return
+  prevCursors.push(currentCursor)
+  currentCursor = window._nextCursor
+  loadTable(currentTable)
+}
+
+function prevPage() {
+  if (!prevCursors.length) return
+  currentCursor = prevCursors.pop()
+  loadTable(currentTable)
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+
+function filterRows() {
+  const q = document.getElementById('browseSearch').value.toLowerCase()
+  if (!q) { renderTable(null, allRows); return }
+  const filtered = allRows.filter(r =>
+    JSON.stringify(r).toLowerCase().includes(q)
+  )
+  renderTable(null, filtered)
+  document.getElementById('pageInfo').textContent = `${filtered.length} of ${allRows.length}`
+}
+
+// ── SQL ───────────────────────────────────────────────────────────────────────
+
+async function runSQL() {
+  const sql = document.getElementById('sqlEditor').value.trim()
+  if (!sql) return
+
+  document.getElementById('sqlError').style.display = 'none'
+  document.getElementById('sqlResults').innerHTML = '<div class="loading"><div class="spinner"></div></div>'
+  document.getElementById('sqlStatus').textContent = 'Running…'
+
+  const t0  = performance.now()
+  const res = await api('/query', { sql })
+  const ms  = (performance.now() - t0).toFixed(0)
+
+  if (res.error) {
+    document.getElementById('sqlError').style.display = 'block'
+    document.getElementById('sqlError').textContent = res.error
+    document.getElementById('sqlResults').innerHTML = ''
+    document.getElementById('sqlStatus').textContent = `error`
+    return
+  }
+
+  document.getElementById('sqlStatus').textContent = `${res.rows.length} rows · ${ms}ms`
+  if (!res.rows.length) {
+    document.getElementById('sqlResults').innerHTML = '<div class="empty">No results</div>'
+    return
+  }
+  renderTableInto('sqlResults', null, res.rows)
+}
+
+function clearSQL() {
+  document.getElementById('sqlEditor').value = ''
+  document.getElementById('sqlResults').innerHTML = '<div class="empty">Write a query and press Run</div>'
+  document.getElementById('sqlStatus').textContent = ''
+  document.getElementById('sqlError').style.display = 'none'
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (document.getElementById('panelQuery').classList.contains('active')) runSQL()
+  }
+})
+
+function renderTableInto(id, columns, rows) {
+  const cols = columns || Object.keys(rows[0])
+  let html = '<table style="min-width:100%"><thead><tr>'
+  for (const col of cols) html += `<th>${esc(col)}</th>`
+  html += '</tr></thead><tbody>'
+  for (const row of rows) {
+    html += '<tr>'
+    for (const col of cols) html += `<td>${formatCell(row[col], col)}</td>`
+    html += '</tr>'
+  }
+  html += '</tbody></table>'
+  document.getElementById(id).innerHTML = html
+}
+
+// ── Schema ────────────────────────────────────────────────────────────────────
+
+// ── ER Diagram ───────────────────────────────────────────────────────────────
+
+let erPositions = {}   // { modelName: { x, y } }
+let erDragging  = null // { el, ox, oy, startX, startY }
+
+// Map each database name to a CSS class slot
+function getDbClass(dbName, driver) {
+  if (driver === 'jsonl')   return 'er-db-jsonl'
+  if (driver === 'logger')  return 'er-db-logger'
+  if (!dbName || dbName === 'main') return 'er-db-main'
+  // Assign stable colour slot based on alphabetical order of non-main sqlite dbs
+  const sqliteDbs = (schema?.databases ?? [])
+    .filter(d => !d.driver || d.driver === 'sqlite')
+    .filter(d => d.name !== 'main')
+    .map(d => d.name)
+    .sort()
+  const idx = sqliteDbs.indexOf(dbName)
+  return idx >= 0 ? `er-db-${idx + 1}` : 'er-db-main'
+}
+
+function renderSchema() {
+  if (!schema) return
+  const canvas = document.getElementById('erCanvas')
+  const svg    = document.getElementById('erSvg')
+
+  canvas.querySelectorAll('.er-table').forEach(el => el.remove())
+  svg.innerHTML = ''
+
+  const models = schema.models
+  erLayout(false)
+
+  for (const model of models) {
+    const dbAttr = model.attributes?.find(a => a.kind === 'db')
+    const dbName = dbAttr?.name ?? 'main'
+    const dbDef  = schema.databases?.find(d => d.name === dbName)
+    const driver = dbDef?.driver ?? 'sqlite'
+    const dbClass = getDbClass(dbName, driver)
+
+    const el = document.createElement('div')
+    el.className = `er-table ${dbClass}`
+    el.dataset.model = model.name
+    el.style.left = (erPositions[model.name]?.x ?? 40) + 'px'
+    el.style.top  = (erPositions[model.name]?.y ?? 40) + 'px'
+
+    const isSoft   = softDeleteMap[model.name]
+    const hasFts   = model.attributes?.find(a => a.kind === 'fts')
+    const isAuto   = model.attributes?.some(a => a.kind === 'auto') ||
+                     // logger auto-models: named <dbName>Logs and db is a logger driver
+                     (driver === 'logger' && model.name === dbName + 'Logs')
+    // Show DB label only in multi-DB mode and only when it's not main
+    const showDbLabel = multiDb && dbName !== 'main'
+
+    let html = `<div class="er-table-header">
+      <span class="er-table-name">${esc(model.name)}</span>
+      ${isSoft ? '<span style="font-size:9px;opacity:.6">soft</span>' : ''}
+      ${hasFts  ? '<span style="font-size:9px;opacity:.6">fts5</span>' : ''}
+      ${isAuto  ? '<span class="er-auto-badge">auto</span>' : ''}
+      ${showDbLabel ? `<span class="er-db-label">${esc(dbName)}</span>` : ''}
+    </div>`
+
+    for (const field of model.fields) {
+      if (field.type.kind === 'relation') continue
+      const isPk = field.attributes.some(a => a.kind === 'id')
+      const isFk = model.fields.some(f =>
+        f.type.kind === 'relation' &&
+        f.attributes.some(a => a.kind === 'relation' && (a.fields === field.name || a.fields?.[0] === field.name))
+      )
+      const cls = isPk ? 'er-row-pk' : isFk ? 'er-row-fk' : ''
+      const icon = isPk ? '🔑' : isFk ? '🔗' : ''
+      const typeName  = field.type.name + (field.type.array ? '[]' : '') + (field.type.optional ? '?' : '')
+      const isMd      = field.attributes.some(a => a.kind === 'markdown')
+      const mdBadge   = isMd ? '<span style="font-size:9px;opacity:.5;margin-left:3px">md</span>' : ''
+      html += `<div class="er-row ${cls}">
+        <span class="er-row-icon">${icon}</span>
+        <span class="er-row-name">${esc(field.name)}${mdBadge}</span>
+        <span class="er-row-type">${esc(typeName)}</span>
+      </div>`
+    }
+
+    el.innerHTML = html
+
+    // Drag support
+    el.addEventListener('mousedown', e => {
+      if (e.target.tagName === 'BUTTON') return
+      erDragging = { el, ox: el.offsetLeft, oy: el.offsetTop, startX: e.clientX, startY: e.clientY }
+      e.preventDefault()
+    })
+
+    canvas.appendChild(el)
+  }
+
+  // Draw FK lines after layout
+  requestAnimationFrame(erDrawLines)
+}
+
+function erLayout(reset = true) {
+  if (!schema) return
+  const models = schema.models
+  const gapX = 260, gapY = 320, padX = 40, padY = 60
+
+  if (multiDb && schema.databases?.length > 1) {
+    // Group by database — each database gets its own column cluster
+    const dbOrder = schema.databases.map(d => d.name)
+    const groups  = {}
+    for (const m of models) {
+      const db = m.attributes?.find(a => a.kind === 'db')?.name ?? 'main'
+      if (!groups[db]) groups[db] = []
+      groups[db].push(m)
+    }
+    let colOffset = 0
+    for (const dbName of dbOrder) {
+      const grpModels = groups[dbName] ?? []
+      if (!grpModels.length) continue
+      const cols = Math.max(1, Math.ceil(Math.sqrt(grpModels.length)))
+      grpModels.forEach((m, i) => {
+        if (!reset && erPositions[m.name]) return
+        erPositions[m.name] = {
+          x: padX + (colOffset + (i % cols)) * gapX,
+          y: padY + Math.floor(i / cols) * gapY,
+        }
+      })
+      colOffset += cols + 0.6   // gap between database groups
+    }
+  } else {
+    // Single-DB: simple grid
+    const gridCols = Math.ceil(Math.sqrt(models.length))
+    models.forEach((m, i) => {
+      if (!reset && erPositions[m.name]) return
+      erPositions[m.name] = {
+        x: padX + (i % gridCols) * gapX,
+        y: padY + Math.floor(i / gridCols) * gapY,
+      }
+    })
+  }
+
+  // Update DOM
+  const canvas = document.getElementById('erCanvas')
+  if (!canvas) return
+  for (const m of models) {
+    const el = canvas.querySelector(`[data-model="${m.name}"]`)
+    if (el) {
+      el.style.left = erPositions[m.name].x + 'px'
+      el.style.top  = erPositions[m.name].y + 'px'
+    }
+  }
+  requestAnimationFrame(erDrawLines)
+}
+
+function erFitAll() {
+  if (!schema) return
+  const wrap   = document.getElementById('erWrap')
+  const models = schema.models
+  if (!models.length) return
+  const xs = models.map(m => erPositions[m.name]?.x ?? 0)
+  const ys = models.map(m => erPositions[m.name]?.y ?? 0)
+  const minX = Math.min(...xs) - 20
+  const minY = Math.min(...ys) - 20
+  wrap.scrollLeft = minX
+  wrap.scrollTop  = minY
+}
+
+function erDrawLines() {
+  if (!schema) return
+  const svg    = document.getElementById('erSvg')
+  const canvas = document.getElementById('erCanvas')
+  if (!svg || !canvas) return
+  svg.innerHTML = ''
+
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (field.type.kind !== 'relation') continue
+      const rel = field.attributes.find(a => a.kind === 'relation')
+      if (!rel?.fields) continue  // hasMany side — skip, drawn from belongsTo
+
+      const fromEl = canvas.querySelector(`[data-model="${model.name}"]`)
+      const toEl   = canvas.querySelector(`[data-model="${field.type.name}"]`)
+      if (!fromEl || !toEl) continue
+
+      const fx = fromEl.offsetLeft + fromEl.offsetWidth
+      const fy = fromEl.offsetTop  + fromEl.offsetHeight / 2
+      const tx = toEl.offsetLeft
+      const ty = toEl.offsetTop   + toEl.offsetHeight / 2
+
+      // Bezier curve
+      const cx = (fx + tx) / 2
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      path.setAttribute('class', 'er-link')
+      path.setAttribute('d', `M${fx},${fy} C${cx},${fy} ${cx},${ty} ${tx},${ty}`)
+      svg.appendChild(path)
+
+      // Dots at endpoints
+      for (const [px, py] of [[fx, fy],[tx, ty]]) {
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+        dot.setAttribute('class', 'er-link-dot')
+        dot.setAttribute('cx', px)
+        dot.setAttribute('cy', py)
+        dot.setAttribute('r', 3)
+        svg.appendChild(dot)
+      }
+    }
+  }
+
+  // Expand canvas to fit all tables
+  const tables = canvas.querySelectorAll('.er-table')
+  let maxRight = 0, maxBottom = 0
+  tables.forEach(t => {
+    maxRight  = Math.max(maxRight,  t.offsetLeft + t.offsetWidth  + 40)
+    maxBottom = Math.max(maxBottom, t.offsetTop  + t.offsetHeight + 40)
+  })
+  canvas.style.width  = maxRight  + 'px'
+  canvas.style.height = maxBottom + 'px'
+  svg.setAttribute('width',  maxRight)
+  svg.setAttribute('height', maxBottom)
+}
+
+// Global drag handlers
+document.addEventListener('mousemove', e => {
+  if (!erDragging) return
+  const { el, ox, oy, startX, startY } = erDragging
+  const newX = Math.max(0, ox + e.clientX - startX)
+  const newY = Math.max(0, oy + e.clientY - startY)
+  el.style.left = newX + 'px'
+  el.style.top  = newY + 'px'
+  erPositions[el.dataset.model] = { x: newX, y: newY }
+  requestAnimationFrame(erDrawLines)
+})
+
+document.addEventListener('mouseup', () => { erDragging = null })
+
+// ── Migrations ────────────────────────────────────────────────────────────────
+
+async function loadMigrations() {
+  const panel = document.getElementById('migPanel')
+  panel.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>'
+
+  const data = await api('/migrations')
+  panel.innerHTML = ''
+
+  const icons = { applied:'✓', pending:'·', modified:'⚠', orphaned:'?' }
+  const cls   = { applied:'status-applied', pending:'status-pending', modified:'status-modified', orphaned:'status-orphaned' }
+
+  function renderMigStatus(rows, diffInfo, dbLabel) {
+    // Optional database header for multi-DB
+    if (dbLabel) {
+      const h = document.createElement('div')
+      h.style.cssText = 'padding:10px 16px 4px;font-size:11px;font-weight:600;opacity:0.5;text-transform:uppercase;letter-spacing:.06em'
+      h.textContent = dbLabel
+      panel.appendChild(h)
+    }
+
+    if (rows?.length) {
+      const section = document.createElement('div')
+      section.innerHTML = rows.map(r => `
+        <div class="migration-status-row">
+          <span class="${cls[r.state]}">${icons[r.state]} ${r.state}</span>
+          <span>${r.file}</span>
+          ${r.applied_at ? `<span class="mig-time">${r.applied_at.slice(0,19).replace('T',' ')}</span>` : ''}
+        </div>`).join('')
+      panel.appendChild(section)
+    } else {
+      const empty = document.createElement('div')
+      empty.className = 'empty'
+      empty.style.padding = '8px 16px'
+      empty.textContent = 'No migration files found'
+      panel.appendChild(empty)
+    }
+
+    // Schema diff for this database
+    if (diffInfo?.diff && !diffInfo.diff.includes('in sync')) {
+      const div = document.createElement('div')
+      div.className = 'diff-block'
+      div.innerHTML = `
+        <div class="diff-block-header">
+          <span>Schema diff${dbLabel ? ` — ${dbLabel}` : ''} (pending changes)</span>
+          <button class="btn" onclick="copyDiff('${dbLabel||'main'}')">Copy SQL</button>
+        </div>
+        <div class="diff-sql" id="diffSQL_${dbLabel||'main'}">${highlightSQL(diffInfo.sql || '')}</div>`
+      panel.appendChild(div)
+      if (!window._diffSQL) window._diffSQL = {}
+      window._diffSQL[dbLabel || 'main'] = diffInfo.sql
+    } else {
+      const div = document.createElement('div')
+      div.innerHTML = `<div style="padding:10px 16px;font-size:12px;color:var(--accent)">✓ ${dbLabel ? dbLabel + ': ' : ''}Schema is in sync</div>`
+      panel.appendChild(div)
+    }
+  }
+
+  const dbCount = Object.keys(data.diffs || {}).length
+  for (const [dbName, diffInfo] of Object.entries(data.diffs || {})) {
+    const rows = data.status?.[dbName] || []
+    // Only show db label when there are multiple databases
+    renderMigStatus(rows, diffInfo, dbCount > 1 ? dbName : null)
+  }
+}
+
+function copyDiff(dbName) {
+  const sql = (window._diffSQL || {})[dbName || 'main'] || ''
+  navigator.clipboard.writeText(sql).then(() => toast('Copied to clipboard', 'ok'))
+}
+
+function highlightSQL(sql) {
+  return esc(sql)
+    .replace(/\b(CREATE|TABLE|INDEX|DROP|ALTER|INSERT|INTO|SELECT|FROM|WHERE|PRAGMA|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|IF|NOT|EXISTS|ON|AS|PRIMARY|KEY|FOREIGN|REFERENCES|UNIQUE|DEFAULT|STRICT|GENERATED|ALWAYS|STORED|VIRTUAL|USING|NULL|AND|OR|UNION|ALL|ORDER|BY|LIMIT)\b/g, '<span class="sql-kw">$1</span>')
+    .replace(/"(\w+)"/g, (m, n) => `<span class="sql-tbl">"${n}"</span>`)
+    .replace(/(--[^\n]*)/g, '<span class="sql-cmt">$1</span>')
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+async function loadStats() {
+  const data = await api('/stats')
+  const grid = document.getElementById('statsGrid')
+  grid.innerHTML = ''
+
+  // ── Multi-DB: render one section per database ─────────────────────────────
+  if (data.databases?.length) {
+    // Totals row only meaningful when there are multiple databases
+    if (data.databases.length > 1) {
+      const totals = [
+        { label: 'Total Size',    value: fmtBytes(data.size || 0) },
+        { label: 'Total Tables',  value: data.tableCount || 0 },
+        { label: 'Total Indexes', value: data.indexCount || 0 },
+        { label: 'Total Rows',    value: (data.totalRows || 0).toLocaleString() },
+        { label: 'Read Cache',    value: (data.cacheSize?.read  || 0) + ' stmts' },
+        { label: 'Write Cache',   value: (data.cacheSize?.write || 0) + ' stmts' },
+      ]
+      for (const c of totals) {
+        grid.innerHTML += `
+          <div class="stat-card">
+            <div class="stat-card-label">${c.label}</div>
+            <div class="stat-card-value">${c.value}</div>
+          </div>`
+      }
+    }
+
+    // Per-database sections
+    for (const db of data.databases) {
+      const section = document.createElement('div')
+      section.className = 'stats-db-section'
+
+      const driverLabel = db.driver !== 'sqlite' ? `<span class="stats-db-driver">${db.driver}</span>` : ''
+      let html = `<div class="stats-db-header">${db.name}${driverLabel}</div>`
+      html += `<div class="stats-grid" style="padding:0;margin-bottom:12px">`
+
+      if (db.driver === 'jsonl' || db.driver === 'logger') {
+        html += `
+          <div class="stat-card">
+            <div class="stat-card-label">File Size</div>
+            <div class="stat-card-value">${fmtBytes(db.size || 0)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-label">Driver</div>
+            <div class="stat-card-value" style="font-size:16px">${db.driver}</div>
+            <div class="stat-card-sub">append-only</div>
+          </div>`
+      } else {
+        const dbCards = [
+          { label: 'Size',         value: fmtBytes(db.size || 0) },
+          { label: 'Page Size',    value: (db.pageSize || 0) + ' B', sub: 'bytes per page' },
+          { label: 'Total Pages',  value: (db.pageCount || 0).toLocaleString() },
+          { label: 'Free Pages',   value: (db.freelistCount || 0).toLocaleString(), sub: 'fragmented' },
+          { label: 'WAL Mode',     value: db.walMode ? 'ON' : 'OFF' },
+          { label: 'Foreign Keys', value: db.foreignKeys ? 'ON' : 'OFF' },
+          { label: 'Tables',       value: db.tableCount || 0 },
+          { label: 'Indexes',      value: db.indexCount || 0 },
+        ]
+        if (db.error) dbCards.push({ label: 'Error', value: '⚠', sub: db.error })
+        for (const c of dbCards) {
+          html += `
+            <div class="stat-card">
+              <div class="stat-card-label">${c.label}</div>
+              <div class="stat-card-value">${c.value}</div>
+              ${c.sub ? `<div class="stat-card-sub">${c.sub}</div>` : ''}
+            </div>`
+        }
+        // Row counts for this database
+        if (db.tables && Object.keys(db.tables).length) {
+          const dbTotalRows = db.totalRows || 0
+          html += `<div style="grid-column:1/-1">
+            <div class="schema-card" style="background:var(--surface)">
+              <div class="schema-card-header"><span class="schema-card-name">Row Counts</span></div>`
+          for (const [tbl, count] of Object.entries(db.tables)) {
+            const pct = dbTotalRows > 0 ? Math.round(count / dbTotalRows * 100) : 0
+            html += `
+              <div class="schema-field" style="gap:12px">
+                <span class="field-name">${tbl}</span>
+                <span class="field-type" style="color:var(--text);min-width:60px;text-align:right">${count.toLocaleString()}</span>
+                <div style="flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden">
+                  <div style="width:${pct}%;height:100%;background:var(--accent);border-radius:2px"></div>
+                </div>
+                <span style="font-size:10px;color:var(--muted);min-width:30px">${pct}%</span>
+              </div>`
+          }
+          html += `</div></div>`
+        }
+      }
+
+      html += `</div>`
+      section.innerHTML = html
+      grid.appendChild(section)
+    }
+    return
+  }
+
+  // ── Single-DB fallback (legacy flat shape) ────────────────────────────────
+  const cards = [
+    { label: 'Database Size',    value: fmtBytes(data.size || 0) },
+    { label: 'Page Size',        value: data.pageSize + ' B',   sub: 'bytes per page' },
+    { label: 'Total Pages',      value: (data.pageCount||0).toLocaleString() },
+    { label: 'Free Pages',       value: (data.freelistCount||0).toLocaleString(), sub: 'fragmented' },
+    { label: 'WAL Mode',         value: data.walMode ? 'ON' : 'OFF' },
+    { label: 'Foreign Keys',     value: data.foreignKeys ? 'ON' : 'OFF' },
+    { label: 'Tables',           value: data.tableCount || 0 },
+    { label: 'Indexes',          value: data.indexCount || 0 },
+    { label: 'Read Cache',       value: (data.cacheSize?.read || 0) + ' stmts' },
+    { label: 'Write Cache',      value: (data.cacheSize?.write || 0) + ' stmts' },
+  ]
+
+  for (const c of cards) {
+    grid.innerHTML += `
+      <div class="stat-card">
+        <div class="stat-card-label">${c.label}</div>
+        <div class="stat-card-value">${c.value}</div>
+        ${c.sub ? `<div class="stat-card-sub">${c.sub}</div>` : ''}
+      </div>`
+  }
+
+  if (data.tables) {
+    const div = document.createElement('div')
+    div.style = 'grid-column: 1 / -1'
+    let html = `
+      <div class="schema-card" style="background:var(--surface)">
+        <div class="schema-card-header"><span class="schema-card-name">Row Counts</span></div>`
+    for (const [name, count] of Object.entries(data.tables)) {
+      const pct = data.totalRows > 0 ? Math.round(count / data.totalRows * 100) : 0
+      html += `
+        <div class="schema-field" style="gap:12px">
+          <span class="field-name">${name}</span>
+          <span class="field-type" style="color:var(--text);min-width:60px;text-align:right">${count.toLocaleString()}</span>
+          <div style="flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:var(--accent);border-radius:2px"></div>
+          </div>
+          <span style="font-size:10px;color:var(--muted);min-width:30px">${pct}%</span>
+        </div>`
+    }
+    html += '</div>'
+    div.innerHTML = html
+    grid.appendChild(div)
+  }
+}
+
+// ── Tool navigation ───────────────────────────────────────────────────────────
+
+function showTool(tool) {
+  const tools = ['browse','query','schema','migrations','stats','repl','transform','perf','lite']
+  for (const t of tools) {
+    document.getElementById('panel' + cap(t)).classList.toggle('active', t === tool)
+    document.getElementById('nav' + cap(t)).classList.toggle('active', t === tool)
+  }
+  if (tool === 'migrations') loadMigrations()
+  if (tool === 'stats')      loadStats()
+  if (tool === 'transform')  txInit()
+  if (tool === 'perf')        perfInit()
+  if (tool === 'lite')        liteInit()
+}
+
+function cap(s) { return s[0].toUpperCase() + s.slice(1) }
+
+// ── Schema.lite editor ────────────────────────────────────────────────────────
+
+let _liteSource   = null   // last saved content from server
+let _liteDirty    = false
+let _liteValidating = false
+let _liteValidateTimer = null
+
+function liteSetStatus(kind, text) {
+  const dot  = document.getElementById('liteStatusDot')
+  const span = document.getElementById('liteStatusText')
+  dot.className  = 'lite-status-dot ' + kind
+  span.textContent = text
+}
+
+function liteSetErrors(errors, warnings) {
+  const box = document.getElementById('liteErrors')
+  if (!errors.length && !warnings.length) { box.style.display = 'none'; box.innerHTML = ''; return }
+  box.style.display = ''
+  box.innerHTML = [
+    ...errors.map(e => `<div class="lite-error-item">✗ ${esc(e)}</div>`),
+    ...warnings.map(w => `<div class="lite-warn-item">⚠ ${esc(w)}</div>`),
+  ].join('')
+}
+
+async function liteInit() {
+  if (_liteSource !== null) return   // already loaded this session
+  await liteReload()
+}
+
+async function liteReload() {
+  liteSetStatus('', 'Loading…')
+  const res = await api('/schema-source', null, 'GET')
+  if (res.error) { liteSetStatus('error', res.error); return }
+  _liteSource = res.source
+  _liteDirty  = false
+  document.getElementById('liteEditor').value = res.source
+  document.getElementById('liteSchemaPath').textContent = res.path || '—'
+  document.getElementById('liteSaveBtn').disabled = true
+  liteSetStatus('ok', 'Loaded')
+  liteSetErrors([], [])
+}
+
+async function liteSave() {
+  const source = document.getElementById('liteEditor').value
+  liteSetStatus('', 'Saving…')
+  document.getElementById('liteSaveBtn').disabled = true
+  const res = await api('/schema-source', { source })
+  if (!res.valid) {
+    liteSetStatus('error', `${res.errors.length} error${res.errors.length !== 1 ? 's' : ''}`)
+    liteSetErrors(res.errors, res.warnings ?? [])
+    document.getElementById('liteSaveBtn').disabled = false
+    return
+  }
+  _liteSource = source
+  _liteDirty  = false
+  liteSetStatus('ok', 'Saved')
+  liteSetErrors([], res.warnings ?? [])
+  if (res.warnings?.length) liteSetStatus('warn', `Saved (${res.warnings.length} warning${res.warnings.length !== 1 ? 's' : ''})`)
+  toast('schema.lite saved', 'ok')
+}
+
+async function liteValidate(source) {
+  // Debounced live validation — calls save endpoint in validate-only mode
+  // We just POST and check valid/errors without saving (server only writes on valid)
+  // Actually server saves on valid, so we call GET parse endpoint instead.
+  // Simplest: just report parse errors client-side for now via a lightweight check,
+  // then do real server validation on save.
+  const btn = document.getElementById('liteSaveBtn')
+  const changed = source !== _liteSource
+  _liteDirty = changed
+  btn.disabled = !changed
+
+  if (!changed) {
+    liteSetStatus('ok', 'No changes')
+    liteSetErrors([], [])
+    return
+  }
+  liteSetStatus('dirty', 'Unsaved changes')
+}
+
+// Wire editor input → live dirty tracking + debounced server validate
+document.addEventListener('DOMContentLoaded', () => {
+  const ed = document.getElementById('liteEditor')
+  if (!ed) return
+
+  // Tab key inserts 2 spaces instead of focusing next element
+  ed.addEventListener('keydown', e => {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      const s = ed.selectionStart, end = ed.selectionEnd
+      ed.value = ed.value.substring(0, s) + '  ' + ed.value.substring(end)
+      ed.selectionStart = ed.selectionEnd = s + 2
+    }
+    // Ctrl/Cmd+S saves
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault()
+      if (!document.getElementById('liteSaveBtn').disabled) liteSave()
+    }
+  })
+
+  ed.addEventListener('input', () => {
+    clearTimeout(_liteValidateTimer)
+    liteValidate(ed.value)
+    _liteValidateTimer = setTimeout(() => liteServerValidate(ed.value), 600)
+  })
+})
+
+async function liteServerValidate(source) {
+  if (source === _liteSource) return
+  // Skip if another validation is already running for newer content
+  _liteValidating = true
+  try {
+    const res = await api('/schema-validate', { source })
+    // Only apply result if editor content hasn't changed since we sent it
+    const current = document.getElementById('liteEditor')?.value
+    if (current !== source) return
+    if (!res.valid) {
+      liteSetStatus('error', `${res.errors.length} error${res.errors.length !== 1 ? 's' : ''}`)
+      liteSetErrors(res.errors, res.warnings ?? [])
+    } else if (res.warnings?.length) {
+      liteSetStatus('warn', `${res.warnings.length} warning${res.warnings.length !== 1 ? 's' : ''}`)
+      liteSetErrors([], res.warnings)
+    } else {
+      liteSetStatus('dirty', 'Valid — unsaved changes')
+      liteSetErrors([], [])
+    }
+  } catch { /* ignore network errors during live validation */ }
+  _liteValidating = false
+}
+
+
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function fmtBytes(b) {
+  if (b >= 1e9) return (b/1e9).toFixed(1) + ' GB'
+  if (b >= 1e6) return (b/1e6).toFixed(1) + ' MB'
+  if (b >= 1e3) return (b/1e3).toFixed(1) + ' KB'
+  return b + ' B'
+}
+
+let _toastTimer
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast')
+  el.textContent  = msg
+  el.className    = `toast show ${type}`
+  clearTimeout(_toastTimer)
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2500)
+}
+
+
+// ── REPL ──────────────────────────────────────────────────────────────────────
+
+let replHistory    = []       // past entries rendered in the panel
+let replCmdHistory = []       // past submitted queries (for ↑↓ navigation)
+let replHistoryIdx = -1       // -1 = not navigating
+let replDraft      = ''       // saved draft when navigating history
+
+const TABLE_METHODS = [
+  'findMany','findFirst','findUnique','findManyCursor',
+  'count','search',
+  'create','createMany',
+  'update','updateMany',
+  'upsert',
+  'remove','removeMany',
+  'delete','deleteMany',
+  'restore',
+]
+const DB_HELPERS = [
+  '$transaction','$backup','$attach','$detach',
+  '$close','$schema','$relations','$softDelete',
+  '$cacheSize','$enums','asSystem','sql',
+]
+
+// Build field map from live schema (populated after boot)
+function getReplFieldMap() {
+  if (!schema) return {}
+  const map = {}
+  for (const model of schema.models) {
+    map[model.name] = model.fields
+      .filter(f => f.type.kind !== 'relation')
+      .map(f => f.name)
+  }
+  return map
+}
+
+function getReplTableNames() {
+  return schema ? schema.models.map(m => m.name) : []
+}
+
+// ── Autocomplete engine ───────────────────────────────────────────────────────
+
+let acItems  = []   // current suggestion list
+let acIndex  = -1   // highlighted index
+
+function getCompletions(line) {
+  if (!schema) return []
+  const tableNames = getReplTableNames()
+  const fieldMap   = getReplFieldMap()
+  // Trim leading whitespace so `  db.` still matches
+  const trimmed    = line.trimStart()
+
+  // db.<table>.<method partial>
+  const methodMatch = trimmed.match(/db\.([\w]+)\.([\w]*)$/)
+  if (methodMatch) {
+    const [, table, partial] = methodMatch
+    if (tableNames.includes(table)) {
+      return TABLE_METHODS
+        .filter(m => m.startsWith(partial))
+        .map(m => ({ insert: `db.${table}.${m}`, label: m, type: 'method' }))
+    }
+  }
+
+  // db.asSystem().<table>.<method partial>
+  const sysMethodMatch = trimmed.match(/db\.asSystem\(\)\.([\w]+)\.([\w]*)$/)
+  if (sysMethodMatch) {
+    const [, table, partial] = sysMethodMatch
+    if (tableNames.includes(table)) {
+      return TABLE_METHODS
+        .filter(m => m.startsWith(partial))
+        .map(m => ({ insert: `db.asSystem().${table}.${m}`, label: m, type: 'method' }))
+    }
+  }
+
+  // db.asSystem().<table partial>
+  const sysTableMatch = trimmed.match(/db\.asSystem\(\)\.([\w]*)$/)
+  if (sysTableMatch) {
+    const partial = sysTableMatch[1]
+    return tableNames
+      .filter(n => n.startsWith(partial))
+      .map(n => ({ insert: `db.asSystem().${n}`, label: n, type: 'table' }))
+  }
+
+  // sys.<table>.<method partial>
+  const sysShortMethodMatch = trimmed.match(/sys\.([\w]+)\.([\w]*)$/)
+  if (sysShortMethodMatch) {
+    const [, table, partial] = sysShortMethodMatch
+    if (tableNames.includes(table)) {
+      return TABLE_METHODS
+        .filter(m => m.startsWith(partial))
+        .map(m => ({ insert: `sys.${table}.${m}`, label: m, type: 'method' }))
+    }
+  }
+
+  // sys.<table partial>
+  const sysShortTableMatch = trimmed.match(/sys\.([\w]*)$/)
+  if (sysShortTableMatch) {
+    const partial = sysShortTableMatch[1]
+    return tableNames
+      .filter(n => n.startsWith(partial))
+      .map(n => ({ insert: `sys.${n}`, label: n, type: 'table' }))
+  }
+
+  // db.$setAuth(...).<table>.<method partial>
+  const authMethodMatch = trimmed.match(/db\.\$setAuth\([^)]*\)\.([\w]+)\.([\w]*)$/)
+  if (authMethodMatch) {
+    const [, table, partial] = authMethodMatch
+    if (tableNames.includes(table)) {
+      return TABLE_METHODS
+        .filter(m => m.startsWith(partial))
+        .map(m => ({ insert: null, label: m, type: 'method' }))
+    }
+  }
+
+  // db.$setAuth(...).<table partial>
+  const authTableMatch = trimmed.match(/db\.\$setAuth\([^)]*\)\.([\w]*)$/)
+  if (authTableMatch) {
+    const partial = authTableMatch[1]
+    return tableNames
+      .filter(n => n.startsWith(partial))
+      .map(n => ({ insert: null, label: n, type: 'table' }))
+  }
+
+  // db.<partial> — tables + helpers
+  const dbMatch = trimmed.match(/db\.([\w]*)$/)
+  if (dbMatch) {
+    const partial    = dbMatch[1]
+    const candidates = [
+      ...tableNames.map(n => ({ insert: `db.${n}`, label: n, type: 'table' })),
+      ...DB_HELPERS.map(n => ({ insert: `db.${n}`, label: n, type: 'helper' })),
+    ]
+    return candidates.filter(c => c.label.startsWith(partial))
+  }
+
+  // where: { <field partial>  — look back for the table name
+  const whereMatch = trimmed.match(/db\.([\w]+)\.[\w]+\(.*where:\s*\{\s*([\w]*)$/)
+  if (whereMatch) {
+    const [, table, partial] = whereMatch
+    const fields = fieldMap[table] ?? []
+    return fields
+      .filter(f => f.startsWith(partial))
+      .map(f => ({ insert: null, label: f, type: 'field' }))
+  }
+
+  return []
+}
+function showAC(items, input) {
+  const box = document.getElementById('replAC')
+  acItems = items
+  acIndex = -1
+  if (!items.length) { box.style.display = 'none'; return }
+
+  box.innerHTML = items.map((item, i) =>
+    `<div class="repl-ac-item" data-idx="${i}" onmousedown="acSelect(${i})">
+      <span class="ac-label">${esc(item.label)}</span>
+      <span class="ac-type">${item.type}</span>
+    </div>`
+  ).join('')
+  box.style.display = 'block'
+}
+
+function hideAC() {
+  document.getElementById('replAC').style.display = 'none'
+  acItems = []
+  acIndex = -1
+}
+
+function acHighlight(idx) {
+  const items = document.getElementById('replAC').querySelectorAll('.repl-ac-item')
+  items.forEach((el, i) => el.classList.toggle('active', i === idx))
+  acIndex = idx
+  // Scroll into view
+  if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' })
+}
+
+function acApply(idx) {
+  const item  = acItems[idx]
+  const input = document.getElementById('replInput')
+  if (!item) return
+
+  const cursor = input.selectionStart
+  const before = input.value.slice(0, cursor)
+  const after  = input.value.slice(cursor)
+
+  if (item.insert !== null) {
+    // Replace the text up to cursor with the full completion, keep text after cursor
+    input.value = item.insert + after
+    input.selectionStart = input.selectionEnd = item.insert.length
+  } else {
+    // Field name — replace the partial word before cursor
+    const newBefore = before.replace(/(\w*)$/, item.label)
+    input.value = newBefore + after
+    input.selectionStart = input.selectionEnd = newBefore.length
+  }
+  hideAC()
+  replAutoResize(input)
+  input.focus()
+}
+
+function acSelect(idx) {
+  acApply(idx)
+}
+
+function replAutoResize(el) {
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+}
+
+function replOnInput(el) {
+  replAutoResize(el)
+  replHistoryIdx = -1  // reset history navigation when typing
+  // Use text up to cursor — so completions work when cursor is mid-line
+  const lineUpToCursor = el.value.slice(0, el.selectionStart)
+  const completions = getCompletions(lineUpToCursor)
+  showAC(completions, el)
+}
+
+function replKeydown(e) {
+  const input = document.getElementById('replInput')
+  const acVisible = document.getElementById('replAC').style.display !== 'none'
+
+  // ── Autocomplete navigation ───────────────────────────────────────────────
+  if (acVisible) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      acHighlight(Math.min(acIndex + 1, acItems.length - 1))
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (acIndex <= 0) hideAC()
+      else acHighlight(acIndex - 1)
+      return
+    }
+    if (e.key === 'Tab' || e.key === 'Enter' && !e.shiftKey) {
+      if (acIndex >= 0) {
+        e.preventDefault()
+        acApply(acIndex)
+        return
+      }
+      if (e.key === 'Tab' && acItems.length > 0) {
+        e.preventDefault()
+        acApply(0)
+        return
+      }
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      hideAC()
+      return
+    }
+  }
+
+  // ── Tab — trigger completion even when AC not visible ─────────────────────
+  if (e.key === 'Tab' && !acVisible) {
+    e.preventDefault()
+    const lineUpToCursor = input.value.slice(0, input.selectionStart)
+    const completions = getCompletions(lineUpToCursor)
+    if (completions.length === 1) {
+      // Single match — apply immediately
+      acItems = completions
+      acApply(0)
+    } else if (completions.length > 1) {
+      showAC(completions, input)
+      acHighlight(0)
+    }
+    return
+  }
+
+  // ── History navigation (↑↓ when AC not open) ─────────────────────────────
+  if (!acVisible && e.key === 'ArrowUp') {
+    e.preventDefault()
+    if (!replCmdHistory.length) return
+    if (replHistoryIdx === -1) {
+      replDraft = input.value   // save current draft
+      replHistoryIdx = replCmdHistory.length - 1
+    } else if (replHistoryIdx > 0) {
+      replHistoryIdx--
+    }
+    input.value = replCmdHistory[replHistoryIdx]
+    replAutoResize(input)
+    input.selectionStart = input.selectionEnd = input.value.length
+    return
+  }
+  if (!acVisible && e.key === 'ArrowDown') {
+    e.preventDefault()
+    if (replHistoryIdx === -1) return
+    if (replHistoryIdx < replCmdHistory.length - 1) {
+      replHistoryIdx++
+      input.value = replCmdHistory[replHistoryIdx]
+    } else {
+      replHistoryIdx = -1
+      input.value = replDraft
+    }
+    replAutoResize(input)
+    input.selectionStart = input.selectionEnd = input.value.length
+    return
+  }
+
+  // ── Run — Shift+Enter or Ctrl+Enter or Cmd+Enter ─────────────────────────
+  const isRunKey = (e.shiftKey && e.key === 'Enter') ||
+                   ((e.ctrlKey || e.metaKey) && e.key === 'Enter')
+  if (isRunKey) {
+    e.preventDefault()
+    hideAC()
+    runRepl()
+    return
+  }
+
+  // ── Escape — clear input ──────────────────────────────────────────────────
+  if (e.key === 'Escape' && !acVisible) {
+    input.value = ''
+    replAutoResize(input)
+    replHistoryIdx = -1
+  }
+}
+
+async function runRepl() {
+  const input = document.getElementById('replInput')
+  const code  = input.value.trim()
+  if (!code) return
+
+  hideAC()
+
+  // Save to command history (avoid consecutive duplicates)
+  if (replCmdHistory[replCmdHistory.length - 1] !== code) {
+    replCmdHistory.push(code)
+    if (replCmdHistory.length > 200) replCmdHistory.shift()
+  }
+  replHistoryIdx = -1
+  replDraft = ''
+
+  // Hide empty state
+  document.getElementById('replEmpty').style.display = 'none'
+
+  const t0 = performance.now()
+  const res = await api('/repl', { code, auth: currentAuth })
+  const ms  = (performance.now() - t0).toFixed(1)
+
+  appendReplEntry(code, res, ms)
+
+  input.value = ''
+  input.style.height = 'auto'
+  input.focus()
+}
+
+// ── SQL log rendering ─────────────────────────────────────────────────────────
+
+// Inline param substitution — replaces ? placeholders with actual values for readability.
+// Purely cosmetic: makes the displayed SQL runnable in any SQLite tool.
+function inlineSqlParams(sql, params) {
+  if (!params?.length) return sql
+  let i = 0
+  return sql.replace(/\?/g, () => {
+    if (i >= params.length) return '?'
+    const v = params[i++]
+    if (v === null || v === undefined) return 'NULL'
+    if (typeof v === 'number') return String(v)
+    if (typeof v === 'boolean') return v ? '1' : '0'
+    // Escape single quotes in string values
+    return "'" + String(v).replace(/'/g, "''") + "'"
+  })
+}
+
+// Very lightweight SQL keyword highlighter — no parser, just regex over known keywords.
+function highlightSql(sql) {
+  const keywords = /(SELECT|FROM|WHERE|INSERT|INTO|VALUES|UPDATE|SET|DELETE|DEFAULT|AND|OR|NOT|NULL|IN|LIKE|MATCH|ORDER BY|GROUP BY|LIMIT|OFFSET|INNER JOIN|LEFT JOIN|JOIN|ON|AS|CASE|WHEN|THEN|ELSE|END|COUNT|MAX|MIN|SUM|AVG|DISTINCT|WITH|EXISTS|UNION|ALL|HAVING|IS|TRUE|FALSE)/gi
+  return esc(sql)
+    .replace(keywords, m => `<span class="sql-kw">${m}</span>`)
+    .replace(/"([^"]+)"/g, (_, t) => `<span class="sql-tbl">"${t}"</span>`)
+    .replace(/'([^']*)'/g, (_, v) => `<span class="sql-val">'${v}'</span>`)
+    .replace(/(\d+)/g, n => `<span class="sql-val">${n}</span>`)
+}
+
+let _sqlLogCounter = 0
+
+function renderSqlLog(sqlLog) {
+  if (!sqlLog?.length) return ''
+
+  const id = `sqllog-${++_sqlLogCounter}`
+  const totalMs = sqlLog.reduce((s, e) => s + (e.duration ?? 0), 0).toFixed(1)
+  const label = sqlLog.length === 1
+    ? `1 query · ${totalMs}ms`
+    : `${sqlLog.length} queries · ${totalMs}ms`
+
+  let items = ''
+  for (const e of sqlLog) {
+    const ms = (e.duration ?? 0).toFixed(2)
+    const durClass = e.duration > 100 ? 'very-slow' : e.duration > 20 ? 'slow' : ''
+    const dbLabel  = e.database && e.database !== 'main' ? `<span class="sql-log-db">${esc(e.database)}</span>` : ''
+    const rowLabel = e.rowCount != null ? `<span class="sql-log-rows">${e.rowCount} row${e.rowCount !== 1 ? 's' : ''}</span>` : ''
+    const actorLabel = e.actorId ? `<span class="sql-log-db">as ${esc(String(e.actorId))}</span>` : ''
+
+    // Substitute params inline for display
+    const displaySql = inlineSqlParams(e.sql ?? '', e.params ?? [])
+
+    items += `
+      <div class="sql-log-item">
+        <div class="sql-log-meta">
+          <span class="sql-log-op">${esc(e.operation ?? '?')}</span>
+          <span class="sql-log-model">${esc(e.model ?? '')}</span>
+          ${dbLabel}
+          ${rowLabel}
+          ${actorLabel}
+          <span class="sql-log-dur ${durClass}">${ms}ms</span>
+        </div>
+        <div class="sql-log-sql">${highlightSql(displaySql)}</div>
+      </div>`
+  }
+
+  return `
+    <div class="sql-log">
+      <div class="sql-log-header" onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('.sql-log-chevron').textContent=this.nextElementSibling.classList.contains('open')?'▲':'▼'">
+        <span class="sql-log-title">SQL</span>
+        <span style="display:flex;gap:8px;align-items:center">
+          <span>${label}</span>
+          <span class="sql-log-chevron">▼</span>
+        </span>
+      </div>
+      <div class="sql-log-body" id="${id}">${items}</div>
+    </div>`
+}
+
+function appendReplEntry(code, res, totalMs) {
+  const history = document.getElementById('replHistory')
+
+  const entry = document.createElement('div')
+  entry.className = 'repl-entry'
+
+  // Input line
+  const inputLine = document.createElement('div')
+  inputLine.className = 'repl-input-line'
+  inputLine.innerHTML = `<span class="repl-prompt">›</span><span class="repl-code">${esc(code)}</span>`
+  entry.appendChild(inputLine)
+
+  // Output
+  const output = document.createElement('div')
+  output.className = 'repl-output'
+
+  // Build timing string — show db time separately when available
+  const dbMs    = res.execMs
+  const timingHtml = dbMs != null
+    ? `<span title="DB execution time">${dbMs}ms db</span> <span style="color:var(--border2)">·</span> <span title="Total round trip including HTTP + serialization">${totalMs}ms total</span>`
+    : `${totalMs}ms`
+
+  if (res.error) {
+    output.innerHTML = `<div class="repl-result-error">${esc(res.error)}</div>`
+  } else {
+    const val = res.result
+    if (val === null || val === undefined) {
+      output.innerHTML = `<span class="repl-result-null">null</span>`
+    } else if (Array.isArray(val)) {
+      if (val.length === 0) {
+        output.innerHTML = `<span class="repl-result-null">[] — 0 rows</span>`
+      } else if (typeof val[0] === 'object' && val[0] !== null) {
+        output.innerHTML = `<div class="repl-result-rows">${renderReplTable(val)}</div>`
+        output.innerHTML += `<div class="repl-elapsed">${val.length} row${val.length !== 1 ? 's' : ''}  ·  ${timingHtml}</div>`
+      } else {
+        output.innerHTML = `<pre class="repl-result-json">${esc(JSON.stringify(val, null, 2))}</pre>`
+        output.innerHTML += `<div class="repl-elapsed">${timingHtml}</div>`
+      }
+    } else if (typeof val === 'object') {
+      output.innerHTML = `<pre class="repl-result-json">${esc(JSON.stringify(val, null, 2))}</pre>`
+      output.innerHTML += `<div class="repl-elapsed">${timingHtml}</div>`
+    } else {
+      output.innerHTML = `<span class="repl-result-scalar">${esc(String(val))}</span>`
+      output.innerHTML += ` <span class="repl-elapsed" style="margin-left:8px">${timingHtml}</span>`
+    }
+  }
+
+  entry.appendChild(output)
+
+  // ── SQL log — show which queries ran ──────────────────────────────────────
+  if (res.sqlLog?.length) {
+    const sqlLogDiv = document.createElement('div')
+    sqlLogDiv.className = 'repl-output'
+    sqlLogDiv.style.paddingTop = '0'
+    sqlLogDiv.innerHTML = renderSqlLog(res.sqlLog)
+    entry.appendChild(sqlLogDiv)
+  }
+
+  history.appendChild(entry)
+  history.scrollTop = history.scrollHeight
+}
+
+function renderReplTable(rows) {
+  const cols = Object.keys(rows[0])
+  let h = '<table style="min-width:100%"><thead><tr>'
+  for (const c of cols) h += `<th>${esc(c)}</th>`
+  h += '</tr></thead><tbody>'
+  for (const row of rows) {
+    h += '<tr>'
+    for (const c of cols) h += `<td>${formatCell(row[c], c)}</td>`
+    h += '</tr>'
+  }
+  return h + '</tbody></table>'
+}
+
+// Close autocomplete when clicking outside the input bar
+document.addEventListener('click', e => {
+  if (!e.target.closest('.repl-input-bar')) hideAC()
+})
+
+
+// ── Export ────────────────────────────────────────────────────────────────────
+
+function exportCSV() {
+  const rows = filteredRows.length ? filteredRows : allRows
+  if (!rows.length) return
+  const cols = Object.keys(rows[0])
+  const lines = [
+    cols.join(','),
+    ...rows.map(r => cols.map(c => {
+      const v = r[c]
+      if (v === null || v === undefined) return ''
+      const s = typeof v === 'object' ? JSON.stringify(v) : String(v)
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? '"' + s.replace(/"/g, '""') + '"'
+        : s
+    }).join(','))
+  ]
+  download(`${currentTable}.csv`, lines.join('\n'), 'text/csv')
+}
+
+function exportJSON() {
+  const rows = filteredRows.length ? filteredRows : allRows
+  download(`${currentTable}.json`, JSON.stringify(rows, null, 2), 'application/json')
+}
+
+function download(name, content, type) {
+  const a    = document.createElement('a')
+  a.href     = URL.createObjectURL(new Blob([content], { type }))
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(a.href)
+  toast(`Downloaded ${name}`, 'ok')
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  // Don't fire when typing in an input, textarea, or the REPL
+  const tag = e.target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (e.target.closest('.repl-input-bar')) return
+
+  switch(e.key) {
+    case 'r': case 'R':
+      if (currentTable) { loadTable(currentTable); toast('Reloaded', 'ok') }
+      break
+    case '/':
+      e.preventDefault()
+      document.getElementById('browseSearch').focus()
+      showTool('browse')
+      break
+    case 'Escape':
+      const s = document.getElementById('browseSearch')
+      if (s.value) { s.value = ''; filterRows() }
+      s.blur()
+      break
+    case 'ArrowRight':
+      if (e.altKey) nextPage()
+      break
+    case 'ArrowLeft':
+      if (e.altKey) prevPage()
+      break
+  }
+})
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+boot()
+
+// ─── Transform panel ──────────────────────────────────────────────────────────
+
+let txSteps     = []   // array of step objects
+let txSelected  = -1   // index of selected step
+let txDragIdx   = -1
+
+// ── Step defaults ─────────────────────────────────────────────────────────────
+function txDefaultStep(type) {
+  const tableNames = (schema?.models ?? []).map(m => m.name)
+  const firstTable = tableNames[0] ?? 'accounts'
+  switch (type) {
+    case 'scope':      return { type, target: firstTable, sql: `id = 1` }
+    case 'filter':     return { type, target: firstTable, sql: `deleted_at IS NULL` }
+    case 'limit':      return { type, target: 'all', n: '1000' }
+    case 'sample':     return { type, target: 'all', n: '500' }
+    case 'drop-col':   return { type, target: 'all', cols: 'email, password' }
+    case 'keep':       return { type, target: firstTable, cols: 'id, name' }
+    case 'mask':       return { type, target: firstTable, col: 'phone', strategy: 'last4' }
+    case 'set':        return { type, target: firstTable, col: 'full_name', expr: `(_, r) => r.first_name + ' ' + r.last_name` }
+    case 'rename':     return { type, target: firstTable, from: 'old_col', to: 'new_col' }
+    case 'redact':     return { type, mode: 'both' }
+    case 'drop-table': return { type, target: firstTable }
+    case 'truncate':   return { type, target: firstTable }
+    case 'drop-except':return { type, keep: tableNames.slice(0, 2).join(', ') }
+    case 'shard':      return { type, target: firstTable }
+    default:           return { type }
+  }
+}
+
+// ── Render step list ──────────────────────────────────────────────────────────
+function txRenderSteps() {
+  const list = document.getElementById('txStepList')
+  document.getElementById('txStepCount').textContent = `${txSteps.length} step${txSteps.length !== 1 ? 's' : ''}`
+
+  if (!txSteps.length) {
+    list.innerHTML = `<div class="log-empty" style="padding:16px;text-align:center">
+      No steps yet — add one below
+    </div>`
+    txUpdateCode()
+    return
+  }
+
+  list.innerHTML = txSteps.map((s, i) => {
+    const badge = txBadgeType(s.type)
+    const desc  = txStepDesc(s)
+    const sel   = i === txSelected ? ' selected' : ''
+    return `<div class="step-card${sel}" draggable="true"
+        onclick="txSelectStep(${i})"
+        ondragstart="txDragStart(event,${i})"
+        ondragover="txDragOver(event,${i})"
+        ondrop="txDrop(event,${i})"
+        ondragleave="txDragLeave(event)"
+        id="txStep_${i}">
+      <div class="step-card-header">
+        <span class="step-type-badge ${badge}">${badge}</span>
+        <span style="font-size:10px;color:var(--muted)">${i + 1}</span>
+      </div>
+      <div class="step-desc">${esc(desc)}</div>
+      <button class="step-del" onclick="event.stopPropagation();txDeleteStep(${i})" title="Remove">✕</button>
+    </div>`
+  }).join('')
+
+  txUpdateCode()
+}
+
+function txBadgeType(type) {
+  if (type === 'drop-col' || type === 'drop-table' || type === 'drop-except') return 'drop'
+  return type
+}
+
+function txStepDesc(s) {
+  switch (s.type) {
+    case 'scope':       return `${s.target}.scope("${s.sql ?? ''}")`
+    case 'filter':      return `${s.target}.filter("${s.sql ?? ''}")`
+    case 'limit':       return `${s.target}.limit(${s.n ?? ''})`
+    case 'sample':      return `${s.target}.sample(${s.n ?? ''})`
+    case 'drop-col':    return `${s.target}.drop(${s.cols ?? ''})`
+    case 'keep':        return `${s.target}.keep(${s.cols ?? ''})`
+    case 'mask':        return `${s.target}.mask("${s.col ?? ''}", "${s.strategy ?? ''}")`
+    case 'set':         return `${s.target}.set("${s.col ?? ''}", fn)`
+    case 'rename':      return `${s.target}.rename("${s.from ?? ''}", "${s.to ?? ''}")`
+    case 'redact':      return `${s.target ?? 'all'}.redact("${s.mode ?? 'both'}")`
+    case 'drop-table':  return `${s.target}.drop()`
+    case 'truncate':    return `${s.target}.truncate()`
+    case 'drop-except': return `dropExcept(${s.keep ?? ''})`
+    case 'shard':       return `shard("${s.target ?? 'accounts'}")`
+    default:            return s.type
+  }
+}
+
+// ── Step editor ───────────────────────────────────────────────────────────────
+function txSelectStep(i) {
+  txSelected = i
+  txRenderSteps()
+  txRenderEditor()
+}
+
+function txRenderEditor() {
+  const fields   = document.getElementById('txEditorFields')
+  const tableNames = (schema?.models ?? []).map(m => m.name)
+  const tableOpts  = ['all', ...tableNames].map(n => `<option value="${n}">${n}</option>`).join('')
+  const s = txSteps[txSelected]
+
+  if (!s) {
+    fields.innerHTML = `<span style="color:var(--muted);font-size:11px">Select a step to edit it</span>`
+    document.querySelector('.step-editor-title').textContent = 'Step editor'
+    return
+  }
+
+  document.querySelector('.step-editor-title').textContent = `Step ${txSelected + 1} — ${s.type}`
+
+  const tableField = (label, key) => `
+    <div class="step-field">
+      <label>${label}</label>
+      <select onchange="txUpdateField(${txSelected},'${key}',this.value)">
+        ${['all', ...tableNames].map(n => `<option value="${n}"${s[key]===n?' selected':''}>${n}</option>`).join('')}
+      </select>
+    </div>`
+  const textField = (label, key, placeholder='', wide=false) => `
+    <div class="step-field">
+      <label>${label}</label>
+      <input type="text" value="${esc(String(s[key] ?? ''))}" placeholder="${placeholder}"
+        ${wide ? 'style="min-width:300px"' : ''}
+        oninput="txUpdateField(${txSelected},'${key}',this.value)" />
+    </div>`
+
+  let html = '', hint = ''
+
+  switch (s.type) {
+    case 'scope':
+      html = tableField('Table', 'target') + textField('SQL / expression', 'sql', 'id = 1', true)
+      hint = 'Filters rows + FK-cascades to all child tables. Use a SQL WHERE expression.'
+      break
+    case 'filter':
+      html = tableField('Table', 'target') + textField('SQL / expression', 'sql', 'deleted_at IS NULL', true)
+      hint = 'Filters rows on this table only — no cascade.'
+      break
+    case 'limit':
+    case 'sample':
+      html = tableField('Table', 'target') + textField('N (rows, %, or size)', 'n', s.type === 'limit' ? '1000' : '500')
+      hint = 'Examples: 500 rows, "10%" of rows, "50mb" by size. Use "all" for every table.'
+      break
+    case 'drop-col':
+      html = tableField('Table', 'target') + textField('Columns (comma-separated)', 'cols', 'email, password', true)
+      hint = 'Use "all" to drop these columns from every table.'
+      break
+    case 'keep':
+      html = tableField('Table', 'target') + textField('Keep columns (comma-separated)', 'cols', 'id, name, status', true)
+      hint = 'Whitelists columns — everything else is dropped from this table.'
+      break
+    case 'mask':
+      html = tableField('Table', 'target') + textField('Column', 'col', 'phone') + `
+        <div class="step-field">
+          <label>Strategy</label>
+          <select onchange="txUpdateField(${txSelected},'strategy',this.value)">
+            ${['redact','last4','first2','hash'].map(v => `<option${s.strategy===v?' selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>`
+      hint = 'redact → "***" · last4 → "***6789" · first2 → "Jo***" · hash → deterministic hex'
+      break
+    case 'set':
+      html = tableField('Table', 'target') + textField('Column', 'col', 'full_name') +
+             textField('Expression', 'expr', '(_, r) => r.first_name + " " + r.last_name', true)
+      hint = "Function receives (currentValue, row). Column is added if it doesn't exist."
+      break
+    case 'rename':
+      html = tableField('Table', 'target') + textField('From', 'from', 'old_name') + textField('To', 'to', 'new_name')
+      break
+    case 'redact':
+      html = `<div class="step-field">
+        <label>Mode</label>
+        <select onchange="txUpdateField(${txSelected},'mode',this.value)">
+          ${[['both','SECRETS + PII'],['SECRETS','SECRETS only'],['PII','PII only']].map(([v,l])=>`<option value="${v}"${s.mode===v?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>`
+      hint = 'SECRETS: password, token, apiKey… · PII: email, phone, firstName…'
+      break
+    case 'drop-table':
+      html = tableField('Table', 'target')
+      hint = 'Drops the entire table from the output db.'
+      break
+    case 'truncate':
+      html = tableField('Table', 'target')
+      hint = 'Clears all rows but keeps the table schema.'
+      break
+    case 'drop-except':
+      html = textField('Keep tables (comma-separated)', 'keep', 'accounts, users', true)
+      hint = 'Drops every table not listed here.'
+      break
+    case 'shard':
+      html = tableField('Split by table', 'target')
+      hint = 'Steps below the shard run once per output file. One file per row in the split table.'
+      break
+  }
+
+  fields.innerHTML = html + (hint ? `<div class="step-editor-hint" style="flex-basis:100%">${hint}</div>` : '')
+}
+
+function txUpdateField(i, key, val) {
+  if (txSteps[i]) {
+    txSteps[i][key] = val
+    txRenderSteps()
+    // re-render editor without changing selection
+    txRenderEditor()
+  }
+}
+
+// ── Add / delete steps ────────────────────────────────────────────────────────
+function txAddStep() {
+  const type = document.getElementById('txStepType').value
+  txSteps.push(txDefaultStep(type))
+  txSelected = txSteps.length - 1
+  txRenderSteps()
+  txRenderEditor()
+  // Scroll to bottom of step list
+  const list = document.getElementById('txStepList')
+  list.scrollTop = list.scrollHeight
+}
+
+function txDeleteStep(i) {
+  txSteps.splice(i, 1)
+  if (txSelected >= txSteps.length) txSelected = txSteps.length - 1
+  txRenderSteps()
+  txRenderEditor()
+}
+
+// ── Drag-to-reorder ───────────────────────────────────────────────────────────
+function txDragStart(e, i) {
+  txDragIdx = i
+  document.getElementById(`txStep_${i}`)?.classList.add('dragging')
+  e.dataTransfer.effectAllowed = 'move'
+}
+function txDragOver(e, i) {
+  e.preventDefault()
+  document.getElementById(`txStep_${i}`)?.classList.add('drag-over')
+}
+function txDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over')
+}
+function txDrop(e, i) {
+  e.preventDefault()
+  e.currentTarget.classList.remove('drag-over')
+  if (txDragIdx === -1 || txDragIdx === i) return
+  const moved = txSteps.splice(txDragIdx, 1)[0]
+  txSteps.splice(i, 0, moved)
+  txSelected = i
+  txDragIdx  = -1
+  txRenderSteps()
+  txRenderEditor()
+}
+
+// ── Code generation ───────────────────────────────────────────────────────────
+function txUpdateCode() {
+  const view = document.getElementById('txCodeView')
+  view.innerHTML = txGenerateCode()
+}
+
+function txGenerateCode() {
+  const srcDb   = document.getElementById('txSrcDb')?.value?.trim() || './production.db'
+  const outPath = document.getElementById('txOutPath')?.value?.trim() || null
+  const filenameFn = document.getElementById('txFilename')?.value?.trim() || null
+
+  const lines = []
+  lines.push(kw('import') + ' { ' + fn('$') + ', ' + fn('params') + ' } ' + kw('from') + ' ' + str("'@frontierjs/litestone'"))
+  lines.push('')
+
+  const hasParams = false // future: detect if any step uses params
+  if (hasParams) {
+    lines.push('const { accountIds } = ' + fn('params') + '({ accountIds: [1] })')
+    lines.push('')
+  }
+
+  lines.push(kw('export let') + ' pipeline = [')
+
+  const hasShardMarker = txSteps.some(s => s.type === 'shard')
+
+  txSteps.forEach((s, i) => {
+    const isLast = i === txSteps.length - 1
+    const comma = isLast ? '' : ','
+
+    if (s.type === 'shard') {
+      const t = s.target && s.target !== 'accounts' ? str(`'${s.target}'`) : ''
+      lines.push('  ' + fn('$') + op('.') + fn('shard') + `(${t})` + comma + cmt('  // ← split here'))
+      return
+    }
+
+    const t   = s.target === 'all' ? fn('$') + op('.') + tbl('all') : fn('$') + op('.') + tbl(s.target || 'table')
+    let chain = ''
+
+    switch (s.type) {
+      case 'scope':
+        chain = op('.') + fn('scope') + '(' + str(`\`${(s.sql||'').replace(/`/g,"'")}\``) + ')'
+        break
+      case 'filter':
+        chain = op('.') + fn('filter') + '(' + str(`\`${(s.sql||'').replace(/`/g,"'")}\``) + ')'
+        break
+      case 'limit':
+        chain = op('.') + fn('limit') + '(' + str(`'${s.n||1000}'`) + ')'
+        break
+      case 'sample':
+        chain = op('.') + fn('sample') + '(' + str(`'${s.n||500}'`) + ')'
+        break
+      case 'drop-col': {
+        const cols = (s.cols||'').split(',').map(c => str(`'${c.trim()}'`)).join(', ')
+        chain = op('.') + fn('drop') + '(' + cols + ')'
+        break
+      }
+      case 'keep': {
+        const cols = (s.cols||'').split(',').map(c => str(`'${c.trim()}'`)).join(', ')
+        chain = op('.') + fn('keep') + '(' + cols + ')'
+        break
+      }
+      case 'mask':
+        chain = op('.') + fn('mask') + '(' + str(`'${s.col||''}'`) + ', ' + str(`'${s.strategy||'redact'}'`) + ')'
+        break
+      case 'set':
+        chain = op('.') + fn('set') + '(' + str(`'${s.col||''}'`) + ', ' + (s.expr||'fn') + ')'
+        break
+      case 'rename':
+        chain = op('.') + fn('rename') + '(' + str(`'${s.from||''}'`) + ', ' + str(`'${s.to||''}'`) + ')'
+        break
+      case 'redact': {
+        const mode = s.mode === 'both' ? '' : str(`'${s.mode}'`)
+        chain = op('.') + fn('redact') + '(' + mode + ')'
+        break
+      }
+      case 'drop-table':
+        chain = op('.') + fn('drop') + '()'
+        break
+      case 'truncate':
+        chain = op('.') + fn('truncate') + '()'
+        break
+      case 'drop-except': {
+        const tables = (s.keep||'').split(',').map(c => str(`'${c.trim()}'`)).join(', ')
+        chain = op('.') + fn('dropExcept') + '(' + tables + ')'
+        break
+      }
+    }
+
+    lines.push('  ' + t + chain + comma)
+  })
+
+  lines.push(']')
+  lines.push('')
+  lines.push(kw('export let') + ' config = {')
+  lines.push('  db:       ' + str(`'${srcDb}'`) + ',')
+  lines.push('  pipeline,')
+  if (outPath) lines.push('  outputPath: ' + str(`'${outPath}'`) + ',')
+  if (filenameFn) lines.push('  filename:  ' + filenameFn + ',')
+  lines.push('}')
+
+  return lines.join('\n')
+}
+
+// Syntax highlight helpers
+const kw  = s => `<span class="tk-kw">${s}</span>`
+const fn  = s => `<span class="tk-fn">${s}</span>`
+const str = s => `<span class="tk-str">${s}</span>`
+const tbl = s => `<span class="tk-tbl">${s}</span>`
+const op  = s => `<span class="tk-op">${s}</span>`
+const cmt = s => `<span class="tk-cmt">${s}</span>`
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function txShowTab(tab) {
+  document.getElementById('txCodeView').style.display = tab === 'code' ? 'block' : 'none'
+  document.getElementById('txLogView').style.display  = tab === 'log'  ? 'block' : 'none'
+  document.getElementById('txTabCode').classList.toggle('active', tab === 'code')
+  document.getElementById('txTabLog').classList.toggle('active',  tab === 'log')
+}
+
+// ── Source DB change ──────────────────────────────────────────────────────────
+function txSrcDbChanged() {
+  txUpdateCode()
+  // Could load tables from the source db via API if it differs from current db
+}
+
+// ── Preview & Run ─────────────────────────────────────────────────────────────
+async function txPreview() {
+  txShowTab('log')
+  const log = document.getElementById('txLogView')
+  log.innerHTML = `<div class="log-line dim">Generating preview...</div>`
+
+  const srcDb    = document.getElementById('txSrcDb').value.trim()
+  const outPath  = document.getElementById('txOutPath').value.trim()
+  const filenameFn = document.getElementById('txFilename').value.trim() || null
+  const steps    = txSerializeSteps()
+
+  try {
+    const res = await api('/transform/preview', { srcDb, steps })
+    if (res.error) {
+      log.innerHTML = `<div class="log-line err">✗ ${esc(res.error)}</div>`
+      return
+    }
+    log.innerHTML = txRenderPreviewResult(res)
+  } catch (e) {
+    log.innerHTML = `<div class="log-line err">✗ ${esc(e.message)}</div>`
+  }
+}
+
+async function txRun() {
+  const btn = document.getElementById('txRunBtn')
+  btn.disabled = true
+  txShowTab('log')
+  const log = document.getElementById('txLogView')
+  log.innerHTML = `<div class="log-line dim">Running pipeline...</div>`
+
+  const srcDb      = document.getElementById('txSrcDb').value.trim()
+  const outPath    = document.getElementById('txOutPath').value.trim()
+  const filenameFn = document.getElementById('txFilename').value.trim() || null
+  const steps      = txSerializeSteps()
+
+  if (!srcDb) {
+    log.innerHTML = `<div class="log-line err">✗ Source DB path is required</div>`
+    btn.disabled = false
+    return
+  }
+
+  try {
+    const res = await api('/transform/run', { srcDb, outPath, filenameFn, steps })
+    if (res.error) {
+      log.innerHTML = `<div class="log-line err">✗ ${esc(res.error)}</div>`
+    } else {
+      log.innerHTML = txRenderRunResult(res)
+    }
+  } catch (e) {
+    log.innerHTML = `<div class="log-line err">✗ ${esc(e.message)}</div>`
+  } finally {
+    btn.disabled = false
+  }
+}
+
+function txRenderPreviewResult(res) {
+  if (!res.tables) return `<div class="log-line err">No result</div>`
+  const rows = ['<div class="log-line step">Preview — estimated output row counts</div>',
+    '<div class="log-line dim" style="margin-bottom:4px">────────────────────────────────────</div>']
+  for (const [t, n] of Object.entries(res.tables)) {
+    const orig = res.source?.[t] ?? n
+    const pct  = orig > 0 ? Math.round((n/orig)*100) : 100
+    const col  = n < orig ? 'var(--danger)' : 'var(--accent)'
+    rows.push(`<div class="log-line"><span style="color:var(--muted)">${t.padEnd(24)}</span><span style="color:${col}">${n}</span><span style="color:var(--muted)"> / ${orig} rows (${pct}%)</span></div>`)
+  }
+  if (res.estimatedBytes) {
+    rows.push('<div class="log-line dim" style="margin-top:8px">Estimated output: ' + fmtBytes(res.estimatedBytes) + '</div>')
+  }
+  return rows.join('')
+}
+
+function txRenderRunResult(res) {
+  const rows = []
+  if (res.lines) {
+    for (const line of res.lines) {
+      rows.push(`<div class="log-line">${esc(stripAnsi(line))}</div>`)
+    }
+  }
+  if (res.outputs?.length) {
+    rows.push('<div class="log-line dim" style="margin-top:8px">────────────────────────────────────</div>')
+    for (const f of res.outputs) {
+      rows.push(`<div class="log-line ok">✓ ${esc(f.path)}  <span style="color:var(--muted)">(${fmtBytes(f.size)})</span></div>`)
+    }
+  }
+  rows.push(`<div class="log-line ok" style="margin-top:8px">✓ Done in ${res.ms ?? '?'}ms</div>`)
+  return rows.join('')
+}
+
+function stripAnsi(s) {
+  return String(s ?? '').replace(/\x1b\[[0-9;]*m/g, '')
+}
+
+// ── Serialize steps for API ───────────────────────────────────────────────────
+function txSerializeSteps() {
+  return txSteps.map(s => {
+    const out = { type: s.type }
+    if (s.target)   out.target   = s.target
+    if (s.sql)      out.sql      = s.sql
+    if (s.n)        out.n        = s.n
+    if (s.cols)     out.cols     = s.cols
+    if (s.col)      out.col      = s.col
+    if (s.strategy) out.strategy = s.strategy
+    if (s.expr)     out.expr     = s.expr
+    if (s.from)     out.from     = s.from
+    if (s.to)       out.to       = s.to
+    if (s.keep)     out.keep     = s.keep
+    if (s.mode)     out.mode     = s.mode
+    return out
+  })
+}
+
+// ── Init transform panel when shown ──────────────────────────────────────────
+function txInit() {
+  // Pre-fill source db from current db
+  const srcInput = document.getElementById('txSrcDb')
+  if (srcInput && !srcInput.value) {
+    const dbPathEl = document.getElementById('dbPath')
+    if (dbPathEl?.textContent && dbPathEl.textContent !== '—') {
+      srcInput.value = dbPathEl.textContent
+    }
+  }
+  txRenderSteps()
+  txUpdateCode()
+}
+
+// ─── Performance panel ────────────────────────────────────────────────────────
+
+let perfActiveIssue = -1
+let perfIssues      = []
+let perfTabActive   = 'advisor'
+
+function perfShowTab(tab) {
+  perfTabActive = tab
+  document.getElementById('perfAdvisorView').style.display = tab === 'advisor' ? 'flex' : 'none'
+  document.getElementById('perfQueryView').style.display   = tab === 'query'   ? 'flex' : 'none'
+  document.getElementById('perfTabAdvisor').classList.toggle('active', tab === 'advisor')
+  document.getElementById('perfTabQuery').classList.toggle('active',   tab === 'query')
+}
+
+async function perfInit() {
+  const list = document.getElementById('perfIssueList')
+  list.innerHTML = '<div class="perf-empty">Analyzing schema...</div>'
+  try {
+    const res = await api('/perf/advisor')
+    if (res.error) { list.innerHTML = `<div class="perf-empty">${esc(res.error)}</div>`; return }
+    perfIssues = res.issues ?? []
+    perfRenderIssueList()
+  } catch(e) {
+    list.innerHTML = `<div class="perf-empty">Error: ${esc(e.message)}</div>`
+  }
+}
+
+// ── Issue list (left column) ──────────────────────────────────────────────────
+
+function perfRenderIssueList() {
+  const list  = document.getElementById('perfIssueList')
+  const count = document.getElementById('perfIssueCount')
+  const reds    = perfIssues.filter(i => i.severity === 'red').length
+  const yellows = perfIssues.filter(i => i.severity === 'yellow').length
+
+  count.textContent = perfIssues.length
+    ? `${reds ? reds + ' critical' : ''}${reds && yellows ? ', ' : ''}${yellows ? yellows + ' warning' : ''}`
+    : ''
+
+  if (!perfIssues.length) {
+    list.innerHTML = '<div class="perf-empty" style="color:var(--accent)">✓ No issues found</div>'
+    document.getElementById('perfIssueDetail').innerHTML =
+      '<div class="perf-empty" style="color:var(--accent)">Schema looks good — no missing indexes detected</div>'
+    return
+  }
+
+  list.innerHTML = perfIssues.map((issue, i) => `
+    <div class="advisor-item${i === perfActiveIssue ? ' active' : ''}" onclick="perfSelectIssue(${i})">
+      <div class="advisor-dot ${issue.severity}"></div>
+      <div>
+        <div class="advisor-label">${esc(issue.title)}</div>
+        <div class="advisor-sub">${esc(issue.table ?? '')}</div>
+      </div>
+    </div>`).join('')
+}
+
+function perfSelectIssue(i) {
+  perfActiveIssue = i
+  perfRenderIssueList()
+  const issue  = perfIssues[i]
+  const detail = document.getElementById('perfIssueDetail')
+
+  const sevColor = issue.severity === 'red' ? '#ff4d6d' : issue.severity === 'yellow' ? '#f7b731' : '#4af2a1'
+  const sevLabel = issue.severity === 'red' ? 'Critical' : issue.severity === 'yellow' ? 'Warning' : 'Info'
+
+  let html = `
+    <div style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div class="advisor-dot ${issue.severity}" style="width:10px;height:10px"></div>
+        <span style="font-size:13px;font-weight:600;color:var(--text)">${esc(issue.title)}</span>
+        <span style="font-size:10px;color:${sevColor};text-transform:uppercase;letter-spacing:.06em">${sevLabel}</span>
+      </div>
+      <p style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:12px">${esc(issue.description)}</p>
+    </div>`
+
+  if (issue.impact) {
+    html += `<div style="margin-bottom:12px">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Impact</div>
+      <p style="font-size:11px;color:var(--text);line-height:1.6">${esc(issue.impact)}</p>
+    </div>`
+  }
+
+  if (issue.sql) {
+    html += `<div style="margin-bottom:12px">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">
+        Suggested fix
+        <button class="copy-sql-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(issue.sql)});this.textContent='✓';setTimeout(()=>this.textContent='copy',1200)">copy</button>
+      </div>
+      <div class="missing-index-sql">${esc(issue.sql)}</div>
+    </div>`
+  }
+
+  if (issue.notes) {
+    html += `<p style="font-size:10px;color:var(--muted);line-height:1.6;font-style:italic">${esc(issue.notes)}</p>`
+  }
+
+  detail.innerHTML = html
+}
+
+// ── Query analyzer ────────────────────────────────────────────────────────────
+
+async function perfAnalyze() {
+  const btn   = document.getElementById('perfAnalyzeBtn')
+  const sql   = document.getElementById('perfQueryInput').value.trim()
+  const out   = document.getElementById('perfQueryResults')
+
+  if (!sql) { out.innerHTML = '<div class="perf-empty">Enter a query first</div>'; return }
+
+  btn.disabled = true
+  out.innerHTML = '<div class="perf-empty">Analyzing...</div>'
+
+  try {
+    const res = await api('/perf/analyze', { sql })
+    if (res.error) { out.innerHTML = `<div class="perf-empty">${esc(res.error)}</div>`; btn.disabled = false; return }
+    out.innerHTML = perfRenderPlan(res)
+  } catch(e) {
+    out.innerHTML = `<div class="perf-empty">Error: ${esc(e.message)}</div>`
+  }
+  btn.disabled = false
+}
+
+function perfRenderPlan(res) {
+  const { nodes, summary, score } = res
+  if (!nodes?.length) return '<div class="perf-empty">No plan returned — check your SQL syntax</div>'
+
+  // Score bar (0–5 pips: red/yellow/green)
+  const pipColors = Array.from({length:5}, (_,i) => {
+    if (score >= 4) return i < score ? 'green' : ''
+    if (score >= 2) return i < score ? 'yellow' : ''
+    return i < score ? 'red' : ''
+  })
+  const scoreLabel = score >= 4 ? 'Fast' : score >= 2 ? 'Could be faster' : 'Slow'
+  const scoreColor = score >= 4 ? 'var(--accent)' : score >= 2 ? 'var(--warn)' : 'var(--danger)'
+
+  let html = `
+    <div class="perf-score-bar">
+      <span class="perf-score-label">Performance</span>
+      <div class="perf-score-pips">${pipColors.map(c => `<div class="pip ${c}"></div>`).join('')}</div>
+      <span style="font-size:11px;color:${scoreColor};font-weight:600">${scoreLabel}</span>
+    </div>`
+
+  if (summary) {
+    html += `<p style="font-size:11px;color:var(--muted);margin-bottom:14px;line-height:1.6">${esc(summary)}</p>`
+  }
+
+  html += nodes.map(node => `
+    <div class="plan-node">
+      <span class="plan-rating ${node.rating}">${node.rating}</span>
+      <div class="plan-node-body">
+        <div class="plan-detail">${esc(node.detail)}</div>
+        ${node.advice ? `<div class="plan-advice">${node.advice}</div>` : ''}
+      </div>
+    </div>`).join('')
+
+  return html
+}
+</script>
+</body>
+</html>

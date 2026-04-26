@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Bun
+bun.lockb
+.bunfig.toml
+
+# Build outputs
+dist/
+build/
+out/
+*.js.map
+*.d.ts.map
+
+# TypeScript
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test outputs
+coverage/
+.nyc_output/
+
+# Temporary
+tmp/
+temp/
+.cache/
+
+*.db*

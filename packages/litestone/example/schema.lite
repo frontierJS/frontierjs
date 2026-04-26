@@ -1,0 +1,261 @@
+/// schema.lite — Litestone example schema
+/// Demonstrates: multi-DB, JSONL, logger driver, row-level policies,
+///               field-level @allow, enums, functions, generated columns,
+///               soft delete, FTS5, relations, GatePlugin
+///
+/// Run:  bun seed.ts          — seed all databases
+///       bun seed.ts --studio — seed + open studio
+
+// ─── Databases ────────────────────────────────────────────────────────────────
+//
+//   main       — core app database (accounts, users, products, etc.)
+//   analytics  — separate SQLite database for aggregated metrics
+//   logs       — JSONL append-only request log (no migrations, just write)
+//   audit      — logger driver, auto-managed schema, all @@log / @log writes here
+
+database main {
+  path env("MAIN_DB_PATH", "./example.db")
+}
+
+database analytics {
+  path env("ANALYTICS_DB_PATH", "./analytics.db")
+}
+
+database logs {
+  path      env("LOGS_PATH", "./logs/")
+  driver    jsonl
+  retention 30d
+}
+
+database audit {
+  path      env("AUDIT_PATH", "./audit/")
+  driver    logger
+  retention 90d
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Plan {
+  starter
+  pro
+  enterprise
+}
+
+enum Role {
+  admin
+  member
+  viewer
+}
+
+enum LeadStatus {
+  active
+  converted
+  archived
+}
+
+// ─── Functions ────────────────────────────────────────────────────────────────
+
+function slug(text: Text): Text {
+  @@expr("lower(trim(replace(replace(replace({text}, ' ', '-'), '.', ''), ',', '')))")
+}
+
+function fullName(first: Text, last: Text): Text {
+  @@expr("trim(COALESCE({first}, '') || ' ' || COALESCE({last}, ''))")
+}
+
+function initials(first: Text, last: Text): Text {
+  @@expr("upper(substr(COALESCE({first},'?'),1,1)) || upper(substr(COALESCE({last},'?'),1,1))")
+}
+
+function discounted(price: Integer, pct: Real): Integer {
+  @@expr("CAST({price} * (1.0 - {pct}) AS INTEGER)")
+}
+
+// ─── Accounts ─────────────────────────────────────────────────────────────────
+
+model accounts {
+  id        Integer  @id
+  name      Text
+  slug      Text     @slug(name)
+  plan      Plan     @default(starter)
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@db(main)
+  @@index([slug])
+  @@gate("2.5.5.6")
+  @@allow('read', auth() != null)
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+// Demonstrates:
+//   @@allow / @@deny   — row-level access policy
+//   @allow('read')     — field-level: salary only visible to admins
+//   @secret            — encrypted + guarded + audit logged (via @log(audit))
+//   @@log(audit)       — model-level audit log: create/update/delete
+
+model users {
+  id          Integer   @id
+  account     accounts  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId   Integer
+  email       Text      @unique @email @lower
+  firstName   Text?     @trim
+  lastName    Text?     @trim
+  displayName Text      @fullName(firstName, lastName)
+  initials    Text      @initials(firstName, lastName)
+  role        Role      @default(member)
+  salary      Real?     @allow('read', auth().role == 'admin')
+  apiKey      Text?     @secret
+  prefs       Json?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  @@db(main)
+  @@softDelete
+  @@index([accountId])
+  @@index([email])
+  @@index([displayName])
+  @@gate("2.4.4.6")
+  @@allow('read',   accountId == auth().accountId)
+  @@allow('update', id == auth().id || auth().role == 'admin')
+  @@allow('delete', auth().role == 'admin')
+  @@log(audit)
+}
+
+// ─── Products ─────────────────────────────────────────────────────────────────
+
+model products {
+  id        Integer  @id
+  account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId Integer
+  name      Text
+  slug      Text     @slug(name)
+  price     Integer
+  discount  Real     @default(0.0)
+  salePrice Integer  @discounted(price, discount)
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  @@db(main)
+  @@softDelete
+  @@index([slug])
+  @@index([salePrice])
+  @@gate("1.4.4.6")
+  @@allow('read', true)
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+
+model leads {
+  id        Integer    @id
+  account   accounts   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId Integer
+  firstName Text?      @trim
+  lastName  Text?      @trim
+  fullName  Text       @fullName(firstName, lastName)
+  email     Text?      @email
+  phone     Text?
+  status    LeadStatus @default(active)
+  score     Real?      @gte(0) @lte(100)
+  notes     Text?
+  createdAt DateTime   @default(now())
+  deletedAt DateTime?
+
+  @@db(main)
+  @@softDelete
+  @@index([accountId])
+  @@index([status])
+  @@index([fullName])
+  @@gate("3.3.4.6")
+  @@allow('read',   accountId == auth().accountId)
+  @@allow('create', accountId == auth().accountId)
+  @@allow('update', accountId == auth().accountId)
+  @@deny('update',  status == 'archived')
+}
+
+// ─── Messages ─────────────────────────────────────────────────────────────────
+
+model messages {
+  id        Integer  @id
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Integer
+  account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId Integer
+  title     Text?
+  body      Text
+  channel   Text     @default("email")
+  isRead    Boolean  @default(false)
+  sentAt    DateTime @default(now())
+  deletedAt DateTime?
+
+  @@db(main)
+  @@softDelete
+  @@fts([body, title])
+  @@index([userId])
+  @@index([accountId])
+  @@index([channel])
+  @@gate("2.4.4.5")
+  @@allow('read', accountId == auth().accountId)
+}
+
+// ─── Analytics — separate SQLite database ─────────────────────────────────────
+// Page view aggregations live in analytics.db, not the main app db.
+// Queried via db.pageViews — routes automatically to the analytics connection.
+
+model pageViews {
+  id        Integer  @id
+  path      Text
+  accountId Integer?
+  userId    Integer?
+  country   Text?
+  device    Text?
+  duration  Integer?
+  createdAt DateTime @default(now())
+
+  @@db(analytics)
+  @@index([path])
+  @@index([accountId])
+  @@index([createdAt])
+  @@allow('read',   auth() != null)
+  @@allow('create', true)
+}
+
+model dailyStats {
+  id          Integer  @id
+  date        Text
+  accountId   Integer?
+  views       Integer  @default(0)
+  uniqueUsers Integer  @default(0)
+  avgDuration Real?
+  updatedAt   DateTime @updatedAt
+
+  @@db(analytics)
+  @@unique([date, accountId])
+  @@index([date])
+  @@allow('read', auth() != null)
+}
+
+// ─── Request log — JSONL database ─────────────────────────────────────────────
+// Append-only HTTP request log. No migrations needed — JSONL driver manages files.
+// retention 30d prunes rows older than 30 days on startup.
+// Writes append to ./logs/apiRequests.jsonl
+
+model apiRequests {
+  method    Text
+  path      Text
+  status    Integer
+  duration  Integer
+  userId    Integer?
+  accountId Integer?
+  ip        Text?
+  userAgent Text?
+  error     Text?
+  createdAt DateTime @default(now())
+
+  @@db(logs)
+}
+
+// ─── Audit log — logger database ─────────────────────────────────────────────
+// driver logger auto-creates auditLogs in audit.db with the unified log shape.
+// Users model writes here via @secret (expands to @log(audit)) and @@log(audit).
+// Query via: db.auditLogs.findMany({ where: { model: 'users' } })
