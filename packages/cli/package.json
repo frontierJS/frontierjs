@@ -1,5 +1,5 @@
 {
-  "name": "fli",
+  "name": "@frontierjs/cli",
   "version": "0.1.0",
   "type": "module",
   "bin": {
@@ -14,5 +14,5 @@
     "test:steps": "bun test tests/zz-steps.test.js",
     "test:deploy": "bun test tests/deploy-helpers.test.js tests/deploy-dispatch.test.js"
   },
-  "_built": "2026-04-13"
+  "_built": "2026-04-25"
 }
