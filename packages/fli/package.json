@@ -1,0 +1,18 @@
+{
+  "name": "fli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "fli": "./bin/fli.js"
+  },
+  "dependencies": {
+    "zx": "^8.3.2"
+  },
+  "scripts": {
+    "test": "bun test tests/compiler.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js tests/deploy-helpers.test.js && bun test tests/zz-steps.test.js tests/deploy-dispatch.test.js",
+    "test:watch": "bun test --watch",
+    "test:steps": "bun test tests/zz-steps.test.js",
+    "test:deploy": "bun test tests/deploy-helpers.test.js tests/deploy-dispatch.test.js"
+  },
+  "_built": "2026-04-13"
+}

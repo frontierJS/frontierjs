@@ -1,0 +1,2482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* ─── Mesa theme (default) ─────────────────────────────────────── */
+  :root, [data-theme="mesa"] {
+    --bg:      #0a0806;
+    --surface: #110d18;
+    --hover:   #1a1428;
+    --border:  #2a1e40;
+    --border2: #3d2a5e;
+    --muted:   #3d2a5e;
+    --text:    #f0d8c0;
+    --dim:     #5a4878;
+    --amber:   #f5a623;
+    --orange2: #e8880a;
+    --green:   #3abfa8;
+    --red:     #f53a1a;
+    --pink:    #e8407a;
+    --violet:  #c87adc;
+    --blue:    #c87adc;
+    --cyan:    #3abfa8;
+    --yellow:  #f5a623;
+    --mono:    'Fira Code', 'Ubuntu Mono', 'Cascadia Code', monospace;
+    --serif:   'Ubuntu', 'Cantarell', sans-serif;
+    --radius:  3px;
+  }
+  /* ─── Dark theme ────────────────────────────────────────────────── */
+  [data-theme="dark"] {
+    --bg:      #0f0f0f;
+    --surface: #161616;
+    --hover:   #1e1e1e;
+    --border:  #2a2a2a;
+    --border2: #333333;
+    --muted:   #333333;
+    --text:    #e5e5e5;
+    --dim:     #525252;
+    --amber:   #60a5fa;
+    --orange2: #3b82f6;
+    --green:   #34d399;
+    --red:     #f87171;
+    --pink:    #c084fc;
+    --violet:  #a3a3a3;
+    --blue:    #60a5fa;
+    --cyan:    #34d399;
+    --yellow:  #fbbf24;
+    --mono:    'Fira Code', 'Ubuntu Mono', 'Cascadia Code', monospace;
+    --serif:   'Ubuntu', 'Cantarell', sans-serif;
+    --radius:  3px;
+  }
+  /* ─── Light theme ───────────────────────────────────────────────── */
+  [data-theme="light"] {
+    --bg:      #f5f4f1;
+    --surface: #eceae5;
+    --hover:   #e4e1db;
+    --border:  #d0cdc6;
+    --border2: #b8b4ac;
+    --muted:   #b8b4ac;
+    --text:    #1a1814;
+    --dim:     #8a8278;
+    --amber:   #c25e00;
+    --orange2: #a84f00;
+    --green:   #0e7490;
+    --red:     #c0392b;
+    --pink:    #c0166a;
+    --violet:  #3d3830;
+    --blue:    #c25e00;
+    --cyan:    #0e7490;
+    --yellow:  #b45309;
+    --mono:    'Fira Code', 'Ubuntu Mono', 'Cascadia Code', monospace;
+    --serif:   'Ubuntu', 'Cantarell', sans-serif;
+    --radius:  3px;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 16px; line-height: 1.5; overflow: hidden; }
+
+  #app {
+    display: grid;
+    grid-template-columns: var(--sidebar-w, 220px) 1fr var(--output-w, 300px);
+    grid-template-rows: 42px 1fr;
+    height: 100vh;
+  }
+  #app.sidebar-collapsed {
+    --sidebar-w: 36px;
+  }
+
+  /* Topbar */
+  #topbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  #topbar .logo { font-family: var(--serif); font-style: italic; font-size: 18px; color: var(--amber); letter-spacing: 0.02em; user-select: none; }
+  #topbar .tagline { color: var(--dim); font-size: 14px; }
+  #topbar .dot { color: var(--muted); }
+  #server-status { margin-left: auto; font-size: 14px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  #server-status .indicator { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+  #server-status.connected .indicator { background: var(--green); }
+
+  /* Sidebar */
+  #sidebar {
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 0; overflow: hidden;
+    transition: all 0.2s ease;
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 2;
+  }
+  #sidebar-toggle {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; padding: 6px 0;
+    background: none; border: none; border-bottom: 1px solid var(--border);
+    color: var(--dim); cursor: pointer; font-size: 10px;
+    transition: color 0.15s, background 0.15s;
+  }
+  #sidebar-toggle:hover { color: var(--amber); background: var(--hover); }
+  #app.sidebar-collapsed #sidebar-search-wrap,
+  #app.sidebar-collapsed #command-list,
+  #app.sidebar-collapsed .sidebar-section-label { display: none; }
+  #app.sidebar-collapsed #sidebar-toggle { writing-mode: vertical-rl; padding: 10px 0; letter-spacing: 0.1em; font-size: 9px; color: var(--dim); }
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+  .ns-group { margin-bottom: 4px; }
+  .ns-label { padding: 6px 14px 4px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); user-select: none; }
+  .cmd-item { display: flex; align-items: center; padding: 5px 14px; cursor: pointer; color: var(--text); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 2px solid transparent; transition: background 0.1s, border-color 0.1s, color 0.1s; }
+  .cmd-item:hover { background: var(--hover); color: var(--text); }
+  .cmd-item.active { border-left-color: var(--amber); color: var(--amber); background: var(--hover); }
+  .cmd-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .cmd-alias { font-size: 10px; color: var(--dim); margin-left: 6px; flex-shrink: 0; }
+  .cmd-item.active .cmd-alias { color: var(--dim); }
+
+  .sidebar-section { margin-bottom: 4px; }
+  .sidebar-section-label {
+    padding: 10px 14px 4px;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--dim);
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sidebar-section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .sidebar-section + .sidebar-section { border-top: 1px solid var(--border); padding-top: 4px; }
+
+  #sidebar-search-wrap {
+    padding: 8px 10px 4px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #sidebar-search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 5px 8px 5px 24px;
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+  }
+  #sidebar-search:focus { border-color: var(--amber); }
+  #sidebar-search::placeholder { color: var(--dim); }
+  .search-icon {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--dim);
+    font-size: 14px;
+    pointer-events: none;
+  }
+  #sidebar-search-wrap { position: relative; }
+  .cmd-item.hidden { display: none; }
+  .ns-group.hidden { display: none; }
+  .sidebar-section.hidden { display: none; }
+
+  /* Main */
+  #main { overflow-y: auto; grid-column: 2; grid-row: 2; }
+
+  /* Form panel */
+  #form-panel { overflow-y: auto; padding: 0; }
+  #form-panel::-webkit-scrollbar { width: 4px; }
+  #form-panel::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+  #empty-state { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--dim); }
+  #empty-state .big { font-family: var(--serif); font-style: italic; font-size: 28px; color: var(--muted); }
+  #empty-state small { font-size: 14px; }
+
+
+
+
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 14px; color: var(--text); margin-bottom: 5px; }
+  .field label .required { color: var(--amber); margin-left: 3px; }
+  .field label .field-desc { color: var(--dim); margin-left: 8px; font-size: 14px; }
+  .field input[type="text"], .field input[type="number"] { width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--mono); font-size: 15px; padding: 7px 11px; outline: none; transition: border-color 0.15s; }
+  .field input:focus { border-color: var(--amber); }
+
+  /* Toggle */
+  .toggle-wrap { display: flex; align-items: center; gap: 10px; }
+  .toggle { position: relative; width: 36px; height: 18px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .toggle-track { position: absolute; inset: 0; background: var(--muted); border-radius: 9px; transition: background 0.2s; }
+  .toggle input:checked ~ .toggle-track { background: var(--amber); }
+  .toggle-thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+  .toggle input:checked ~ .toggle-thumb { transform: translateX(18px); }
+  .toggle-label { font-size: 14px; color: var(--text); }
+
+  .flags-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px 20px; }
+
+  /* Source view */
+  .source-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--dim); font-size: 16px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); user-select: none; transition: color 0.15s; }
+  .source-toggle:hover { color: var(--text); }
+  .source-toggle .chevron { transition: transform 0.2s; font-style: normal; }
+  .source-toggle.open .chevron { transform: rotate(90deg); }
+  .source-panel { display: none; margin-top: 12px; }
+  .source-panel.open { display: block; }
+  .source-section { margin-bottom: 12px; }
+  .source-section-label { font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--violet); margin-bottom: 6px; }
+  .source-section-label.collapsible { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 5px; transition: color 0.15s; }
+  .source-section-label.collapsible:hover { color: var(--text); }
+  .source-section-label.collapsible .ss-chevron { font-style: normal; transition: transform 0.15s; display: inline-block; }
+  .source-section-label.collapsible.open .ss-chevron { transform: rotate(90deg); }
+  .source-section-body { display: none; }
+  .source-section-body.open { display: block; }
+  .source-prose { font-size: 14px; color: var(--text); font-style: italic; padding: 8px 10px; border-left: 2px solid var(--border); }
+  pre.source-code { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; font-size: 16px; line-height: 1.65; color: var(--text); overflow-x: auto; white-space: pre; }
+  /* syntax highlight tokens */
+  .hl-kw   { color: #c87adc; }           /* keywords */
+  .hl-fn   { color: #3abfa8; }           /* function names */
+  .hl-str  { color: #f0d8c0; }           /* strings */
+  .hl-num  { color: #f5a623; }           /* numbers */
+  .hl-cmt  { color: #5a4878; font-style: italic; } /* comments */
+  .hl-bi   { color: #f5a623; }           /* built-ins */
+  .hl-op   { color: #3abfa8; }           /* operators */
+  .hl-bool { color: #f53a1a; }           /* booleans */
+  pre.source-code::-webkit-scrollbar { height: 4px; }
+  pre.source-code::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+  /* make:command special form */
+  .spec-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .spec-row { display: grid; gap: 6px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; }
+  .spec-row.arg-row { grid-template-columns: 1fr 1fr auto auto; }
+  .spec-row.flag-row { grid-template-columns: 1fr 60px 90px 1fr auto; }
+  .spec-row input, .spec-row select { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--mono); font-size: 14px; padding: 4px 8px; outline: none; width: 100%; transition: border-color 0.15s; }
+  .spec-row input:focus, .spec-row select:focus { border-color: var(--amber); }
+  .spec-row select option { background: var(--surface); }
+  .spec-row label { font-size: 10px; color: var(--dim); }
+  .spec-row-del { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 14px; padding: 2px 6px; line-height: 1; border-radius: var(--radius); transition: color 0.15s; }
+  .spec-row-del:hover { color: var(--red); }
+  .spec-col { display: flex; flex-direction: column; gap: 3px; }
+  .add-row-btn { background: none; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--dim); font-family: var(--mono); font-size: 14px; padding: 5px 12px; cursor: pointer; width: 100%; transition: border-color 0.15s, color 0.15s; }
+  .add-row-btn:hover { border-color: var(--amber); color: var(--amber); }
+  .spec-checkbox { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--dim); margin-top: 4px; }
+  .spec-checkbox input { width: auto; }
+
+  /* Run button */
+  #run-btn { margin-top: 24px; display: flex; align-items: center; gap: 8px; padding: 9px 22px; background: transparent; border: 1px solid var(--amber); border-radius: var(--radius); color: var(--amber); font-family: var(--mono); font-size: 15px; cursor: pointer; transition: background 0.15s, color 0.15s; letter-spacing: 0.04em; }
+  #run-btn:hover { background: var(--amber); color: #000; }
+  #run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #run-btn .spinner { width: 10px; height: 10px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; display: none; }
+  #run-btn.running .spinner { display: block; }
+  #run-btn.running .btn-label::after { content: 'running…'; }
+  #run-btn:not(.running) .btn-label::after { content: 'run'; }
+
+  #copy-cmd-btn {
+    margin-top: 24px;
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 16px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--dim);
+    font-family: var(--mono);
+    font-size: 15px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+  #copy-cmd-btn:hover { border-color: var(--text); color: var(--text); }
+  #copy-cmd-btn.copied { border-color: var(--green); color: var(--green); }
+  .run-row { display: flex; align-items: center; gap: 8px; }
+
+  /* ─── Frontmatter bar — compact top row ─────────────────────────── */
+  .fm-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 20px 32px;
+    padding: 18px 28px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .fm-header { min-width: 160px; flex: 0 0 auto; }
+  .fm-header h1 { font-family: var(--serif); font-style: italic; font-size: 22px; color: var(--amber); font-weight: 400; margin-bottom: 3px; }
+  .fm-header .desc { color: var(--text); font-size: 14px; line-height: 1.5; margin-bottom: 4px; }
+  .fm-header .example { font-size: 14px; color: var(--dim); font-family: var(--mono); }
+  .fm-header .example::before { content: '$ '; color: var(--dim); }
+  .fm-fields { flex: 1; display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: flex-end; min-width: 0; }
+  .fm-field { display: flex; flex-direction: column; gap: 4px; min-width: 120px; }
+  .fm-field label { font-size: 14px; color: var(--dim); white-space: nowrap; }
+  .fm-field label .required { color: var(--amber); margin-left: 2px; }
+  .fm-field input[type="text"], .fm-field input[type="number"] {
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-family: var(--mono); font-size: 14px;
+    padding: 5px 9px; outline: none; width: 100%; transition: border-color 0.15s;
+    min-width: 120px; max-width: 220px;
+  }
+  .fm-field input:focus { border-color: var(--amber); }
+  .fm-toggles { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .fm-toggle-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .fm-toggle-item .toggle-label { font-size: 14px; color: var(--dim); }
+  .fm-actions { display: flex; align-items: flex-end; gap: 8px; margin-left: auto; flex-shrink: 0; }
+
+  /* ─── Source panel — now below the bar, open by default ─────────── */
+  .source-body { padding: 20px 28px; }
+  .source-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--dim); font-size: 14px; padding: 10px 28px 0; user-select: none; transition: color 0.15s; }
+  .source-toggle:hover { color: var(--text); }
+  .source-toggle .chevron { transition: transform 0.2s; font-style: normal; }
+  .source-toggle.open .chevron { transform: rotate(90deg); }
+  .source-panel { display: none; }
+  .source-panel.open { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Divider */
+  #divider {
+    background: var(--border); cursor: ew-resize;
+    width: 1px; grid-row: 2;
+  }
+  #divider:hover { background: var(--amber); }
+
+  /* Output panel */
+  #output-panel {
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 10px 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    grid-column: 3;
+    grid-row: 2;
+    display: flex; flex-direction: column;
+  }
+  #output-panel::-webkit-scrollbar { width: 4px; }
+  #output-panel::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+  #output-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--border); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+  #clear-btn, #copy-btn { background: none; border: none; color: var(--dim); font-family: var(--mono); font-size: 10px; cursor: pointer; padding: 1px 6px; border-radius: var(--radius); transition: color 0.15s; }
+  #clear-btn { margin-left: auto; }
+  #clear-btn:hover, #copy-btn:hover { color: var(--text); }
+  #copy-btn.copied { color: var(--green); }
+  .out-line { cursor: pointer; border-radius: 2px; transition: background 0.1s; }
+  .out-line:hover { background: #1a1a1a; }
+  #output-lines { white-space: pre-wrap; word-break: break-word; }
+  .out-line { display: block; animation: fade-in 0.15s ease; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; } }
+  .out-output { color: #d8d8d8; }
+  .out-success { color: var(--green); }
+  .out-error   { color: var(--red); }
+  .out-warn    { color: var(--yellow); }
+  .out-info    { color: var(--blue); }
+  .out-dry     { color: var(--cyan); }
+  .out-debug   { color: var(--dim); }
+  .out-done    { color: var(--dim); font-style: italic; }
+  .out-done::before { content: '─ '; }
+
+  /* ─── Command palette ───────────────────────────────────────────────────── */
+  #palette-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.65); z-index: 1000;
+    align-items: flex-start; justify-content: center;
+    padding-top: 12vh;
+  }
+  #palette-backdrop.open { display: flex; }
+  #palette {
+    width: min(580px, 92vw);
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  }
+  #palette-input-wrap {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  #palette-input-wrap .p-icon { color: var(--dim); font-size: 14px; flex-shrink: 0; }
+  #palette-input {
+    flex: 1; background: none; border: none; outline: none;
+    color: var(--text); font-family: var(--mono); font-size: 16px;
+    padding: 14px 0; caret-color: var(--amber);
+  }
+  #palette-input::placeholder { color: var(--dim); }
+  #palette-hint {
+    font-size: 10px; color: var(--dim); padding: 0 6px;
+    border: 1px solid var(--border); border-radius: 3px;
+    white-space: nowrap; flex-shrink: 0; line-height: 20px;
+  }
+  #palette-results {
+    max-height: 360px; overflow-y: auto;
+    padding: 6px 0;
+  }
+  #palette-results::-webkit-scrollbar { width: 3px; }
+  #palette-results::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+  .p-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; cursor: pointer;
+    transition: background 0.08s;
+  }
+  .p-item:hover, .p-item.p-selected { background: var(--hover); }
+  .p-item.p-selected { border-left: 2px solid var(--amber); padding-left: 12px; }
+  .p-ns {
+    font-size: 10px; color: var(--dim); min-width: 68px;
+    text-align: right; flex-shrink: 0; font-family: var(--mono);
+  }
+  .p-title {
+    font-family: var(--mono); font-size: 14px; color: var(--text);
+    flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .p-title mark {
+    background: none; color: var(--amber); font-weight: bold;
+  }
+  .p-alias {
+    font-size: 10px; color: var(--dim); font-family: var(--mono);
+    flex-shrink: 0;
+  }
+  .p-source {
+    font-size: 9px; color: var(--dim); border: 1px solid var(--border);
+    border-radius: 2px; padding: 1px 4px; flex-shrink: 0;
+  }
+  .p-empty {
+    padding: 20px 14px; font-size: 14px; color: var(--dim); text-align: center;
+  }
+  #palette-footer {
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px 14px; border-top: 1px solid var(--border);
+    font-size: 10px; color: var(--dim);
+  }
+  .p-key {
+    display: inline-flex; align-items: center; gap: 3px;
+  }
+  .p-key kbd {
+    background: var(--hover); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 5px; font-size: 10px;
+    font-family: var(--mono); color: var(--dim);
+  }
+
+  /* ─── Theme switcher ───────────────────────────────────────────── */
+  #theme-switcher { display: flex; align-items: center; gap: 4px; margin-left: 12px; }
+  .theme-btn {
+    background: none; border: 1px solid var(--border); border-radius: 3px;
+    color: var(--dim); font-family: var(--mono); font-size: 9px;
+    padding: 2px 7px; cursor: pointer; letter-spacing: 0.06em;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .theme-btn:hover { border-color: var(--border2); color: var(--text); }
+  .theme-btn.active { border-color: var(--amber); color: var(--amber); }
+
+  /* ─── Docs panel ────────────────────────────────────────────────── */
+  #docs-panel {
+    display: none;
+    position: absolute; inset: 0;
+    background: var(--bg);
+    z-index: 500;
+    overflow-y: auto;
+    padding: 0;
+  }
+  #docs-panel.open { display: block; }
+  #docs-panel::-webkit-scrollbar { width: 4px; }
+  #docs-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  #docs-header {
+    position: sticky; top: 0;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 28px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    z-index: 10;
+  }
+  #docs-header .docs-title { font-family: var(--serif); font-style: italic; font-size: 17px; color: var(--amber); }
+  #docs-header .docs-close {
+    margin-left: auto; background: none; border: 1px solid var(--border);
+    border-radius: 3px; color: var(--dim); font-family: var(--mono);
+    font-size: 10px; padding: 3px 10px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  #docs-header .docs-close:hover { border-color: var(--amber); color: var(--amber); }
+
+  #docs-nav {
+    display: flex; gap: 4px; flex-wrap: wrap;
+    padding: 10px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .docs-nav-btn {
+    background: none; border: 1px solid var(--border); border-radius: 3px;
+    color: var(--dim); font-family: var(--mono); font-size: 10px;
+    padding: 3px 10px; cursor: pointer; letter-spacing: 0.04em;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .docs-nav-btn:hover, .docs-nav-btn.active { border-color: var(--amber); color: var(--amber); }
+
+  #docs-body { padding: 28px 32px; max-width: 780px; }
+
+  .docs-section { display: none; }
+  .docs-section.active { display: block; }
+
+  .docs-h1 {
+    font-family: var(--serif); font-style: italic; font-size: 26px;
+    color: var(--amber); font-weight: 400; margin-bottom: 6px;
+  }
+  .docs-h2 {
+    font-size: 14px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--violet);
+    margin: 28px 0 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .docs-h3 {
+    font-size: 14px; color: var(--amber); margin: 18px 0 6px;
+  }
+  .docs-p {
+    font-size: 14px; line-height: 1.8; color: var(--text);
+    margin-bottom: 12px;
+  }
+  .docs-p a { color: var(--amber); text-decoration: none; }
+  .docs-p a:hover { text-decoration: underline; }
+  .docs-lead {
+    font-size: 16px; color: var(--dim); line-height: 1.7;
+    margin-bottom: 20px; padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .docs-code {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 16px;
+    font-family: var(--mono); font-size: 14px; line-height: 1.8;
+    color: var(--text); overflow-x: auto; white-space: pre;
+    margin: 10px 0 16px;
+  }
+  .docs-code .c  { color: var(--dim); font-style: italic; }
+  .docs-code .k  { color: var(--violet); }
+  .docs-code .s  { color: var(--text); opacity: 0.85; }
+  .docs-code .a  { color: var(--amber); }
+  .docs-code .g  { color: var(--green); }
+  .docs-code .r  { color: var(--red); opacity: 0.85; }
+  .docs-inline { font-family: var(--mono); font-size: 14px; color: var(--amber); background: var(--surface); padding: 1px 5px; border-radius: 2px; border: 1px solid var(--border); }
+  .docs-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 10px 0 16px; }
+  .docs-table th { text-align: left; color: var(--dim); font-weight: 400; letter-spacing: 0.08em; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .docs-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+  .docs-table td:first-child { font-family: var(--mono); font-size: 14px; color: var(--amber); white-space: nowrap; }
+  .docs-table tr:last-child td { border-bottom: none; }
+  .docs-callout {
+    border-left: 2px solid var(--amber); padding: 10px 14px;
+    background: var(--surface); margin: 12px 0 16px;
+    font-size: 14px; color: var(--text); line-height: 1.7;
+  }
+  .docs-callout strong { color: var(--amber); }
+  .docs-steps { counter-reset: step; list-style: none; padding: 0; margin: 10px 0 16px; }
+  .docs-steps li {
+    counter-increment: step; display: flex; gap: 12px;
+    align-items: flex-start; margin-bottom: 10px; font-size: 14px; color: var(--text);
+  }
+  .docs-steps li::before {
+    content: counter(step); flex-shrink: 0;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--surface); border: 1px solid var(--border2);
+    color: var(--amber); font-size: 10px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .docs-tag {
+    display: inline-block; font-size: 9px; padding: 1px 6px;
+    border-radius: 2px; font-family: var(--mono); letter-spacing: 0.06em;
+    vertical-align: middle; margin-left: 6px;
+  }
+  .docs-tag-core { background: var(--surface); border: 1px solid var(--border2); color: var(--violet); }
+  .docs-tag-project { background: var(--surface); border: 1px solid var(--amber); color: var(--amber); }
+
+
+  /* ─── Prose markdown rendering ─────────────────────────────────── */
+  .source-prose.prose-rendered { font-style: normal; padding: 0; border-left: none; }
+  .prose-h1 { font-size: 15px; font-weight: 600; color: var(--amber); margin: 16px 0 6px; letter-spacing: 0.02em; }
+  .prose-h2 { font-size: 14px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal); margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .prose-p { font-size: 14px; line-height: 1.7; color: var(--text); margin: 0 0 8px; }
+  .prose-list { margin: 4px 0 10px 4px; padding: 0; list-style: none; }
+  .prose-list li { font-size: 14px; line-height: 1.7; color: var(--text); padding: 2px 0 2px 14px; position: relative; }
+  .prose-list li::before { content: '·'; position: absolute; left: 0; color: var(--dim); }
+  .prose-list li code { font-family: var(--mono); font-size: 14px; color: var(--amber); background: var(--surface); padding: 1px 5px; border-radius: 2px; border: 1px solid var(--border); }
+  .prose-p code { font-family: var(--mono); font-size: 14px; color: var(--amber); background: var(--surface); padding: 1px 5px; border-radius: 2px; border: 1px solid var(--border); }
+  .prose-p strong { color: var(--text); font-weight: 600; }
+  .prose-list li strong { color: var(--text); font-weight: 600; }
+  .prose-var { color: var(--green); font-family: var(--mono); font-size: 14px; }
+  .prose-spacer { height: 6px; }
+
+
+  /* ─── Env panel ──────────────────────────────────────────────────── */
+  #env-panel {
+    display: none; position: absolute; inset: 0;
+    background: var(--bg); z-index: 500;
+    flex-direction: column;
+  }
+  #env-panel.open { display: flex; }
+  #env-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 28px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #env-header .env-title { font-family: var(--serif); font-style: italic; font-size: 17px; color: var(--amber); }
+  #env-header .env-path { font-size: 14px; color: var(--dim); font-family: var(--mono); }
+  #env-header .env-close {
+    margin-left: auto; background: none; border: 1px solid var(--border);
+    border-radius: 3px; color: var(--dim); font-family: var(--mono);
+    font-size: 10px; padding: 3px 10px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  #env-header .env-close:hover { border-color: var(--amber); color: var(--amber); }
+  #env-save-btn {
+    background: none; border: 1px solid var(--teal); border-radius: 3px;
+    color: var(--teal); font-family: var(--mono); font-size: 10px;
+    padding: 3px 12px; cursor: pointer; transition: background 0.15s, color 0.15s;
+  }
+  #env-save-btn:hover { background: var(--teal); color: #000; }
+  #env-editor {
+    flex: 1; background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 14px; line-height: 1.7;
+    padding: 24px 32px; border: none; outline: none; resize: none;
+    overflow-y: auto;
+  }
+  #env-editor::-webkit-scrollbar { width: 4px; }
+  #env-editor::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  #env-status { font-size: 14px; color: var(--dim); padding: 0 8px; transition: color 0.3s; }
+
+
+  /* ─── Ports panel ────────────────────────────────────────────────── */
+  #ports-panel {
+    display: none; position: absolute; inset: 0;
+    background: var(--bg); z-index: 500;
+    flex-direction: column;
+  }
+  #ports-panel.open { display: flex; }
+  #ports-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 28px; border-bottom: 1px solid var(--border);
+    background: var(--bg); flex-shrink: 0;
+  }
+  #ports-header .ports-title { font-family: var(--serif); font-style: italic; font-size: 17px; color: var(--amber); }
+  #ports-refresh {
+    background: none; border: 1px solid var(--border); border-radius: 3px;
+    color: var(--dim); font-family: var(--mono); font-size: 10px;
+    padding: 3px 10px; cursor: pointer; transition: border-color 0.15s, color 0.15s;
+  }
+  #ports-refresh:hover { border-color: var(--amber); color: var(--amber); }
+  #ports-close {
+    margin-left: auto; background: none; border: 1px solid var(--border);
+    border-radius: 3px; color: var(--dim); font-family: var(--mono);
+    font-size: 10px; padding: 3px 10px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  #ports-close:hover { border-color: var(--amber); color: var(--amber); }
+  #ports-body { flex: 1; overflow-y: auto; padding: 24px 32px; }
+  #ports-body::-webkit-scrollbar { width: 4px; }
+  #ports-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .ports-global { margin-bottom: 28px; }
+  .ports-section-title {
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 12px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ports-global-grid {
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .ports-global-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .ports-global-item .port-num { font-family: var(--mono); font-size: 18px; color: var(--amber); font-weight: 600; }
+  .ports-global-item .port-label { font-size: 14px; color: var(--dim); }
+  .ports-global-item .port-status { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 5px var(--green); flex-shrink: 0; }
+  .ports-global-item .port-status.off { background: var(--dim); box-shadow: none; }
+
+  .sessions-grid { display: flex; flex-direction: column; gap: 12px; }
+  .session-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 18px;
+  }
+  .session-card.stale { opacity: 0.5; border-style: dashed; }
+  .session-card-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+  .session-status-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  }
+  .session-status-dot.alive { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .session-status-dot.stale { background: var(--dim); }
+  .session-name { font-size: 15px; color: var(--text); font-weight: 500; }
+  .session-meta { font-size: 14px; color: var(--dim); margin-left: auto; }
+  .session-ports {
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+  .session-port {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 5px 10px;
+  }
+  .session-port .sp-num { font-family: var(--mono); font-size: 14px; color: var(--teal); }
+  .session-port .sp-cat { font-size: 10px; color: var(--dim); letter-spacing: 0.08em; }
+  .session-clean-btn {
+    margin-top: 8px; background: none; border: none;
+    font-family: var(--mono); font-size: 10px; color: var(--dim);
+    cursor: pointer; padding: 0; text-decoration: underline;
+    transition: color 0.15s;
+  }
+  .session-clean-btn:hover { color: var(--red); }
+  .ports-empty {
+    color: var(--dim); font-size: 14px; padding: 20px 0;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .ports-empty code { font-family: var(--mono); color: var(--amber); font-size: 14px; }
+  .ports-schema {
+    margin-top: 28px; padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .schema-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px; margin-top: 10px;
+  }
+  .schema-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 12px;
+    font-size: 14px;
+  }
+  .schema-item .si-digit { font-family: var(--mono); color: var(--amber); font-size: 16px; margin-right: 4px; }
+  .schema-item .si-label { color: var(--dim); }
+
+
+  /* ─── Namespace module block ────────────────────────────────────── */
+  .ns-module {
+    border: 1px solid var(--border2); border-radius: var(--radius);
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .ns-module-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; background: var(--surface);
+    cursor: pointer; user-select: none;
+    transition: background 0.15s;
+  }
+  .ns-module-header:hover { background: var(--hover); }
+  .ns-module-ns { font-size: 14px; color: var(--violet); font-family: var(--mono); letter-spacing: 0.08em; }
+  .ns-module-desc { font-size: 14px; color: var(--dim); flex: 1; }
+  .ns-module-chevron { color: var(--dim); font-size: 14px; transition: transform 0.15s; }
+  .ns-module-header.open .ns-module-chevron { transform: rotate(90deg); }
+  .ns-module-body { display: none; padding: 12px 14px; border-top: 1px solid var(--border); }
+  .ns-module-body.open { display: block; }
+  .ns-requires {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;
+  }
+  .ns-req-item {
+    display: flex; align-items: center; gap: 5px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 3px 8px;
+    font-family: var(--mono); font-size: 14px; color: var(--dim);
+  }
+  .ns-req-item.unset { border-color: var(--red); color: var(--red); }
+
+
+  /* ─── Steps pipeline panel ─────────────────────────────────────────── */
+  .steps-pipeline { margin-bottom: 14px; }
+  .steps-pipeline-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  }
+  .steps-pipeline-title {
+    font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--teal); font-weight: 600;
+  }
+  .steps-dynamic-badge {
+    font-size: 9px; padding: 2px 6px; border-radius: 2px;
+    background: var(--surface); border: 1px solid var(--amber);
+    color: var(--amber); font-family: var(--mono); letter-spacing: 0.06em;
+  }
+  .steps-folder {
+    margin-bottom: 10px;
+  }
+  .steps-folder-label {
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none;
+    font-size: 14px; color: var(--violet); font-family: var(--mono);
+    margin-bottom: 4px; padding: 4px 8px;
+    background: var(--surface); border-radius: var(--radius);
+    transition: background 0.15s;
+  }
+  .steps-folder-label:hover { background: var(--hover); }
+  .steps-folder-label .sf-chevron { transition: transform 0.15s; }
+  .steps-folder-label.open .sf-chevron { transform: rotate(90deg); }
+  .steps-folder-default { color: var(--green); font-size: 9px; border: 1px solid var(--green); border-radius: 2px; padding: 1px 5px; }
+  .steps-list { display: none; margin-left: 12px; }
+  .steps-list.open { display: block; }
+  .step-item {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 3px 8px; font-size: 14px;
+    border-left: 1px solid var(--border);
+  }
+  .step-num { font-family: var(--mono); color: var(--dim); font-size: 10px; min-width: 20px; }
+  .step-name { color: var(--text); }
+  .step-desc { color: var(--dim); font-size: 14px; }
+  .step-badge {
+    font-size: 9px; padding: 1px 5px; border-radius: 2px;
+    font-family: var(--mono); border: 1px solid var(--border); color: var(--dim);
+  }
+  .step-badge.optional { border-color: var(--yellow); color: var(--yellow); }
+  .step-badge.skip { border-color: var(--violet); color: var(--violet); }
+  .steps-summary { font-size: 14px; color: var(--dim); margin-bottom: 4px; }
+
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header id="topbar">
+    <span class="logo">fli</span>
+    <span class="dot">·</span>
+    <span class="tagline">command runner</span>
+    <span id="build-date" style="font-size:10px;color:var(--dim);margin-left:6px;font-family:var(--mono);"></span>
+    <div id="theme-switcher">
+      <button class="theme-btn active" onclick="setTheme('mesa')" data-theme="mesa">mesa</button>
+      <button class="theme-btn" onclick="setTheme('dark')" data-theme="dark">dark</button>
+      <button class="theme-btn" onclick="setTheme('light')" data-theme="light">light</button>
+    </div>
+    <button onclick="openPortsPanel()" title="Port sessions" style="background:none;border:1px solid var(--border);border-radius:3px;padding:2px 9px;font-size: 14px;color:var(--dim);cursor:pointer;font-family:var(--mono);transition:border-color .15s,color .15s;" id="ports-topbar-btn" onmouseover="this.style.borderColor='var(--amber)';this.style.color='var(--amber)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--dim)'">ports</button>
+    <button onclick="openEnvPanel()" title="Global env (~/.config/fli/.env)" style="background:none;border:1px solid var(--border);border-radius:3px;padding:2px 9px;font-size: 14px;color:var(--dim);cursor:pointer;font-family:var(--mono);transition:border-color .15s,color .15s;" onmouseover="this.style.borderColor='var(--amber)';this.style.color='var(--amber)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--dim)'">.env</button>
+    <button onclick="openDocs()" title="Documentation" style="background:none;border:1px solid var(--border);border-radius:3px;padding:2px 9px;font-size: 14px;color:var(--dim);cursor:pointer;font-family:var(--mono);transition:border-color .15s,color .15s;" onmouseover="this.style.borderColor='var(--amber)';this.style.color='var(--amber)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--dim)'">?</button>
+    <div id="server-status">
+      <div class="indicator"></div>
+      <span id="status-text">connecting…</span>
+    </div>
+  </header>
+
+  <nav id="sidebar">
+    <button id="sidebar-toggle" onclick="toggleSidebar()" title="Collapse sidebar">
+      <span id="sidebar-toggle-icon">◀ commands</span>
+    </button>
+    <div id="sidebar-search-wrap">
+      <span class="search-icon">⌕</span>
+      <input id="sidebar-search" type="text" placeholder="search commands…"
+        oninput="filterSidebar(this.value)" autocomplete="off" spellcheck="false">
+      <button onclick="openPalette()" title="Open command palette (Ctrl+K)" style="background:none;border:1px solid var(--border);border-radius:3px;padding:2px 6px;font-size:10px;color:var(--dim);cursor:pointer;font-family:var(--mono);flex-shrink:0;margin-right:4px;">⌘K</button>
+    </div>
+    <div id="command-list" style="overflow-y:auto;flex:1;padding:8px 0;">
+      <div style="padding:14px;color:var(--dim);font-size: 14px">loading…</div>
+    </div>
+  </nav>
+
+  <div id="main">
+    <div id="form-panel">
+      <div id="empty-state">
+        <div class="big">select a command</div>
+        <small>← pick one from the sidebar</small>
+      </div>
+      <div id="cmd-form" style="display:none"></div>
+    </div>
+  </div>
+
+  <div id="output-panel">
+    <div id="output-header">
+      output
+      <button id="copy-btn" onclick="copyOutput()" title="Copy all output">copy</button>
+      <button id="clear-btn" onclick="clearOutput()">clear</button>
+    </div>
+    <div id="output-lines"></div>
+  </div>
+
+
+
+
+
+  <!-- ─── Ports Panel ──────────────────────────────────────────────── -->
+  <div id="ports-panel">
+    <div id="ports-header">
+      <span class="ports-title">ports</span>
+      <button id="ports-refresh" onclick="loadPorts()">↻ refresh</button>
+      <button id="ports-close" onclick="closePortsPanel()">✕ close</button>
+    </div>
+    <div id="ports-body">
+      <div style="color:var(--dim);font-size: 14px">loading…</div>
+    </div>
+  </div>
+
+  <!-- ─── Global Env Panel ────────────────────────────────────────── -->
+  <div id="env-panel">
+    <div id="env-header">
+      <span class="env-title">.env</span>
+      <span class="env-path">~/.config/fli/.env</span>
+      <span id="env-status"></span>
+      <button id="env-save-btn" onclick="saveEnv()">save</button>
+      <button class="env-close" onclick="closeEnvPanel()">✕ close</button>
+    </div>
+    <textarea id="env-editor" spellcheck="false" placeholder="# FLI global environment&#10;# Add env vars here that apply across all projects&#10;&#10;GITHUB_TOKEN=&#10;WORKSPACE_DIR=&#10;ANTHROPIC_API_KEY="></textarea>
+  </div>
+
+  <!-- ─── Docs Panel ──────────────────────────────────────────────── -->
+  <div id="docs-panel">
+    <div id="docs-header">
+      <span class="docs-title">fli</span>
+      <span style="color:var(--dim);font-size: 14px">documentation</span>
+      <button class="docs-close" onclick="closeDocs()">✕ close</button>
+    </div>
+    <div id="docs-nav">
+      <button class="docs-nav-btn active" onclick="showDocsSection('overview')">overview</button>
+      <button class="docs-nav-btn" onclick="showDocsSection('anatomy')">command anatomy</button>
+      <button class="docs-nav-btn" onclick="showDocsSection('context')">context api</button>
+      <button class="docs-nav-btn" onclick="showDocsSection('steps')">_steps/</button>
+      <button class="docs-nav-btn" onclick="showDocsSection('new-command')">add a command</button>
+      <button class="docs-nav-btn" onclick="showDocsSection('extend')">extend fli</button>
+    </div>
+    <div id="docs-body">
+
+      <!-- ── overview ─────────────────────────────────────────── -->
+      <div class="docs-section active" id="docs-overview">
+        <div class="docs-h1">fli</div>
+        <div class="docs-lead">A modular CLI automation platform where every command is a plain <code class="docs-inline">.md</code> file. Drop a file, it runs. No compilation, no rebuilding. The same command files power three interfaces: CLI, this Web GUI, and a planned TUI.</div>
+
+        <div class="docs-h2">how it works</div>
+        <div class="docs-p">When you run <code class="docs-inline">fli git:commit</code>, the runtime:</div>
+        <ol class="docs-steps">
+          <li>Scans both command roots and builds a registry</li>
+          <li>Finds the <code class="docs-inline">.md</code> file for <code class="docs-inline">git:commit</code></li>
+          <li>Compiles it into an ESM module in memory — no temp files</li>
+          <li>Validates args and flags against the frontmatter</li>
+          <li>Calls <code class="docs-inline">run(context)</code> with everything the command needs</li>
+        </ol>
+
+        <div class="docs-h2">two command roots</div>
+        <div class="docs-p">FLI scans two locations at startup and merges them into a single registry. Project commands take precedence over core commands with the same title.</div>
+        <table class="docs-table">
+          <tr><th>root</th><th>path</th><th>label</th></tr>
+          <tr><td>fliRoot/commands/</td><td>ships with fli — always available</td><td><span class="docs-tag docs-tag-core">core</span></td></tr>
+          <tr><td>projectRoot/cli/src/routes/</td><td>your project — scoped to this repo</td><td><span class="docs-tag docs-tag-project">project</span></td></tr>
+        </table>
+
+        <div class="docs-h2">key concepts</div>
+        <table class="docs-table">
+          <tr><th>concept</th><th>what it is</th></tr>
+          <tr><td>title</td><td>The command name in <code class="docs-inline">namespace:command</code> format</td></tr>
+          <tr><td>alias</td><td>Short form — <code class="docs-inline">fli gc</code> instead of <code class="docs-inline">fli git:commit</code></td></tr>
+          <tr><td>context</td><td>The object passed to every command — paths, env, exec, git, log…</td></tr>
+          <tr><td>_steps/</td><td>Multi-step pipeline convention for complex commands</td></tr>
+          <tr><td>--dry</td><td>Every command gets this for free — shows what would run</td></tr>
+        </table>
+
+        <div class="docs-callout"><strong>Live reload.</strong> Commands are compiled fresh on every run. Edit a <code class="docs-inline">.md</code> file and your next <code class="docs-inline">fli &lt;command&gt;</code> sees the change immediately — no restart needed.</div>
+      </div>
+
+      <!-- ── anatomy ───────────────────────────────────────────── -->
+      <div class="docs-section" id="docs-anatomy">
+        <div class="docs-h1">command anatomy</div>
+        <div class="docs-lead">Every command is a <code class="docs-inline">.md</code> file with three sections: YAML frontmatter, an optional <code class="docs-inline">&lt;script&gt;</code> block for helpers, and a fenced <code class="docs-inline">js</code> block that runs on execute.</div>
+
+        <div class="docs-h2">full example</div>
+        <div class="docs-code"><span class="c">---</span>
+<span class="a">title:</span> git:commit
+<span class="a">description:</span> Conventional commit prompt
+<span class="a">alias:</span> gc
+<span class="a">examples:</span>
+  - fli gc
+  - fli gc --dry
+<span class="a">args:</span>
+  -
+    <span class="a">name:</span> message
+    <span class="a">description:</span> Commit message
+    <span class="a">required:</span> false
+<span class="a">flags:</span>
+  <span class="a">push:</span>
+    <span class="a">type:</span> boolean
+    <span class="a">char:</span> p
+    <span class="a">description:</span> Push after committing
+    <span class="a">defaultValue:</span> false
+<span class="c">---</span>
+
+<span class="k">&lt;script&gt;</span>
+<span class="c">// helpers here — available to the js block below</span>
+<span class="k">import</span> { execSync } <span class="k">from</span> <span class="s">'child_process'</span>
+<span class="k">const</span> <span class="a">getStagedFiles</span> = () =&gt; execSync(<span class="s">'git diff --cached --name-only'</span>, { encoding: <span class="s">'utf8'</span> }).trim().split(<span class="s">'\n'</span>)
+<span class="k">&lt;/script&gt;</span>
+
+<span class="c">```js</span>
+<span class="c">// this block runs when the command executes</span>
+<span class="k">const</span> staged = getStagedFiles()
+<span class="k">if</span> (!staged.length) { log.error(<span class="s">'Nothing staged'</span>); <span class="k">return</span> }
+
+<span class="k">const</span> msg = arg.message || <span class="k">await</span> question(<span class="s">'Commit message: '</span>)
+context.exec({ command: <span class="s">`git commit -m "<span class="a">${msg}</span>"`</span>, dry: flag.dry })
+<span class="k">if</span> (flag.push) context.exec({ command: <span class="s">'git push'</span>, dry: flag.dry })
+<span class="c">```</span></div>
+
+        <div class="docs-h2">frontmatter fields</div>
+        <table class="docs-table">
+          <tr><th>field</th><th>required</th><th>description</th></tr>
+          <tr><td>title</td><td>✓</td><td>Unique name in <code class="docs-inline">namespace:command</code> format</td></tr>
+          <tr><td>description</td><td></td><td>Shown in sidebar, list, and help output</td></tr>
+          <tr><td>alias</td><td></td><td>Short name — <code class="docs-inline">fli gc</code> instead of <code class="docs-inline">fli git:commit</code></td></tr>
+          <tr><td>examples</td><td></td><td>Array of example invocations shown in help</td></tr>
+          <tr><td>args</td><td></td><td>Ordered positional argument definitions</td></tr>
+          <tr><td>flags</td><td></td><td>Named flag definitions</td></tr>
+        </table>
+
+        <div class="docs-h2">flag definition fields</div>
+        <table class="docs-table">
+          <tr><th>field</th><th>description</th></tr>
+          <tr><td>type</td><td><code class="docs-inline">string</code> · <code class="docs-inline">boolean</code> · <code class="docs-inline">number</code></td></tr>
+          <tr><td>char</td><td>Single-letter shorthand: <code class="docs-inline">-p</code> instead of <code class="docs-inline">--push</code></td></tr>
+          <tr><td>description</td><td>Shown in Web GUI and <code class="docs-inline">--help</code> output</td></tr>
+          <tr><td>defaultValue</td><td>Applied when flag is not passed</td></tr>
+          <tr><td>options</td><td>Enum — restricts value to a fixed set</td></tr>
+        </table>
+
+        <div class="docs-callout"><strong>Built-in flags.</strong> Every command automatically gets <code class="docs-inline">--dry</code> (<code class="docs-inline">-d</code>), <code class="docs-inline">--test</code> (<code class="docs-inline">-t</code>), and <code class="docs-inline">--step</code> — you never need to declare them.</div>
+      </div>
+
+      <!-- ── context ───────────────────────────────────────────── -->
+      <div class="docs-section" id="docs-context">
+        <div class="docs-h1">context api</div>
+        <div class="docs-lead">Every command's <code class="docs-inline">js</code> block runs inside a function that receives <code class="docs-inline">context</code>. The most-used properties are available as top-level locals.</div>
+
+        <div class="docs-h2">top-level locals</div>
+        <div class="docs-code"><span class="c">// Positional args — by name from frontmatter</span>
+arg.name        <span class="c">// e.g. arg.path, arg.query</span>
+
+<span class="c">// Named flags</span>
+flag.dry        <span class="c">// always present</span>
+flag.push       <span class="c">// your custom flags</span>
+
+<span class="c">// Styled logging</span>
+log.info(<span class="s">'Starting...'</span>)      <span class="c">// blue</span>
+log.success(<span class="s">'Done'</span>)           <span class="c">// green</span>
+log.warn(<span class="s">'Watch out'</span>)         <span class="c">// yellow</span>
+log.error(<span class="s">'Failed'</span>)           <span class="c">// red</span>
+log.dry(<span class="s">'Would run: ...'</span>)     <span class="c">// cyan — use for --dry output</span>
+
+<span class="c">// ZX globals</span>
+echo(<span class="s">'hello'</span>)                <span class="c">// write to stdout</span>
+<span class="k">await</span> question(<span class="s">'Name: '</span>)     <span class="c">// interactive prompt</span>
+<span class="k">await</span> <span class="s">`git push`</span>             <span class="c">// ZX shell execution</span></div>
+
+        <div class="docs-h2">context object</div>
+        <div class="docs-code"><span class="c">// Shell execution — respects --dry automatically</span>
+context.exec({ command: <span class="s">`git push`</span>, dry: flag.dry })
+
+<span class="c">// Resolved project paths</span>
+context.paths.root        <span class="c">// project root</span>
+context.paths.api         <span class="c">// api/ directory</span>
+context.paths.web         <span class="c">// web/ directory</span>
+context.paths.db          <span class="c">// db/ directory</span>
+context.paths.schema      <span class="c">// db/prisma/schema.prisma</span>
+context.paths.webPages    <span class="c">// web/src/routes/</span>
+context.paths.webComponents <span class="c">// web/src/components/</span>
+
+<span class="c">// Environment variables (from .env + process.env)</span>
+context.env.PROD_SERVER
+context.env.ANTHROPIC_API_KEY
+
+<span class="c">// Shared state for _steps/ pipelines</span>
+context.config.myKey = value  <span class="c">// write in orchestrator</span>
+context.config.myKey          <span class="c">// read in steps</span></div>
+
+        <div class="docs-h2">context.git</div>
+        <div class="docs-p">Git helpers are built in — no imports needed:</div>
+        <div class="docs-code">context.git.branch()          <span class="c">// current branch name</span>
+context.git.status()          <span class="c">// array of changed file lines</span>
+context.git.isDirty()         <span class="c">// true if uncommitted changes</span>
+context.git.lastTag()         <span class="c">// most recent tag</span>
+context.git.isAffected()      <span class="c">// changes since last tag</span>
+context.git.ahead()           <span class="c">// commits ahead of upstream</span>
+context.git.behind()          <span class="c">// commits behind upstream</span>
+context.git.log(tag)          <span class="c">// [{hash, subject, author}] since tag</span>
+context.git.remote()          <span class="c">// origin remote URL</span>
+
+<span class="c">// All methods accept an optional dir argument</span>
+context.git.branch(dir)       <span class="c">// branch in a different directory</span></div>
+      </div>
+
+      <!-- ── steps ────────────────────────────────────────────── -->
+      <div class="docs-section" id="docs-steps">
+        <div class="docs-h1">_steps/ pipelines</div>
+        <div class="docs-lead">Large commands break into numbered step files that share state via <code class="docs-inline">context.config</code>. Steps run in sequence. The orchestrator's own body runs first, then each step in order.</div>
+
+        <div class="docs-h2">directory structure</div>
+        <div class="docs-code">commands/npm/release/
+  index.md              <span class="c">← orchestrator: sets context.config from flags</span>
+  _steps/
+    01-test.md          <span class="c">← skip: "context.config.noTest"</span>
+    02-build.md         <span class="c">← optional: true</span>
+    03-version.md
+    04-publish.md
+    05-push.md          <span class="c">← skip: "flag.dry"</span></div>
+
+        <div class="docs-h2">step frontmatter</div>
+        <table class="docs-table">
+          <tr><th>field</th><th>description</th></tr>
+          <tr><td>optional: true</td><td>Failure warns and continues to the next step</td></tr>
+          <tr><td>skip: "expr"</td><td>JS expression — if truthy, the step is skipped. Has access to <code class="docs-inline">flag</code> and <code class="docs-inline">context</code></td></tr>
+        </table>
+
+        <div class="docs-h2">running steps</div>
+        <div class="docs-code">fli release patch          <span class="c"># all steps</span>
+fli release patch --dry    <span class="c"># step 5 skipped (skip: "flag.dry")</span>
+fli release patch --step 3 <span class="c"># re-run only step 3</span></div>
+
+        <div class="docs-h2">sharing state between steps</div>
+        <div class="docs-code"><span class="c">// In the orchestrator (index.md):</span>
+context.config.server    = env.PROD_SERVER
+context.config.startTime = Date.now()
+
+<span class="c">// In any step:</span>
+<span class="k">const</span> { server, startTime } = context.config
+context.exec({ command: <span class="s">`ssh <span class="a">${server}</span> "npm run deploy"`</span>, dry: flag.dry })</div>
+
+        <div class="docs-callout"><strong>Step files are never registered.</strong> The registry skips any <code class="docs-inline">.md</code> file inside a <code class="docs-inline">_steps/</code> directory — they can't be run directly, only as part of their orchestrator.</div>
+      </div>
+
+      <!-- ── new-command ───────────────────────────────────────── -->
+      <div class="docs-section" id="docs-new-command">
+        <div class="docs-h1">add a command</div>
+        <div class="docs-lead">There are two ways: use the scaffold command, or write the file directly. Either way, it's live as soon as it's saved.</div>
+
+        <div class="docs-h2">option 1 — scaffold it</div>
+        <div class="docs-code"><span class="c"># Interactive — prompts for name, args, flags</span>
+fli make:command
+
+<span class="c"># With a name pre-filled</span>
+fli make:command myapp:sync</div>
+        <div class="docs-p">This creates the file in <code class="docs-inline">cli/src/routes/</code> and opens it in your editor.</div>
+
+        <div class="docs-h2">option 2 — write the file</div>
+        <ol class="docs-steps">
+          <li>Create <code class="docs-inline">cli/src/routes/myapp/sync.md</code> (or any path — the title in frontmatter is the command name)</li>
+          <li>Add the YAML frontmatter with <code class="docs-inline">title</code>, <code class="docs-inline">description</code>, and any <code class="docs-inline">args</code>/<code class="docs-inline">flags</code></li>
+          <li>Write a fenced <code class="docs-inline">js</code> block with your logic</li>
+          <li>Run <code class="docs-inline">fli myapp:sync</code> — it works immediately</li>
+        </ol>
+
+        <div class="docs-h2">minimal example</div>
+        <div class="docs-code"><span class="c">---</span>
+<span class="a">title:</span> myapp:sync
+<span class="a">description:</span> Sync data from the remote API
+<span class="a">alias:</span> sync
+<span class="a">flags:</span>
+  <span class="a">production:</span>
+    <span class="a">type:</span> boolean
+    <span class="a">description:</span> Sync from production
+    <span class="a">defaultValue:</span> false
+<span class="c">---</span>
+
+<span class="c">```js</span>
+<span class="k">const</span> url = flag.production
+  ? context.env.PROD_API_URL
+  : context.env.DEV_API_URL
+
+log.info(<span class="s">`Syncing from <span class="a">${url}</span>...`</span>)
+
+<span class="k">const</span> data = <span class="k">await</span> fetch(url).then(r => r.json())
+log.success(<span class="s">`Got <span class="a">${data.length}</span> records`</span>)
+<span class="c">```</span></div>
+
+        <div class="docs-h2">project vs core</div>
+        <div class="docs-p">Commands in <code class="docs-inline">cli/src/routes/</code> are project-scoped — they only appear when fli is run from that project directory. To make a command available everywhere, add it to <code class="docs-inline">fliRoot/commands/</code> instead.</div>
+
+        <div class="docs-h2">where the file lives vs what it's called</div>
+        <div class="docs-callout"><strong>The file path is irrelevant.</strong> You can put <code class="docs-inline">myapp:sync</code> in any file — <code class="docs-inline">routes/sync.md</code>, <code class="docs-inline">routes/myapp/sync.md</code>, <code class="docs-inline">routes/myapp/sync/index.md</code>. The <code class="docs-inline">title</code> in frontmatter is the only thing that matters for the command name.</div>
+      </div>
+
+      <!-- ── extend ────────────────────────────────────────────── -->
+      <div class="docs-section" id="docs-extend">
+        <div class="docs-h1">extend fli</div>
+        <div class="docs-lead">FLI is designed to grow with your workflow. There are three levels of extension: project commands, core namespace additions, and deeper runtime hooks.</div>
+
+        <div class="docs-h2">level 1 — project commands</div>
+        <div class="docs-p">The simplest extension: add <code class="docs-inline">.md</code> files to your project's <code class="docs-inline">cli/src/routes/</code>. These commands only appear in that project. Use them for project-specific automation that doesn't belong in the shared core.</div>
+        <div class="docs-code"><span class="c"># Initialise the project routes directory</span>
+fli init
+
+<span class="c"># Then add commands for your project</span>
+cli/src/routes/
+  deploy/
+    index.md      <span class="c">← deploy:all  (your real deploy pipeline)</span>
+    _steps/
+      01-api.md
+      02-web.md
+  seed/
+    index.md      <span class="c">← seed:all  (custom data seeder)</span></div>
+
+        <div class="docs-h2">level 2 — new core namespaces</div>
+        <div class="docs-p">Add a new namespace to <code class="docs-inline">fliRoot/commands/</code> to make it available across all projects. A namespace is just a folder — there's no registration step.</div>
+        <div class="docs-code">commands/
+  ai/           <span class="c">← ai:ask</span>
+  git/          <span class="c">← git:commit, git:push…</span>
+  myteam/       <span class="c">← your new namespace</span>
+    standup.md  <span class="c">← myteam:standup</span>
+    deploy.md   <span class="c">← myteam:deploy</span></div>
+
+        <div class="docs-h2">level 3 — extending the context</div>
+        <div class="docs-p">The context object is assembled in <code class="docs-inline">core/runtime.js</code>. To add a helper that's available in every command, add it to the <code class="docs-inline">Command()</code> function:</div>
+        <div class="docs-code"><span class="c">// In core/runtime.js, after config.git is set:</span>
+config.slack = {
+  post: <span class="k">async</span> (msg) => {
+    <span class="k">await</span> fetch(process.env.SLACK_WEBHOOK, {
+      method: <span class="s">'POST'</span>,
+      body: JSON.stringify({ text: msg })
+    })
+  }
+}
+
+<span class="c">// Now every command can do:</span>
+<span class="k">await</span> context.slack.post(<span class="s">`Deployed <span class="a">${flag.target}</span> ✓`</span>)</div>
+
+        <div class="docs-h2">the .fli.json config</div>
+        <div class="docs-p">Drop a <code class="docs-inline">.fli.json</code> in any project root to override defaults:</div>
+        <div class="docs-code">{
+  <span class="s">"routesDir"</span>:        <span class="s">"cli/src/routes"</span>,   <span class="c">// where fli scans for project commands</span>
+  <span class="s">"defaultNamespace"</span>: <span class="s">"myapp"</span>,           <span class="c">// default ns for make:command</span>
+  <span class="s">"editor"</span>:           <span class="s">"code"</span>              <span class="c">// used by fli edit &lt;command&gt;</span>
+}</div>
+
+        <div class="docs-h2">environment variables</div>
+        <table class="docs-table">
+          <tr><th>variable</th><th>what it controls</th></tr>
+          <tr><td>FLI_PORT</td><td>Web GUI port (default 5000 — matches global port schema)</td></tr>
+          <tr><td>WORKSPACE_DIR</td><td>Monorepo root for all ws-* commands</td></tr>
+          <tr><td>ANTHROPIC_API_KEY</td><td>Required for <code class="docs-inline">fli ask</code></td></tr>
+          <tr><td>WEB_DIR / API_DIR / DB_DIR</td><td>Override default directory names</td></tr>
+          <tr><td>DEV_SERVER / PROD_SERVER</td><td>SSH targets for deploy and db commands</td></tr>
+          <tr><td>EDITOR / VISUAL</td><td>Editor opened by <code class="docs-inline">fli edit</code></td></tr>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+<!-- ─── Command Palette ──────────────────────────────────────────────── -->
+<div id="palette-backdrop" onclick="closePalette(event)">
+  <div id="palette">
+    <div id="palette-input-wrap">
+      <span class="p-icon">⌕</span>
+      <input id="palette-input" type="text" placeholder="Search commands…" autocomplete="off" spellcheck="false" />
+      <span id="palette-hint">esc</span>
+    </div>
+    <div id="palette-results"></div>
+    <div id="palette-footer">
+      <span class="p-key"><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+      <span class="p-key"><kbd>↵</kbd> open</span>
+      <span class="p-key"><kbd>esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+const API = ''
+let activeCommand = null
+let running = false
+let allCommands = []
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const [commands, meta] = await Promise.all([
+      fetch(`${API}/api/commands`).then(r => r.json()),
+      fetch(`${API}/api/meta`).then(r => r.json()).catch(() => null),
+    ])
+    allCommands = commands
+    renderSidebar(commands)
+    setStatus(true)
+    if (meta?.built) {
+      const el = document.getElementById('build-date')
+      if (el) el.textContent = 'built ' + meta.built
+    }
+    // Route: /workspace/init → workspace:init
+    const routed = routeFromPath(window.location.pathname)
+    if (routed) selectCommand(routed)
+  } catch {
+    setStatus(false)
+    document.getElementById('command-list').innerHTML =
+      `<div style="padding:14px;color:var(--red);font-size: 14px">could not reach server</div>`
+  }
+}
+
+// Convert URL path to command title and vice versa
+// /workspace/init  ↔  workspace:init
+// /npm/release     ↔  npm:release
+function routeFromPath(path) {
+  const clean = path.replace(/^\/+|\/+$/g, '') // strip leading/trailing slashes
+  if (!clean) return null
+  const title = clean.replace('/', ':')
+  return allCommands.find(c => c.title === title || c.alias === title) ? title : null
+}
+
+function pathFromTitle(title) {
+  return '/' + title.replace(':', '/')
+}
+
+function setStatus(connected) {
+  document.getElementById('server-status').classList.toggle('connected', connected)
+  document.getElementById('status-text').textContent = connected ? 'connected' : 'offline'
+}
+
+// ─── Sidebar collapse ────────────────────────────────────────────────────────
+function toggleSidebar() {
+  const app       = document.getElementById('app')
+  const collapsed = app.classList.toggle('sidebar-collapsed')
+  document.getElementById('sidebar-toggle-icon').textContent = collapsed ? '▶' : '◀ commands'
+  localStorage.setItem('fli-sidebar-collapsed', collapsed ? '1' : '')
+}
+;(function() {
+  if (localStorage.getItem('fli-sidebar-collapsed')) {
+    document.getElementById('app').classList.add('sidebar-collapsed')
+    document.getElementById('sidebar-toggle-icon').textContent = '▶'
+  }
+})()
+
+// ─── Output panel resize (drag left edge) ────────────────────────────────────
+;(function() {
+  const app    = document.getElementById('app')
+  const output = document.getElementById('output-panel')
+  let dragging = false, startX = 0, startW = 0
+  output.addEventListener('mousedown', e => {
+    if (e.clientX > output.getBoundingClientRect().left + 6) return
+    dragging = true
+    startX = e.clientX
+    startW = output.offsetWidth
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'ew-resize'
+  })
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return
+    const delta = startX - e.clientX
+    const newW  = Math.max(160, Math.min(startW + delta, window.innerWidth - 400))
+    app.style.setProperty('--output-w', newW + 'px')
+  })
+  document.addEventListener('mouseup', () => {
+    dragging = false
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  })
+})()
+
+
+
+// ─── mdToHtml — render prose markdown to HTML for the source panel ────────────
+function mdToHtml(text) {
+  const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const inline = s => e(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\{\{(\w+)\}\}/g, '<span class="prose-var">{{$1}}</span>')
+
+  const lines   = text.split('\n')
+  const out     = []
+  let inCode    = false
+  let codeBuf   = []
+  let inList    = false
+
+  const flushList = () => { if (inList) { out.push('</ul>'); inList = false } }
+
+  for (const raw of lines) {
+    if (raw.startsWith('```')) {
+      flushList()
+      if (inCode) {
+        out.push('<pre class="source-code">' + codeBuf.map(e).join('\n') + '</pre>')
+        codeBuf = []; inCode = false
+      } else { inCode = true }
+      continue
+    }
+    if (inCode) { codeBuf.push(raw); continue }
+
+    if (raw.startsWith('## ')) {
+      flushList()
+      out.push('<h3 class="prose-h2">' + inline(raw.slice(3)) + '</h3>')
+      continue
+    }
+    if (raw.startsWith('# ')) {
+      flushList()
+      out.push('<h2 class="prose-h1">' + inline(raw.slice(2)) + '</h2>')
+      continue
+    }
+    if (/^[-*] /.test(raw)) {
+      if (!inList) { out.push('<ul class="prose-list">'); inList = true }
+      out.push('<li>' + inline(raw.slice(2)) + '</li>')
+      continue
+    }
+    flushList()
+    if (!raw.trim()) { out.push('<div class="prose-spacer"></div>'); continue }
+    out.push('<p class="prose-p">' + inline(raw) + '</p>')
+  }
+  flushList()
+  return out.join('\n')
+}
+
+// ─── Syntax highlighter ───────────────────────────────────────────────────────
+// Lightweight JS highlighter — no external deps.
+// Tokenises in a single pass using a regex alternation so tokens never overlap.
+function highlight(code) {
+  // Single-pass tokeniser — collects tokens in order, applies spans, rejoins.
+  // Handles: comments, template literals, strings, numbers, keywords, builtins, bools.
+  const KW   = new Set(['const','let','var','function','async','await','return','if','else',
+    'for','while','of','in','new','typeof','instanceof','try','catch','finally','throw',
+    'import','export','default','class','extends','from','switch','case','break',
+    'continue','delete','void','yield','static','get','set'])
+  const BI   = new Set(['console','process','require','module','exports','global','globalThis',
+    'echo','question','log','context','flag','arg','fetch','JSON','Object','Array','Math',
+    'Date','Promise','String','Number','Boolean','Buffer','URL','Error','Map','Set',
+    'Symbol','setTimeout','clearTimeout','setInterval','clearInterval','resolve','reject',
+    'parseInt','parseFloat','isNaN','isFinite','encodeURIComponent','decodeURIComponent',
+    'readFileSync','writeFileSync','existsSync','mkdirSync','appendFileSync','unlinkSync',
+    'execSync','resolve','dirname','basename','homedir'])
+  const BOOL = new Set(['true','false','null','undefined','NaN','Infinity'])
+
+  const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const w = (cls, s) => `<span class="hl-${cls}">${s}</span>`
+
+  // Regex alternation — order determines precedence
+  const RE = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|`[^`\\]*(?:\\[\s\S][^`\\]*)*`|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b|\b[a-zA-Z_$][a-zA-Z0-9_$]*\b|[^\s\w]/g
+
+  let out = ''
+  let last = 0
+  let m
+
+  while ((m = RE.exec(code)) !== null) {
+    // Append any gap between last match and this one (already escaped)
+    if (m.index > last) out += e(code.slice(last, m.index))
+    last = RE.lastIndex
+
+    const t = m[0]
+    const c = t[0]
+
+    if (c === '/' && (t[1] === '/' || t[1] === '*')) {
+      out += w('cmt', e(t))
+    } else if (c === '`' || c === '"' || c === "'") {
+      out += w('str', e(t))
+    } else if (/\d/.test(c)) {
+      out += w('num', e(t))
+    } else if (/[a-zA-Z_$]/.test(c)) {
+      if      (KW.has(t))   out += w('kw',   e(t))
+      else if (BOOL.has(t)) out += w('bool', e(t))
+      else if (BI.has(t))   out += w('bi',   e(t))
+      else                  out += e(t)
+    } else {
+      out += e(t)
+    }
+  }
+  // Append tail
+  if (last < code.length) out += e(code.slice(last))
+  return out
+}
+
+function renderSidebar(commands) {
+  const core    = commands.filter(c => c._source === 'core')
+  const project = commands.filter(c => c._source === 'project')
+
+  const renderGroup = (cmds) => {
+    const groups = {}
+    for (const cmd of cmds) {
+      const [ns] = cmd.title.split(':')
+      if (!groups[ns]) groups[ns] = []
+      groups[ns].push(cmd)
+    }
+    return Object.entries(groups).map(([ns, items]) => `
+      <div class="ns-group">
+        <div class="ns-label">${ns}</div>
+        ${items.map(cmd => `
+          <div class="cmd-item" data-title="${cmd.title}" onclick="selectCommand('${cmd.title}')">
+            <span class="cmd-name">${cmd.title.split(':')[1]}</span>
+            ${cmd.alias ? `<span class="cmd-alias">${cmd.alias}</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    `).join('')
+  }
+
+  const el = document.getElementById('command-list')
+  el.innerHTML = `
+    ${core.length ? `
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">core</div>
+        ${renderGroup(core)}
+      </div>
+    ` : ''}
+    ${project.length ? `
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">project</div>
+        ${renderGroup(project)}
+      </div>
+    ` : ''}
+    ${!core.length && !project.length ? `
+      <div style="padding:14px;color:var(--dim);font-size: 14px">
+        no commands found<br>
+        <span style="color:#2a2a2a">run fli init</span>
+      </div>
+    ` : ''}
+  `
+
+  // Re-highlight active command if one is selected
+  if (activeCommand) {
+    document.querySelectorAll('.cmd-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.title === activeCommand.title)
+    })
+  }
+}
+
+function filterSidebar(query) {
+  const q = query.trim().toLowerCase()
+
+  document.querySelectorAll('.cmd-item').forEach(item => {
+    const title = item.dataset.title?.toLowerCase() || ''
+    const name  = item.querySelector('.cmd-name')?.textContent.toLowerCase() || ''
+    const alias = item.querySelector('.cmd-alias')?.textContent.toLowerCase() || ''
+    const match = !q || title.includes(q) || name.includes(q) || alias.includes(q)
+    item.classList.toggle('hidden', !match)
+  })
+
+  // Hide empty namespace groups
+  document.querySelectorAll('.ns-group').forEach(group => {
+    const visible = [...group.querySelectorAll('.cmd-item')].some(i => !i.classList.contains('hidden'))
+    group.classList.toggle('hidden', !visible)
+  })
+
+  // Hide empty sections (core/project)
+  document.querySelectorAll('.sidebar-section').forEach(section => {
+    const visible = [...section.querySelectorAll('.cmd-item')].some(i => !i.classList.contains('hidden'))
+    section.classList.toggle('hidden', !visible)
+  })
+}
+
+async function refreshSidebar() {
+  try {
+    const commands = await fetch(`${API}/api/commands`).then(r => r.json())
+    allCommands = commands
+    renderSidebar(commands)
+  } catch {}
+}
+
+// ─── Command Form ─────────────────────────────────────────────────────────────
+async function selectCommand(title) {
+  document.querySelectorAll('.cmd-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.title === title)
+  })
+  // Update URL without reloading
+  const newPath = pathFromTitle(title)
+  if (window.location.pathname !== newPath) {
+    history.pushState({ title }, '', newPath)
+  }
+  const meta = await fetch(`${API}/api/commands/${encodeURIComponent(title)}`).then(r => r.json())
+  activeCommand = meta
+
+  document.getElementById('empty-state').style.display = 'none'
+  const form = document.getElementById('cmd-form')
+  form.style.display = 'block'
+
+  // make:command gets a special structured form
+  if (title === 'make:command') {
+    form.innerHTML = buildMakeCommandForm(meta)
+  } else {
+    form.innerHTML = buildForm(meta)
+  }
+}
+
+// ─── Standard form ────────────────────────────────────────────────────────────
+function buildForm(meta) {
+  const example = Array.isArray(meta.examples) ? meta.examples[0] : meta.examples
+
+  // ── Args as inline fields ──────────────────────────────────────────────────
+  const argsFields = (meta.args || []).map(arg => `
+    <div class="fm-field">
+      <label>${arg.name}${arg.required ? '<span class="required">*</span>' : ''}</label>
+      <input type="text" id="arg-${arg.name}"
+        placeholder="${arg.description || arg.name}"
+        value="${arg.defaultValue ?? ''}">
+    </div>
+  `).join('')
+
+  // ── Value flags as inline fields ───────────────────────────────────────────
+  const allFlags  = Object.entries(meta.flags || {}).filter(([k]) => k !== 'dry' && k !== 'test')
+  const boolFlags = allFlags.filter(([, f]) => f.type === 'boolean')
+  const valFlags  = allFlags.filter(([, f]) => f.type !== 'boolean')
+
+  const valFields = valFlags.map(([name, flag]) => `
+    <div class="fm-field">
+      <label>--${name}${flag.char ? ` -${flag.char}` : ''}</label>
+      <input type="${flag.type === 'number' ? 'number' : 'text'}"
+        id="flag-${name}" value="${flag.defaultValue ?? ''}"
+        placeholder="${flag.defaultValue ?? flag.description ?? ''}">
+    </div>
+  `).join('')
+
+  // ── Bool flags + dry as toggles ────────────────────────────────────────────
+  const toggleItems = [...boolFlags.map(([name, flag]) => `
+    <div class="fm-toggle-item">
+      <label class="toggle"><input type="checkbox" id="flag-${name}" ${flag.defaultValue ? 'checked' : ''}><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+      <span class="toggle-label">--${name}</span>
+    </div>
+  `), `
+    <div class="fm-toggle-item">
+      <label class="toggle"><input type="checkbox" id="flag-dry"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+      <span class="toggle-label">--dry</span>
+    </div>
+  `].join('')
+
+  // ── Source panel — open by default ─────────────────────────────────────────
+  const s = meta._source
+  const m = meta._module
+  let sourceHtml = ''
+
+  // ── Steps pipeline block ─────────────────────────────────────────────────────
+  const st = meta._steps
+  let stepsHtml = ''
+  if (st) {
+    const dynBadge = st.dynamic
+      ? '<span class="steps-dynamic-badge">dynamic dispatch</span>'
+      : ''
+    const foldersHtml = st.folders.map(folder => {
+      const isDefault = folder.isDefault
+      const defaultBadge = isDefault ? '<span class="steps-folder-default">default</span>' : ''
+      const stepsListHtml = folder.steps.map((step, i) => {
+        const optBadge  = step.optional ? '<span class="step-badge optional">optional</span>' : ''
+        const skipBadge = step.skip     ? '<span class="step-badge skip">skip: ' + step.skip + '</span>' : ''
+        const desc      = step.description ? '<span class="step-desc">— ' + step.description + '</span>' : ''
+        return '<div class="step-item">' +
+          '<span class="step-num">' + String(i+1).padStart(2,'0') + '</span>' +
+          '<span class="step-name">' + step.name + '</span>' +
+          desc + optBadge + skipBadge +
+          '</div>'
+      }).join('')
+      return '<div class="steps-folder">' +
+        '<div class="steps-folder-label" onclick="this.classList.toggle(' + "'open'" + ');this.nextElementSibling.classList.toggle(' + "'open'" + ')">' +
+          '<span class="sf-chevron">›</span>' +
+          '<span style="font-family:var(--mono)">' + folder.folder + '/</span>' +
+          defaultBadge +
+          '<span style="margin-left:auto;font-size:10px;color:var(--dim)">' + folder.steps.length + ' steps</span>' +
+        '</div>' +
+        '<div class="steps-list' + (isDefault ? ' open' : '') + '">' + stepsListHtml + '</div>' +
+      '</div>'
+    }).join('')
+
+    stepsHtml = '<div class="steps-pipeline">' +
+      '<div class="steps-pipeline-header">' +
+        '<span class="steps-pipeline-title">pipeline</span>' +
+        dynBadge +
+        (st.dynamic ? '<span style="font-size:10px;color:var(--dim)">stepsDir set at runtime</span>' : '') +
+      '</div>' +
+      '<div class="steps-summary">' + st.folderCount + ' folder' + (st.folderCount !== 1 ? 's' : '') + ' · ' + st.totalSteps + ' total steps</div>' +
+      foldersHtml +
+    '</div>'
+  }
+
+  // ── Namespace module block ───────────────────────────────────────────────────
+  let moduleHtml = ''
+  if (m) {
+    const ns = meta.title?.split(':')?.[0] || ''
+    const reqHtml = (m.requires || []).map(k => {
+      // We can't check process.env from browser — show as pills, mark unset if needed
+      return `<span class="ns-req-item" title="${k}">${k}</span>`
+    }).join('')
+
+    const moduleProse = m.prose ? `<div class="source-prose prose-rendered">${mdToHtml(m.prose)}</div>` : ''
+
+    moduleHtml = `
+      <div class="ns-module">
+        <div class="ns-module-header" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+          <span class="ns-module-ns">${ns}</span>
+          <span class="ns-module-desc">${m.description || 'namespace documentation'}</span>
+          <span class="ns-module-chevron">›</span>
+        </div>
+        <div class="ns-module-body">
+          ${reqHtml ? `<div class="ns-requires">${reqHtml}</div>` : ''}
+          ${moduleProse}
+        </div>
+      </div>`
+  }
+
+  if (stepsHtml || moduleHtml || (s && (s.prose || s.script || s.main))) {
+    const sections = []
+    if (s.prose) sections.push(`
+      <div class="source-section">
+        <div class="source-section-label">description</div>
+        <div class="source-prose prose-rendered">${mdToHtml(s.prose)}</div>
+      </div>`)
+    if (s.script) sections.push(`
+      <div class="source-section">
+        <div class="source-section-label collapsible" onclick="toggleScriptBlock(this)">
+          <span class="ss-chevron">›</span> helpers
+        </div>
+        <div class="source-section-body">
+          <pre class="source-code">${highlight(s.script)}</pre>
+        </div>
+      </div>`)
+    if (s.main) sections.push(`
+      <div class="source-section">
+        <div class="source-section-label">main block</div>
+        <pre class="source-code">${highlight(s.main)}</pre>
+      </div>`)
+
+    if (s && (s.prose || s.script || s.main)) {
+      sourceHtml = `
+        <div class="source-toggle open" onclick="toggleSource(this)">
+          <span class="chevron">›</span> source
+        </div>
+        <div class="source-panel open">
+          <div class="source-body">${stepsHtml}${moduleHtml}${sections.join('')}</div>
+        </div>`
+    } else if (stepsHtml || moduleHtml) {
+      sourceHtml = `
+        <div class="source-toggle open" onclick="toggleSource(this)">
+          <span class="chevron">›</span> source
+        </div>
+        <div class="source-panel open">
+          <div class="source-body">${stepsHtml}${moduleHtml}</div>
+        </div>`
+    }
+  }
+
+  return `
+    <div class="fm-bar">
+      <div class="fm-header">
+        <h1>${meta.title}</h1>
+        ${meta.description ? `<div class="desc">${meta.description}</div>` : ''}
+        ${example ? `<div class="example">${example.replace(/^fli\s+/, '')}</div>` : ''}
+      </div>
+      <div class="fm-fields">
+        ${argsFields}${valFields}
+        <div class="fm-toggles">${toggleItems}</div>
+      </div>
+      <div class="fm-actions">
+        <button id="run-btn" onclick="runCommand()">
+          <div class="spinner"></div><span class="btn-label"></span>
+        </button>
+        <button id="copy-cmd-btn" onclick="copyCommand()" title="Copy CLI command">
+          ⎘ copy cmd
+        </button>
+      </div>
+    </div>
+    ${sourceHtml}
+  `
+}
+
+function toggleSource(toggle) {
+  toggle.classList.toggle('open')
+  toggle.nextElementSibling.classList.toggle('open')
+}
+
+function toggleScriptBlock(label) {
+  label.classList.toggle('open')
+  label.nextElementSibling.classList.toggle('open')
+}
+
+// ─── make:command structured form ─────────────────────────────────────────────
+function buildMakeCommandForm(meta) {
+  return `
+    <div class="cmd-header">
+      <h1>make:command</h1>
+      <div class="desc">Scaffold a new FLI command file</div>
+      <div class="example">make:command hello:notify</div>
+    </div>
+
+    <div class="section-label">command identity</div>
+    <div class="field">
+      <label>title <span class="required">*</span> <span class="field-desc">namespace:command format</span></label>
+      <input type="text" id="mc-title" placeholder="hello:notify">
+    </div>
+    <div class="field">
+      <label>description <span class="field-desc">shown in list and GUI</span></label>
+      <input type="text" id="mc-desc" placeholder="What this command does">
+    </div>
+
+    <div class="section-label">
+      arguments
+      <button class="add-row-btn" style="margin-top:8px" onclick="addArgRow()">+ add argument</button>
+    </div>
+    <div class="spec-rows" id="args-rows"></div>
+
+    <div class="section-label" style="margin-top:16px">
+      flags
+      <button class="add-row-btn" style="margin-top:8px" onclick="addFlagRow()">+ add flag</button>
+    </div>
+    <div class="spec-rows" id="flags-rows"></div>
+
+    <div class="section-label">run options</div>
+    <div class="field">
+      <div class="toggle-wrap">
+        <label class="toggle"><input type="checkbox" id="flag-dry"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+        <span class="toggle-label">--dry — preview path without writing file</span>
+      </div>
+    </div>
+
+    <div class="run-row">
+      <button id="run-btn" onclick="runMakeCommand()">
+        <div class="spinner"></div><span class="btn-label"></span>
+      </button>
+      <button id="copy-cmd-btn" onclick="copyCommand()" title="Copy CLI command">
+        ⎘ copy cmd
+      </button>
+    </div>
+  `
+}
+
+let argRowCount = 0, flagRowCount = 0
+
+function addArgRow() {
+  const id = argRowCount++
+  const row = document.createElement('div')
+  row.className = 'spec-row arg-row'
+  row.id = `arg-row-${id}`
+  row.innerHTML = `
+    <div class="spec-col"><label>name</label><input type="text" placeholder="path" id="arg-name-${id}"></div>
+    <div class="spec-col"><label>description</label><input type="text" placeholder="The path to use" id="arg-desc-${id}"></div>
+    <div class="spec-col" style="align-items:center;justify-content:flex-end;gap:8px">
+      <label class="spec-checkbox"><input type="checkbox" id="arg-req-${id}"> required</label>
+    </div>
+    <button class="spec-row-del" onclick="this.closest('.spec-row').remove()">×</button>
+  `
+  document.getElementById('args-rows').appendChild(row)
+}
+
+function addFlagRow() {
+  const id = flagRowCount++
+  const row = document.createElement('div')
+  row.className = 'spec-row flag-row'
+  row.id = `flag-row-${id}`
+  row.innerHTML = `
+    <div class="spec-col"><label>name</label><input type="text" placeholder="count" id="fl-name-${id}"></div>
+    <div class="spec-col"><label>char</label><input type="text" placeholder="c" maxlength="1" id="fl-char-${id}" style="width:50px"></div>
+    <div class="spec-col"><label>type</label>
+      <select id="fl-type-${id}">
+        <option value="string">string</option>
+        <option value="boolean">boolean</option>
+        <option value="number">number</option>
+      </select>
+    </div>
+    <div class="spec-col"><label>description</label><input type="text" placeholder="How many times" id="fl-desc-${id}"></div>
+    <button class="spec-row-del" onclick="this.closest('.spec-row').remove()">×</button>
+  `
+  document.getElementById('flags-rows').appendChild(row)
+}
+
+function collectMakeSpec() {
+  const title = document.getElementById('mc-title').value.trim()
+  const description = document.getElementById('mc-desc').value.trim()
+
+  const args = []
+  document.querySelectorAll('#args-rows .spec-row').forEach(row => {
+    const id = row.id.split('-').pop()
+    const name = document.getElementById(`arg-name-${id}`)?.value.trim()
+    if (!name) return
+    args.push({
+      name,
+      description: document.getElementById(`arg-desc-${id}`)?.value.trim() || undefined,
+      required: document.getElementById(`arg-req-${id}`)?.checked || false,
+    })
+  })
+
+  const flags = {}
+  document.querySelectorAll('#flags-rows .spec-row').forEach(row => {
+    const id = row.id.split('-').pop()
+    const name = document.getElementById(`fl-name-${id}`)?.value.trim()
+    if (!name) return
+    const type = document.getElementById(`fl-type-${id}`)?.value
+    const char = document.getElementById(`fl-char-${id}`)?.value.trim()
+    const desc = document.getElementById(`fl-desc-${id}`)?.value.trim()
+    flags[name] = {
+      type,
+      ...(char ? { char } : {}),
+      ...(desc ? { description: desc } : {}),
+    }
+  })
+
+  return { title, description, args, flags }
+}
+
+async function runMakeCommand() {
+  if (running) return
+  const spec = collectMakeSpec()
+
+  if (!spec.title || !spec.title.includes(':')) {
+    appendOutput('Title must be in namespace:command format (e.g. hello:notify)', 'error')
+    return
+  }
+
+  const dry = document.getElementById('flag-dry')?.checked || false
+
+  running = true
+  const btn = document.getElementById('run-btn')
+  btn.disabled = true
+  btn.classList.add('running')
+
+  appendOutput(`scaffolding ${spec.title}…`, 'info')
+
+  try {
+    const res = await fetch(`${API}/api/run/make:command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // Pass the entire spec as a structured flag — make:command reads _spec
+      // when emit is present (web context) and skips all readline prompts
+      body: JSON.stringify({ args: [spec.title], flags: {
+        description: spec.description,
+        dry,
+        _spec: JSON.stringify(spec),
+      }})
+    })
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try { handleEvent(JSON.parse(line.slice(6))) } catch {}
+      }
+    }
+  } catch (err) {
+    appendOutput(`connection error: ${err.message}`, 'error')
+  } finally {
+    running = false
+    btn.disabled = false
+    btn.classList.remove('running')
+  }
+}
+
+// ─── Collect current form state into args array + flags object ───────────────
+function collectCurrentArgs() {
+  if (!activeCommand) return { args: [], flags: {}, cmd: '' }
+
+  const args = (activeCommand.args || [])
+    .map(arg => document.getElementById(`arg-${arg.name}`)?.value.trim() || '')
+    .filter(v => v !== '')
+
+  const flags = {}
+  for (const [name, flagDef] of Object.entries(activeCommand.flags || {})) {
+    const el = document.getElementById(`flag-${name}`)
+    if (!el) continue
+    if (flagDef.type === 'boolean' || el.type === 'checkbox') {
+      if (el.checked) flags[name] = true
+    } else if (el.value.trim() !== '') {
+      flags[name] = flagDef.type === 'number' ? Number(el.value) : el.value.trim()
+    }
+  }
+  const dryEl = document.getElementById('flag-dry')
+  if (dryEl?.checked) flags.dry = true
+
+  // Build CLI string
+  const parts = ['fli', activeCommand.alias || activeCommand.title]
+  for (const a of args) parts.push(a.includes(' ') ? `"${a}"` : a)
+  for (const [k, v] of Object.entries(flags)) {
+    if (v === true)       parts.push(`--${k}`)
+    else if (v === false) continue
+    else                  parts.push(`--${k} ${String(v).includes(' ') ? `"${v}"` : v}`)
+  }
+
+  return { args, flags, cmd: parts.join(' ') }
+}
+
+function copyCommand() {
+  const { cmd } = collectCurrentArgs()
+  if (!cmd) return
+  navigator.clipboard.writeText(cmd).then(() => {
+    const btn = document.getElementById('copy-cmd-btn')
+    if (!btn) return
+    const orig = btn.textContent
+    btn.textContent = '✓ copied'
+    btn.classList.add('copied')
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied') }, 1500)
+  })
+}
+
+// ─── Run (standard commands) ──────────────────────────────────────────────────
+async function runCommand() {
+  if (!activeCommand || running) return
+
+  const { args, flags } = collectCurrentArgs()
+
+  running = true
+  const btn = document.getElementById('run-btn')
+  btn.disabled = true
+  btn.classList.add('running')
+
+  appendOutput(`running ${activeCommand.title}…`, 'info')
+
+  try {
+    const res = await fetch(`${API}/api/run/${encodeURIComponent(activeCommand.title)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ args, flags })
+    })
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try { handleEvent(JSON.parse(line.slice(6))) } catch {}
+      }
+    }
+  } catch (err) {
+    appendOutput(`connection error: ${err.message}`, 'error')
+  } finally {
+    running = false
+    btn.disabled = false
+    btn.classList.remove('running')
+  }
+}
+
+// ─── Event handler ────────────────────────────────────────────────────────────
+function handleEvent(event) {
+  switch (event.type) {
+    case 'output': appendOutput(stripAnsi(event.text).trimEnd(), 'output'); break
+    case 'log':    appendOutput(stripAnsi(event.text), event.level || 'info'); break
+    case 'done':
+      appendOutput('done', 'done')
+      // Refresh sidebar — a new command may have been created
+      refreshSidebar()
+      break
+    case 'error':  appendOutput(`error: ${event.text}`, 'error'); break
+  }
+}
+
+// ─── Output ───────────────────────────────────────────────────────────────────
+function appendOutput(text, type = 'output') {
+  if (!text) return
+  const el = document.createElement('span')
+  el.className = `out-line out-${type}`
+  el.textContent = text + '\n'
+  el.title = 'Click to copy'
+  el.addEventListener('click', () => {
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = el.style.background
+      el.style.background = '#1a3a1a'
+      setTimeout(() => { el.style.background = orig }, 600)
+    })
+  })
+  document.getElementById('output-lines').appendChild(el)
+  document.getElementById('output-panel').scrollTop = 999999
+}
+
+function clearOutput() {
+  document.getElementById('output-lines').innerHTML = ''
+}
+
+function copyOutput() {
+  const lines = document.getElementById('output-lines')
+  const text  = [...lines.querySelectorAll('.out-line')]
+    .map(el => el.textContent.trimEnd())
+    .join('\n')
+  if (!text) return
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copy-btn')
+    btn.textContent = 'copied!'
+    btn.classList.add('copied')
+    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied') }, 1500)
+  })
+}
+
+function stripAnsi(str) {
+  return str.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+}
+
+
+
+init()
+// ─── Command Palette ──────────────────────────────────────────────────────────
+let paletteIndex = 0
+
+function openPalette() {
+  document.getElementById('palette-backdrop').classList.add('open')
+  const input = document.getElementById('palette-input')
+  input.value = ''
+  input.focus()
+  paletteIndex = 0
+  renderPalette('')
+}
+
+function closePalette(e) {
+  if (e && e.target !== document.getElementById('palette-backdrop')) return
+  document.getElementById('palette-backdrop').classList.remove('open')
+}
+
+function closePaletteHard() {
+  document.getElementById('palette-backdrop').classList.remove('open')
+}
+
+function hlMatch(text, query) {
+  if (!query) return text
+  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  if (idx === -1) return text
+  return text.slice(0, idx) + '<mark>' + text.slice(idx, idx + query.length) + '</mark>' + text.slice(idx + query.length)
+}
+
+function renderPalette(query) {
+  const q = query.trim().toLowerCase()
+
+  // Special docs entries — shown when searching help/docs/?
+  const docsEntries = [
+    { title: 'docs:overview',     alias: '?',    description: 'What is FLI and how does it work',   _source: 'docs', _section: 'overview'    },
+    { title: 'docs:anatomy',      alias: null,   description: 'Command file anatomy and frontmatter', _source: 'docs', _section: 'anatomy'     },
+    { title: 'docs:context',      alias: null,   description: 'Context API — paths, git, exec, log', _source: 'docs', _section: 'context'     },
+    { title: 'docs:_steps',       alias: null,   description: 'Multi-step pipelines with _steps/',   _source: 'docs', _section: 'steps'       },
+    { title: 'docs:new-command',  alias: null,   description: 'How to add a new command',            _source: 'docs', _section: 'new-command' },
+    { title: 'docs:extend',       alias: null,   description: 'How to extend FLI',                   _source: 'docs', _section: 'extend'      },
+  ]
+  const showDocs = !q || ['?','help','docs','how','what'].some(kw => kw.startsWith(q) || q.startsWith(kw) || 'docs'.includes(q))
+  const matchedDocs = showDocs ? docsEntries.filter(d => !q || d.title.includes(q) || d.description.toLowerCase().includes(q)) : []
+
+  const cmdResults = q
+    ? allCommands.filter(c =>
+        c.title.toLowerCase().includes(q) ||
+        (c.alias || '').toLowerCase().includes(q) ||
+        (c.description || '').toLowerCase().includes(q)
+      )
+    : allCommands
+  const results = [...matchedDocs, ...cmdResults]
+
+  const el = document.getElementById('palette-results')
+  if (!results.length) {
+    el.innerHTML = `<div class="p-empty">No commands match "${query}"</div>`
+    return
+  }
+
+  el.innerHTML = results.map((c, i) => {
+    const [ns, name] = c.title.split(':')
+    const titleHl   = hlMatch(name || c.title, q)
+    const sel        = i === paletteIndex ? ' p-selected' : ''
+    const isDoc      = c._source === 'docs'
+    const onclick    = isDoc
+      ? "paletteSelect('" + c.title + "','" + (c._section||'') + "')"
+      : "paletteSelect('" + c.title + "')"
+    const secAttr    = isDoc ? ' data-section="' + c._section + '"' : ''
+    const srcBadge   = isDoc
+      ? '<span class="p-source" style="color:var(--violet);border-color:var(--border2)">docs</span>'
+      : c._source === 'project' ? '<span class="p-source">project</span>' : ''
+    const nsStyle    = isDoc ? 'color:var(--violet)' : ''
+    return '<div class="p-item' + sel + '" data-title="' + c.title + '"' + secAttr + ' data-idx="' + i + '" onclick="' + onclick + '">' +
+      '<span class="p-ns" style="' + nsStyle + '">' + ns + '</span>' +
+      '<span class="p-title">' + titleHl + '</span>' +
+      (c.alias ? '<span class="p-alias">' + hlMatch(c.alias, q) + '</span>' : '') +
+      srcBadge +
+      '</div>'
+  }).join('')
+}
+
+function paletteSelect(title, section) {
+  closePaletteHard()
+  if (section) { openDocs(section); return }
+  selectCommand(title)
+  setTimeout(() => {
+    const el = document.querySelector(`.cmd-item[data-title="${title}"]`)
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  }, 50)
+}
+
+function paletteMoveSelection(dir) {
+  const items = document.querySelectorAll('.p-item')
+  if (!items.length) return
+  paletteIndex = (paletteIndex + dir + items.length) % items.length
+  items.forEach((el, i) => el.classList.toggle('p-selected', i === paletteIndex))
+  items[paletteIndex]?.scrollIntoView({ block: 'nearest' })
+}
+
+document.getElementById('palette-input').addEventListener('input', e => {
+  paletteIndex = 0
+  renderPalette(e.target.value)
+})
+
+document.getElementById('palette-input').addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown')  { e.preventDefault(); paletteMoveSelection(1) }
+  if (e.key === 'ArrowUp')    { e.preventDefault(); paletteMoveSelection(-1) }
+  if (e.key === 'Escape')     { closePaletteHard() }
+  if (e.key === 'Enter') {
+    const items = document.querySelectorAll('.p-item')
+    const sel   = items[paletteIndex]
+    if (sel) paletteSelect(sel.dataset.title, sel.dataset.section)
+  }
+})
+
+// Global Ctrl+K / Cmd+K
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault()
+    const isOpen = document.getElementById('palette-backdrop').classList.contains('open')
+    isOpen ? closePaletteHard() : openPalette()
+  }
+  if (e.key === 'Escape') closePaletteHard()
+})
+
+// ─── Theme switcher ───────────────────────────────────────────────────────────
+function setTheme(name) {
+  document.documentElement.setAttribute('data-theme', name)
+  localStorage.setItem('fli-theme', name)
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === name)
+  })
+}
+;(function() {
+  const saved = localStorage.getItem('fli-theme') || 'mesa'
+  setTheme(saved)
+})()
+
+// ─── Docs panel ───────────────────────────────────────────────────────────────
+function openDocs(section) {
+  document.getElementById('docs-panel').classList.add('open')
+  if (section) showDocsSection(section)
+}
+
+function closeDocs() {
+  document.getElementById('docs-panel').classList.remove('open')
+}
+
+function showDocsSection(name) {
+  document.querySelectorAll('.docs-section').forEach(el => el.classList.remove('active'))
+  document.querySelectorAll('.docs-nav-btn').forEach(el => el.classList.remove('active'))
+  const sec = document.getElementById('docs-' + name)
+  if (sec) sec.classList.add('active')
+  const btn = document.querySelector(`.docs-nav-btn[onclick*="${name}"]`)
+  if (btn) btn.classList.add('active')
+  document.getElementById('docs-panel').scrollTop = 0
+}
+
+// Esc closes docs panel too
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDocs()
+})
+
+// Handle browser back/forward navigation
+window.addEventListener('popstate', e => {
+  if (e.state?.title) {
+    selectCommand(e.state.title)
+  } else {
+    // Back to root — clear the form
+    activeCommand = null
+    document.getElementById('empty-state').style.display = ''
+    document.getElementById('cmd-form').style.display = 'none'
+    document.querySelectorAll('.cmd-item').forEach(el => el.classList.remove('active'))
+  }
+})
+
+// ─── Global env panel ────────────────────────────────────────────────────────
+async function openEnvPanel() {
+  document.getElementById('env-panel').classList.add('open')
+  const status = document.getElementById('env-status')
+  status.textContent = 'loading…'
+  try {
+    const { content, path } = await fetch(`${API}/api/env`).then(r => r.json())
+    document.getElementById('env-editor').value = content
+    document.querySelector('.env-path').textContent = path
+    status.textContent = ''
+  } catch {
+    status.textContent = 'could not load'
+    status.style.color = 'var(--red)'
+  }
+}
+
+function closeEnvPanel() {
+  document.getElementById('env-panel').classList.remove('open')
+}
+
+async function saveEnv() {
+  const content = document.getElementById('env-editor').value
+  const status  = document.getElementById('env-status')
+  const btn     = document.getElementById('env-save-btn')
+  btn.disabled  = true
+  status.textContent = 'saving…'
+  status.style.color = 'var(--dim)'
+  try {
+    await fetch(`${API}/api/env`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ content }),
+    })
+    status.textContent = '✓ saved'
+    status.style.color = 'var(--green)'
+    setTimeout(() => { status.textContent = '' }, 2000)
+  } catch {
+    status.textContent = 'save failed'
+    status.style.color = 'var(--red)'
+  }
+  btn.disabled = false
+}
+
+// Ctrl+S to save when env panel is open
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    if (document.getElementById('env-panel').classList.contains('open')) {
+      e.preventDefault()
+      saveEnv()
+    }
+  }
+  if (e.key === 'Escape') closeEnvPanel()
+})
+
+// ─── Ports panel ─────────────────────────────────────────────────────────────
+let portsAutoRefresh = null
+
+async function openPortsPanel() {
+  document.getElementById('ports-panel').classList.add('open')
+  await loadPorts()
+  // Auto-refresh every 5s while panel is open
+  portsAutoRefresh = setInterval(loadPorts, 5000)
+}
+
+function closePortsPanel() {
+  document.getElementById('ports-panel').classList.remove('open')
+  if (portsAutoRefresh) { clearInterval(portsAutoRefresh); portsAutoRefresh = null }
+}
+
+async function loadPorts() {
+  const body = document.getElementById('ports-body')
+  try {
+    const [{ sessions, global: globalPorts }, { ENV, CAT }] = await Promise.all([
+      fetch(`${API}/api/ports`).then(r => r.json()),
+      fetch(`${API}/api/ports/schema`).then(r => r.json()),
+    ])
+
+    // Update topbar button to show alive count
+    const aliveCount = sessions.filter(s => s.alive).length
+    const btn = document.getElementById('ports-topbar-btn')
+    if (btn) btn.textContent = aliveCount > 0 ? `ports (${aliveCount})` : 'ports'
+
+    body.innerHTML = renderPortsBody(sessions, globalPorts, ENV, CAT)
+  } catch (err) {
+    body.innerHTML = `<div style="color:var(--red);font-size: 14px">Could not load port data: ${err.message}</div>`
+  }
+}
+
+function renderPortsBody(sessions, globalPorts, ENV, CAT) {
+  // ── Global ports ────────────────────────────────────────────────────────────
+  const currentPort = window.location.port || '5000'
+  const globalHtml = Object.entries(globalPorts).map(([name, p]) => {
+    const isThis  = String(p) === currentPort
+    const dot     = `<span class="port-status${isThis ? '' : ' off'}"></span>`
+    const tag     = isThis ? ` <span style="font-size:9px;color:var(--green);font-family:var(--mono);margin-left:2px">● this server</span>` : ''
+    return `
+    <div class="ports-global-item">
+      ${dot}
+      <span class="port-num">${p}</span>
+      <span class="port-label">${name}${tag}</span>
+    </div>`
+  }).join('')
+
+  // ── Sessions ────────────────────────────────────────────────────────────────
+  let sessionsHtml
+  if (!sessions.length) {
+    sessionsHtml = `<div class="ports-empty">
+      <div>No active sessions</div>
+      <div>Run <code>fli dev</code> in a project to claim ports</div>
+    </div>`
+  } else {
+    sessionsHtml = sessions.map(s => {
+      const dotClass = s.alive ? 'alive' : 'stale'
+      const cardClass = s.alive ? '' : ' stale'
+      const started = s.startedAt ? new Date(s.startedAt).toLocaleTimeString() : ''
+      const meta = [
+        `pid ${s.pid}`,
+        s.env,
+        `slot ${s.projectId}`,
+        started ? `↑ ${started}` : ''
+      ].filter(Boolean).join('  ·  ')
+
+      const portsHtml = Object.entries(s.ports || {}).map(([cat, ps]) => {
+        const portList = Array.isArray(ps) ? ps : [ps]
+        return portList.map(p => `
+          <div class="session-port">
+            <span class="sp-num">${p}</span>
+            <span class="sp-cat">${cat}</span>
+          </div>
+        `).join('')
+      }).join('')
+
+      const cleanBtn = !s.alive
+        ? `<button class="session-clean-btn" onclick="cleanSession('${s.name}')">remove stale entry</button>`
+        : ''
+
+      return `
+        <div class="session-card${cardClass}" id="session-${s.name}">
+          <div class="session-card-header">
+            <div class="session-status-dot ${dotClass}"></div>
+            <span class="session-name">${s.name}</span>
+            <span class="session-meta">${meta}</span>
+          </div>
+          <div class="session-ports">${portsHtml}</div>
+          ${cleanBtn}
+        </div>
+      `
+    }).join('')
+  }
+
+  // ── Schema reference ────────────────────────────────────────────────────────
+  const catItems = Object.entries(CAT).map(([name, digit]) => `
+    <div class="schema-item">
+      <span class="si-digit">x${digit}xx</span>
+      <span class="si-label">${name}</span>
+    </div>
+  `).join('')
+
+  const envItems = Object.entries(ENV).map(([name, digit]) => `
+    <div class="schema-item">
+      <span class="si-digit">${digit}xxx</span>
+      <span class="si-label">${name}</span>
+    </div>
+  `).join('')
+
+  return `
+    <div class="ports-global">
+      <div class="ports-section-title">global tooling</div>
+      <div class="ports-global-grid">${globalHtml}</div>
+    </div>
+
+    <div>
+      <div class="ports-section-title">active sessions</div>
+      <div class="sessions-grid">${sessionsHtml}</div>
+    </div>
+
+    <div class="ports-schema">
+      <div class="ports-section-title">schema reference</div>
+      <div style="font-size: 14px;color:var(--dim);margin-bottom:8px;">
+        <code style="font-family:var(--mono);color:var(--amber)">[ENV][CAT][PROJECT][SERVICE]</code>
+        &nbsp;·&nbsp; e.g. <code style="font-family:var(--mono);color:var(--teal)">8010</code> = dev / fe / project 1 / service 0
+      </div>
+      <div style="margin-bottom:8px;font-size:10px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase">environment</div>
+      <div class="schema-grid" style="margin-bottom:16px">${envItems}</div>
+      <div style="margin-bottom:8px;font-size:10px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase">category</div>
+      <div class="schema-grid">${catItems}</div>
+    </div>
+  `
+}
+
+async function cleanSession(name) {
+  try {
+    // Call ports:status --clean equivalent via a minimal fetch
+    // For now, just refresh — user can run `fli ps --clean` from CLI
+    await fetch(`${API}/api/ports/clean`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+  } catch {}
+  loadPorts()
+}
+
+// Esc closes ports panel
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePortsPanel()
+})
+
+</script>
+</body>
+</html>

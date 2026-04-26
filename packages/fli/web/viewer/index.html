@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FJSChain</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; background: #0c0b09; overflow: hidden; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script>
+const { useEffect } = React
+
+
+// ── Project map helpers ───────────────────────────────────────────────────────
+
+function flatUniq(phaseMap = {}) {
+  return [...new Set(Object.values(phaseMap).flat())]
+}
+function detectGap(svc) {
+  return !Object.values(svc.hooks?.before ?? {}).flat().includes('authenticate')
+}
+function gateStr(g) { return g.read + '.' + g.create + '.' + g.update + '.' + g.delete }
+function isNullable(prop) {
+  if (Array.isArray(prop.type)) return prop.type.includes('null')
+  if (prop.anyOf) return prop.anyOf.some(p => p.type === 'null')
+  return false
+}
+function resolveFieldType(prop) {
+  const inner = prop.anyOf ? (prop.anyOf.find(p => p.type !== 'null') ?? prop) : prop
+  const t = Array.isArray(inner.type) ? inner.type.find(x => x !== 'null') : inner.type
+  if (inner.format === 'date-time') return 'DateTime'
+  if (inner.format === 'email')     return 'Text'
+  if (inner['$ref'])                return inner['$ref'].replace('#/$defs/', '')
+  switch (t) {
+    case 'integer': return 'Integer'
+    case 'number':  return 'Real'
+    case 'boolean': return 'Boolean'
+    default:        return 'Text'
+  }
+}
+function attrsFromProp(name, prop) {
+  const a     = []
+  const inner = prop.anyOf ? (prop.anyOf.find(p => p.type !== 'null') ?? prop) : prop
+  if (name === 'id')             a.push('@id')
+  if (inner.format === 'email')  a.push('@email')
+  if (inner['x-trim'])           a.push('@trim')
+  if (inner.minLength != null && inner.maxLength != null) a.push('@length(' + inner.minLength + ', ' + inner.maxLength + ')')
+  if (inner.minimum != null)     a.push('@gte(' + inner.minimum + ')')
+  if (inner.maximum != null)     a.push('@lte(' + inner.maximum + ')')
+  if (inner.default != null)     a.push('@default(' + inner.default + ')')
+  return a
+}
+
+// ── Package registry (tier-1 FJS packages) ────────────────────────────────────
+// Canonical chip data — colors, chain points, config descriptions.
+// Merged with installation status from the project map.
+
+const TIER1_REGISTRY = [
+  {
+    id:    'auth',
+    label: '@frontierjs/auth',
+    short: 'auth',
+    realm: 'junction',
+    color: C.teal, colorBright: C.teal, colorDim: C.tealDim, colorBorder: C.tealBorder,
+    chainPoints: [
+      { nodeId: 'transport-in',  role: 'verifySession(token)' },
+      { nodeId: 'svc-before',    role: 'authenticate hook' },
+      { nodeId: 'transport-out', role: 'SessionContext stamp' },
+    ],
+    config: [
+      { key: 'login',         val: 'POST /auth/login' },
+      { key: 'logout',        val: 'POST /auth/logout' },
+      { key: 'verifySession', val: 'async (token) => SessionContext' },
+      { key: 'sessionTtl',    val: '30 days' },
+    ],
+  },
+  {
+    id:    'conduit',
+    label: '@frontierjs/conduit',
+    short: 'conduit',
+    realm: 'junction',
+    color: C.blue, colorBright: C.blueBright, colorDim: C.blueDim, colorBorder: C.blueBorder,
+    chainPoints: [
+      { nodeId: 'svc-after', role: 'outbound integrations' },
+    ],
+    config: [
+      { key: 'targets',   val: 'registered dynamically' },
+      { key: 'retries',   val: '2 (exponential backoff)' },
+      { key: 'timeout',   val: '15 000ms' },
+    ],
+  },
+  {
+    id:    'caravan',
+    label: '@frontierjs/caravan',
+    short: 'caravan',
+    realm: 'junction',
+    color: C.amber, colorBright: C.amberBright, colorDim: C.amberDim, colorBorder: C.amberBorder,
+    chainPoints: [
+      { nodeId: 'svc-after', role: 'enqueue background jobs' },
+    ],
+    config: [
+      { key: 'concurrency', val: '5' },
+      { key: 'retries',     val: '3' },
+    ],
+  },
+  {
+    id:    'notifications',
+    label: '@frontierjs/notifications',
+    short: 'notifications',
+    realm: 'junction',
+    color: C.pink, colorBright: C.pinkBright, colorDim: C.pinkDim, colorBorder: C.pinkBorder,
+    chainPoints: [
+      { nodeId: 'svc-after',    role: 'app.notify(user, notification)' },
+      { nodeId: 'sqlite',       role: 'inApp → notifications table' },
+      { nodeId: 'resource-out', role: 'WS push notification:created' },
+    ],
+    config: [
+      { key: 'channels.email', val: "{ mailer: 'default' }" },
+      { key: 'channels.inApp', val: 'enabled (WS + DB)' },
+    ],
+  },
+  {
+    id:    'litestream',
+    label: 'litestream',
+    short: 'litestream',
+    realm: 'litestone',
+    color: C.purple, colorBright: C.purpleBright, colorDim: C.purpleDim, colorBorder: C.purpleBorder,
+    chainPoints: [
+      { nodeId: 'sqlite', role: 'WAL stream → S3' },
+    ],
+    config: [
+      { key: 'replica',  val: 's3://your-bucket/app.db' },
+      { key: 'interval', val: '1s' },
+    ],
+  },
+]
+
+function buildProjectMap(map) {
+  const defs      = map.schema?.['$defs'] ?? {}
+  const services  = map.services  ?? []
+  const resources = map.resources ?? []
+
+  const modelEntries = Object.entries(defs).filter(([, d]) => d.type === 'object' && !d['x-litestone-file'])
+  const enumEntries  = Object.entries(defs).filter(([, d]) => d.type === 'string'  && d.enum)
+
+  const dbSchema = {
+    enums:  enumEntries.map(([name, d]) => ({ name, values: d.enum })),
+    models: modelEntries.map(([name, def]) => ({
+      name,
+      fields:    Object.entries(def.properties ?? {}).map(([fname, prop]) => ({
+        name:     fname,
+        type:     resolveFieldType(prop),
+        attrs:    attrsFromProp(fname, prop),
+        nullable: isNullable(prop),
+      })),
+      gate:      def['x-gate'] ? gateStr(def['x-gate']) : '?',
+      plugins:   def.properties?.deletedAt ? ['softDelete'] : [],
+      relations: def['x-relations'] ?? [],
+      raw:       '',
+    })),
+  }
+
+  const channels = services.map(svc => ({
+    name:      svc.name,
+    service:   svc.name,
+    events:    ['created','patched','removed'].map(e => svc.name + ':' + e),
+    members:   'all authenticated connections',
+    resources: resources.filter(r => r.service === svc.name).map(r => r.name),
+  }))
+
+  const relations = []
+  for (const [modelName, def] of modelEntries) {
+    for (const rel of (def['x-relations'] ?? [])) {
+      relations.push({
+        from:      modelName,
+        fromField: rel.fields?.[0] ?? rel.field,
+        to:        rel.model,
+        type:      rel.type === 'm2m' ? 'N→N' : 'N→1',
+        label:     rel.type === 'm2m' ? '↔ ' + rel.model : '→ ' + rel.model,
+        cascade:   rel.onDelete === 'Cascade',
+      })
+    }
+  }
+
+  const healthGaps = []
+  for (const svc of services) {
+    for (const method of ['create','patch','remove']) {
+      const hooks = svc.hooks?.before?.[method] ?? svc.hooks?.before?.all ?? []
+      if (!hooks.includes('authenticate')) {
+        healthGaps.push({
+          type: 'warning',
+          msg:  "Service '" + svc.name + "' " + method + " has no authenticate hook",
+          ref:  'api.services.' + svc.name + '.hooks.before.' + method + ' → authenticate (missing)',
+        })
+      }
+    }
+  }
+
+  const litestoneNouns = dbSchema.models.map(m => ({
+    name:    m.name,
+    gate:    m.gate,
+    fields:  m.fields.length,
+    plugins: m.plugins,
+  }))
+
+  const junctionNouns = services.map(svc => ({
+    name:    svc.name,
+    hooks: {
+      before: flatUniq(svc.hooks?.before),
+      after:  flatUniq(svc.hooks?.after),
+    },
+    actions: svc.customMethods ?? [],
+    gap:     detectGap(svc),
+  }))
+
+  const sierraNouns = resources.map(r => ({
+    name:    r.name,
+    service: r.service ?? null,
+    exports: ['store', 'service', 'make', 'load'],
+    hooks:   r.hooks ?? [],
+  }))
+
+  // Patch real nouns into CHAIN_DATA realms — everything else (nodes, config) stays
+  // Sierra is dimmed when no resources exist (no web frontend in this project)
+  const chainData = {
+    ...CHAIN_DATA,
+    realms: CHAIN_DATA.realms.map(realm => {
+      if (realm.id === 'litestone') return { ...realm, nouns: litestoneNouns }
+      if (realm.id === 'junction')  return { ...realm, nouns: junctionNouns }
+      if (realm.id === 'sierra')    return { ...realm, nouns: sierraNouns, empty: sierraNouns.length === 0 }
+      return realm
+    }),
+  }
+
+  // Merge canonical chip data with installation status from project map
+  const detectedPkgs = map.packages ?? []
+  const packages = TIER1_REGISTRY.map(reg => {
+    const detected = detectedPkgs.find(p => p.id === reg.id)
+    return {
+      ...reg,
+      installed: detected ? detected.installed : false,
+    }
+  })
+
+  return {
+    dbSchema,
+    chainData,
+    channels,
+    relations,
+    healthGaps,
+    packages,
+    migrations: (map.migrations ?? []).map(m => ({
+      name: m.name, status: 'applied', appliedAt: null, sql: m.sql,
+    })),
+  }
+}
+
+// ── useProjectMap ─────────────────────────────────────────────────────────────
+
+function useProjectMap() {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState(null)
+
+  useEffect(() => {
+    fetch('/data')
+      .then(r => r.json())
+      .then(map => { setData(buildProjectMap(map)); setLoading(false) })
+      .catch(e  => { setError(e.message);           setLoading(false) })
+  }, [])
+
+  return { data, loading, error }
+}
+
+
+// ── FJSChain (compiled from FJSChain.jsx) ─────────────────────────────────────
+const { useState } = React;
+const C = {
+  bg: "#0c0b09",
+  surface: "#131411",
+  surface2: "#0f0e0c",
+  border: "#242420",
+  border2: "#2a2824",
+  text: "#f0ede8",
+  textMid: "#c8c4bc",
+  textDim: "#6a6660",
+  textFaint: "#3a3830",
+  amber: "#d4920a",
+  amberBright: "#eaa520",
+  amberDim: "#181205",
+  amberBorder: "#3d2a06",
+  blue: "#4a7fa8",
+  blueBright: "#60a5fa",
+  blueDim: "#081420",
+  blueBorder: "#0e2d4a",
+  green: "#4a9e5c",
+  greenBright: "#4ade80",
+  greenDim: "#071410",
+  greenBorder: "#0e3318",
+  orange: "#c26a1a",
+  orangeBright: "#f08030",
+  orangeDim: "#160a02",
+  orangeBorder: "#3d2008",
+  pink: "#a0366a",
+  pinkBright: "#e060a0",
+  pinkDim: "#160510",
+  pinkBorder: "#4a1030",
+  purple: "#7c3aed",
+  purpleBright: "#a78bfa",
+  purpleDim: "#100d1a",
+  purpleBorder: "#2d1660",
+  teal: "#2dd4bf",
+  tealDim: "#071514",
+  tealBorder: "#0e3330",
+  red: "#cc4444",
+  redDim: "#160505",
+  redBorder: "#5a1414"
+};
+const FONT = "'IBM Plex Mono', 'JetBrains Mono', 'Fira Code', monospace";
+const CHAIN_DATA = {
+  nodes: [
+    // Outgoing (top row, left→right) ─ result/response path
+    { id: "schema", lane: "out", realm: "data", x: 0, label: "schema.lite", sub: "JSON Schema", color: C.purple, colorBright: C.purpleBright, colorDim: C.purpleDim },
+    { id: "svc-after", lane: "out", realm: "api", x: 1, label: "Service", sub: "After Hook", color: C.blue, colorBright: C.blueBright, colorDim: C.blueDim },
+    { id: "app-after", lane: "out", realm: "api", x: 2, label: "App", sub: "After Hook", color: C.teal, colorBright: C.teal, colorDim: C.tealDim },
+    { id: "transport-out", lane: "out", realm: "api", x: 3, label: "Transport", sub: "Outgoing", color: C.amber, colorBright: C.amberBright, colorDim: C.amberDim },
+    { id: "webclient-res", lane: "out", realm: "ui", x: 4, label: "WebClient", sub: "Response", color: C.orange, colorBright: C.orangeBright, colorDim: C.orangeDim },
+    { id: "resource-out", lane: "out", realm: "ui", x: 5, label: "Resource", sub: "After Hook", color: C.orange, colorBright: C.orangeBright, colorDim: C.orangeDim },
+    // Data realm internal (vertical center)
+    { id: "litestone-w", lane: "mid", realm: "data", x: 0, label: "Litestone", sub: "write result", color: C.purple, colorBright: C.purpleBright, colorDim: C.purpleDim },
+    { id: "gate", lane: "mid", realm: "data", x: 0, label: "Gate Plugin", sub: '@@gate("R.C.U.D")', color: C.purple, colorBright: C.purpleBright, colorDim: C.purpleDim },
+    { id: "sqlite", lane: "mid", realm: "data", x: 0, label: "SQLite", sub: "db write/read", color: C.purple, colorBright: C.purpleBright, colorDim: C.purpleDim },
+    { id: "litestone-r", lane: "mid", realm: "data", x: 0, label: "Litestone", sub: "read query", color: C.purple, colorBright: C.purpleBright, colorDim: C.purpleDim },
+    // Incoming (bottom row, right→left) ─ request/query path
+    { id: "resource-in", lane: "in", realm: "ui", x: 5, label: "Resource", sub: "Before Hook", color: C.orange, colorBright: C.orangeBright, colorDim: C.orangeDim },
+    { id: "webclient-req", lane: "in", realm: "ui", x: 4, label: "WebClient", sub: "Request", color: C.orange, colorBright: C.orangeBright, colorDim: C.orangeDim },
+    { id: "transport-in", lane: "in", realm: "api", x: 3, label: "Transport", sub: "Incoming", color: C.amber, colorBright: C.amberBright, colorDim: C.amberDim },
+    { id: "app-before", lane: "in", realm: "api", x: 2, label: "App", sub: "Before Hook", color: C.teal, colorBright: C.teal, colorDim: C.tealDim },
+    { id: "svc-before", lane: "in", realm: "api", x: 1, label: "Service", sub: "Before Hook", color: C.blue, colorBright: C.blueBright, colorDim: C.blueDim },
+    { id: "schema-in", lane: "in", realm: "data", x: 0, label: "schema.lite", sub: "validates data", color: C.purple, colorBright: C.purpleBright, colorDim: C.purpleDim },
+    // UI spine (vertical right column)
+    { id: "ui-resource", lane: "ui", realm: "ui", x: 0, label: "Resource", sub: "service binding", color: C.orange, colorBright: C.orangeBright, colorDim: C.orangeDim },
+    { id: "ui-store", lane: "ui", realm: "ui", x: 0, label: "Store", sub: "reactive state", color: C.orange, colorBright: C.orangeBright, colorDim: C.orangeDim },
+    { id: "ui-component", lane: "ui", realm: "ui", x: 0, label: "Component", sub: "renders / events", color: C.orange, colorBright: C.orangeBright, colorDim: C.orangeDim },
+    { id: "ui-make", lane: "ui", realm: "ui", x: 0, label: "make()", sub: "schema factory", color: C.orange, colorBright: C.orangeBright, colorDim: C.orangeDim }
+  ],
+  // Realm package boxes (center row)
+  realms: [
+    {
+      id: "litestone",
+      label: "Litestone",
+      realm: "data",
+      color: C.purple,
+      colorBright: C.purpleBright,
+      colorDim: C.purpleDim,
+      colorBorder: C.purpleBorder,
+      sub: "ORM \xB7 Schema \xB7 Gate \xB7 SQLite",
+      config: {
+        file: "db/schema.lite + api/server.ts",
+        settings: [
+          { key: "database", val: "./db/acme-crm.db" },
+          { key: "schema", val: "./db/schema.lite" },
+          { key: "plugins", val: "[GatePlugin, AuditPlugin]" },
+          { key: "gate.getLevel", val: "async (user) => user ? USER : STRANGER" },
+          { key: "migrations", val: "./db/migrations/" },
+          { key: "litestream", val: "enabled (replica to S3)" }
+        ]
+      },
+      nouns: []
+    },
+    {
+      id: "junction",
+      label: "Junction",
+      realm: "api",
+      color: C.blue,
+      colorBright: C.blueBright,
+      colorDim: C.blueDim,
+      colorBorder: C.blueBorder,
+      sub: "HTTP \xB7 WebSocket \xB7 Hooks \xB7 Channels",
+      config: {
+        file: "api/src/server.ts",
+        settings: [
+          { key: "port", val: "3000" },
+          { key: "cors.origins", val: "['http://localhost:5173']" },
+          { key: "auth", val: "{ verifySession, login, logout }" },
+          { key: "openapi", val: "{ title: 'Acme CRM', version: '1.0.0' }" },
+          { key: "channels", val: "['contacts','companies','deals','activities','notes']" },
+          { key: "plugins", val: "[cors, correlationId, requestLogger, openapi]" }
+        ]
+      },
+      nouns: []
+    },
+    {
+      id: "sierra",
+      label: "Sierra",
+      realm: "ui",
+      color: C.orange,
+      colorBright: C.orangeBright,
+      colorDim: C.orangeDim,
+      colorBorder: C.orangeBorder,
+      sub: "Vite \xB7 File-system routing \xB7 Resources \xB7 Mesa",
+      config: {
+        file: "web/config/sierra.config.js",
+        settings: [
+          { key: "target", val: "'spa'" },
+          { key: "routesDir", val: "'src/routes'" },
+          { key: "trailingSlash", val: "'always'" },
+          { key: "junction.url", val: 'VITE_API_WS_URL ?? "ws://localhost:3000"' },
+          { key: "junction.tokenKey", val: "'acme_crm_token'" },
+          { key: "auth.redirectTo", val: "'/login/'" },
+          { key: "auth.publicRoutes", val: "['/', '/login/']" }
+        ]
+      },
+      nouns: []
+    }
+  ],
+  // Hook detail per chain node
+  hookDetail: {
+    "svc-after": {
+      title: "Service After Hooks",
+      desc: "Run after every successful service operation. Publish events, audit writes, invalidate caches.",
+      hooks: [
+        { phase: "after.create", fns: ['publish(channel("contacts"))'], svc: "contacts" },
+        { phase: "after.patch", fns: ['publish(channel("contacts"))'], svc: "contacts" },
+        { phase: "after.remove", fns: ['publish(channel("contacts"))'], svc: "contacts" },
+        { phase: "after.create", fns: ['publish(channel("deals"))'], svc: "deals" },
+        { phase: "after.create", fns: ['publish(channel("notes"))'], svc: "notes" }
+      ],
+      context: "{ service, method, id, data, params, result, error, app }"
+    },
+    "app-after": {
+      title: "App After Hooks",
+      desc: "Global app-level hooks. Run after all services. Used for correlation ID stamping, response shaping.",
+      hooks: [
+        { phase: "after.all", fns: ["correlationId.stamp(ctx)"], svc: "app-level" }
+      ],
+      context: "{ service, method, id, data, params, result, error, app }"
+    },
+    "transport-out": {
+      title: "Transport \u2014 Outgoing",
+      desc: "Result serialized to HTTP response or WebSocket event payload. No hook runs here \u2014 transport is transparent.",
+      hooks: [
+        { phase: "HTTP", fns: ["JSON.stringify(result)", "res.json(result)"], svc: "transport" },
+        { phase: "WS", fns: ['emit("contacts:created", record)'], svc: "transport" }
+      ],
+      context: "HTTP: { req, res } \xB7 WS: [event, ...args]"
+    },
+    "webclient-res": {
+      title: "WebClient \u2014 Response",
+      desc: "Browser receives HTTP response or WebSocket push event. Sierra parses and hands off to the resource.",
+      hooks: [],
+      context: "{ status, data, headers }"
+    },
+    "resource-out": {
+      title: "Resource After Hooks",
+      desc: "Client-side after hooks. Transform incoming data \u2014 ISO strings to Date objects, format currency, normalize shapes.",
+      hooks: [
+        { phase: "after.all", fns: ["formatDates"], svc: "Contact / Company / Deal / Activity" },
+        { phase: "after.all", fns: ["formatCurrency"], svc: "Deal" }
+      ],
+      context: '{ service, model, method, id, data, params, result, type: "after" }'
+    },
+    "svc-before": {
+      title: "Service Before Hooks",
+      desc: "Gate to the Data realm. Authenticate the caller, validate the payload against JSON Schema, transform data.",
+      hooks: [
+        { phase: "before.all", fns: ["authenticate"], svc: "contacts / companies / notes / activities" },
+        { phase: "before.patch", fns: ["authenticate"], svc: "deals" },
+        { phase: "before.remove", fns: ["authenticate"], svc: "deals" },
+        { phase: "before.create", fns: ["validate(jsonSchema)"], svc: "all services (auto-generated)" },
+        { phase: "before.patch", fns: ["validate(jsonSchema)"], svc: "all services (auto-generated)" }
+      ],
+      context: "{ service, method, id, data, params, result, error, app }"
+    },
+    "app-before": {
+      title: "App Before Hooks",
+      desc: "Global app-level before hooks. withLitestoneDb attaches a per-request, auth-scoped DB client to every service call.",
+      hooks: [
+        { phase: "around.all", fns: ["withLitestoneDb(db, (base, { user }) => user ? base.$setAuth(user) : base)"], svc: "app-level" }
+      ],
+      context: "{ service, method, id, data, params, result, error, app }"
+    },
+    "transport-in": {
+      title: "Transport \u2014 Incoming",
+      desc: "HTTP request or WebSocket message arrives. Token extracted, parsed, handed to auth verifier.",
+      hooks: [
+        { phase: "HTTP", fns: ["extractBearerToken(req.headers)", "IAuth.verifySession(token)"], svc: "transport" },
+        { phase: "WS", fns: ["verifySession(conn.query.token)", "attach SessionContext"], svc: "transport" }
+      ],
+      context: "HTTP: { req, res } \xB7 WS: [event, ...args]"
+    },
+    "resource-in": {
+      title: "Resource Before Hooks",
+      desc: "Client-side before hooks. Normalize data before it leaves the browser \u2014 format datetimes, clear empty strings.",
+      hooks: [
+        { phase: "before.create", fns: ["formatDateTimeValues"], svc: "all resources" },
+        { phase: "before.patch", fns: ["formatDateTimeValues"], svc: "all resources" }
+      ],
+      context: '{ service, model, method, id, data, params, result, type: "before" }'
+    },
+    "webclient-req": {
+      title: "WebClient \u2014 Request",
+      desc: "Sierra attaches auth token to every HTTP request header and WebSocket connection query string.",
+      hooks: [],
+      context: '{ method, url, headers: { Authorization: "Bearer <token>" } }'
+    },
+    "schema": {
+      title: "Schema \u2014 JSON Schema artifact",
+      desc: "generateJsonSchema(db.$schema) produces the JSON Schema artifact. Flows into Junction for validation, Sierra for make() factories.",
+      hooks: [
+        { phase: "radiation", fns: ["generateJsonSchema(db.$schema)"], svc: "api/server.ts" },
+        { phase: "junction", fns: ["createLitestoneService({ schema: jsonSchema })"], svc: "validation auto-generated" },
+        { phase: "sierra", fns: ["GET /api/schema.json", "resource.make() factories"], svc: "browser" }
+      ],
+      context: "JSON Schema \xB7 field types \xB7 constraints \xB7 defaults"
+    },
+    "schema-in": {
+      title: "Schema \u2014 validates incoming data",
+      desc: "The JSON Schema derived from schema.lite drives create + patch validators in Junction automatically.",
+      hooks: [
+        { phase: "before.create", fns: ["validateSchema(jsonSchema, data)"], svc: "all services" },
+        { phase: "before.patch", fns: ["validateSchema(jsonSchema, data)"], svc: "all services" }
+      ],
+      context: "JSON Schema constraints enforced before Data realm is reached"
+    },
+    "litestone-w": {
+      title: "Litestone \u2014 write result",
+      desc: "After the gate passes, Litestone executes the write and returns the created/updated/deleted record.",
+      hooks: [
+        { phase: "onAfterWrite", fns: ["AuditPlugin.log(operation, record, user)"], svc: "data-level plugin" }
+      ],
+      context: "{ model, operation, args, user, level }"
+    },
+    "litestone-r": {
+      title: "Litestone \u2014 read query",
+      desc: "Auth-scoped db client executes the find/get query. withLitestoneDb has already called $setAuth(user) so the gate level is set.",
+      hooks: [
+        { phase: "onBeforeRead", fns: ["GatePlugin.injectWhereClause(user.level)"], svc: "data-level plugin" }
+      ],
+      context: "{ model, operation, args, user, level }"
+    },
+    "gate": {
+      title: "Gate Plugin",
+      desc: 'Enforces @@gate("R.C.U.D") on every operation. User trust level must meet the declared minimum or the operation throws.',
+      hooks: [
+        { phase: "Read", fns: ["user.level >= gate.read   || throw 403"], svc: "all models" },
+        { phase: "Create", fns: ["user.level >= gate.create || throw 403"], svc: "all models" },
+        { phase: "Update", fns: ["user.level >= gate.update || throw 403"], svc: "all models" },
+        { phase: "Delete", fns: ["user.level >= gate.delete || throw 403"], svc: "all models" }
+      ],
+      context: "Trust: STRANGER(0) \u2192 VISITOR(1) \u2192 READER(2) \u2192 CREATOR(3) \u2192 USER(4) \u2192 ADMIN(5) \u2192 OWNER(6) \u2192 SYSADMIN(7) \u2192 SYSTEM(8)"
+    },
+    "sqlite": {
+      title: "SQLite",
+      desc: "The database. Bun-native SQLite. One file per tenant. Litestream streams WAL to S3 for continuous backup.",
+      hooks: [],
+      context: "./db/acme-crm.db \xB7 WAL mode \xB7 Litestream replica"
+    },
+    "ui-resource": {
+      title: "Resource",
+      desc: "The UI binding for a service. Module block runs once \u2014 any component importing this file shares the same store, service, and make factory.",
+      hooks: [
+        { phase: "createResource", fns: ["resource.createResource({ model: 'Lead', service: 'leads' })"], svc: "web/src/resources/Lead.mesa" },
+        { phase: "exports", fns: ["store, service, make, load, context"], svc: "shared across all importing components" }
+      ],
+      context: "{ model, service, idField }"
+    },
+    "ui-store": {
+      title: "Store",
+      desc: "Reactive container for resource data. Auto-syncs via WebSocket events \u2014 creates upsert, patch updates, remove deletes. Components subscribe and re-render on change.",
+      hooks: [
+        { phase: "ws:created", fns: ["store.upsert(record)"], svc: "auto-wired by createResource" },
+        { phase: "ws:patched", fns: ["store.upsert(record)"], svc: "auto-wired by createResource" },
+        { phase: "ws:removed", fns: ["store.remove(id)"], svc: "auto-wired by createResource" }
+      ],
+      context: "store.get() \u2192 T[] \xB7 store.set(records) \xB7 store.upsert(record) \xB7 store.remove(id)"
+    },
+    "ui-component": {
+      title: "Component",
+      desc: "Mesa or framework component that consumes the store. Subscribes to store changes, calls service methods, renders reactive UI. Events flow back into the chain via service calls.",
+      hooks: [
+        { phase: "useStore", fns: ["const leads = useStore(leadsStore)"], svc: "subscribes, re-renders on change" },
+        { phase: "onMount", fns: ["leadsStore.set(data.leads)"], svc: "seeds from load() prefetch" },
+        { phase: "onDestroy", fns: ["leads.unsubscribe()"], svc: "cleanup" }
+      ],
+      context: "Mesa reactive runtime \xB7 fine-grained subscriptions \xB7 no virtual DOM diffing"
+    },
+    "ui-make": {
+      title: "make()",
+      desc: "Schema-driven factory function. Returns a blank model instance with all fields initialized to schema-correct defaults. The only place JSON Schema directly touches the UI at construction time.",
+      hooks: [
+        { phase: "schema \u2192 make", fns: ["GET /api/schema.json", "resource.make() factories"], svc: "JSON Schema radiation \u2192 UI" },
+        { phase: "usage", fns: ['const lead = make({ status: "active" })'], svc: "overrides merge with schema defaults" }
+      ],
+      context: "make(spec?) \u2192 T \xB7 spec overrides merge with schema defaults \xB7 always returns valid shape"
+    }
+  }
+};
+const PACKAGE_REGISTRY = [];
+function pill(label, color, bg, border) {
+  return /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "2px 6px", borderRadius: 3, background: bg, color, border: `1px solid ${border}`, fontWeight: 600, fontFamily: FONT, whiteSpace: "nowrap" } }, label);
+}
+function ChainNode({ node, selected, onClick }) {
+  const active = selected === node.id;
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      onClick: () => onClick(node.id),
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 110,
+        minHeight: 54,
+        borderRadius: 27,
+        background: active ? node.colorDim : C.surface,
+        border: `1px solid ${active ? node.color : C.border2}`,
+        cursor: "pointer",
+        padding: "6px 10px",
+        textAlign: "center",
+        transition: "all .15s",
+        flexShrink: 0,
+        boxShadow: active ? `0 0 0 1px ${node.color}44` : "none"
+      }
+    },
+    /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: active ? node.colorBright : C.text, lineHeight: 1.2, fontFamily: FONT } }, node.label),
+    /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: active ? node.color : C.textDim, marginTop: 2, fontFamily: FONT } }, node.sub)
+  );
+}
+function ChainNodeWithTags({ node, selected, onClick, onSelectPackage, selectedPackage, packages }) {
+  const pkgRegistry = packages ?? PACKAGE_REGISTRY;
+  const tags = pkgRegistry.flatMap(
+    (pkg) => (pkg.chainPoints || []).filter((cp) => cp.nodeId === node.id).map((cp) => ({ pkg, role: cp.role }))
+  );
+  const isOut = node.lane === "out";
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 0, flexShrink: 0 } }, isOut && tags.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 3, marginBottom: 4 } }, tags.map(({ pkg, role }) => {
+    const isSelPkg = selectedPackage === pkg.id;
+    return /* @__PURE__ */ React.createElement("div", { key: pkg.id, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 } }, /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        onClick: (e) => {
+          e.stopPropagation();
+          onSelectPackage(pkg.id);
+        },
+        style: {
+          fontSize: 9,
+          padding: "2px 7px",
+          borderRadius: 10,
+          cursor: "pointer",
+          background: isSelPkg ? pkg.colorDim : C.surface2,
+          color: isSelPkg ? pkg.colorBright : pkg.color,
+          border: `1px solid ${isSelPkg ? pkg.color : pkg.colorBorder}`,
+          fontFamily: FONT,
+          whiteSpace: "nowrap",
+          transition: "all .12s",
+          fontWeight: 600
+        }
+      },
+      pkg.short
+    ), /* @__PURE__ */ React.createElement("div", { style: { width: 1, height: 5, background: pkg.color, opacity: 0.4 } }));
+  })), /* @__PURE__ */ React.createElement(ChainNode, { node, selected, onClick }), !isOut && tags.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 3, marginTop: 4 } }, tags.map(({ pkg, role }) => {
+    const isSelPkg = selectedPackage === pkg.id;
+    return /* @__PURE__ */ React.createElement("div", { key: pkg.id, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 } }, /* @__PURE__ */ React.createElement("div", { style: { width: 1, height: 5, background: pkg.color, opacity: 0.4 } }), /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        onClick: (e) => {
+          e.stopPropagation();
+          onSelectPackage(pkg.id);
+        },
+        style: {
+          fontSize: 9,
+          padding: "2px 7px",
+          borderRadius: 10,
+          cursor: "pointer",
+          background: isSelPkg ? pkg.colorDim : C.surface2,
+          color: isSelPkg ? pkg.colorBright : pkg.color,
+          border: `1px solid ${isSelPkg ? pkg.color : pkg.colorBorder}`,
+          fontFamily: FONT,
+          whiteSpace: "nowrap",
+          transition: "all .12s",
+          fontWeight: 600
+        }
+      },
+      pkg.short
+    ));
+  })), node.lane === "mid" && tags.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 3, marginTop: 4 } }, tags.map(({ pkg }) => {
+    const isSelPkg = selectedPackage === pkg.id;
+    return /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        key: pkg.id,
+        onClick: (e) => {
+          e.stopPropagation();
+          onSelectPackage(pkg.id);
+        },
+        style: {
+          fontSize: 9,
+          padding: "2px 7px",
+          borderRadius: 10,
+          cursor: "pointer",
+          background: isSelPkg ? pkg.colorDim : C.surface2,
+          color: isSelPkg ? pkg.colorBright : pkg.color,
+          border: `1px solid ${isSelPkg ? pkg.color : pkg.colorBorder}`,
+          fontFamily: FONT,
+          whiteSpace: "nowrap",
+          transition: "all .12s",
+          fontWeight: 600
+        }
+      },
+      pkg.short
+    );
+  })));
+}
+function Arrow({ color = C.border2, reverse = false }) {
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", flexShrink: 0, width: 24 } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, height: 1, background: color, opacity: 0.5 } }), !reverse && /* @__PURE__ */ React.createElement("div", { style: { width: 0, height: 0, borderTop: "3px solid transparent", borderBottom: "3px solid transparent", borderLeft: `4px solid ${color}`, opacity: 0.5 } }), reverse && /* @__PURE__ */ React.createElement("div", { style: { position: "absolute", left: 0, width: 0, height: 0, borderTop: "3px solid transparent", borderBottom: "3px solid transparent", borderRight: `4px solid ${color}`, opacity: 0.5 } }));
+}
+function RealmBox({ realm, selected, onClick, onSelectNoun, onSelectPackage, selectedNoun, selectedPackage, packages }) {
+  const [open, setOpen] = useState(false);
+  const active = selected === realm.id;
+  const nounCount = realm.nouns.length;
+  const nounLabel = realm.id === "litestone" ? "models" : realm.id === "junction" ? "services" : "resources";
+  const hasGap = realm.nouns.some((n) => n.gap);
+  const pkgRegistry = packages ?? PACKAGE_REGISTRY;
+  const realmPkgs = pkgRegistry.filter((p) => p.realm === realm.id);
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      style: {
+        border: `1px solid ${active ? realm.color : C.border}`,
+        borderTop: `2px solid ${realm.empty ? C.border : realm.color}`,
+        borderRadius: 8,
+        background: active ? realm.colorDim : C.surface2,
+        transition: "all .15s",
+        width: "100%",
+        height: "100%",
+        boxShadow: active ? `0 0 16px ${realm.color}22` : "none",
+        display: "flex",
+        flexDirection: "column",
+        opacity: realm.empty ? 0.35 : 1,
+      }
+    },
+    /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        style: { padding: "16px", cursor: "pointer", display: "flex", alignItems: open ? "flex-start" : "center", justifyContent: "center", userSelect: "none", flex: open ? "0 0 auto" : 1 },
+        onClick: () => {
+          setOpen((o) => !o);
+          onClick(realm.id);
+        }
+      },
+      /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: realm.colorBright, fontFamily: FONT, letterSpacing: "-0.5px" } }, realm.label), hasGap && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 5px", borderRadius: 3, background: C.redDim, color: C.red, border: `1px solid ${C.redBorder}`, fontWeight: 600 } }, "\u26A0")), !open && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "center" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: realm.color, fontFamily: FONT, fontWeight: 600 } }, nounCount), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.textDim, fontFamily: FONT } }, nounLabel), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, realm.nouns.slice(0, 4).map((n) => n.name).join(", "), nounCount > 4 ? ` +${nounCount - 4}` : "")))
+    ),
+    realmPkgs.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 16px 8px", display: "flex", gap: 6, flexWrap: "wrap", borderBottom: `1px solid ${C.border}` } }, realmPkgs.map((pkg) => {
+      const isSel = selectedPackage === pkg.id;
+      const isInstalled = pkg.installed !== false;
+      return /* @__PURE__ */ React.createElement(
+        "div",
+        {
+          key: pkg.id,
+          onClick: (e) => {
+            e.stopPropagation();
+            onSelectPackage(pkg.id);
+          },
+          style: {
+            fontSize: 10,
+            padding: "3px 9px",
+            borderRadius: 10,
+            cursor: "pointer",
+            background: !isInstalled ? "transparent" : isSel ? pkg.colorDim : C.surface,
+            color: !isInstalled ? C.textFaint : isSel ? pkg.colorBright : pkg.color,
+            border: `1px solid ${!isInstalled ? C.border : isSel ? pkg.color : pkg.colorBorder}`,
+            fontFamily: FONT,
+            fontWeight: 600,
+            opacity: isInstalled ? 1 : 0.45,
+            transition: "all .12s",
+            display: "flex",
+            alignItems: "center",
+            gap: 5
+          }
+        },
+        /* @__PURE__ */ React.createElement("div", { style: { width: 5, height: 5, borderRadius: "50%", background: isInstalled ? pkg.color : C.textFaint, flexShrink: 0 } }),
+        pkg.short,
+        !isInstalled && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 8, opacity: 0.7, marginLeft: 2 } }, "not installed")
+      );
+    })),
+    open && /* @__PURE__ */ React.createElement("div", { style: { borderTop: `1px solid ${C.border}`, padding: "6px 0" } }, realm.nouns.map((noun, i) => {
+      const isSel = selectedNoun?.realmId === realm.id && selectedNoun?.nounIdx === i;
+      return /* @__PURE__ */ React.createElement(
+        "div",
+        {
+          key: i,
+          onClick: () => onSelectNoun(realm.id, i),
+          style: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "5px 16px",
+            cursor: "pointer",
+            background: isSel ? `${realm.color}18` : "transparent",
+            borderLeft: `2px solid ${isSel ? realm.color : "transparent"}`,
+            transition: "all .12s"
+          }
+        },
+        /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: isSel ? realm.colorBright : C.textMid, fontFamily: FONT } }, noun.name),
+        /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 4, alignItems: "center" } }, noun.gate && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, color: C.purpleBright, fontFamily: FONT, opacity: 0.7 } }, noun.gate), noun.plugins?.includes("softDelete") && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 4px", borderRadius: 3, background: C.amberDim, color: C.amber, border: `1px solid ${C.amberBorder}`, fontWeight: 600 } }, "sd"), noun.gap && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 4px", borderRadius: 3, background: C.redDim, color: C.red, border: `1px solid ${C.redBorder}` } }, "\u26A0"), noun.exports && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT } }, noun.exports.length, " exports"))
+      );
+    }))
+  );
+}
+function PackageDetail({ pkgId, onClose, packages, chainData }) {
+  const pkgRegistry = packages ?? PACKAGE_REGISTRY;
+  const chainDataR = chainData ?? CHAIN_DATA;
+  const pkg = pkgRegistry.find((p) => p.id === pkgId);
+  if (!pkg) return null;
+  return /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${pkg.color}66`, borderRadius: 10, background: C.surface2, overflow: "hidden", marginTop: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.border}`, background: pkg.colorDim } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: pkg.colorBright, fontFamily: FONT } }, pkg.label), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: pkg.color, marginTop: 2, fontFamily: FONT } }, "docked to ", pkg.realm)), /* @__PURE__ */ React.createElement("div", { onClick: onClose, style: { fontSize: 18, cursor: "pointer", color: C.textDim, padding: "0 4px", lineHeight: 1 } }, "\xD7")), /* @__PURE__ */ React.createElement("div", { style: { padding: "14px 16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textDim, marginBottom: 8, fontFamily: FONT } }, "Config"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } }, pkg.config.map((s, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 0, alignItems: "baseline", padding: "5px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: pkg.colorBright, fontFamily: FONT, minWidth: 130, flexShrink: 0, opacity: 0.8 } }, s.key), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.textMid, fontFamily: FONT } }, s.val))))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textDim, marginBottom: 8, fontFamily: FONT } }, "Chain points"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4 } }, pkg.chainPoints.map((cp, i) => {
+    const node = chainDataR.nodes.find((n) => n.id === cp.nodeId);
+    return /* @__PURE__ */ React.createElement("div", { key: i, style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, display: "flex", gap: 10, alignItems: "flex-start" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "2px 7px", borderRadius: 3, background: node?.colorDim || C.surface2, color: node?.colorBright || C.textMid, border: `1px solid ${node?.color || C.border}44`, fontFamily: FONT, whiteSpace: "nowrap", flexShrink: 0 } }, node?.label, " ", node?.sub), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.textMid, fontFamily: FONT, lineHeight: 1.5 } }, cp.role));
+  })))));
+}
+function ChainNodeDetail({ nodeId, onClose, chainData }) {
+  const chainDataR = chainData ?? CHAIN_DATA;
+  const detail = chainDataR.hookDetail[nodeId];
+  const node = chainDataR.nodes.find((n) => n.id === nodeId);
+  if (!detail || !node) return null;
+  return /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${node.color}66`, borderRadius: 10, background: C.surface2, overflow: "hidden", marginTop: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.border}`, background: `${node.colorDim}` } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: node.colorBright, fontFamily: FONT } }, detail.title), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: node.color, marginTop: 2, fontFamily: FONT } }, node.realm, " realm \xB7 ", node.lane === "out" ? "outgoing path" : node.lane === "in" ? "incoming path" : "data internal")), /* @__PURE__ */ React.createElement("div", { onClick: onClose, style: { fontSize: 18, cursor: "pointer", color: C.textDim, padding: "0 4px", lineHeight: 1 } }, "\xD7")), /* @__PURE__ */ React.createElement("div", { style: { padding: "14px 16px" } }, detail.hooks.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textDim, marginBottom: 8, fontFamily: FONT } }, "Hook entries"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 } }, detail.hooks.map((h, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 10, alignItems: "flex-start", padding: "7px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "2px 7px", borderRadius: 3, background: node.colorDim, color: node.colorBright, border: `1px solid ${node.color}44`, fontFamily: FONT, whiteSpace: "nowrap", flexShrink: 0 } }, h.phase), /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, h.fns.map((fn, j) => /* @__PURE__ */ React.createElement("div", { key: j, style: { fontSize: 12, color: C.text, fontFamily: FONT, lineHeight: 1.6 } }, fn)), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textDim, fontFamily: FONT, marginTop: 2 } }, h.svc)))))), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textDim, marginBottom: 6, fontFamily: FONT } }, "Context shape"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: C.textMid, fontFamily: FONT, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px", lineHeight: 1.7 } }, detail.context)));
+}
+function RealmDetail({ realmId, nounIdx, onClose, chainData }) {
+  const chainDataR = chainData ?? CHAIN_DATA;
+  const realm = chainDataR.realms.find((r) => r.id === realmId);
+  if (!realm) return null;
+  const noun = nounIdx !== null ? realm.nouns[nounIdx] : null;
+  return /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${realm.color}66`, borderRadius: 10, background: C.surface2, overflow: "hidden", marginTop: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.border}`, background: realm.colorDim } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: realm.colorBright, fontFamily: FONT } }, noun ? `${realm.label} \u2192 ${noun.name}` : `${realm.label} \u2014 config`), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: realm.color, marginTop: 2, fontFamily: FONT } }, realm.config.file)), /* @__PURE__ */ React.createElement("div", { onClick: onClose, style: { fontSize: 18, cursor: "pointer", color: C.textDim, padding: "0 4px", lineHeight: 1 } }, "\xD7")), /* @__PURE__ */ React.createElement("div", { style: { padding: "14px 16px", display: "grid", gridTemplateColumns: noun ? "1fr 1fr" : "1fr", gap: 16 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textDim, marginBottom: 8, fontFamily: FONT } }, "Config"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } }, realm.config.settings.map((s, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 0, alignItems: "baseline", padding: "5px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: realm.colorBright, fontFamily: FONT, minWidth: 140, flexShrink: 0, opacity: 0.8 } }, s.key), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.textMid, fontFamily: FONT, lineHeight: 1.5 } }, s.val))))), noun && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textDim, marginBottom: 8, fontFamily: FONT } }, realm.id === "litestone" ? "Model" : realm.id === "junction" ? "Service" : "Resource", ": ", noun.name), realm.id === "litestone" && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4 } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 3 } }, "gate"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 4 } }, ["R", "C", "U", "D"].map((op, j) => {
+    const level = parseInt(noun.gate.split(".")[j]);
+    const types = { R: "r", C: "c", U: "u", D: "d" };
+    const colorMap = { r: [C.green, C.greenDim, C.greenBorder], c: [C.blue, C.blueDim, C.blueBorder], u: [C.blue, C.blueDim, C.blueBorder], d: ["#cc5a4a", "#1a0f0a", "#3d1a14"] };
+    const [fc, bg, bc] = colorMap[types[op]];
+    return /* @__PURE__ */ React.createElement("span", { key: op, style: { fontSize: 11, padding: "2px 7px", borderRadius: 3, background: bg, color: fc, border: `1px solid ${bc}`, fontFamily: FONT, fontWeight: 600 } }, op, "=", level);
+  }))), /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 2 } }, "fields"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: C.purpleBright, fontFamily: FONT, fontWeight: 600 } }, noun.fields)), noun.plugins?.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 4 } }, "plugins"), noun.plugins.map((p) => /* @__PURE__ */ React.createElement("div", { key: p, style: { fontSize: 12, color: C.purpleBright, fontFamily: FONT } }, "@@", p)))), realm.id === "junction" && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4 } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 4 } }, "before hooks"), (noun.hooks.before || []).map((h, j) => /* @__PURE__ */ React.createElement("div", { key: j, style: { fontSize: 12, color: noun.gap && h.endsWith("*") ? C.red : C.blueBright, fontFamily: FONT, lineHeight: 1.6 } }, h, noun.gap && h.endsWith("*") ? " \u26A0 missing on create" : ""))), /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 4 } }, "after hooks"), (noun.hooks.after || []).map((h, j) => /* @__PURE__ */ React.createElement("div", { key: j, style: { fontSize: 12, color: C.blueBright, fontFamily: FONT, lineHeight: 1.6 } }, h))), noun.actions?.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 4 } }, "actions"), noun.actions.map((a) => /* @__PURE__ */ React.createElement("div", { key: a, style: { fontSize: 12, color: C.blueBright, fontFamily: FONT } }, a)))), realm.id === "sierra" && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4 } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 4 } }, "service binding"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: C.orangeBright, fontFamily: FONT } }, noun.service)), /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 4 } }, "exports"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 4, flexWrap: "wrap" } }, noun.exports.map((e) => /* @__PURE__ */ React.createElement("span", { key: e, style: { fontSize: 11, color: C.orangeBright, fontFamily: FONT, background: C.orangeDim, padding: "2px 6px", borderRadius: 3, border: `1px solid ${C.orangeBorder}` } }, e)))), /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 10px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, marginBottom: 4 } }, "after hooks"), noun.hooks.map((h, j) => /* @__PURE__ */ React.createElement("div", { key: j, style: { fontSize: 12, color: C.orangeBright, fontFamily: FONT, lineHeight: 1.6 } }, h)))))));
+}
+function Lane({ nodes, labelOnly, reverse, selectedNode, onSelectNode, selectedPackage, onSelectPackage, packages }) {
+  const displayNodes = reverse ? [...nodes].reverse() : nodes;
+  const segments = [];
+  displayNodes.forEach((node, i) => {
+    const last = segments[segments.length - 1];
+    if (last && last.realm === node.realm) {
+      last.nodes.push({ node, idx: i });
+    } else {
+      segments.push({ realm: node.realm, color: node.color, colorDim: node.colorDim, nodes: [{ node, idx: i }] });
+    }
+  });
+  const totalNodes = displayNodes.length;
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "stretch", gap: 0, marginBottom: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1, display: "flex", alignItems: "stretch", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}` } }, segments.map((seg, si) => {
+    const isLast = si === segments.length - 1;
+    return /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        key: seg.realm + si,
+        style: {
+          flex: seg.nodes.length,
+          background: seg.colorDim,
+          borderRight: isLast ? "none" : `1px solid ${C.border}`,
+          padding: "8px 10px",
+          display: "flex",
+          alignItems: "center",
+          gap: 4
+        }
+      },
+      seg.nodes.map(({ node, idx }, ni) => {
+        const isLastOverall = idx === totalNodes - 1;
+        return /* @__PURE__ */ React.createElement("div", { key: node.id, style: { display: "flex", alignItems: "center", gap: 4, flex: isLastOverall ? "0 0 auto" : 1, minWidth: 0 } }, /* @__PURE__ */ React.createElement(
+          ChainNodeWithTags,
+          {
+            node,
+            selected: selectedNode,
+            onClick: onSelectNode,
+            selectedPackage,
+            onSelectPackage,
+            packages
+          }
+        ), !isLastOverall && /* @__PURE__ */ React.createElement("div", { style: { flex: 1, display: "flex", alignItems: "center", minWidth: 6 } }, reverse && /* @__PURE__ */ React.createElement("div", { style: { width: 0, height: 0, borderTop: "3px solid transparent", borderBottom: "3px solid transparent", borderRight: `4px solid ${node.color}`, opacity: 0.4 } }), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, height: 1, background: node.color, opacity: 0.4 } }), !reverse && /* @__PURE__ */ React.createElement("div", { style: { width: 0, height: 0, borderTop: "3px solid transparent", borderBottom: "3px solid transparent", borderLeft: `4px solid ${node.color}`, opacity: 0.4 } })));
+      })
+    );
+  })));
+}
+const TRUST = ["STRANGER", "VISITOR", "READER", "CREATOR", "USER", "ADMIN", "OWNER", "SYSADMIN", "SYSTEM", "LOCKED"];
+const DB_SCHEMA = { enums: [], models: [] };
+const MIGRATIONS = [];
+const HEALTH_PACKAGES = [];
+const HEALTH_GAPS = [];
+const SQL_KW = /* @__PURE__ */ new Set(["CREATE", "TABLE", "INDEX", "ALTER", "ADD", "COLUMN", "PRIMARY", "KEY", "AUTOINCREMENT", "NOT", "NULL", "DEFAULT", "REFERENCES", "CHECK", "ON", "INTEGER", "TEXT", "REAL", "UNIQUE", "IF", "EXISTS", "DROP", "STRFTIME"]);
+function SqlHighlight({ code }) {
+  const tokens = code.split(/(\s+|[(),;]|'[^']*'|--[^\n]*)/g).filter(Boolean);
+  return /* @__PURE__ */ React.createElement("span", null, tokens.map((tok, i) => {
+    if (tok.startsWith("--")) return /* @__PURE__ */ React.createElement("span", { key: i, style: { color: C.textFaint } }, tok);
+    if (tok.startsWith("'")) return /* @__PURE__ */ React.createElement("span", { key: i, style: { color: "#7a9a5a" } }, tok);
+    if (SQL_KW.has(tok.toUpperCase())) return /* @__PURE__ */ React.createElement("span", { key: i, style: { color: C.blueBright, fontWeight: 600 } }, tok);
+    return /* @__PURE__ */ React.createElement("span", { key: i, style: { color: C.textMid } }, tok);
+  }));
+}
+function LiteHighlight({ code }) {
+  return /* @__PURE__ */ React.createElement(React.Fragment, null, code.split("\n").map((line, i) => {
+    const t = line.trim();
+    if (!t) return /* @__PURE__ */ React.createElement("div", { key: i }, "\xA0");
+    if (t.startsWith("--")) return /* @__PURE__ */ React.createElement("div", { key: i, style: { color: C.textFaint } }, line);
+    if (t.startsWith("@@")) {
+      const m = line.match(/^(\s*)(@@\w+)(\(.*\))?(.*)$/);
+      return m ? /* @__PURE__ */ React.createElement("div", { key: i }, /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint } }, m[1]), /* @__PURE__ */ React.createElement("span", { style: { color: C.purpleBright, fontWeight: 600 } }, m[2]), /* @__PURE__ */ React.createElement("span", { style: { color: C.textDim } }, m[3] || "", m[4] || "")) : /* @__PURE__ */ React.createElement("div", { key: i }, line);
+    }
+    if (/^(enum|model)\s/.test(t)) {
+      const m = line.match(/^(\s*)(enum|model)(\s+)(\w+)/);
+      return m ? /* @__PURE__ */ React.createElement("div", { key: i }, /* @__PURE__ */ React.createElement("span", { style: { color: C.blueBright, fontWeight: 600 } }, m[2]), /* @__PURE__ */ React.createElement("span", { style: { color: C.textDim } }, m[3]), /* @__PURE__ */ React.createElement("span", { style: { color: C.text, fontWeight: 600 } }, m[4])) : /* @__PURE__ */ React.createElement("div", { key: i }, line);
+    }
+    const fm = line.match(/^(\s+)(\w+)(\s+)(\w+\??)(\s*)(.*)$/);
+    if (fm && t && t !== "{" && t !== "}") {
+      const attrs = fm[6].split(/(@\w+(?:\([^)]*\))?)/).filter(Boolean);
+      return /* @__PURE__ */ React.createElement("div", { key: i }, /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint } }, fm[1]), /* @__PURE__ */ React.createElement("span", { style: { color: C.textMid } }, fm[2]), /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint } }, fm[3]), /* @__PURE__ */ React.createElement("span", { style: { color: C.blueBright } }, fm[4]), /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint } }, fm[5]), attrs.map((a, j) => a.startsWith("@") ? /* @__PURE__ */ React.createElement("span", { key: j, style: { color: "#7a9a5a" } }, a) : /* @__PURE__ */ React.createElement("span", { key: j, style: { color: C.textFaint } }, a)));
+    }
+    return /* @__PURE__ */ React.createElement("div", { key: i, style: { color: C.textDim } }, line);
+  }));
+}
+function HealthPanel({ migrations, healthGaps, healthPackages }) {
+  const migrationsR = migrations ?? MIGRATIONS;
+  const healthGapsR = healthGaps ?? HEALTH_GAPS;
+  const healthPackagesR = healthPackages ?? HEALTH_PACKAGES;
+  const applied = migrationsR.filter((m) => m.status === "applied").length;
+  const pending = migrationsR.filter((m) => m.status === "pending").length;
+  const td = { padding: "7px 12px", borderBottom: `1px solid ${C.border2}`, color: C.textMid, verticalAlign: "middle", fontFamily: FONT, fontSize: 12 };
+  const th = { textAlign: "left", fontWeight: 600, fontSize: 10, color: C.textFaint, textTransform: "uppercase", letterSpacing: "0.08em", padding: "8px 12px", borderBottom: `1px solid ${C.border}`, fontFamily: FONT };
+  return /* @__PURE__ */ React.createElement("div", { style: { padding: 20, overflowY: "auto", flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, marginBottom: 20 } }, [{ label: "Migrations", val: `${applied}/${applied + pending}`, warn: pending > 0, sub: `${pending} pending` }, { label: "Gaps", val: healthGapsR.length, warn: healthGapsR.length > 0, sub: `${healthGapsR.filter((g) => g.type === "error").length} err \xB7 ${healthGapsR.filter((g) => g.type === "warning").length} warn` }].map((m) => /* @__PURE__ */ React.createElement("div", { key: m.label, style: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textDim, marginBottom: 3, fontFamily: FONT } }, m.label), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20, fontWeight: 700, color: m.warn ? C.amber : C.text, letterSpacing: "-0.5px", fontFamily: FONT } }, m.val), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, marginTop: 2, fontFamily: FONT } }, m.sub)))), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 8, fontFamily: FONT } }, "Packages"), /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16, background: C.surface } }, /* @__PURE__ */ React.createElement("table", { style: { width: "100%", borderCollapse: "collapse" } }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, ["Package", "Version", "Sub-project", "Status"].map((h) => /* @__PURE__ */ React.createElement("th", { key: h, style: th }, h)))), /* @__PURE__ */ React.createElement("tbody", null, healthPackagesR.map((pkg) => /* @__PURE__ */ React.createElement("tr", { key: pkg.name }, /* @__PURE__ */ React.createElement("td", { style: td }, pkg.name), /* @__PURE__ */ React.createElement("td", { style: td }, /* @__PURE__ */ React.createElement("span", { style: { fontFamily: FONT, fontSize: 11, background: C.bg, padding: "2px 6px", borderRadius: 3, color: C.textDim, border: `1px solid ${C.border}` } }, pkg.version)), /* @__PURE__ */ React.createElement("td", { style: td }, pkg.sub), /* @__PURE__ */ React.createElement("td", { style: td }, pkg.status === "current" ? /* @__PURE__ */ React.createElement("span", { style: { color: C.green, fontSize: 11, fontWeight: 600 } }, "current") : /* @__PURE__ */ React.createElement("span", { style: { color: C.amber, fontSize: 11, fontWeight: 600 } }, "\u2192 ", pkg.latest))))))), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 8, fontFamily: FONT } }, "Gaps"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, healthGapsR.map((g, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 8, border: `1px solid ${g.type === "error" ? C.redBorder : C.amberBorder}`, background: g.type === "error" ? C.redDim : C.amberDim } }, /* @__PURE__ */ React.createElement("div", { style: { color: g.type === "error" ? C.red : C.amber, fontSize: 13, flexShrink: 0 } }, g.type === "error" ? "\u2715" : "\u26A0"), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { color: C.textMid, lineHeight: 1.5, fontFamily: FONT, fontSize: 12 } }, g.msg), /* @__PURE__ */ React.createElement("div", { style: { color: C.textFaint, fontSize: 10, fontFamily: FONT, marginTop: 2 } }, g.ref))))));
+}
+function DBPanel({ dbSchema }) {
+  const dbSchemaR = dbSchema ?? DB_SCHEMA;
+  const [selModel, setSelModel] = useState(dbSchemaR.models[0]?.name ?? "");
+  const [showRaw, setShowRaw] = useState(false);
+  const model = dbSchemaR.models.find((m) => m.name === selModel);
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 180, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Enums"), dbSchemaR.enums.map((e) => /* @__PURE__ */ React.createElement("div", { key: e.name, style: { padding: "4px 14px", fontSize: 11, color: C.purpleBright, display: "flex", justifyContent: "space-between", fontFamily: FONT } }, /* @__PURE__ */ React.createElement("span", null, e.name), /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint, fontSize: 10 } }, e.values.length)))), /* @__PURE__ */ React.createElement("div", { style: { borderTop: `1px solid ${C.border}` } }), /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Models"), dbSchemaR.models.map((m) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: m.name,
+      onClick: () => {
+        setSelModel(m.name);
+        setShowRaw(false);
+      },
+      style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px", cursor: "pointer", fontSize: 11, fontFamily: FONT, color: selModel === m.name ? C.text : C.textDim, background: selModel === m.name ? C.surface : "transparent", borderLeft: `2px solid ${selModel === m.name ? C.purple : "transparent"}`, transition: "all .12s" }
+    },
+    /* @__PURE__ */ React.createElement("span", null, m.name),
+    /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 3 } }, m.plugins.includes("softDelete") && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 4px", borderRadius: 3, background: C.amberDim, color: C.amber, border: `1px solid ${C.amberBorder}`, fontWeight: 600 } }, "sd"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint } }, m.fields.length))
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, model && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, fontFamily: FONT, letterSpacing: "-0.3px" } }, "model ", model.name), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT, marginTop: 2 } }, '@@gate("', model.gate.read, ".", model.gate.create, ".", model.gate.update, ".", model.gate.delete, '")', model.plugins.length > 0 && /* @__PURE__ */ React.createElement("span", { style: { marginLeft: 8, color: C.amber } }, "@@", model.plugins.join(" @@")))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowRaw((r) => !r), style: { fontSize: 9, padding: "3px 9px", borderRadius: 3, cursor: "pointer", background: showRaw ? C.purple : "transparent", color: showRaw ? "#fff" : C.textDim, border: `1px solid ${showRaw ? C.purple : C.border}`, transition: "all .12s", fontFamily: FONT } }, showRaw ? "structured" : "raw source")), showRaw ? /* @__PURE__ */ React.createElement("div", { style: { background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: 14, fontSize: 11, lineHeight: 1.7, whiteSpace: "pre", overflowX: "auto", fontFamily: FONT, color: C.textMid } }, /* @__PURE__ */ React.createElement(LiteHighlight, { code: model.raw })) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 6, fontFamily: FONT } }, "Fields"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 2, marginBottom: 14 } }, model.fields.map((f) => /* @__PURE__ */ React.createElement("div", { key: f.name, style: { display: "flex", gap: 0, fontSize: 11, padding: "3px 8px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, fontFamily: FONT } }, /* @__PURE__ */ React.createElement("span", { style: { color: C.textMid, minWidth: 100, fontWeight: 500 } }, f.name), /* @__PURE__ */ React.createElement("span", { style: { color: C.blueBright, minWidth: 100 } }, f.type, f.nullable && /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint } }, "?")), /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint, fontSize: 10 } }, f.attrs.join("  "))))), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 6, fontFamily: FONT } }, "Gate"), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginBottom: 14 } }, [["Read", model.gate.read, "r"], ["Create", model.gate.create, "c"], ["Update", model.gate.update, "u"], ["Delete", model.gate.delete, "d"]].map(([op, lvl, t]) => {
+    const cm = { r: ["#2a9a5a", "#0a1a14", "#143d26"], c: ["#3a7aaa", "#0a1420", "#0e2d4a"], u: ["#3a7aaa", "#0a1420", "#0e2d4a"], d: ["#cc5a4a", "#1a0f0a", "#3d1a14"] };
+    const [fc, bg, bc] = cm[t];
+    return /* @__PURE__ */ React.createElement("div", { key: op, style: { background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 5, padding: "6px 8px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, fontFamily: FONT } }, op), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "2px 6px", borderRadius: 3, background: bg, color: fc, border: `1px solid ${bc}`, fontFamily: FONT, fontWeight: 600 } }, TRUST[lvl], "(", lvl, ")"));
+  })), model.relations?.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 6, fontFamily: FONT } }, "Relations"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 } }, model.relations.map((rel) => /* @__PURE__ */ React.createElement("div", { key: rel.name, style: { fontSize: 11, padding: "3px 10px", borderRadius: 4, background: C.blueDim, border: `1px solid ${C.blueBorder}`, color: C.blueBright, fontFamily: FONT, display: "flex", gap: 6 } }, /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint } }, rel.type === "one-to-many" ? "1\u2192N" : "N\u21921"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, rel.model), /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint } }, "via ", rel.field))))), model.plugins?.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 6, fontFamily: FONT } }, "Plugins"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6 } }, model.plugins.map((p) => /* @__PURE__ */ React.createElement("span", { key: p, style: { fontSize: 11, padding: "3px 8px", borderRadius: 4, background: C.amberDim, color: C.amber, border: `1px solid ${C.amberBorder}`, fontWeight: 600, fontFamily: FONT } }, "@@", p))))), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 20, borderTop: `1px solid ${C.border}`, paddingTop: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 8, fontFamily: FONT } }, "Enums"), dbSchemaR.enums.map((e) => /* @__PURE__ */ React.createElement("div", { key: e.name, style: { background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 12px", marginBottom: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: C.purpleBright, fontFamily: FONT, marginBottom: 5 } }, "enum ", e.name), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 5, flexWrap: "wrap" } }, e.values.map((v) => /* @__PURE__ */ React.createElement("span", { key: v, style: { fontSize: 10, padding: "2px 7px", borderRadius: 3, background: C.surface, border: `1px solid ${C.border}`, color: C.textMid, fontFamily: FONT } }, v)))))))));
+}
+function MigrationsPanel({ migrations }) {
+  const migrationsR = migrations ?? MIGRATIONS;
+  const [sel, setSel] = useState(migrationsR[migrationsR.length - 1]?.name ?? "");
+  const mig = migrationsR.find((m) => m.name === sel);
+  const isPend = (s) => s === "pending";
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 280, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, [...migrationsR].reverse().map((m) => /* @__PURE__ */ React.createElement("div", { key: m.name, onClick: () => setSel(m.name), style: { padding: "9px 14px", cursor: "pointer", borderLeft: `2px solid ${sel === m.name ? isPend(m.status) ? C.amber : C.green : "transparent"}`, background: sel === m.name ? C.surface : "transparent", borderBottom: `1px solid ${C.border}`, transition: "all .12s" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: sel === m.name ? C.text : C.textDim, fontFamily: FONT, marginBottom: 3 } }, m.name), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, m.appliedAt ? m.appliedAt.split(" ")[0] : "\u2014"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "1px 7px", borderRadius: 3, fontWeight: 600, fontFamily: FONT, background: isPend(m.status) ? C.amberDim : C.greenDim, color: isPend(m.status) ? C.amber : C.green, border: `1px solid ${isPend(m.status) ? C.amberBorder : C.greenBorder}` } }, m.status))))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, mig && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.text, fontFamily: FONT, letterSpacing: "-0.2px", marginBottom: 3 } }, mig.name), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textDim, fontFamily: FONT } }, mig.appliedAt ? `applied ${mig.appliedAt}` : "not yet applied")), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "2px 8px", borderRadius: 3, fontWeight: 600, fontFamily: FONT, background: isPend(mig.status) ? C.amberDim : C.greenDim, color: isPend(mig.status) ? C.amber : C.green, border: `1px solid ${isPend(mig.status) ? C.amberBorder : C.greenBorder}` } }, mig.status)), isPend(mig.status) && /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 14, padding: "9px 12px", borderRadius: 6, background: C.amberDim, border: `1px solid ${C.amberBorder}`, fontSize: 11, color: C.amber, fontFamily: FONT } }, "\u26A0 pending \u2014 run ", /* @__PURE__ */ React.createElement("span", { style: { background: "#2a1e00", padding: "1px 6px", borderRadius: 3 } }, "fli db:migrate")), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 6, fontFamily: FONT } }, "SQL"), /* @__PURE__ */ React.createElement("div", { style: { background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: 14, fontSize: 11, lineHeight: 1.8, whiteSpace: "pre", overflowX: "auto", fontFamily: FONT, color: C.textMid } }, /* @__PURE__ */ React.createElement(SqlHighlight, { code: mig.sql })))));
+}
+const ROUTES_DATA = [];
+const CLI_DATA = [];
+const CHANNELS_DATA = [];
+const RELATIONS_DATA = [];
+function RoutesPanel() {
+  const [sel, setSel] = useState(ROUTES_DATA[0].path);
+  const route = ROUTES_DATA.find((r) => r.path === sel);
+  const resourceColor = (name) => {
+    if (!name) return C.textFaint;
+    const map = { Contact: C.orangeBright, Company: C.orangeBright, Deal: C.orangeBright, Activity: C.orangeBright, Notification: C.pinkBright };
+    return map[name] || C.orangeBright;
+  };
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 260, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Routes \u2014 web/src/routes/"), ROUTES_DATA.map((r) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: r.path,
+      onClick: () => setSel(r.path),
+      style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px", cursor: "pointer", fontFamily: FONT, background: sel === r.path ? C.surface : "transparent", borderLeft: `2px solid ${sel === r.path ? C.orange : "transparent"}`, transition: "all .12s" }
+    },
+    /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: sel === r.path ? C.text : C.textMid } }, r.path), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textFaint, marginTop: 1 } }, r.label)),
+    /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 4, flexShrink: 0 } }, r.public && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 4px", borderRadius: 3, background: C.greenDim, color: C.green, border: `1px solid ${C.greenBorder}` } }, "pub"), r.load && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 4px", borderRadius: 3, background: C.blueDim, color: C.blueBright, border: `1px solid ${C.blueBorder}` } }, "load"))
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, route && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, fontFamily: FONT, letterSpacing: "-0.2px", marginBottom: 3 } }, route.path), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.textDim, fontFamily: FONT } }, route.label)), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 } }, [
+    { label: "File", val: route.file },
+    { label: "Layout", val: route.layout },
+    { label: "Resource", val: route.resource || "\u2014", color: route.resource ? resourceColor(route.resource) : C.textFaint },
+    { label: "Auth", val: route.public ? "public" : "requires session", color: route.public ? C.green : C.amber }
+  ].map((item) => /* @__PURE__ */ React.createElement("div", { key: item.label, style: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, fontFamily: FONT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 } }, item.label), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: item.color || C.textMid, fontFamily: FONT } }, item.val)))), route.load && route.meta && /* @__PURE__ */ React.createElement("div", { style: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 10px", marginBottom: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, fontFamily: FONT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 } }, "load() \u2014 prefetch"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.blueBright, fontFamily: FONT } }, route.meta), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT, marginTop: 3 } }, "Runs before mount \xB7 cached on mousedown hover \xB7 data available as prop")), route.resource && /* @__PURE__ */ React.createElement("div", { style: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, fontFamily: FONT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 } }, "Resource binding"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, fontFamily: FONT } }, /* @__PURE__ */ React.createElement("span", { style: { color: C.orangeBright } }, "import"), /* @__PURE__ */ React.createElement("span", { style: { color: C.textMid } }, " ", "{ store, service, make, load }", " "), /* @__PURE__ */ React.createElement("span", { style: { color: C.orangeBright } }, "from"), /* @__PURE__ */ React.createElement("span", { style: { color: "#7a9a5a" } }, " '@/resources/", route.resource, ".mesa'"))))));
+}
+function CLIPanel() {
+  const [selGroup, setSelGroup] = useState(CLI_DATA[0].group);
+  const [search, setSearch] = useState("");
+  const group = CLI_DATA.find((g) => g.group === selGroup);
+  const filtered = search.trim() ? CLI_DATA.flatMap((g) => g.commands.filter((c) => c.cmd.includes(search) || c.desc.toLowerCase().includes(search.toLowerCase())).map((c) => ({ ...c, group: g.group, color: g.color }))) : null;
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 160, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 6px", fontFamily: FONT } }, "fli \u2014"), CLI_DATA.map((g) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: g.group,
+      onClick: () => {
+        setSelGroup(g.group);
+        setSearch("");
+      },
+      style: { padding: "7px 14px", cursor: "pointer", fontFamily: FONT, fontSize: 11, color: selGroup === g.group && !search ? g.color : C.textDim, background: selGroup === g.group && !search ? C.surface : "transparent", borderLeft: `2px solid ${selGroup === g.group && !search ? g.color : "transparent"}`, transition: "all .12s", display: "flex", alignItems: "center", justifyContent: "space-between" }
+    },
+    /* @__PURE__ */ React.createElement("span", null, g.group),
+    /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint } }, g.commands.length)
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 14, position: "relative" } }, /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      value: search,
+      onChange: (e) => setSearch(e.target.value),
+      placeholder: "search commands...",
+      style: { width: "100%", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 12px", fontSize: 11, fontFamily: FONT, color: C.textMid, outline: "none" }
+    }
+  )), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } }, (filtered || group?.commands || []).map((cmd, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 4, flexShrink: 0, background: filtered ? cmd.color || C.teal : group.color, opacity: 0.6 } }), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, padding: "7px 12px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: C.text, fontFamily: FONT, fontWeight: 600, marginBottom: 2 } }, cmd.cmd), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.textDim, fontFamily: FONT } }, cmd.desc), filtered && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT, marginTop: 2 } }, "fli ", cmd.group)))))));
+}
+function ChannelsPanel({ channels }) {
+  const channelsR = channels ?? CHANNELS_DATA;
+  const [sel, setSel] = useState(channelsR[0]?.name ?? "");
+  const ch = channelsR.find((c) => c.name === sel);
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 180, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Channels"), channelsR.map((c) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: c.name,
+      onClick: () => setSel(c.name),
+      style: { padding: "7px 14px", cursor: "pointer", fontFamily: FONT, fontSize: 11, color: sel === c.name ? C.blueBright : C.textMid, background: sel === c.name ? C.surface : "transparent", borderLeft: `2px solid ${sel === c.name ? C.blue : "transparent"}`, transition: "all .12s", display: "flex", alignItems: "center", justifyContent: "space-between" }
+    },
+    /* @__PURE__ */ React.createElement("span", null, c.name),
+    /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint } }, c.events.length)
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, ch && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 14 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, fontFamily: FONT, letterSpacing: "-0.2px", marginBottom: 3 } }, "channel('", ch.name, "')"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.textDim, fontFamily: FONT } }, "service: ", ch.service)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, fontFamily: FONT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 } }, "Events published"), ch.events.map((e) => /* @__PURE__ */ React.createElement("div", { key: e, style: { fontSize: 12, color: C.blueBright, fontFamily: FONT, padding: "2px 0", lineHeight: 1.7 } }, e))), /* @__PURE__ */ React.createElement("div", { style: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, fontFamily: FONT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 } }, "Channel membership"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.textMid, fontFamily: FONT } }, ch.members)), /* @__PURE__ */ React.createElement("div", { style: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, fontFamily: FONT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 } }, "UI resources subscribed"), ch.resources.length > 0 ? ch.resources.map((r) => /* @__PURE__ */ React.createElement("div", { key: r, style: { fontSize: 12, color: C.orangeBright, fontFamily: FONT, lineHeight: 1.7 } }, r, ".mesa \u2014 service.on('", ch.name.slice(0, -1), ":*')")) : /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.textFaint, fontFamily: FONT } }, "no UI resource")), /* @__PURE__ */ React.createElement("div", { style: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textFaint, fontFamily: FONT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 } }, "Server wiring"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.textMid, fontFamily: FONT, lineHeight: 1.8 } }, /* @__PURE__ */ React.createElement("span", { style: { color: C.blueBright } }, "app.channel"), "(", /* @__PURE__ */ React.createElement("span", { style: { color: "#7a9a5a" } }, "'", ch.name, "'"), ").join(conn)", /* @__PURE__ */ React.createElement("br", null), /* @__PURE__ */ React.createElement("span", { style: { color: C.blueBright } }, "publish"), "(_ => ", /* @__PURE__ */ React.createElement("span", { style: { color: C.blueBright } }, "app.channel"), "(", /* @__PURE__ */ React.createElement("span", { style: { color: "#7a9a5a" } }, "'", ch.name, "'"), "))"))))));
+}
+function RelationsPanel({ relations }) {
+  const relationsR = relations ?? RELATIONS_DATA;
+  const models = [...new Set(relationsR.map((r) => r.from))];
+  const [selModel, setSelModel] = useState(models[0] ?? "");
+  const rels = relationsR.filter((r) => r.from === selModel);
+  const refsTo = relationsR.filter((r) => r.to === selModel);
+  const modelColor = (name) => {
+    if (!name || name.startsWith("(")) return C.textFaint;
+    return C.purpleBright;
+  };
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 180, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Models"), models.map((m) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: m,
+      onClick: () => setSelModel(m),
+      style: { padding: "7px 14px", cursor: "pointer", fontFamily: FONT, fontSize: 11, color: selModel === m ? C.purpleBright : C.textMid, background: selModel === m ? C.surface : "transparent", borderLeft: `2px solid ${selModel === m ? C.purple : "transparent"}`, transition: "all .12s" }
+    },
+    m
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, fontFamily: FONT, marginBottom: 14 } }, "model ", selModel), rels.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 8, fontFamily: FONT } }, "Outgoing relations"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 } }, rels.map((r, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 12px" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: C.purpleBright, fontFamily: FONT, fontWeight: 600 } }, selModel), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, r.fromField), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 3 } }, /* @__PURE__ */ React.createElement("div", { style: { width: 24, height: 1, background: C.purple, opacity: 0.4 } }), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "1px 5px", borderRadius: 3, background: C.purpleDim, color: C.purpleBright, border: `1px solid ${C.purpleBorder}`, fontFamily: FONT } }, r.type), /* @__PURE__ */ React.createElement("div", { style: { width: 24, height: 1, background: C.purple, opacity: 0.4 } })), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, r.label)), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: modelColor(r.to), fontFamily: FONT, fontWeight: 600 } }, r.to))))), refsTo.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, marginBottom: 8, fontFamily: FONT } }, "Referenced by"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4 } }, refsTo.map((r, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: 10, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 5, padding: "7px 12px" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.textMid, fontFamily: FONT } }, r.from), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, "\u2192 ", r.fromField), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "1px 5px", borderRadius: 3, background: C.purpleDim, color: C.purpleBright, border: `1px solid ${C.purpleBorder}`, fontFamily: FONT } }, r.type), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, r.label))))), rels.length === 0 && refsTo.length === 0 && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.textFaint, fontFamily: FONT } }, "No relations defined for this model.")));
+}
+const ENV_DATA = [
+  {
+    group: "API server",
+    file: "api/.env",
+    color: C.blue,
+    vars: [
+      { key: "DATABASE_URL", example: "./db/acme-crm.db", required: true, status: "set", desc: "Litestone SQLite path" },
+      { key: "PORT", example: "3000", required: false, status: "set", desc: "Junction server port" },
+      { key: "JWT_SECRET", example: "super-secret-key", required: true, status: "set", desc: "@frontierjs/auth session signing" },
+      { key: "SESSION_TTL", example: "7d", required: false, status: "set", desc: "Session token lifetime" },
+      { key: "LITESTREAM_REPLICA", example: "s3://acme-backups/crm.db", required: false, status: "set", desc: "Litestream S3 WAL replica target" },
+      { key: "AWS_ACCESS_KEY_ID", example: "AKIA...", required: false, status: "set", desc: "S3 access for Litestream" },
+      { key: "AWS_SECRET_ACCESS_KEY", example: "...", required: false, status: "set", desc: "S3 secret for Litestream" },
+      { key: "RESEND_API_KEY", example: "re_...", required: true, status: "missing", desc: "@frontierjs/notifications email driver" },
+      { key: "MAIL_FROM", example: "noreply@acme.com", required: true, status: "missing", desc: "Default sender for email notifications" }
+    ]
+  },
+  {
+    group: "Web frontend",
+    file: "web/.env",
+    color: C.orange,
+    vars: [
+      { key: "VITE_API_WS_URL", example: "ws://localhost:3000", required: true, status: "set", desc: "Sierra junction.url \u2014 API WebSocket endpoint" },
+      { key: "VITE_API_URL", example: "http://localhost:3000", required: false, status: "set", desc: "HTTP base URL for schema.json fetch" }
+    ]
+  }
+];
+const FRONTIER_CONFIG = [
+  { key: "name", val: "'acme-crm'", desc: "Project name" },
+  { key: "db", val: "'./db/acme-crm.db'", desc: "Database path" },
+  { key: "schema", val: "'./db/schema.lite'", desc: "Schema file path" },
+  { key: "api.port", val: "3000", desc: "API server port" },
+  { key: "web.port", val: "5173", desc: "Vite dev server port" },
+  { key: "auth.sessionTtl", val: "'7d'", desc: "Session token lifetime" },
+  { key: "deploy.host", val: "'ssh://deploy@acme.com'", desc: "SSH deploy target" },
+  { key: "deploy.dir", val: "'/var/www/acme-crm'", desc: "Remote deploy directory" }
+];
+function ConfigPanel() {
+  const [activeGroup, setActiveGroup] = useState("api");
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 180, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Config files"), [{ id: "api", label: "api/.env", color: C.blue }, { id: "web", label: "web/.env", color: C.orange }, { id: "frontier", label: "frontier.config.js", color: C.teal }].map((g) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: g.id,
+      onClick: () => setActiveGroup(g.id),
+      style: { padding: "7px 14px", cursor: "pointer", fontFamily: FONT, fontSize: 11, color: activeGroup === g.id ? g.color : C.textDim, background: activeGroup === g.id ? C.surface : "transparent", borderLeft: `2px solid ${activeGroup === g.id ? g.color : "transparent"}`, transition: "all .12s" }
+    },
+    g.label
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, (activeGroup === "api" || activeGroup === "web") && (() => {
+    const grp = ENV_DATA.find((g) => g.group.toLowerCase().startsWith(activeGroup));
+    const missing = grp.vars.filter((v) => v.status === "missing").length;
+    return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 14 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.text, fontFamily: FONT } }, grp.file), missing > 0 && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "2px 7px", borderRadius: 4, background: C.redDim, color: C.red, border: `1px solid ${C.redBorder}`, fontWeight: 600 } }, missing, " missing")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } }, grp.vars.map((v) => /* @__PURE__ */ React.createElement("div", { key: v.key, style: { display: "flex", alignItems: "center", gap: 0, background: C.surface, border: `1px solid ${v.status === "missing" ? C.redBorder : C.border}`, borderRadius: 5, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 3, flexShrink: 0, background: v.status === "missing" ? C.red : C.green, opacity: 0.7 } }), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, padding: "6px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 10, marginBottom: 2 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: v.status === "missing" ? C.red : C.text, fontFamily: FONT, fontWeight: 600 } }, v.key), v.required && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, color: C.red, fontFamily: FONT } }, "required")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, v.example), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textDim, fontFamily: FONT } }, "\u2014 ", v.desc))), /* @__PURE__ */ React.createElement("div", { style: { padding: "0 10px", fontSize: 10, fontFamily: FONT, color: v.status === "missing" ? C.red : C.green, fontWeight: 600 } }, v.status)))));
+  })(), activeGroup === "frontier" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.text, fontFamily: FONT, marginBottom: 14 } }, "frontier.config.js"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } }, FRONTIER_CONFIG.map((item) => /* @__PURE__ */ React.createElement("div", { key: item.key, style: { display: "flex", alignItems: "baseline", gap: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "6px 10px" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.teal, fontFamily: FONT, minWidth: 160, flexShrink: 0 } }, item.key), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: "#7a9a5a", fontFamily: FONT, minWidth: 180 } }, item.val), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, "\u2014 ", item.desc)))))));
+}
+const WORKFLOWS = [
+  {
+    id: "add-model",
+    label: "Add a model end-to-end",
+    color: C.purple,
+    steps: [
+      { file: "db/schema.lite", action: "Define model, fields, gate, plugins", cmd: null },
+      { file: null, action: "Push schema to local DB", cmd: "fli db:push" },
+      { file: "api/src/server.ts", action: "Register createLitestoneService({ name, model, schema })", cmd: null },
+      { file: "web/src/resources/Model.mesa", action: "Create resource with createResource({ model, service })", cmd: null },
+      { file: "web/src/routes/models/index.mesa", action: "Add route, import store from resource, seed from load()", cmd: null },
+      { file: "web/src/routes/models/index.meta.js", action: "Add load() function for prefetch", cmd: null },
+      { file: null, action: "Create migration file when ready to commit", cmd: "fli db:migrate" }
+    ]
+  },
+  {
+    id: "add-route",
+    label: "Add a new page / route",
+    color: C.orange,
+    steps: [
+      { file: "web/src/routes/path/index.mesa", action: "Create route component file", cmd: null },
+      { file: "web/src/routes/path/index.meta.js", action: "Add load() if prefetch needed", cmd: null },
+      { file: "web/config/sierra.config.js", action: "Add to publicRoutes if unauthenticated", cmd: null },
+      { file: "web/src/resources/Model.mesa", action: "Import store, service, make from resource", cmd: null }
+    ]
+  },
+  {
+    id: "add-hook",
+    label: "Add a service hook",
+    color: C.blue,
+    steps: [
+      { file: "api/src/hooks/myHook.ts", action: "Write hook function (ctx) => void", cmd: null },
+      { file: "api/src/server.ts", action: "Add to service hooks.before or hooks.after array", cmd: null },
+      { file: null, action: "Hook receives full ServiceContext \u2014 mutate ctx.data or throw", cmd: null }
+    ]
+  },
+  {
+    id: "add-notification",
+    label: "Add a notification type",
+    color: C.pink,
+    steps: [
+      { file: "api/src/notifications/MyNotif.ts", action: "Extend Notification, implement via(), toInApp(), toEmail()", cmd: null },
+      { file: "api/src/services/users.ts", action: "Call await ctx.app.notify(user, new MyNotif(data)) in after hook", cmd: null },
+      { file: "web/src/resources/Notification.mesa", action: 'onEvent("notification:created") auto-updates store via WS', cmd: null },
+      { file: null, action: "No schema migration needed \u2014 type stored as string identifier", cmd: null }
+    ]
+  },
+  {
+    id: "add-job",
+    label: "Add a background job",
+    color: C.amber,
+    steps: [
+      { file: "api/src/jobs/myJob.ts", action: "Define job({ name, perform: async (data, { app }) => {} })", cmd: null },
+      { file: "api/src/server.ts", action: "Add to caravanPlugin jobs array", cmd: null },
+      { file: "api/src/services/myService.ts", action: 'Enqueue from after hook: await caravan.enqueue("my-job", data)', cmd: null },
+      { file: null, action: "Job runs at SYSTEM trust level \u2014 use db.asSystem() for writes", cmd: null }
+    ]
+  },
+  {
+    id: "deploy",
+    label: "Deploy to production",
+    color: C.teal,
+    steps: [
+      { file: null, action: "Run full test suite", cmd: "fli test" },
+      { file: null, action: "Verify DB schema matches migrations", cmd: "fli db:verify" },
+      { file: null, action: "Check for gap errors (exits 1 if any)", cmd: "fli project:map --gaps" },
+      { file: null, action: "Deploy all sub-projects (migrations run automatically)", cmd: "fli deploy --production" },
+      { file: null, action: "Check deployment status", cmd: "fli deploy:status" }
+    ]
+  }
+];
+function WorkflowsPanel() {
+  const [sel, setSel] = useState(WORKFLOWS[0].id);
+  const wf = WORKFLOWS.find((w) => w.id === sel);
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 220, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Common workflows"), WORKFLOWS.map((w) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: w.id,
+      onClick: () => setSel(w.id),
+      style: { padding: "8px 14px", cursor: "pointer", fontFamily: FONT, background: sel === w.id ? C.surface : "transparent", borderLeft: `2px solid ${sel === w.id ? w.color : "transparent"}`, transition: "all .12s" }
+    },
+    /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: sel === w.id ? w.color : C.textMid } }, w.label),
+    /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textFaint, marginTop: 1 } }, w.steps.length, " steps")
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, wf && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: wf.color, fontFamily: FONT, marginBottom: 16 } }, wf.label), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 0 } }, wf.steps.map((step, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 12, alignItems: "flex-start" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 24 } }, /* @__PURE__ */ React.createElement("div", { style: { width: 22, height: 22, borderRadius: "50%", background: C.surface2, border: `1px solid ${wf.color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: wf.color, fontFamily: FONT, fontWeight: 700, flexShrink: 0 } }, i + 1), i < wf.steps.length - 1 && /* @__PURE__ */ React.createElement("div", { style: { width: 1, flex: 1, minHeight: 12, background: wf.color, opacity: 0.2, margin: "2px 0" } })), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, paddingBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: C.text, fontFamily: FONT, lineHeight: 1.5, marginBottom: step.file || step.cmd ? 4 : 0 } }, step.action), step.file && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textDim, fontFamily: FONT, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 3, padding: "2px 8px", display: "inline-block", marginBottom: step.cmd ? 4 : 0 } }, step.file), step.cmd && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.teal, fontFamily: FONT, background: C.tealDim, border: `1px solid ${C.tealBorder}`, borderRadius: 3, padding: "2px 8px", display: "inline-block" } }, step.cmd))))))));
+}
+const ERROR_PATHS = [
+  {
+    id: "gate-deny",
+    label: "Gate denies access",
+    trigger: "user.level < gate.required",
+    color: C.red,
+    nodes: [
+      { node: "transport-in", outcome: "Token extracted and verified", status: "pass" },
+      { node: "app-before", outcome: "withLitestoneDb scopes db to user", status: "pass" },
+      { node: "svc-before", outcome: "authenticate hook passes", status: "pass" },
+      { node: "gate", outcome: "user.level (0) < gate.create (4) \u2192 throws 403", status: "fail" },
+      { node: "svc-after", outcome: "skipped \u2014 chain aborted", status: "skip" },
+      { node: "transport-out", outcome: "HTTP 403 Forbidden returned", status: "error" }
+    ]
+  },
+  {
+    id: "auth-fail",
+    label: "Authentication fails",
+    trigger: "Invalid or expired token",
+    color: C.amber,
+    nodes: [
+      { node: "transport-in", outcome: "Token extracted from Authorization header", status: "pass" },
+      { node: "app-before", outcome: "withLitestoneDb attaches db", status: "pass" },
+      { node: "svc-before", outcome: "authenticate hook: verifySession(token) \u2192 throws 401", status: "fail" },
+      { node: "gate", outcome: "skipped \u2014 chain aborted before data realm", status: "skip" },
+      { node: "svc-after", outcome: "skipped", status: "skip" },
+      { node: "transport-out", outcome: "HTTP 401 Unauthorized returned", status: "error" }
+    ]
+  },
+  {
+    id: "validation-fail",
+    label: "Validation fails",
+    trigger: "Payload fails JSON Schema validation",
+    color: C.orange,
+    nodes: [
+      { node: "transport-in", outcome: "Request received and parsed", status: "pass" },
+      { node: "app-before", outcome: "withLitestoneDb attaches db", status: "pass" },
+      { node: "svc-before", outcome: "authenticate passes, validate(jsonSchema) \u2192 throws 422", status: "fail" },
+      { node: "gate", outcome: "skipped", status: "skip" },
+      { node: "svc-after", outcome: "skipped", status: "skip" },
+      { node: "transport-out", outcome: "HTTP 422 Unprocessable Entity + field errors returned", status: "error" }
+    ]
+  },
+  {
+    id: "hook-throw",
+    label: "After hook throws",
+    trigger: "Service after hook throws unexpectedly",
+    color: C.blue,
+    nodes: [
+      { node: "svc-before", outcome: "All before hooks pass", status: "pass" },
+      { node: "gate", outcome: "Gate passes", status: "pass" },
+      { node: "sqlite", outcome: "Write succeeds", status: "pass" },
+      { node: "svc-after", outcome: "publish() throws (channel unavailable) \u2192 error hook runs", status: "fail" },
+      { node: "transport-out", outcome: "HTTP 500 Internal Server Error \u2014 write already committed", status: "error" }
+    ],
+    note: "The write already committed to SQLite. The after hook failure does not roll it back. Use transactions if atomicity is required."
+  }
+];
+const STATUS_STYLE = {
+  pass: { color: C.green, bg: C.greenDim, border: C.greenBorder, label: "pass" },
+  fail: { color: C.red, bg: C.redDim, border: C.redBorder, label: "fail" },
+  skip: { color: C.textDim, bg: C.surface2, border: C.border, label: "skip" },
+  error: { color: C.amber, bg: C.amberDim, border: C.amberBorder, label: "error" }
+};
+function ErrorPathPanel() {
+  const [sel, setSel] = useState(ERROR_PATHS[0].id);
+  const path = ERROR_PATHS.find((p) => p.id === sel);
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 220, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Error scenarios"), ERROR_PATHS.map((p) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: p.id,
+      onClick: () => setSel(p.id),
+      style: { padding: "8px 14px", cursor: "pointer", fontFamily: FONT, background: sel === p.id ? C.surface : "transparent", borderLeft: `2px solid ${sel === p.id ? p.color : "transparent"}`, transition: "all .12s" }
+    },
+    /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: sel === p.id ? p.color : C.textMid } }, p.label),
+    /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textFaint, marginTop: 1 } }, p.trigger)
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, path && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { marginBottom: 14 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: path.color, fontFamily: FONT, marginBottom: 3 } }, path.label), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.textDim, fontFamily: FONT } }, "trigger: ", path.trigger)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 } }, path.nodes.map((n, i) => {
+    const st = STATUS_STYLE[n.status];
+    return /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 10, alignItems: "flex-start", background: C.surface, border: `1px solid ${n.status === "fail" || n.status === "error" ? st.border : C.border}`, borderRadius: 5, padding: "7px 10px" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, padding: "2px 7px", borderRadius: 3, background: st.bg, color: st.color, border: `1px solid ${st.border}`, fontFamily: FONT, fontWeight: 600, flexShrink: 0, minWidth: 36, textAlign: "center" } }, st.label), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textDim, fontFamily: FONT, minWidth: 110, flexShrink: 0 } }, n.node), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: n.status === "fail" || n.status === "error" ? st.color : C.textMid, fontFamily: FONT, lineHeight: 1.5 } }, n.outcome));
+  })), path.note && /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 12px", borderRadius: 6, background: C.amberDim, border: `1px solid ${C.amberBorder}`, fontSize: 11, color: C.amber, fontFamily: FONT, lineHeight: 1.6 } }, "\u26A0 ", path.note))));
+}
+const SESSION_DATA = {
+  contextShape: [
+    { key: "id", type: "string", example: "'usr_abc123'", desc: "Unique user identifier" },
+    { key: "email", type: "string", example: "'user@acme.com'", desc: "User email address" },
+    { key: "firstName", type: "string?", example: "'Alice'", desc: "Optional first name" },
+    { key: "lastName", type: "string?", example: "'Smith'", desc: "Optional last name" },
+    { key: "role", type: "string", example: "'user' | 'admin'", desc: "Application role" },
+    { key: "level", type: "number", example: "4  // USER", desc: "Trust level 0\u20139 for gate enforcement" },
+    { key: "authMethod", type: "string", example: "'password' | 'created'", desc: "How session was established. 'created' = new user registration" },
+    { key: "scopes", type: "string[]", example: "['read', 'write']", desc: "Optional permission scopes" }
+  ],
+  lifecycle: [
+    { step: "Login", desc: "POST /auth/login \u2192 verifySession issues opaque token \u2192 stored in localStorage via tokenKey" },
+    { step: "HTTP attach", desc: "Sierra attaches token as Authorization: Bearer <token> header on every request" },
+    { step: "WS attach", desc: "Junction WS connection receives token in query string \u2192 authenticates once at upgrade time" },
+    { step: "Verify", desc: "transport-in: IAuth.verifySession(token) \u2192 resolves SessionContext" },
+    { step: "Scope", desc: "withLitestoneDb: db.$setAuth(user) \u2192 GatePlugin reads user.level for every operation" },
+    { step: "Logout", desc: "sierra.logout() \u2192 clears token \u2192 disconnects WS \u2192 redirects to auth.redirectTo" },
+    { step: "WS re-auth", desc: "After login, WS disconnects and reconnects so new session takes effect at transport level" }
+  ],
+  trustLevels: [
+    { level: 0, name: "STRANGER", desc: "Unauthenticated. Read-only public data." },
+    { level: 1, name: "VISITOR", desc: "Identified but unverified." },
+    { level: 2, name: "READER", desc: "Can read non-public content." },
+    { level: 3, name: "CREATOR", desc: "Can create limited content." },
+    { level: 4, name: "USER", desc: "Standard authenticated user. Most write operations." },
+    { level: 5, name: "ADMIN", desc: "Elevated privileges. Can modify others." },
+    { level: 6, name: "OWNER", desc: "Record owner. Can delete own records." },
+    { level: 7, name: "SYSADMIN", desc: "Full application access." },
+    { level: 8, name: "SYSTEM", desc: "Internal system calls only. db.asSystem()." },
+    { level: 9, name: "LOCKED", desc: "No code path can reach this. Hard lock." }
+  ]
+};
+function SessionPanel() {
+  const [view, setView] = useState("context");
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flex: 1, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 180, borderRight: `1px solid ${C.border}`, flexShrink: 0, overflowY: "auto", background: C.bg } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.textFaint, padding: "4px 14px 5px", fontFamily: FONT } }, "Auth / Session"), [{ id: "context", label: "SessionContext shape" }, { id: "lifecycle", label: "Auth lifecycle" }, { id: "trust", label: "Trust hierarchy" }].map((v) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: v.id,
+      onClick: () => setView(v.id),
+      style: { padding: "7px 14px", cursor: "pointer", fontFamily: FONT, fontSize: 11, color: view === v.id ? C.teal : C.textMid, background: view === v.id ? C.surface : "transparent", borderLeft: `2px solid ${view === v.id ? C.teal : "transparent"}`, transition: "all .12s" }
+    },
+    v.label
+  )))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, view === "context" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.teal, fontFamily: FONT, marginBottom: 14 } }, "SessionContext"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 10, color: C.textDim, fontFamily: FONT, marginBottom: 10 } }, "Available on ctx.params.user in every service hook after authenticate runs. Passed to db.$setAuth() for gate enforcement."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 2 } }, SESSION_DATA.contextShape.map((f) => /* @__PURE__ */ React.createElement("div", { key: f.key, style: { display: "flex", gap: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "5px 10px", fontFamily: FONT } }, /* @__PURE__ */ React.createElement("span", { style: { color: C.teal, minWidth: 100, fontSize: 11, fontWeight: 600 } }, f.key), /* @__PURE__ */ React.createElement("span", { style: { color: C.blueBright, minWidth: 80, fontSize: 11 } }, f.type), /* @__PURE__ */ React.createElement("span", { style: { color: "#7a9a5a", minWidth: 160, fontSize: 11 } }, f.example), /* @__PURE__ */ React.createElement("span", { style: { color: C.textFaint, fontSize: 10 } }, f.desc))))), view === "lifecycle" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.teal, fontFamily: FONT, marginBottom: 14 } }, "Auth lifecycle"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4 } }, SESSION_DATA.lifecycle.map((l, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.teal, fontFamily: FONT, fontWeight: 600, minWidth: 90, flexShrink: 0 } }, l.step), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.textMid, fontFamily: FONT, lineHeight: 1.5 } }, l.desc))))), view === "trust" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: C.teal, fontFamily: FONT, marginBottom: 14 } }, "Trust hierarchy"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 3 } }, SESSION_DATA.trustLevels.map((t) => {
+    const col = t.level === 9 ? C.red : t.level >= 7 ? C.amber : t.level >= 4 ? C.teal : C.textDim;
+    return /* @__PURE__ */ React.createElement("div", { key: t.level, style: { display: "flex", gap: 10, alignItems: "center", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4, padding: "6px 10px" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, fontWeight: 700, color: col, fontFamily: FONT, minWidth: 18, textAlign: "right" } }, t.level), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: col, fontFamily: FONT, fontWeight: 600, minWidth: 90 } }, t.name), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.textDim, fontFamily: FONT } }, t.desc));
+  })))));
+}
+function collectAllIssues({ chainData, migrations, healthGaps, healthPackages } = {}) {
+  const chainDataR = chainData ?? CHAIN_DATA;
+  const migrationsR = migrations ?? MIGRATIONS;
+  const healthGapsR = healthGaps ?? HEALTH_GAPS;
+  const healthPackagesR = healthPackages ?? HEALTH_PACKAGES;
+  const issues = [];
+  chainDataR.nodes.filter((n) => n.gap).forEach((n) => {
+    issues.push({
+      id: `chain-svc-${n.id}`,
+      severity: n.gap.type,
+      source: "chain",
+      label: n.gap.msg,
+      detail: `api.services.${n.label || n.id}`,
+      jumpTab: null
+    });
+  });
+  chainDataR.realms.forEach((realm) => {
+    realm.nouns?.forEach((noun) => {
+      if (noun.gap) {
+        issues.push({
+          id: `realm-${realm.id}-${noun.name}`,
+          severity: noun.gap.type,
+          source: "chain",
+          label: `${realm.label} \u2192 ${noun.name}: ${noun.gap.msg}`,
+          detail: `${realm.id}.${noun.name}`,
+          jumpTab: null
+        });
+      }
+    });
+  });
+  healthGapsR.forEach((g, i) => {
+    issues.push({
+      id: `health-${i}`,
+      severity: g.type,
+      source: "health",
+      label: g.msg,
+      detail: g.ref,
+      jumpTab: "health"
+    });
+  });
+  migrationsR.filter((m) => m.status === "pending").forEach((m) => {
+    issues.push({
+      id: `mig-${m.name}`,
+      severity: "warning",
+      source: "migrations",
+      label: `Pending migration: ${m.name}`,
+      detail: "Run fli db:migrate to apply",
+      jumpTab: "migrations"
+    });
+  });
+  healthPackagesR.filter((p) => p.status === "update").forEach((p) => {
+    issues.push({
+      id: `pkg-${p.name}`,
+      severity: "warning",
+      source: "health",
+      label: `${p.name} update available: ${p.version} \u2192 ${p.latest}`,
+      detail: `${p.sub} sub-project`,
+      jumpTab: "health"
+    });
+  });
+  ENV_DATA.forEach((grp) => {
+    grp.vars.filter((v) => v.status === "missing").forEach((v) => {
+      issues.push({
+        id: `env-${v.key}`,
+        severity: v.required ? "error" : "warning",
+        source: "config/env",
+        label: `${v.key} is missing`,
+        detail: `${grp.file} \u2014 ${v.desc}`,
+        jumpTab: "config"
+      });
+    });
+  });
+  const seen = /* @__PURE__ */ new Set();
+  const deduped = issues.filter((i) => {
+    if (seen.has(i.label)) return false;
+    seen.add(i.label);
+    return true;
+  });
+  return deduped.sort((a, b) => {
+    if (a.severity === "error" && b.severity !== "error") return -1;
+    if (a.severity !== "error" && b.severity === "error") return 1;
+    return 0;
+  });
+}
+function IssuesPanel({ onJumpTab, chainData, migrations, healthGaps, healthPackages }) {
+  const issues = collectAllIssues({ chainData, migrations, healthGaps, healthPackages });
+  const errors = issues.filter((i) => i.severity === "error");
+  const warnings = issues.filter((i) => i.severity === "warning");
+  const severityStyle = (s) => s === "error" ? { icon: "\u2715", color: C.red, bg: C.redDim, border: C.redBorder } : { icon: "\u26A0", color: C.amber, bg: C.amberDim, border: C.amberBorder };
+  const sourceColor = (src) => ({
+    "chain": C.blue,
+    "health": C.teal,
+    "migrations": C.amber,
+    "config/env": C.orange
+  })[src] || C.textDim;
+  if (issues.length === 0) {
+    return /* @__PURE__ */ React.createElement("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20, color: C.green } }, "\u2713"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: C.textMid, fontFamily: FONT } }, "No issues found"));
+  }
+  return /* @__PURE__ */ React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: 16 } }, errors.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 14px", borderRadius: 6, background: C.redDim, border: `1px solid ${C.redBorder}`, display: "flex", gap: 8, alignItems: "center" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, color: C.red } }, "\u2715"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: C.red, fontFamily: FONT, fontWeight: 600 } }, errors.length, " error", errors.length > 1 ? "s" : "")), warnings.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { padding: "6px 14px", borderRadius: 6, background: C.amberDim, border: `1px solid ${C.amberBorder}`, display: "flex", gap: 8, alignItems: "center" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, color: C.amber } }, "\u26A0"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: C.amber, fontFamily: FONT, fontWeight: 600 } }, warnings.length, " warning", warnings.length > 1 ? "s" : ""))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 5 } }, issues.map((issue) => {
+    const st = severityStyle(issue.severity);
+    return /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        key: issue.id,
+        style: { display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", borderRadius: 7, border: `1px solid ${st.border}`, background: st.bg, cursor: issue.jumpTab ? "pointer" : "default", transition: "opacity .12s" },
+        onClick: () => issue.jumpTab && onJumpTab(issue.jumpTab)
+      },
+      /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: st.color, flexShrink: 0, marginTop: 1 } }, st.icon),
+      /* @__PURE__ */ React.createElement("div", { style: { flex: 1, minWidth: 0 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: C.text, fontFamily: FONT, lineHeight: 1.5 } }, issue.label), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 3, alignItems: "center" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, issue.detail))),
+      /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center", flexShrink: 0 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 6px", borderRadius: 3, background: `${sourceColor(issue.source)}22`, color: sourceColor(issue.source), border: `1px solid ${sourceColor(issue.source)}44`, fontFamily: FONT, fontWeight: 600 } }, issue.source), issue.jumpTab && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, color: C.textFaint, fontFamily: FONT } }, "\u2192 ", issue.jumpTab))
+    );
+  })));
+}
+function FJSChain({ data = null }) {
+  const chainData = data?.chainData ?? CHAIN_DATA;
+  const packages = data?.packages ?? PACKAGE_REGISTRY;
+  const dbSchema = data?.dbSchema ?? DB_SCHEMA;
+  const migrations = data?.migrations ?? MIGRATIONS;
+  const channels = data?.channels ?? CHANNELS_DATA;
+  const relations = data?.relations ?? RELATIONS_DATA;
+  const healthGaps = data?.healthGaps ?? HEALTH_GAPS;
+  const healthPackages = data?.healthPackages ?? HEALTH_PACKAGES;
+  const appName = data?.appName ?? "acme-crm";
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [selectedRealm, setSelectedRealm] = useState(null);
+  const [selectedNoun, setSelectedNoun] = useState(null);
+  const [selectedPackage, setSelectedPackage] = useState(null);
+  const [bottomTab, setBottomTab] = useState(null);
+  const outNodes = chainData.nodes.filter((n) => n.lane === "out");
+  const inNodes = chainData.nodes.filter((n) => n.lane === "in");
+  const dataNodes = chainData.nodes.filter((n) => n.lane === "mid");
+  const uiNodes = chainData.nodes.filter((n) => n.lane === "ui");
+  const handleNodeClick = (id) => {
+    setSelectedNode((prev) => prev === id ? null : id);
+    setSelectedRealm(null);
+    setSelectedNoun(null);
+    setSelectedPackage(null);
+  };
+  const handleRealmClick = (id) => {
+    setSelectedRealm((prev) => prev === id ? null : id);
+    setSelectedNode(null);
+    setSelectedNoun(null);
+    setSelectedPackage(null);
+  };
+  const handleNounClick = (realmId, nounIdx) => {
+    setSelectedNoun((prev) => prev?.realmId === realmId && prev?.nounIdx === nounIdx ? null : { realmId, nounIdx });
+    setSelectedRealm(realmId);
+    setSelectedNode(null);
+    setSelectedPackage(null);
+  };
+  const handlePackageClick = (id) => {
+    setSelectedPackage((prev) => prev === id ? null : id);
+    setSelectedNode(null);
+    setSelectedRealm(null);
+    setSelectedNoun(null);
+  };
+  const handleBottomTab = (tab) => {
+    setBottomTab((prev) => prev === tab ? null : tab);
+  };
+  const showChainDetail = selectedNode && chainData.hookDetail[selectedNode];
+  const showRealmDetail = (selectedRealm || selectedNoun) && !selectedNode && !selectedPackage;
+  const showPackageDetail = selectedPackage && !selectedNode;
+  const allIssues = collectAllIssues({ chainData, migrations, healthGaps, healthPackages });
+  const issueErrors = allIssues.filter((i) => i.severity === "error").length;
+  const issueWarnings = allIssues.filter((i) => i.severity === "warning").length;
+  const BOTTOM_TABS = [
+    { id: "issues", label: "issues" },
+    { id: "health", label: "health" },
+    { id: "schema", label: "schema" },
+    { id: "migrations", label: "migrations" },
+    { id: "routes", label: "routes" },
+    { id: "cli", label: "fli" },
+    { id: "channels", label: "channels" },
+    { id: "relations", label: "relations" },
+    { id: "config", label: "config/env" },
+    { id: "workflows", label: "workflows" },
+    { id: "errors", label: "error paths" },
+    { id: "session", label: "session" }
+  ];
+  return /* @__PURE__ */ React.createElement("div", { style: { fontFamily: FONT, fontSize: 13, background: C.bg, color: C.textMid, minHeight: "100vh", display: "flex", flexDirection: "column", paddingBottom: bottomTab ? 360 : 44 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px 14px", marginBottom: 4 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { width: 22, height: 22, borderRadius: 5, background: `linear-gradient(135deg,${C.purple} 0%,${C.blue} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff" } }, "FJS"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: "-0.2px" } }, "Chain of Responsibility")), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, letterSpacing: "0.1em", textTransform: "uppercase" } }, "click any node to zoom in")), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "90px 134px 1fr 134px 70px", gridTemplateRows: "auto auto auto", gap: 0, padding: "0 20px", alignItems: "stretch" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between", paddingRight: 12, paddingBottom: 0, gridColumn: 1, gridRow: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "right", lineHeight: 1.5 } }, "\u2192 result", /* @__PURE__ */ React.createElement("br", null), "/ error")), /* @__PURE__ */ React.createElement("svg", { width: "42", height: "36", viewBox: "0 0 42 36", fill: "none", style: { flexShrink: 0 } }, /* @__PURE__ */ React.createElement("path", { d: "M6 36 L6 16 Q6 8 14 8 L42 8", stroke: C.purple, strokeWidth: "1", strokeOpacity: "0.5", fill: "none" }), /* @__PURE__ */ React.createElement("polygon", { points: "38,4 42,8 38,12", fill: C.purple, opacity: "0.5" }))), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: 2, gridRow: 1 } }), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: "3 / 4", gridRow: 1, paddingLeft: 10, paddingRight: 10 } }, /* @__PURE__ */ React.createElement(
+    Lane,
+    {
+      nodes: outNodes,
+      labelOnly: true,
+      reverse: false,
+      selectedNode,
+      onSelectNode: handleNodeClick,
+      selectedPackage,
+      onSelectPackage: handlePackageClick,
+      packages
+    }
+  )), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: 4, gridRow: 1 } }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "space-between", paddingLeft: 12, gridColumn: 5, gridRow: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "center", flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.5 } }, "ui", /* @__PURE__ */ React.createElement("br", null), "realm")), /* @__PURE__ */ React.createElement("svg", { width: "42", height: "36", viewBox: "0 0 42 36", fill: "none", style: { flexShrink: 0 } }, /* @__PURE__ */ React.createElement("path", { d: "M0 8 L28 8 Q36 8 36 16 L36 36", stroke: C.orange, strokeWidth: "1", strokeOpacity: "0.5", fill: "none" }), /* @__PURE__ */ React.createElement("polygon", { points: "32,32 36,36 40,32", fill: C.orange, opacity: "0.5" }))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 12, gridColumn: 1, gridRow: 2 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.purple, fontFamily: FONT, letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "right", lineHeight: 1.4 } }, "data", /* @__PURE__ */ React.createElement("br", null), "realm")), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: 2, gridRow: 2, background: C.purpleDim, border: `1px solid ${C.purpleBorder}`, borderRadius: 6, padding: "10px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 } }, dataNodes.map((node, i) => /* @__PURE__ */ React.createElement("div", { key: node.id, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "100%" } }, /* @__PURE__ */ React.createElement(ChainNodeWithTags, { node, selected: selectedNode, onClick: handleNodeClick, selectedPackage, onSelectPackage: handlePackageClick, packages }), i < dataNodes.length - 1 && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { width: 1, height: 8, background: C.purple, opacity: 0.3 } }), /* @__PURE__ */ React.createElement("div", { style: { width: 0, height: 0, borderLeft: "3px solid transparent", borderRight: "3px solid transparent", borderTop: `4px solid ${C.purple}`, opacity: 0.3 } }))))), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: 3, gridRow: 2, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, paddingLeft: 10, paddingRight: 10, alignItems: "stretch" } }, chainData.realms.map((realm) => /* @__PURE__ */ React.createElement(RealmBox, { key: realm.id, realm, selected: selectedRealm, onClick: handleRealmClick, onSelectNoun: handleNounClick, onSelectPackage: handlePackageClick, selectedNoun, selectedPackage, packages }))), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: 4, gridRow: 2, background: C.orangeDim, border: `1px solid ${C.orangeBorder}`, borderRadius: 6, padding: "10px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 } }, uiNodes.map((node, i) => /* @__PURE__ */ React.createElement("div", { key: node.id, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "100%" } }, /* @__PURE__ */ React.createElement(ChainNodeWithTags, { node, selected: selectedNode, onClick: handleNodeClick, selectedPackage, onSelectPackage: handlePackageClick, packages }), i < uiNodes.length - 1 && /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { width: 1, height: 8, background: C.orange, opacity: 0.3 } }), /* @__PURE__ */ React.createElement("div", { style: { width: 0, height: 0, borderLeft: "3px solid transparent", borderRight: "3px solid transparent", borderTop: `4px solid ${C.orange}`, opacity: 0.3 } }))))), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: 5, gridRow: 2 } }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between", paddingRight: 12, gridColumn: 1, gridRow: 3 } }, /* @__PURE__ */ React.createElement("svg", { width: "42", height: "36", viewBox: "0 0 42 36", fill: "none", style: { flexShrink: 0 } }, /* @__PURE__ */ React.createElement("path", { d: "M42 28 L14 28 Q6 28 6 20 L6 0", stroke: C.purple, strokeWidth: "1", strokeOpacity: "0.5", fill: "none" }), /* @__PURE__ */ React.createElement("polygon", { points: "2,4 6,0 10,4", fill: C.purple, opacity: "0.5" })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "right", lineHeight: 1.5 } }, "\u2190 data", /* @__PURE__ */ React.createElement("br", null), "+ query"))), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: 2, gridRow: 3 } }), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: "3 / 4", gridRow: 3, paddingLeft: 10, paddingRight: 10 } }, /* @__PURE__ */ React.createElement(
+    Lane,
+    {
+      nodes: inNodes,
+      labelOnly: true,
+      reverse: true,
+      selectedNode,
+      onSelectNode: handleNodeClick,
+      selectedPackage,
+      onSelectPackage: handlePackageClick,
+      packages
+    }
+  )), /* @__PURE__ */ React.createElement("div", { style: { gridColumn: 4, gridRow: 3 } }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "space-between", paddingLeft: 12, gridColumn: 5, gridRow: 3 } }, /* @__PURE__ */ React.createElement("svg", { width: "42", height: "36", viewBox: "0 0 42 36", fill: "none", style: { flexShrink: 0 } }, /* @__PURE__ */ React.createElement("path", { d: "M36 36 L36 16 Q36 8 28 8 L0 8", stroke: C.orange, strokeWidth: "1", strokeOpacity: "0.5", fill: "none" }), /* @__PURE__ */ React.createElement("polygon", { points: "4,4 0,8 4,12", fill: C.orange, opacity: "0.5" })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "center", flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 9, color: C.textDim, fontFamily: FONT, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.5 } }, "ui", /* @__PURE__ */ React.createElement("br", null), "realm")))), /* @__PURE__ */ React.createElement("div", { style: { padding: "0 20px" } }, showChainDetail && /* @__PURE__ */ React.createElement(ChainNodeDetail, { nodeId: selectedNode, onClose: () => setSelectedNode(null), chainData }), showRealmDetail && /* @__PURE__ */ React.createElement(RealmDetail, { realmId: selectedNoun?.realmId || selectedRealm, nounIdx: selectedNoun?.nounIdx ?? null, onClose: () => {
+    setSelectedRealm(null);
+    setSelectedNoun(null);
+  }, chainData }), showPackageDetail && /* @__PURE__ */ React.createElement(PackageDetail, { pkgId: selectedPackage, onClose: () => setSelectedPackage(null), packages, chainData })), /* @__PURE__ */ React.createElement("div", { style: { position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 20, background: C.bg, borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "stretch", overflowX: "auto" } }, BOTTOM_TABS.map((t) => /* @__PURE__ */ React.createElement(
+    "div",
+    {
+      key: t.id,
+      onClick: () => handleBottomTab(t.id),
+      style: { padding: "10px 16px", cursor: "pointer", fontSize: 11, fontFamily: FONT, letterSpacing: "0.04em", color: bottomTab === t.id ? C.text : C.textDim, borderTop: bottomTab === t.id ? `2px solid ${C.teal}` : "2px solid transparent", background: bottomTab === t.id ? C.surface : "transparent", transition: "all .15s", fontWeight: bottomTab === t.id ? 600 : 400, display: "flex", alignItems: "center", gap: 5, flexShrink: 0, whiteSpace: "nowrap" }
+    },
+    t.label,
+    t.id === "issues" && issueErrors > 0 && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 5px", borderRadius: 8, background: C.redDim, color: C.red, border: `1px solid ${C.redBorder}`, fontWeight: 700 } }, issueErrors),
+    t.id === "issues" && issueErrors === 0 && issueWarnings > 0 && /* @__PURE__ */ React.createElement("span", { style: { fontSize: 9, padding: "1px 5px", borderRadius: 8, background: C.amberDim, color: C.amber, border: `1px solid ${C.amberBorder}`, fontWeight: 700 } }, issueWarnings),
+    t.id === "migrations" && migrations.some((m) => m.status === "pending") && /* @__PURE__ */ React.createElement("span", { style: { width: 5, height: 5, borderRadius: "50%", background: C.amber, display: "inline-block" } })
+  )), /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }), /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 16px", fontSize: 9, color: C.textFaint, fontFamily: FONT, letterSpacing: "0.06em", textTransform: "uppercase", display: "flex", alignItems: "center", flexShrink: 0 } }, appName, " \xB7 fli pview")), bottomTab && /* @__PURE__ */ React.createElement("div", { style: { position: "fixed", bottom: 44, left: 0, right: 0, height: 320, zIndex: 19, background: C.bg, borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden" } }, bottomTab === "issues" && /* @__PURE__ */ React.createElement(IssuesPanel, { onJumpTab: (tab) => setBottomTab(tab), chainData, migrations, healthGaps, healthPackages }), bottomTab === "health" && /* @__PURE__ */ React.createElement(HealthPanel, { migrations, healthGaps, healthPackages }), bottomTab === "schema" && /* @__PURE__ */ React.createElement(DBPanel, { dbSchema }), bottomTab === "migrations" && /* @__PURE__ */ React.createElement(MigrationsPanel, { migrations }), bottomTab === "routes" && /* @__PURE__ */ React.createElement(RoutesPanel, null), bottomTab === "cli" && /* @__PURE__ */ React.createElement(CLIPanel, null), bottomTab === "channels" && /* @__PURE__ */ React.createElement(ChannelsPanel, { channels }), bottomTab === "relations" && /* @__PURE__ */ React.createElement(RelationsPanel, { relations }), bottomTab === "config" && /* @__PURE__ */ React.createElement(ConfigPanel, null), bottomTab === "workflows" && /* @__PURE__ */ React.createElement(WorkflowsPanel, null), bottomTab === "errors" && /* @__PURE__ */ React.createElement(ErrorPathPanel, null), bottomTab === "session" && /* @__PURE__ */ React.createElement(SessionPanel, null)));
+}
+
+
+
+// ── FJSChainWithData ──────────────────────────────────────────────────────────
+// FONT is declared in the compiled block below — available here via hoisting/scope
+
+function FJSChainWithData() {
+  const { data, loading, error } = useProjectMap()
+
+  if (loading) return React.createElement('div', {
+    style: { display:'flex', alignItems:'center', justifyContent:'center',
+             height:'100vh', fontFamily:FONT, fontSize:13, color:'#6a6660' }
+  }, 'loading project map...')
+
+  if (error) return React.createElement('div', {
+    style: { display:'flex', alignItems:'center', justifyContent:'center',
+             height:'100vh', fontFamily:FONT, fontSize:13, color:'#cc4444' }
+  }, 'error: ' + error)
+
+  return React.createElement(FJSChain, { data })
+}
+ReactDOM.createRoot(document.getElementById('root')).render(
+  React.createElement(FJSChainWithData)
+)
+</script>
+</body>
+</html>
