@@ -1,0 +1,380 @@
+{
+  "Script block": {
+    "prefix": "script",
+    "body": [
+      "<script>",
+      "\t$0",
+      "</script>",
+      ""
+    ],
+    "description": "Mesa script block"
+  },
+  "Style block": {
+    "prefix": "style",
+    "body": [
+      "<style>",
+      "\t$0",
+      "</style>"
+    ],
+    "description": "Mesa scoped style block"
+  },
+  "$: watch+handler (sync)": {
+    "prefix": "$watch",
+    "body": [
+      "\\$: ${1:dep}, () => {",
+      "\t$0",
+      "}"
+    ],
+    "description": "$: dep, () => { } \u2014 explicit watch handler"
+  },
+  "$: watch+handler (async)": {
+    "prefix": "$watchAsync",
+    "body": [
+      "\\$: ${1:dep}, async () => {",
+      "\t$onCleanup(() => { $2 })",
+      "\t$0",
+      "}"
+    ],
+    "description": "$: dep, async () => { } \u2014 async watch handler with cleanup"
+  },
+  "$: writable derived": {
+    "prefix": "$derived",
+    "body": [
+      "\\$: ${1:name} = ${2:expr}"
+    ],
+    "description": "$: name = expr \u2014 writable derived signal"
+  },
+  "$: side effect": {
+    "prefix": "$effect",
+    "body": [
+      "\\$: ${1:expr}"
+    ],
+    "description": "$: expr \u2014 auto-tracked side effect"
+  },
+  "$context provide": {
+    "prefix": "$provide",
+    "body": [
+      "\\$context.${1:key} = ${2:value}"
+    ],
+    "description": "Provide a context value to descendants"
+  },
+  "$context consume (const)": {
+    "prefix": "$consume",
+    "body": [
+      "const ${1:name} = \\$context.${2:key}"
+    ],
+    "description": "Consume context \u2014 read-only derived"
+  },
+  "$context consume (let)": {
+    "prefix": "$consumeLet",
+    "body": [
+      "let ${1:name} = \\$context.${2:key}"
+    ],
+    "description": "Consume context \u2014 writable derived, locally overridable"
+  },
+  "$.transition": {
+    "prefix": "$transition",
+    "body": [
+      "\\$.transition(() => {",
+      "\t$0",
+      "})"
+    ],
+    "description": "Wrap state change in View Transitions API"
+  },
+  "$.entrance": {
+    "prefix": "$entrance",
+    "body": [
+      "\\$.entrance({",
+      "\tin:  (el) => el.animate(",
+      "\t\t[{ opacity: 0, transform: 'translateY(-8px)' }, { opacity: 1, transform: 'translateY(0)' }],",
+      "\t\t{ duration: ${1:250}, easing: 'ease-out', fill: 'forwards' }",
+      "\t),",
+      "\tout: (el) => el.animate(",
+      "\t\t[{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(-8px)' }],",
+      "\t\t{ duration: ${2:200}, easing: 'ease-in', fill: 'forwards' }",
+      "\t).finished",
+      "})"
+    ],
+    "description": "$.entrance({ in, out }) \u2014 enter/exit animation attachment"
+  },
+  "$onMount": {
+    "prefix": "$onMount",
+    "body": [
+      "\\$onMount(() => {",
+      "\t$0",
+      "})"
+    ],
+    "description": "Run after component mounts"
+  },
+  "$onDestroy": {
+    "prefix": "$onDestroy",
+    "body": [
+      "\\$onDestroy(() => {",
+      "\t$0",
+      "})"
+    ],
+    "description": "Run when component is destroyed"
+  },
+  "export let prop": {
+    "prefix": "propLet",
+    "body": [
+      "export let ${1:name}${2: = ${3:defaultValue}}"
+    ],
+    "description": "Reactive prop \u2014 parent writes, component reads/writes"
+  },
+  "export const prop": {
+    "prefix": "propConst",
+    "body": [
+      "export const ${1:name}${2: = ${3:defaultValue}}"
+    ],
+    "description": "Immutable prop \u2014 component cannot reassign"
+  },
+  "export var prop": {
+    "prefix": "propVar",
+    "body": [
+      "export var ${1:name}${2: = ${3:defaultValue}}"
+    ],
+    "description": "Non-reactive prop \u2014 snapshot at mount"
+  },
+  "async derived const": {
+    "prefix": "asyncConst",
+    "body": [
+      "const ${1:data} = await ${2:fetchFn}(${3:dep})"
+    ],
+    "description": "Async derived const \u2014 reruns when deps change"
+  },
+  "{#if}": {
+    "prefix": "#if",
+    "body": [
+      "{#if ${1:condition}}",
+      "\t$0",
+      "{/if}"
+    ],
+    "description": "{#if} block"
+  },
+  "{#if}{:else}": {
+    "prefix": "#ifElse",
+    "body": [
+      "{#if ${1:condition}}",
+      "\t$2",
+      "{:else}",
+      "\t$3",
+      "{/if}"
+    ],
+    "description": "{#if}{:else} block"
+  },
+  "{#each}": {
+    "prefix": "#each",
+    "body": [
+      "{#each ${1:items} as ${2:item} (${2:item}.${3:id})}",
+      "\t$0",
+      "{/each}"
+    ],
+    "description": "{#each} block with key"
+  },
+  "{#each}{:else}": {
+    "prefix": "#eachElse",
+    "body": [
+      "{#each ${1:items} as ${2:item} (${2:item}.${3:id})}",
+      "\t$4",
+      "{:else}",
+      "\t$5",
+      "{/each}"
+    ],
+    "description": "{#each}{:else} block"
+  },
+  "{#await}": {
+    "prefix": "#await",
+    "body": [
+      "{#await ${1:promise}}",
+      "\t<p>Loading\u2026</p>",
+      "{:then ${2:value}}",
+      "\t$0",
+      "{:catch ${3:error}}",
+      "\t<p>{${3:error}.message}</p>",
+      "{/await}"
+    ],
+    "description": "{#await} block"
+  },
+  "{@attach}": {
+    "prefix": "@attach",
+    "body": [
+      "{@attach ${1:fn}}"
+    ],
+    "description": "{@attach fn} \u2014 element lifecycle attachment"
+  },
+  "{@html}": {
+    "prefix": "@html",
+    "body": [
+      "{@html ${1:expr}}"
+    ],
+    "description": "{@html} \u2014 raw HTML injection"
+  },
+  "bind:value": {
+    "prefix": "bindValue",
+    "body": [
+      "bind:value={${1:variable}}"
+    ],
+    "description": "Two-way bind to input value"
+  },
+  "bind:this": {
+    "prefix": "bindThis",
+    "body": [
+      "bind:this={${1:ref}}"
+    ],
+    "description": "Capture DOM element reference"
+  },
+  "bind:group": {
+    "prefix": "bindGroup",
+    "body": [
+      "bind:group={${1:arr}}"
+    ],
+    "description": "Checkbox/radio group binding"
+  },
+  "class: directive": {
+    "prefix": "class:",
+    "body": [
+      "class:${1:name}={${2:condition}}"
+    ],
+    "description": "Conditional CSS class directive"
+  },
+  "style: directive": {
+    "prefix": "style:",
+    "body": [
+      "style:${1:property}={${2:value}}"
+    ],
+    "description": "Reactive inline style directive"
+  },
+  "on:event": {
+    "prefix": "on:",
+    "body": [
+      "on:${1:click}={${2:handler}}"
+    ],
+    "description": "Event listener directive"
+  },
+  "on:event with modifier": {
+    "prefix": "on:mod",
+    "body": [
+      "on:${1:click}|${2:preventDefault}={${3:handler}}"
+    ],
+    "description": "Event listener with modifier"
+  },
+  "on:debounce": {
+    "prefix": "on:debounce",
+    "body": [
+      "on:${1:input}|debounce(${2:300})={${3:handler}}"
+    ],
+    "description": "Debounced event listener"
+  },
+  "<mesa:window>": {
+    "prefix": "mesaWindow",
+    "body": [
+      "<mesa:window on:${1:resize}={${2:handler}}>"
+    ],
+    "description": "Bind window events/properties"
+  },
+  "<mesa:portal>": {
+    "prefix": "mesaPortal",
+    "body": [
+      "<mesa:portal to={${1:document.body}}>",
+      "\t$0",
+      "</mesa:portal>"
+    ],
+    "description": "Render into a different DOM node"
+  },
+  "<mesa:head>": {
+    "prefix": "mesaHead",
+    "body": [
+      "<mesa:head>",
+      "\t<title>${1:Page Title}</title>",
+      "</mesa:head>"
+    ],
+    "description": "Inject reactive content into document.head"
+  },
+  "Full component template": {
+    "prefix": "mesa",
+    "body": [
+      "<script>",
+      "\t// Props",
+      "\texport let ${1:value}",
+      "",
+      "\t// State",
+      "\tlet ${2:count} = 0",
+      "",
+      "\t// Derived",
+      "\tconst ${3:double} = ${2:count} * 2",
+      "</script>",
+      "",
+      "<div>",
+      "\t$0",
+      "</div>"
+    ],
+    "description": "Full Mesa component skeleton"
+  },
+  "{#snippet}": {
+    "prefix": [
+      "snippet",
+      "#snippet"
+    ],
+    "body": [
+      "{#snippet ${1:name}(${2:args})}",
+      "\t$0",
+      "{/snippet}"
+    ],
+    "description": "Define a reusable template snippet"
+  },
+  "{@render}": {
+    "prefix": [
+      "render",
+      "@render"
+    ],
+    "body": "{@render ${1:snippet}($2)}",
+    "description": "Render a snippet inline"
+  },
+  "{#key}": {
+    "prefix": [
+      "key",
+      "#key"
+    ],
+    "body": [
+      "{#key ${1:expr}}",
+      "\t$0",
+      "{/key}"
+    ],
+    "description": "Destroy and recreate content when expr changes"
+  },
+  "script module": {
+    "prefix": [
+      "script module",
+      "module"
+    ],
+    "body": [
+      "<script module>",
+      "\t$0",
+      "</' + 'script>"
+    ],
+    "description": "Module-level script block (runs once, shared across instances)"
+  },
+  "$class prop": {
+    "prefix": [
+      "$class",
+      "class prop"
+    ],
+    "body": "export let $class = ''",
+    "description": "Declare the $class prop for class passthrough"
+  },
+  "bind:class shorthand": {
+    "prefix": [
+      "bind:class"
+    ],
+    "body": "bind:class",
+    "description": "Two-way class binding \u2014 auto-wires $class prop"
+  },
+  "{class} shorthand": {
+    "prefix": [
+      "{class}"
+    ],
+    "body": "{class}",
+    "description": "Class shorthand \u2014 auto-wires $class prop"
+  }
+}

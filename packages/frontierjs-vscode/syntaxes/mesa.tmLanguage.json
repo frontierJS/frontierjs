@@ -1,0 +1,540 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Mesa",
+  "scopeName": "source.mesa",
+  "fileTypes": ["mesa"],
+  "patterns": [
+    { "include": "#script-block" },
+    { "include": "#style-block" },
+    { "include": "#html-comment" },
+    { "include": "#mesa-special-elements" },
+    { "include": "#template-blocks" },
+    { "include": "#template-expression" },
+    { "include": "#directive-attributes" },
+    { "include": "#html-tag" }
+  ],
+  "repository": {
+
+    "script-block": {
+      "name": "meta.script.mesa",
+      "begin": "(<)(script)(>)",
+      "end": "(</)(script)(>)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "3": { "name": "punctuation.definition.tag.end.html" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "3": { "name": "punctuation.definition.tag.end.html" }
+      },
+      "contentName": "source.js.embedded.mesa",
+      "patterns": [
+        { "include": "#mesa-script-annotations" },
+        { "include": "source.js" }
+      ]
+    },
+
+    "style-block": {
+      "name": "meta.style.mesa",
+      "begin": "(<)(style)(>)",
+      "end": "(</)(style)(>)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "3": { "name": "punctuation.definition.tag.end.html" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.html" },
+        "2": { "name": "entity.name.tag.html" },
+        "3": { "name": "punctuation.definition.tag.end.html" }
+      },
+      "contentName": "source.css.embedded.mesa",
+      "patterns": [{ "include": "source.css" }]
+    },
+
+    "mesa-script-annotations": {
+      "patterns": [
+        {
+          "comment": "$context.key = expr (provide) — must come before $context.key read",
+          "match": "(\\$context)(\\.)([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*(=)(?!=)",
+          "captures": {
+            "1": { "name": "variable.language.context.mesa" },
+            "2": { "name": "punctuation.accessor.mesa" },
+            "3": { "name": "entity.name.context-key.mesa" },
+            "4": { "name": "keyword.operator.assignment.js" }
+          }
+        },
+        {
+          "comment": "$context.key (consume read)",
+          "match": "(\\$context)(\\.)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "1": { "name": "variable.language.context.mesa" },
+            "2": { "name": "punctuation.accessor.mesa" },
+            "3": { "name": "entity.name.context-key.mesa" }
+          }
+        },
+        {
+          "comment": "$async.name.prop e.g. $async.cities.loading",
+          "match": "(\\$async)(\\.)([a-zA-Z_$][a-zA-Z0-9_$]*)(\\.)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "1": { "name": "variable.language.async-state.mesa" },
+            "2": { "name": "punctuation.accessor.mesa" },
+            "3": { "name": "variable.other.async-name.mesa" },
+            "4": { "name": "punctuation.accessor.mesa" },
+            "5": { "name": "support.variable.async-prop.mesa" }
+          }
+        },
+        {
+          "comment": "$.transition / $.entrance / $.xxx",
+          "match": "(\\$)(\\.)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "1": { "name": "variable.language.mesa-namespace.mesa" },
+            "2": { "name": "punctuation.accessor.mesa" },
+            "3": { "name": "support.function.mesa-namespace.mesa" }
+          }
+        },
+        {
+          "comment": "Mesa builtins: $onMount $onDestroy $onCleanup $emit $props $attributes",
+          "match": "\\b(\\$onMount|\\$onDestroy|\\$onCleanup|\\$emit|\\$props|\\$attributes)\\b",
+          "name": "support.function.builtin.mesa"
+        },
+        {
+          "comment": "$_name: debug label (must come before $:)",
+          "begin": "^(\\s*)(\\$_[a-zA-Z_][a-zA-Z0-9_]*)(:)",
+          "end": "$",
+          "beginCaptures": {
+            "2": { "name": "entity.name.debug-label.mesa" },
+            "3": { "name": "punctuation.separator.label.mesa" }
+          },
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "comment": "$: reactive annotation",
+          "begin": "^(\\s*)(\\$:)",
+          "end": "$",
+          "beginCaptures": {
+            "2": { "name": "keyword.operator.reactive.mesa" }
+          },
+          "patterns": [{ "include": "source.js" }]
+        },
+
+        {
+          "comment": "export let — reactive prop (orange)",
+          "match": "^(\\s*)(export)(\\s+)(let)(\\s+)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "2": { "name": "keyword.control.export.mesa" },
+            "4": { "name": "keyword.declaration.let.mesa storage.type.let.mesa" },
+            "6": { "name": "variable.other.reactive.prop.mesa" }
+          }
+        },
+        {
+          "comment": "export const — immutable prop (teal)",
+          "match": "^(\\s*)(export)(\\s+)(const)(\\s+)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "2": { "name": "keyword.control.export.mesa" },
+            "4": { "name": "keyword.declaration.const.mesa storage.type.const.mesa" },
+            "6": { "name": "variable.other.immutable.prop.mesa" }
+          }
+        },
+        {
+          "comment": "export var — non-reactive prop (dim)",
+          "match": "^(\\s*)(export)(\\s+)(var)(\\s+)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "2": { "name": "keyword.control.export.mesa" },
+            "4": { "name": "keyword.declaration.var.mesa storage.type.var.mesa" },
+            "6": { "name": "variable.other.nonreactive.prop.mesa" }
+          }
+        },
+        {
+          "comment": "let — reactive signal (orange)",
+          "match": "^(\\s{0,4})(let)(\\s+)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "2": { "name": "keyword.declaration.let.mesa storage.type.let.mesa" },
+            "4": { "name": "variable.other.reactive.mesa" }
+          }
+        },
+        {
+          "comment": "const — derived or static (teal)",
+          "match": "^(\\s{0,4})(const)(\\s+)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "2": { "name": "keyword.declaration.const.mesa storage.type.const.mesa" },
+            "4": { "name": "variable.other.derived.mesa" }
+          }
+        },
+        {
+          "comment": "var — non-reactive sampler (dim)",
+          "match": "^(\\s{0,4})(var)(\\s+)([a-zA-Z_$][a-zA-Z0-9_$]*)",
+          "captures": {
+            "2": { "name": "keyword.declaration.var.mesa storage.type.var.mesa" },
+            "4": { "name": "variable.other.sampler.mesa" }
+          }
+        }
+      ]
+    },
+
+    "html-comment": {
+      "name": "comment.block.html",
+      "begin": "<!--",
+      "end": "-->",
+      "captures": {
+        "0": { "name": "punctuation.definition.comment.html" }
+      }
+    },
+
+    "mesa-special-elements": {
+      "patterns": [
+        {
+          "comment": "<mesa:xxx ...> opening",
+          "begin": "(<)(mesa:(?:window|document|body|head|portal|boundary))",
+          "end": "(/?>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.mesa-element.mesa" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.end.html" }
+          },
+          "patterns": [
+            { "include": "#directive-attributes" },
+            { "include": "#html-attribute" }
+          ]
+        },
+        {
+          "comment": "</mesa:xxx> closing",
+          "match": "(</)( ?mesa:(?:window|document|body|head|portal|boundary))(>)",
+          "captures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.mesa-element.mesa" },
+            "3": { "name": "punctuation.definition.tag.end.html" }
+          }
+        }
+      ]
+    },
+
+    "template-blocks": {
+      "patterns": [
+        {
+          "comment": "{#each items as item (key)}",
+          "begin": "(\\{)(#each)\\s+",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.each.mesa" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.section.block.end.mesa" }
+          },
+          "patterns": [
+            {
+              "match": "\\b(as)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)(?:\\s*(,)\\s*([a-zA-Z_$][a-zA-Z0-9_$]*))?(?:\\s*(\\()(.+?)(\\)))?",
+              "captures": {
+                "1": { "name": "keyword.operator.as.mesa" },
+                "2": { "name": "variable.other.loop-item.mesa" },
+                "3": { "name": "punctuation.separator.comma.js" },
+                "4": { "name": "variable.other.loop-index.mesa" },
+                "5": { "name": "punctuation.definition.key.begin.mesa" },
+                "6": { "name": "variable.other.loop-key.mesa" },
+                "7": { "name": "punctuation.definition.key.end.mesa" }
+              }
+            },
+            { "include": "source.js" }
+          ]
+        },
+        {
+          "match": "(\\{)(/each)(\\})",
+          "captures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.each.mesa" },
+            "3": { "name": "punctuation.section.block.end.mesa" }
+          }
+        },
+        {
+          "comment": "{:else if expr}",
+          "begin": "(\\{)(:else if)\\s+",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.else.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.block.end.mesa" } },
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "comment": "{:else} {:then var} {:catch var}",
+          "match": "(\\{)(:(?:else|then|catch))(?:\\s+([a-zA-Z_$][a-zA-Z0-9_$]*))?(\\})",
+          "captures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.else.mesa" },
+            "3": { "name": "variable.other.block.mesa" },
+            "4": { "name": "punctuation.section.block.end.mesa" }
+          }
+        },
+        {
+          "comment": "{#if expr}",
+          "begin": "(\\{)(#if)\\s+",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.conditional.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.block.end.mesa" } },
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "match": "(\\{)(/if)(\\})",
+          "captures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.conditional.mesa" },
+            "3": { "name": "punctuation.section.block.end.mesa" }
+          }
+        },
+        {
+          "comment": "{#await expr}",
+          "begin": "(\\{)(#await)\\s+",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.await.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.block.end.mesa" } },
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "match": "(\\{)(/await)(\\})",
+          "captures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.await.mesa" },
+            "3": { "name": "punctuation.section.block.end.mesa" }
+          }
+        },
+        {
+          "comment": "{#snippet name(params)}",
+          "begin": "(\\{)(#snippet)\\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\\s*",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.snippet.mesa" },
+            "3": { "name": "entity.name.function.snippet.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.block.end.mesa" } },
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "match": "(\\{)(/snippet)(\\})",
+          "captures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.snippet.mesa" },
+            "3": { "name": "punctuation.section.block.end.mesa" }
+          }
+        },
+        {
+          "comment": "{@attach expr}",
+          "begin": "(\\{)(@attach)\\s+",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.attach.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.block.end.mesa" } },
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "comment": "{@html expr}",
+          "begin": "(\\{)(@html)\\s+",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.html.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.block.end.mesa" } },
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "comment": "{#key expr}",
+          "begin": "(\\{)(#key)\\s+",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.key.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.block.end.mesa" } },
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "match": "(\\{)(/key)(\\})",
+          "captures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.key.mesa" },
+            "3": { "name": "punctuation.section.block.end.mesa" }
+          }
+        },
+        {
+          "comment": "{@render snippet(args)}",
+          "begin": "(\\{)(@render)\\s+",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.block.begin.mesa" },
+            "2": { "name": "keyword.control.render.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.block.end.mesa" } },
+          "patterns": [{ "include": "source.js" }]
+        }
+      ]
+    },
+
+    "template-expression": {
+      "comment": "{expr} inline JS in template",
+      "begin": "(\\{)(?![/#@:}])",
+      "end": "(\\})",
+      "beginCaptures": { "1": { "name": "punctuation.section.embedded.begin.mesa" } },
+      "endCaptures": { "1": { "name": "punctuation.section.embedded.end.mesa" } },
+      "contentName": "source.js.embedded.mesa",
+      "patterns": [{ "include": "source.js" }]
+    },
+
+    "directive-attributes": {
+      "patterns": [
+        {
+          "comment": "bind:this  bind:value  bind:group  bind:xxx",
+          "match": "\\b(bind):([a-zA-Z][a-zA-Z0-9-]*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
+          "captures": {
+            "1": { "name": "keyword.operator.directive.bind.mesa" },
+            "2": { "name": "entity.other.attribute-name.directive.mesa" },
+            "3": { "name": "punctuation.separator.key-value.html" },
+            "4": { "name": "string.quoted.attribute.html" }
+          }
+        },
+        {
+          "comment": "class:name={expr}  class:name (shorthand)",
+          "match": "\\b(class):([a-zA-Z_][a-zA-Z0-9_-]*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
+          "captures": {
+            "1": { "name": "keyword.operator.directive.class.mesa" },
+            "2": { "name": "entity.other.attribute-name.class-directive.mesa" },
+            "3": { "name": "punctuation.separator.key-value.html" },
+            "4": { "name": "string.quoted.attribute.html" }
+          }
+        },
+        {
+          "comment": "style:font-size=\"{n}px\"  style:color={expr}  style:prop (shorthand)",
+          "match": "\\b(style):([a-zA-Z][a-zA-Z0-9-]*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
+          "captures": {
+            "1": { "name": "keyword.operator.directive.style.mesa" },
+            "2": { "name": "entity.other.attribute-name.style-directive.mesa" },
+            "3": { "name": "punctuation.separator.key-value.html" },
+            "4": { "name": "string.quoted.attribute.html" }
+          }
+        },
+        {
+          "comment": "on:click|debounce(300)|once={handler}",
+          "match": "\\b(on):([a-zA-Z][a-zA-Z0-9-]*)((?:\\|[a-zA-Z][a-zA-Z0-9]*(?:\\([^)]*\\))?)*)(?:(=)(\"[^\"]*\"|'[^']*'|\\{[^}]*\\}))?",
+          "captures": {
+            "1": { "name": "keyword.operator.directive.event.mesa" },
+            "2": { "name": "entity.other.attribute-name.event.mesa" },
+            "3": { "name": "keyword.operator.modifier.event.mesa" },
+            "4": { "name": "punctuation.separator.key-value.html" },
+            "5": { "name": "string.quoted.attribute.html" }
+          }
+        }
+      ]
+    },
+
+    "html-tag": {
+      "patterns": [
+        {
+          "comment": "PascalCase component opening tag <MyComp",
+          "begin": "(<)([A-Z][a-zA-Z0-9]*)\\b",
+          "end": "(/?>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.component.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.definition.tag.end.html" } },
+          "patterns": [
+            { "include": "#directive-attributes" },
+            { "include": "#html-attribute" }
+          ]
+        },
+        {
+          "comment": "PascalCase component closing tag </MyComp>",
+          "match": "(</)([A-Z][a-zA-Z0-9]*)(>)",
+          "captures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.component.mesa" },
+            "3": { "name": "punctuation.definition.tag.end.html" }
+          }
+        },
+        {
+          "comment": "HTML element opening <div <p etc.",
+          "begin": "(<)([a-z][a-zA-Z0-9-]*)\\b",
+          "end": "(/?>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.html" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.definition.tag.end.html" } },
+          "patterns": [
+            { "include": "#directive-attributes" },
+            { "include": "#html-attribute" }
+          ]
+        },
+        {
+          "comment": "HTML element closing </div>",
+          "match": "(</)([a-z][a-zA-Z0-9-]*)(>)",
+          "captures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.html" },
+            "3": { "name": "punctuation.definition.tag.end.html" }
+          }
+        }
+      ]
+    },
+
+    "html-attribute": {
+      "patterns": [
+        {
+          "comment": "attr={expr}",
+          "begin": "([a-zA-Z_:][a-zA-Z0-9_:.-]*)\\s*(=)\\s*(\\{)",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": { "name": "entity.other.attribute-name.html" },
+            "2": { "name": "punctuation.separator.key-value.html" },
+            "3": { "name": "punctuation.section.embedded.begin.mesa" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.embedded.end.mesa" } },
+          "contentName": "source.js.embedded.mesa",
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "comment": "attr=\"...{expr}...\" mixed template string",
+          "begin": "([a-zA-Z_:][a-zA-Z0-9_:.-]*)\\s*(=)\\s*(\")",
+          "end": "(\")",
+          "beginCaptures": {
+            "1": { "name": "entity.other.attribute-name.html" },
+            "2": { "name": "punctuation.separator.key-value.html" },
+            "3": { "name": "punctuation.definition.string.begin.html" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.definition.string.end.html" } },
+          "patterns": [{ "include": "#template-expression" }]
+        },
+        {
+          "comment": "attr='value'",
+          "match": "([a-zA-Z_:][a-zA-Z0-9_:.-]*)\\s*(=)\\s*('[^']*')",
+          "captures": {
+            "1": { "name": "entity.other.attribute-name.html" },
+            "2": { "name": "punctuation.separator.key-value.html" },
+            "3": { "name": "string.quoted.single.html" }
+          }
+        },
+        {
+          "comment": "boolean attribute",
+          "match": "([a-zA-Z_][a-zA-Z0-9_-]*)(?=[\\s/>])",
+          "captures": {
+            "1": { "name": "entity.other.attribute-name.html" }
+          }
+        }
+      ]
+    }
+  }
+}

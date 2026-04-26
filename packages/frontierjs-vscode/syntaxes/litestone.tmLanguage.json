@@ -1,0 +1,211 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Litestone",
+  "scopeName": "source.litestone",
+  "fileTypes": ["lite", "litestone"],
+  "patterns": [
+    { "include": "#doc-comment" },
+    { "include": "#comments" },
+    { "include": "#import" },
+    { "include": "#database" },
+    { "include": "#enum" },
+    { "include": "#function" },
+    { "include": "#model" }
+  ],
+  "repository": {
+
+    "doc-comment": {
+      "name": "comment.line.triple-slash.litestone",
+      "match": "///.*$"
+    },
+
+    "comments": {
+      "name": "comment.line.double-slash.litestone",
+      "match": "//.*$"
+    },
+
+    "import": {
+      "name": "meta.import.litestone",
+      "match": "(import)\\s+(\"[^\"]*\")",
+      "captures": {
+        "1": { "name": "keyword.control.import.litestone" },
+        "2": { "name": "string.quoted.double.litestone" }
+      }
+    },
+
+    "database": {
+      "name": "meta.database.litestone",
+      "begin": "\\b(database)\\s+(\\w+)\\s*\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.database.litestone" },
+        "2": { "name": "entity.name.type.database.litestone" }
+      },
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "name": "meta.database.field.litestone",
+          "match": "^\\s*(path|driver|retention)\\s+",
+          "captures": {
+            "1": { "name": "support.type.property-name.litestone" }
+          }
+        },
+        {
+          "name": "constant.language.driver.litestone",
+          "match": "\\b(sqlite|jsonl|logger)\\b"
+        },
+        {
+          "name": "meta.env-call.litestone",
+          "match": "(env)\\(\"[^\"]*\"(?:,\\s*\"[^\"]*\")?\\)",
+          "captures": {
+            "1": { "name": "support.function.litestone" }
+          }
+        },
+        { "include": "#string" }
+      ]
+    },
+
+    "enum": {
+      "name": "meta.enum.litestone",
+      "begin": "\\b(enum)\\s+(\\w+)\\s*\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.enum.litestone" },
+        "2": { "name": "entity.name.type.enum.litestone" }
+      },
+      "patterns": [
+        { "include": "#doc-comment" },
+        { "include": "#comments" },
+        {
+          "name": "variable.other.enummember.litestone",
+          "match": "\\b\\w+\\b"
+        }
+      ]
+    },
+
+    "function": {
+      "name": "meta.function.litestone",
+      "begin": "\\b(function)\\s+(\\w+)\\s*\\(",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.function.litestone" },
+        "2": { "name": "entity.name.function.litestone" }
+      },
+      "patterns": [
+        { "include": "#doc-comment" },
+        { "include": "#comments" },
+        { "include": "#model-attribute" },
+        { "include": "#type" },
+        {
+          "name": "variable.parameter.litestone",
+          "match": "\\b\\w+(?=\\s*:)"
+        }
+      ]
+    },
+
+    "model": {
+      "name": "meta.model.litestone",
+      "begin": "\\b(model)\\s+(\\w+)\\s*\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.declaration.model.litestone" },
+        "2": { "name": "entity.name.type.model.litestone" }
+      },
+      "patterns": [
+        { "include": "#doc-comment" },
+        { "include": "#comments" },
+        { "include": "#model-attribute" },
+        { "include": "#field" }
+      ]
+    },
+
+    "field": {
+      "name": "meta.field.litestone",
+      "match": "^\\s*(\\w+)\\s+(\\w+)(\\[\\])?(\\?)?",
+      "captures": {
+        "1": { "name": "variable.other.field.litestone" },
+        "2": { "name": "support.type.litestone" },
+        "3": { "name": "keyword.operator.array.litestone" },
+        "4": { "name": "keyword.operator.optional.litestone" }
+      }
+    },
+
+    "model-attribute": {
+      "patterns": [
+        {
+          "comment": "Model-level attributes (@@)",
+          "name": "meta.attribute.model.litestone",
+          "match": "@@(index|unique|fts|noStrict|strict|map|softDelete|gate|auth|allow|deny|db|log|external)\\b",
+          "captures": {
+            "0": { "name": "entity.other.attribute-name.model.litestone" }
+          }
+        },
+        {
+          "comment": "Gate level names",
+          "name": "constant.language.level.litestone",
+          "match": "\\b(STRANGER|VISITOR|READER|CREATOR|USER|ADMINISTRATOR|OWNER|SYSADMIN|SYSTEM|LOCKED)\\b"
+        },
+        {
+          "comment": "@@expr inside function body",
+          "name": "meta.attribute.expr.litestone",
+          "begin": "@@expr\\(\"",
+          "end": "\"\\)",
+          "beginCaptures": {
+            "0": { "name": "entity.other.attribute-name.model.litestone" }
+          },
+          "contentName": "string.regexp.litestone"
+        },
+        {
+          "comment": "Field-level attributes with known names (@)",
+          "name": "meta.attribute.field.litestone",
+          "match": "@(id|unique|default|relation|generated|computed|hardDelete|email|url|phone|trim|lower|upper|slug|regex|length|gt|gte|lt|lte|startsWith|endsWith|contains|date|datetime|omit|guarded|encrypted|secret|updatedAt|updatedBy|map|sequence|log|keepVersions|accept|markdown|from)\\b",
+          "captures": {
+            "0": { "name": "entity.other.attribute-name.field.litestone" }
+          }
+        },
+        {
+          "comment": "Function calls as field attributes: @funcName(...)",
+          "name": "meta.attribute.funcall.litestone",
+          "match": "@(\\w+)\\(",
+          "captures": {
+            "0": { "name": "entity.name.function.call.litestone" }
+          }
+        }
+      ]
+    },
+
+    "type": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.litestone",
+          "match": "\\b(Integer|Real|Text|Boolean|DateTime|Json|Blob|File)\\b"
+        },
+        {
+          "name": "keyword.operator.array.litestone",
+          "match": "\\[\\]"
+        },
+        {
+          "name": "keyword.operator.optional.litestone",
+          "match": "\\?"
+        }
+      ]
+    },
+
+    "string": {
+      "name": "string.quoted.double.litestone",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.litestone",
+          "match": "\\\\."
+        },
+        {
+          "name": "variable.other.field-ref.litestone",
+          "match": "\\{\\w+\\}"
+        }
+      ]
+    }
+
+  }
+}

@@ -3,7 +3,7 @@
 **SQLite-first ORM for Bun.** Schema-first, zero dependencies, production-ready.
 
 ```js
-const db = await createClient({ path: './schema.lite', db: './app.db' })
+const db = await createClient({ path: './schema.lite'})
 
 const users = await db.users.findMany({
   where:   { role: 'admin' },

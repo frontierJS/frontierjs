@@ -1,0 +1,234 @@
+{
+  "name": "frontierjs",
+  "displayName": "FrontierJS",
+  "description": "Language support for Litestone (.lite) and MESA",
+  "version": "0.1.0",
+  "publisher": "frontierjs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/frontierjs/vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "litestone",
+    "lite",
+    "sqlite",
+    "schema",
+    "mesa",
+    "frontierjs"
+  ],
+  "icon": "icons/frontierjs.png",
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "litestone",
+        "aliases": [
+          "Litestone",
+          "litestone",
+          "lite"
+        ],
+        "extensions": [
+          ".lite",
+          ".litestone"
+        ],
+        "configuration": "./language-configuration/litestone.json",
+        "icon": {
+          "light": "./icons/litestone-light.svg",
+          "dark": "./icons/litestone-dark.svg"
+        }
+      },
+      {
+        "id": "mesa",
+        "aliases": [
+          "MESA"
+        ],
+        "extensions": [
+          ".mesa"
+        ],
+        "configuration": "./language-configuration/mesa.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "litestone",
+        "scopeName": "source.litestone",
+        "path": "./syntaxes/litestone.tmLanguage.json"
+      },
+      {
+        "language": "mesa",
+        "scopeName": "source.mesa",
+        "path": "./syntaxes/mesa.tmLanguage.json",
+        "embeddedLanguages": {
+          "source.js.embedded.mesa": "javascript",
+          "source.css.embedded.mesa": "css"
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "litestone.format",
+        "title": "Litestone: Format Document",
+        "when": "editorLangId == litestone"
+      },
+      {
+        "command": "litestone.restartServer",
+        "title": "Litestone: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "FrontierJS",
+      "properties": {
+        "litestone.trace.server": {
+          "scope": "window",
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace LSP communication for debugging"
+        },
+        "litestone.formatOnSave": {
+          "scope": "resource",
+          "type": "boolean",
+          "default": true,
+          "description": "Format .lite files on save"
+        },
+        "litestone.parserPath": {
+          "scope": "machine",
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to litestone/src directory. Leave empty to auto-resolve (sibling monorepo directory or installed npm package)."
+        },
+        "mesa.compilerPath": {
+          "scope": "machine",
+          "type": "string",
+          "default": "",
+          "description": "Path to mesa compiler.js. Defaults to node_modules/@mesa/compiler/compiler.js in the workspace root."
+        },
+        "mesa.validateOnType": {
+          "scope": "resource",
+          "type": "boolean",
+          "default": true,
+          "description": "Validate Mesa files as you type (debounced). Disable for large files."
+        },
+        "mesa.validateDelay": {
+          "scope": "resource",
+          "type": "number",
+          "default": 300,
+          "description": "Debounce delay in milliseconds for on-type validation."
+        }
+      }
+    },
+    "snippets": [
+      {
+        "language": "litestone",
+        "path": "./snippets/litestone.json"
+      },
+      {
+        "language": "mesa",
+        "path": "./snippets/mesa.json"
+      }
+    ],
+    "configurationDefaults": {
+      "emmet.includeLanguages": {
+        "mesa": "html"
+      },
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "comment": "Mesa: let \u2014 reactive signal (orange, mutable)",
+            "scope": "keyword.declaration.let.mesa",
+            "settings": {
+              "foreground": "#fe8a11"
+            }
+          },
+          {
+            "comment": "Mesa: const \u2014 derived/static (teal, settled)",
+            "scope": "keyword.declaration.const.mesa",
+            "settings": {
+              "foreground": "#2ec4b6"
+            }
+          },
+          {
+            "comment": "Mesa: var \u2014 non-reactive sampler (dim, escapes graph)",
+            "scope": "keyword.declaration.var.mesa",
+            "settings": {
+              "foreground": "#545470"
+            }
+          },
+          {
+            "comment": "Mesa: reactive variable name",
+            "scope": "variable.other.reactive.mesa",
+            "settings": {
+              "foreground": "#f0dfc0"
+            }
+          },
+          {
+            "comment": "Mesa: reactive prop name",
+            "scope": "variable.other.reactive.prop.mesa",
+            "settings": {
+              "foreground": "#f0dfc0"
+            }
+          },
+          {
+            "comment": "Mesa: derived variable name (slightly muted)",
+            "scope": "variable.other.derived.mesa",
+            "settings": {
+              "foreground": "#c49a84"
+            }
+          },
+          {
+            "comment": "Mesa: immutable prop name",
+            "scope": "variable.other.immutable.prop.mesa",
+            "settings": {
+              "foreground": "#c49a84"
+            }
+          },
+          {
+            "comment": "Mesa: non-reactive / sampler (dim)",
+            "scope": "variable.other.sampler.mesa, variable.other.nonreactive.prop.mesa",
+            "settings": {
+              "foreground": "#545470"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:parser && tsc -p tsconfig.json",
+    "build:parser": "node scripts/build-parser.js",
+    "watch": "concurrently \"npm run watch:parser\" \"npm run watch:tsc\"",
+    "watch:tsc": "tsc -watch -p tsconfig.json",
+    "watch:parser": "node scripts/build-parser.js --watch",
+    "dev": "npm run watch",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.0",
+    "esbuild": "^0.20.0",
+    "concurrently": "^8.2.0"
+  }
+}

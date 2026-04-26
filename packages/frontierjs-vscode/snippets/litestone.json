@@ -1,0 +1,497 @@
+{
+  "Model block": {
+    "prefix": "model",
+    "body": [
+      "model ${1:ModelName} {",
+      "  id        Integer  @id",
+      "  $0",
+      "  createdAt DateTime @default(now())",
+      "}"
+    ],
+    "description": "New Litestone model block"
+  },
+
+  "Model block with timestamps": {
+    "prefix": "modelts",
+    "body": [
+      "model ${1:ModelName} {",
+      "  id        Integer  @id",
+      "  $0",
+      "  createdAt DateTime @default(now())",
+      "  updatedAt DateTime @updatedAt",
+      "}"
+    ],
+    "description": "Model with createdAt + updatedAt"
+  },
+
+  "Model with soft delete": {
+    "prefix": "modelsd",
+    "body": [
+      "model ${1:ModelName} {",
+      "  id        Integer   @id",
+      "  $0",
+      "  createdAt DateTime  @default(now())",
+      "  deletedAt DateTime?",
+      "  @@softDelete",
+      "}"
+    ],
+    "description": "Model with soft delete"
+  },
+
+  "Model with soft delete cascade": {
+    "prefix": "modelsdc",
+    "body": [
+      "model ${1:ModelName} {",
+      "  id        Integer   @id",
+      "  $0",
+      "  createdAt DateTime  @default(now())",
+      "  deletedAt DateTime?",
+      "  @@softDelete(cascade)",
+      "}"
+    ],
+    "description": "Model with soft delete cascade"
+  },
+
+  "Model with gate": {
+    "prefix": "modelgate",
+    "body": [
+      "model ${1:ModelName} {",
+      "  id        Integer  @id",
+      "  $0",
+      "  createdAt DateTime @default(now())",
+      "  @@gate(\"${2:4}\")",
+      "}"
+    ],
+    "description": "Model with GatePlugin access control"
+  },
+
+  "Model with FTS": {
+    "prefix": "modelfts",
+    "body": [
+      "model ${1:ModelName} {",
+      "  id      Integer @id",
+      "  ${2:title}  Text",
+      "  ${3:body}   Text",
+      "  @@fts([${2:title}, ${3:body}])",
+      "}"
+    ],
+    "description": "Model with full-text search"
+  },
+
+  "Model with row-level policy": {
+    "prefix": "modelpolicy",
+    "body": [
+      "model ${1:ModelName} {",
+      "  id      Integer @id",
+      "  ownerId Integer @default(auth().id)",
+      "  $0",
+      "  @@allow('read',   ownerId == auth().id)",
+      "  @@allow('create', auth() != null)",
+      "  @@allow('update', ownerId == auth().id)",
+      "  @@allow('delete', ownerId == auth().id)",
+      "}"
+    ],
+    "description": "Model with owner-scoped row-level policies"
+  },
+
+  "Enum block": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:EnumName} {",
+      "  ${2:value1}",
+      "  ${3:value2}",
+      "  $0",
+      "}"
+    ],
+    "description": "Enum definition"
+  },
+
+  "Database block (sqlite)": {
+    "prefix": "database",
+    "body": [
+      "database ${1:main} {",
+      "  path env(\"${2:DB_PATH}\", \"${3:./${1:main}.db}\")",
+      "}"
+    ],
+    "description": "SQLite database block"
+  },
+
+  "Database block (jsonl)": {
+    "prefix": "databasejsonl",
+    "body": [
+      "database ${1:logs} {",
+      "  path      \"${2:./logs/}\"",
+      "  driver    jsonl",
+      "  retention ${3:30d}",
+      "}"
+    ],
+    "description": "JSONL append-only log database"
+  },
+
+  "Database block (logger)": {
+    "prefix": "databaselogger",
+    "body": [
+      "database ${1:audit} {",
+      "  path      \"${2:./audit/}\"",
+      "  driver    logger",
+      "  retention ${3:90d}",
+      "}"
+    ],
+    "description": "Logger audit database for @log / @@log"
+  },
+
+  "Function block": {
+    "prefix": "function",
+    "body": [
+      "function ${1:name}(${2:field}: ${3:Text}): ${3:Text} {",
+      "  @@expr(\"${4:sql expression}\")",
+      "}"
+    ],
+    "description": "Schema function (SQL-generated column helper)"
+  },
+
+  "Slug function": {
+    "prefix": "funcslug",
+    "body": [
+      "function slug(text: Text): Text {",
+      "  @@expr(\"lower(replace(trim({text}), ' ', '-'))\")",
+      "}"
+    ],
+    "description": "Standard URL slug function"
+  },
+
+  "@id": {
+    "prefix": "@id",
+    "body": ["@id"],
+    "description": "Primary key"
+  },
+
+  "@unique": {
+    "prefix": "@unique",
+    "body": ["@unique"],
+    "description": "UNIQUE constraint"
+  },
+
+  "@default(now())": {
+    "prefix": "@now",
+    "body": ["@default(now())"],
+    "description": "Default to current timestamp"
+  },
+
+  "@default(uuid())": {
+    "prefix": "@uuid",
+    "body": ["@default(uuid())"],
+    "description": "Default to UUID v4"
+  },
+
+  "@default(ulid())": {
+    "prefix": "@ulid",
+    "body": ["@default(ulid())"],
+    "description": "Default to ULID"
+  },
+
+  "@default(auth())": {
+    "prefix": "@authstamp",
+    "body": ["@default(auth().${1:id})"],
+    "description": "Stamp from ctx.auth at write time"
+  },
+
+  "@updatedAt": {
+    "prefix": "@updatedAt",
+    "body": ["@updatedAt"],
+    "description": "Auto-set to now() on every update"
+  },
+
+  "@updatedBy": {
+    "prefix": "@updatedBy",
+    "body": ["@updatedBy"],
+    "description": "Auto-stamp ctx.auth.id on every update"
+  },
+
+  "@map": {
+    "prefix": "@map",
+    "body": ["@map(\"${1:column_name}\")"],
+    "description": "Custom DB column name"
+  },
+
+  "@omit": {
+    "prefix": "@omit",
+    "body": ["@omit"],
+    "description": "Exclude from findMany/findFirst"
+  },
+
+  "@omit(all)": {
+    "prefix": "@omitall",
+    "body": ["@omit(all)"],
+    "description": "Exclude from all reads"
+  },
+
+  "@guarded": {
+    "prefix": "@guarded",
+    "body": ["@guarded"],
+    "description": "Exclude unless asSystem()"
+  },
+
+  "@guarded(all)": {
+    "prefix": "@guardedall",
+    "body": ["@guarded(all)"],
+    "description": "Exclude from reads and writes unless asSystem()"
+  },
+
+  "@encrypted": {
+    "prefix": "@encrypted",
+    "body": ["@encrypted"],
+    "description": "AES-256-GCM encrypted at rest"
+  },
+
+  "@encrypted(searchable)": {
+    "prefix": "@encryptedsearch",
+    "body": ["@encrypted(searchable: true)"],
+    "description": "Encrypted with HMAC index for equality search"
+  },
+
+  "@secret": {
+    "prefix": "@secret",
+    "body": ["@secret"],
+    "description": "@encrypted + @guarded(all) + @log(audit)"
+  },
+
+  "@log": {
+    "prefix": "@log",
+    "body": ["@log(${1:audit})"],
+    "description": "Log reads/writes to a logger database"
+  },
+
+  "@sequence": {
+    "prefix": "@sequence",
+    "body": ["@sequence(scope: ${1:scopeField})"],
+    "description": "Per-scope auto-increment counter"
+  },
+
+  "@computed": {
+    "prefix": "@computed",
+    "body": ["@computed"],
+    "description": "App-layer derived field (implemented in computed.js)"
+  },
+
+  "@generated": {
+    "prefix": "@generated",
+    "body": ["@generated(\"${1:sql expression}\")"],
+    "description": "SQLite GENERATED ALWAYS AS column"
+  },
+
+  "@keepVersions": {
+    "prefix": "@keepVersions",
+    "body": ["@keepVersions"],
+    "description": "Keep old S3 object on File update"
+  },
+
+  "@accept": {
+    "prefix": "@accept",
+    "body": ["@accept(\"${1:image/*}\")"],
+    "description": "MIME type validation for File fields"
+  },
+
+  "@markdown": {
+    "prefix": "@markdown",
+    "body": ["@markdown"],
+    "description": "Annotation: field contains Markdown"
+  },
+
+  "@hardDelete": {
+    "prefix": "@hardDelete",
+    "body": ["@hardDelete"],
+    "description": "Hard-delete these children in a softDelete(cascade) model"
+  },
+
+  "@allow field": {
+    "prefix": "@allow",
+    "body": ["@allow('${1|read,write,all|}', ${2:auth().role == 'admin'})"],
+    "description": "Field-level conditional access policy"
+  },
+
+  "@from": {
+    "prefix": "@from",
+    "body": ["@from(${1:relation}, ${2|count: true,sum: amount,exists: true,first: true,last: true|})"],
+    "description": "Derived field from relation aggregate"
+  },
+
+  "@slug": {
+    "prefix": "@slug",
+    "body": ["@slug"],
+    "description": "Auto-slug transform before write"
+  },
+
+  "@trim": {
+    "prefix": "@trim",
+    "body": ["@trim"],
+    "description": "Trim whitespace before write"
+  },
+
+  "@lower": {
+    "prefix": "@lower",
+    "body": ["@lower"],
+    "description": "Lowercase before write"
+  },
+
+  "@email": {
+    "prefix": "@email",
+    "body": ["@email"],
+    "description": "Validate email format"
+  },
+
+  "@url": {
+    "prefix": "@url",
+    "body": ["@url"],
+    "description": "Validate URL format"
+  },
+
+  "@length": {
+    "prefix": "@length",
+    "body": ["@length(${1:1}, ${2:255})"],
+    "description": "String length validator"
+  },
+
+  "@regex": {
+    "prefix": "@regex",
+    "body": ["@regex(\"${1:pattern}\")"],
+    "description": "Regex validator"
+  },
+
+  "@gte": {
+    "prefix": "@gte",
+    "body": ["@gte(${1:0})"],
+    "description": "Numeric >= validator"
+  },
+
+  "@@db": {
+    "prefix": "@@db",
+    "body": ["@@db(${1:dbName})"],
+    "description": "Assign model to a named database"
+  },
+
+  "@@index": {
+    "prefix": "@@index",
+    "body": ["@@index([${1:field1}, ${2:field2}])"],
+    "description": "Composite index"
+  },
+
+  "@@unique": {
+    "prefix": "@@unique",
+    "body": ["@@unique([${1:field1}, ${2:field2}])"],
+    "description": "Composite unique constraint"
+  },
+
+  "@@fts": {
+    "prefix": "@@fts",
+    "body": ["@@fts([${1:title}, ${2:body}])"],
+    "description": "FTS5 full-text search"
+  },
+
+  "@@softDelete": {
+    "prefix": "@@softDelete",
+    "body": ["@@softDelete"],
+    "description": "Enable soft delete (requires deletedAt DateTime?)"
+  },
+
+  "@@softDelete(cascade)": {
+    "prefix": "@@softDeleteCascade",
+    "body": ["@@softDelete(cascade)"],
+    "description": "Soft delete with cascade to FK children"
+  },
+
+  "@@gate": {
+    "prefix": "@@gate",
+    "body": ["@@gate(\"${1:4}\")"],
+    "description": "Level-based access control (0-9, or R.C.U.D notation)"
+  },
+
+  "@@gate RCUD": {
+    "prefix": "@@gatercud",
+    "body": ["@@gate(\"${1:2}.${2:4}.${3:4}.${4:6}\")"],
+    "description": "Gate with explicit Read.Create.Update.Delete levels"
+  },
+
+  "@@allow": {
+    "prefix": "@@allow",
+    "body": ["@@allow('${1|read,create,update,delete,write,all|}', ${2:auth() != null})"],
+    "description": "Row-level allow policy"
+  },
+
+  "@@deny": {
+    "prefix": "@@deny",
+    "body": ["@@deny('${1|read,create,update,delete,write,all|}', ${2:condition})"],
+    "description": "Row-level deny policy (overrides allow)"
+  },
+
+  "@@log": {
+    "prefix": "@@log",
+    "body": ["@@log(${1:audit})"],
+    "description": "Model-level audit log"
+  },
+
+  "@@map": {
+    "prefix": "@@map",
+    "body": ["@@map(\"${1:table_name}\")"],
+    "description": "Custom DB table name"
+  },
+
+  "@@auth": {
+    "prefix": "@@auth",
+    "body": ["@@auth"],
+    "description": "Mark as auth subject (auth() resolves to rows of this model)"
+  },
+
+  "@@external": {
+    "prefix": "@@external",
+    "body": ["@@external"],
+    "description": "Table managed outside Litestone (views, FTS virtual tables)"
+  },
+
+  "Owner-scoped field pattern": {
+    "prefix": "ownerId",
+    "body": ["ownerId Integer @default(auth().id)"],
+    "description": "Auto-stamp owner from ctx.auth.id at create time"
+  },
+
+  "Soft delete field": {
+    "prefix": "deletedAt",
+    "body": ["deletedAt DateTime?"],
+    "description": "Required for @@softDelete"
+  },
+
+  "Timestamp pair": {
+    "prefix": "timestamps",
+    "body": [
+      "createdAt DateTime @default(now())",
+      "updatedAt DateTime @updatedAt"
+    ],
+    "description": "createdAt + updatedAt pair"
+  },
+
+  "File upload field": {
+    "prefix": "fileField",
+    "body": ["${1:avatar}  File?"],
+    "description": "Single file upload (S3/R2/local via FileStorage plugin)"
+  },
+
+  "File upload array": {
+    "prefix": "fileArray",
+    "body": ["${1:photos}  File[]"],
+    "description": "Multiple file uploads"
+  },
+
+  "Encrypted secret field": {
+    "prefix": "secretField",
+    "body": ["${1:apiKey}  Text  @secret"],
+    "description": "Encrypted + guarded + audited field"
+  },
+
+  "Sequence field": {
+    "prefix": "seqField",
+    "body": [
+      "${1:number}  Integer  @sequence(scope: ${2:accountId})"
+    ],
+    "description": "Per-scope auto-increment (e.g. invoice numbers per account)"
+  }
+}

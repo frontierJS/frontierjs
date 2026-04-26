@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/litestone",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "SQLite ORM for Bun — schema-first, type-safe, zero dependencies",
   "type": "module",
   "license": "MIT",
@@ -27,7 +27,7 @@
     "fts5"
   ],
   "bin": {
-    "litestone": "./src/tools/cli.js"
+    "litestone": "src/tools/cli.js"
   },
   "exports": {
     ".": {
