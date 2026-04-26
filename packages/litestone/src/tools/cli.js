@@ -2109,11 +2109,19 @@ async function cmdSeed(seederArg, cfg) {
 
 // ─── seed:run — run reusable infrastructure seeds ─────────────────────────────
 //
-// Seeds live in ./db/seeds/ (or cfg.seedsDir) as .sql or .js files.
+// Two seed sources:
+//
+//   1. Built-in seeds — ship with @frontierjs/litestone, live in
+//      <package>/src/tools/seeds/. Currently: calendar.
+//
+//   2. User seeds — in the consumer's project. Resolved from cfg.seedsDir,
+//      defaulting to ./seeds/.
+//
+// User seeds with the same name as a built-in seed override the built-in.
 // Each seed is tracked in _litestone_seeds — won't run twice unless --force.
 //
 // Usage:
-//   litestone seed:run                    — list available seeds
+//   litestone seed:run                    — list available seeds (built-in + user)
 //   litestone seed:run calendar           — run calendar seed against main db
 //   litestone seed:run calendar --db=analytics
 //   litestone seed:run calendar --force   — re-run even if already applied
@@ -2124,27 +2132,41 @@ async function cmdSeedRun(seedName, cfg) {
   const { Database } = await import('bun:sqlite')
   const { readdirSync, readFileSync } = await import('fs')
 
-  // Resolve seeds directory — config.seedsDir → ./db/seeds → ./seeds
-  const seedsDir = cfg.seedsDir
-    ?? (existsSync(resolve('./db/seeds'))  ? resolve('./db/seeds')  : null)
-    ?? (existsSync(resolve('./seeds'))     ? resolve('./seeds')      : null)
-    ?? resolve('./db/seeds')  // default (will be created if needed)
+  // Bundled seeds dir — ships with the package.
+  const builtinSeedsDir = resolve(import.meta.dir, 'seeds')
 
-  const dbPath   = getFlag('db') ? resolve(getFlag('db')) : cfg.db
-  const force    = flag('force')
+  // User seeds dir — explicit config wins, otherwise ./seeds/.
+  const userSeedsDir = cfg.seedsDir
+    ?? (existsSync(resolve('./seeds')) ? resolve('./seeds') : null)
+
+  const dbPath = getFlag('db') ? resolve(getFlag('db')) : cfg.db
+  const force  = flag('force')
+
+  // ── Catalogue helper — returns Map<name, { source, file }> ─────────────
+  // User seeds with the same name as a built-in seed override the built-in
+  // (last-write-wins on the Map).
+  const catalogue = () => {
+    const out = new Map()
+    for (const dir of [builtinSeedsDir, userSeedsDir]) {
+      if (!dir || !existsSync(dir)) continue
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.sql') && !f.endsWith('.js')) continue
+        const name = f.replace(/\.(sql|js)$/, '')
+        out.set(name, {
+          source: dir === builtinSeedsDir ? 'builtin' : 'user',
+          file:   resolve(dir, f),
+        })
+      }
+    }
+    return out
+  }
 
   // ── List mode ──────────────────────────────────────────────────────────────
   if (!seedName) {
-    if (!existsSync(seedsDir)) {
-      console.log(`  ${dim(`No seeds directory found.`)}`)
-      console.log(`  Create ${cyan(rel(seedsDir))} and add .sql or .js files.\n`)
-      return
-    }
-    const files = readdirSync(seedsDir)
-      .filter(f => f.endsWith('.sql') || f.endsWith('.js'))
-      .sort()
-    if (!files.length) {
-      console.log(`  ${dim(`No seeds found in ${rel(seedsDir)}`)}\n`)
+    const seeds = catalogue()
+    if (!seeds.size) {
+      console.log(`  ${dim('No seeds available.')}`)
+      console.log(`  Add .sql or .js files to ${cyan('./seeds/')} or set ${cyan('seedsDir')} in litestone.config.js\n`)
       return
     }
 
@@ -2158,34 +2180,33 @@ async function cmdSeedRun(seedName, cfg) {
       } catch {} finally { raw.close() }
     }
 
-    console.log(`  ${dim('Seeds:')}  ${rel(seedsDir)}\n`)
-    for (const f of files) {
-      const name   = f.replace(/\.(sql|js)$/, '')
+    console.log(`  ${dim('Available seeds:')}\n`)
+    for (const [name, { source, file }] of [...seeds.entries()].sort()) {
       const status = applied.has(name) ? green('✓ applied') : dim('· pending')
-      console.log(`    ${status}  ${f}`)
+      const tag    = source === 'builtin' ? dim('(built-in)') : dim('(user)')
+      console.log(`    ${status}  ${name.padEnd(20)} ${tag}  ${dim(rel(file))}`)
     }
     console.log()
     return
   }
 
   // ── Run mode ───────────────────────────────────────────────────────────────
-  if (!existsSync(seedsDir))
-    fatal(`Seeds directory not found: ${rel(seedsDir)}\n     Create it and add .sql or .js seed files.`)
-
   if (!dbPath)
     fatal(`No database specified. Pass ${cyan('--db=<path>')} or set ${cyan('db')} in litestone.config.js`)
 
-  // Find seed file — try .sql first, then .js
-  const sqlFile = resolve(seedsDir, `${seedName}.sql`)
-  const jsFile  = resolve(seedsDir, `${seedName}.js`)
-  const seedFile = existsSync(sqlFile) ? sqlFile : existsSync(jsFile) ? jsFile : null
+  const seeds    = catalogue()
+  const seedRef  = seeds.get(seedName)
 
-  if (!seedFile)
-    fatal(`Seed not found: ${seedName}\n     Looked for:\n       ${rel(sqlFile)}\n       ${rel(jsFile)}`)
+  if (!seedRef) {
+    const list = [...seeds.keys()].sort().join(', ') || '(none)'
+    fatal(`Seed not found: ${seedName}\n     Available: ${list}`)
+  }
 
-  const isJs = seedFile.endsWith('.js')
+  const seedFile = seedRef.file
+  const isJs     = seedFile.endsWith('.js')
 
-  console.log(`  ${dim('Seed:')}     ${rel(seedFile)}`)
+  console.log(`  ${dim('Seed:')}     ${cyan(seedName)} ${dim(`(${seedRef.source})`)}`)
+  console.log(`  ${dim('File:')}     ${rel(seedFile)}`)
   console.log(`  ${dim('Database:')} ${rel(dbPath)}\n`)
 
   const raw = new Database(dbPath)

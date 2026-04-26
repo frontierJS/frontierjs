@@ -1,15 +1,43 @@
 # Litestone
 
-**SQLite-first ORM for Bun.** Schema-first, zero dependencies, production-ready.
+**Schema-first SQLite ORM for Bun.**
+
+A single `.lite` file declares the **shape** of your data, **access** rules, **lifecycle** behavior, and the **generation** of everything downstream — TypeScript types, migrations, JSON Schema, runtime enforcement. Edit the schema; everything stays consistent. SQLite and Bun keep the runtime embedded, fast, and dependency-free.
+
+```
+// schema.lite
+type Address {
+  street     Text
+  city       Text
+  postalCode Text
+}
+
+trait Dates {
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id      Integer @id
+  name    Text
+  email   Text  @email
+  address Json  @type(Address)
+
+  @@trait(Dates)
+  @@allow('read',   auth() != null)
+  @@allow('update', id == auth().id)
+}
+```
 
 ```js
-const db = await createClient({ path: './schema.lite'})
+// One declaration produces a typed, validated, access-controlled client
+const db = await createClient({ schema: './schema.lite', db: './app.db' })
 
-const users = await db.users.findMany({
-  where:   { role: 'admin' },
-  include: { account: true },
-  orderBy: { createdAt: 'desc' },
-  limit:   20,
+const me = await db.user.findUnique({ where: { id: 1 } })
+me.address.city                                // typed as string
+
+await db.user.findMany({
+  where: { address: { city: 'Boston' } }       // compiles to json_extract
 })
 ```
 
@@ -17,90 +45,112 @@ const users = await db.users.findMany({
 
 ## Why
 
-Most ORMs treat SQLite as a dev convenience. Litestone treats it as the target. The result:
+In most stacks, your data model is described in five places — an ORM schema, a validator library, TypeScript types, middleware for access control, JSON Schema for API consumers — and they drift.
 
-- **Zero dependencies** — one package, no Rust binary, no WASM
-- **STRICT mode on by default** — no silent type coercion
-- **Soft delete built-in** — add `deletedAt DateTime?`, get filtering, restore, and cascade automatically
-- **Dual connections** — WAL mode with separate read/write connections so reads never block writes
-- **FTS5 first-class** — `@@fts([body])` gives you `db.messages.search('hello world')`
-- **Cursor pagination** — `findManyCursor` is O(log n), not O(n) offset scans
-- **Pristine migrations** — diff against a fresh in-memory build, no shadow database
-- **Multi-database** — route models to different SQLite files, JSONL logs, or audit loggers in one schema
-- **Row-level policies** — `@@allow` / `@@deny` compile to SQL WHERE injections, not app-layer filtering
+Litestone collapses that to one `.lite` file. Row-level policies, traits, typed JSON, soft delete with cascade, encryption, audit logs, multi-database routing, full-text search — all declared in the schema, enforced at runtime, and reflected in generated types.
+
+The runtime is implementation detail in service of the declarative model. SQLite is the target so the database is a single file you can back up, replicate, ship in a container, or run in a Bun script. Bun is the runtime because its native SQLite driver removes the C++/WASM hop other ORMs need.
+
+Both choices are deliberate. Both keep the principles intact: **fast, embedded, single-binary, no external services to run alongside your app.**
 
 ---
 
 ## How it compares
 
-### Access control
+The comparison is organized around what you can **declare** in the schema and what derives from those declarations.
+
+### Shape — what you can declare about your data
 
 |  | Litestone | Drizzle | Prisma | ZenStack |
 |---|:---:|:---:|:---:|:---:|
-| **Row-level policies (SQL WHERE injection)** | ✓ | ✗ | ✗ | ✓ |
+| **Schema as a file (not code)** | ✓ | ✗ | ✓ | ✓ |
+| **Multi-file schema imports** | ✓ | ✗ ¹ | ✓ | ✓ |
+| **Relations + nested writes + includes** | ✓ | ✓ | ✓ | ✓ |
+| **Field validators in schema** (`@email`, `@regex`, `@length`, etc.) | ✓ | ✗ | ✗ | partial ⁶ |
+| **Reusable model traits** (cross-cutting concerns spliced as fields) | ✓ | ✗ | ✗ | ✓ ⁶ |
+| **Typed JSON columns** (write-time validation + path filter pushdown) | ✓ | partial ⁷ | partial ⁷ | partial ⁶ |
+| **Derived relation fields** (`@from(Model, sum: amount)`) | ✓ | ✗ | ✗ | ✗ |
+| **Computed fields** (`@computed`) | ✓ | ✗ | ✗ | ✗ |
+| **Generated columns** (`@generated("expr")`) | ✓ | ✗ | ✗ | ✗ |
+| **Enum state machines** (with declared transitions) | ✓ | ✗ | ✗ | ✗ |
+| **Full-text search** (FTS5 declared with `@@fts`) | ✓ | ✗ | ✗ | ✗ |
+| **`@@external`** (declare a table you don't own) | ✓ | ✗ | partial ⁴ | ✗ |
+| **STRICT mode by default** | ✓ | ✗ | ✗ | ✗ |
+
+### Access — who can do what to which rows and fields
+
+|  | Litestone | Drizzle | Prisma | ZenStack |
+|---|:---:|:---:|:---:|:---:|
+| **Row-level policies** (compiled to SQL WHERE) | ✓ | ✗ | ✗ | ✓ |
 | **Field-level policies** | ✓ | ✗ | ✗ | ✓ |
 | **`auth()` in policy expressions** | ✓ | ✗ | ✗ | ✓ |
 | **Relation-based policy checks** | ✓ | ✗ | ✗ | ✓ |
-| **Level-based access control (GatePlugin)** | ✓ | ✗ | ✗ | ✗ |
-| **Schema-level field encryption** | ✓ | ✗ | ✗ | ✗ |
+| **Level-based access control** (GatePlugin) | ✓ | ✗ | ✗ | ✗ |
+| **Field-level encryption at rest** (`@encrypted` / `@secret`) | ✓ | ✗ | ✗ | ✗ |
+| **Hidden / guarded fields** (`@guarded`, `@guarded(all)`) | ✓ | ✗ | ✗ | ✗ |
+| **System-mode bypass** (`asSystem()`) | ✓ | ✗ | ✗ | partial ⁶ |
 
-### Querying
-
-|  | Litestone | Drizzle | Prisma | ZenStack |
-|---|:---:|:---:|:---:|:---:|
-| **Nested writes on relations** | ✓ | ✓ | ✓ | ✓ |
-| **Include on writes** | ✓ | ✓ | ✓ | ✓ |
-| **Raw SQL escape hatch** | ✓ | ✓ | ✓ | ✓ |
-| **Cursor pagination** | ✓ | ✓ | ✓ | ✓ |
-| **Recursive CTE tree queries** | ✓ | manual | manual | manual |
-| **Window functions** (`ROW_NUMBER`, `RANK`, `LAG`, rolling aggs) | ✓ | manual | manual | manual |
-| **FTS5 `search()`** | ✓ | ✗ | ✗ | ✗ |
-| **`query()` per-model dispatcher** (auto-routes findMany/aggregate/groupBy by shape) | ✓ | ✗ | ✗ | ✗ |
-| **`db.query(spec)` multi-model batch** (one transaction, named results) | ✓ | ✗ | ✗ | ✗ |
-| **Reusable scopes** (named query fragments, chainable, auth-aware) | ✓ | ✗ | ✗ | ✗ |
-| **`@@external` — query tables Litestone doesn't own** | ✓ | ✗ | partial ⁴ | ✗ |
-
-### Data modeling
+### Lifecycle — what happens automatically over a row's life
 
 |  | Litestone | Drizzle | Prisma | ZenStack |
 |---|:---:|:---:|:---:|:---:|
+| **Auto timestamps** (`@default(now())`, `@updatedAt`) | ✓ | ✓ | ✓ | ✓ |
 | **Soft delete built-in** | ✓ | ✗ | ✗ | ✓ ² |
 | **Cascading soft delete** | ✓ | ✗ | ✗ | ✗ |
-| **Reusable model traits** (cross-cutting concerns spliced as fields) | ✓ | ✗ | ✗ | ✓ ⁶ |
-| **Typed JSON columns** (write-time validation + path filter pushdown) | ✓ | partial ⁷ | partial ⁷ | partial ⁶ |
-| **`@sequence` per-scope auto-increment** | ✓ | ✗ | ✗ | ✗ |
-| **`@from` derived relation fields** | ✓ | ✗ | ✗ | ✗ |
-| **Enum state machines + transitions** | ✓ | ✗ | ✗ | ✗ |
-| **File storage primitives in schema** (`@file`, S3/R2) | ✓ | ✗ | ✗ | ✗ |
-| **Per-model storage backend** (SQLite + JSONL append-only) | ✓ | ✗ | ✗ | ✗ |
+| **`@hardDelete` overrides for cascade** | ✓ | ✗ | ✗ | ✗ |
+| **Auto attribution** (`@default(auth().id)`, `@updatedBy`) | ✓ | ✗ | ✗ | partial ⁶ |
+| **Per-scope sequences** (`@sequence(scope: tenantId)`) | ✓ | ✗ | ✗ | ✗ |
+| **File storage lifecycle** (S3/R2 upload + cleanup paired with row writes) | ✓ | ✗ | ✗ | ✗ |
+| **Audit log per write** (`@@log(audit)` with full diff) | ✓ | ✗ | ✗ | ✗ |
+| **Encryption key rotation** (`$rotateKey`) | ✓ | ✗ | ✗ | ✗ |
 
-### Operations
+### Querying — how you read the data back
 
 |  | Litestone | Drizzle | Prisma | ZenStack |
 |---|:---:|:---:|:---:|:---:|
-| **`onQuery` production logging** | ✓ | ✓ | ✓ | ✓ |
+| **Type-safe client** | ✓ | ✓ | ✓ | ✓ |
+| **Cursor pagination** | ✓ | ✓ | ✓ | ✓ |
+| **Aggregate / groupBy / count** | ✓ | ✓ | ✓ | ✓ |
+| **Raw SQL escape hatch** | ✓ | ✓ | ✓ | ✓ |
+| **Recursive CTE tree queries** | ✓ | manual | manual | manual |
+| **Window functions** (`ROW_NUMBER`, `LAG`, rolling aggregates) | ✓ | manual | manual | manual |
+| **FTS5 `search()`** | ✓ | ✗ | ✗ | ✗ |
+| **Per-model `query(spec)` dispatcher** (auto-routes by spec shape) | ✓ | ✗ | ✗ | ✗ |
+| **Multi-model batch `db.query(spec)`** (one transaction, named results) | ✓ | ✗ | ✗ | ✗ |
+| **Reusable scopes** (named query fragments, chainable, auth-aware) | ✓ | ✗ | ✗ | ✗ |
+| **JSON path filter pushdown** (`where: { addr: { city: 'X' } }`) | ✓ | ✗ | ✗ | ✗ |
+
+### Operations — running this in production
+
+|  | Litestone | Drizzle | Prisma | ZenStack |
+|---|:---:|:---:|:---:|:---:|
+| **`onQuery` query logging** | ✓ | ✓ | ✓ | ✓ |
 | **Studio browser UI** | ✓ | ✓ | ✓ | ✓ |
-| **`$backup` / `$walStatus` / WAL replication** | ✓ | ✗ | ✗ | ✗ |
-| **Application-level locks (`$lock`)** | ✓ | ✗ | ✗ | ✗ |
+| **`db push` (autoMigrate)** | ✓ | ✓ | ✓ | ✓ |
+| **Multi-database support** | ✓ | ✓ | ✓ | ✓ |
+| **Multi-database in one schema** | ✓ | ✗ | ✗ | ✗ |
+| **Continuous WAL replication** (Litestream wrapper) | ✓ | ✗ | ✗ | ✗ |
+| **`$backup` / `$walStatus`** | ✓ | ✗ | ✗ | ✗ |
+| **Per-model storage backend** (SQLite + JSONL append-only) | ✓ | ✗ | ✗ | ✗ |
+| **Application-level locks** (`$lock`) | ✓ | ✗ | ✗ | ✗ |
 | **First-class multi-tenant client cache** | ✓ | ✗ | ✗ | plugin |
-| **Testing utilities (`/testing`)** | ✓ | ✗ | ✗ | ✗ |
+| **Migrations without an external dev database** | ✓ | ✓ | ✗ | ✗ |
 | **Managed connection pooling** | ✗ | ✗ | ✓ ³ | ✓ ³ |
-| **Auto-generated API / tRPC hooks** | ✗ | ✗ | ✗ | ✓ |
 
-### Schema & migrations
+### Generation — what derives from the schema
 
 |  | Litestone | Drizzle | Prisma | ZenStack |
 |---|:---:|:---:|:---:|:---:|
-| **Multi-database support** | ✓ | ✓ | ✓ | ✓ |
-| **TypeScript declaration generation** | ✓ | ✓ | ✓ | ✓ |
-| **`db push` (autoMigrate)** | ✓ | ✓ | ✓ | ✓ |
-| **Schema file (not code)** | ✓ | ✗ | ✓ | ✓ |
-| **Multi-file schema imports** | ✓ | ✗ ¹ | ✓ | ✓ |
-| **Multi-database in one schema** | ✓ | ✗ | ✗ | ✗ |
-| **Migrations without an external dev database** | ✓ | ✓ | ✗ | ✗ |
+| **TypeScript types** | ✓ | ✓ | ✓ | ✓ |
+| **JSON Schema** (with `$defs` for typed JSON) | ✓ | ✗ | partial | partial |
+| **Migration files** | ✓ | ✓ | ✓ | ✓ |
+| **Test factories** (auto from schema) | ✓ | ✗ | ✗ | ✗ |
+| **Test fixtures** (`generateGateMatrix`, `generateValidationCases`) | ✓ | ✗ | ✗ | ✗ |
+| **Reverse introspection** (DB → `.lite`) | ✓ | ✓ | ✓ | ✓ |
+| **Auto-generated API / tRPC hooks** | ✗ | ✗ | ✗ | ✓ |
 | **Zero npm dependencies** | ✓ | ✓ | ✗ | ✗ |
 
-### Platform
+### Platform reach (a tradeoff, not a feature)
 
 |  | Litestone | Drizzle | Prisma | ZenStack |
 |---|:---:|:---:|:---:|:---:|
@@ -113,19 +163,19 @@ Most ORMs treat SQLite as a dev convenience. Litestone treats it as the target. 
 
 ³ Via Prisma Accelerate / ZenStack Cloud — managed external services, not part of the local ORM.
 
-⁴ Prisma supports `@@ignore` to exclude a model from the client, and `prisma db pull` can introspect external tables — but there is no first-class way to query an externally-managed table through the Prisma client with full type safety. The top-requested issue (#8864, 74 comments) for ignore-list migration support has been open since 2021.
+⁴ Prisma supports `@@ignore` to exclude a model from the client, and `prisma db pull` can introspect external tables — but there is no first-class way to query an externally-managed table through the Prisma client with full type safety.
 
 ⁵ Prisma supports edge runtimes (Cloudflare Workers, Vercel Edge) only via Prisma Accelerate or specific drivers; the native Prisma engine targets Node and Bun.
 
-⁶ ZenStack v3 introduced `type X / model M with X` for column splicing — equivalent to Litestone's `trait` / `@@trait(T)`. ZenStack's typed JSON is via a separate Zod plugin, and runtime validation requires bolting Zod onto the Prisma layer.
+⁶ ZenStack v3 introduced `type X / model M with X` for column splicing — equivalent to Litestone's `trait` / `@@trait(T)`. Field validators, attribution defaults, and system-mode bypass exist via Zod plugins or auth helpers — supported but not first-class to the schema language.
 
-⁷ Drizzle's `$type<T>()` and Prisma's typed-JSON plugins provide TypeScript types only — the type is asserted at compile time but not enforced at runtime, and filter operations on JSON sub-keys require dropping into raw SQL. Bad data slips through writes; type drift surfaces silently on reads. Litestone validates the shape on every write and lets you filter inside typed JSON columns using the same query shape you'd use on real columns (`where: { address: { city: 'NYC' } }` compiles to `json_extract(...)`).
+⁷ Drizzle's `$type<T>()` and Prisma's typed-JSON plugins provide TypeScript types only — the type is asserted at compile time but not enforced at runtime, and filter operations on JSON sub-keys require dropping into raw SQL. Litestone validates the shape on every write and lets you filter inside typed JSON columns using the same query shape you'd use on real columns (`where: { address: { city: 'NYC' } }` compiles to `json_extract(...)`).
 
 **When to choose the others instead:**
 
 - **Drizzle** — you need Postgres or MySQL; you want schema-as-code with full TypeScript inference; you prefer a thin query builder over a higher-level ORM
-- **Prisma** — largest ecosystem, most tutorials, strongest hiring pool; you need Prisma Accelerate (managed connection pooling + edge caching); you're already on the Prisma ecosystem
-- **ZenStack** — you want auto-generated tRPC or REST APIs from your schema; you need model inheritance; you're building on Prisma and want access control layered on top
+- **Prisma** — largest ecosystem, most tutorials, strongest hiring pool; you need Prisma Accelerate (managed connection pooling + edge caching); you're already invested in the Prisma ecosystem
+- **ZenStack** — you want auto-generated tRPC or REST APIs from your schema; you're building on Prisma and want access control layered on top
 
 ---
 

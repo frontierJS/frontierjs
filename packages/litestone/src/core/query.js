@@ -105,8 +105,12 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
     const jsonPath = `'$.${subPath.map(p => p.replace(/'/g, "''")).join('.')}'`
     const fieldType = field.type.name
 
-    // Coerce primitive values for SQLite: booleans → 0/1, dates stay as-is
-    const coerce = (v) => (typeof v === 'boolean' ? (v ? 1 : 0) : v)
+    // Coerce primitive values for SQLite: booleans → 0/1, Date → ISO 8601 string.
+    const coerce = (v) => {
+      if (typeof v === 'boolean') return v ? 1 : 0
+      if (v instanceof Date) return v.toISOString()
+      return v
+    }
 
     // Text predicates (LIKE) need explicit CAST AS TEXT — json_extract returns
     // SQLite-native types, and LIKE on a number or NULL silently misbehaves.
@@ -198,6 +202,35 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   const clauses = []
   const aliasPrefix = tableAlias ? `${tableAlias}.` : ''
 
+  // Coerce JS values that aren't valid SQLite bind types. The Bun driver will
+  // happily call `.toString()` on a Date, producing the human-readable form
+  // ("Mon Apr 27 2026 ...") which compares lexically wrong against ISO
+  // datetime columns. We normalize Dates to ISO 8601 here so comparisons
+  // line up with how DateTime values are stored.
+  //
+  // Functions, symbols, and undefined values can't be bound at all and Bun
+  // throws "Binding expected ..." — a useless error that doesn't say which
+  // field caused it. We catch that case here and re-throw with the field name
+  // so the user can find their bug in five seconds instead of five minutes.
+  const coerce = (v) => v instanceof Date ? v.toISOString() : v
+  const checkBindable = (v, fieldName) => {
+    if (v === undefined) {
+      throw new Error(`where clause: field "${fieldName}" was given undefined — did you mean null?`)
+    }
+    if (typeof v === 'function') {
+      throw new Error(`where clause: field "${fieldName}" was given a function — you probably forgot to call it (e.g. \`${fieldName}: req.headers.get('x')\` not \`${fieldName}: req.headers.get\`)`)
+    }
+    if (typeof v === 'symbol') {
+      throw new Error(`where clause: field "${fieldName}" was given a symbol — symbols can't be used in queries`)
+    }
+    return v
+  }
+  // Bound to the current key being processed in the loop below. `pushFor(k)(v)`
+  // both coerces and bind-checks `v` against field name `k`. The factory keeps
+  // hot-path overhead minimal — the closure is created once per top-level key
+  // and reused for all operands at that key.
+  const pushFor = (fieldName) => (v) => params.push(checkBindable(coerce(v), fieldName))
+
   for (const [key, val] of Object.entries(where)) {
     if (key === 'AND') {
       const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap)).filter(Boolean)
@@ -256,15 +289,19 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
     if (val === null) { clauses.push(`${col} IS NULL`); continue }
 
-    if (typeof val !== 'object' || Array.isArray(val)) {
+    // Field-bound binder — captures the field name so any "Binding expected"
+    // error tells the caller which field caused it.
+    const push = pushFor(key)
+
+    if (typeof val !== 'object' || Array.isArray(val) || val instanceof Date) {
       if (Array.isArray(val)) {
-        val.forEach(v => params.push(typeof v === 'boolean' ? (v ? 1 : 0) : v))
+        val.forEach(v => push(typeof v === 'boolean' ? (v ? 1 : 0) : v))
         clauses.push(`${col} IN (${val.map(() => '?').join(', ')})`)
       } else if (typeof val === 'boolean' && isFromExpr && col.includes('EXISTS')) {
         // EXISTS subquery — already returns 0/1; emit directly or negate
         clauses.push(val ? col : `NOT ${col}`)
       } else {
-        params.push(typeof val === 'boolean' ? (val ? 1 : 0) : val)
+        push(typeof val === 'boolean' ? (val ? 1 : 0) : val)
         clauses.push(`${col} = ?`)
       }
       continue
@@ -272,34 +309,34 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
     for (const [op, operand] of Object.entries(val)) {
       switch (op) {
-        case 'gt':         params.push(operand);       clauses.push(`${col} > ?`);           break
-        case 'gte':        params.push(operand);       clauses.push(`${col} >= ?`);          break
-        case 'lt':         params.push(operand);       clauses.push(`${col} < ?`);           break
-        case 'lte':        params.push(operand);       clauses.push(`${col} <= ?`);          break
-        case 'contains':   params.push(`%${operand}%`); clauses.push(`${col} LIKE ?`);      break
-        case 'startsWith': params.push(`${operand}%`);  clauses.push(`${col} LIKE ?`);      break
-        case 'endsWith':   params.push(`%${operand}`);  clauses.push(`${col} LIKE ?`);      break
+        case 'gt':         push(operand);              clauses.push(`${col} > ?`);           break
+        case 'gte':        push(operand);              clauses.push(`${col} >= ?`);          break
+        case 'lt':         push(operand);              clauses.push(`${col} < ?`);           break
+        case 'lte':        push(operand);              clauses.push(`${col} <= ?`);          break
+        case 'contains':   push(`%${operand}%`);       clauses.push(`${col} LIKE ?`);        break
+        case 'startsWith': push(`${operand}%`);        clauses.push(`${col} LIKE ?`);        break
+        case 'endsWith':   push(`%${operand}`);        clauses.push(`${col} LIKE ?`);        break
         case 'in':
           if (!operand?.length) { clauses.push('0 = 1'); break }
-          operand.forEach(v => params.push(v))
+          operand.forEach(v => push(v))
           clauses.push(`${col} IN (${operand.map(() => '?').join(', ')})`)
           break
         case 'notIn':
           if (!operand?.length) break
-          operand.forEach(v => params.push(v))
+          operand.forEach(v => push(v))
           // Include NULL rows — NOT IN silently excludes them in SQLite
           clauses.push(`(${col} NOT IN (${operand.map(() => '?').join(', ')}) OR ${col} IS NULL)`)
           break
         case 'has':
           // element exists in JSON array: json_each(col) WHERE value = ?
-          params.push(operand)
+          push(operand)
           clauses.push(`EXISTS (SELECT 1 FROM json_each(${col}) WHERE value = ?)`)
           break
         case 'hasEvery':
           // all elements present
           if (!operand?.length) break
           for (const v of operand) {
-            params.push(v)
+            push(v)
             clauses.push(`EXISTS (SELECT 1 FROM json_each(${col}) WHERE value = ?)`)
           }
           break
@@ -307,7 +344,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           // at least one element present
           if (!operand?.length) { clauses.push('0 = 1'); break }
           {
-            const parts = operand.map(v => { params.push(v); return `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value = ?)` })
+            const parts = operand.map(v => { push(v); return `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value = ?)` })
             clauses.push(`(${parts.join(' OR ')})`)
           }
           break
@@ -316,7 +353,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           break
         case 'not':
           if (operand === null) { clauses.push(`${col} IS NOT NULL`); break }
-          params.push(operand)
+          push(operand)
           clauses.push(`${col} != ?`)
           break
         default:

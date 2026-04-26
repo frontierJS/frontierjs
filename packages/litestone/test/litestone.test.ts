@@ -11232,6 +11232,224 @@ describe('type declarations', () => {
   })
 })
 
+// ─── Date object coercion ────────────────────────────────────────────────────
+
+describe('Date object coercion', () => {
+  // JS Date objects passed into create/update/where on DateTime fields should
+  // be silently normalized to ISO 8601 strings. Without this, validate() rejects
+  // Date instances on writes and Bun's SQLite driver stringifies them to the
+  // human-readable form on reads, breaking comparisons.
+
+  test('create with Date object on DateTime field succeeds', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `
+        model Session {
+          id        Integer  @id
+          token     Text
+          expiresAt DateTime
+        }
+      `,
+      db: ':memory:',
+    })
+    const expiresAt = new Date('2026-12-31T23:59:59Z')
+    const s = await db.session.create({ data: { token: 'abc', expiresAt } })
+    expect(s.expiresAt).toBe('2026-12-31T23:59:59.000Z')
+    db.$close()
+  })
+
+  test('create with millisecond timestamp on DateTime field succeeds', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `
+        model E { id Integer @id; at DateTime }
+      `,
+      db: ':memory:',
+    })
+    const ms = Date.UTC(2026, 5, 15, 12, 0, 0)  // 2026-06-15T12:00:00Z
+    const e = await db.e.create({ data: { at: ms } })
+    expect(e.at).toBe('2026-06-15T12:00:00.000Z')
+    db.$close()
+  })
+
+  test('where comparison with Date object — gt/lt', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `model E { id Integer @id; at DateTime }`,
+      db: ':memory:',
+    })
+    await db.e.create({ data: { id: 1, at: '2025-01-01T00:00:00Z' } })
+    await db.e.create({ data: { id: 2, at: '2027-01-01T00:00:00Z' } })
+    const cutoff = new Date('2026-01-01T00:00:00Z')
+    const future = await db.e.findMany({ where: { at: { gt: cutoff } } })
+    expect(future.map((r: any) => r.id)).toEqual([2])
+    const past = await db.e.findMany({ where: { at: { lt: cutoff } } })
+    expect(past.map((r: any) => r.id)).toEqual([1])
+    db.$close()
+  })
+
+  test('where direct equality with Date object', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `model E { id Integer @id; at DateTime }`,
+      db: ':memory:',
+    })
+    const at = new Date('2026-06-15T12:00:00Z')
+    await db.e.create({ data: { id: 1, at } })
+    const found = await db.e.findMany({ where: { at: new Date('2026-06-15T12:00:00Z') } })
+    expect(found.map((r: any) => r.id)).toEqual([1])
+    db.$close()
+  })
+
+  test('where in: [Date, Date]', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `model E { id Integer @id; at DateTime }`,
+      db: ':memory:',
+    })
+    const d1 = new Date('2026-01-01T00:00:00Z')
+    const d2 = new Date('2026-06-01T00:00:00Z')
+    const d3 = new Date('2026-12-01T00:00:00Z')
+    await db.e.create({ data: { id: 1, at: d1 } })
+    await db.e.create({ data: { id: 2, at: d2 } })
+    await db.e.create({ data: { id: 3, at: d3 } })
+    const r = await db.e.findMany({ where: { at: { in: [d1, d3] } } })
+    expect(r.map((x: any) => x.id).sort()).toEqual([1, 3])
+    db.$close()
+  })
+
+  test('update with Date object', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `model E { id Integer @id; at DateTime }`,
+      db: ':memory:',
+    })
+    await db.e.create({ data: { id: 1, at: new Date('2026-01-01T00:00:00Z') } })
+    const updated = await db.e.update({
+      where: { id: 1 },
+      data: { at: new Date('2027-01-01T00:00:00Z') },
+    })
+    expect(updated.at).toBe('2027-01-01T00:00:00.000Z')
+    db.$close()
+  })
+
+  test('typed JSON path pushdown also handles Date objects', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `
+        type Meta { occurredAt DateTime }
+        model E { id Integer @id; meta Json @type(Meta) }
+      `,
+      db: ':memory:',
+    })
+    await db.e.create({ data: { id: 1, meta: { occurredAt: '2025-01-01T00:00:00Z' } } })
+    await db.e.create({ data: { id: 2, meta: { occurredAt: '2027-01-01T00:00:00Z' } } })
+    const future = await db.e.findMany({
+      where: { meta: { occurredAt: { gt: new Date('2026-01-01T00:00:00Z') } } }
+    })
+    expect(future.map((r: any) => r.id)).toEqual([2])
+    db.$close()
+  })
+
+  test('null DateTime is still rejected as required', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `model E { id Integer @id; at DateTime }`,
+      db: ':memory:',
+    })
+    // Bad ISO string still rejected
+    await expect(db.e.create({ data: { id: 1, at: 'not a date' } as any }))
+      .rejects.toThrow(/ISO 8601/)
+    db.$close()
+  })
+
+  test('Date works as secondary param in multi-param WHERE (Bun bind quirk regression)', async () => {
+    // Bun's SQLite driver throws "Binding expected ..." when a Date appears
+    // as a secondary param in .get(p1, p2, ...). Single-param queries silently
+    // coerce Date, multi-param ones do not. Litestone normalizes Date to ISO
+    // string in buildWhere so this never reaches Bun unconverted. Without the
+    // fix, this exact pattern (auth-style session lookup) would throw.
+    const { createClient } = await import('../src/core/client.js')
+    const db = await createClient({
+      schema: `
+        model Session {
+          id        Integer @id
+          token     Text
+          expiresAt DateTime
+        }
+      `,
+      db: ':memory:',
+    })
+    const future = new Date(Date.now() + 60 * 60 * 1000)
+    await db.session.create({ data: { token: 'abc', expiresAt: future } })
+
+    // Exact pattern from a typical auth middleware:
+    //   where: { token: 'abc', expiresAt: { gt: new Date() } }
+    // Two params: a string and a Date. Pre-fix this threw "Binding expected".
+    const found = await db.session.findFirst({
+      where: { token: 'abc', expiresAt: { gt: new Date() } },
+    })
+    expect(found?.token).toBe('abc')
+    db.$close()
+  })
+})
+
+// ─── Helpful WHERE binding errors ────────────────────────────────────────────
+
+describe('WHERE binding error reporting', () => {
+  // Bun throws "Binding expected ..." on functions, symbols, etc. without
+  // saying which field caused it. Litestone catches the unbindable cases
+  // before they reach Bun and re-throws with the field name.
+
+  async function makeDb() {
+    const { createClient } = await import('../src/core/client.js')
+    return await createClient({
+      schema: `model U { id Integer @id; token Text }`,
+      db: ':memory:',
+    })
+  }
+
+  test('passing a function as a WHERE value names the field', async () => {
+    const db = await makeDb()
+    await expect(
+      db.u.findFirst({ where: { token: (() => 'x') as any } })
+    ).rejects.toThrow(/field "token".*function/)
+    db.$close()
+  })
+
+  test('passing undefined as a WHERE value names the field', async () => {
+    const db = await makeDb()
+    await expect(
+      db.u.findFirst({ where: { token: undefined as any } })
+    ).rejects.toThrow(/field "token".*undefined.*null/)
+    db.$close()
+  })
+
+  test('function inside an op block names the field', async () => {
+    const db = await makeDb()
+    await expect(
+      db.u.findFirst({ where: { id: { gt: (() => 5) as any } } })
+    ).rejects.toThrow(/field "id".*function/)
+    db.$close()
+  })
+
+  test('function inside in: array names the field', async () => {
+    const db = await makeDb()
+    await expect(
+      db.u.findFirst({ where: { id: { in: [1, (() => 2) as any] } } })
+    ).rejects.toThrow(/field "id".*function/)
+    db.$close()
+  })
+
+  test('symbol value names the field', async () => {
+    const db = await makeDb()
+    await expect(
+      db.u.findFirst({ where: { token: Symbol('x') as any } })
+    ).rejects.toThrow(/field "token".*symbol/)
+    db.$close()
+  })
+})
+
 // ─── Typed JSON path pushdown ────────────────────────────────────────────────
 
 describe('typed JSON path pushdown', () => {

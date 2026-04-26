@@ -101,6 +101,21 @@ export function applyTransforms(data, model) {
   for (const field of model.fields) {
     if (!(field.name in out) || out[field.name] == null) continue
 
+    // Auto-coerce JS Date objects on DateTime fields to ISO 8601 strings.
+    // Without this, `expiresAt: new Date()` would fail validation because
+    // `String(new Date())` produces the human-readable form, not ISO.
+    // Numbers (millisecond timestamps) get the same treatment for parity
+    // with what `new Date(ms).toISOString()` would have produced if the
+    // user had wrapped it themselves.
+    if (field.type.name === 'DateTime') {
+      const v = out[field.name]
+      if (v instanceof Date) {
+        out[field.name] = v.toISOString()
+      } else if (typeof v === 'number' && Number.isFinite(v)) {
+        out[field.name] = new Date(v).toISOString()
+      }
+    }
+
     for (const attr of field.attributes) {
       switch (attr.kind) {
         case 'trim':  out[field.name] = String(out[field.name]).trim();          break

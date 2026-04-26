@@ -2909,7 +2909,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // with a direct SELECT from calendar WHERE date BETWEEN gapStart AND gapEnd.
         // Calendar table has a B-tree index on 'date', making day-level queries
         // over multi-year ranges significantly faster. Not implemented — CTE is
-        // sufficient for most use cases. See: src/tools/seeds/calendar.sql
+        // sufficient for most use cases. Run `litestone seed run calendar`
+        // to populate the table from the bundled seed.
 
       } else {
         // No gap fill — standard groupBy
