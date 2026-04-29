@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { extractFrontmatter, transformMarkdown, compileCli } from '../core/compiler.js'
+import { extractFrontmatter, transformMarkdown, compileCli, extractSegments } from '../core/compiler.js'
 
 // ─── extractFrontmatter ───────────────────────────────────────────────────────
 
@@ -409,6 +409,226 @@ echo('fallback echo')
       if (prevEcho !== undefined) globalThis.echo = prevEcho
       else delete globalThis.echo
     }
+  })
+
+})
+
+// ─── extractSegments ──────────────────────────────────────────────────────────
+
+describe('extractSegments', () => {
+
+  test('extracts script + single prose + single code block', () => {
+    const out = extractSegments(`---
+title: foo
+---
+
+<script>
+const helper = () => 1
+</script>
+
+This is the prose.
+
+\`\`\`js
+log.info(helper())
+\`\`\`
+`)
+    expect(out.script).toBe('const helper = () => 1')
+    expect(out.segments).toHaveLength(2)
+    expect(out.segments[0]).toEqual({ type: 'prose', content: 'This is the prose.' })
+    expect(out.segments[1]).toEqual({ type: 'code', lang: 'js', content: 'log.info(helper())' })
+  })
+
+  test('preserves order of interleaved prose/code (literate style)', () => {
+    const out = extractSegments(`---
+title: literate
+---
+
+Intro paragraph.
+
+\`\`\`js
+const x = 1
+\`\`\`
+
+## A heading
+
+More prose here.
+
+\`\`\`js
+const y = x + 1
+\`\`\`
+
+Final notes.
+`)
+    expect(out.segments).toHaveLength(5)
+    expect(out.segments.map(s => s.type)).toEqual(['prose', 'code', 'prose', 'code', 'prose'])
+    expect(out.segments[2].content).toContain('## A heading')
+    expect(out.segments[2].content).toContain('More prose here.')
+    expect(out.segments[4].content).toBe('Final notes.')
+  })
+
+  test('returns null script when none present', () => {
+    const out = extractSegments(`---
+title: no-script
+---
+
+Just prose.
+
+\`\`\`js
+log.info('hi')
+\`\`\`
+`)
+    expect(out.script).toBeNull()
+    expect(out.segments).toHaveLength(2)
+  })
+
+  test('handles pure prose with no code blocks', () => {
+    const out = extractSegments(`---
+title: pure-prose
+---
+
+Para 1.
+
+Para 2.
+`)
+    expect(out.segments).toHaveLength(1)
+    expect(out.segments[0].type).toBe('prose')
+    expect(out.segments[0].content).toContain('Para 1.')
+    expect(out.segments[0].content).toContain('Para 2.')
+  })
+
+  test('combines consecutive prose paragraphs into single segment', () => {
+    const out = extractSegments(`---
+title: x
+---
+
+Para 1.
+
+Para 2.
+
+\`\`\`js
+log.info('go')
+\`\`\`
+`)
+    expect(out.segments).toHaveLength(2)
+    expect(out.segments[0].content).toContain('Para 1.')
+    expect(out.segments[0].content).toContain('Para 2.')
+  })
+
+  test('detects bash language', () => {
+    const out = extractSegments(`---
+title: x
+---
+
+\`\`\`bash
+ls -la
+\`\`\`
+`)
+    expect(out.segments[0].lang).toBe('bash')
+    expect(out.segments[0].content).toBe('ls -la')
+  })
+
+  test('drops empty prose between adjacent code blocks', () => {
+    const out = extractSegments(`---
+title: x
+---
+
+\`\`\`js
+const a = 1
+\`\`\`
+
+\`\`\`js
+const b = 2
+\`\`\`
+`)
+    expect(out.segments).toHaveLength(2)
+    expect(out.segments.every(s => s.type === 'code')).toBe(true)
+  })
+
+  test('captures unterminated code block at EOF', () => {
+    const out = extractSegments(`---
+title: x
+---
+
+\`\`\`js
+const x = 1
+// no closing fence
+`)
+    expect(out.segments).toHaveLength(1)
+    expect(out.segments[0].type).toBe('code')
+    expect(out.segments[0].content).toContain('const x = 1')
+  })
+
+  test('preserves HTML tags in prose verbatim', () => {
+    const out = extractSegments(`---
+title: x
+---
+
+Here is <RandomComponent /> embedded.
+`)
+    expect(out.segments[0].content).toContain('<RandomComponent />')
+  })
+
+  test('handles empty body', () => {
+    const out = extractSegments(`---
+title: empty
+---
+`)
+    expect(out.script).toBeNull()
+    expect(out.segments).toHaveLength(0)
+  })
+
+  test('handles tilde fences', () => {
+    const out = extractSegments(`---
+title: x
+---
+
+~~~js
+log.info('tilde')
+~~~
+`)
+    expect(out.segments).toHaveLength(1)
+    expect(out.segments[0].type).toBe('code')
+    expect(out.segments[0].lang).toBe('js')
+  })
+
+  test('full literate flow: script + 3 prose + 3 code blocks', () => {
+    const out = extractSegments(`---
+title: fli:update
+---
+
+<script>
+const helper = () => 'h'
+</script>
+
+Update fli to the latest version.
+
+\`\`\`js
+const fliRoot = global.fliRoot
+\`\`\`
+
+## Pre-flight
+
+This is a paragraph between blocks.
+
+\`\`\`js
+const dirty = context.git.status(fliRoot)
+\`\`\`
+
+## Final step
+
+\`\`\`js
+log.success('done')
+\`\`\`
+`)
+    expect(out.script).toBe("const helper = () => 'h'")
+    expect(out.segments).toHaveLength(6)
+    expect(out.segments.map(s => s.type)).toEqual(
+      ['prose', 'code', 'prose', 'code', 'prose', 'code']
+    )
+    expect(out.segments[2].content).toContain('## Pre-flight')
+    expect(out.segments[1].content).toContain('global.fliRoot')
+    expect(out.segments[3].content).toContain('git.status')
+    expect(out.segments[5].content).toContain('log.success')
   })
 
 })

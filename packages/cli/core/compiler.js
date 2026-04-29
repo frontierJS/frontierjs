@@ -219,3 +219,115 @@ export function transformMarkdown(buf) {
   }
   return output.join('\n')
 }
+
+// ─── extractSegments ──────────────────────────────────────────────────────────
+// Literate-markdown decomposition: split a command body into an ordered list
+// of segments the GUI can render top-to-bottom. The runtime ignores this —
+// transformMarkdown handles execution. Segments are purely for presentation.
+//
+// Returns:
+//   {
+//     script:   string | null         // <script> block contents (module-level)
+//     segments: [
+//       { type: 'prose', content }
+//       { type: 'code',  lang: 'js'|'bash'|'other', content }
+//     ]
+//   }
+//
+// Frontmatter is stripped before walking. Empty prose chunks between adjacent
+// code blocks are dropped. Script and code content are trimmed of outer
+// blank lines; prose preserves internal whitespace.
+
+export function extractSegments(template) {
+  const raw = bufToString(template).replace(/^---[\s\S]*?---\s*/, '')
+
+  // Pull script block out first so the segment walker doesn't see it.
+  const scriptMatch = raw.match(/<script[^>]*>([\s\S]*?)<\/script>/)
+  const script = scriptMatch ? scriptMatch[1].trim() : null
+  const body = raw.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')
+
+  const segments = []
+  const tabRe = /^(  +|\t)/
+  const codeBlockRe =
+    /^(?<fence>(`{3,20}|~{3,20}))(?:(?<js>(js|javascript|ts|typescript))|(?<bash>(sh|shell|bash))|(?<other>.*))$/
+
+  let state       = 'root'
+  let codeFence   = ''
+  let codeLang    = 'other'
+  let buffer      = []
+  let prevWasEmpty = true
+
+  const flushProse = () => {
+    const content = buffer.join('\n').trim()
+    if (content) segments.push({ type: 'prose', content })
+    buffer = []
+  }
+  const flushCode = (lang) => {
+    // Strip leading/trailing blank lines from code content
+    const content = buffer.join('\n').replace(/^\s*\n|\n\s*$/g, '')
+    if (content) segments.push({ type: 'code', lang, content })
+    buffer = []
+  }
+
+  for (const line of body.split(/\r?\n/)) {
+    switch (state) {
+      case 'root': {
+        if (tabRe.test(line) && prevWasEmpty) {
+          flushProse()
+          buffer.push(line)
+          state = 'tabcode'
+          continue
+        }
+        const groups = line.match(codeBlockRe)?.groups
+        if (!groups?.fence) {
+          prevWasEmpty = line === ''
+          buffer.push(line)
+          continue
+        }
+        // Hit a fence — flush prose buffer, start collecting code
+        flushProse()
+        codeFence = groups.fence
+        codeLang  = groups.js ? 'js' : groups.bash ? 'bash' : 'other'
+        state = 'code'
+        break
+      }
+      case 'code':
+        if (line === codeFence) {
+          flushCode(codeLang)
+          state = 'root'
+          prevWasEmpty = true
+        } else {
+          buffer.push(line)
+        }
+        break
+      case 'tabcode':
+        if (line === '') {
+          buffer.push(line)
+        } else if (tabRe.test(line)) {
+          buffer.push(line)
+        } else {
+          // Unindented line — close the tab block, restart in root with this line
+          // Strip the tab prefix from each accumulated line
+          buffer = buffer.map(l => l.replace(tabRe, ''))
+          flushCode('other')
+          state = 'root'
+          prevWasEmpty = false
+          buffer.push(line)
+        }
+        break
+    }
+  }
+
+  // Flush whatever's left — could be unterminated prose or unterminated code
+  if (state === 'root') {
+    flushProse()
+  } else if (state === 'code') {
+    flushCode(codeLang)
+  } else if (state === 'tabcode') {
+    buffer = buffer.map(l => l.replace(tabRe, ''))
+    flushCode('other')
+  }
+
+  return { script, segments }
+}
+

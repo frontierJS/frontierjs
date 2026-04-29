@@ -218,11 +218,10 @@ if (!layer || layer === 'resources') {
 
     if (!refs.model && !refs.service) continue  // not a createResource component
 
-    // model: 'Lead' → schema model name is 'leads' (lowercase + s)
+    // model: 'Lead' → schema model name is 'Lead' (PascalCase singular)
     if (refs.model) {
-      const schemaName = refs.model.charAt(0).toLowerCase() + refs.model.slice(1) + 's'
-      if (!models.has(schemaName) && !models.has(refs.model)) {
-        err('resources', file, `References model '${refs.model}' (schema: '${schemaName}') which does not exist in schema.lite`)
+      if (!models.has(refs.model)) {
+        err('resources', file, `References model '${refs.model}' which does not exist in schema.lite`)
       }
     }
 

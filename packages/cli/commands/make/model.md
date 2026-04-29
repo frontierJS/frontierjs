@@ -39,10 +39,11 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
 const makeLiteModel = (name, softDelete) => {
-  const lower = name.charAt(0).toLowerCase() + name.slice(1)
+  // Model names in schema.lite are PascalCase singular — e.g. Lead, not leads
+  const pascal = name.charAt(0).toUpperCase() + name.slice(1)
   const lines = [
     '',
-    `model ${lower}s {`,
+    `model ${pascal} {`,
     `  id        Integer   @id`,
     `  createdAt DateTime  @default(now())`,
     `  updatedAt DateTime  @default(now()) @updatedAt`,

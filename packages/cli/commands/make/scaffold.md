@@ -103,13 +103,13 @@ function toLabel(name) {
 // ─── Template: schema.lite stanza ────────────────────────────────────────────
 
 function makeSchemaStanza(name, fields, softDelete) {
-  const lower = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural = lower + 's'
+  // Model names in schema.lite are PascalCase singular — e.g. Lead, not leads
+  const pascal = name.charAt(0).toUpperCase() + name.slice(1)
   const col = 10  // column width for field names
 
   const lines = [
     '',
-    `model ${plural} {`,
+    `model ${pascal} {`,
     `  ${'id'.padEnd(col)}Integer   @id`,
   ]
 
@@ -418,10 +418,10 @@ if (!existsSync(schemaPath)) {
 }
 
 const existing = readFileSync(schemaPath, 'utf8')
-if (existing.includes(`model ${plural}`) && !flag.force) {
-  log.warn(`model ${plural} already exists in schema.lite — skipping (use --force to overwrite)`)
+if (existing.includes(`model ${modelName}`) && !flag.force) {
+  log.warn(`model ${modelName} already exists in schema.lite — skipping (use --force to overwrite)`)
 } else if (flag.dry) {
-  log.dry(`Would append model ${plural} to schema.lite`)
+  log.dry(`Would append model ${modelName} to schema.lite`)
 } else {
   const stanza = makeSchemaStanza(modelName, fields, flag['soft-delete'])
   writeFileSync(schemaPath, existing + stanza, 'utf8')

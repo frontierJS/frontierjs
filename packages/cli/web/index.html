@@ -244,6 +244,12 @@
   .source-section-body.open { display: block; }
   .source-prose { font-size: 14px; color: var(--text); font-style: italic; padding: 8px 10px; border-left: 2px solid var(--border); }
   pre.source-code { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; font-size: 16px; line-height: 1.65; color: var(--text); overflow-x: auto; white-space: pre; }
+  /* literate flow — vertical rhythm for interleaved prose/code segments */
+  .source-section > .source-prose + pre.source-code,
+  .source-section > pre.source-code + .source-prose,
+  .source-section > pre.source-code + pre.source-code,
+  .source-section > .source-prose + .source-prose { margin-top: 12px; }
+  pre.source-code[data-lang="bash"] { color: var(--green); }
   /* syntax highlight tokens */
   .hl-kw   { color: #c87adc; }           /* keywords */
   .hl-fn   { color: #3abfa8; }           /* function names */
@@ -1630,6 +1636,37 @@ function buildForm(meta) {
   const m = meta._module
   let sourceHtml = ''
 
+  // Render an array of {type, lang?, content} segments as interleaved
+  // prose (via mdToHtml) and code blocks (via highlight). Returns '' if empty.
+  const renderSegments = (segments) => {
+    if (!segments || !segments.length) return ''
+    return segments.map(seg => {
+      if (seg.type === 'prose') {
+        return `<div class="source-prose prose-rendered">${mdToHtml(seg.content)}</div>`
+      }
+      // code segment — apply JS highlighting; bash falls through to plain escape
+      const escaped = seg.lang === 'js'
+        ? highlight(seg.content)
+        : seg.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      return `<pre class="source-code"${seg.lang ? ` data-lang="${seg.lang}"` : ''}>${escaped}</pre>`
+    }).join('')
+  }
+
+  // Render a script block (namespace helpers) as a collapsible section.
+  // Returns '' if no script content.
+  const renderScript = (script, label = 'helpers') => {
+    if (!script) return ''
+    return `
+      <div class="source-section">
+        <div class="source-section-label collapsible" onclick="toggleScriptBlock(this)">
+          <span class="ss-chevron">›</span> ${label}
+        </div>
+        <div class="source-section-body">
+          <pre class="source-code">${highlight(script)}</pre>
+        </div>
+      </div>`
+  }
+
   // ── Steps pipeline block ─────────────────────────────────────────────────────
   const st = meta._steps
   let stepsHtml = ''
@@ -1681,7 +1718,8 @@ function buildForm(meta) {
       return `<span class="ns-req-item" title="${k}">${k}</span>`
     }).join('')
 
-    const moduleProse = m.prose ? `<div class="source-prose prose-rendered">${mdToHtml(m.prose)}</div>` : ''
+    const moduleSegmentsHtml = renderSegments(m.segments)
+    const moduleScriptHtml   = renderScript(m.script, 'helpers')
 
     moduleHtml = `
       <div class="ns-module">
@@ -1692,50 +1730,29 @@ function buildForm(meta) {
         </div>
         <div class="ns-module-body">
           ${reqHtml ? `<div class="ns-requires">${reqHtml}</div>` : ''}
-          ${moduleProse}
+          ${moduleScriptHtml}
+          ${moduleSegmentsHtml}
         </div>
       </div>`
   }
 
-  if (stepsHtml || moduleHtml || (s && (s.prose || s.script || s.main))) {
-    const sections = []
-    if (s.prose) sections.push(`
-      <div class="source-section">
-        <div class="source-section-label">description</div>
-        <div class="source-prose prose-rendered">${mdToHtml(s.prose)}</div>
-      </div>`)
-    if (s.script) sections.push(`
-      <div class="source-section">
-        <div class="source-section-label collapsible" onclick="toggleScriptBlock(this)">
-          <span class="ss-chevron">›</span> helpers
-        </div>
-        <div class="source-section-body">
-          <pre class="source-code">${highlight(s.script)}</pre>
-        </div>
-      </div>`)
-    if (s.main) sections.push(`
-      <div class="source-section">
-        <div class="source-section-label">main block</div>
-        <pre class="source-code">${highlight(s.main)}</pre>
-      </div>`)
+  // ── Command source: helpers (script) + interleaved segments ──────────────────
+  const hasSource    = s && (s.script || (s.segments && s.segments.length))
+  const segmentsHtml = s ? renderSegments(s.segments) : ''
+  const scriptHtml   = s ? renderScript(s.script, 'helpers') : ''
 
-    if (s && (s.prose || s.script || s.main)) {
-      sourceHtml = `
-        <div class="source-toggle open" onclick="toggleSource(this)">
-          <span class="chevron">›</span> source
-        </div>
-        <div class="source-panel open">
-          <div class="source-body">${stepsHtml}${moduleHtml}${sections.join('')}</div>
-        </div>`
-    } else if (stepsHtml || moduleHtml) {
-      sourceHtml = `
-        <div class="source-toggle open" onclick="toggleSource(this)">
-          <span class="chevron">›</span> source
-        </div>
-        <div class="source-panel open">
-          <div class="source-body">${stepsHtml}${moduleHtml}</div>
-        </div>`
-    }
+  if (stepsHtml || moduleHtml || hasSource) {
+    const sections = []
+    if (scriptHtml)   sections.push(scriptHtml)
+    if (segmentsHtml) sections.push(`<div class="source-section">${segmentsHtml}</div>`)
+
+    sourceHtml = `
+      <div class="source-toggle open" onclick="toggleSource(this)">
+        <span class="chevron">›</span> source
+      </div>
+      <div class="source-panel open">
+        <div class="source-body">${stepsHtml}${moduleHtml}${sections.join('')}</div>
+      </div>`
   }
 
   return `

@@ -238,12 +238,15 @@ describe('GET /api/commands/:name — _source blocks', () => {
     expect(typeof meta._source).toBe('object')
   })
 
-  test('_source.main contains the js block content', async () => {
+  test('_source.segments is an array of typed segments', async () => {
     const res  = await fetch(`${base}/api/commands/hello:exec`)
     const meta = await res.json()
-    // hello:exec has a js block
-    expect(meta._source.main).toBeTruthy()
-    expect(typeof meta._source.main).toBe('string')
+    expect(Array.isArray(meta._source.segments)).toBe(true)
+    // hello:exec has at least one js code block
+    const codeSegments = meta._source.segments.filter(s => s.type === 'code')
+    expect(codeSegments.length).toBeGreaterThan(0)
+    expect(codeSegments[0].lang).toBe('js')
+    expect(typeof codeSegments[0].content).toBe('string')
   })
 
   test('_source.script contains the script block when present', async () => {
@@ -251,15 +254,23 @@ describe('GET /api/commands/:name — _source blocks', () => {
     const meta = await res.json()
     // hello:exec has a <script> block with buildCommand
     expect(meta._source.script).toBeTruthy()
+    expect(typeof meta._source.script).toBe('string')
     expect(meta._source.script).toContain('buildCommand')
   })
 
-  test('_source fields are null when blocks are absent', async () => {
-    // utils:killnode has no <script> block and no prose
+  test('_source.script is null when no <script> block', async () => {
+    // utils:killnode has no <script> block
     const res  = await fetch(`${base}/api/commands/utils:killnode`)
     const meta = await res.json()
     expect(meta._source.script).toBeNull()
-    expect(meta._source.prose).toBeNull()
+  })
+
+  test('_source.segments contains no prose entries when command has no prose', async () => {
+    // utils:killnode is just a single js block, no prose
+    const res  = await fetch(`${base}/api/commands/utils:killnode`)
+    const meta = await res.json()
+    const proseSegments = meta._source.segments.filter(s => s.type === 'prose')
+    expect(proseSegments).toHaveLength(0)
   })
 
 })

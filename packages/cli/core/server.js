@@ -24,6 +24,7 @@ import { homedir } from 'os'
 const __dir = dirname(fileURLToPath(import.meta.url))
 import { buildRegistry, uniqueCommands } from './registry.js'
 import { Command } from './runtime.js'
+import { extractSegments } from './compiler.js'
 
 import { GLOBAL } from './ports.js'
 const PORT = parseInt(process.env.FLI_PORT) || GLOBAL.gui
@@ -214,17 +215,10 @@ async function handleMeta(req, res, name) {
       return json(res, 404, { error: `Command "${name}" not found` })
     }
 
-    // Enrich metadata with source blocks from the raw .md file
-    // so the Web GUI can display the command's implementation
-    const raw   = readFileSync(entry.filePath, 'utf8')
-    const body  = raw.replace(/^---[\s\S]*?---\s*/, '')
-
-    const scriptMatch = body.match(/<script[^>]*>([\s\S]*?)<\/script>/)
-    const jsMatch     = body.match(/```js\s*\n([\s\S]*?)```/)
-    const prose       = body
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')
-      .replace(/```[\s\S]*?```/g, '')
-      .trim()
+    // Decompose the .md file into ordered prose+code segments for the GUI.
+    // The runtime ignores this — segments are purely for presentation.
+    const raw = readFileSync(entry.filePath, 'utf8')
+    const { script, segments } = extractSegments(raw)
 
     const { getModule: getModuleForNs } = await import('./registry.js')
     const cmdNs  = entry.meta.title?.split(':')?.[0]
@@ -259,22 +253,28 @@ async function handleMeta(req, res, name) {
         return { folder: d.name, steps, isDefault: d.name === '_steps' }
       })
 
-    // Does the main block set context.config.stepsDir dynamically?
-    const mainBlock  = jsMatch ? jsMatch[1] : ''
-    const dynamicSteps = mainBlock.includes('context.config.stepsDir')
-      || mainBlock.includes('config.stepsDir')
+    // Does ANY js segment set context.config.stepsDir dynamically?
+    const dynamicSteps = segments
+      .filter(s => s.type === 'code' && s.lang === 'js')
+      .some(s => s.content.includes('context.config.stepsDir')
+              || s.content.includes('config.stepsDir'))
+
+    // Module's own segments (for namespace docs in the GUI)
+    const moduleSource = mod
+      ? extractSegments(readFileSync(mod.filePath, 'utf8'))
+      : null
 
     json(res, 200, {
       ...entry.meta,
       _source: {
-        script: scriptMatch ? scriptMatch[1].trim() : null,
-        main:   jsMatch     ? jsMatch[1].trim()     : null,
-        prose:  prose || null,
+        script,
+        segments,
       },
       _module: mod ? {
-        prose:       mod.prose    || null,
         description: mod.meta?.description || null,
         requires:    mod.meta?.requires    || [],
+        script:      moduleSource?.script   || null,
+        segments:    moduleSource?.segments || [],
       } : null,
       _steps: stepFolders.length ? {
         folders:      stepFolders,

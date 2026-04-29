@@ -22,9 +22,12 @@ flags:
 import { appendFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
-const makeModel = (name) => `
+const makeModel = (name) => {
+  // Model names are PascalCase singular — e.g. Lead, not leads
+  const pascal = name.charAt(0).toUpperCase() + name.slice(1)
+  return `
 
-model ${name} {
+model ${pascal} {
   id               Int       @id @default(autoincrement())
 
   type             String?

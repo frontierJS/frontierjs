@@ -34,7 +34,7 @@ import { resolve }                                             from 'path'
 const authSchemaFragments = (db) => `
 // ─── Auth — injected by fli auth:install ─────────────────────────────────────
 
-model users {
+model User {
   id            Text      @id @default(uuid())
   email         Text      @email @unique @lower
   name          Text?     @trim
@@ -47,7 +47,7 @@ model users {
   @@log(audit)
 }
 
-model credentials {
+model Credential {
   id             Integer   @id
   userId         Text
   type           Text
@@ -65,7 +65,7 @@ model credentials {
   @@index([type, value])
 }
 
-model sessions {
+model Session {
   id        Text     @id @default(uuid())
   userId    Text
   token     Text     @unique @guarded(all)
@@ -79,7 +79,7 @@ model sessions {
   @@log(audit)
 }
 
-model verifications {
+model Verification {
   id         Integer  @id
   identifier Text
   value      Text     @guarded(all)
