@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // litestone CLI
 
-import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync } from 'fs'
+import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSync } from 'fs'
 import { resolve, relative, join, dirname }       from 'path'
 import { Database }                                from 'bun:sqlite'
 
@@ -30,6 +30,88 @@ const green  = s => `${c.green}${s}${c.reset}`
 const yellow = s => `${c.yellow}${s}${c.reset}`
 const red    = s => `${c.red}${s}${c.reset}`
 const cyan   = s => `${c.cyan}${s}${c.reset}`
+
+// ─── .env loading ─────────────────────────────────────────────────────────────
+// Auto-load environment variables from .env files in cwd before any command
+// runs. This matches behaviour developers expect from tools like Prisma and
+// Drizzle: drop secrets in .env, run `litestone db push`, it just works.
+//
+// Precedence (highest wins, never overrides what the shell already set):
+//   1. process.env from the shell (already set when this file loads)
+//   2. .env.local                  (gitignored, machine-local overrides)
+//   3. .env                        (committed defaults)
+//   4. file passed via --env-file=path / --env-file path
+//
+// Disable with --no-env. Passing --env-file replaces the default search and
+// errors if the file is missing.
+
+function parseDotenv(text) {
+  const out = {}
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const eq = line.indexOf('=')
+    if (eq <= 0) continue
+    const key = line.slice(0, eq).trim()
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue
+    let val = line.slice(eq + 1).trim()
+    // Strip wrapping quotes — single or double
+    if ((val.startsWith('"') && val.endsWith('"') && val.length >= 2) ||
+        (val.startsWith("'") && val.endsWith("'") && val.length >= 2)) {
+      val = val.slice(1, -1)
+    } else {
+      // Strip inline `# comment` only when value is unquoted
+      const hash = val.indexOf(' #')
+      if (hash >= 0) val = val.slice(0, hash).trim()
+    }
+    out[key] = val
+  }
+  return out
+}
+
+function loadEnvFile(path, { required = false } = {}) {
+  if (!existsSync(path)) {
+    if (required) {
+      console.error(`\n  ${c.red}✗${c.reset}  --env-file not found: ${path}\n`)
+      process.exit(1)
+    }
+    return 0
+  }
+  const parsed = parseDotenv(readFileSync(path, 'utf8'))
+  let loaded   = 0
+  for (const [k, v] of Object.entries(parsed)) {
+    // Shell env always wins — never clobber a value the user set explicitly.
+    if (process.env[k] === undefined) {
+      process.env[k] = v
+      loaded++
+    }
+  }
+  return loaded
+}
+
+;(function autoLoadEnv() {
+  const argv = process.argv.slice(2)
+  if (argv.includes('--no-env')) return
+
+  // Pull --env-file value if present (supports --env-file=x and --env-file x)
+  let explicit = null
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === '--env-file' && argv[i + 1]) { explicit = argv[i + 1]; break }
+    if (a.startsWith('--env-file=')) { explicit = a.slice('--env-file='.length); break }
+  }
+
+  if (explicit) {
+    loadEnvFile(resolve(process.cwd(), explicit), { required: true })
+    return
+  }
+
+  // Default: .env then .env.local in cwd. Load .env.local LAST so that when we
+  // skip already-set keys, .env.local effectively wins for any keys present in
+  // both files. (Shell still beats both.)
+  loadEnvFile(resolve(process.cwd(), '.env.local'))
+  loadEnvFile(resolve(process.cwd(), '.env'))
+})()
 
 // ─── Args ─────────────────────────────────────────────────────────────────────
 
@@ -71,6 +153,9 @@ const HELP = `
 
   ${bold('Commands')}
     ${cyan('litestone init')}                      create schema.lite + litestone.config.js
+    ${cyan('litestone codemod')} [path]            migrate .lite files to renamed types
+    ${dim('  --dry-run')}                            preview without writing
+    ${dim('  --no-backup')}                          skip .bak files
     ${cyan('litestone migrate create')} [label]    diff schema → write migration file
     ${cyan('litestone migrate dry-run')} [label]   preview migration SQL, no file written
     ${cyan('litestone migrate apply')}             apply all pending migrations
@@ -105,6 +190,8 @@ const HELP = `
     ${dim('--migrations=<dir>')}  migrations dir    ${dim('(default: from config or ./migrations)')}
     ${dim('--force')}             overwrite on init
     ${dim('--debug')}             print stack traces on error
+    ${dim('--env-file=<path>')}   load env vars from file ${dim('(default: ./.env.local then ./.env)')}
+    ${dim('--no-env')}            skip auto-loading .env files
     ${dim('--version')}           print version and exit
 
   ${bold('Config')}  litestone.config.js
@@ -198,6 +285,13 @@ function loadSchema(schemaPath) {
   return result
 }
 
+// Resolve encryption key from env for CLI commands that open createClient.
+// Schemas with @encrypted/@secret fields require a key; CLI ops (db push,
+// migrate apply, studio, seed, optimize, backup) all load via env.
+function getEncKey() {
+  return process.env.ENCRYPTION_KEY ?? process.env.LITESTONE_KEY ?? undefined
+}
+
 function openDb(dbPath) {
   if (!dbPath)
     fatal(`No database specified. Pass ${cyan('--db=<path>')} or set ${cyan('db')} in litestone.config.js`)
@@ -285,6 +379,77 @@ function openSqliteDbs(parseResult, cfg) {
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
+// Migrate .lite files from the old type names (Text/Integer/Real/Blob) to the
+// new ones (String/Int/Float/Bytes). Word-boundary replacement so we don't
+// trample identifiers that happen to contain the old name as a substring.
+//
+// Defaults: rewrite in place, skip node_modules / .git / migrations directory.
+// Pass --dry-run to print the changes without writing. Pass --no-backup to
+// skip the .bak files (default writes filename.lite.bak alongside).
+async function cmdCodemod(target) {
+  header('litestone codemod')
+
+  const dryRun  = flag('dry-run')
+  const backup  = !flag('no-backup')
+  const root    = target ? resolve(target) : process.cwd()
+  const renames = [
+    [/\bText\b/g,    'String'],
+    [/\bInteger\b/g, 'Int'],
+    [/\bReal\b/g,    'Float'],
+    [/\bBlob\b/g,    'Bytes'],
+  ]
+
+  // Walk root looking for .lite files. Skip the obvious throw-away dirs.
+  const SKIP_DIRS = new Set(['node_modules', '.git', 'migrations', 'dist', 'build'])
+  const files = []
+  function walk(dir) {
+    let entries
+    try { entries = readdirSync(dir, { withFileTypes: true }) }
+    catch { return }
+    for (const e of entries) {
+      if (e.name.startsWith('.') && e.name !== '.') continue
+      if (SKIP_DIRS.has(e.name)) continue
+      const full = join(dir, e.name)
+      if (e.isDirectory()) walk(full)
+      else if (e.isFile() && e.name.endsWith('.lite')) files.push(full)
+    }
+  }
+  walk(root)
+
+  if (!files.length) {
+    console.log(`  ${dim('no .lite files found under')} ${rel(root)}`)
+    return
+  }
+
+  let totalEdits = 0
+  for (const f of files) {
+    const before = readFileSync(f, 'utf8')
+    let after = before
+    let edits = 0
+    for (const [re, name] of renames) {
+      after = after.replace(re, () => { edits++; return name })
+    }
+    if (!edits) {
+      console.log(`  ${dim('·')} ${rel(f)} ${dim('(no changes)')}`)
+      continue
+    }
+    totalEdits += edits
+    if (dryRun) {
+      console.log(`  ${yellow('~')} ${rel(f)} ${dim(`(${edits} change${edits === 1 ? '' : 's'})`)}`)
+      continue
+    }
+    if (backup) writeFileSync(f + '.bak', before, 'utf8')
+    writeFileSync(f, after, 'utf8')
+    console.log(`  ${green('✓')} ${rel(f)} ${dim(`(${edits} change${edits === 1 ? '' : 's'}${backup ? ', backup written' : ''})`)}`)
+  }
+
+  console.log()
+  console.log(dryRun
+    ? `  ${dim('dry-run — no files written. Total changes that would be made:')} ${totalEdits}`
+    : `  ${green('✓')}  rewrote ${totalEdits} occurrence${totalEdits === 1 ? '' : 's'} across ${files.length} file${files.length === 1 ? '' : 's'}`
+  )
+}
+
 async function cmdInit() {
   header('litestone init')
 
@@ -297,9 +462,9 @@ async function cmdInit() {
   writeFileSync(schemaPath, `/// schema.lite — Litestone schema definition
 
 model User {
-  id        Integer  @id
-  email     Text     @unique
-  name      Text?
+  id        Int      @id
+  email     String   @unique
+  name      String?
   createdAt DateTime @default(now())
   deletedAt DateTime?
 
@@ -438,7 +603,7 @@ async function cmdApply(cfg) {
       let lsClient = null
       if (hasPendingJs) {
         const { createClient } = await import(import.meta.dir + '/../core/client.js')
-        lsClient = await createClient({ parsed: parseResult, db: rawDb })
+        lsClient = await createClient({ parsed: parseResult, db: rawDb, encryptionKey: getEncKey() })
       }
 
       const result = await apply(rawDb, migrationsDir, lsClient)
@@ -858,8 +1023,7 @@ async function cmdStudio(cfg) {
 
   const port        = parseInt(getFlag('port') ?? '5001')
   const parseResult = loadSchema(cfg.schema)
-  const encKey      = process.env.ENCRYPTION_KEY ?? process.env.LITESTONE_KEY ?? undefined
-  const db     = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: encKey ?? undefined })
+  const db     = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
   const rawDb  = db.$db
   const rawDbs = db.$rawDbs
 
@@ -1658,7 +1822,7 @@ async function cmdDoctor() {
         fail('SCHEMA', 'schema.lite not found', rel(schemaPath),
           fix ? async () => {
             const { writeFileSync } = await import('fs')
-            writeFileSync(schemaPath, `/// schema.lite\n\nmodel example {\n  id   Integer @id\n  name Text\n}\n`)
+            writeFileSync(schemaPath, `/// schema.lite\n\nmodel example {\n  id   Int @id\n  name String\n}\n`)
             return `created ${rel(schemaPath)}`
           } : null
         )
@@ -2078,7 +2242,7 @@ async function cmdSeed(seederArg, cfg) {
   const { createClient } = await import(import.meta.dir + '/../core/client.js')
   const { runSeeder }    = await import(import.meta.dir + '/seeder.js')
 
-  const db = await createClient({ parsed: parseResult, db: cfg.db })
+  const db = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
 
   const mod         = await import(`file://${absSeeder}`)
   // Allow: default export, named export matching the file, or named DatabaseSeeder
@@ -2235,7 +2399,7 @@ async function cmdSeedRun(seedName, cfg) {
       if (!parseResult)
         fatal(`No schema found. Set ${cyan('schema')} in litestone.config.js to use JS seeds.`)
       const { createClient } = await import(import.meta.dir + '/../core/client.js')
-      const db = await createClient({ parsed: parseResult, db: dbPath })
+      const db = await createClient({ parsed: parseResult, db: dbPath, encryptionKey: getEncKey() })
       const mod = await import(`file://${seedFile}`)
       const fn  = mod.default ?? Object.values(mod).find(v => typeof v === 'function')
       if (!fn) fatal(`JS seed ${seedName} must export a default function`)
@@ -2278,7 +2442,7 @@ async function cmdOptimize(targetTable, cfg) {
 
   const { createClient } = await import(import.meta.dir + '/../core/client.js')
   const parseResult = loadSchema(cfg.schema)
-  const db = await createClient({ parsed: parseResult, db: cfg.db })
+  const db = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
 
   // Find all models with @@fts
   const ftsModels = parseResult.schema.models.filter(m =>
@@ -2349,7 +2513,7 @@ async function cmdBackup(dest, cfg) {
   mkdirSync(resolvedDest, { recursive: true })
 
   // ── Open client to resolve database paths ──────────────────────────────────
-  const db        = await createClient({ parsed: parseResult, db: cfg.db })
+  const db        = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
   const databases = db.$databases
   db.$close()
 
@@ -2374,7 +2538,7 @@ async function cmdBackup(dest, cfg) {
       // ── SQLite: hot backup ──────────────────────────────────────────────
       const destFile = resolve(resolvedDest, `${name}.db`)
       try {
-        const singleDb = await createClient({ parsed: parseResult, db: info.path })
+        const singleDb = await createClient({ parsed: parseResult, db: info.path, encryptionKey: getEncKey() })
         const result   = await singleDb.$backup(destFile, { vacuum })
         singleDb.$close()
         totalSize += result.size ?? 0
@@ -2473,7 +2637,7 @@ async function cmdDbPush(cfg) {
   const hasDbs      = schema.databases.some(db => !db.driver || db.driver === 'sqlite')
 
   // Open a temporary createClient just to get $rawDbs wired up correctly
-  const db = await createClient({ parsed: parseResult, db: cfg.db })
+  const db = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
 
   const t0      = performance.now()
   const results = autoMigrate(db)
@@ -2661,6 +2825,7 @@ async function main() {
   }
 
   if (cmd === 'init')   { await cmdInit();   return }
+  if (cmd === 'codemod') { await cmdCodemod(sub ?? null); return }
   if (cmd === 'seed') {
     const cfg = await loadConfig()
     if (sub === 'run') { await cmdSeedRun(rest[0] ?? null, cfg); return }

@@ -455,9 +455,9 @@ function fieldToTs(field, schema, modelNames, nullable = true) {
     base = pascal(type.name)
   } else {
     switch (type.name) {
-      case 'Integer':  base = 'number';  break
-      case 'Real':     base = 'number';  break
-      case 'Text':     base = 'string';  break
+      case 'Int':  base = 'number';  break
+      case 'Float':     base = 'number';  break
+      case 'String':     base = 'string';  break
       case 'Boolean':  base = 'boolean'; break
       case 'DateTime': base = 'string';  break   // ISO-8601 string
       case 'Json': {
@@ -470,7 +470,7 @@ function fieldToTs(field, schema, modelNames, nullable = true) {
         }
         break
       }
-      case 'Blob':     base = 'Buffer';  break
+      case 'Bytes':     base = 'Buffer';  break
       case 'File':     base = 'FileRef'; break
       default:
         // Could be a model name (M2M) — use generic

@@ -6,10 +6,10 @@
 // Json is stored as TEXT — SQLite has no native JSON type but json_extract() works on TEXT
 
 const TYPE_MAP = {
-  Text:     'TEXT',
-  Integer:  'INTEGER',
-  Real:     'REAL',
-  Blob:     'BLOB',
+  String:   'TEXT',
+  Int:      'INTEGER',
+  Float:    'REAL',
+  Bytes:    'BLOB',
   Boolean:  'INTEGER',   // SQLite has no BOOLEAN — 0/1
   DateTime: 'TEXT',      // ISO8601 string — most portable
   Json:     'TEXT',      // json_extract() / json_each() work on TEXT

@@ -35,7 +35,18 @@ const TK = {
 }
 
 const SCALAR_TYPES = new Set([
-  'Text', 'Integer', 'Real', 'Blob', 'Boolean', 'DateTime', 'Json', 'File'
+  'String', 'Int', 'Float', 'Bytes', 'Boolean', 'DateTime', 'Json', 'File'
+])
+
+// Old type names → new names. Used by the tokenizer to emit a clear migration
+// error pointing the user at the new name. We don't accept the old names —
+// this is a hard cut. Pre-publish, no aliases. Codemod script in
+// `tools/codemod-rename-types.js` for users with existing .lite files.
+const RENAMED_TYPES = new Map([
+  ['Text',    'String'],
+  ['Integer', 'Int'],
+  ['Real',    'Float'],
+  ['Blob',    'Bytes'],
 ])
 
 const KEYWORDS = new Set([
@@ -43,6 +54,10 @@ const KEYWORDS = new Set([
 ])
 
 function tokenize(src) {
+  // Strip leading UTF-8 BOM if present — editors sometimes write \uFEFF at the
+  // start of files and the rest of the parser treats it as garbage.
+  if (src.charCodeAt(0) === 0xFEFF) src = src.slice(1)
+
   const tokens = []
   let i = 0
   let line = 1
@@ -59,8 +74,19 @@ function tokenize(src) {
   while (i < src.length) {
     const pos = mark()
 
-    // Whitespace
+    // Whitespace — includes ASCII \s plus common Unicode invisibles that get
+    // pasted in from rich-text editors (NBSP, zero-width, BOM mid-file, etc.)
     if (/\s/.test(src[i])) { advance(); continue }
+    const code = src.charCodeAt(i)
+    if (
+      code === 0x00A0 ||  // NO-BREAK SPACE
+      code === 0x2007 ||  // FIGURE SPACE
+      code === 0x202F ||  // NARROW NO-BREAK SPACE
+      code === 0x200B ||  // ZERO WIDTH SPACE
+      code === 0x200C ||  // ZERO WIDTH NON-JOINER
+      code === 0x200D ||  // ZERO WIDTH JOINER
+      code === 0xFEFF     // BOM appearing mid-stream (concat'd files etc.)
+    ) { advance(); continue }
 
     // Triple-slash doc comment
     if (src.slice(i, i + 3) === '///') {
@@ -148,11 +174,44 @@ function tokenize(src) {
       continue
     }
 
-    throw new ParseError(`Unexpected character '${src[i]}'`, pos)
+    // Unknown character — surface code point + line context so smart quotes,
+    // NBSPs, and similar invisibles are easy to spot.
+    const ch       = src[i]
+    const ccode    = src.charCodeAt(i)
+    const lineStart = src.lastIndexOf('\n', i - 1) + 1
+    const lineEndN  = src.indexOf('\n', i)
+    const lineText  = src.slice(lineStart, lineEndN === -1 ? src.length : lineEndN)
+    // Only show the literal character for printable ASCII. Anything outside
+    // ASCII is shown as its codepoint (U+XXXX) so users can identify smart
+    // quotes, NBSP, em-dashes, etc. by code rather than by ambiguous glyph.
+    const isAsciiPrintable = ccode >= 0x20 && ccode <= 0x7E
+    const display = isAsciiPrintable ? `'${ch}'` : `U+${ccode.toString(16).toUpperCase().padStart(4, '0')}`
+    const hint    = pickCharHint(ccode)
+    throw new ParseError(
+      `Unexpected character ${display} (line ${pos.line}, col ${pos.col})\n` +
+      `  ${lineText}\n` +
+      `  ${' '.repeat(pos.col - 1)}^` +
+      (hint ? `\n  ${hint}` : ''),
+      pos,
+    )
   }
 
   tokens.push({ type: TK.EOF, value: null, line, col })
   return tokens
+}
+
+// Map common gotcha codepoints to actionable hints. Returns null if nothing
+// useful to say — caller falls back to the raw codepoint display.
+function pickCharHint(code) {
+  switch (code) {
+    case 0x2018: case 0x2019: return "Looks like a smart single-quote (' or '). Use a plain ASCII '."
+    case 0x201C: case 0x201D: return 'Looks like a smart double-quote (" or "). Use a plain ASCII ".'
+    case 0x2013: case 0x2014: return 'Looks like an en/em dash (– or —). Did you mean - ?'
+    case 0x00A0:              return 'Looks like a non-breaking space. Replace with a regular space.'
+    case 0x200B: case 0x200C:
+    case 0x200D: case 0xFEFF: return 'Looks like an invisible Unicode character. Re-type the line.'
+    default:                  return null
+  }
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -587,6 +646,18 @@ class Parser {
 
   parseFieldType() {
     const t = this.eat(TK.IDENT)
+    // Hard-cut renamed scalar types — point users at the new spelling. This
+    // is checked before SCALAR_TYPES so the error is descriptive instead of
+    // letting the type fall through as an unknown enum reference.
+    const renamed = RENAMED_TYPES.get(t.value)
+    if (renamed) {
+      throw new ParseError(
+        `Type '${t.value}' was renamed to '${renamed}'. ` +
+        `Update your schema (no aliases are accepted). ` +
+        `Run 'litestone codemod' to migrate .lite files automatically.`,
+        t,
+      )
+    }
     const isScalar = SCALAR_TYPES.has(t.value)
     const array    = !!this.maybeEat(TK.LBRACKET) && !!this.eat(TK.RBRACKET)
     const optional = !!this.maybeEat(TK.QUESTION)
@@ -1211,6 +1282,33 @@ class Parser {
       }
       case 'softDeleteCascade':
         throw new ParseError(`@@softDeleteCascade is no longer supported. Use @@softDelete(cascade) instead.`, this.peek())
+      case 'hasTemplates': {
+        // @@hasTemplates                       — adds isTemplate Boolean @default(false), filters it out by default
+        // @@hasTemplates(field: "isPreset")    — same, but with a custom column name
+        //
+        // Categorical "definition vs instance" pattern. Templates and instances
+        // share a table because they share a schema; default reads exclude
+        // templates so reporting and operational queries see only real rows.
+        // Opt in per call with { withTemplates: true } or { onlyTemplates: true }.
+        let field = 'isTemplate'
+        if (this.check(TK.LPAREN)) {
+          this.eat(TK.LPAREN)
+          // Accept (field: "name") OR ("name") for ergonomics
+          if (this.peek().type === TK.IDENT && this.peek().value === 'field') {
+            this.eat(TK.IDENT)
+            this.eat(TK.COLON)
+          }
+          if (this.check(TK.STRING)) {
+            field = this.eat(TK.STRING).value
+          } else {
+            throw new ParseError(`@@hasTemplates expects (field: "name") — got ${this.peek().value}`, this.peek())
+          }
+          this.eat(TK.RPAREN)
+        }
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field))
+          throw new ParseError(`@@hasTemplates field name must be a valid identifier, got '${field}'`, this.peek())
+        return { kind: 'hasTemplates', field }
+      }
       // ── Access policies ──────────────────────────────────────────────────────
       // @@allow('read', published || owner == auth())
       // @@allow('create,update', auth() != null)
@@ -1602,7 +1700,7 @@ const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   'id', 'unique', 'map', 'relation', 'generated', 'from',
   'encrypted', 'guarded', 'secret', 'updatedAt', 'allow', 'deny',
 ])
-const TYPE_FORBIDDEN_FIELD_TYPES = new Set(['File', 'Blob'])
+const TYPE_FORBIDDEN_FIELD_TYPES = new Set(['File', 'Bytes'])
 const TYPE_DEFAULT_FORBIDDEN_KINDS = new Set(['now', 'cuid', 'ulid', 'uuid', 'auth'])
 
 function validateTypes(schema) {
@@ -1729,6 +1827,29 @@ function expandSecretAttributes(schema) {
   }
 }
 
+// @@hasTemplates — auto-inject the marker field if the user hasn't declared
+// it, so the directive is self-contained. Validation (type compatibility,
+// collisions with @id, etc.) happens later in validate().
+function expandHasTemplatesAttributes(schema) {
+  for (const model of schema.models) {
+    const ht = model.attributes.find(a => a.kind === 'hasTemplates')
+    if (!ht) continue
+
+    const existing = model.fields.find(f => f.name === ht.field)
+    if (existing) continue   // user declared their own — validate() checks the type
+
+    // Mirror the AST shape produced by the parser for `isTemplate Boolean @default(false)`.
+    // type is a nested {kind, name, array, optional} object, and the @default
+    // value uses {kind:'boolean'} (NOT 'literal') so DDL emits `DEFAULT 0`.
+    model.fields.push({
+      name: ht.field,
+      type: { kind: 'scalar', name: 'Boolean', array: false, optional: false },
+      attributes: [{ kind: 'default', value: { kind: 'boolean', value: false } }],
+      comments: [],
+    })
+  }
+}
+
 function validate(schema) {
   const errors   = []
   const warnings = []
@@ -1798,7 +1919,7 @@ function validate(schema) {
 
       // Array type validation — only Text, Integer, and File support []
       if (field.type.array) {
-        const arrayAllowed = new Set(['Text', 'Integer', 'File'])
+        const arrayAllowed = new Set(['String', 'Int', 'File'])
         const isImplicitM2M = modelNames.has(field.type.name) && field.type.kind !== 'relation'
         if (!arrayAllowed.has(field.type.name) && field.type.kind !== 'relation' && !isImplicitM2M) {
           errors.push(`Model '${model.name}', field '${field.name}': array [] is only supported for Text, Integer, File, or a model name for many-to-many (got ${field.type.name})`)
@@ -2058,7 +2179,7 @@ function validate(schema) {
   for (const model of schema.models) {
     for (const field of model.fields) {
       if (!field.attributes.some(a => a.kind === 'sequence')) continue
-      if (field.type.name !== 'Integer')
+      if (field.type.name !== 'Int')
         errors.push(`Model '${model.name}', field '${field.name}': @sequence requires an Integer or Integer? field, got ${field.type.name}`)
       const seqAttr = field.attributes.find(a => a.kind === 'sequence')
       const scopeField = model.fields.find(f => f.name === seqAttr.scope)
@@ -2091,7 +2212,7 @@ function validate(schema) {
         if (field.type.name !== target)
           errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ${op}: true) — field type must be '${target}' or '${target}?', got '${field.type.name}'`)
       }
-      if (op === 'count' && field.type.name !== 'Integer')
+      if (op === 'count' && field.type.name !== 'Int')
         errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, count: true) — field type must be Integer, got '${field.type.name}'`)
       if (op === 'exists' && field.type.name !== 'Boolean')
         errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, exists: true) — field type must be Boolean, got '${field.type.name}'`)
@@ -2286,6 +2407,34 @@ function validate(schema) {
     }
   }
 
+  // ── @@hasTemplates field shape ────────────────────────────────────────────
+  // If the user declared the marker field themselves (instead of letting
+  // expandHasTemplatesAttributes inject it), enforce the contract: must be
+  // a non-optional Boolean. Without this, default WHERE clauses generate
+  // SQL that doesn't match what the user expects.
+  for (const model of schema.models) {
+    const ht = model.attributes.find(a => a.kind === 'hasTemplates')
+    if (!ht) continue
+    const field = model.fields.find(f => f.name === ht.field)
+    // expand step always inserts if missing, so this should always be true,
+    // but keep the guard for the case where validate runs without expansion.
+    if (!field) continue
+    // Field type lives on field.type which is a {kind, name, array, optional}
+    // object for scalars (mirrors how the parser emits all field types). Read
+    // through the inner shape to support both directly-emitted and
+    // user-declared variants.
+    const t = field.type
+    const typeName = typeof t === 'object' ? t.name : t
+    const isArray  = (typeof t === 'object' && t.array)    || field.array    || false
+    const isOpt    = (typeof t === 'object' && t.optional) || field.optional || false
+    if (typeName !== 'Boolean' || isArray) {
+      errors.push(`Model '${model.name}': @@hasTemplates field '${ht.field}' must be Boolean (got ${typeName}${isArray ? '[]' : ''})`)
+    }
+    if (isOpt) {
+      errors.push(`Model '${model.name}': @@hasTemplates field '${ht.field}' must not be optional — templates are categorical, not nullable`)
+    }
+  }
+
   return { valid: errors.length === 0, errors, warnings }
 }
 
@@ -2324,7 +2473,37 @@ export function parseFile(filePath) {
     try { src = readFileSync(currentPath, 'utf8') }
     catch (e) { allErrors.push(`Cannot read file: ${currentPath}`); return null }
 
-    const tokens = tokenize(src)
+    // Sniff for binary content. Schemas are UTF-8 text; if we got a SQLite db
+    // file, an image, or any binary blob, the tokenizer will explode at some
+    // arbitrary offset with a useless "Unexpected character U+0000" error.
+    // Catch it here with a message that points at the actual mistake — almost
+    // always: schema and db paths got swapped in createClient().
+    if (src.startsWith('SQLite format 3\u0000')) {
+      allErrors.push(
+        `Schema file is a SQLite database, not a .lite schema: ${currentPath}\n` +
+        `       Did you swap the 'schema' and 'db' arguments in createClient()?`
+      )
+      return null
+    }
+    // Generic binary sniff: NUL byte in the first 512 bytes is a strong signal
+    // (legitimate .lite schemas are pure UTF-8 text with no NULs).
+    const head = src.slice(0, 512)
+    if (head.indexOf('\u0000') !== -1) {
+      allErrors.push(
+        `Schema file appears to be binary, not text: ${currentPath}\n` +
+        `       Expected a UTF-8 .lite schema file.`
+      )
+      return null
+    }
+
+    let tokens
+    try { tokens = tokenize(src) }
+    catch (e) {
+      // Re-raise with the file path so the user sees which file failed when
+      // imports chain across multiple files.
+      if (e && e.message) e.message = `In ${currentPath}:\n  ${e.message}`
+      throw e
+    }
     const parser = new Parser(tokens)
     const schema = parser.parseSchema()
 
@@ -2388,6 +2567,7 @@ export function parseFile(filePath) {
 
   // Run the full validator on the merged schema
   expandSecretAttributes(schema)
+  expandHasTemplatesAttributes(schema)
   const { valid, errors, warnings } = validate(schema)
   allErrors.push(...errors)
   allWarnings.push(...warnings)
@@ -2422,6 +2602,7 @@ export function parse(src) {
     return { schema, valid: false, errors: typeErrors, warnings: [] }
   }
   expandSecretAttributes(schema)
+  expandHasTemplatesAttributes(schema)
   const { valid, errors, warnings } = validate(schema)
   return { schema, valid, errors, warnings }
 }

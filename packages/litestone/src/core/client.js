@@ -825,10 +825,125 @@ function buildRelationMap(schema) {
 // ─── Soft delete map ──────────────────────────────────────────────────────────
 // { modelName: boolean } — true if the model uses soft delete
 
+// Suggest the closest match for an unknown key from a set of valid keys.
+// Used in write-data validation to give users actionable typo hints —
+// "Unknown field 'emial' on User. Did you mean: email?". Levenshtein with a
+// small ceiling, since field names are short and typos are usually 1–2 edits.
+function suggestKey(unknown, allowed) {
+  if (!unknown) return null
+  const lower = String(unknown).toLowerCase()
+  let best = null
+  let bestDist = Infinity
+  for (const candidate of allowed) {
+    const cand = String(candidate).toLowerCase()
+    // Cheap pre-filter: skip candidates whose length differs by > 3
+    if (Math.abs(cand.length - lower.length) > 3) continue
+    const d = editDistance(lower, cand)
+    if (d < bestDist) { bestDist = d; best = candidate }
+  }
+  // Threshold: allow up to 2 edits for very short names (so transposition
+  // typos like "naem" → "name" qualify), scaling up to ~1/3 of the input
+  // length for longer names. Also require the suggestion to keep more chars
+  // than it changes — otherwise short typos like "x" match anything.
+  const threshold = Math.max(2, Math.floor(lower.length / 3))
+  if (bestDist > threshold) return null
+  if (bestDist >= lower.length) return null
+  return best
+}
+
+function editDistance(a, b) {
+  if (a === b) return 0
+  if (!a.length) return b.length
+  if (!b.length) return a.length
+  // Iterative DP with two rows — O(min(a,b)) memory.
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  let curr = new Array(b.length + 1)
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      curr[j] = Math.min(
+        curr[j - 1] + 1,        // insertion
+        prev[j]   + 1,          // deletion
+        prev[j - 1] + cost,     // substitution
+      )
+    }
+    [prev, curr] = [curr, prev]
+  }
+  return prev[b.length]
+}
+
 function buildSoftDeleteMap(schema) {
   const map = {}
   for (const model of schema.models) {
     map[model.name] = isSoftDelete(model)
+  }
+  return map
+}
+
+// ─── @@hasTemplates map ───────────────────────────────────────────────────────
+// { modelName: string | null } — name of the marker column if the model has
+// @@hasTemplates, otherwise null. Lookup is hot-path on every read query so
+// we keep it as a pre-computed plain object.
+
+function buildHasTemplatesMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    const attr = model.attributes.find(a => a.kind === 'hasTemplates')
+    map[model.name] = attr ? attr.field : null
+  }
+  return map
+}
+
+// ─── Co-FK map ────────────────────────────────────────────────────────────────
+// For nested writes, identify FK columns that exist on BOTH the parent and the
+// child and reference the same target table. These are propagated from parent
+// to child during nested create/update — preventing referential drift like a
+// child line item ending up with a different tenantId than its parent order.
+//
+// Shape: { parentModel: { childModel: [<fk_col_name>, ...] } }
+//
+// A column qualifies as a co-FK when:
+//   1. Both parent and child have a belongsTo relation with the same FK name
+//   2. Both relations point at the same target model
+//   3. Both reference the same target column (always 'id' in practice, but
+//      we check explicitly so multi-PK targets don't surprise us)
+//
+// The PK of the parent that becomes the child's FK in a hasMany relation
+// (e.g. `account.id` → `users.accountId`) is excluded — that's already
+// handled by the existing FK injection at processHasManyNested time.
+
+function buildCoFkMap(schema, relationMap) {
+  const map = {}
+  for (const parentModel of schema.models) {
+    const parentRels = relationMap[parentModel.name] ?? {}
+    // Collect parent's belongsTo FKs: { columnName: { target, references } }
+    const parentBT = {}
+    for (const rel of Object.values(parentRels)) {
+      if (rel.kind !== 'belongsTo') continue
+      parentBT[rel.foreignKey] = { target: rel.targetModel, references: rel.referencedKey }
+    }
+    if (!Object.keys(parentBT).length) continue
+
+    // Walk every other model — anyone whose belongsTo overlaps with parent's
+    // belongsTo on column name AND target IS a co-FK candidate.
+    for (const childModel of schema.models) {
+      if (childModel.name === parentModel.name) continue
+      const childRels = relationMap[childModel.name] ?? {}
+      const overlaps = []
+      for (const rel of Object.values(childRels)) {
+        if (rel.kind !== 'belongsTo') continue
+        const p = parentBT[rel.foreignKey]
+        if (!p) continue
+        if (p.target !== rel.targetModel) continue
+        if (p.references !== rel.referencedKey) continue
+        overlaps.push(rel.foreignKey)
+      }
+      if (overlaps.length) {
+        if (!map[parentModel.name]) map[parentModel.name] = {}
+        map[parentModel.name][childModel.name] = overlaps
+      }
+    }
   }
   return map
 }
@@ -943,6 +1058,27 @@ function injectSoftDeleteFilter(where, mode) {
   return { AND: [filter, where] }
 }
 
+// ─── @@hasTemplates WHERE injection ───────────────────────────────────────────
+// Prepend the isTemplate = 0 filter to any existing where clause. Same shape
+// as soft-delete: default mode hides templates, mode flags opt in.
+//
+// `field` is the configured marker column (defaults to 'isTemplate' but can
+// be overridden via @@hasTemplates(field: "isPreset")).
+
+function injectHasTemplatesFilter(where, mode, field = 'isTemplate') {
+  // mode: 'instances' (default) | 'withTemplates' | 'onlyTemplates'
+  if (mode === 'withTemplates') return where
+  if (mode === 'onlyTemplates') {
+    const filter = { [field]: true }
+    if (!where) return filter
+    return { AND: [filter, where] }
+  }
+  // 'instances' — default
+  const filter = { [field]: false }
+  if (!where) return filter
+  return { AND: [filter, where] }
+}
+
 // ─── Include resolution ───────────────────────────────────────────────────────
 // One query per relation level, batched with IN — never N queries per row.
 // Uses readDb for all include fetches.
@@ -999,6 +1135,12 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         results = readDb.query(sql).all(...pkValues)
       } else {
         const sdExtra = softDeleteMap[rel.targetModel] ? ` AND "deletedAt" IS NULL` : ''
+        // Default _count behaviour mirrors normal reads — exclude templates.
+        // The relInclude here is `spec`, parsed above; we don't currently
+        // surface withTemplates/onlyTemplates on _count selectors (matches
+        // soft-delete: no withDeleted on _count either).
+        const targetHt = ctx.hasTemplatesMap?.[rel.targetModel] ?? null
+        const htExtra  = targetHt ? ` AND "${targetHt}" = 0` : ''
         // Build optional where filter using buildWhere
         let whereExtra = ''
         const whereParams = []
@@ -1006,7 +1148,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
           const ws = buildWhere(where, whereParams)
           if (ws) whereExtra = ` AND (${ws})`
         }
-        sql = `SELECT "${rel.foreignKey}" as __pk, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" WHERE "${rel.foreignKey}" IN (${ph})${sdExtra}${whereExtra} GROUP BY "${rel.foreignKey}"`
+        sql = `SELECT "${rel.foreignKey}" as __pk, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" WHERE "${rel.foreignKey}" IN (${ph})${sdExtra}${htExtra}${whereExtra} GROUP BY "${rel.foreignKey}"`
         results = readDb.query(sql).all(...pkValues, ...whereParams)
       }
 
@@ -1033,9 +1175,25 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
     const nestedMode    = typeof relInclude === 'object' && relInclude !== true
       ? relInclude.withDeleted ? 'withDeleted' : relInclude.onlyDeleted ? 'onlyDeleted' : 'live'
       : 'live'
+    // @@hasTemplates mode for related table — same shape as soft-delete mode.
+    const nestedHtMode  = typeof relInclude === 'object' && relInclude !== true
+      ? relInclude.withTemplates ? 'withTemplates' : relInclude.onlyTemplates ? 'onlyTemplates' : 'instances'
+      : 'instances'
 
     const targetJsonFields  = jsonMap[rel.targetModel]      ?? new Set()
     const targetSoftDelete  = softDeleteMap[rel.targetModel] ?? false
+    const targetHtField     = ctx.hasTemplatesMap?.[rel.targetModel] ?? null
+    const targetHasTemplates = targetHtField !== null
+
+    // Build the @@hasTemplates SQL fragment for nested includes. Same logic as
+    // injectHasTemplatesFilter but emitted as raw SQL alongside the existing
+    // hand-built sdWhere — these include paths bypass buildWhere entirely for
+    // performance, so the filter has to be appended manually here.
+    const htClause = (targetHasTemplates && nestedHtMode !== 'withTemplates')
+      ? (nestedHtMode === 'onlyTemplates'
+          ? `"${targetHtField}" = 1`
+          : `"${targetHtField}" = 0`)
+      : null
 
     if (rel.kind === 'belongsTo') {
       const fkValues = [...new Set(rows.map(r => r[rel.foreignKey]).filter(v => v != null))]
@@ -1066,6 +1224,8 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         sdWhere = `"${rel.referencedKey}" IN (${ph})`
         sdParams.push(...fkValues)
       }
+      // Append @@hasTemplates filter — composes onto whatever sdWhere produced.
+      if (htClause) sdWhere = `${sdWhere} AND ${htClause}`
 
       const related = readDb
         .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}`)
@@ -1143,6 +1303,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       } else {
         sdWhere = `"${rel.foreignKey}" IN (${ph})`
       }
+      if (htClause) sdWhere = `${sdWhere} AND ${htClause}`
 
       const related = readDb
         .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}`)
@@ -1328,6 +1489,49 @@ function makeTable(
   const { relationMap, computedSets, computedFns, tx, hookRunner, emitter, globalFilters } = ctx
   const plugins = ctx.plugins   // PluginRunner
   const hasFieldPolicy = Object.keys(fieldPolicy).length > 0
+
+  // @@hasTemplates marker column name, or null if this model doesn't opt in.
+  // Read paths inject `<field> = false` by default; `withTemplates` /
+  // `onlyTemplates` query args opt out / invert the filter.
+  const hasTemplatesField = ctx.hasTemplatesMap?.[modelName] ?? null
+  const hasTemplates      = hasTemplatesField !== null
+
+  // Pre-build allowed write keys for this model. Used by writeData to detect
+  // typos before SQL — a typo would otherwise surface as the cryptic SQLite
+  // error "table X has no column named Y". This set covers:
+  //   - all scalar field names                       (user.email)
+  //   - all relation names                           (user.account, user.posts)
+  //     — relations with nested op shape are extracted before writeData,
+  //       but they may also appear with scalar values during a typo
+  //       (e.g. user wrote `account: 1` meaning accountId), and the
+  //       suggestion machinery is still useful.
+  //   - all FK columns derived from belongsTo relations (user.accountId)
+  //   - "id" — always allowed as primary key
+  //
+  // Computed and generated fields are NOT writable, so they're omitted; if a
+  // user passes one we want to surface the typo with a helpful hint.
+  const _modelForKeys = ctx.models?.[modelName]
+  const _allowedWriteKeys = new Set()
+  if (_modelForKeys) {
+    for (const f of _modelForKeys.fields) {
+      const isComputed  = f.attributes?.find(a => a.kind === 'computed')
+      const isGenerated = f.attributes?.find(a => a.kind === 'generated' || a.kind === 'funcCall')
+      if (!isComputed && !isGenerated) _allowedWriteKeys.add(f.name)
+    }
+  }
+  const _modelRels = ctx.relationMap?.[modelName] ?? {}
+  for (const relName of Object.keys(_modelRels)) {
+    const rel = _modelRels[relName]
+    _allowedWriteKeys.add(relName)
+    // Only add FK columns for belongsTo relations — those are the ones whose
+    // FK lives on THIS table. hasMany / m2m carry foreignKey metadata too,
+    // but the column is on the OTHER table and would falsely accept typos
+    // like `users: { create: ... }` paired with a stray `accountId` on the
+    // parent (which has no such column).
+    if (rel?.kind === 'belongsTo' && rel.foreignKey) _allowedWriteKeys.add(rel.foreignKey)
+  }
+  // Always allow id even if not declared (legacy/edge-case schemas)
+  _allowedWriteKeys.add('id')
 
   // Accessor key (camelCase singular, e.g. "user", "serviceAgreement") — used
   // to look up user-facing config like `filters:` that users keyed using the
@@ -1686,6 +1890,23 @@ function makeTable(
   // ── Write helper ──────────────────────────────────────────────────────────
   function writeData(data) {
     const model = ctx.models[modelName]
+
+    // Reject unknown keys before SQL — surface typos with a path, model, and
+    // a "did you mean" hint instead of SQLite's cryptic "no column named X".
+    // Skipped when no model is registered (rare path: free-form clients).
+    if (model && data && typeof data === 'object' && !Array.isArray(data)) {
+      const errs = []
+      for (const k of Object.keys(data)) {
+        if (_allowedWriteKeys.has(k)) continue
+        const hint = suggestKey(k, _allowedWriteKeys)
+        const msg  = hint
+          ? `Unknown field '${k}' on model '${modelName}'. Did you mean: ${hint}?`
+          : `Unknown field '${k}' on model '${modelName}'. Valid fields: ${[..._allowedWriteKeys].sort().join(', ')}`
+        errs.push({ path: [k], message: msg })
+      }
+      if (errs.length) throw new ValidationError(errs)
+    }
+
     const transformed = model ? applyTransforms(data, model) : { ...data }
     if (model && ctx.hasValidation[modelName]) validate(transformed, model, computedFns, ctx.typeMap)
     // Validate array fields
@@ -1709,9 +1930,9 @@ function makeTable(
         if (uniqueItems && new Set(val.map(String)).size !== val.length)
           throw new ValidationError([{ path: [field.name], message: `${field.name} must have unique items` }])
         // Type validation: Text[] → all strings, Integer[] → all integers
-        if (field.type.name === 'Integer' && !val.every(v => Number.isInteger(v)))
+        if (field.type.name === 'Int' && !val.every(v => Number.isInteger(v)))
           throw new ValidationError([{ path: [field.name], message: `${field.name} (Integer[]) must contain only integers` }])
-        if (field.type.name === 'Text' && !val.every(v => typeof v === 'string'))
+        if (field.type.name === 'String' && !val.every(v => typeof v === 'string'))
           throw new ValidationError([{ path: [field.name], message: `${field.name} (Text[]) must contain only strings` }])
       }
     }
@@ -1869,7 +2090,10 @@ function makeTable(
     ? new Set(_fromEntries.filter(([,{isBool}]) => isBool).map(([n]) => n))
     : null
   // Pre-compute the ultra-common case: findMany({}) on a soft-delete table with no policy/filter
-  const _fastFindManySql = (softDelete && !ctx.hasPolicies && !_staticGlobalFilter && !_dynamicGlobalFilter && !plugins?.hasPlugins)
+  // Disabled for @@hasTemplates models — they need an additional column predicate
+  // (`isTemplate = 0`) on every read, which combinatorially expands fast-path
+  // SQL variants. The slow build-SQL path handles them correctly.
+  const _fastFindManySql = (softDelete && !hasTemplates && !ctx.hasPolicies && !_staticGlobalFilter && !_dynamicGlobalFilter && !plugins?.hasPlugins)
     ? `${_baseSqlWithFrom} WHERE "deletedAt" IS NULL`
     : null
 
@@ -1896,7 +2120,8 @@ function makeTable(
     !_staticGlobalFilter && !_dynamicGlobalFilter &&
     !plugins?.hasPlugins &&
     Object.keys(fieldPolicy).length === 0 &&
-    !_hasFrom
+    !_hasFrom &&
+    !hasTemplates
   )
   const _fastFindUniqueSql = _canFastFindUnique
     ? (softDelete
@@ -1912,7 +2137,7 @@ function makeTable(
     catch { _fastFindUniqueStmt = null }
   }
 
-  function buildSQL({ where, orderBy, limit, offset, parsedSelect, sdMode = 'live', distinct = false, windowSpec = null } = {}) {
+  function buildSQL({ where, orderBy, limit, offset, parsedSelect, sdMode = 'live', htMode = 'instances', distinct = false, windowSpec = null } = {}) {
     const params   = []
 
     // ── Ultra-fast path: no where, no order, no limit, live mode, no policy/filters ──
@@ -1931,10 +2156,13 @@ function makeTable(
       : where
     // Row-level policy filter — injected as raw SQL after mergedWhere
     const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-    // Inject soft delete filter before building WHERE
-    const effectiveWhere = softDelete
+    // Inject soft delete and @@hasTemplates filters before building WHERE.
+    // Both are AND-composed onto whatever the caller passed; both fall back to
+    // pass-through if the model doesn't opt in.
+    const sdWhere = softDelete
       ? injectSoftDeleteFilter(mergedWhere, sdMode)
       : mergedWhere
+    const effectiveWhere = applyHtFilter(sdWhere, htMode)
     // Build relation orderBy first so we know if JOINs will be present.
     // When JOINs are added, column refs in WHERE must be qualified with `t.`
     // to avoid ambiguous column errors (e.g. `id` exists on both joined tables).
@@ -2041,6 +2269,22 @@ function makeTable(
     return 'live'
   }
 
+  // @@hasTemplates mode from args. Same shape as sdMode: default hides templates,
+  // explicit flags opt into mixed or template-only views.
+  function htMode(args) {
+    if (!hasTemplates) return 'instances'
+    if (args?.withTemplates) return 'withTemplates'
+    if (args?.onlyTemplates) return 'onlyTemplates'
+    return 'instances'
+  }
+
+  // Compose: apply hasTemplates filter on top of soft-delete-filtered where.
+  // Both filters AND together at the WHERE level — orthogonal concerns.
+  function applyHtFilter(where, mode) {
+    if (!hasTemplates) return where
+    return injectHasTemplatesFilter(where, mode, hasTemplatesField)
+  }
+
   // ── Nested writes ──────────────────────────────────────────────────────────
   // Split data into scalar fields and nested relation ops.
   //
@@ -2104,8 +2348,34 @@ function makeTable(
   }
 
   // hasMany ops — run AFTER parent insert/update
-  async function processHasManyNested(nested, parentPk) {
+  async function processHasManyNested(nested, parentPk, parentRow) {
     const rels = relationMap[modelName] ?? {}
+    // Pre-resolve co-FK fields keyed by child model — used below to copy
+    // parent's tenantId/accountId/etc into child rows during nested writes.
+    const coFkForParent = ctx.coFkMap?.[modelName] ?? {}
+
+    // Helper: merge parent's co-FK values into a child create payload.
+    // Strict by default (parent wins), opt-out via allowChildFkOverride.
+    function applyCoFk(childModel, childRow) {
+      const cols = coFkForParent[childModel]
+      if (!cols || !cols.length || !parentRow) return childRow
+      const result = { ...childRow }
+      for (const col of cols) {
+        // Only propagate when parent has a real (non-null) value.
+        if (parentRow[col] == null) continue
+        if (ctx.allowChildFkOverride) {
+          // Permissive: child's explicit value wins; only fill if missing/null.
+          if (result[col] == null) result[col] = parentRow[col]
+        } else {
+          // Strict (default): always overwrite. This is the safe choice — a
+          // child carrying a different tenantId/accountId than its parent is
+          // referentially inconsistent and should never silently happen.
+          result[col] = parentRow[col]
+        }
+      }
+      return result
+    }
+
     for (const [fieldName, ops] of Object.entries(nested)) {
       const rel = rels[fieldName]
       if (!rel) continue
@@ -2122,7 +2392,7 @@ function makeTable(
         if (ops.create) {
           const rows = Array.isArray(ops.create) ? ops.create : [ops.create]
           for (const row of rows) {
-            const created = await tbl.create({ data: row })
+            const created = await tbl.create({ data: applyCoFk(rel.targetModel, row) })
             writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, created.id)
           }
         }
@@ -2170,7 +2440,7 @@ function makeTable(
 
       if (ops.create) {
         const rows = Array.isArray(ops.create) ? ops.create : [ops.create]
-        for (const row of rows) await tbl.create({ data: { ...row, ...fk } })
+        for (const row of rows) await tbl.create({ data: { ...applyCoFk(rel.targetModel, row), ...fk } })
       }
       if (ops.connect) {
         const wheres = Array.isArray(ops.connect) ? ops.connect : [ops.connect]
@@ -2224,7 +2494,8 @@ function makeTable(
           const anchorParams = []
           const anchorWhere  = args.where
           const sdFilteredWhere = softDelete ? injectSoftDeleteFilter(anchorWhere, 'live') : anchorWhere
-          const anchorSql    = buildWhereWithEncryption(sdFilteredWhere, anchorParams)
+          const htFilteredWhere = applyHtFilter(sdFilteredWhere, 'instances')
+          const anchorSql    = buildWhereWithEncryption(htFilteredWhere, anchorParams)
           const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
           let anchorFilter = anchorSql ?? ''
@@ -2341,8 +2612,9 @@ WHERE _tree."${fkField}" IS NOT NULL`
       const { where, include, orderBy, limit, offset, select, distinct } = hctx ? hctx.args : args
       const windowSpec      = args.window ?? null
       const mode            = sdMode(hctx ? hctx.args : args)
+      const htm             = htMode(hctx ? hctx.args : args)
       const ps              = parseArgs(select, include)
-      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, distinct: distinct === true, windowSpec })
+      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, distinct: distinct === true, windowSpec })
       const _nt = needsTiming()
       const _fmT0 = _nt ? performance.now() : 0
       let rows              = readAll(readDb.query(sql).all(...params), { mode: 'list', selectedFields: ps?.requestedFields })
@@ -2362,8 +2634,9 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (hctx && hookRunner.hasBefore('findFirst')) hookRunner.runBefore(hctx, ctx)
       const { where, include, orderBy, select } = hctx ? hctx.args : args
       const mode            = sdMode(hctx ? hctx.args : args)
+      const htm             = htMode(hctx ? hctx.args : args)
       const ps              = parseArgs(select, include)
-      const { sql, params } = buildSQL({ where, orderBy, limit: 1, parsedSelect: ps, sdMode: mode })
+      const { sql, params } = buildSQL({ where, orderBy, limit: 1, parsedSelect: ps, sdMode: mode, htMode: htm })
       const _nt = needsTiming()
       const _ffT0 = _nt ? performance.now() : 0
       let row               = read(readDb.query(sql).get(...params), { mode: 'list', selectedFields: ps?.requestedFields })
@@ -2404,8 +2677,9 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, select } = args
       const mode            = sdMode(args)
+      const htm             = htMode(args)
       const ps              = parseArgs(select, include)
-      const { sql, params } = buildSQL({ where, limit: 2, parsedSelect: ps, sdMode: mode })
+      const { sql, params } = buildSQL({ where, limit: 2, parsedSelect: ps, sdMode: mode, htMode: htm })
       const _nt = needsTiming()
       const _fuT0 = _nt ? performance.now() : 0
       const rows            = readAll(readDb.query(sql).all(...params), { mode: 'single', selectedFields: ps?.requestedFields })
@@ -2446,6 +2720,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (hctx && hookRunner.hasBefore('count')) hookRunner.runBefore(hctx, ctx)
       const { where } = hctx ? hctx.args : args
       const mode      = sdMode(hctx ? hctx.args : args)
+      const htm       = htMode(hctx ? hctx.args : args)
       const params    = []
       // Merge global filter + plugin read filters + policy filter (same as buildSQL does)
       const rawFilter    = globalFilters[accessor]
@@ -2455,7 +2730,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       const mergedWhere  = allFilters.length
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
+      const sdWhere       = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
+      const effectiveWhere = applyHtFilter(sdWhere, htm)
       const whereSql  = buildWhereWithEncryption(effectiveWhere, params)
       // Policy filter for count
       const countPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
@@ -2485,6 +2761,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (hctx && hookRunner.hasBefore('exists')) hookRunner.runBefore(hctx, ctx)
       const { where } = hctx ? hctx.args : args
       const mode      = sdMode(hctx ? hctx.args : args)
+      const htm       = htMode(hctx ? hctx.args : args)
       const params    = []
       const rawFilter    = globalFilters[accessor]
       const globalFilter = typeof rawFilter === 'function' ? rawFilter(ctx) : rawFilter
@@ -2493,7 +2770,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       const mergedWhere  = allFilters.length
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
+      const sdWhere       = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
+      const effectiveWhere = applyHtFilter(sdWhere, htm)
       const whereSql  = buildWhereWithEncryption(effectiveWhere, params)
       const existsPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       let   sql       = `SELECT 1 as _e FROM "${tableName}"`
@@ -2523,10 +2801,11 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (hctx && hookRunner.hasBefore('findMany')) hookRunner.runBefore(hctx, ctx)
       const { where, include, orderBy, limit, offset, select, distinct } = hctx ? hctx.args : args
       const mode = sdMode(hctx ? hctx.args : args)
+      const htm  = htMode(hctx ? hctx.args : args)
       const ps   = parseArgs(select, include)
 
       // ── rows query (with limit/offset) ──────────────────────────────────
-      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, distinct: distinct === true })
+      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, distinct: distinct === true })
       const _t0 = performance.now()
       let rows = readAll(readDb.query(sql).all(...params), { mode: 'list', selectedFields: ps?.requestedFields })
       fireQuery({ operation: 'findMany', args, sql, params, duration: performance.now() - _t0, rowCount: rows.length })
@@ -2541,7 +2820,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       const mergedWhere = allFilters.length
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
+      const sdMergedWhere = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
+      const effectiveWhere = applyHtFilter(sdMergedWhere, htm)
       const whereSql = buildWhereWithEncryption(effectiveWhere, countParams)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       let countSql = `SELECT COUNT(*) as n FROM "${tableName}"`
@@ -2601,7 +2881,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       const mergedWhere  = allFilters.length
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(mergedWhere, 'live') : mergedWhere
+      const sdEffective = softDelete ? injectSoftDeleteFilter(mergedWhere, 'live') : mergedWhere
+      const effectiveWhere = applyHtFilter(sdEffective, 'instances')
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
@@ -2705,7 +2986,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
         // Validate field is DateTime on the model
         const modelDef = ctx.models[modelName]
         const intervalFieldDef = modelDef?.fields.find(f => f.name === intervalField)
-        if (intervalFieldDef && intervalFieldDef.type.name !== 'DateTime' && intervalFieldDef.type.name !== 'Text')
+        if (intervalFieldDef && intervalFieldDef.type.name !== 'DateTime' && intervalFieldDef.type.name !== 'String')
           throw new Error(`groupBy() interval field '${intervalField}' must be a DateTime field, got '${intervalFieldDef.type.name}'`)
       }
 
@@ -2755,7 +3036,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       const mergedWhere  = allFilters.length
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(mergedWhere, 'live') : mergedWhere
+      const sdEffective = softDelete ? injectSoftDeleteFilter(mergedWhere, 'live') : mergedWhere
+      const effectiveWhere = applyHtFilter(sdEffective, 'instances')
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
@@ -3073,9 +3355,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       let created = read(writeDb.query(_crSql).get(..._crParams), { mode: 'single' })
       fireQuery({ operation: 'create', args: { data, include, select }, sql: _crSql, params: _crParams, duration: _nt ? performance.now() - _crT0 : 0, rowCount: created ? 1 : 0 })
       if (!created) return null
-      // hasMany ops after — children need parent PK
+      // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
       const pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-      await processHasManyNested(nested, created[pkField])
+      await processHasManyNested(nested, created[pkField], created)
       const ps = parseArgs(select, include)
       if (ps || include) withIncludes([created], ps, include)
       created = finaliseOne(created, ps)
@@ -3166,7 +3448,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         .map(c => { setParams.push(row[c] ?? null); return `"${c}" = ?` })
         .join(', ')
       const whereParams = []
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(where, 'live') : where
+      const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
+      const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
       const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
       if (!whereSql) throw new Error(`update on "${tableName}" requires a where clause`)
       // Append update policy filter to WHERE
@@ -3257,7 +3540,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
 
       const pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-      await processHasManyNested(nested, updated[pkField])
+      await processHasManyNested(nested, updated[pkField], updated)
       const ps = parseArgs(select === false ? null : select, include)
       if (ps || include) withIncludes([updated], ps, include)
       const finalRow = select === false ? null : finaliseOne(updated, ps)
@@ -3278,7 +3561,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const setCols  = Object.keys(row)
         .map(c => { params.push(row[c] ?? null); return `"${c}" = ?` })
         .join(', ')
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(where, 'live') : where
+      const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
+      const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       const updateManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (updateManyPolicy) params.push(...updateManyPolicy.params)
@@ -3392,7 +3676,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     async remove({ where } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(where, 'live') : where
+      const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
+      const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       if (!whereSql) throw new Error(`remove on "${tableName}" requires a where clause`)
       const removePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
@@ -3461,7 +3746,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     async removeMany({ where } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const effectiveWhere = softDelete ? injectSoftDeleteFilter(where, 'live') : where
+      const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
+      const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       const removeManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (removeManyPolicy) params.push(...removeManyPolicy.params)
@@ -3714,6 +4000,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       withRank    = true,
       withDeleted = false,
       onlyDeleted = false,
+      withTemplates = false,
+      onlyTemplates = false,
     } = {}) {
       if (!ftsFields) {
         throw new Error(
@@ -3723,6 +4011,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       const ftsTable = `${tableName}_fts`
       const mode     = withDeleted ? 'withDeleted' : onlyDeleted ? 'onlyDeleted' : 'live'
+      const htm      = withTemplates ? 'withTemplates' : onlyTemplates ? 'onlyTemplates' : 'instances'
 
       // ── Step 1: query FTS table for matching rowids + rank ─────────────────
       // FTS5 rank column is BM25 — lower (more negative) = better match.
@@ -3782,12 +4071,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const baseParams   = []
       const inClause     = rowids.map(() => '?').join(', ')
       const idFilter     = { id: { in: rowids } }
-      const effectiveWhere = softDelete
-        ? injectSoftDeleteFilter(
-            where ? { AND: [idFilter, where] } : idFilter,
-            mode
-          )
-        : (where ? { AND: [idFilter, where] } : idFilter)
+      const effectiveWhere = applyHtFilter(
+        softDelete
+          ? injectSoftDeleteFilter(
+              where ? { AND: [idFilter, where] } : idFilter,
+              mode
+            )
+          : (where ? { AND: [idFilter, where] } : idFilter),
+        htm
+      )
 
       const whereSql = buildWhereWithEncryption(effectiveWhere, baseParams)
 
@@ -4130,14 +4422,14 @@ function makeLoggerAutoModel(dbName) {
   return {
     name,
     fields: [
-      f('operation',  'Text'),
-      f('model',      'Text'),
-      f('field',      'Text',     true),
+      f('operation',  'String'),
+      f('model',      'String'),
+      f('field',      'String',     true),
       f('records',    'Json'),
       f('before',     'Json',     true),
       f('after',      'Json',     true),
-      f('actorId',    'Integer',  true),
-      f('actorType',  'Text',     true),
+      f('actorId',    'Int',  true),
+      f('actorType',  'String',     true),
       f('meta',       'Json',     true),
       { name: 'createdAt', type: { kind: 'scalar', name: 'DateTime', optional: false, array: false },
         attributes: [{ kind: 'default', value: { kind: 'call', fn: 'now' } }], comments: [] },
@@ -4255,6 +4547,8 @@ export async function createClient({
   onQuery,
   policyDebug = false,
   scopes:     scopeRegistry = {},   // { ModelName: { scopeName: scopeDef, ... } }
+  allowChildFkOverride = false,     // false (default) → parent's co-FK silently overwrites child's value
+                                    // true → explicit child value wins; missing values still auto-filled
 } = {}) {
 
   // ── Parse schema ───────────────────────────────────────────────────────────
@@ -4572,8 +4866,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const fromMap       = buildFromMap(schema, pluralizeTableNames)
   const computedSets  = buildComputedSet(schema)
   const relationMap   = buildRelationMap(schema)
+  const coFkMap       = buildCoFkMap(schema, relationMap)
   const softDeleteMap        = buildSoftDeleteMap(schema)
   const softDeleteCascadeMap = buildSoftDeleteCascadeMap(schema)
+  const hasTemplatesMap      = buildHasTemplatesMap(schema)
   const boolMap        = buildBoolMap(schema)
   const autoIdMap      = buildAutoIdMap(schema)
   const authDefaultMap     = buildAuthDefaultMap(schema)
@@ -4602,14 +4898,59 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
   // Validate encryption key — fail fast if @encrypted fields exist but no key given
   const encKey = normaliseKey(encryptionKey ?? null)
-  const hasEncryptedFields = schema.models.some(m =>
-    m.fields.some(f => f.attributes.find(a => a.kind === 'encrypted'))
-  )
+  const encryptedFields = []
+  for (const m of schema.models)
+    for (const f of m.fields)
+      if (f.attributes.find(a => a.kind === 'encrypted'))
+        encryptedFields.push(`${m.name}.${f.name}`)
+  const hasEncryptedFields = encryptedFields.length > 0
   if (hasEncryptedFields && !encKey) {
-    throw new Error(
-      'Schema has @encrypted fields but no encryption key was provided.\n' +
-      'Pass { encryptionKey: process.env.ENCRYPTION_KEY } to createClient().'
-    )
+    // Look for env vars the user *probably* intended to pass — common naming
+    // patterns and any var matching a 64-char hex string. Helps diagnose the
+    // forgot-to-forward-the-env case (Bun loads .env, but createClient still
+    // needs an explicit `encryptionKey:` argument).
+    const env = (typeof process !== 'undefined' && process.env) ? process.env : {}
+    const conventional = [
+      'ENCRYPTION_KEY', 'LITESTONE_KEY',
+      'LITESTONE_ENCRYPTION_KEY', 'DB_ENCRYPTION_KEY',
+    ].filter(k => typeof env[k] === 'string' && env[k].length > 0)
+
+    const looksLikeKey = (v) => typeof v === 'string' && /^[0-9a-fA-F]{64}$/.test(v)
+    const heuristic = Object.keys(env)
+      .filter(k => !conventional.includes(k))
+      .filter(k => looksLikeKey(env[k]))
+      .slice(0, 3) // cap to avoid noise
+
+    const lines = [
+      'Schema has @encrypted fields but no encryption key was provided.',
+      `  affected fields: ${encryptedFields.slice(0, 5).join(', ')}` +
+        (encryptedFields.length > 5 ? ` (+${encryptedFields.length - 5} more)` : ''),
+      '',
+      "Fix: pass encryptionKey to createClient():",
+      "  createClient({ schema: '...', encryptionKey: process.env.ENCRYPTION_KEY })",
+    ]
+    if (conventional.length > 0) {
+      lines.push(
+        '',
+        `Detected ${conventional.map(k => `process.env.${k}`).join(', ')} in your environment ` +
+          `but it wasn't passed in. Bun auto-loads .env, but createClient still ` +
+          `needs an explicit \`encryptionKey:\` argument.`,
+      )
+    } else if (heuristic.length > 0) {
+      lines.push(
+        '',
+        `Hint: these env vars look like 32-byte hex keys — did you mean one of them?`,
+        ...heuristic.map(k => `  process.env.${k}`),
+      )
+    } else {
+      lines.push(
+        '',
+        'No likely key found in process.env. Generate one with:',
+        '  openssl rand -hex 32',
+        'and add to .env as ENCRYPTION_KEY=...',
+      )
+    }
+    throw new Error(lines.join('\n'))
   }
   if (encKey && encKey.length !== 32) {
     throw new Error(`Encryption key must be 32 bytes (got ${encKey.length}). Use a 32-byte (64 hex char) key.`)
@@ -4644,7 +4985,15 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Shared context threaded through include resolution + table ops
   const ctx = {
     relationMap, jsonMap, computedSets,
-    softDeleteMap, softDeleteCascadeMap, ftsMap, boolMap, enumMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, selfRelationMap, sequenceMap, computedFns, tx,
+    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, selfRelationMap, sequenceMap, computedFns, tx,
+    coFkMap,
+    // Default: parent values silently overwrite any child-supplied co-FK
+    // values during nested writes — this is the safe choice that prevents
+    // referential drift like a child line item ending up with a different
+    // tenantId than its parent order. Setting allowChildFkOverride:true flips
+    // the policy so an explicit child value wins, but a missing one still
+    // gets auto-filled.
+    allowChildFkOverride: allowChildFkOverride === true,
     transitionMap,
     models:        modelIndex,
     schema,

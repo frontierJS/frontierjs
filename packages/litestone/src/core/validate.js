@@ -181,9 +181,9 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors) {
       }
     } else {
       const expected = field.type.name
-      if (expected === 'Text'     && typeof fieldValue !== 'string') errors.push({ path: fieldPath, message: 'must be a string' })
-      else if (expected === 'Integer' && (typeof fieldValue !== 'number' || !Number.isInteger(fieldValue))) errors.push({ path: fieldPath, message: 'must be an integer' })
-      else if (expected === 'Real'    && typeof fieldValue !== 'number') errors.push({ path: fieldPath, message: 'must be a number' })
+      if (expected === 'String'     && typeof fieldValue !== 'string') errors.push({ path: fieldPath, message: 'must be a string' })
+      else if (expected === 'Int' && (typeof fieldValue !== 'number' || !Number.isInteger(fieldValue))) errors.push({ path: fieldPath, message: 'must be an integer' })
+      else if (expected === 'Float'    && typeof fieldValue !== 'number') errors.push({ path: fieldPath, message: 'must be a number' })
       else if (expected === 'Boolean' && typeof fieldValue !== 'boolean') errors.push({ path: fieldPath, message: 'must be a boolean' })
       else if (expected === 'DateTime' && typeof fieldValue !== 'string') errors.push({ path: fieldPath, message: 'must be a string in ISO 8601 format' })
       else if (expected === 'DateTime' && typeof fieldValue === 'string' && !ISO_DATE_RE.test(fieldValue)) errors.push({ path: fieldPath, message: 'must be a valid ISO 8601 datetime' })

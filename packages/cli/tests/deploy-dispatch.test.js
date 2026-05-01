@@ -8,6 +8,13 @@ const ROOT  = resolve(__dir, '..')
 global.fliRoot     = ROOT
 global.projectRoot = ROOT
 
+// Build the registry once so getModule('deploy') returns the real
+// commands/deploy/_module.md helpers (resolveTarget, resolveDeployConf).
+// Without this, the runtime's `getModule(ns)` lookup returns null and
+// fixture scripts that reference those helpers throw ReferenceError.
+import { buildRegistry } from '../core/registry.js'
+buildRegistry()
+
 import { Command } from '../core/runtime.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -37,14 +44,18 @@ const steps  = (events) => ({
 })
 
 // ── Project dirs ──────────────────────────────────────────────────────────────
-
-const TMP_DOCKER = resolve(ROOT, '.tmp-deploy-docker')
-const TMP_LEGACY = resolve(ROOT, '.tmp-deploy-legacy')
+// Unique paths per test — Bun's import cache keys by file URL, so reusing the
+// same path across tests returns the cached module from the previous write.
 
 const dockerFixture = resolve(__dir, 'fixtures/frontier-deploy-docker/index.md')
 const legacyFixture = resolve(__dir, 'fixtures/frontier-deploy-legacy/index.md')
 
+let TMP_DOCKER, TMP_LEGACY
+
 beforeEach(() => {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  TMP_DOCKER = resolve(ROOT, `.tmp-deploy-docker-${id}`)
+  TMP_LEGACY = resolve(ROOT, `.tmp-deploy-legacy-${id}`)
   mkdirSync(TMP_DOCKER, { recursive: true })
   mkdirSync(TMP_LEGACY, { recursive: true })
 })

@@ -2,6 +2,8 @@
 // CLI path uses only string parsing — no Svelte/mdsvex at runtime.
 // compileSvelte() is available for the Web GUI layer when needed.
 
+import { pathToFileURL } from 'url'
+
 const utf8Decoder = new TextDecoder('utf-8')
 const bufToString = (buf) => (typeof buf === 'string' ? buf : utf8Decoder.decode(buf))
 
@@ -21,7 +23,10 @@ export async function load(url, context, defaultLoad) {
   if (url.endsWith('.md')) {
     const { readFile } = await import('fs/promises')
     const template = await readFile(new URL(url), 'utf8')
-    const source = compileCli(template)
+    // Pass the file path so compileCli can emit a sourceURL pragma —
+    // runtime error stacks then point to the .md instead of a temp shim.
+    const { fileURLToPath } = await import('url')
+    const source = compileCli(template, '', fileURLToPath(url))
     return { format: 'module', source, shortCircuit: true }
   }
   return defaultLoad(url, context)
@@ -29,7 +34,7 @@ export async function load(url, context, defaultLoad) {
 
 // ─── CLI Compiler ─────────────────────────────────────────────────────────────
 
-export function compileCli(template, moduleScript = '') {
+export function compileCli(template, moduleScript = '', sourcePath = '') {
   const frontmatter = extractFrontmatter(template)
   const ownScript   = extractScriptBlock(template)
   // Module script is prepended so namespace helpers are available everywhere
@@ -41,6 +46,13 @@ export function compileCli(template, moduleScript = '') {
   // don't get picked up by the tab-indent detection and leak into run()
   const scriptStripped = stripScriptBlocks(template)
   const mainBody       = transformMarkdown(scriptStripped)
+
+  // sourceURL pragma — Node and Bun both honor this. Stack traces for runtime
+  // errors will reference the .md file path instead of the temp .__fli_*.mjs
+  // shim, which is the user's source of truth and survives after temp cleanup.
+  const sourceURL = sourcePath
+    ? `\n//# sourceURL=${pathToFileURL(sourcePath).href}\n`
+    : ''
 
   return `
 import 'zx/globals'
@@ -56,8 +68,7 @@ export async function run(context) {
   const echo = context.echo ?? globalThis.echo
   ${mainBody}
   return context
-}
-`.trimStart()
+}${sourceURL}`.trimStart()
 }
 
 // ─── Svelte compiler — Web GUI path only, not used by CLI ─────────────────────
@@ -85,7 +96,13 @@ export function extractFrontmatter(template) {
 function parseYaml(yaml) {
   const lines = yaml.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('#'))
 
-  const indent = (line) => line.match(/^(\s*)/)[1].length
+  // Count leading spaces directly — avoids regex match + capture allocation
+  // per call (this fires once per line of frontmatter).
+  const indent = (line) => {
+    let n = 0
+    while (n < line.length && line.charCodeAt(n) === 32) n++
+    return n
+  }
 
   const result = {}
   let stack = [{ container: result, indentLevel: -1 }]
@@ -121,12 +138,21 @@ function parseYaml(yaml) {
       const [, key, value] = kv
       const val = value.trim()
       if (val === '') {
+        // Blank/comment lines are pre-filtered out (see line 97), so the next
+        // line in `lines` is the next meaningful line. If it's more indented,
+        // we have a child block; otherwise the value is empty string.
         const nextLine = lines[i + 1]
-        const nextTrimmed = nextLine?.trim() ?? ''
-        const isArray = nextTrimmed === '-' || nextTrimmed.startsWith('- ')
-        const child = isArray ? [] : {}
-        current[key] = child
-        stack.push({ container: child, indentLevel: lvl })
+        const nextLvl  = nextLine ? indent(nextLine) : -1
+        const hasChild = nextLine && nextLvl > lvl
+        if (hasChild) {
+          const nextTrimmed = nextLine.trim()
+          const isArray = nextTrimmed === '-' || nextTrimmed.startsWith('- ')
+          const child = isArray ? [] : {}
+          current[key] = child
+          stack.push({ container: child, indentLevel: lvl })
+        } else {
+          current[key] = ''
+        }
       } else {
         current[key] = coerceYamlValue(val)
       }
@@ -141,8 +167,13 @@ function coerceYamlValue(val) {
   if (val === 'true')  return true
   if (val === 'false') return false
   if (val === 'null' || val === '~') return null
-  const n = Number(val)
-  if (!isNaN(n) && val.trim() !== '') return n
+  // Only coerce to number if it round-trips cleanly — avoids surprising
+  // conversions like "+123" → 123, "0xff" → 255, "1e3" → 1000, "Infinity" → null.
+  // We want a YAML 1.2 scalar that's unambiguously a plain integer or float.
+  if (/^-?\d+$/.test(val) || /^-?\d+\.\d+$/.test(val)) {
+    const n = Number(val)
+    if (Number.isFinite(n)) return n
+  }
   if ((val.startsWith('"') && val.endsWith('"')) ||
       (val.startsWith("'") && val.endsWith("'"))) return val.slice(1, -1)
   return val

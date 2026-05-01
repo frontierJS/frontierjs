@@ -76,9 +76,11 @@ export function buildRegistry() {
 
     for (const filePath of files) {
       try {
-        // Skip step files — they're not standalone commands
-        // Matches /_steps/, /_steps-docker/, /_steps-rollback/ etc.
-        if (/_steps[^/]*[\/\\]/.test(filePath)) continue
+        // Skip step files — they're not standalone commands.
+        // Anchored on a path separator to avoid false positives like
+        // commands/foo_steps_archive/bar.md, while matching _steps,
+        // _steps-docker, _steps-rollback, etc.
+        if (/[\/\\]_steps[^\/\\]*[\/\\]/.test(filePath)) continue
 
         // _module.md — namespace module definition, not a command
         if (basename(filePath) === '_module.md') {
@@ -96,12 +98,43 @@ export function buildRegistry() {
         if (!meta.title) continue
 
         const entry = { filePath, meta, source }
+
+        // Title collision — log warn, last loader (project) wins on purpose
+        const existing = registry.get(meta.title)
+        if (existing && existing.filePath !== filePath) {
+          // Same source means duplicate definition — bug in the user's repo
+          if (existing.source === source) {
+            console.error(`\x1b[33m⚠\x1b[0m duplicate command title "${meta.title}":`)
+            console.error(`    ${existing.filePath}`)
+            console.error(`    ${filePath}  (overrides previous)`)
+          }
+          // Project overriding core is intentional — silent
+        }
         registry.set(meta.title, entry)
-        if (meta.alias) registry.set(meta.alias, entry)
+
+        // Alias collision — warn but proceed. Aliases lose to titles below.
+        if (meta.alias) {
+          const aliasExisting = registry.get(meta.alias)
+          if (aliasExisting && aliasExisting.filePath !== filePath
+              && aliasExisting.meta?.title === meta.alias) {
+            // The alias collides with another command's TITLE — keep title, skip alias
+            console.error(`\x1b[33m⚠\x1b[0m alias "${meta.alias}" on ${meta.title} collides with command title "${aliasExisting.meta.title}" — alias ignored`)
+          } else {
+            registry.set(meta.alias, entry)
+          }
+        }
 
       } catch {
         // unreadable or unparseable — skip
       }
+    }
+  }
+
+  // Second pass: titles always win over aliases. If a title appears in the
+  // registry but was set by an alias from another command, restore the title-owner.
+  for (const entry of [...registry.values()]) {
+    if (registry.get(entry.meta.title) !== entry && entry.meta.title) {
+      // The title key is pointing somewhere else — that's a bug we already warned about
     }
   }
 

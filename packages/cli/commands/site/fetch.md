@@ -544,10 +544,9 @@ if (mode === 'error') {
   return
 }
 
-// Surface the output destination upfront so users can sanity-check before
-// the run starts. paths.site might not be where they expect in a monorepo.
-const contentRoot = `${context.paths.site}/content`
-const mediaRoot   = `${context.paths.site}/content/media`
+// Output destination for content + downloaded media
+const contentRoot = context.paths.siteContent
+const mediaRoot   = context.paths.siteMedia
 const destRoot    = `${contentRoot}/${dest}${prefix ? '/' + prefix.replace(/^\/+|\/+$/g, '') : ''}`
 log.info(`writing to: ${destRoot}/`)
 

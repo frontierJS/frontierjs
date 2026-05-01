@@ -1,0 +1,4 @@
+node_modules/
+bun.lock
+.fli-tmp/
+.__fli_*.mjs

@@ -1,5 +1,5 @@
 ---
-title: fixture:legacy-deploy
+title: deploy:fixture-legacy
 description: Deploy fixture — simulates a project without frontier.config.js
 flags:
   production:
@@ -11,8 +11,6 @@ flags:
 ---
 
 ```js
-import { loadFrontierConfig } from '../../../core/utils.js'
-
 const target      = resolveTarget(flag, context.git)
 const frontierConfig = await loadFrontierConfig(context.paths.root)
 const deployConf  = frontierConfig?.deploy

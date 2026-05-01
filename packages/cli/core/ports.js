@@ -20,7 +20,8 @@
  */
 
 import net from 'net'
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, openSync, writeSync, closeSync, unlinkSync } from 'fs'
+import { execSync } from 'child_process'
 import { homedir } from 'os'
 import { join } from 'path'
 
@@ -58,9 +59,9 @@ export function port(category, { env, projectId, serviceId = 0 }) {
   if (CAT[category] === undefined) throw new Error(`Unknown category "${category}"`)
   if (projectId < 0 || projectId > 9) throw new Error(`projectId must be 0–9`)
   if (serviceId < 0 || serviceId > 9) throw new Error(`serviceId must be 0–9`)
-  // Guard: project ports are 7xxx/8xxx/9xxx, global tooling ports are 85xx
-  // Prevent accidental collision with global slots
-  if (projectId === 0 && (CAT[category] === 5) && serviceId <= 2) {
+  // Guard: dev tooling ports 8500–8502 are reserved for global FLI tooling
+  // (gui, pview, studio). Test (75xx) and prod (95xx) tooling ports are not reserved.
+  if (env === 'dev' && projectId === 0 && CAT[category] === CAT.tooling && serviceId <= 2) {
     throw new Error(`Ports 8500–8502 are reserved for global tooling (gui, pview, studio)`)
   }
   return (ENV[env] * 1000) + (CAT[category] * 100) + (projectId * 10) + serviceId
@@ -94,14 +95,19 @@ export function isPortInUse(p) {
 
 /**
  * Find the first free port in a category for a given env + project,
- * scanning service slots 0–9.
+ * scanning service slots 0–9 in parallel for speed.
  */
 export async function findFreeServicePort(category, env, projectId) {
+  const ports = []
   for (let serviceId = 0; serviceId <= 9; serviceId++) {
-    const p = port(category, { env, projectId, serviceId })
-    if (!(await isPortInUse(p))) return p
+    ports.push({ serviceId, p: port(category, { env, projectId, serviceId }) })
   }
-  return null
+  // Probe all slots concurrently — typically all are free or one early one is.
+  const results = await Promise.all(ports.map(async ({ serviceId, p }) => ({
+    serviceId, p, inUse: await isPortInUse(p),
+  })))
+  const free = results.find(r => !r.inUse)
+  return free ? free.p : null
 }
 
 // ─── Lock manager ─────────────────────────────────────────────────────────────
@@ -128,6 +134,43 @@ function isProcessAlive(pid) {
   catch { return false }
 }
 
+// ─── File-lock helper ─────────────────────────────────────────────────────────
+// Best-effort exclusive lock via O_EXCL on a sidecar file. Multiple fli
+// processes may compete for sessions.lock; this serializes the read-modify-write.
+const LOCK_GUARD = LOCK_FILE + '.guard'
+
+function acquireLock(timeoutMs = 5000) {
+  const start = Date.now()
+  if (!existsSync(LOCK_DIR)) mkdirSync(LOCK_DIR, { recursive: true })
+  while (true) {
+    try {
+      // O_EXCL: fails if file exists. Atomic.
+      const fd = openSync(LOCK_GUARD, 'wx')
+      writeSync(fd, String(process.pid))
+      closeSync(fd)
+      return
+    } catch (err) {
+      // If guard exists but the holder died, take it over
+      try {
+        const heldBy = parseInt(readFileSync(LOCK_GUARD, 'utf8'))
+        if (heldBy && !isProcessAlive(heldBy)) {
+          unlinkSync(LOCK_GUARD)
+          continue
+        }
+      } catch {}
+      if (Date.now() - start > timeoutMs) {
+        throw new Error(`Could not acquire ${LOCK_GUARD} within ${timeoutMs}ms`)
+      }
+      // Brief sleep then retry
+      try { execSync('sleep 0.05', { stdio: 'pipe' }) } catch {}
+    }
+  }
+}
+
+function releaseLock() {
+  try { unlinkSync(LOCK_GUARD) } catch {}
+}
+
 /**
  * Claim a project session — assigns a projectId and ports for each
  * requested category. Categories can be a simple array ['fe','be'] or
@@ -139,67 +182,79 @@ function isProcessAlive(pid) {
  * @returns {Promise<{ projectId: number, ports: Record<string, number[]> }>}
  */
 export async function claimSession(projectName, env, categories) {
-  const sessions = readLock()
+  acquireLock()
+  try {
+    const sessions = readLock()
 
-  // Evict stale sessions (PID no longer alive)
-  for (const [name, session] of Object.entries(sessions)) {
-    if (!isProcessAlive(session.pid)) delete sessions[name]
-  }
+    // Evict stale sessions (PID no longer alive)
+    for (const [name, session] of Object.entries(sessions)) {
+      if (!isProcessAlive(session.pid)) delete sessions[name]
+    }
 
-  // If this project is already registered, return existing session
-  if (sessions[projectName]) {
-    const s = sessions[projectName]
-    return { projectId: s.projectId, ports: s.ports }
-  }
+    // If this project is already registered, return existing session
+    if (sessions[projectName]) {
+      const s = sessions[projectName]
+      return { projectId: s.projectId, ports: s.ports }
+    }
 
-  // Claim lowest unused project ID
-  const usedIds  = new Set(Object.values(sessions).map(s => s.projectId))
-  let   projectId = 0
-  while (usedIds.has(projectId)) projectId++
-  if (projectId > 9) throw new Error('Maximum concurrent projects (10) reached')
+    // Claim lowest unused project ID
+    const usedIds  = new Set(Object.values(sessions).map(s => s.projectId))
+    let   projectId = 0
+    while (usedIds.has(projectId)) projectId++
+    if (projectId > 9) throw new Error('Maximum concurrent projects (10) reached')
 
-  // Normalise categories to { category: count }
-  const catMap = Array.isArray(categories)
-    ? Object.fromEntries(categories.map(c => [c, 1]))
-    : categories
+    // Normalise categories to { category: count }
+    const catMap = Array.isArray(categories)
+      ? Object.fromEntries(categories.map(c => [c, 1]))
+      : categories
 
-  // Assign ports — fall back to next service slot if somehow in use
-  const ports = {}
-  for (const [category, count] of Object.entries(catMap)) {
-    ports[category] = []
-    let serviceId = 0
-    for (let i = 0; i < count; i++) {
-      // Find a free slot
-      while (serviceId <= 9) {
-        const p = port(category, { env, projectId, serviceId })
-        if (!(await isPortInUse(p))) { ports[category].push(p); serviceId++; break }
-        serviceId++
+    // Assign ports — fall back to next service slot if somehow in use
+    const ports = {}
+    for (const [category, count] of Object.entries(catMap)) {
+      ports[category] = []
+      let serviceId = 0
+      for (let i = 0; i < count; i++) {
+        let assigned = null
+        while (serviceId <= 9) {
+          const p = port(category, { env, projectId, serviceId })
+          if (!(await isPortInUse(p))) { assigned = p; serviceId++; break }
+          serviceId++
+        }
+        if (assigned === null) {
+          throw new Error(
+            `No free service slot for category "${category}" ` +
+            `(env=${env}, projectId=${projectId}, requested=${count}, assigned=${ports[category].length})`
+          )
+        }
+        ports[category].push(assigned)
       }
     }
-  }
 
-  sessions[projectName] = {
-    projectId,
-    pid:       process.pid,
-    env,
-    ports,
-    startedAt: new Date().toISOString(),
-  }
-
-  writeLock(sessions)
-
-  // Inject into process.env so child processes inherit
-  for (const [category, ps] of Object.entries(ports)) {
-    if (ps.length === 1) {
-      process.env[`FLI_PORT_${category.toUpperCase()}`] = String(ps[0])
-    } else {
-      ps.forEach((p, i) =>
-        process.env[`FLI_PORT_${category.toUpperCase()}_${i}`] = String(p)
-      )
+    sessions[projectName] = {
+      projectId,
+      pid:       process.pid,
+      env,
+      ports,
+      startedAt: new Date().toISOString(),
     }
-  }
 
-  return { projectId, ports }
+    writeLock(sessions)
+
+    // Inject into process.env so child processes inherit
+    for (const [category, ps] of Object.entries(ports)) {
+      if (ps.length === 1) {
+        process.env[`FLI_PORT_${category.toUpperCase()}`] = String(ps[0])
+      } else {
+        ps.forEach((p, i) =>
+          process.env[`FLI_PORT_${category.toUpperCase()}_${i}`] = String(p)
+        )
+      }
+    }
+
+    return { projectId, ports }
+  } finally {
+    releaseLock()
+  }
 }
 
 export function releaseSession(projectName) {
@@ -211,8 +266,8 @@ export function releaseSession(projectName) {
 export function autoRelease(projectName) {
   const cleanup = () => releaseSession(projectName)
   process.on('exit',   cleanup)
-  process.on('SIGINT',  () => { cleanup(); process.exit(0) })
-  process.on('SIGTERM', () => { cleanup(); process.exit(0) })
+  process.on('SIGINT',  () => { cleanup(); process.exit(130) })
+  process.on('SIGTERM', () => { cleanup(); process.exit(143) })
 }
 
 /**

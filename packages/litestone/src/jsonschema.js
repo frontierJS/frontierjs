@@ -421,18 +421,18 @@ function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false) {
 
   // Array types — Text[] / Integer[]
   if (type.array) {
-    const itemType = type.name === 'Integer' ? 'integer' : 'string'
+    const itemType = type.name === 'Int' ? 'integer' : 'string'
     return { type: 'array', items: { type: itemType } }
   }
 
   switch (type.name) {
-    case 'Text':     return { type: 'string' }
-    case 'Integer':  return { type: 'integer' }
-    case 'Real':     return { type: 'number' }
+    case 'String':     return { type: 'string' }
+    case 'Int':  return { type: 'integer' }
+    case 'Float':     return { type: 'number' }
     case 'Boolean':  return { type: 'boolean' }
     case 'DateTime': return { type: 'string', format: 'date-time' }
     case 'Json':     return {}   // any JSON value — no type constraint
-    case 'Blob':     return { type: 'string', contentEncoding: 'base64' }
+    case 'Bytes':     return { type: 'string', contentEncoding: 'base64' }
     case 'File':     return { '$ref': '#/$defs/FileRef' }  // shared ref — see FileRef definition below
     default:         return { type: 'string' }
   }

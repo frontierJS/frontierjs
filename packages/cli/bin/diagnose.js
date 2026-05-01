@@ -10,17 +10,8 @@ console.log('Platform:    ', process.platform)
 
 global.fliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-function findProjectRoot(start) {
-  let dir = start
-  while (true) {
-    if (existsSync(resolve(dir, 'package.json')) && dir !== global.fliRoot) return dir
-    if (existsSync(resolve(dir, 'package.json'))) return dir
-    const parent = resolve(dir, '..')
-    if (parent === dir) return start
-    dir = parent
-  }
-}
-global.projectRoot = findProjectRoot(process.cwd())
+const { findProjectRoot } = await import('../core/utils.js')
+global.projectRoot = findProjectRoot(process.cwd(), global.fliRoot)
 
 console.log('fliRoot:     ', global.fliRoot)
 console.log('projectRoot: ', global.projectRoot)

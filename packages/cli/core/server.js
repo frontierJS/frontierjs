@@ -22,12 +22,30 @@ import { fileURLToPath } from 'url'
 import { homedir } from 'os'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
-import { buildRegistry, uniqueCommands } from './registry.js'
+import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { Command } from './runtime.js'
 import { extractSegments } from './compiler.js'
 
 import { GLOBAL } from './ports.js'
 const PORT = parseInt(process.env.FLI_PORT) || GLOBAL.gui
+
+// ─── Registry cache ───────────────────────────────────────────────────────────
+// buildRegistry() walks the filesystem and reads every .md file — expensive
+// to do on every API call. Cache results for a short TTL so back-to-back
+// requests (sidebar load + meta fetch + run) share one scan, while edits made
+// during a session show up within a few seconds without manual refresh.
+let _cachedRegistry = null
+let _cacheTime = 0
+const REGISTRY_TTL_MS = 2000
+
+function getRegistry() {
+  const now = Date.now()
+  if (!_cachedRegistry || now - _cacheTime > REGISTRY_TTL_MS) {
+    _cachedRegistry = buildRegistry()
+    _cacheTime = now
+  }
+  return _cachedRegistry
+}
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
@@ -197,7 +215,7 @@ function handleStatic(res) {
 
 function handleList(req, res) {
   try {
-    const registry = buildRegistry()
+    const registry = getRegistry()
     const commands = uniqueCommands(registry)
     json(res, 200, commands)
   } catch (err) {
@@ -209,7 +227,7 @@ function handleList(req, res) {
 
 async function handleMeta(req, res, name) {
   try {
-    const registry = buildRegistry()
+    const registry = getRegistry()
     const entry = registry.get(name)
     if (!entry) {
       return json(res, 404, { error: `Command "${name}" not found` })
@@ -220,9 +238,8 @@ async function handleMeta(req, res, name) {
     const raw = readFileSync(entry.filePath, 'utf8')
     const { script, segments } = extractSegments(raw)
 
-    const { getModule: getModuleForNs } = await import('./registry.js')
     const cmdNs  = entry.meta.title?.split(':')?.[0]
-    const mod    = cmdNs ? getModuleForNs(cmdNs) : null
+    const mod    = cmdNs ? getModule(cmdNs) : null
 
     // ── Discover _steps* folders alongside the command file ──────────────────────
     const cmdDir  = dirname(entry.filePath)
@@ -304,7 +321,7 @@ async function handleRun(req, res, name) {
   const { args = [], flags = {} } = body
 
   // Look up command
-  const registry = buildRegistry()
+  const registry = getRegistry()
   const entry = registry.get(name)
   if (!entry) {
     return json(res, 404, { error: `Command "${name}" not found` })

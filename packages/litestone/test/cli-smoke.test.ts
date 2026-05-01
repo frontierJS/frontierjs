@@ -50,10 +50,10 @@ function makeFixtureDir(label: string, opts: { schema?: string | null; config?: 
 /** Fixture schema — PascalCase singular models, exercises common attributes. */
 const DEFAULT_SCHEMA = `
 model User {
-  id        Integer  @id
-  email     Text     @unique
-  name      Text?
-  role      Text     @default("member")
+  id        Int  @id
+  email     String     @unique
+  name      String?
+  role      String     @default("member")
   createdAt DateTime @default(now())
   deletedAt DateTime?
 
@@ -64,11 +64,11 @@ model User {
 }
 
 model Post {
-  id        Integer  @id
-  title     Text
-  body      Text
+  id        Int  @id
+  title     String
+  body      String
   author    User     @relation(fields: [authorId], references: [id])
-  authorId  Integer
+  authorId  Int
   createdAt DateTime @default(now())
 
   @@fts([title, body])
@@ -267,6 +267,93 @@ describe('CLI smoke — one-shot commands', () => {
     expect(existsSync(join(dir, 'nested', 'deep', 'app.db'))).toBe(true)
   })
 
+  test('db push works on a schema with @encrypted fields when ENCRYPTION_KEY is set', async () => {
+    // Regression guard: cmdDbPush (and other CLI cmds) used to call
+    // createClient without forwarding encryptionKey, so any schema with
+    // @encrypted/@secret would crash with "no encryption key was provided".
+    const dir = makeFixtureDir('db-push-encrypted', {
+      schema: `
+        model User {
+          id    Int @id
+          email String    @unique
+          ssn   String    @encrypted
+        }
+      `,
+    })
+    const key = 'a'.repeat(64) // 32 bytes hex
+    const pushed = await runCli(dir, ['db', 'push'], { env: { ENCRYPTION_KEY: key } })
+    expect(pushed.exit).toBe(0)
+    expect(pushed.stdout + pushed.stderr).not.toContain('no encryption key was provided')
+    expect(existsSync(join(dir, 'test.db'))).toBe(true)
+  })
+
+  test('--env-file loads keys from a custom file', async () => {
+    // Regression guard for the auto .env loader. Bun reads ./.env on its own,
+    // but --env-file must support arbitrary paths (e.g. .env.production).
+    const dir = makeFixtureDir('db-push-env-file', {
+      schema: `
+        model User {
+          id    Int @id
+          email String    @unique
+          ssn   String    @encrypted
+        }
+      `,
+    })
+    const key = 'c'.repeat(64)
+    writeFileSync(join(dir, 'prod.env'), `ENCRYPTION_KEY=${key}\n`, 'utf8')
+    const pushed = await runCli(dir, ['db', 'push', '--env-file=prod.env'])
+    expect(pushed.exit).toBe(0)
+    expect(pushed.stdout + pushed.stderr).not.toContain('no encryption key was provided')
+    expect(existsSync(join(dir, 'test.db'))).toBe(true)
+  })
+
+  test('codemod: rewrites old type names in .lite files in place', async () => {
+    // Hard-cut migration helper. After the Text/Integer/Real/Blob → String/
+    // Int/Float/Bytes rename, this command walks .lite files and applies
+    // word-boundary replacements. Default: writes .bak alongside.
+    const dir = makeFixtureDir('codemod-basic', {
+      schema: `model U { id Integer @id; name Text; data Blob?; price Real }`,
+    })
+    const r = await runCli(dir, ['codemod'])
+    expect(r.exit).toBe(0)
+    const after = readFileSync(join(dir, 'schema.lite'), 'utf8')
+    expect(after).toContain('id Int @id')
+    expect(after).toContain('name String')
+    expect(after).toContain('data Bytes')
+    expect(after).toContain('price Float')
+    expect(after).not.toContain('Integer')
+    expect(after).not.toContain('Text')
+    expect(after).not.toContain('Blob')
+    expect(after).not.toContain(' Real')
+    expect(existsSync(join(dir, 'schema.lite.bak'))).toBe(true)
+    const bak = readFileSync(join(dir, 'schema.lite.bak'), 'utf8')
+    expect(bak).toContain('Integer')   // backup preserves original
+  })
+
+  test('codemod --dry-run: prints changes but writes nothing', async () => {
+    const dir = makeFixtureDir('codemod-dryrun', {
+      schema: `model U { id Integer @id; name Text }`,
+    })
+    const before = readFileSync(join(dir, 'schema.lite'), 'utf8')
+    const r = await runCli(dir, ['codemod', '--dry-run'])
+    expect(r.exit).toBe(0)
+    expect(r.stdout + r.stderr).toContain('dry-run')
+    const after = readFileSync(join(dir, 'schema.lite'), 'utf8')
+    expect(after).toBe(before)   // unchanged
+    expect(existsSync(join(dir, 'schema.lite.bak'))).toBe(false)
+  })
+
+  test('codemod --no-backup: rewrites without .bak file', async () => {
+    const dir = makeFixtureDir('codemod-nobackup', {
+      schema: `model U { id Integer @id }`,
+    })
+    const r = await runCli(dir, ['codemod', '--no-backup'])
+    expect(r.exit).toBe(0)
+    expect(existsSync(join(dir, 'schema.lite.bak'))).toBe(false)
+    const after = readFileSync(join(dir, 'schema.lite'), 'utf8')
+    expect(after).toContain('Int @id')
+  })
+
   test('full pipeline: schema with trait + type → migrate → types → jsonschema', async () => {
     // Exercises every CLI surface that sees the post-splice schema:
     //   - migrate create / migrate apply (column emission for trait fields)
@@ -281,15 +368,15 @@ describe('CLI smoke — one-shot commands', () => {
         }
 
         type Address {
-          street     Text
-          city       Text
-          state      Text?
-          postalCode Text
+          street     String
+          city       String
+          state      String?
+          postalCode String
         }
 
         model User {
-          id      Integer @id
-          name    Text
+          id      Int @id
+          name    String
           address Json @type(Address)
           @@trait(Dates)
         }

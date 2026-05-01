@@ -2,8 +2,8 @@ import { chalk } from 'zx'
 import { execSync, spawn } from 'child_process'
 import { pathToFileURL } from 'url'
 import { compileCli, extractFrontmatter } from './compiler.js'
-import { readFileSync, writeFileSync, unlinkSync, readdirSync, existsSync, statSync } from 'fs'
-import { resolve, dirname, basename } from 'path'
+import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, rmSync } from 'fs'
+import { resolve, dirname, basename, join } from 'path'
 import { fileURLToPath } from 'url'
 import { logger } from './utils.js'
 import { getModule } from './registry.js'
@@ -12,18 +12,101 @@ import { printPlanFromFile } from './prose.js'
 const env = process.env
 
 // ─── Temp file registry — guaranteed cleanup on exit ─────────────────────────
-const _tmpFiles = new Set()
-const _cleanupTmp = () => { for (const f of _tmpFiles) { try { unlinkSync(f) } catch {} } }
-process.on('exit', _cleanupTmp)
-process.on('SIGINT',  () => { _cleanupTmp(); process.exit(130) })
-process.on('SIGTERM', () => { _cleanupTmp(); process.exit(143) })
+// Compiled command bodies are written as .mjs shims so we can `import()` them
+// (Node ESM loaders only resolve real files, not in-memory strings). They have
+// to live somewhere that can resolve 'zx/globals' (and any other node_modules
+// imports compiled commands need) — which means under fliRoot, where the
+// node_modules tree is.
+//
+// Subdirectory choice: <fliRoot>/.fli-tmp/<pid>/. Hidden from typical
+// dev-tooling walks, easy to add to .gitignore, and a single rmSync at exit
+// handles the whole session. PID-keyed subdirs mean concurrent fli processes
+// don't step on each other; a startup sweep reaps dirs from runs that crashed
+// before cleanup. Previous fliRoot/.__fli_*.mjs sprinkled untracked files
+// directly in the project root; this layout is much tidier.
+//
+// Lazy-init: we don't create the dir or register handlers until first temp
+// file is needed, so importing this module before `global.fliRoot` is set
+// (e.g. tests that import directly) doesn't crash.
+let _sessionDir = null
+let _cleanupRegistered = false
+
+const _ensureSession = () => {
+  if (_sessionDir) return _sessionDir
+  if (!global.fliRoot) {
+    throw new Error('runtime: global.fliRoot is not set — bin/fli.js must initialize globals before commands run')
+  }
+  _sessionDir = join(global.fliRoot, '.fli-tmp', String(process.pid))
+  mkdirSync(_sessionDir, { recursive: true })
+
+  // Sweep stale session dirs from previous runs that didn't clean up.
+  // Best-effort, never throws.
+  try {
+    const tmpRoot = join(global.fliRoot, '.fli-tmp')
+    for (const name of readdirSync(tmpRoot)) {
+      const pid = parseInt(name)
+      if (!pid || pid === process.pid) continue
+      // process.kill(pid, 0) throws ESRCH if the process is gone
+      try {
+        process.kill(pid, 0)
+        // still alive — leave it
+      } catch (err) {
+        if (err.code === 'ESRCH') {
+          try { rmSync(join(tmpRoot, name), { recursive: true, force: true }) } catch {}
+        }
+      }
+    }
+  } catch {}
+
+  if (!_cleanupRegistered) {
+    process.on('exit', _cleanupTmp)
+    process.on('SIGINT',  () => { _cleanupTmp(); process.exit(130) })
+    process.on('SIGTERM', () => { _cleanupTmp(); process.exit(143) })
+    _cleanupRegistered = true
+  }
+  return _sessionDir
+}
+
+const _cleanupTmp = () => {
+  if (!_sessionDir) return
+  try { rmSync(_sessionDir, { recursive: true, force: true }) } catch {}
+}
+
+const _tmpFile = () => join(
+  _ensureSession(),
+  `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}.mjs`
+)
 
 // ─── Module cache ─────────────────────────────────────────────────────────────
 // Keyed by "filePath:mtimeMs" — skips recompiling and temp file writes for
 // commands invoked more than once per session (workspace loops, step files, etc).
 // Each entry holds { run, metadata } from the compiled module.
 // The mtime component means edits are always picked up — no stale cache risk.
+//
+// Bounded LRU: long-running GUI sessions can accumulate entries when files
+// are edited (each mtime gets its own key, prior entries linger). We evict
+// the oldest entry when count exceeds MAX. Map preserves insertion order;
+// re-insertion on hit moves an entry to "most recent".
 const _moduleCache = new Map()
+const MODULE_CACHE_MAX = 256
+
+function _cacheGet(key) {
+  if (!_moduleCache.has(key)) return undefined
+  const v = _moduleCache.get(key)
+  // Touch — move to the end of the iteration order
+  _moduleCache.delete(key)
+  _moduleCache.set(key, v)
+  return v
+}
+
+function _cacheSet(key, value) {
+  if (_moduleCache.size >= MODULE_CACHE_MAX && !_moduleCache.has(key)) {
+    // Evict oldest
+    const oldest = _moduleCache.keys().next().value
+    _moduleCache.delete(oldest)
+  }
+  _moduleCache.set(key, value)
+}
 
 const dirs = {
   web:       env.WEB_DIR       || 'web',
@@ -55,22 +138,30 @@ export async function Command({ file, arg, flag, emit }) {
     try {
       const stat = statSync(file)
       cacheKey = `${file}:${stat.mtimeMs}`
-      if (_moduleCache.has(cacheKey)) {
-        ;({ run, metadata } = _moduleCache.get(cacheKey))
+      const cached = _cacheGet(cacheKey)
+      if (cached) {
+        ;({ run, metadata } = cached)
       }
     } catch { /* can't stat — fall through to compile */ }
 
     if (!run) {
-      const source = compileCli(template, mod?.script || '')
-      const tmpFile = resolve(global.fliRoot, `.__fli_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}__.mjs`)
+      const source = compileCli(template, mod?.script || '', file)
+      const tmpFile = _tmpFile()
       try {
         writeFileSync(tmpFile, source)
         ;({ run, metadata } = await import(pathToFileURL(tmpFile)))
-      } finally {
-        _tmpFiles.add(tmpFile)
-        setTimeout(() => { try { unlinkSync(tmpFile); _tmpFiles.delete(tmpFile) } catch {} }, 200)
+      } catch (err) {
+        // Re-throw with the actual command file path so users see what's broken,
+        // not the disposable temp shim path.
+        const wrapped = new Error(`${file}:\n  ${err.message}`)
+        wrapped.cause = err
+        wrapped.signal = err.signal
+        throw wrapped
       }
-      if (cacheKey) _moduleCache.set(cacheKey, { run, metadata })
+      // No per-file unlink — the session dir is wiped on process exit.
+      // (Per-file sync unlink would also work, but the dir-sweep is simpler
+      // and lets us survive a crash without needing every code path to clean up.)
+      if (cacheKey) _cacheSet(cacheKey, { run, metadata })
     }
   } else {
     ;({ run, metadata } = await import(pathToFileURL(file)))
@@ -171,12 +262,28 @@ export async function Command({ file, arg, flag, emit }) {
   // ─── context.exec — synchronous shell execution ────────────────────────────
   // Use for short-lived commands where output is not needed live (git, rsync,
   // quick docker commands). Respects --dry automatically.
+  //
+  // SIGINT/SIGTERM (e.g. user hits Ctrl+C while a long-running child is going)
+  // is not an error — it's the user telling us to stop. We swallow the throw
+  // and exit cleanly with the matching exit code (130 for SIGINT, 143 for
+  // SIGTERM) instead of bubbling a stack trace.
   config.exec = ({ command, dry, ...opts }) => {
     if (dry ?? config.flag.dry) {
       const msg = command
       return emit ? emit({ type: 'log', level: 'dry', text: msg }) : logger(msg, 'dry')
     }
-    return execSync(command, { stdio: 'inherit', ...opts })
+    try {
+      return execSync(command, { stdio: 'inherit', ...opts })
+    } catch (err) {
+      if (err.signal === 'SIGINT' || err.signal === 'SIGTERM') {
+        const code = err.signal === 'SIGINT' ? 130 : 143
+        const note = err.signal === 'SIGINT' ? 'aborted (Ctrl+C)' : 'terminated'
+        if (emit) emit({ type: 'log', level: 'warn', text: note })
+        else logger(note, 'warn')
+        process.exit(code)
+      }
+      throw err
+    }
   }
 
   config.execute = (actions) => actions.forEach((action) => config.exec(action))
@@ -212,7 +319,16 @@ export async function Command({ file, arg, flag, emit }) {
         child.stderr?.on('data', chunk => emit({ type: 'output', text: chunk.toString() }))
       }
 
-      child.on('close', code => {
+      child.on('close', (code, signal) => {
+        // Signal-based exit (Ctrl+C, kill) is not an error — user asked to stop.
+        if (signal === 'SIGINT' || signal === 'SIGTERM') {
+          const note = signal === 'SIGINT' ? 'aborted (Ctrl+C)' : 'terminated'
+          if (emit) emit({ type: 'log', level: 'warn', text: note })
+          else logger(note, 'warn')
+          const exitCode = signal === 'SIGINT' ? 130 : 143
+          process.exit(exitCode)
+          return
+        }
         if (code !== 0) reject(new Error(`Command failed (exit ${code}): ${command}`))
         else resolve()
       })
@@ -355,7 +471,12 @@ export async function Command({ file, arg, flag, emit }) {
               config.log.info(`  [${stepNum}/${totalSteps}] ${stepName} — skipped`)
               return
             }
-          } catch { /* skip predicate error — run the step anyway */ }
+          } catch (err) {
+            // skip predicate threw — warn loudly so users notice typos.
+            // Falling through to run the step is the safer default; a typo
+            // shouldn't silently disable a step.
+            config.log.warn(`  [${stepNum}/${totalSteps}] ${stepName} — skip predicate error: ${err.message} (running step anyway)`)
+          }
         }
 
         config.log.info(`  [${stepNum}/${totalSteps}] ${stepName}`)
@@ -369,22 +490,25 @@ export async function Command({ file, arg, flag, emit }) {
           try {
             const stat = statSync(stepFile)
             stepCacheKey = `${stepFile}:${stat.mtimeMs}`
-            if (_moduleCache.has(stepCacheKey)) {
-              ;({ run: stepRun } = _moduleCache.get(stepCacheKey))
+            const cached = _cacheGet(stepCacheKey)
+            if (cached) {
+              ;({ run: stepRun } = cached)
             }
           } catch {}
 
           if (!stepRun) {
-            const stepSource = compileCli(stepTemplate)
-            const tmpStep = resolve(global.fliRoot, `.__fli_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}__.mjs`)
+            const stepSource = compileCli(stepTemplate, '', stepFile)
+            const tmpStep = _tmpFile()
             try {
               writeFileSync(tmpStep, stepSource)
               ;({ run: stepRun } = await import(pathToFileURL(tmpStep)))
-            } finally {
-              _tmpFiles.add(tmpStep)
-              setTimeout(() => { try { unlinkSync(tmpStep); _tmpFiles.delete(tmpStep) } catch {} }, 200)
+            } catch (err) {
+              const wrapped = new Error(`${stepFile}:\n  ${err.message}`)
+              wrapped.cause = err
+              wrapped.signal = err.signal
+              throw wrapped
             }
-            if (stepCacheKey) _moduleCache.set(stepCacheKey, { run: stepRun, metadata: stepMeta })
+            if (stepCacheKey) _cacheSet(stepCacheKey, { run: stepRun, metadata: stepMeta })
           }
 
           // Build step context — inherits parent flags + shared config
@@ -443,7 +567,34 @@ export async function Command({ file, arg, flag, emit }) {
         } else {
           const names = group.entries.map(e => basename(e.file, '.md')).join(', ')
           config.log.info(`  [parallel] ${names}`)
-          await Promise.all(group.entries.map(({ file, template }) => runOneStep(file, template)))
+
+          // Wrap config.config in a Proxy that tracks how many times each key
+          // is written during this parallel group. If a key is written more
+          // than once, two steps probably collided — warn so the user notices
+          // the race condition. (Tracking which step did the writing requires
+          // AsyncLocalStorage which we don't yet plumb through; this is the
+          // best-effort signal.)
+          const realConfig = config.config
+          const writeCount = new Map()
+          const proxied = new Proxy(realConfig, {
+            set(target, key, value, receiver) {
+              writeCount.set(key, (writeCount.get(key) || 0) + 1)
+              return Reflect.set(target, key, value, receiver)
+            }
+          })
+          config.config = proxied
+
+          try {
+            await Promise.all(group.entries.map(({ file, template }) => runOneStep(file, template)))
+          } finally {
+            config.config = realConfig
+            // Report any keys written more than once
+            for (const [key, n] of writeCount) {
+              if (n > 1) {
+                config.log.warn(`  [parallel] race: context.config.${String(key)} written ${n} times — use serial steps for shared state`)
+              }
+            }
+          }
         }
       }
     }
@@ -474,19 +625,34 @@ const defaultFlags = {
   step: {
     type: 'number',
     description: 'Re-run a single step by number (1-based) when using _steps/'
+  },
+  debug: {
+    type: 'boolean',
+    description: 'Show full stack traces on errors instead of clean messages'
   }
 }
 
 export function getConfig(metadata, rawArg, flag) {
   // Deep-clone metadata so repeated calls (registry lookups, help display)
   // don't see .value properties written by previous runs on the same cached module.
+  // Crucially, defaultFlags is also cloned per-entry — without this, setting
+  // .value on (e.g.) defaultFlags.step during one call leaks into all
+  // subsequent calls across the entire process. That bit us in zz-steps.test
+  // where scenario 7 sets --step 99, and scenario 8 inherits the leftover
+  // step:99 even though it passed flag:{}.
   const meta = {
     ...metadata,
     args:  (metadata.args  || []).map(a => ({ ...a })),
-    flags: { ...defaultFlags, ...Object.fromEntries(
-      Object.entries(metadata.flags || {}).map(([k, v]) => [k, { ...v }])
-    )}
+    flags: {
+      ...Object.fromEntries(Object.entries(defaultFlags).map(([k, v]) => [k, { ...v }])),
+      ...Object.fromEntries(Object.entries(metadata.flags || {}).map(([k, v]) => [k, { ...v }])),
+    }
   }
+
+  // Clone the flag object so we don't mutate the caller's input — bootstrap
+  // and tests both pass in objects that survive the call and could carry
+  // surprising mutations otherwise.
+  flag = { ...flag }
 
   const rawArgArray = rawArg
   let arg = rawArgArray.reduce((acc, value, index) => {
@@ -630,6 +796,8 @@ function buildPaths() {
     webComponents: resolve(r, d.web, 'src/components'),
     webResources:  resolve(r, d.web, 'src/resources'),
     site:          resolve(r, d.site),
+    siteContent:   resolve(r, d.site, 'content'),
+    siteMedia:     resolve(r, d.site, 'content/media'),
     mobile:        resolve(r, d.mobile),
     extension:     resolve(r, d.extension),
   }

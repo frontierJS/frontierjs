@@ -178,7 +178,7 @@ export function generateFactory(schema, modelName, options = {}) {
 
       // @id on Text → '{modelName}-{seq}'
       const isId = attrs.some(a => a.kind === 'id')
-      if (isId && type.name === 'Text') {
+      if (isId && type.name === 'String') {
         out[name] = rng ? `${modelName}-${rng.str(6)}` : `${modelName}-${seq}`
         continue
       }
@@ -202,9 +202,9 @@ export function generateFactory(schema, modelName, options = {}) {
       }
 
       // Enum type (no default → first value)
-      if (type.kind === 'enum' || (type.kind === 'scalar' && type.name !== 'Text' && type.name !== 'Integer' &&
-          type.name !== 'Real' && type.name !== 'Boolean' && type.name !== 'DateTime' &&
-          type.name !== 'Json' && type.name !== 'Blob')) {
+      if (type.kind === 'enum' || (type.kind === 'scalar' && type.name !== 'String' && type.name !== 'Int' &&
+          type.name !== 'Float' && type.name !== 'Boolean' && type.name !== 'DateTime' &&
+          type.name !== 'Json' && type.name !== 'Bytes')) {
         const enumDef = schema.enums.find(e => e.name === type.name)
         if (enumDef) {
           if (!enumDef.values.length) throw new Error(`generateFactory: enum "${type.name}" has no values`)
@@ -214,7 +214,7 @@ export function generateFactory(schema, modelName, options = {}) {
       }
 
       switch (type.name) {
-        case 'Text': {
+        case 'String': {
           if (opt && !_hasTextConstraint(attrs)) { out[name] = null; break }
           const emailAttr = attrs.find(a => a.kind === 'email')
           if (emailAttr) {
@@ -248,7 +248,7 @@ export function generateFactory(schema, modelName, options = {}) {
           break
         }
 
-        case 'Integer': {
+        case 'Int': {
           if (opt) { out[name] = null; break }
           if (fkFields.has(name) || name.endsWith('Id')) {
             out[name] = fkDefaults[name] ?? 1
@@ -258,7 +258,7 @@ export function generateFactory(schema, modelName, options = {}) {
           break
         }
 
-        case 'Real': {
+        case 'Float': {
           if (opt) { out[name] = null; break }
           const gteAttr = attrs.find(a => a.kind === 'gte')
           const lteAttr = attrs.find(a => a.kind === 'lte')
@@ -283,7 +283,7 @@ export function generateFactory(schema, modelName, options = {}) {
         }
 
         case 'Json':
-        case 'Blob':
+        case 'Bytes':
         default:
           out[name] = null
           break
@@ -375,7 +375,7 @@ export function generateValidationCases(schema, modelName) {
     if (field.type.array) continue
 
     const name  = field.name
-    const isInt = field.type.name === 'Integer'
+    const isInt = field.type.name === 'Int'
     const isOpt = field.type.optional
 
     for (const attr of field.attributes) {
@@ -498,7 +498,7 @@ function _shouldSkipField(field, model) {
 
   // @id on Integer → auto-increment
   const isId  = attrs.some(a => a.kind === 'id')
-  if (isId && type.name === 'Integer') return true
+  if (isId && type.name === 'Int') return true
 
   const defAttr = attrs.find(a => a.kind === 'default')
   if (defAttr) {

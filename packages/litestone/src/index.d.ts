@@ -143,6 +143,19 @@ export interface CreateClientOptions {
   db?:            string
   /** 64-char hex — required for @encrypted / @secret fields */
   encryptionKey?: string
+  /**
+   * Permissive nested-write co-FK propagation.
+   *
+   * Default (false, strict): when a nested create involves an FK column that
+   * exists on both parent and child, the parent's value silently overwrites
+   * any child-supplied value. Prevents referential drift like a line item
+   * having a different `tenantId` than its parent order.
+   *
+   * When true: an explicit child value wins over the parent. Missing child
+   * values are still auto-filled. Use this only if you have legitimate
+   * cross-context writes (e.g. cross-tenant moves performed via nested ops).
+   */
+  allowChildFkOverride?: boolean
   /** Plugins — GatePlugin, FileStorage, custom */
   plugins?:       Plugin[]
   /** Computed field functions, or path to a file exporting them */
@@ -216,6 +229,10 @@ export interface ScopeDef {
   distinct?:     boolean | string[]
   withDeleted?:  boolean
   onlyDeleted?:  boolean
+  /** @@hasTemplates: include templates alongside instances. Default false. */
+  withTemplates?: boolean
+  /** @@hasTemplates: return templates only. Default false. */
+  onlyTemplates?: boolean
   [key: string]: unknown
 }
 
@@ -245,15 +262,15 @@ export interface CursorResult<T> {
 }
 
 export interface TableClient<TRow, TCreate, TUpdate, TWhere, TOrderBy> {
-  findMany(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; recursive?: boolean | { direction?: 'descendants' | 'ancestors'; nested?: boolean; maxDepth?: number; via?: string }; distinct?: boolean; window?: WindowSpec }): Promise<(TRow & Record<string, unknown>)[]>
-  findFirst(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean> }): Promise<TRow | null>
-  findUnique(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean> }): Promise<TRow | null>
+  findMany(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; recursive?: boolean | { direction?: 'descendants' | 'ancestors'; nested?: boolean; maxDepth?: number; via?: string }; distinct?: boolean; window?: WindowSpec }): Promise<(TRow & Record<string, unknown>)[]>
+  findFirst(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
+  findUnique(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
   findFirstOrThrow(args?: { where?: TWhere }): Promise<TRow>
   findUniqueOrThrow(args: { where: TWhere }): Promise<TRow>
-  count(args?: { where?: TWhere }): Promise<number>
-  exists(args?: { where?: TWhere }): Promise<boolean>
+  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<number>
+  exists(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<boolean>
   findManyCursor(args?: { where?: TWhere; limit?: number; cursor?: string; orderBy?: TOrderBy | TOrderBy[] }): Promise<CursorResult<TRow>>
-  search(query: string, args?: { where?: TWhere; limit?: number; offset?: number }): Promise<TRow[]>
+  search(query: string, args?: { where?: TWhere; limit?: number; offset?: number; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow[]>
   create(args: { data: TCreate; include?: Record<string, boolean>; select?: Record<string, boolean> | false }): Promise<TRow | null>
   createMany(args: { data: TCreate[] }): Promise<{ count: number }>
   update(args: { where: TWhere; data: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false }): Promise<TRow | null>

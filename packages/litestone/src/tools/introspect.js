@@ -20,30 +20,30 @@ import { introspect } from '../core/migrate.js'
 // ─── Type mapping: SQLite types → .lite types ─────────────────────────────────
 
 const TYPE_MAP = {
-  'INTEGER': 'Integer',
-  'INT':     'Integer',
-  'BIGINT':  'Integer',
-  'SMALLINT':'Integer',
-  'TINYINT': 'Integer',
-  'REAL':    'Real',
-  'FLOAT':   'Real',
-  'DOUBLE':  'Real',
-  'NUMERIC': 'Real',
-  'DECIMAL': 'Real',
-  'TEXT':    'Text',
-  'VARCHAR': 'Text',
-  'CHAR':    'Text',
-  'CLOB':    'Text',
-  'BLOB':    'Blob',
-  'BYTES':   'Blob',
+  'INTEGER': 'Int',
+  'INT':     'Int',
+  'BIGINT':  'Int',
+  'SMALLINT':'Int',
+  'TINYINT': 'Int',
+  'REAL':    'Float',
+  'FLOAT':   'Float',
+  'DOUBLE':  'Float',
+  'NUMERIC': 'Float',
+  'DECIMAL': 'Float',
+  'TEXT':    'String',
+  'VARCHAR': 'String',
+  'CHAR':    'String',
+  'CLOB':    'String',
+  'BLOB':    'Bytes',
+  'BYTES':   'Bytes',
   'BOOLEAN': 'Boolean',
   'BOOL':    'Boolean',
 }
 
 function sqliteTypeToLite(rawType) {
-  if (!rawType) return 'Text'
+  if (!rawType) return 'String'
   const upper = rawType.toUpperCase().split('(')[0].trim()
-  return TYPE_MAP[upper] ?? 'Text'
+  return TYPE_MAP[upper] ?? 'String'
 }
 
 // ─── Name helpers ──────────────────────────────────────────────────────────────

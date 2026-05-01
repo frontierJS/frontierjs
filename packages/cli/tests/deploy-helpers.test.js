@@ -6,12 +6,15 @@ import { writeFileSync, rmSync, mkdirSync } from 'fs'
 const __dir = dirname(fileURLToPath(import.meta.url))
 const ROOT  = resolve(__dir, '..')
 
-// ── Temp project dir — fresh per test ────────────────────────────────────────
+// ── Temp project dir — fresh per test (unique path so import cache doesn't ──
+// return a stale module from a previous test that wrote to the same file).
+let TMP
 
-const TMP = resolve(ROOT, '.tmp-deploy-test')
-
-beforeEach(() => mkdirSync(TMP, { recursive: true }))
-afterEach(()  => rmSync(TMP, { recursive: true, force: true }))
+beforeEach(() => {
+  TMP = resolve(ROOT, `.tmp-deploy-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  mkdirSync(TMP, { recursive: true })
+})
+afterEach(() => rmSync(TMP, { recursive: true, force: true }))
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,17 +34,21 @@ import { compileCli, extractFrontmatter } from '../core/compiler.js'
 import { readFileSync } from 'fs'
 import { pathToFileURL } from 'url'
 
+// Set global.fliRoot so the _module.md script can resolve its dynamic import
+// (it does `await import(new URL('file://' + global.fliRoot + '/core/utils.js'))`)
+global.fliRoot ??= ROOT
+
 async function loadModuleHelpers() {
   const modulePath = resolve(ROOT, 'commands/deploy/_module.md')
   const src        = readFileSync(modulePath, 'utf8')
-  const compiled   = compileCli(src)
-  // The module script defines resolveTarget and resolveDeployConf as consts.
-  // We extract them by evaluating the compiled script and pulling the exports.
-  // Simpler: just extract the script block and eval it directly.
   const scriptMatch = src.match(/<script>([\s\S]+?)<\/script>/)
   if (!scriptMatch) throw new Error('No <script> block in _module.md')
-  // Wrap in a function that returns the helpers
-  const fn = new Function(`
+
+  // The script uses `await import(...)` at top level, so we need an async
+  // function constructor (the regular `new Function` constructor only builds
+  // sync function bodies — top-level await throws SyntaxError).
+  const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
+  const fn = new AsyncFunction(`
     ${scriptMatch[1]}
     return { resolveTarget, resolveDeployConf }
   `)

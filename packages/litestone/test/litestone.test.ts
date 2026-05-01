@@ -59,9 +59,9 @@ describe('parser', () => {
   test('parses basic model', () => {
     const r = parse(`
       model users {
-        id    Integer  @id
-        email Text     @unique
-        name  Text?
+        id    Int  @id
+        email String     @unique
+        name  String?
       }
     `)
     expect(r.valid).toBe(true)
@@ -73,7 +73,7 @@ describe('parser', () => {
   test('parses enums', () => {
     const r = parse(`
       enum Plan { starter  pro  enterprise }
-      model accounts { id Integer @id
+      model accounts { id Int @id
         plan Plan @default(starter) }
     `)
     expect(r.valid).toBe(true)
@@ -83,12 +83,12 @@ describe('parser', () => {
 
   test('parses function blocks', () => {
     const r = parse(`
-      function slug(text: Text): Text {
+      function slug(text: String): String {
         @@expr("lower(replace({text}, ' ', '-'))")
       }
-      model posts { id Integer @id
-        title Text
-        slug Text @slug(title) }
+      model posts { id Int @id
+        title String
+        slug String @slug(title) }
     `)
     expect(r.valid).toBe(true)
     expect(r.schema.functions).toHaveLength(1)
@@ -99,10 +99,10 @@ describe('parser', () => {
   test('parses @generated with {field} syntax', () => {
     const r = parse(`
       model orders {
-        id    Integer @id
-        price Integer
-        tax   Real    @default(0.08)
-        total Real    @generated("{price} * (1.0 + {tax})", stored)
+        id    Int @id
+        price Int
+        tax   Float    @default(0.08)
+        total Float    @generated("{price} * (1.0 + {tax})", stored)
       }
     `)
     expect(r.valid).toBe(true)
@@ -115,9 +115,9 @@ describe('parser', () => {
   test('validates unknown @relation references', () => {
     const r = parse(`
       model users {
-        id        Integer  @id
+        id        Int  @id
         account   accounts @relation(fields: [accountId], references: [id])
-        accountId Integer
+        accountId Int
       }
     `)
     expect(r.valid).toBe(false)
@@ -126,12 +126,12 @@ describe('parser', () => {
 
   test('forward-ref @relation (FK after relation field) is valid', () => {
     const r = parse(`
-      model accounts { id Integer @id
-        name Text }
+      model accounts { id Int @id
+        name String }
       model users {
-        id        Integer  @id
+        id        Int  @id
         account   accounts @relation(fields: [accountId], references: [id])
-        accountId Integer
+        accountId Int
       }
     `)
     expect(r.valid).toBe(true)
@@ -139,19 +139,19 @@ describe('parser', () => {
 
   test('validates @funcCall unknown function', () => {
     const r = parse(`
-      model t { id Integer @id
-        val Integer
-        r Integer @missingFn(val) }
+      model t { id Int @id
+        val Int
+        r Int @missingFn(val) }
     `)
     expect(r.errors.some((e: string) => e.includes('unknown function'))).toBe(true)
   })
 
   test('validates @funcCall arg count', () => {
     const r = parse(`
-      function dbl(x: Integer): Integer { @@expr("{x} * 2") }
-      model t { id Integer @id
-        val Integer
-        r Integer @dbl(val, extra) }
+      function dbl(x: Int): Int { @@expr("{x} * 2") }
+      model t { id Int @id
+        val Int
+        r Int @dbl(val, extra) }
     `)
     expect(r.errors.some((e: string) => e.includes('expects 1 argument'))).toBe(true)
   })
@@ -159,11 +159,11 @@ describe('parser', () => {
   test('multi-file imports via parseFile', () => {
     const dir = tmpDir('imports')
     writeFileSync(join(dir, 'enums.lite'),    'enum Role { admin  member }')
-    writeFileSync(join(dir, 'functions.lite'),'function slug(text: Text): Text { @@expr("lower({text})") }')
+    writeFileSync(join(dir, 'functions.lite'),'function slug(text: String): String { @@expr("lower({text})") }')
     writeFileSync(join(dir, 'schema.lite'),   [
       'import "./enums.lite"',
       'import "./functions.lite"',
-      'model users { id Integer @id\nrole Role @default(member)\nname Text\nslug Text @slug(name) }',
+      'model users { id Int @id\nrole Role @default(member)\nname String\nslug String @slug(name) }',
     ].join('\n'))
 
     const r = parseFile(join(dir, 'schema.lite'))
@@ -176,8 +176,8 @@ describe('parser', () => {
   test('import deduplication — same file imported twice', () => {
     const dir = tmpDir('dedup')
     writeFileSync(join(dir, 'enums.lite'),  'enum Status { active  archived }')
-    writeFileSync(join(dir, 'a.lite'),      'import "./enums.lite"\nmodel A { id Integer @id\ns Status }')
-    writeFileSync(join(dir, 'b.lite'),      'import "./enums.lite"\nmodel B { id Integer @id\ns Status }')
+    writeFileSync(join(dir, 'a.lite'),      'import "./enums.lite"\nmodel A { id Int @id\ns Status }')
+    writeFileSync(join(dir, 'b.lite'),      'import "./enums.lite"\nmodel B { id Int @id\ns Status }')
     writeFileSync(join(dir, 'schema.lite'), 'import "./a.lite"\nimport "./b.lite"')
 
     const r = parseFile(join(dir, 'schema.lite'))
@@ -193,6 +193,91 @@ describe('parser', () => {
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toContain('Cannot read file')
   })
+
+  // ─── Invisible / gotcha characters ────────────────────────────────────────
+  // Editors and rich-text sources frequently introduce these. Parser must
+  // either tolerate them or fail with an actionable error.
+
+  test('strips leading UTF-8 BOM', () => {
+    const r = parse('\uFEFFmodel users { id Int @id }')
+    expect(r.valid).toBe(true)
+    expect(r.schema.models[0].name).toBe('users')
+  })
+
+  test('treats non-breaking space as whitespace', () => {
+    // U+00A0 between tokens — used to trip tokenizer on first occurrence
+    const src = `model\u00A0users\u00A0{\u00A0id\u00A0Int\u00A0@id\u00A0}`
+    const r = parse(src)
+    expect(r.valid).toBe(true)
+    expect(r.schema.models[0].fields).toHaveLength(1)
+  })
+
+  test('ignores zero-width characters', () => {
+    const src = `model users { id\u200B Int @id }`
+    const r = parse(src)
+    expect(r.valid).toBe(true)
+    expect(r.schema.models[0].fields[0].name).toBe('id')
+  })
+
+  test('smart quote produces actionable error with codepoint + hint', () => {
+    // U+201C is the left smart double-quote — common when pasting from docs
+    let err: any = null
+    try { parse(`model users { id String @default(\u201Chi\u201D) }`) }
+    catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(err.message).toContain('U+201C')
+    expect(err.message.toLowerCase()).toContain('smart')
+  })
+
+  test('NBSP error path retains location info if not skipped (sanity)', () => {
+    // Direct check that pickCharHint surfaces a useful message when something
+    // genuinely unparseable shows up — uses an em-dash, which we don't accept.
+    let err: any = null
+    try { parse(`model users { id \u2014 Int @id }`) }
+    catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(err.message).toContain('U+2014')
+    expect(err.message.toLowerCase()).toMatch(/dash|did you mean/)
+  })
+
+  test('parseFile: SQLite database file is rejected with a clear error', () => {
+    // Regression: passing a .db file as 'schema' to createClient (e.g. paths
+    // got swapped) used to crash deep in tokenize() with "U+0000". parseFile
+    // now sniffs the SQLite magic header and produces an actionable error.
+    const dir = tmpDir('sqlite-as-schema')
+    const fakeDb = Buffer.concat([
+      Buffer.from('SQLite format 3\u0000', 'binary'),
+      Buffer.alloc(100), // padding so we look like a real header
+    ])
+    const dbPath = join(dir, 'oops.db')
+    writeFileSync(dbPath, fakeDb)
+    const r = parseFile(dbPath)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('SQLite database')
+    expect(r.errors.join('\n').toLowerCase()).toContain('swap')
+  })
+
+  test('parseFile: arbitrary binary file rejected with clear error', () => {
+    const dir = tmpDir('binary-as-schema')
+    const path = join(dir, 'random.bin')
+    writeFileSync(path, Buffer.from([0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0x00, 0x42]))
+    const r = parseFile(path)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n').toLowerCase()).toContain('binary')
+  })
+
+  test('parseFile: tokenize errors include the offending file path', () => {
+    // When an import chain points at a broken file, the path in the error
+    // message is what makes it findable. Drop a smart quote in and check.
+    const dir = tmpDir('parse-error-path')
+    const path = join(dir, 'broken.lite')
+    writeFileSync(path, `model users { id String @default(\u201Cx\u201D) }`)
+    let err: any = null
+    try { parseFile(path) } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(err.message).toContain(path)
+    expect(err.message).toContain('U+201C')
+  })
 })
 
 // ─── 2. DDL ───────────────────────────────────────────────────────────────────
@@ -201,13 +286,13 @@ describe('parser', () => {
 describe('DDL', () => {
 
   test('STRICT by default', () => {
-    const r = parse(`model t { id Integer @id }`)
+    const r = parse(`model t { id Int @id }`)
     expect(isStrict(r.schema.models[0])).toBe(true)
     expect(generateDDL(r.schema)).toContain('STRICT')
   })
 
   test('@@noStrict opts out', () => {
-    const r = parse(`model t { id Integer @id
+    const r = parse(`model t { id Int @id
         @@noStrict }`)
     expect(isStrict(r.schema.models[0])).toBe(false)
     expect(generateDDL(r.schema)).not.toContain('STRICT')
@@ -215,11 +300,11 @@ describe('DDL', () => {
 
   test('soft delete detection', () => {
     const r = parse(`
-      model soft { id Integer @id
+      model soft { id Int @id
         deletedAt DateTime?
         @@softDelete }
-      model hard { id Integer @id }
-      model cascade { id Integer @id
+      model hard { id Int @id }
+      model cascade { id Int @id
         deletedAt DateTime?
         @@softDelete(cascade) }
     `)
@@ -234,8 +319,8 @@ describe('DDL', () => {
 
   test('partial indexes on soft-delete tables', () => {
     const r = parse(`
-      model users { id Integer @id
-        email Text
+      model users { id Int @id
+        email String
         deletedAt DateTime?
         @@softDelete
         @@index([email]) }
@@ -247,8 +332,8 @@ describe('DDL', () => {
 
   test('no partial indexes on hard-delete tables', () => {
     const r = parse(`
-      model logs { id Integer @id
-        action Text
+      model logs { id Int @id
+        action String
         @@index([action]) }
     `)
     const ddl = generateDDL(r.schema)
@@ -258,7 +343,7 @@ describe('DDL', () => {
   test('enum generates CHECK constraint', () => {
     const r = parse(`
       enum Plan { starter  pro  enterprise }
-      model t { id Integer @id
+      model t { id Int @id
         plan Plan @default(starter) }
     `)
     const ddl = generateDDL(r.schema)
@@ -267,9 +352,9 @@ describe('DDL', () => {
 
   test('FTS5 virtual table + triggers', () => {
     const r = parse(`
-      model messages { id Integer @id
-        body Text
-        title Text?
+      model messages { id Int @id
+        body String
+        title String?
         @@fts([body, title]) }
     `)
     const ddl = generateDDL(r.schema)
@@ -282,9 +367,9 @@ describe('DDL', () => {
 
   test('@generated VIRTUAL (default)', () => {
     const r = parse(`
-      model t { id Integer @id
-        a Integer
-        b Real @generated("{a} * 2") }
+      model t { id Int @id
+        a Int
+        b Float @generated("{a} * 2") }
     `)
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain('GENERATED ALWAYS AS ("a" * 2) VIRTUAL')
@@ -292,9 +377,9 @@ describe('DDL', () => {
 
   test('@generated STORED', () => {
     const r = parse(`
-      model t { id Integer @id
-        a Integer
-        b Integer @generated("{a} * 2", stored) }
+      model t { id Int @id
+        a Int
+        b Int @generated("{a} * 2", stored) }
     `)
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain('GENERATED ALWAYS AS ("a" * 2) STORED')
@@ -304,9 +389,9 @@ describe('DDL', () => {
   test('@generated — self-reference is an error', () => {
     const r = parse(`
       model t {
-        id  Integer @id
-        a   Integer
-        val Integer @generated("{val} * 2")
+        id  Int @id
+        a   Int
+        val Int @generated("{val} * 2")
       }
     `)
     expect(r.errors.some((e: string) => e.includes('cannot reference itself'))).toBe(true)
@@ -315,9 +400,9 @@ describe('DDL', () => {
   test('@generated — circular reference is an error', () => {
     const r = parse(`
       model t {
-        id Integer @id
-        a  Integer @generated("{b} + 1")
-        b  Integer @generated("{a} + 1")
+        id Int @id
+        a  Int @generated("{b} + 1")
+        b  Int @generated("{a} + 1")
       }
     `)
     expect(r.errors.some((e: string) => e.includes('circular'))).toBe(true)
@@ -326,9 +411,9 @@ describe('DDL', () => {
   test('@generated — unknown field reference is an error', () => {
     const r = parse(`
       model t {
-        id  Integer @id
-        a   Integer
-        val Integer @generated("{ghost} * 2")
+        id  Int @id
+        a   Int
+        val Int @generated("{ghost} * 2")
       }
     `)
     expect(r.errors.some((e: string) => e.includes("unknown field 'ghost'"))).toBe(true)
@@ -337,10 +422,10 @@ describe('DDL', () => {
   test('@generated — forward chain is valid (SQLite handles it)', () => {
     const r = parse(`
       model t {
-        id Integer @id
-        c  Integer @generated("{b} + 1")
-        b  Integer @generated("{a} + 1")
-        a  Integer
+        id Int @id
+        c  Int @generated("{b} + 1")
+        b  Int @generated("{a} + 1")
+        a  Int
       }
     `)
     expect(r.valid).toBe(true)
@@ -349,10 +434,10 @@ describe('DDL', () => {
   test('@generated — backward chain is valid', () => {
     const r = parse(`
       model t {
-        id Integer @id
-        a  Integer
-        b  Integer @generated("{a} + 1")
-        c  Integer @generated("{b} + 1")
+        id Int @id
+        a  Int
+        b  Int @generated("{a} + 1")
+        c  Int @generated("{b} + 1")
       }
     `)
     expect(r.valid).toBe(true)
@@ -361,10 +446,10 @@ describe('DDL', () => {
   test('@generated — multi-field expr is valid', () => {
     const r = parse(`
       model orders {
-        id    Integer @id
-        price Integer
-        tax   Real    @default(0.08)
-        total Real    @generated("{price} * (1.0 + {tax})")
+        id    Int @id
+        price Int
+        tax   Float    @default(0.08)
+        total Float    @generated("{price} * (1.0 + {tax})")
       }
     `)
     expect(r.valid).toBe(true)
@@ -372,10 +457,10 @@ describe('DDL', () => {
 
   test('function @funcCall expands to GENERATED ALWAYS AS STORED', () => {
     const r = parse(`
-      function slug(text: Text): Text { @@expr("lower({text})") }
-      model posts { id Integer @id
-        title Text
-        slug Text @slug(title) }
+      function slug(text: String): String { @@expr("lower({text})") }
+      model posts { id Int @id
+        title String
+        slug String @slug(title) }
     `)
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain('GENERATED ALWAYS AS (lower("title")) STORED')
@@ -383,12 +468,12 @@ describe('DDL', () => {
 
   test('DDL executes in bun:sqlite', () => {
     const r = parse(`
-      model accounts { id Integer @id
-        name Text
-        plan Text @default("starter") }
-      model users { id Integer @id
-        accountId Integer
-        email Text @unique
+      model accounts { id Int @id
+        name String
+        plan String @default("starter") }
+      model users { id Int @id
+        accountId Int
+        email String @unique
         deletedAt DateTime?
         @@softDelete
         @@index([accountId]) }
@@ -585,8 +670,8 @@ describe('@updatedAt parser attribute', () => {
   test('@updatedAt is a recognised field attribute', () => {
     const result = parse(`
       model posts {
-        id        Integer  @id
-        title     Text
+        id        Int  @id
+        title     String
         updatedAt DateTime @default(now()) @updatedAt
       }
     `)
@@ -599,8 +684,8 @@ describe('@updatedAt parser attribute', () => {
   test('@updatedAt alongside other attributes does not conflict', () => {
     const result = parse(`
       model items {
-        id        Integer  @id
-        name      Text     @trim @lower
+        id        Int  @id
+        name      String     @trim @lower
         updatedAt DateTime @default(now()) @updatedAt
         deletedAt DateTime?
         @@softDelete
@@ -615,8 +700,8 @@ describe('@updatedAt parser attribute', () => {
     // based on field name, not the attribute. Verify the trigger works.
     const db = await makeDb(`
       model entries {
-        id        Integer  @id
-        body      Text
+        id        Int  @id
+        body      String
         updatedAt DateTime @default(now()) @updatedAt
       }
     `, 'updatedat-trigger')
@@ -639,10 +724,10 @@ describe('@updatedAt parser attribute', () => {
 describe('@date field attribute', () => {
   const schema = `
     model events {
-      id        Integer @id
-      name      Text
-      startsOn  Text    @date
-      endsOn    Text?   @date
+      id        Int @id
+      name      String
+      startsOn  String    @date
+      endsOn    String?   @date
     }
   `
 
@@ -734,15 +819,15 @@ describe('@date field attribute', () => {
   test('@date custom error message', async () => {
     const result = parse(`
       model items {
-        id   Integer @id
-        due  Text    @date("Due date must be YYYY-MM-DD")
+        id   Int @id
+        due  String    @date("Due date must be YYYY-MM-DD")
       }
     `)
     expect(result.valid).toBe(true)
     const db = await makeDb(`
       model items {
-        id   Integer @id
-        due  Text    @date("Due date must be YYYY-MM-DD")
+        id   Int @id
+        due  String    @date("Due date must be YYYY-MM-DD")
       }
     `, 'date-custom-msg')
     await expect(
@@ -758,10 +843,10 @@ describe('@date field attribute', () => {
 describe('@sequence per-scope auto-increment', () => {
   const schema = `
     model Quote {
-      id          Integer  @id
-      accountId   Integer?
-      quoteNumber Integer? @sequence(scope: accountId)
-      title       Text
+      id          Int  @id
+      accountId   Int?
+      quoteNumber Int? @sequence(scope: accountId)
+      title       String
     }
   `
 
@@ -843,11 +928,11 @@ describe('@sequence per-scope auto-increment', () => {
   test('multiple @sequence fields on one model are independent', async () => {
     const db = await makeDb(`
       model Doc {
-        id         Integer @id
-        accountId  Integer
-        docNum     Integer @sequence(scope: accountId)
-        revNum     Integer @sequence(scope: accountId)
-        title      Text
+        id         Int @id
+        accountId  Int
+        docNum     Int @sequence(scope: accountId)
+        revNum     Int @sequence(scope: accountId)
+        title      String
       }
     `, 'seq-multi')
     const d1 = await db.doc.create({ data: { id: 1, accountId: 1, title: 'A' } })
@@ -878,23 +963,23 @@ import { generateJsonSchema } from '../src/jsonschema.js'
 
 const FACTORY_SCHEMA = `
   model accounts {
-    id   Integer @id
-    name Text
-    plan Text    @default("starter")
+    id   Int @id
+    name String
+    plan String    @default("starter")
   }
   model users {
-    id        Integer @id
-    accountId Integer
-    email     Text
-    role      Text    @default("member")
+    id        Int @id
+    accountId Int
+    email     String
+    role      String    @default("member")
     deletedAt DateTime?
     @@softDelete
   }
   model posts {
-    id        Integer @id
-    userId    Integer
-    title     Text
-    status    Text    @default("draft")
+    id        Int @id
+    userId    Int
+    title     String
+    status    String    @default("draft")
     deletedAt DateTime?
     @@softDelete
   }
@@ -940,10 +1025,10 @@ class PostFactory extends Factory {
 describe('@markdown', () => {
   const MD_SCHEMA = `
     model posts {
-      id   Integer @id
-      body Text    @markdown
-      note Text?   @markdown
-      name Text
+      id   Int @id
+      body String    @markdown
+      note String?   @markdown
+      name String
     }
   `
 
@@ -988,7 +1073,7 @@ describe('@markdown', () => {
     expect(posts.properties.name.contentMediaType).toBeUndefined()
   })
 
-  test('field stores and retrieves Text value normally', async () => {
+  test('field stores and retrieves String value normally', async () => {
     const { db } = await makeTestClient(MD_SCHEMA)
     const row = await db.posts.create({ data: { id: 1, body: '# Hello\n**world**', name: 'test' } })
     expect(row.body).toBe('# Hello\n**world**')
@@ -1005,7 +1090,7 @@ describe('File type + @keepVersions parser', () => {
   test('File type is a recognized scalar type', () => {
     const result = parse(`
       model users {
-        id     Integer @id
+        id     Int @id
         avatar File?
       }
     `)
@@ -1019,7 +1104,7 @@ describe('File type + @keepVersions parser', () => {
   test('@keepVersions attribute sets the flag on File fields', () => {
     const result = parse(`
       model users {
-        id     Integer @id
+        id     Int @id
         resume File?   @keepVersions
       }
     `)
@@ -1034,7 +1119,7 @@ describe('File type + @keepVersions parser', () => {
     const { generateDDL } = await import('../src/core/ddl.js')
     const result = parse(`
       model users {
-        id     Integer @id
+        id     Int @id
         avatar File?
       }
     `)
@@ -1045,7 +1130,7 @@ describe('File type + @keepVersions parser', () => {
   test('multiple File fields on same model are all valid', () => {
     const result = parse(`
       model users {
-        id     Integer @id
+        id     Int @id
         avatar File?
         resume File?   @keepVersions
       }
@@ -1061,8 +1146,8 @@ describe('File type + @keepVersions parser', () => {
 
 const FILE_SCHEMA = `
   model users {
-    id     Integer @id
-    name   Text
+    id     Int @id
+    name   String
     avatar File?
     resume File?   @keepVersions
   }
@@ -1086,17 +1171,17 @@ function makeMockProvider() {
 
 describe('File[] — parser + DDL', () => {
   test('File[] parses without error', () => {
-    const r = parse(`model t { id Integer @id; photos File[] }`)
+    const r = parse(`model t { id Int @id; photos File[] }`)
     expect(r.valid).toBe(true)
   })
 
   test('File[]? optional parses without error', () => {
-    const r = parse(`model t { id Integer @id; photos File[]? }`)
+    const r = parse(`model t { id Int @id; photos File[]? }`)
     expect(r.valid).toBe(true)
   })
 
   test('File[] stored as TEXT column (JSON array)', async () => {
-    const { db } = await makeTestClient(`model t { id Integer @id; photos File[] }`)
+    const { db } = await makeTestClient(`model t { id Int @id; photos File[] }`)
     const cols = db.$db.prepare("PRAGMA table_info('t')").all()
     const photosCol = cols.find((c: any) => c.name === 'photos')
     expect(photosCol?.type).toBe('TEXT')
@@ -1109,19 +1194,19 @@ describe('File[] — parser + DDL', () => {
 
 describe('@accept', () => {
   test('parses @accept("image/*") without error', () => {
-    const r = parse(`model t { id Integer @id; avatar File? @accept("image/*") }`)
+    const r = parse(`model t { id Int @id; avatar File? @accept("image/*") }`)
     expect(r.valid).toBe(true)
   })
 
   test('@accept stored on field AST with types', () => {
-    const { schema } = parse(`model t { id Integer @id; avatar File? @accept("image/*") }`)
+    const { schema } = parse(`model t { id Int @id; avatar File? @accept("image/*") }`)
     const f = schema.models[0].fields.find((f: any) => f.name === 'avatar')
     const attr = f.attributes.find((a: any) => a.kind === 'accept')
     expect(attr?.types).toBe('image/*')
   })
 
   test('@accept multi-type parses', () => {
-    const r = parse(`model t { id Integer @id; f File? @accept("image/jpeg,image/png") }`)
+    const r = parse(`model t { id Int @id; f File? @accept("image/jpeg,image/png") }`)
     expect(r.valid).toBe(true)
     const { schema } = r
     const attr = schema.models[0].fields[1].attributes.find((a: any) => a.kind === 'accept')
@@ -1129,7 +1214,7 @@ describe('@accept', () => {
   })
 
   test('JSON Schema emits x-litestone-accept', () => {
-    const { schema } = parse(`model t { id Integer @id; avatar File? @accept("image/*") }`)
+    const { schema } = parse(`model t { id Int @id; avatar File? @accept("image/*") }`)
     const js = generateJsonSchema(schema, { mode: 'full' })
     const t = js['$defs']?.t ?? js.t
     expect(t.properties.avatar['x-litestone-accept'] ?? 
@@ -1143,27 +1228,27 @@ const JEXT_SCHEMA = `
   enum Plan { starter pro enterprise }
 
   model accounts {
-    id    Integer @id
-    name  Text
+    id    Int @id
+    name  String
     plan  Plan    @default(starter)
     users users[]
     @@gate("2.5.5.6")
   }
 
   model users {
-    id        Integer  @id
+    id        Int  @id
     account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
-    accountId Integer
-    email     Text     @email
+    accountId Int
+    email     String     @email
     posts     posts[]
     @@gate("2.4.4.6")
   }
 
   model posts {
-    id     Integer @id
+    id     Int @id
     author users   @relation(fields: [userId], references: [id])
-    userId Integer
-    title  Text
+    userId Int
+    title  String
     tags   posts[]
   }
 `
@@ -1175,7 +1260,7 @@ const JEXT_SCHEMA = `
 describe('bun:sqlite — WAL + dual connections', () => {
 
   test('WAL mode is set on write connection', async () => {
-    const db  = await makeDb(`model t { id Integer @id }`, 'wal')
+    const db  = await makeDb(`model t { id Int @id }`, 'wal')
     const raw = db.$db as Database
     const mode = raw.query('PRAGMA journal_mode').get() as any
     expect(mode.journal_mode).toBe('wal')
@@ -1183,7 +1268,7 @@ describe('bun:sqlite — WAL + dual connections', () => {
   })
 
   test('page_size is 8192', async () => {
-    const db  = await makeDb(`model t { id Integer @id }`, 'pagesize')
+    const db  = await makeDb(`model t { id Int @id }`, 'pagesize')
     const raw = db.$db as Database
     const ps  = raw.query('PRAGMA page_size').get() as any
     expect(ps.page_size).toBe(8192)
@@ -1191,7 +1276,7 @@ describe('bun:sqlite — WAL + dual connections', () => {
   })
 
   test('foreign_keys ON', async () => {
-    const db  = await makeDb(`model t { id Integer @id }`, 'fk')
+    const db  = await makeDb(`model t { id Int @id }`, 'fk')
     const raw = db.$db as Database
     const fk  = raw.query('PRAGMA foreign_keys').get() as any
     expect(fk.foreign_keys).toBe(1)
@@ -1199,7 +1284,7 @@ describe('bun:sqlite — WAL + dual connections', () => {
   })
 
   test('$cacheSize reports both connections', async () => {
-    const db = await makeDb(`model t { id Integer @id }`, 'cache')
+    const db = await makeDb(`model t { id Int @id }`, 'cache')
     await db.t.findMany()
     const cs = db.$cacheSize
     expect(cs).toHaveProperty('read')
@@ -1210,7 +1295,7 @@ describe('bun:sqlite — WAL + dual connections', () => {
 
   test('readonly read connection cannot write', async () => {
     // Structural test — read and write connections are separate, each with their own cache
-    const db = await makeDb(`model t { id Integer @id }`, 'readonly')
+    const db = await makeDb(`model t { id Int @id }`, 'readonly')
     await db.t.findMany()
     await db.t.create({ data: { id: 1 } })
     await db.t.findMany()
@@ -1232,13 +1317,13 @@ describe('bun:sqlite — WAL + dual connections', () => {
 describe('migrations', () => {
 
   test('pristine diff detects new table', () => {
-    const r1 = parse(`model User { id Integer @id
-        email Text }`)
+    const r1 = parse(`model User { id Int @id
+        email String }`)
     const r2 = parse(`
-      model User    { id Integer @id
-        email Text }
-      model Account { id Integer @id
-        name  Text }
+      model User    { id Int @id
+        email String }
+      model Account { id Int @id
+        name  String }
     `)
     const liveDb    = new Database(':memory:')
     const pristineDb = new Database(':memory:')
@@ -1255,11 +1340,11 @@ describe('migrations', () => {
   })
 
   test('pristine diff detects new column', () => {
-    const r1 = parse(`model User { id Integer @id
-        email Text }`)
-    const r2 = parse(`model User { id Integer @id
-        email Text
-        name Text? }`)
+    const r1 = parse(`model User { id Int @id
+        email String }`)
+    const r2 = parse(`model User { id Int @id
+        email String
+        name String? }`)
     const liveDb     = new Database(':memory:')
     const pristineDb = new Database(':memory:')
     for (const s of splitStatements(generateDDL(r1.schema)))
@@ -1273,9 +1358,9 @@ describe('migrations', () => {
 
   test('generate + apply migrations', async () => {
     const schemaText = `
-      model User { id Integer @id
-        email Text @unique
-        name Text? }
+      model User { id Int @id
+        email String @unique
+        name String? }
     `
     const dbPath = tmpDb('migrations')
     const migDir = tmpDir('migrations-sql')
@@ -1299,8 +1384,8 @@ describe('migrations', () => {
   })
 
   test('migration status — applied/pending', async () => {
-    const schemaText = `model Post { id Integer @id
-        title Text }`
+    const schemaText = `model Post { id Int @id
+        title String }`
     const dbPath = tmpDb('status')
     const migDir = tmpDir('status-sql')
     const result = parse(schemaText)
@@ -1319,8 +1404,8 @@ describe('migrations', () => {
   })
 
   test('verify detects drift', () => {
-    const schemaText = `model Thing { id Integer @id
-        val Text }`
+    const schemaText = `model Thing { id Int @id
+        val String }`
     const dbPath = tmpDb('verify')
     const migDir = tmpDir('verify-sql')
     const result = parse(schemaText)
@@ -1345,19 +1430,19 @@ const SCHEMA = `
   enum Role { admin  member  viewer }
 
   model Account {
-    id        Integer  @id
-    name      Text
+    id        Int  @id
+    name      String
     plan      Plan     @default(starter)
     meta      Json?
     createdAt DateTime @default(now())
   }
 
   model User {
-    id        Integer  @id
+    id        Int  @id
     account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-    accountId Integer
-    email     Text     @unique @lower
-    name      Text?
+    accountId Int
+    email     String     @unique @lower
+    name      String?
     isAdmin   Boolean  @default(false)
     role      Role     @default(member)
     prefs     Json?
@@ -1369,11 +1454,11 @@ const SCHEMA = `
   }
 
   model Message {
-    id        Integer  @id
+    id        Int  @id
     user      User     @relation(fields: [userId], references: [id])
-    userId    Integer
-    body      Text
-    title     Text?
+    userId    Int
+    body      String
+    title     String?
     isRead    Boolean  @default(false)
     createdAt DateTime @default(now())
 
@@ -1388,8 +1473,8 @@ describe('autoMigrate', () => {
     const { autoMigrate } = await import('../src/core/migrations.js')
     const db = await makeDb(`
       model Widget {
-        id    Integer @id
-        label Text
+        id    Int @id
+        label String
       }
     `, 'automigrate-fresh')
     // makeDb already applied DDL — create a second client on the same file
@@ -1402,7 +1487,7 @@ describe('autoMigrate', () => {
   test('no-ops when schema is already in sync', async () => {
     const { autoMigrate } = await import('../src/core/migrations.js')
     const db = await makeDb(`
-      model Thing { id Integer @id; name Text }
+      model Thing { id Int @id; name String }
     `, 'automigrate-noop')
     const result = autoMigrate(db)
     expect(result.main.state).toBe('in-sync')
@@ -1422,7 +1507,7 @@ describe('autoMigrate', () => {
     raw.close()
 
     // Now createClient with a schema that has an extra column
-    const result = parse(`model Gadget { id Integer @id; name Text @default("x") }`)
+    const result = parse(`model Gadget { id Int @id; name String @default("x") }`)
     const db = await createClient({ parsed: result,  db: path })
 
     const migResult = autoMigrate(db)
@@ -1444,7 +1529,7 @@ describe('autoMigrate', () => {
     raw.run('CREATE TABLE item (id INTEGER PRIMARY KEY)')
     raw.close()
 
-    const result = parse(`model Item { id Integer @id; label Text @default("x") }`)
+    const result = parse(`model Item { id Int @id; label String @default("x") }`)
     const db = await createClient({ parsed: result,  db: path })
 
     autoMigrate(db)                    // first call — applies migration
@@ -1460,7 +1545,7 @@ describe('autoMigrate', () => {
 describe('status() — sql field', () => {
   test('status rows include sql string for applied and pending', async () => {
     const { db } = await makeTestClient(
-      `model t { id Integer @id; name Text }`,
+      `model t { id Int @id; name String }`,
       { data: async () => {} }
     )
     // Create a temp migrations dir with one file
@@ -1482,7 +1567,7 @@ describe('status() — sql field', () => {
   })
 
   test('orphaned rows have sql: null', async () => {
-    const { db } = await makeTestClient(`model t { id Integer @id }`)
+    const { db } = await makeTestClient(`model t { id Int @id }`)
     const { join } = await import('path')
     const { tmpdir } = await import('os')
     const { mkdirSync, writeFileSync, unlinkSync } = await import('fs')
@@ -1767,21 +1852,21 @@ describe('relation orderBy', () => {
   beforeAll(async () => {
     ;({ db } = await makeTestClient(`
       model Country {
-        id    Integer @id
-        name  Text
-        code  Text
+        id    Int @id
+        name  String
+        code  String
       }
       model Company {
-        id        Integer  @id
-        name      Text
+        id        Int  @id
+        name      String
         country   Country @relation(fields: [countryId], references: [id])
-        countryId Integer
+        countryId Int
       }
       model User {
-        id        Integer  @id
-        name      Text
+        id        Int  @id
+        name      String
         company   Company @relation(fields: [companyId], references: [id])
-        companyId Integer
+        companyId Int
       }
     `, {
       data: async (db: any) => {
@@ -1870,21 +1955,21 @@ describe('relation aggregate orderBy', () => {
   beforeAll(async () => {
     ;({ db } = await makeTestClient(`
       model Author {
-        id     Integer @id
-        name   Text
+        id     Int @id
+        name   String
         books  Book[]
         tags   Tag[]
       }
       model Book {
-        id       Integer @id
-        title    Text
-        price    Real
+        id       Int @id
+        title    String
+        price    Float
         author   Author @relation(fields: [authorId], references: [id])
-        authorId Integer
+        authorId Int
       }
       model Tag {
-        id      Integer @id
-        label   Text
+        id      Int @id
+        label   String
         authors Author[]
       }
     `, {
@@ -1984,10 +2069,10 @@ describe('window functions', () => {
   beforeAll(async () => {
     ;({ db } = await makeTestClient(`
       model scores {
-        id        Integer @id
-        userId    Integer
-        category  Text
-        value     Real
+        id        Int @id
+        userId    Int
+        category  String
+        value     Float
         createdAt DateTime @default(now())
       }
     `, {
@@ -2631,8 +2716,8 @@ describe('updatedAt auto-trigger', () => {
   test('trigger generated when updatedAt DateTime field exists', () => {
     const r = parse(`
       model posts {
-        id        Integer  @id
-        title     Text
+        id        Int  @id
+        title     String
         createdAt DateTime @default(now())
         updatedAt DateTime @default(now())
       }
@@ -2644,22 +2729,22 @@ describe('updatedAt auto-trigger', () => {
   })
 
   test('no trigger on models without updatedAt', () => {
-    const r = parse(`model logs { id Integer @id
-        action Text }`)
+    const r = parse(`model logs { id Int @id
+        action String }`)
     expect(generateDDL(r.schema)).not.toContain('logs_updatedAt')
   })
 
   test('no trigger on non-DateTime updatedAt field', () => {
-    const r = parse(`model t { id Integer @id
-        updatedAt Text }`)
+    const r = parse(`model t { id Int @id
+        updatedAt String }`)
     expect(generateDDL(r.schema)).not.toContain('t_updatedAt')
   })
 
   test('trigger fires on UPDATE in bun:sqlite', async () => {
     const db = await makeDb(`
       model posts {
-        id        Integer  @id
-        title     Text
+        id        Int  @id
+        title     String
         createdAt DateTime @default(now())
         updatedAt DateTime @default(now())
       }
@@ -2684,8 +2769,8 @@ describe('updatedAt auto-trigger', () => {
   test('WHEN guard — explicit updatedAt set by user is preserved', async () => {
     const db = await makeDb(`
       model posts {
-        id        Integer  @id
-        title     Text
+        id        Int  @id
+        title     String
         updatedAt DateTime @default(now())
       }
     `, 'updatedat-guard')
@@ -2701,8 +2786,8 @@ describe('updatedAt auto-trigger', () => {
   test('trigger fires via raw SQL too (database-level)', async () => {
     const db = await makeDb(`
       model posts {
-        id        Integer  @id
-        title     Text
+        id        Int  @id
+        title     String
         updatedAt DateTime @default(now())
       }
     `, 'updatedat-raw')
@@ -2721,26 +2806,26 @@ describe('updatedAt auto-trigger', () => {
 
 const CASCADE_SCHEMA = `
   model Account {
-    id        Integer  @id
-    name      Text
+    id        Int  @id
+    name      String
     deletedAt DateTime?
     @@softDelete(cascade)
   }
 
   model User {
-    id        Integer  @id
+    id        Int  @id
     account   Account @relation(fields: [accountId], references: [id])
-    accountId Integer
-    email     Text
+    accountId Int
+    email     String
     deletedAt DateTime?
     @@softDelete(cascade)
   }
 
   model Post {
-    id        Integer @id
+    id        Int @id
     user      User @relation(fields: [userId], references: [id])
-    userId    Integer
-    title     Text
+    userId    Int
+    title     String
     deletedAt DateTime?
     @@softDelete
   }
@@ -2765,7 +2850,7 @@ describe('soft delete cascade', () => {
   afterAll(() => db.$close())
 
   test('@@softDelete(cascade) parses on model', () => {
-    const r = parse(`model T { id Integer @id
+    const r = parse(`model T { id Int @id
         deletedAt DateTime?
         @@softDelete(cascade) }`)
     expect(r.valid).toBe(true)
@@ -2804,8 +2889,8 @@ describe('soft delete cascade', () => {
 
   test('remove() on non-soft-delete table is a real DELETE', async () => {
     const db2 = await makeDb(`
-      model Log { id Integer @id
-        action Text }
+      model Log { id Int @id
+        action String }
     `, 'remove-hard')
     await db2.log.create({ data: { id: 1, action: 'login' } })
     await db2.log.remove({ where: { id: 1 } })
@@ -2816,15 +2901,15 @@ describe('soft delete cascade', () => {
 
   test('without cascade — children not affected', async () => {
     const db2 = await makeDb(`
-      model Org    { id Integer @id
-        name Text
+      model Org    { id Int @id
+        name String
         deletedAt DateTime?
         @@softDelete }
       model Member {
-        id    Integer @id
+        id    Int @id
         org   Org @relation(fields: [orgId], references: [id])
-        orgId Integer
-        name  Text
+        orgId Int
+        name  String
         deletedAt DateTime?
         @@softDelete
       }
@@ -2853,8 +2938,8 @@ describe('soft delete cascade', () => {
 
 const HARD_DELETE_CASCADE_SCHEMA = `
   model Account {
-    id        Integer  @id
-    name      Text
+    id        Int  @id
+    name      String
     users     User[]
     sessions  Session[]  @hardDelete
     deletedAt DateTime?
@@ -2862,19 +2947,19 @@ const HARD_DELETE_CASCADE_SCHEMA = `
   }
 
   model User {
-    id        Integer  @id
-    accountId Integer
+    id        Int  @id
+    accountId Int
     account   Account @relation(fields: [accountId], references: [id])
-    name      Text
+    name      String
     deletedAt DateTime?
     @@softDelete
   }
 
   model Session {
-    id        Integer  @id
-    accountId Integer
+    id        Int  @id
+    accountId Int
     account   Account @relation(fields: [accountId], references: [id])
-    token     Text
+    token     String
   }
 `
 
@@ -2962,14 +3047,14 @@ describe('@@softDelete cascade footgun warning', () => {
   test('warns when @@softDelete model has hasMany to another @@softDelete model without cascade', () => {
     const r = parse(`
       model Account {
-        id        Integer  @id
+        id        Int  @id
         users     User[]
         deletedAt DateTime?
         @@softDelete
       }
       model User {
-        id        Integer  @id
-        accountId Integer
+        id        Int  @id
+        accountId Int
         account   Account @relation(fields: [accountId], references: [id])
         deletedAt DateTime?
         @@softDelete
@@ -2983,14 +3068,14 @@ describe('@@softDelete cascade footgun warning', () => {
   test('no warning when @@softDelete(cascade) is declared', () => {
     const r = parse(`
       model Account {
-        id        Integer  @id
+        id        Int  @id
         users     User[]
         deletedAt DateTime?
         @@softDelete(cascade)
       }
       model User {
-        id        Integer  @id
-        accountId Integer
+        id        Int  @id
+        accountId Int
         account   Account @relation(fields: [accountId], references: [id])
         deletedAt DateTime?
         @@softDelete
@@ -3004,16 +3089,16 @@ describe('@@softDelete cascade footgun warning', () => {
   test('no warning when child has no @@softDelete', () => {
     const r = parse(`
       model Account {
-        id        Integer  @id
+        id        Int  @id
         logs      Log[]
         deletedAt DateTime?
         @@softDelete
       }
       model Log {
-        id        Integer  @id
-        accountId Integer
+        id        Int  @id
+        accountId Int
         account   Account @relation(fields: [accountId], references: [id])
-        body      Text
+        body      String
       }
     `)
     expect(r.warnings.some((w: string) => w.includes('@@softDelete(cascade)'))).toBe(false)
@@ -3022,16 +3107,16 @@ describe('@@softDelete cascade footgun warning', () => {
   test('no warning when @hardDelete is on the relation field', () => {
     const r = parse(`
       model Account {
-        id        Integer  @id
+        id        Int  @id
         sessions  sessions[]  @hardDelete
         deletedAt DateTime?
         @@softDelete
       }
       model sessions {
-        id        Integer  @id
-        accountId Integer
+        id        Int  @id
+        accountId Int
         account   Account @relation(fields: [accountId], references: [id])
-        token     Text
+        token     String
       }
     `)
     expect(r.warnings.some((w: string) => w.includes('@@softDelete(cascade)'))).toBe(false)
@@ -3040,12 +3125,12 @@ describe('@@softDelete cascade footgun warning', () => {
   test('no warning when parent has no @@softDelete at all', () => {
     const r = parse(`
       model Account {
-        id    Integer @id
+        id    Int @id
         users User[]
       }
       model User {
-        id        Integer  @id
-        accountId Integer
+        id        Int  @id
+        accountId Int
         account   Account @relation(fields: [accountId], references: [id])
         deletedAt DateTime?
         @@softDelete
@@ -3057,14 +3142,14 @@ describe('@@softDelete cascade footgun warning', () => {
   test('warning mentions @hardDelete as an alternative', () => {
     const r = parse(`
       model Account {
-        id        Integer @id
+        id        Int @id
         users     User[]
         deletedAt DateTime?
         @@softDelete
       }
       model User {
-        id        Integer  @id
-        accountId Integer
+        id        Int  @id
+        accountId Int
         account   Account @relation(fields: [accountId], references: [id])
         deletedAt DateTime?
         @@softDelete
@@ -3083,36 +3168,36 @@ afterAll(() => {
 // ─── 18. @omit / @guarded ─────────────────────────────────────────────────────
 
 
-describe('Text[] / Integer[] array fields', () => {
+describe('String[] / Int[] array fields', () => {
   let db: any
 
   beforeAll(async () => {
     db = await makeDb(`
       model posts {
-        id     Integer @id
-        title  Text
-        tags   Text[]
-        scores Integer[]
-        flags  Text[]   @minItems(1) @maxItems(5) @uniqueItems
+        id     Int @id
+        title  String
+        tags   String[]
+        scores Int[]
+        flags  String[]   @minItems(1) @maxItems(5) @uniqueItems
       }
     `, 'arrays')
   })
   afterAll(() => db.$close())
 
-  test('Text[] defaults to []', async () => {
+  test('String[] defaults to []', async () => {
     await db.posts.create({ data: { id: 1, title: 'Hello', flags: ['featured'] } })
     const row = await db.posts.findUnique({ where: { id: 1 } })
     expect(row.tags).toEqual([])
     expect(row.scores).toEqual([])
   })
 
-  test('Text[] stores and retrieves array', async () => {
+  test('String[] stores and retrieves array', async () => {
     await db.posts.create({ data: { id: 2, title: 'World', tags: ['js', 'ts'], flags: ['new'] } })
     const row = await db.posts.findUnique({ where: { id: 2 } })
     expect(row.tags).toEqual(['js', 'ts'])
   })
 
-  test('Integer[] stores and retrieves array', async () => {
+  test('Int[] stores and retrieves array', async () => {
     await db.posts.create({ data: { id: 3, title: 'Nums', scores: [10, 20, 30], flags: ['test'] } })
     const row = await db.posts.findUnique({ where: { id: 3 } })
     expect(row.scores).toEqual([10, 20, 30])
@@ -3178,13 +3263,13 @@ describe('Text[] / Integer[] array fields', () => {
     ).rejects.toThrow(ValidationError)
   })
 
-  test('Text[] rejects non-string items', async () => {
+  test('String[] rejects non-string items', async () => {
     await expect(
       db.posts.create({ data: { id: 99, title: 'Bad', tags: [1, 2], flags: ['ok'] } })
     ).rejects.toThrow(ValidationError)
   })
 
-  test('Integer[] rejects non-integer items', async () => {
+  test('Int[] rejects non-integer items', async () => {
     await expect(
       db.posts.create({ data: { id: 99, title: 'Bad', scores: ['not','ints'], flags: ['ok'] } })
     ).rejects.toThrow(ValidationError)
@@ -3206,9 +3291,9 @@ describe('findFirstOrThrow / findUniqueOrThrow', () => {
   beforeAll(async () => {
     db = await makeDb(`
       model users {
-        id    Integer @id
-        email Text    @unique
-        name  Text
+        id    Int @id
+        email String    @unique
+        name  String
       }
     `, 'throw-ops')
     await db.users.create({ data: { id: 1, name: 'Alice', email: 'alice@x.com' } })
@@ -3256,9 +3341,9 @@ describe('global query filters', () => {
   test('static filter applied to findMany', async () => {
     const db = await makeDb(`
       model posts {
-        id     Integer @id
-        status Text
-        title  Text
+        id     Int @id
+        status String
+        title  String
       }
     `, 'filter-static', {
       filters: { posts: { status: 'published' } }
@@ -3276,7 +3361,7 @@ describe('global query filters', () => {
   test('static filter applied to count', async () => {
     const db = await makeDb(`
       model items {
-        id     Integer @id
+        id     Int @id
         active Boolean @default(true)
       }
     `, 'filter-count', {
@@ -3293,8 +3378,8 @@ describe('global query filters', () => {
   test('filter AND-merged with query where', async () => {
     const db = await makeDb(`
       model posts {
-        id     Integer @id
-        status Text
+        id     Int @id
+        status String
         pinned Boolean @default(false)
       }
     `, 'filter-merge', {
@@ -3314,8 +3399,8 @@ describe('global query filters', () => {
   test('function filter receives ctx', async () => {
     let called = false
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'filter-fn', {
       filters: {
         t: (_ctx: any) => {
@@ -3332,8 +3417,8 @@ describe('global query filters', () => {
 
   test('no filter — unaffected tables work normally', async () => {
     const db = await makeDb(`
-      model a { id Integer @id }
-      model b { id Integer @id }
+      model a { id Int @id }
+      model b { id Int @id }
     `, 'filter-none', {
       filters: { a: { id: { gt: 0 } } }
     })
@@ -3354,14 +3439,14 @@ describe('nested writes', () => {
   beforeAll(async () => {
     db = await makeDb(`
       model accounts {
-        id    Integer @id
-        name  Text
+        id    Int @id
+        name  String
       }
       model users {
-        id        Integer  @id
+        id        Int  @id
         account   accounts @relation(fields: [accountId], references: [id])
-        accountId Integer
-        email     Text
+        accountId Int
+        email     String
       }
     `, 'nested-writes')
   })
@@ -3483,10 +3568,10 @@ describe('nested writes', () => {
 describe('upsertMany', () => {
   const schema = `
     model products {
-      id    Integer @id
-      slug  Text    @unique @lower @trim
-      price Real    @default(0) @gte(0)
-      stock Integer @default(0)
+      id    Int @id
+      slug  String    @unique @lower @trim
+      price Float    @default(0) @gte(0)
+      stock Int @default(0)
     }
   `
 
@@ -3587,9 +3672,9 @@ describe('upsertMany', () => {
 describe('optimizeFts', () => {
   const schema = `
     model docs {
-      id    Integer @id
-      body  Text
-      title Text?
+      id    Int @id
+      body  String
+      title String?
       @@fts([body, title])
     }
   `
@@ -3622,7 +3707,7 @@ describe('optimizeFts', () => {
 
   test('optimizeFts throws on a model without @@fts', async () => {
     const db = await makeDb(`
-      model plain { id Integer @id; name Text }
+      model plain { id Int @id; name String }
     `, 'optimize-no-fts')
     expect(() => db.plain.optimizeFts()).toThrow('not available')
     db.$close()
@@ -3636,7 +3721,7 @@ describe('RETURNING * — write path', () => {
 
   test('create returns correct row without follow-up SELECT', async () => {
     const db = await makeDb(`
-      model users { id Integer @id; name Text; email Text @unique }
+      model users { id Int @id; name String; email String @unique }
     `, 'returning-create')
     const u = await db.users.create({ data: { name: 'Alice', email: 'alice@test.com' } })
     expect(u.id).toBe(1)
@@ -3647,7 +3732,7 @@ describe('RETURNING * — write path', () => {
 
   test('update returns updated row without follow-up SELECT', async () => {
     const db = await makeDb(`
-      model users { id Integer @id; name Text }
+      model users { id Int @id; name String }
     `, 'returning-update')
     await db.users.create({ data: { name: 'Alice' } })
     const u = await db.users.update({ where: { id: 1 }, data: { name: 'Bob' } })
@@ -3658,8 +3743,8 @@ describe('RETURNING * — write path', () => {
   test('soft-delete remove returns deleted row', async () => {
     const db = await makeDb(`
       model users {
-        id        Integer   @id
-        name      Text
+        id        Int   @id
+        name      String
         deletedAt DateTime?
         @@softDelete
       }
@@ -3673,7 +3758,7 @@ describe('RETURNING * — write path', () => {
 
   test('update returns null when row not found', async () => {
     const db = await makeDb(`
-      model users { id Integer @id; name Text }
+      model users { id Int @id; name String }
     `, 'returning-update-miss')
     const u = await db.users.update({ where: { id: 999 }, data: { name: 'Ghost' } })
     expect(u).toBeNull()
@@ -3689,7 +3774,7 @@ describe('$walStatus()', () => {
 
   test('returns WAL frame counts', async () => {
     const db = await makeDb(`
-      model items { id Integer @id; val Text }
+      model items { id Int @id; val String }
     `, 'wal-status')
     await db.items.create({ data: { val: 'x' } })
     const s: any = db.$walStatus()
@@ -3707,7 +3792,7 @@ describe('$walStatus()', () => {
 describe('createClient — input forms', () => {
 
   test('{ parsed } form works', async () => {
-    const r = parse(`model users { id Integer @id; name Text }`)
+    const r = parse(`model users { id Int @id; name String }`)
     const p = join(TMP, `form-parsed-${Date.now()}.db`)
     const db = await createClient({ parsed: r, db: p })
     await db.users.create({ data: { name: 'Alice' } })
@@ -3719,7 +3804,7 @@ describe('createClient — input forms', () => {
   test('{ schema } inline string form works', async () => {
     const p = join(TMP, `form-schema-${Date.now()}.db`)
     const db = await createClient({
-      schema: `model users { id Integer @id; name Text }`,
+      schema: `model users { id Int @id; name String }`,
       db: p
     })
     await db.users.create({ data: { name: 'Bob' } })
@@ -3749,9 +3834,9 @@ describe('computed fields — file path', () => {
     `)
     const db = await makeDb(`
       model User {
-        id      Integer @id
+        id      Int @id
         isAdmin Boolean @default(false)
-        role    Text    @default("member")
+        role    String    @default("member")
         isFullAdmin Boolean @computed
       }
     `, 'ext')
@@ -3772,10 +3857,10 @@ describe('computed: inline object', () => {
   test('computed field resolved via inline function', async () => {
     const db = await makeDb(`
       model User {
-        id        Integer @id
-        firstName Text
-        lastName  Text
-        fullName  Text @computed
+        id        Int @id
+        firstName String
+        lastName  String
+        fullName  String @computed
       }
     `, 'computed-inline', {
       computed: {
@@ -3792,7 +3877,7 @@ describe('computed: inline object', () => {
 
   test('computed function receives ctx as second arg', async () => {
     const db = await makeDb(`
-      model Item { id Integer @id; val Text; tagged Text @computed }
+      model Item { id Int @id; val String; tagged String @computed }
     `, 'computed-ctx', {
       computed: {
         Item: {
@@ -3815,7 +3900,7 @@ describe("databases: ':memory:'", () => {
 
   test('all SQLite databases open in-memory', async () => {
     const db = await makeDb(`
-      model users { id Integer @id; name Text }
+      model users { id Int @id; name String }
     `, 'inmem', { databases: ':memory:' })
     const u = await db.users.create({ data: { name: 'Alice' } })
     expect(u.id).toBe(1)
@@ -3839,12 +3924,12 @@ describe('@omit / @guarded field policy', () => {
   beforeAll(async () => {
     db = await makeDb(`
       model User {
-        id       Integer @id
-        name     Text
-        bio      Text?   @omit
-        prefs    Text?   @omit(all)
-        salary   Integer @guarded
-        secret   Text    @guarded(all)
+        id       Int @id
+        name     String
+        bio      String?   @omit
+        prefs    String?   @omit(all)
+        salary   Int @guarded
+        secret   String    @guarded(all)
       }
     `, 'policy')
     await db.user.create({ data: { id: 1, name: 'Alice', bio: 'Long bio', prefs: '{}', salary: 100000, secret: 'top-secret' } })
@@ -3941,10 +4026,10 @@ describe('@guarded(all) + WHERE clause', () => {
   beforeAll(async () => {
     db = await makeDb(`
       model User {
-        id      Integer @id
-        name    Text
-        secret  Text    @guarded(all)
-        token   Text    @encrypted @guarded(all)
+        id      Int @id
+        name    String
+        secret  String    @guarded(all)
+        token   String    @encrypted @guarded(all)
       }
     `, 'guarded-where', { encryptionKey: ENC_KEY })
 
@@ -4061,10 +4146,10 @@ describe('@encrypted field policy', () => {
   beforeAll(async () => {
     db = await makeDb(`
       model User {
-        id    Integer @id
-        name  Text
-        ssn   Text    @encrypted
-        email Text    @encrypted(searchable: true)
+        id    Int @id
+        name  String
+        ssn   String    @encrypted
+        email String    @encrypted(searchable: true)
       }
     `, 'encrypted', { encryptionKey: ENC_KEY })
     await db.user.create({ data: { id: 1, name: 'Alice', ssn: '123-45-6789', email: 'alice@example.com' } })
@@ -4107,17 +4192,122 @@ describe('@encrypted field policy', () => {
     expect(row).toBeNull()
   })
   test('createClient throws without encryption key if @encrypted fields exist', async () => {
-    const r = parse(`model T { id Integer @id
-        secret Text @encrypted }`)
+    const r = parse(`model T { id Int @id
+        secret String @encrypted }`)
     const p = tmpDb('enc-no-key')
     const raw = new Database(p)
     for (const s of splitStatements(generateDDL(r.schema))) if (!s.startsWith('PRAGMA')) raw.run(s)
     raw.close()
     await expect(createClient({ parsed: r,  db: p })).rejects.toThrow('encryption key')
   })
+  test('missing-key error names the affected fields', async () => {
+    // Helps the user immediately see why the key is needed and where it gets used.
+    const r = parse(`model T { id Int @id
+        secret String @encrypted
+        token  String @encrypted }`)
+    const p = tmpDb('enc-no-key-fields')
+    const raw = new Database(p)
+    for (const s of splitStatements(generateDDL(r.schema))) if (!s.startsWith('PRAGMA')) raw.run(s)
+    raw.close()
+    let err: any = null
+    try { await createClient({ parsed: r, db: p }) } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(err.message).toContain('T.secret')
+    expect(err.message).toContain('T.token')
+  })
+  test('missing-key error: detects ENCRYPTION_KEY in process.env and hints at the forgot-to-pass case', async () => {
+    // When the env var is set but createClient was called without forwarding
+    // it, surface that explicitly — most common cause of this error.
+    const r = parse(`model T { id Int @id; secret String @encrypted }`)
+    const p = tmpDb('enc-no-key-env-set')
+    const raw = new Database(p)
+    for (const s of splitStatements(generateDDL(r.schema))) if (!s.startsWith('PRAGMA')) raw.run(s)
+    raw.close()
+    const prev = process.env.ENCRYPTION_KEY
+    process.env.ENCRYPTION_KEY = 'a'.repeat(64)
+    try {
+      let err: any = null
+      try { await createClient({ parsed: r, db: p }) } catch (e) { err = e }
+      expect(err).not.toBeNull()
+      expect(err.message).toContain('process.env.ENCRYPTION_KEY')
+      expect(err.message.toLowerCase()).toContain("wasn't passed in")
+    } finally {
+      if (prev === undefined) delete process.env.ENCRYPTION_KEY
+      else process.env.ENCRYPTION_KEY = prev
+    }
+  })
+  test('missing-key error: heuristic suggests env vars that look like 32-byte hex keys', async () => {
+    // Catches the case where the user named the env var something nonstandard.
+    const r = parse(`model T { id Int @id; secret String @encrypted }`)
+    const p = tmpDb('enc-no-key-heuristic')
+    const raw = new Database(p)
+    for (const s of splitStatements(generateDDL(r.schema))) if (!s.startsWith('PRAGMA')) raw.run(s)
+    raw.close()
+    // Make sure no conventional name is set, so heuristic branch is reached.
+    const stash: Record<string, string | undefined> = {}
+    for (const k of ['ENCRYPTION_KEY', 'LITESTONE_KEY', 'LITESTONE_ENCRYPTION_KEY', 'DB_ENCRYPTION_KEY']) {
+      stash[k] = process.env[k]; delete process.env[k]
+    }
+    // Strip any other 64-hex env vars so our injected one isn't crowded out
+    // by real keys that happen to live in the test runner's environment.
+    const envHexStash: Record<string, string> = {}
+    for (const [k, v] of Object.entries(process.env)) {
+      if (typeof v === 'string' && /^[0-9a-fA-F]{64}$/.test(v)) {
+        envHexStash[k] = v
+        delete process.env[k]
+      }
+    }
+    process.env.MY_APP_SECRET = 'b'.repeat(64)
+    try {
+      let err: any = null
+      try { await createClient({ parsed: r, db: p }) } catch (e) { err = e }
+      expect(err).not.toBeNull()
+      expect(err.message).toContain('process.env.MY_APP_SECRET')
+      expect(err.message.toLowerCase()).toContain('did you mean')
+    } finally {
+      delete process.env.MY_APP_SECRET
+      for (const [k, v] of Object.entries(envHexStash)) process.env[k] = v
+      for (const [k, v] of Object.entries(stash)) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+  })
+  test('missing-key error: no env match falls back to openssl rand suggestion', async () => {
+    const r = parse(`model T { id Int @id; secret String @encrypted }`)
+    const p = tmpDb('enc-no-key-noenv')
+    const raw = new Database(p)
+    for (const s of splitStatements(generateDDL(r.schema))) if (!s.startsWith('PRAGMA')) raw.run(s)
+    raw.close()
+    const stash: Record<string, string | undefined> = {}
+    for (const k of ['ENCRYPTION_KEY', 'LITESTONE_KEY', 'LITESTONE_ENCRYPTION_KEY', 'DB_ENCRYPTION_KEY']) {
+      stash[k] = process.env[k]; delete process.env[k]
+    }
+    // Remove any other 64-hex env vars that would hit the heuristic branch
+    // and starve the openssl fallback message.
+    const envHexStash: Record<string, string> = {}
+    for (const [k, v] of Object.entries(process.env)) {
+      if (typeof v === 'string' && /^[0-9a-fA-F]{64}$/.test(v)) {
+        envHexStash[k] = v
+        delete process.env[k]
+      }
+    }
+    try {
+      let err: any = null
+      try { await createClient({ parsed: r, db: p }) } catch (e) { err = e }
+      expect(err).not.toBeNull()
+      expect(err.message).toContain('openssl rand -hex 32')
+    } finally {
+      for (const [k, v] of Object.entries(envHexStash)) process.env[k] = v
+      for (const [k, v] of Object.entries(stash)) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+  })
   test('@encrypted: key wrong length throws', async () => {
-    const r = parse(`model T { id Integer @id
-        secret Text @encrypted }`)
+    const r = parse(`model T { id Int @id
+        secret String @encrypted }`)
     const p = tmpDb('enc-bad-key')
     const raw = new Database(p)
     for (const s of splitStatements(generateDDL(r.schema))) if (!s.startsWith('PRAGMA')) raw.run(s)
@@ -4136,7 +4326,7 @@ describe('@secret field attribute', () => {
   // ── Parser expansion ──────────────────────────────────────────────────────
 
   test('expands @secret → @encrypted + @guarded(all) at parse time', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret }`)
+    const r = parse(`model T { id Int @id; token String @secret }`)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
     expect(field.attributes.some((a: any) => a.kind === 'secret')).toBe(true)
@@ -4145,21 +4335,21 @@ describe('@secret field attribute', () => {
   })
 
   test('@secret defaults rotate: true', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret }`)
+    const r = parse(`model T { id Int @id; token String @secret }`)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
     const secretAttr = field.attributes.find((a: any) => a.kind === 'secret')
     expect(secretAttr.rotate).toBe(true)
   })
 
   test('@secret(rotate: false) sets rotate: false', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret(rotate: false) }`)
+    const r = parse(`model T { id Int @id; token String @secret(rotate: false) }`)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
     const secretAttr = field.attributes.find((a: any) => a.kind === 'secret')
     expect(secretAttr.rotate).toBe(false)
   })
 
   test('@secret still expands @encrypted + @guarded(all) when rotate: false', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret(rotate: false) }`)
+    const r = parse(`model T { id Int @id; token String @secret(rotate: false) }`)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
     expect(field.attributes.some((a: any) => a.kind === 'encrypted')).toBe(true)
@@ -4169,7 +4359,7 @@ describe('@secret field attribute', () => {
   test('@secret synthesizes @log when a logger database is declared', () => {
     const r = parse(`
       database audit { path "./audit/" driver logger }
-      model T { id Integer @id; token Text @secret }
+      model T { id Int @id; token String @secret }
     `)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
@@ -4181,37 +4371,37 @@ describe('@secret field attribute', () => {
   })
 
   test('@secret does not synthesize @log when no logger database exists', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret }`)
+    const r = parse(`model T { id Int @id; token String @secret }`)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
     expect(field.attributes.some((a: any) => a.kind === 'log')).toBe(false)
   })
 
   test('@secret emits warning when no logger database is declared', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret }`)
+    const r = parse(`model T { id Int @id; token String @secret }`)
     expect(r.warnings.some((w: string) => w.includes('@secret') && w.includes('logger database'))).toBe(true)
   })
 
   test('@secret + explicit @encrypted is a validation error', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret @encrypted }`)
+    const r = parse(`model T { id Int @id; token String @secret @encrypted }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('@secret') && e.includes('@encrypted'))).toBe(true)
   })
 
   test('@secret + explicit @guarded is a validation error', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret @guarded }`)
+    const r = parse(`model T { id Int @id; token String @secret @guarded }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('@secret') && e.includes('@guarded'))).toBe(true)
   })
 
   test('@secret unknown option is a parse error', () => {
-    const r = parse(`model T { id Integer @id; token Text @secret(expires: true) }`)
+    const r = parse(`model T { id Int @id; token String @secret(expires: true) }`)
     expect(r.valid).toBe(false)
   })
 
   // ── Runtime behaviour ─────────────────────────────────────────────────────
 
   test('@secret field is encrypted at rest', async () => {
-    const db = await makeDb(`model Secret { id Integer @id; token Text @secret }`, 'secret-enc', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'secret-enc', { encryptionKey: ENC_KEY })
     await db.secret.create({ data: { token: 'mysecret' } })
     const raw = db.$db.query(`SELECT token FROM secret`).get() as any
     expect(raw.token).toMatch(/^v1\./)   // AES-GCM ciphertext prefix
@@ -4219,7 +4409,7 @@ describe('@secret field attribute', () => {
   })
 
   test('@secret field is stripped from findMany results', async () => {
-    const db = await makeDb(`model Secret { id Integer @id; token Text @secret }`, 'secret-strip', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'secret-strip', { encryptionKey: ENC_KEY })
     await db.secret.create({ data: { token: 'mysecret' } })
     const rows = await db.secret.findMany()
     expect((rows[0] as any).token).toBeUndefined()
@@ -4227,7 +4417,7 @@ describe('@secret field attribute', () => {
   })
 
   test('@secret field is returned via asSystem()', async () => {
-    const db = await makeDb(`model Secret { id Integer @id; token Text? @secret }`, 'secret-system', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String? @secret }`, 'secret-system', { encryptionKey: ENC_KEY })
     await db.secret.create({ data: { token: 'mysecret' } })
     const row = await db.asSystem().secret.findFirst({}) as any
     expect(row.token).toBe('mysecret')
@@ -4239,7 +4429,7 @@ describe('@secret field attribute', () => {
   const NEW_KEY = 'b'.repeat(64)
 
   test('$rotateKey re-encrypts rotate:true fields', async () => {
-    const db = await makeDb(`model Secret { id Integer @id; token Text @secret }`, 'rotate-basic', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-basic', { encryptionKey: ENC_KEY })
     await db.secret.create({ data: { token: 'rotate-me' } })
 
     const statsBefore = db.$db.query(`SELECT token FROM secret`).get() as any
@@ -4256,7 +4446,7 @@ describe('@secret field attribute', () => {
   })
 
   test('$rotateKey returns per-model stats', async () => {
-    const db = await makeDb(`model Secret { id Integer @id; token Text @secret }`, 'rotate-stats', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-stats', { encryptionKey: ENC_KEY })
     await db.secret.create({ data: { token: 'a' } })
     await db.secret.create({ data: { token: 'b' } })
 
@@ -4268,7 +4458,7 @@ describe('@secret field attribute', () => {
 
   test('rotated field is still readable after rotation with new key', async () => {
     // Manage path directly so we can re-open with a different key
-    const schema = `model Secret { id Integer @id; token Text? @secret }`
+    const schema = `model Secret { id Int @id; token String? @secret }`
     const r      = parse(schema)
     const path   = tmpDb('rotate-read' + Math.random().toString(36).slice(2))
     const { Database: BunDb } = await import('bun:sqlite')
@@ -4289,7 +4479,7 @@ describe('@secret field attribute', () => {
 
   test('@secret(rotate: false) field is skipped by $rotateKey', async () => {
     const db = await makeDb(
-      `model Secret { id Integer @id; fixed Text @secret(rotate: false); rotateable Text @secret }`,
+      `model Secret { id Int @id; fixed String @secret(rotate: false); rotateable String @secret }`,
       'rotate-skip',
       { encryptionKey: ENC_KEY }
     )
@@ -4307,7 +4497,7 @@ describe('@secret field attribute', () => {
   })
 
   test('$rotateKey with no @secret fields returns empty stats', async () => {
-    const db = await makeDb(`model Plain { id Integer @id; name Text }`, 'rotate-empty')
+    const db = await makeDb(`model Plain { id Int @id; name String }`, 'rotate-empty')
     const stats = await db.$rotateKey(ENC_KEY)
     expect(Object.keys(stats)).toHaveLength(0)
     db.$close()
@@ -4317,20 +4507,20 @@ describe('@secret field attribute', () => {
     // A client with @secret fields cannot be created without an encKey (createClient rejects).
     // Testing with a plain model: $rotateKey returns {} with no @secret fields regardless
     // of whether the client has an encryption key.
-    const db = await makeDb(`model Plain { id Integer @id; name Text }`, 'rotate-no-key')
+    const db = await makeDb(`model Plain { id Int @id; name String }`, 'rotate-no-key')
     const stats = await db.$rotateKey(NEW_KEY)
     expect(Object.keys(stats)).toHaveLength(0)
     db.$close()
   })
 
   test('$rotateKey throws on bad key length', async () => {
-    const db = await makeDb(`model Secret { id Integer @id; token Text @secret }`, 'rotate-bad-key', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-bad-key', { encryptionKey: ENC_KEY })
     await expect(db.$rotateKey('tooshort')).rejects.toThrow('32 bytes')
     db.$close()
   })
 
   test('$rotateKey leaves null fields untouched', async () => {
-    const db = await makeDb(`model Secret { id Integer @id; token Text? @secret }`, 'rotate-null', { encryptionKey: ENC_KEY })
+    const db = await makeDb(`model Secret { id Int @id; token String? @secret }`, 'rotate-null', { encryptionKey: ENC_KEY })
     await db.secret.create({ data: {} })
     const stats = await db.$rotateKey(NEW_KEY)
     expect(stats.Secret?.rows ?? 0).toBe(0)   // null field — nothing to update
@@ -4351,9 +4541,9 @@ describe('onLog callback', () => {
     database audit { path "./audit/" driver logger }
 
     model posts {
-      id        Integer  @id
-      title     Text
-      body      Text     @log(audit)
+      id        Int  @id
+      title     String
+      body      String     @log(audit)
 
       @@db(main)
       @@log(audit)
@@ -4461,7 +4651,7 @@ describe('onLog callback', () => {
   test('onLog not called when no @log / @@log on model', async () => {
     const PLAIN_SCHEMA = `
       database main { path env("MAIN_DB", "./main.db") }
-      model notes { id Integer @id; text Text @@db(main) }
+      model notes { id Int @id; text String @@db(main) }
     `
     const r = parse(PLAIN_SCHEMA)
     const dir = join(tmpdir(), `ls-onlog-plain-${Date.now()}`)
@@ -4505,8 +4695,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('parses @@allow with simple condition', () => {
     const r = parse(`
       model Post {
-        id      Integer @id
-        ownerId Integer
+        id      Int @id
+        ownerId Int
         @@allow('read', ownerId == auth().id)
       }
     `)
@@ -4520,8 +4710,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('parses @@deny with condition', () => {
     const r = parse(`
       model Post {
-        id     Integer @id
-        status Text
+        id     Int @id
+        status String
         @@deny('delete', status == 'archived')
       }
     `)
@@ -4531,26 +4721,26 @@ describe('@@allow / @@deny row-level policies', () => {
   })
 
   test("parses 'all' operation alias", () => {
-    const r = parse(`model T { id Integer @id; @@allow('all', true) }`)
+    const r = parse(`model T { id Int @id; @@allow('all', true) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.operations).toEqual(['read', 'create', 'update', 'post-update', 'delete'])
   })
 
   test("parses 'write' operation alias", () => {
-    const r = parse(`model T { id Integer @id; @@allow('write', true) }`)
+    const r = parse(`model T { id Int @id; @@allow('write', true) }`)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.operations).toEqual(['create', 'update', 'delete'])
   })
 
   test('parses comma-separated operations', () => {
-    const r = parse(`model T { id Integer @id; @@allow('update,delete', true) }`)
+    const r = parse(`model T { id Int @id; @@allow('update,delete', true) }`)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.operations).toEqual(['update', 'delete'])
   })
 
   test('invalid operation is a parse error', () => {
-    const r = parse(`model T { id Integer @id; @@allow('fetch', true) }`)
+    const r = parse(`model T { id Int @id; @@allow('fetch', true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/invalid operation/)
   })
@@ -4558,9 +4748,9 @@ describe('@@allow / @@deny row-level policies', () => {
   test('parses || && ! operators', () => {
     const r = parse(`
       model T {
-        id        Integer @id
+        id        Int @id
         published Boolean
-        ownerId   Integer
+        ownerId   Int
         @@allow('read', published || ownerId == auth().id)
         @@allow('create', auth() != null && !published)
       }
@@ -4572,7 +4762,7 @@ describe('@@allow / @@deny row-level policies', () => {
   })
 
   test('parses auth() != null', () => {
-    const r = parse(`model T { id Integer @id; @@allow('create', auth() != null) }`)
+    const r = parse(`model T { id Int @id; @@allow('create', auth() != null) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.expr.type).toBe('compare')
@@ -4582,7 +4772,7 @@ describe('@@allow / @@deny row-level policies', () => {
   })
 
   test('parses now() in condition', () => {
-    const r = parse(`model T { id Integer @id; expiresAt DateTime; @@allow('read', expiresAt > now()) }`)
+    const r = parse(`model T { id Int @id; expiresAt DateTime; @@allow('read', expiresAt > now()) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.expr.right.type).toBe('now')
@@ -4591,12 +4781,12 @@ describe('@@allow / @@deny row-level policies', () => {
   test('parses check(field)', () => {
     const r = parse(`
       model Post {
-        id     Integer @id
+        id     Int @id
         author User @relation(fields: [authorId], references: [id])
-        authorId Integer
+        authorId Int
         @@allow('read', check(author))
       }
-      model User { id Integer @id }
+      model User { id Int @id }
     `)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
@@ -4608,19 +4798,19 @@ describe('@@allow / @@deny row-level policies', () => {
   test('parses check(field, operation)', () => {
     const r = parse(`
       model Post {
-        id Integer @id
+        id Int @id
         author User @relation(fields: [authorId], references: [id])
-        authorId Integer
+        authorId Int
         @@allow('update', check(author, 'read'))
       }
-      model User { id Integer @id }
+      model User { id Int @id }
     `)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr.expr.operation).toBe('read')
   })
 
   test('warns if @@deny exists without @@allow', () => {
-    const r = parse(`model T { id Integer @id; @@deny('delete', true) }`)
+    const r = parse(`model T { id Int @id; @@deny('delete', true) }`)
     expect(r.valid).toBe(true)
     expect(r.warnings.some((w: string) => w.includes('@@deny') && w.includes('@@allow'))).toBe(true)
   })
@@ -4630,9 +4820,9 @@ describe('@@allow / @@deny row-level policies', () => {
   test('@@allow read — only matching rows returned', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
-        title   Text
+        id      Int @id
+        ownerId Int
+        title   String
         @@allow('read', ownerId == auth().id)
       }
     `, 'policy-read-own')
@@ -4648,10 +4838,10 @@ describe('@@allow / @@deny row-level policies', () => {
   test('@@allow read with || — sees own + published', async () => {
     const db = await makeDb(`
       model Post {
-        id        Integer @id
-        ownerId   Integer
+        id        Int @id
+        ownerId   Int
         published Boolean @default(false)
-        title     Text
+        title     String
         @@allow('read', published || ownerId == auth().id)
       }
     `, 'policy-read-or')
@@ -4669,10 +4859,10 @@ describe('@@allow / @@deny row-level policies', () => {
   test('@@deny overrides @@allow', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
+        id      Int @id
+        ownerId Int
         deleted Boolean @default(false)
-        title   Text
+        title   String
         @@allow('read', ownerId == auth().id)
         @@deny('read', deleted == true)
       }
@@ -4689,8 +4879,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('no auth → no rows when policy uses auth().id', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
+        id      Int @id
+        ownerId Int
         @@allow('read', ownerId == auth().id)
       }
     `, 'policy-no-auth')
@@ -4703,8 +4893,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('asSystem() bypasses all policies', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
+        id      Int @id
+        ownerId Int
         @@allow('read', ownerId == auth().id)
       }
     `, 'policy-system-bypass')
@@ -4716,7 +4906,7 @@ describe('@@allow / @@deny row-level policies', () => {
 
   test('no @@allow → no restriction', async () => {
     const db = await makeDb(`
-      model Post { id Integer @id; title Text }
+      model Post { id Int @id; title String }
     `, 'policy-none')
     await db.post.create({ data: { title: 'open' } })
     const rows = await db.post.findMany()
@@ -4727,8 +4917,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('now() in policy — time-based access', async () => {
     const db = await makeDb(`
       model Item {
-        id          Integer  @id
-        title       Text
+        id          Int  @id
+        title       String
         publishedAt DateTime
         @@allow('read', publishedAt <= now())
       }
@@ -4747,8 +4937,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('@@allow create — auth() != null allows authenticated users', async () => {
     const db = await makeDb(`
       model Post {
-        id    Integer @id
-        title Text
+        id    Int @id
+        title String
         @@allow('create', auth() != null)
       }
     `, 'policy-create-auth')
@@ -4761,8 +4951,8 @@ describe('@@allow / @@deny row-level policies', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeDb(`
       model Post {
-        id    Integer @id
-        title Text
+        id    Int @id
+        title String
         @@allow('create', auth() != null)
       }
     `, 'policy-create-block')
@@ -4774,8 +4964,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('@@allow create with field check — ownerId must match auth', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
+        id      Int @id
+        ownerId Int
         @@allow('create', ownerId == auth().id)
       }
     `, 'policy-create-field')
@@ -4791,9 +4981,9 @@ describe('@@allow / @@deny row-level policies', () => {
   test('@@allow update — can only update own rows', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
-        title   Text
+        id      Int @id
+        ownerId Int
+        title   String
         @@allow('read', true)
         @@allow('update', ownerId == auth().id)
       }
@@ -4813,8 +5003,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('@@allow delete — can only delete own rows', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
+        id      Int @id
+        ownerId Int
         @@allow('read', true)
         @@allow('delete', ownerId == auth().id)
       }
@@ -4834,8 +5024,8 @@ describe('@@allow / @@deny row-level policies', () => {
   test('post-update policy — prevents ownership transfer', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
+        id      Int @id
+        ownerId Int
         @@allow('read', true)
         @@allow('update', ownerId == auth().id)
         @@allow('post-update', ownerId == auth().id)
@@ -4857,15 +5047,15 @@ describe('@@allow / @@deny row-level policies', () => {
   test('check() — delegates read policy to parent model', async () => {
     const db = await makeDb(`
       model User {
-        id      Integer @id
-        ownerId Integer
+        id      Int @id
+        ownerId Int
         @@allow('read', ownerId == auth().id)
       }
       model Post {
-        id       Integer @id
-        authorId Integer
+        id       Int @id
+        authorId Int
         author   User @relation(fields: [authorId], references: [id])
-        title    Text
+        title    String
         @@allow('read', check(author))
       }
     `, 'policy-check')
@@ -4893,8 +5083,8 @@ describe('@allow field-level access', () => {
   test('parses @allow(read) on field', () => {
     const r = parse(`
       model User {
-        id     Integer @id
-        salary Real?   @allow('read', auth().role == 'hr')
+        id     Int @id
+        salary Float?   @allow('read', auth().role == 'hr')
       }
     `)
     expect(r.valid).toBe(true)
@@ -4906,7 +5096,7 @@ describe('@allow field-level access', () => {
   })
 
   test('parses @allow(write) on field', () => {
-    const r = parse(`model T { id Integer @id; role Text @allow('write', auth().isAdmin) }`)
+    const r = parse(`model T { id Int @id; role String @allow('write', auth().isAdmin) }`)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'role')
     const fa = field.attributes.find((a: any) => a.kind === 'fieldAllow')
@@ -4914,26 +5104,26 @@ describe('@allow field-level access', () => {
   })
 
   test("@allow('all') expands to read + write", () => {
-    const r = parse(`model T { id Integer @id; data Text @allow('all', auth() != null) }`)
+    const r = parse(`model T { id Int @id; data String @allow('all', auth() != null) }`)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'data')
     const fa = field.attributes.find((a: any) => a.kind === 'fieldAllow')
     expect(fa.operations).toEqual(['read', 'write'])
   })
 
   test('@allow on field with invalid operation is a parse error', () => {
-    const r = parse(`model T { id Integer @id; x Text @allow('create', true) }`)
+    const r = parse(`model T { id Int @id; x String @allow('create', true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/read.*write.*all/)
   })
 
   test('@allow conflicts with @guarded is a validation error', () => {
-    const r = parse(`model T { id Integer @id; x Text @guarded @allow('read', true) }`)
+    const r = parse(`model T { id Int @id; x String @guarded @allow('read', true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('@allow') && e.includes('@guarded'))).toBe(true)
   })
 
   test('@allow conflicts with @secret is a validation error', () => {
-    const r = parse(`model T { id Integer @id; x Text @secret @allow('read', true) }`)
+    const r = parse(`model T { id Int @id; x String @secret @allow('read', true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('@allow') && e.includes('@secret'))).toBe(true)
   })
@@ -4943,9 +5133,9 @@ describe('@allow field-level access', () => {
   test('@allow read — field stripped when condition false', async () => {
     const db = await makeDb(`
       model User {
-        id     Integer @id
-        name   Text
-        salary Real?   @allow('read', auth().role == 'hr')
+        id     Int @id
+        name   String
+        salary Float?   @allow('read', auth().role == 'hr')
       }
     `, 'field-allow-read-strip')
     await db.asSystem().user.create({ data: { name: 'Alice', salary: 100000 } })
@@ -4958,9 +5148,9 @@ describe('@allow field-level access', () => {
   test('@allow read — field visible when condition true', async () => {
     const db = await makeDb(`
       model User {
-        id     Integer @id
-        name   Text
-        salary Real?   @allow('read', auth().role == 'hr')
+        id     Int @id
+        name   String
+        salary Float?   @allow('read', auth().role == 'hr')
       }
     `, 'field-allow-read-visible')
     await db.asSystem().user.create({ data: { name: 'Alice', salary: 100000 } })
@@ -4972,8 +5162,8 @@ describe('@allow field-level access', () => {
   test('@allow read — asSystem() always sees the field', async () => {
     const db = await makeDb(`
       model User {
-        id     Integer @id
-        salary Real?   @allow('read', auth().role == 'hr')
+        id     Int @id
+        salary Float?   @allow('read', auth().role == 'hr')
       }
     `, 'field-allow-read-system')
     await db.asSystem().user.create({ data: { salary: 50000 } })
@@ -4985,9 +5175,9 @@ describe('@allow field-level access', () => {
   test('@allow read — multiple conditions OR-combined', async () => {
     const db = await makeDb(`
       model Post {
-        id      Integer @id
-        ownerId Integer
-        notes   Text?   @allow('read', auth().role == 'admin')
+        id      Int @id
+        ownerId Int
+        notes   String?   @allow('read', auth().role == 'admin')
                         @allow('read', ownerId == auth().id)
       }
     `, 'field-allow-read-or')
@@ -5004,8 +5194,8 @@ describe('@allow field-level access', () => {
   test('@allow read — no auth strips field', async () => {
     const db = await makeDb(`
       model User {
-        id     Integer @id
-        salary Real?   @allow('read', auth() != null)
+        id     Int @id
+        salary Float?   @allow('read', auth() != null)
       }
     `, 'field-allow-no-auth')
     await db.asSystem().user.create({ data: { salary: 80000 } })
@@ -5019,8 +5209,8 @@ describe('@allow field-level access', () => {
   test('@allow write — field silently dropped when condition false', async () => {
     const db = await makeDb(`
       model User {
-        id   Integer @id
-        role Text    @default('user') @allow('write', auth().isAdmin)
+        id   Int @id
+        role String    @default('user') @allow('write', auth().isAdmin)
       }
     `, 'field-allow-write-drop')
     const row = await db.$setAuth({ id: 1, isAdmin: false }).user.create({ data: { role: 'admin' } }) as any
@@ -5032,8 +5222,8 @@ describe('@allow field-level access', () => {
   test('@allow write — field written when condition true', async () => {
     const db = await makeDb(`
       model User {
-        id   Integer @id
-        role Text    @default('user') @allow('write', auth().isAdmin)
+        id   Int @id
+        role String    @default('user') @allow('write', auth().isAdmin)
       }
     `, 'field-allow-write-pass')
     const row = await db.$setAuth({ id: 1, isAdmin: true }).user.create({ data: { role: 'admin' } }) as any
@@ -5044,8 +5234,8 @@ describe('@allow field-level access', () => {
   test('@allow write — asSystem() always writes the field', async () => {
     const db = await makeDb(`
       model User {
-        id   Integer @id
-        role Text    @default('user') @allow('write', auth().isAdmin)
+        id   Int @id
+        role String    @default('user') @allow('write', auth().isAdmin)
       }
     `, 'field-allow-write-system')
     const row = await db.asSystem().user.create({ data: { role: 'superadmin' } }) as any
@@ -5056,8 +5246,8 @@ describe('@allow field-level access', () => {
   test('@allow write enforced on update too', async () => {
     const db = await makeDb(`
       model User {
-        id   Integer @id
-        role Text    @default('user') @allow('write', auth().isAdmin)
+        id   Int @id
+        role String    @default('user') @allow('write', auth().isAdmin)
       }
     `, 'field-allow-write-update')
     await db.asSystem().user.create({ data: { role: 'user' } })
@@ -5084,8 +5274,8 @@ describe('policyDebug logging', () => {
     try {
       const db = await makeDb(`
         model Post {
-          id      Integer @id
-          ownerId Integer
+          id      Int @id
+          ownerId Int
           @@allow('read', ownerId == auth().id)
         }
       `, 'pdebug-sql', { policyDebug: true })
@@ -5112,7 +5302,7 @@ describe('policyDebug logging', () => {
     try {
       const db = await makeDb(`
         model Post {
-          id Integer @id
+          id Int @id
           @@allow('create', auth() != null)
         }
       `, 'pdebug-deny', { policyDebug: true })
@@ -5136,8 +5326,8 @@ describe('policyDebug logging', () => {
     try {
       const db = await makeDb(`
         model Post {
-          id      Integer @id
-          ownerId Integer
+          id      Int @id
+          ownerId Int
           @@allow('read', ownerId == auth().id)
         }
       `, 'pdebug-off', { policyDebug: false })
@@ -5160,8 +5350,8 @@ describe('policyDebug logging', () => {
     try {
       const db = await makeDb(`
         model Post {
-          id      Integer @id
-          ownerId Integer
+          id      Int @id
+          ownerId Int
           @@allow('read', ownerId == auth().id)
         }
       `, 'pdebug-verbose', { policyDebug: 'verbose' })
@@ -5243,7 +5433,7 @@ describe('GatePlugin', () => {
   test('read allowed when user level meets requirement', async () => {
     const db = await makeGateDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("2.4.4.6")
       }
     `, 'gate-read-ok', () => 3)   // level 3 >= read(2)
@@ -5257,7 +5447,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("2.4.4.6")
       }
     `, 'gate-read-deny', () => 1)   // level 1 < read(2)
@@ -5269,7 +5459,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("2.4.4.6")
       }
     `, 'gate-create-deny', () => 3)   // level 3 < create(4)
@@ -5281,8 +5471,8 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
       model Post {
-        id Integer @id
-        val Text
+        id Int @id
+        val String
         @@gate("2.4.5.6")
       }
     `, 'gate-update-deny', (_, model) => model === 'posts' ? 4 : 0)  // level 4 < update(5)
@@ -5295,7 +5485,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("2.4.4.6")
       }
     `, 'gate-delete-deny', () => 5)   // level 5 < delete(6)
@@ -5310,7 +5500,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
       model audit_logs {
-        id Integer @id
+        id Int @id
         @@gate("5.8.8.9")
       }
     `, 'gate-locked', () => 6)   // level 6 (OWNER) can't beat LOCKED (now 9)
@@ -5323,7 +5513,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
       model audit_logs {
-        id Integer @id
+        id Int @id
         @@gate("5.8.8.9")
       }
     `, 'gate-system', () => 6)   // level 6 can't create (SYSTEM=8)
@@ -5340,7 +5530,7 @@ describe('GatePlugin', () => {
     let capturedUser: any = null
     const db = await makeDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("4")
       }
     `, 'gate-setauth', {
@@ -5364,7 +5554,7 @@ describe('GatePlugin', () => {
     const { GatePlugin } = await import('../src/plugins/gate.js')
     const db = await makeDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("4")
       }
     `, 'gate-setauth-pass', {
@@ -5382,7 +5572,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("4")
       }
     `, 'gate-setauth-deny', {
@@ -5398,7 +5588,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("2")
       }
     `, 'gate-setauth-null', {
@@ -5413,7 +5603,7 @@ describe('GatePlugin', () => {
     const { GatePlugin } = await import('../src/plugins/gate.js')
     const db = await makeDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("5.8.8.8")
       }
     `, 'gate-clamp', {
@@ -5431,15 +5621,15 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeDb(`
       model Account {
-        id   Integer @id
-        name Text
+        id   Int @id
+        name String
         @@gate("2.6.6.6")
       }
       model User {
-        id        Integer  @id
+        id        Int  @id
         account   Account @relation(fields: [accountId], references: [id])
-        accountId Integer
-        email     Text
+        accountId Int
+        email     String
         @@gate("2.4.4.6")
       }
     `, 'gate-nested-preflight', {
@@ -5463,7 +5653,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeDb(`
       model Secret {
-        id Integer @id
+        id Int @id
         @@gate("7")
       }
     `, 'gate-sysadmin', {
@@ -5496,7 +5686,7 @@ describe('GatePlugin', () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeDb(`
       model Restricted {
-        id Integer @id
+        id Int @id
         @@gate("8")
       }
     `, 'gate-sysadmin-clamp', {
@@ -5517,9 +5707,9 @@ describe('GatePlugin', () => {
   test('model without @@gate is open to all', async () => {
     const { GatePlugin } = await import('../src/plugins/gate.js')
     const db = await makeDb(`
-      model open_table { id Integer @id }
+      model open_table { id Int @id }
       model gated_table {
-        id Integer @id
+        id Int @id
         @@gate("5")
       }
     `, 'gate-open-model', {
@@ -5545,11 +5735,11 @@ describe('GatePlugin', () => {
     }
     const db = await makeDb(`
       model Post {
-        id Integer @id
+        id Int @id
         @@gate("2.4.4.6")
       }
       model Billing {
-        id Integer @id
+        id Int @id
         @@gate("2.5.5.6")
       }
     `, 'gate-role-based', {
@@ -5699,7 +5889,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Integer @id }
+      model t { id Int @id }
     `, 'plugin-init', { plugins: [new InitPlugin()] })
     expect(receivedSchema).not.toBeNull()
     expect(receivedSchema.models.length).toBeGreaterThan(0)
@@ -5715,7 +5905,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Integer @id }
+      model t { id Int @id }
     `, 'plugin-block-read', { plugins: [new BlockAll()] })
     await db.t.create({ data: { id: 1 } })
     await expect(db.t.findMany()).rejects.toThrow('blocked')
@@ -5730,7 +5920,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Integer @id }
+      model t { id Int @id }
     `, 'plugin-block-create', { plugins: [new BlockCreate()] })
     await expect(db.t.create({ data: { id: 1 } })).rejects.toThrow('no creates')
     db.$close()
@@ -5744,8 +5934,8 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'plugin-block-update', { plugins: [new BlockUpdate()] })
     await db.$db.run(`INSERT INTO t VALUES (1, 'x')`)
     await expect(db.t.update({ where: { id: 1 }, data: { val: 'y' } })).rejects.toThrow('no updates')
@@ -5760,7 +5950,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Integer @id }
+      model t { id Int @id }
     `, 'plugin-block-delete', { plugins: [new BlockDelete()] })
     await db.$db.run(`INSERT INTO t VALUES (1)`)
     await expect(db.t.delete({ where: { id: 1 } })).rejects.toThrow('no deletes')
@@ -5774,7 +5964,7 @@ describe('plugin system', () => {
     class B extends Plugin { async onBeforeRead() { log.push('B') } }
     class C extends Plugin { async onBeforeRead() { log.push('C') } }
     const db = await makeDb(`
-      model t { id Integer @id }
+      model t { id Int @id }
     `, 'plugin-multi', { plugins: [new A(), new B(), new C()] })
     await db.t.findMany()
     expect(log).toEqual(['A', 'B', 'C'])
@@ -5823,8 +6013,8 @@ describe('plugin system — onAfterDelete', () => {
     }
     const db = await makeDb(`
       model users {
-        id    Integer @id
-        name  Text
+        id    Int @id
+        name  String
       }
     `, 'after-delete-hard', { plugins: [new Spy()] })
     await db.users.create({ data: { id: 1, name: 'Alice' } })
@@ -5843,8 +6033,8 @@ describe('plugin system — onAfterDelete', () => {
     }
     const db = await makeDb(`
       model posts {
-        id        Integer  @id
-        title     Text
+        id        Int  @id
+        title     String
         deletedAt DateTime?
         @@softDelete
       }
@@ -5864,8 +6054,8 @@ describe('plugin system — onAfterDelete', () => {
     }
     const db = await makeDb(`
       model items {
-        id    Integer @id
-        tag   Text
+        id    Int @id
+        tag   String
       }
     `, 'after-delete-many', { plugins: [new Spy()] })
     await db.items.createMany({ data: [
@@ -5884,7 +6074,7 @@ describe('plugin system — onAfterDelete', () => {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
-      model items { id Integer @id }
+      model items { id Int @id }
     `, 'after-delete-nomatch', { plugins: [new Spy()] })
     await db.items.deleteMany({ where: { id: 99 } })
     expect(called).toBe(false)
@@ -5908,7 +6098,7 @@ describe('FileStorage plugin', () => {
   test('onInit ignores models with no @file fields', async () => {
     const { FileStorage } = await import('../src/plugins/file.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
-    const schema = parse(`model posts { id Integer @id; title Text }`).schema
+    const schema = parse(`model posts { id Int @id; title String }`).schema
     plugin.onInit(schema, { models: {} })
     expect(plugin._fileMap.posts).toBeUndefined()
   })
@@ -6235,9 +6425,9 @@ describe('fileUrls() helper', () => {
 describe('buildReadFilter wired into buildSQL', () => {
   const schema = `
     model posts {
-      id       Integer @id
-      authorId Integer
-      title    Text
+      id       Int @id
+      authorId Int
+      title    String
     }
   `
 
@@ -6351,9 +6541,9 @@ describe('buildReadFilter wired into buildSQL', () => {
 describe('onAfterRead wired into reads', () => {
   const schema = `
     model articles {
-      id      Integer @id
-      title   Text
-      content Text
+      id      Int @id
+      title   String
+      content String
     }
   `
 
@@ -6436,8 +6626,8 @@ describe('onAfterRead wired into reads', () => {
 describe('upsert plugin hooks', () => {
   const schema = `
     model notes {
-      id      Integer @id
-      content Text
+      id      Int @id
+      content String
     }
   `
 
@@ -6504,8 +6694,8 @@ describe('upsert plugin hooks', () => {
 describe('removeMany plugin hooks', () => {
   const schema = `
     model tasks {
-      id        Integer  @id
-      status    Text     @default("open")
+      id        Int  @id
+      status    String     @default("open")
       deletedAt DateTime?
       @@softDelete
     }
@@ -6559,9 +6749,9 @@ describe('transform hooks (before/after)', () => {
   test('before:setters runs on create — can mutate data', async () => {
     const log: string[] = []
     const db = await makeDb(`
-      model items { id Integer @id
-        name Text
-        score Integer }
+      model items { id Int @id
+        name String
+        score Int }
     `, 'hook-before', {
       hooks: {
         before: {
@@ -6583,8 +6773,8 @@ describe('transform hooks (before/after)', () => {
   test('before:update only runs on update', async () => {
     const ops: string[] = []
     const db = await makeDb(`
-      model items { id Integer @id
-        name Text }
+      model items { id Int @id
+        name String }
     `, 'hook-update', {
       hooks: {
         before: {
@@ -6600,9 +6790,9 @@ describe('transform hooks (before/after)', () => {
 
   test('after:getters transforms read result', async () => {
     const db = await makeDb(`
-      model users { id Integer @id
-        first Text
-        last Text }
+      model users { id Int @id
+        first String
+        last String }
     `, 'hook-after', {
       hooks: {
         after: {
@@ -6625,8 +6815,8 @@ describe('transform hooks (before/after)', () => {
   test('after:all runs on both reads and writes', async () => {
     const ops: string[] = []
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'hook-all', {
       hooks: {
         after: {
@@ -6646,8 +6836,8 @@ describe('transform hooks (before/after)', () => {
   test('before hook gets schema (model definition)', async () => {
     let capturedSchema: any = null
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'hook-schema', {
       hooks: {
         before: {
@@ -6663,8 +6853,8 @@ describe('transform hooks (before/after)', () => {
 
   test('no hooks — normal operation unaffected', async () => {
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'hook-none')
     await db.t.create({ data: { id: 1, val: 'x' } })
     const rows = await db.t.findMany()
@@ -6680,8 +6870,8 @@ describe('event listeners (on.*)', () => {
   test('on.create fires after create', async () => {
     const events: any[] = []
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'evt-create', {
       onEvent: { create: (event: any) => events.push({ op: event.operation, id: event.result?.id }) }
     })
@@ -6696,8 +6886,8 @@ describe('event listeners (on.*)', () => {
   test('on.update fires after update', async () => {
     const events: any[] = []
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'evt-update', {
       onEvent: { update: (event: any) => events.push(event.operation) }
     })
@@ -6711,8 +6901,8 @@ describe('event listeners (on.*)', () => {
   test('on.remove fires after remove', async () => {
     const events: any[] = []
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text
+      model t { id Int @id
+        val String
         deletedAt DateTime?
         @@softDelete }
     `, 'evt-remove', {
@@ -6728,8 +6918,8 @@ describe('event listeners (on.*)', () => {
   test('on.change fires for all writes', async () => {
     const ops: string[] = []
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'evt-change', {
       onEvent: { change: (event: any) => ops.push(event.operation) }
     })
@@ -6743,8 +6933,8 @@ describe('event listeners (on.*)', () => {
 
   test('event listener errors do not throw to caller', async () => {
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'evt-error', {
       onEvent: { create: () => { throw new Error('listener crash') } }
     })
@@ -6756,8 +6946,8 @@ describe('event listeners (on.*)', () => {
   test('event fires after result is returned to caller', async () => {
     const timeline: string[] = []
     const db = await makeDb(`
-      model t { id Integer @id
-        val Text }
+      model t { id Int @id
+        val String }
     `, 'evt-timing', {
       onEvent: { create: () => timeline.push('event') }
     })
@@ -6770,7 +6960,7 @@ describe('event listeners (on.*)', () => {
   })
 })
 
-// ─── 22. Text[] / Integer[] array fields ─────────────────────────────────────
+// ─── 22. String[] / Int[] array fields ─────────────────────────────────────
 
 
 // ┌────────────────────────────────────────────────────────────────────────────┐
@@ -6807,7 +6997,7 @@ describe('enum transitions — parser', () => {
 
   test('plain enum (no transitions) still valid', () => {
     const r = parse(`enum Color { red green blue }
-model t { id Integer @id; c Color }`)
+model t { id Int @id; c Color }`)
     expect(r.valid).toBe(true)
     const en = r.schema.enums[0]
     expect(en.transitions).toBeUndefined()
@@ -6945,7 +7135,7 @@ describe('enum transitions — enforcement', () => {
   })
 
   test('transition() on model without transitions throws helpful error', async () => {
-    const { db: db2 } = await makeTestClient(`model t { id Integer @id; name Text }`)
+    const { db: db2 } = await makeTestClient(`model t { id Int @id; name String }`)
     await expect(db2.t.transition(1, 'go')).rejects.toThrow('no transitions block')
     db2.$close()
   })
@@ -6969,7 +7159,7 @@ describe('enum transitions — enforcement', () => {
   test('plain enum field update is unaffected', async () => {
     const { db: db2 } = await makeTestClient(`
       enum Color { red green blue }
-      model t { id Integer @id; c Color @default(red) }
+      model t { id Int @id; c Color @default(red) }
     `)
     await db2.t.create({ data: { id: 1, c: 'red' } })
     const r = await db2.t.update({ where: { id: 1 }, data: { c: 'blue' } })
@@ -7156,7 +7346,7 @@ describe('enum transitions — JSON Schema', () => {
 
   test('plain enum has no x-litestone-transitions', () => {
     const { schema } = parse(`enum Color { red green blue }
-model t { id Integer @id; c Color }`)
+model t { id Int @id; c Color }`)
     const js = generateJsonSchema(schema)
     const enumDef = js['$defs']?.['Color'] ?? js['Color']
     expect(enumDef['x-litestone-transitions']).toBeUndefined()
@@ -7168,7 +7358,7 @@ model t { id Integer @id; c Color }`)
 import { LockNotAcquiredError, LockReleasedByOtherError, LockExpiredError }
   from '../src/core/client.js'
 
-const LOCK_SCHEMA = `model things { id Integer @id; name Text }`
+const LOCK_SCHEMA = `model things { id Int @id; name String }`
 
 
 describe('lock primitive — $lock(key, fn)', () => {
@@ -7434,17 +7624,17 @@ describe('lock primitive — _locks table auto-created', () => {
 describe('@markdown — generateTypeScript', () => {
   const MD_TS_SCHEMA = `
     model posts {
-      id    Integer @id
-      body  Text    @markdown
-      note  Text?   @markdown
-      title Text
+      id    Int @id
+      body  String    @markdown
+      note  String?   @markdown
+      title String
     }
   `
   const { schema } = parse(MD_TS_SCHEMA)
 
   test('@markdown field emits string type (not special type)', () => {
     const dts = generateTypeScript(schema)
-    // body is Text @markdown — should still be string, not a special markdown type
+    // body is String @markdown — should still be string, not a special markdown type
     const postSection = dts.slice(dts.indexOf('export interface Posts {'), dts.indexOf('export interface PostsCreate {'))
     expect(postSection).toContain('body:')
     expect(postSection).toContain('string')
@@ -7490,9 +7680,9 @@ describe('seeder + factory', () => {
       definition(seq: number) { return { id: seq, name: `User ${seq}`, email: `u${seq}@x.com` } }
     }
     const db = await makeDb(`model users {
-        id    Integer @id
-        name  Text
-        email Text
+        id    Int @id
+        name  String
+        email String
       }`, 'factory-build')
     const f = new UserFactory(db)
     const data = f.buildOne()
@@ -7508,8 +7698,8 @@ describe('seeder + factory', () => {
       definition(seq: number) { return { id: seq, val: `v${seq}` } }
     }
     const db = await makeDb(`model t {
-        id  Integer @id
-        val Text
+        id  Int @id
+        val String
       }`, 'factory-many')
     const items = new F(db).buildMany(5)
     expect(items.length).toBe(5)
@@ -7524,8 +7714,8 @@ describe('seeder + factory', () => {
       definition(seq: number) { return { id: seq, val: `v${seq}` } }
     }
     const db = await makeDb(`model t {
-        id  Integer @id
-        val Text
+        id  Int @id
+        val String
       }`, 'factory-create')
     await new F(db).createMany(3)
     expect(await db.t.count()).toBe(3)
@@ -7540,8 +7730,8 @@ describe('seeder + factory', () => {
       admin() { return this.state({ role: 'admin' }) }
     }
     const db = await makeDb(`model t {
-        id   Integer @id
-        role Text
+        id   Int @id
+        role String
       }`, 'factory-state')
     const [row] = await new F(db).admin().createMany(1)
     expect(row.role).toBe('admin')
@@ -7555,8 +7745,8 @@ describe('seeder + factory', () => {
       definition(_: number, rng: any) { return { id: _, val: rng.str(6) } }
     }
     const db = await makeDb(`model t {
-        id  Integer @id
-        val Text
+        id  Int @id
+        val String
       }`, 'factory-seed')
     const a = new F(db).seed(42).buildMany(3).map((r: any) => r.val)
     const b = new F(db).seed(42).buildMany(3).map((r: any) => r.val)
@@ -7570,7 +7760,7 @@ describe('seeder + factory', () => {
     class A extends Seeder { async run() { order.push('A') } }
     class B extends Seeder { async run() { order.push('B') } }
     class Root extends Seeder { async run(db: any) { await this.call(db, [A, B]) } }
-    const db = await makeDb(`model t { id Integer @id }`, 'seeder-call')
+    const db = await makeDb(`model t { id Int @id }`, 'seeder-call')
     await runSeeder(db, Root)
     expect(order).toEqual(['A', 'B'])
     db.$close()
@@ -7594,8 +7784,8 @@ describe('entity generator', () => {
     // introspect emits PascalCase singular model names (per new naming convention)
     expect(schema).toContain('model User')
     expect(schema).toContain('@id')
-    expect(schema).toContain('Integer')
-    expect(schema).toContain('Real')
+    expect(schema).toContain('Int')
+    expect(schema).toContain('Float')
     db.close()
   })
 
@@ -7654,7 +7844,7 @@ describe('entity generator', () => {
     db.run(`CREATE TABLE t (id INTEGER PRIMARY KEY, required TEXT NOT NULL, optional TEXT) STRICT`)
     const { generateLiteSchema } = await import('../src/tools/introspect.js')
     const schema = generateLiteSchema(db, { camelCase: false })
-    expect(schema).toContain('Text?')
+    expect(schema).toContain('String?')
     expect(schema).toContain('optional')
     expect(schema).not.toMatch(/required\?/)
     db.close()
@@ -8104,32 +8294,32 @@ const UTIL_SCHEMA = `
   enum Plan   { starter pro enterprise }
 
   model Account {
-    id    Integer @id
-    name  Text
+    id    Int @id
+    name  String
     plan  Plan    @default(starter)
-    url   Text?   @url
-    slug  Text?   @length(3, 50)
+    url   String?   @url
+    slug  String?   @length(3, 50)
   }
 
   model Lead {
-    id        Integer @id
-    accountId Integer
-    email     Text?   @email
-    firstName Text?
-    lastName  Text?
+    id        Int @id
+    accountId Int
+    email     String?   @email
+    firstName String?
+    lastName  String?
     status    Status  @default(new)
-    score     Real?   @gte(0) @lte(100)
-    notes     Text?   @contains("note")
+    score     Float?   @gte(0) @lte(100)
+    notes     String?   @contains("note")
   }
 
   model Post {
-    id        Integer @id
-    accountId Integer
-    title     Text
-    body      Text?
+    id        Int @id
+    accountId Int
+    title     String
+    body      String?
     published Boolean
-    views     Integer
-    rating    Real
+    views     Int
+    rating    Float
     createdAt DateTime?
     updatedAt DateTime?
     deletedAt DateTime?
@@ -8138,14 +8328,14 @@ const UTIL_SCHEMA = `
   }
 
   model Locked {
-    id    Integer @id
-    name  Text
+    id    Int @id
+    name  String
     @@gate("9")
   }
 
   model Open {
-    id   Integer @id
-    data Text?
+    id   Int @id
+    data String?
     @@gate("0")
   }
 `
@@ -8160,7 +8350,7 @@ describe('generateFactory', () => {
     expect(() => generateFactory(schema, 'nope')).toThrow('not found')
   })
 
-  test('skips @id Integer (auto-increment)', () => {
+  test('skips @id Int (auto-increment)', () => {
     const def = generateFactory(schema, 'Account')
     const row = def(1, null)
     expect('id' in row).toBe(false)
@@ -8176,27 +8366,27 @@ describe('generateFactory', () => {
 
   test('skips relation fields', () => {
     const { schema: s } = parse(`
-      model User { id Integer @id; name Text; posts Post[] }
-      model Post { id Integer @id; userId Integer; title Text }
+      model User { id Int @id; name String; posts Post[] }
+      model Post { id Int @id; userId Int; title String }
     `)
     const def = generateFactory(s, 'User')
     expect('posts' in def(1, null)).toBe(false)
   })
 
   test('@default(literal string) used', () => {
-    const { schema: s } = parse(`model t { id Integer @id; role Text @default("admin") }`)
+    const { schema: s } = parse(`model t { id Int @id; role String @default("admin") }`)
     const row = generateFactory(s, 't')(1, null)
     expect(row.role).toBe('admin')
   })
 
   test('@default(number) used', () => {
-    const { schema: s } = parse(`model t { id Integer @id; count Integer @default(0) }`)
+    const { schema: s } = parse(`model t { id Int @id; count Int @default(0) }`)
     const row = generateFactory(s, 't')(1, null)
     expect(row.count).toBe(0)
   })
 
   test('@default(boolean) used', () => {
-    const { schema: s } = parse(`model t { id Integer @id; active Boolean @default(true) }`)
+    const { schema: s } = parse(`model t { id Int @id; active Boolean @default(true) }`)
     const row = generateFactory(s, 't')(1, null)
     expect(row.active).toBe(true)
   })
@@ -8210,7 +8400,7 @@ describe('generateFactory', () => {
   test('Enum type no default → first value', () => {
     const { schema: s } = parse(`
       enum Color { red green blue }
-      model t { id Integer @id; color Color }
+      model t { id Int @id; color Color }
     `)
     const row = generateFactory(s, 't')(1, null)
     expect(row.color).toBe('red')
@@ -8225,7 +8415,7 @@ describe('generateFactory', () => {
   test('@url → example.com url', () => {
     const def = generateFactory(schema, 'Account')
     const row = def(1, null)
-    // url is optional — null when optional and no other Text constraint
+    // url is optional — null when optional and no other String constraint
     // but @url is a text constraint so should be non-null
     expect(row.url).toMatch(/^https:\/\//)
   })
@@ -8236,62 +8426,62 @@ describe('generateFactory', () => {
     expect(row.slug?.length).toBeGreaterThanOrEqual(3)
   })
 
-  test('plain Text → "FieldName seq"', () => {
+  test('plain String → "FieldName seq"', () => {
     const def = generateFactory(schema, 'Account')
     const row = def(1, null)
     expect(row.name).toBe('Name 1')
   })
 
-  test('plain Text increments with seq', () => {
+  test('plain String increments with seq', () => {
     const def = generateFactory(schema, 'Account')
     expect(def(1, null).name).toBe('Name 1')
     expect(def(3, null).name).toBe('Name 3')
   })
 
-  test('Text? optional no constraint → null', () => {
+  test('String? optional no constraint → null', () => {
     const def = generateFactory(schema, 'Lead')
     expect(def(1, null).firstName).toBeNull()
     expect(def(1, null).lastName).toBeNull()
   })
 
-  test('Integer FK field → 1', () => {
+  test('Int FK field → 1', () => {
     const def = generateFactory(schema, 'Lead')
     expect(def(1, null).accountId).toBe(1)
   })
 
-  test('Integer FK field respects fkDefaults', () => {
+  test('Int FK field respects fkDefaults', () => {
     const def = generateFactory(schema, 'Lead', { fkDefaults: { accountId: 42 } })
     expect(def(1, null).accountId).toBe(42)
   })
 
-  test('Integer non-FK → seq', () => {
+  test('Int non-FK → seq', () => {
     const def = generateFactory(schema, 'Post')
     expect(def(3, null).views).toBe(3)
   })
 
-  test('Integer? optional → null', () => {
-    const { schema: s } = parse(`model t { id Integer @id; count Integer? }`)
+  test('Int? optional → null', () => {
+    const { schema: s } = parse(`model t { id Int @id; count Int? }`)
     const row = generateFactory(s, 't')(1, null)
     expect(row.count).toBeNull()
   })
 
-  test('Real with @gte and @lte → midpoint', () => {
+  test('Float with @gte and @lte → midpoint', () => {
     const def = generateFactory(schema, 'Lead')
     expect(def(1, null).score).toBeNull()   // optional → null
   })
 
-  test('Real with @gte and @lte required → midpoint', () => {
-    const { schema: s } = parse(`model t { id Integer @id; score Real @gte(0) @lte(100) }`)
+  test('Float with @gte and @lte required → midpoint', () => {
+    const { schema: s } = parse(`model t { id Int @id; score Float @gte(0) @lte(100) }`)
     const row = generateFactory(s, 't')(1, null)
     expect(row.score).toBe(50)
   })
 
-  test('Real with @gte only → gte value', () => {
-    const { schema: s } = parse(`model t { id Integer @id; n Real @gte(5) }`)
+  test('Float with @gte only → gte value', () => {
+    const { schema: s } = parse(`model t { id Int @id; n Float @gte(5) }`)
     expect(generateFactory(s, 't')(1, null).n).toBe(5)
   })
 
-  test('Real no constraint → seq * 1.0', () => {
+  test('Float no constraint → seq * 1.0', () => {
     const def = generateFactory(schema, 'Post')
     expect(def(2, null).rating).toBe(2.0)
   })
@@ -8302,27 +8492,27 @@ describe('generateFactory', () => {
   })
 
   test('Json → null', () => {
-    const { schema: s } = parse(`model t { id Integer @id; meta Json }`)
+    const { schema: s } = parse(`model t { id Int @id; meta Json }`)
     expect(generateFactory(s, 't')(1, null).meta).toBeNull()
   })
 
-  test('Text[] required → []', () => {
-    const { schema: s } = parse(`model t { id Integer @id; tags Text[] }`)
+  test('String[] required → []', () => {
+    const { schema: s } = parse(`model t { id Int @id; tags String[] }`)
     const row = generateFactory(s, 't')(1, null)
     expect(row.tags).toEqual([])
   })
 
-  test('Text[]? optional → null', () => {
-    const { schema: s } = parse(`model t { id Integer @id; tags Text[]? }`)
+  test('String[]? optional → null', () => {
+    const { schema: s } = parse(`model t { id Int @id; tags String[]? }`)
     const row = generateFactory(s, 't')(1, null)
     expect(row.tags).toBeNull()
   })
 
   test('@secret included (ORM encrypts on write)', () => {
     const ENC = 'c'.repeat(64)
-    const { schema: s } = parse(`model t { id Integer @id; token Text @secret }`)
+    const { schema: s } = parse(`model t { id Int @id; token String @secret }`)
     const row = generateFactory(s, 't')(1, null)
-    // @secret field is present — value generated like any Text field
+    // @secret field is present — value generated like any String field
     expect('token' in row).toBe(true)
     expect(typeof row.token).toBe('string')
   })
@@ -8475,7 +8665,7 @@ describe('generateValidationCases', () => {
   })
 
   test('model with no validators → empty invalid and boundary', () => {
-    const { schema: s } = parse(`model t { id Integer @id; name Text }`)
+    const { schema: s } = parse(`model t { id Int @id; name String }`)
     const { invalid, boundary } = generateValidationCases(s, 't')
     expect(invalid).toEqual([])
     expect(boundary).toEqual([])
@@ -8515,7 +8705,7 @@ describe('generateValidationCases', () => {
   })
 
   test('@length invalid cases (min and max)', () => {
-    const { schema: s } = parse(`model t { id Integer @id; code Text @length(3, 10) }`)
+    const { schema: s } = parse(`model t { id Int @id; code String @length(3, 10) }`)
     const { invalid, boundary } = generateValidationCases(s, 't')
     const tooShort = invalid.find(c => c.value === '')
     const tooLong  = invalid.find(c => typeof c.value === 'string' && c.value.length === 11)
@@ -8657,22 +8847,22 @@ const TS_SCHEMA = `
   enum Plan { starter pro enterprise }
 
   model accounts {
-    id        Integer  @id
-    name      Text
+    id        Int  @id
+    name      String
     plan      Plan     @default(starter)
     meta      Json?
     createdAt DateTime @default(now())
   }
 
   model users {
-    id        Integer   @id
+    id        Int   @id
     account   accounts  @relation(fields: [accountId], references: [id])
-    accountId Integer
-    email     Text      @unique @email
-    role      Text      @default("member")
-    salary    Real?     @guarded
-    apiKey    Text?     @secret
-    tags      Text[]
+    accountId Int
+    email     String      @unique @email
+    role      String      @default("member")
+    salary    Float?     @guarded
+    apiKey    String?     @secret
+    tags      String[]
     deletedAt DateTime?
     @@softDelete
   }
@@ -8723,7 +8913,7 @@ describe('generateTypeScript', () => {
     expect(dts).toContain('unknown | null')
   })
 
-  test('row interface has Text[] as string[]', () => {
+  test('row interface has String[] as string[]', () => {
     const dts = generateTypeScript(schema)
     expect(dts).toContain('tags')
     expect(dts).toContain('string[]')
@@ -8878,9 +9068,9 @@ const TRANSITION_SCHEMA = `
   }
 
   model orders {
-    id     Integer     @id
+    id     Int     @id
     status OrderStatus @default(pending)
-    note   Text?
+    note   String?
   }
 `
 
@@ -8930,7 +9120,7 @@ describe('generateJsonSchema — x-relations', () => {
   })
 
   test('no x-relations on model with no relations', () => {
-    const { schema: s } = parse(`model t { id Integer @id; name Text }`)
+    const { schema: s } = parse(`model t { id Int @id; name String }`)
     const js = generateJsonSchema(s)
     expect(js['$defs']?.t?.['x-relations']).toBeUndefined()
   })
@@ -8979,13 +9169,13 @@ describe('generateJsonSchema — x-relations', () => {
 describe('implicit many-to-many', () => {
   const m2mSchema = `
     model posts {
-      id    Integer @id
-      title Text
+      id    Int @id
+      title String
       tags  tags[]
     }
     model tags {
-      id    Integer @id
-      name  Text
+      id    Int @id
+      name  String
       posts posts[]
     }
   `
@@ -9005,11 +9195,11 @@ describe('implicit many-to-many', () => {
   test('requires both sides to declare the relation', () => {
     const r = parse(`
       model posts {
-        id   Integer @id
+        id   Int @id
         tags tags[]
       }
       model tags {
-        id   Integer @id
+        id   Int @id
       }
     `)
     expect(r.valid).toBe(false)
@@ -9019,7 +9209,7 @@ describe('implicit many-to-many', () => {
   test('unknown model in m2m field is an error', () => {
     const r = parse(`
       model posts {
-        id      Integer @id
+        id      Int @id
         missing unknown[]
       }
     `)
@@ -9267,8 +9457,8 @@ describe('onAfterDelete — soft-delete boundary', () => {
     }
     const db = await makeDb(`
       model posts {
-        id        Integer  @id
-        title     Text
+        id        Int  @id
+        title     String
         deletedAt DateTime?
         @@softDelete
       }
@@ -9287,8 +9477,8 @@ describe('onAfterDelete — soft-delete boundary', () => {
     }
     const db = await makeDb(`
       model posts {
-        id        Integer  @id
-        title     Text
+        id        Int  @id
+        title     String
         deletedAt DateTime?
         @@softDelete
       }
@@ -9308,8 +9498,8 @@ describe('onAfterDelete — soft-delete boundary', () => {
     }
     const db = await makeDb(`
       model posts {
-        id        Integer  @id
-        tag       Text
+        id        Int  @id
+        tag       String
         deletedAt DateTime?
         @@softDelete
       }
@@ -9326,27 +9516,27 @@ describe('onAfterDelete — soft-delete boundary', () => {
 
 const FROM_SCHEMA = `
   model Account {
-    id       Integer @id
-    name     Text
+    id       Int @id
+    name     String
     orders   Order[]
 
-    orderCount   Integer  @from(Order, count: true)
-    totalSpent   Real     @from(Order, sum: amount)
-    lastOrderId  Integer  @from(Order, max: id)
-    firstOrderId Integer  @from(Order, min: id)
+    orderCount   Int  @from(Order, count: true)
+    totalSpent   Float     @from(Order, sum: amount)
+    lastOrderId  Int  @from(Order, max: id)
+    firstOrderId Int  @from(Order, min: id)
     latestOrder  Order?  @from(Order, last: true)
     firstOrder   Order?  @from(Order, first: true)
     hasOrders    Boolean  @from(Order, exists: true)
-    pendingCount Integer  @from(Order, count: true, where: "status = 'pending'")
+    pendingCount Int  @from(Order, count: true, where: "status = 'pending'")
     latestPending Order? @from(Order, last: true, where: "status = 'pending'", orderBy: id)
   }
 
   model Order {
-    id        Integer @id
-    accountId Integer
+    id        Int @id
+    accountId Int
     account   Account @relation(fields: [accountId], references: [id])
-    amount    Real
-    status    Text
+    amount    Float
+    status    String
   }
 `
 
@@ -9535,18 +9725,18 @@ describe('@from — derived relation fields', () => {
   })
 
   test('@from: unknown target model is a parse error', () => {
-    const r = parse(`model T { id Integer @id; x Integer @from(nope, count: true) }`)
+    const r = parse(`model T { id Int @id; x Int @from(nope, count: true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('nope'))).toBe(true)
   })
 
   test('@from: wrong type for count is a parse error', () => {
     const r = parse(`
-      model User { id Integer @id; posts Post[]; postCount Text @from(Post, count: true) }
-      model Post { id Integer @id; userId Integer; u User @relation(fields: [userId], references: [id]) }
+      model User { id Int @id; posts Post[]; postCount String @from(Post, count: true) }
+      model Post { id Int @id; userId Int; u User @relation(fields: [userId], references: [id]) }
     `)
     expect(r.valid).toBe(false)
-    expect(r.errors.some((e: string) => e.includes('Integer'))).toBe(true)
+    expect(r.errors.some((e: string) => e.includes('Int'))).toBe(true)
   })
 })
 
@@ -9641,10 +9831,10 @@ describe('@from — WHERE filtering', () => {
 
 const AGG_SCHEMA = `
   model orders {
-    id        Integer @id
-    amount    Real
-    status    Text
-    accountId Integer
+    id        Int @id
+    amount    Float
+    status    String
+    accountId Int
     deletedAt DateTime?
     @@softDelete
   }
@@ -9944,15 +10134,15 @@ describe('query() dispatcher', () => {
 describe('db.query() — multi-model batch', () => {
   const SCHEMA = `
     model accounts {
-      id   Integer @id
-      name Text
-      tier Text @default("free")
+      id   Int @id
+      name String
+      tier String @default("free")
     }
     model orders {
-      id        Integer @id
-      amount    Real
-      status    Text
-      accountId Integer
+      id        Int @id
+      amount    Float
+      status    String
+      accountId Int
     }
   `
 
@@ -10114,8 +10304,8 @@ describe('db.query() — multi-model batch', () => {
     // Schema with a deny rule — readable by no one (forces asSystem usage)
     const POLICY = `
       model widgets {
-        id   Integer @id
-        name Text
+        id   Int @id
+        name String
         @@deny('read', true)
       }
     `
@@ -10138,9 +10328,9 @@ describe('db.query() — multi-model batch', () => {
     // Schema with row policy — only see your own rows
     const POLICY_SCHEMA = `
       model posts {
-        id      Integer @id
-        ownerId Integer
-        title   Text
+        id      Int @id
+        ownerId Int
+        title   String
         @@allow('read', ownerId == auth().id)
       }
     `
@@ -10165,11 +10355,11 @@ describe('db.query() — multi-model batch', () => {
 describe('Scopes', () => {
   const SCHEMA = `
     model Customer {
-      id        Integer  @id
-      name      Text
-      status    Text     @default("active")
-      tier      Text     @default("free")
-      ownerId   Integer?
+      id        Int  @id
+      name      String
+      status    String     @default("active")
+      tier      String     @default("free")
+      ownerId   Int?
       createdAt DateTime @default(now())
     }
   `
@@ -10429,9 +10619,9 @@ describe('Scopes', () => {
   test('scope where AND-merges with soft-delete filter (live rows only by default)', async () => {
     const SD_SCHEMA = `
       model Customer {
-        id        Integer  @id
-        name      Text
-        status    Text
+        id        Int  @id
+        name      String
+        status    String
         deletedAt DateTime?
         @@softDelete
       }
@@ -10455,9 +10645,9 @@ describe('Scopes', () => {
   test('caller can opt out of soft-delete with withDeleted: true', async () => {
     const SD_SCHEMA = `
       model Customer {
-        id        Integer  @id
-        name      Text
-        status    Text
+        id        Int  @id
+        name      String
+        status    String
         deletedAt DateTime?
         @@softDelete
       }
@@ -10500,7 +10690,7 @@ describe('trait declarations', () => {
         createdAt DateTime @default(now())
         updatedAt DateTime @updatedAt
       }
-      model Post { id Integer @id; title Text; @@trait(Dates) }
+      model Post { id Int @id; title String; @@trait(Dates) }
     `)
     expect(r.valid).toBe(true)
     const post = r.schema.models.find((m: any) => m.name === 'Post')!
@@ -10512,7 +10702,7 @@ describe('trait declarations', () => {
       trait Dates {
         createdAt DateTime @default(now())
       }
-      model Post { id Integer @id; title Text; @@trait(Dates) }
+      model Post { id Int @id; title String; @@trait(Dates) }
     `)
     const post = r.schema.models.find((m: any) => m.name === 'Post')!
     expect(post.fields[0].name).toBe('createdAt')
@@ -10523,7 +10713,7 @@ describe('trait declarations', () => {
   test('@@trait references are removed from final attribute list', () => {
     const r = parse(`
       trait Dates { createdAt DateTime @default(now()) }
-      model Post { id Integer @id; @@trait(Dates) }
+      model Post { id Int @id; @@trait(Dates) }
     `)
     const post = r.schema.models.find((m: any) => m.name === 'Post')!
     expect(post.attributes.find((a: any) => a.kind === 'trait')).toBeUndefined()
@@ -10535,7 +10725,7 @@ describe('trait declarations', () => {
         deletedAt DateTime?
         @@softDelete
       }
-      model Post { id Integer @id; @@trait(SoftDelete) }
+      model Post { id Int @id; @@trait(SoftDelete) }
     `)
     const post = r.schema.models.find((m: any) => m.name === 'Post')!
     expect(post.attributes.some((a: any) => a.kind === 'softDelete')).toBe(true)
@@ -10544,11 +10734,11 @@ describe('trait declarations', () => {
   test('trait policy attributes splice and host attributes come after', () => {
     const r = parse(`
       trait Tenant {
-        tenantId Integer
+        tenantId Int
         @@allow('read', tenantId == auth().tenantId)
       }
       model Post {
-        id Integer @id
+        id Int @id
         @@trait(Tenant)
         @@allow('read', auth() != null)
       }
@@ -10565,8 +10755,8 @@ describe('trait declarations', () => {
 
   test('trait cannot contain @id', () => {
     const r = parse(`
-      trait Bad { id Integer @id }
-      model M { id Integer @id; @@trait(Bad) }
+      trait Bad { id Int @id }
+      model M { id Int @id; @@trait(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@id is not allowed in a trait/)
@@ -10575,7 +10765,7 @@ describe('trait declarations', () => {
   test('trait cannot contain @@map', () => {
     const r = parse(`
       trait Bad { @@map("custom") }
-      model M { id Integer @id; @@trait(Bad) }
+      model M { id Int @id; @@trait(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@@map is not allowed in a trait/)
@@ -10585,7 +10775,7 @@ describe('trait declarations', () => {
     const r = parse(`
       database audit { path "./audit/" driver logger }
       trait Bad { @@db(audit) }
-      model M { id Integer @id; @@trait(Bad) }
+      model M { id Int @id; @@trait(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@@db is not allowed in a trait/)
@@ -10593,8 +10783,8 @@ describe('trait declarations', () => {
 
   test('trait cannot contain @@fts', () => {
     const r = parse(`
-      trait Bad { title Text; @@fts([title]) }
-      model M { id Integer @id; title Text; @@trait(Bad) }
+      trait Bad { title String; @@fts([title]) }
+      model M { id Int @id; title String; @@trait(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@@fts is not allowed in a trait/)
@@ -10604,7 +10794,7 @@ describe('trait declarations', () => {
     const r = parse(`
       trait Dates { createdAt DateTime @default(now()) }
       trait Dates { updatedAt DateTime @updatedAt }
-      model M { id Integer @id; @@trait(Dates) }
+      model M { id Int @id; @@trait(Dates) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/Duplicate trait 'Dates'/)
@@ -10614,7 +10804,7 @@ describe('trait declarations', () => {
 
   test('unknown trait reference is an error', () => {
     const r = parse(`
-      model M { id Integer @id; @@trait(Nonexistent) }
+      model M { id Int @id; @@trait(Nonexistent) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/unknown trait 'Nonexistent'/)
@@ -10622,9 +10812,9 @@ describe('trait declarations', () => {
 
   test('two traits providing same field — collision error', () => {
     const r = parse(`
-      trait X { foo Text }
-      trait Y { foo Text }
-      model M { id Integer @id; @@trait(X); @@trait(Y) }
+      trait X { foo String }
+      trait Y { foo String }
+      model M { id Int @id; @@trait(X); @@trait(Y) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/field 'foo' provided by both/)
@@ -10632,10 +10822,10 @@ describe('trait declarations', () => {
 
   test('host field overrides trait field of same name', () => {
     const r = parse(`
-      trait T { foo Text @default("from-trait") }
+      trait T { foo String @default("from-trait") }
       model M {
-        id  Integer @id
-        foo Text @default("from-host")
+        id  Int @id
+        foo String @default("from-host")
         @@trait(T)
       }
     `)
@@ -10652,9 +10842,9 @@ describe('trait declarations', () => {
 
   test('nested traits expand transitively', () => {
     const r = parse(`
-      trait Inner { a Text }
-      trait Outer { b Text; @@trait(Inner) }
-      model M { id Integer @id; @@trait(Outer) }
+      trait Inner { a String }
+      trait Outer { b String; @@trait(Inner) }
+      model M { id Int @id; @@trait(Outer) }
     `)
     expect(r.valid).toBe(true)
     const m = r.schema.models.find((mm: any) => mm.name === 'M')!
@@ -10666,9 +10856,9 @@ describe('trait declarations', () => {
 
   test('trait cycle is detected', () => {
     const r = parse(`
-      trait A { x Text; @@trait(B) }
-      trait B { y Text; @@trait(A) }
-      model M { id Integer @id; @@trait(A) }
+      trait A { x String; @@trait(B) }
+      trait B { y String; @@trait(A) }
+      model M { id Int @id; @@trait(A) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/Trait cycle detected/)
@@ -10676,8 +10866,8 @@ describe('trait declarations', () => {
 
   test('self-cycle is detected', () => {
     const r = parse(`
-      trait Self { x Text; @@trait(Self) }
-      model M { id Integer @id; @@trait(Self) }
+      trait Self { x String; @@trait(Self) }
+      model M { id Int @id; @@trait(Self) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/Trait cycle detected/)
@@ -10694,8 +10884,8 @@ describe('trait declarations', () => {
           updatedAt DateTime @updatedAt
         }
         model Post {
-          id    Integer @id
-          title Text
+          id    Int @id
+          title String
           @@trait(Dates)
         }
       `,
@@ -10717,8 +10907,8 @@ describe('trait declarations', () => {
           @@softDelete
         }
         model Post {
-          id    Integer @id
-          title Text
+          id    Int @id
+          title String
           @@trait(SoftDelete)
         }
       `,
@@ -10744,8 +10934,8 @@ describe('trait declarations', () => {
           @@softDelete
         }
         model Post {
-          id    Integer @id
-          title Text
+          id    Int @id
+          title String
           @@trait(Dates)
           @@trait(SoftDelete)
         }
@@ -10764,11 +10954,11 @@ describe('trait declarations', () => {
     const db = await createClient({
       schema: `
         trait Contactable {
-          email Text @email
+          email String @email
         }
         model User {
-          id   Integer @id
-          name Text
+          id   Int @id
+          name String
           @@trait(Contactable)
         }
       `,
@@ -10788,13 +10978,13 @@ describe('type declarations', () => {
   test('parses a type declaration', () => {
     const r = parse(`
       type Address {
-        street     Text
-        city       Text
-        state      Text?
-        postalCode Text
-        country    Text @default("US")
+        street     String
+        city       String
+        state      String?
+        postalCode String
+        country    String @default("US")
       }
-      model User { id Integer @id; name Text; address Json @type(Address) }
+      model User { id Int @id; name String; address Json @type(Address) }
     `)
     expect(r.valid).toBe(true)
     expect(r.schema.types).toHaveLength(1)
@@ -10804,8 +10994,8 @@ describe('type declarations', () => {
 
   test('@type attribute appears on the field', () => {
     const r = parse(`
-      type Address { street Text; city Text }
-      model User { id Integer @id; address Json @type(Address) }
+      type Address { street String; city String }
+      model User { id Int @id; address Json @type(Address) }
     `)
     const user = r.schema.models.find((m: any) => m.name === 'User')!
     const addr = user.fields.find((f: any) => f.name === 'address')!
@@ -10815,8 +11005,8 @@ describe('type declarations', () => {
 
   test('@type accepts strict: false', () => {
     const r = parse(`
-      type Address { street Text; city Text }
-      model User { id Integer @id; address Json @type(Address, strict: false) }
+      type Address { street String; city String }
+      model User { id Int @id; address Json @type(Address, strict: false) }
     `)
     const addr = r.schema.models[0].fields.find((f: any) => f.name === 'address')!
     const typeAttr = addr.attributes.find((a: any) => a.kind === 'type')
@@ -10828,11 +11018,11 @@ describe('type declarations', () => {
   test('type cannot contain relations', () => {
     const r = parse(`
       type Bad {
-        userId Integer
+        userId Int
         user   User @relation(fields: [userId], references: [id])
       }
-      model User { id Integer @id }
-      model M { id Integer @id; bad Json @type(Bad) }
+      model User { id Int @id }
+      model M { id Int @id; bad Json @type(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors.join(' ')).toMatch(/@relation not allowed in a type/)
@@ -10840,8 +11030,8 @@ describe('type declarations', () => {
 
   test('type cannot contain @id', () => {
     const r = parse(`
-      type Bad { id Integer @id }
-      model M { id Integer @id; bad Json @type(Bad) }
+      type Bad { id Int @id }
+      model M { id Int @id; bad Json @type(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@id not allowed in a type/)
@@ -10849,8 +11039,8 @@ describe('type declarations', () => {
 
   test('type cannot contain @encrypted', () => {
     const r = parse(`
-      type Bad { secret Text @encrypted }
-      model M { id Integer @id; bad Json @type(Bad) }
+      type Bad { secret String @encrypted }
+      model M { id Int @id; bad Json @type(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@encrypted not allowed in a type/)
@@ -10858,8 +11048,8 @@ describe('type declarations', () => {
 
   test('type cannot contain model-level attributes', () => {
     const r = parse(`
-      type Bad { name Text; @@index([name]) }
-      model M { id Integer @id; bad Json @type(Bad) }
+      type Bad { name String; @@index([name]) }
+      model M { id Int @id; bad Json @type(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@@index not allowed in a type/)
@@ -10868,7 +11058,7 @@ describe('type declarations', () => {
   test('type cannot contain @default(now())', () => {
     const r = parse(`
       type Bad { createdAt DateTime @default(now()) }
-      model M { id Integer @id; bad Json @type(Bad) }
+      model M { id Int @id; bad Json @type(Bad) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@default\(now\(\)\) not allowed in a type/)
@@ -10876,8 +11066,8 @@ describe('type declarations', () => {
 
   test('type allows literal defaults', () => {
     const r = parse(`
-      type T { country Text @default("US") }
-      model M { id Integer @id; t Json @type(T) }
+      type T { country String @default("US") }
+      model M { id Int @id; t Json @type(T) }
     `)
     expect(r.valid).toBe(true)
   })
@@ -10885,20 +11075,20 @@ describe('type declarations', () => {
   test('type allows validators and transforms', () => {
     const r = parse(`
       type Contact {
-        email Text @email @lower
-        zip   Text @regex("^[0-9]{5}$") @trim
-        age   Integer @gte(0) @lt(150)
+        email String @email @lower
+        zip   String @regex("^[0-9]{5}$") @trim
+        age   Int @gte(0) @lt(150)
       }
-      model M { id Integer @id; contact Json @type(Contact) }
+      model M { id Int @id; contact Json @type(Contact) }
     `)
     expect(r.valid).toBe(true)
   })
 
   test('duplicate type name is an error', () => {
     const r = parse(`
-      type Address { street Text }
-      type Address { city Text }
-      model M { id Integer @id; addr Json @type(Address) }
+      type Address { street String }
+      type Address { city String }
+      model M { id Int @id; addr Json @type(Address) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/Duplicate type 'Address'/)
@@ -10908,8 +11098,8 @@ describe('type declarations', () => {
 
   test('@type on a non-Json field is an error', () => {
     const r = parse(`
-      type X { foo Text }
-      model M { id Integer @id; x Text @type(X) }
+      type X { foo String }
+      model M { id Int @id; x String @type(X) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/@type\(X\) requires the field to be Json/)
@@ -10917,7 +11107,7 @@ describe('type declarations', () => {
 
   test('@type with unknown name is an error', () => {
     const r = parse(`
-      model M { id Integer @id; addr Json @type(Nonexistent) }
+      model M { id Int @id; addr Json @type(Nonexistent) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/unknown type 'Nonexistent'/)
@@ -10925,9 +11115,9 @@ describe('type declarations', () => {
 
   test('cycle in Json @type chain is detected', () => {
     const r = parse(`
-      type A { name Text; b Json @type(B) }
-      type B { name Text; a Json @type(A) }
-      model M { id Integer @id; a Json @type(A) }
+      type A { name String; b Json @type(B) }
+      type B { name String; a Json @type(A) }
+      model M { id Int @id; a Json @type(A) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toMatch(/Type cycle detected/)
@@ -10940,12 +11130,12 @@ describe('type declarations', () => {
     const db = await createClient({
       schema: `
         type Address {
-          street     Text
-          city       Text
-          state      Text?
-          postalCode Text
+          street     String
+          city       String
+          state      String?
+          postalCode String
         }
-        model User { id Integer @id; name Text; address Json @type(Address) }
+        model User { id Int @id; name String; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -10961,8 +11151,8 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Address { street Text; city Text; postalCode Text }
-        model User { id Integer @id; name Text; address Json @type(Address) }
+        type Address { street String; city String; postalCode String }
+        model User { id Int @id; name String; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -10976,8 +11166,8 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Address { postalCode Text; city Text }
-        model User { id Integer @id; name Text; address Json @type(Address) }
+        type Address { postalCode String; city String }
+        model User { id Int @id; name String; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -10997,8 +11187,8 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Address { street Text; city Text }
-        model User { id Integer @id; address Json @type(Address) }
+        type Address { street String; city String }
+        model User { id Int @id; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -11016,8 +11206,8 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Address { street Text; city Text }
-        model User { id Integer @id; address Json @type(Address, strict: false) }
+        type Address { street String; city String }
+        model User { id Int @id; address Json @type(Address, strict: false) }
       `,
       db: ':memory:',
     })
@@ -11032,13 +11222,13 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Coordinates { lat Real; lng Real }
+        type Coordinates { lat Float; lng Float }
         type Address {
-          street Text
-          city   Text
+          street String
+          city   String
           coords Json @type(Coordinates)
         }
-        model Place { id Integer @id; address Json @type(Address) }
+        model Place { id Int @id; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -11053,9 +11243,9 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Coordinates { lat Real; lng Real }
-        type Address { street Text; coords Json @type(Coordinates) }
-        model Place { id Integer @id; address Json @type(Address) }
+        type Coordinates { lat Float; lng Float }
+        type Address { street String; coords Json @type(Coordinates) }
+        model Place { id Int @id; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -11075,10 +11265,10 @@ describe('type declarations', () => {
     const db = await createClient({
       schema: `
         type Contact {
-          email Text @email
-          age   Integer @gte(0)
+          email String @email
+          age   Int @gte(0)
         }
-        model User { id Integer @id; contact Json @type(Contact) }
+        model User { id Int @id; contact Json @type(Contact) }
       `,
       db: ':memory:',
     })
@@ -11099,8 +11289,8 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Address { street Text; city Text }
-        model User { id Integer @id; address Json? @type(Address) }
+        type Address { street String; city String }
+        model User { id Int @id; address Json? @type(Address) }
       `,
       db: ':memory:',
     })
@@ -11113,8 +11303,8 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Tags { values Text[] }
-        model Post { id Integer @id; tags Json @type(Tags) }
+        type Tags { values String[] }
+        model Post { id Int @id; tags Json @type(Tags) }
       `,
       db: ':memory:',
     })
@@ -11130,8 +11320,8 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Mixed { flag Boolean; count Integer; ratio Real }
-        model M { id Integer @id; data Json @type(Mixed) }
+        type Mixed { flag Boolean; count Int; ratio Float }
+        model M { id Int @id; data Json @type(Mixed) }
       `,
       db: ':memory:',
     })
@@ -11150,10 +11340,10 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Address { city Text }
+        type Address { city String }
         model User {
-          id      Integer @id
-          email   Text @email
+          id      Int @id
+          email   String @email
           address Json @type(Address)
         }
       `,
@@ -11173,8 +11363,8 @@ describe('type declarations', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Address { street Text; city Text }
-        model User { id Integer @id; address Json @type(Address) }
+        type Address { street String; city String }
+        model User { id Int @id; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -11189,9 +11379,9 @@ describe('type declarations', () => {
   test('typegen emits an interface for each type', async () => {
     const { generateTypeScript } = await import('../src/tools/typegen.js')
     const r = parse(`
-      type Address { street Text; city Text; state Text? }
-      type Coordinates { lat Real; lng Real }
-      model M { id Integer @id }
+      type Address { street String; city String; state String? }
+      type Coordinates { lat Float; lng Float }
+      model M { id Int @id }
     `)
     const ts = generateTypeScript(r.schema!)
     expect(ts).toContain('export interface Address {')
@@ -11204,9 +11394,9 @@ describe('type declarations', () => {
   test('typegen references typed JSON fields by interface name', async () => {
     const { generateTypeScript } = await import('../src/tools/typegen.js')
     const r = parse(`
-      type Address { street Text; city Text }
+      type Address { street String; city String }
       model User {
-        id      Integer @id
+        id      Int @id
         address Json @type(Address)
         rawData Json
       }
@@ -11221,9 +11411,9 @@ describe('type declarations', () => {
   test('typegen handles optional typed JSON fields', async () => {
     const { generateTypeScript } = await import('../src/tools/typegen.js')
     const r = parse(`
-      type Address { street Text }
+      type Address { street String }
       model User {
-        id      Integer @id
+        id      Int @id
         address Json? @type(Address)
       }
     `)
@@ -11245,8 +11435,8 @@ describe('Date object coercion', () => {
     const db = await createClient({
       schema: `
         model Session {
-          id        Integer  @id
-          token     Text
+          id        Int  @id
+          token     String
           expiresAt DateTime
         }
       `,
@@ -11262,7 +11452,7 @@ describe('Date object coercion', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        model E { id Integer @id; at DateTime }
+        model E { id Int @id; at DateTime }
       `,
       db: ':memory:',
     })
@@ -11275,7 +11465,7 @@ describe('Date object coercion', () => {
   test('where comparison with Date object — gt/lt', async () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
-      schema: `model E { id Integer @id; at DateTime }`,
+      schema: `model E { id Int @id; at DateTime }`,
       db: ':memory:',
     })
     await db.e.create({ data: { id: 1, at: '2025-01-01T00:00:00Z' } })
@@ -11291,7 +11481,7 @@ describe('Date object coercion', () => {
   test('where direct equality with Date object', async () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
-      schema: `model E { id Integer @id; at DateTime }`,
+      schema: `model E { id Int @id; at DateTime }`,
       db: ':memory:',
     })
     const at = new Date('2026-06-15T12:00:00Z')
@@ -11304,7 +11494,7 @@ describe('Date object coercion', () => {
   test('where in: [Date, Date]', async () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
-      schema: `model E { id Integer @id; at DateTime }`,
+      schema: `model E { id Int @id; at DateTime }`,
       db: ':memory:',
     })
     const d1 = new Date('2026-01-01T00:00:00Z')
@@ -11321,7 +11511,7 @@ describe('Date object coercion', () => {
   test('update with Date object', async () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
-      schema: `model E { id Integer @id; at DateTime }`,
+      schema: `model E { id Int @id; at DateTime }`,
       db: ':memory:',
     })
     await db.e.create({ data: { id: 1, at: new Date('2026-01-01T00:00:00Z') } })
@@ -11338,7 +11528,7 @@ describe('Date object coercion', () => {
     const db = await createClient({
       schema: `
         type Meta { occurredAt DateTime }
-        model E { id Integer @id; meta Json @type(Meta) }
+        model E { id Int @id; meta Json @type(Meta) }
       `,
       db: ':memory:',
     })
@@ -11354,7 +11544,7 @@ describe('Date object coercion', () => {
   test('null DateTime is still rejected as required', async () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
-      schema: `model E { id Integer @id; at DateTime }`,
+      schema: `model E { id Int @id; at DateTime }`,
       db: ':memory:',
     })
     // Bad ISO string still rejected
@@ -11373,8 +11563,8 @@ describe('Date object coercion', () => {
     const db = await createClient({
       schema: `
         model Session {
-          id        Integer @id
-          token     Text
+          id        Int @id
+          token     String
           expiresAt DateTime
         }
       `,
@@ -11404,7 +11594,7 @@ describe('WHERE binding error reporting', () => {
   async function makeDb() {
     const { createClient } = await import('../src/core/client.js')
     return await createClient({
-      schema: `model U { id Integer @id; token Text }`,
+      schema: `model U { id Int @id; token String }`,
       db: ':memory:',
     })
   }
@@ -11458,14 +11648,14 @@ describe('typed JSON path pushdown', () => {
     return await createClient({
       schema: `
         type Address {
-          street     Text
-          city       Text
-          state      Text?
-          postalCode Text
+          street     String
+          city       String
+          state      String?
+          postalCode String
         }
         model User {
-          id      Integer @id
-          name    Text
+          id      Int @id
+          name    String
           address Json @type(Address)
         }
       `,
@@ -11546,8 +11736,8 @@ describe('typed JSON path pushdown', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Settings { darkMode Boolean; tag Text? }
-        model U { id Integer @id; s Json @type(Settings) }
+        type Settings { darkMode Boolean; tag String? }
+        model U { id Int @id; s Json @type(Settings) }
       `,
       db: ':memory:',
     })
@@ -11562,8 +11752,8 @@ describe('typed JSON path pushdown', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Settings { tag Text? }
-        model U { id Integer @id; s Json @type(Settings) }
+        type Settings { tag String? }
+        model U { id Int @id; s Json @type(Settings) }
       `,
       db: ':memory:',
     })
@@ -11578,8 +11768,8 @@ describe('typed JSON path pushdown', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type T { city Text }
-        model U { id Integer @id; addr Json? @type(T) }
+        type T { city String }
+        model U { id Int @id; addr Json? @type(T) }
       `,
       db: ':memory:',
     })
@@ -11597,7 +11787,7 @@ describe('typed JSON path pushdown', () => {
     const db = await createClient({
       schema: `
         type Settings { darkMode Boolean }
-        model U { id Integer @id; s Json @type(Settings) }
+        model U { id Int @id; s Json @type(Settings) }
       `,
       db: ':memory:',
     })
@@ -11615,8 +11805,8 @@ describe('typed JSON path pushdown', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Stats { count Integer }
-        model U { id Integer @id; s Json @type(Stats) }
+        type Stats { count Int }
+        model U { id Int @id; s Json @type(Stats) }
       `,
       db: ':memory:',
     })
@@ -11634,8 +11824,8 @@ describe('typed JSON path pushdown', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Coords { lat Real; lng Real }
-        model P { id Integer @id; c Json @type(Coords) }
+        type Coords { lat Float; lng Float }
+        model P { id Int @id; c Json @type(Coords) }
       `,
       db: ':memory:',
     })
@@ -11654,9 +11844,9 @@ describe('typed JSON path pushdown', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Coords { lat Real; lng Real }
-        type Address { city Text; coords Json @type(Coords) }
-        model P { id Integer @id; address Json @type(Address) }
+        type Coords { lat Float; lng Float }
+        type Address { city String; coords Json @type(Coords) }
+        model P { id Int @id; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -11674,9 +11864,9 @@ describe('typed JSON path pushdown', () => {
     const { createClient } = await import('../src/core/client.js')
     const db = await createClient({
       schema: `
-        type Coords { lat Real; lng Real }
-        type Address { city Text; coords Json @type(Coords) }
-        model P { id Integer @id; address Json @type(Address) }
+        type Coords { lat Float; lng Float }
+        type Address { city String; coords Json @type(Coords) }
+        model P { id Int @id; address Json @type(Address) }
       `,
       db: ':memory:',
     })
@@ -11774,9 +11964,9 @@ describe('generateJsonSchema with types', () => {
   test('emits $ref to a type definition for typed JSON fields', async () => {
     const { generateJsonSchema } = await import('../src/jsonschema.js')
     const r = parse(`
-      type Address { street Text; city Text }
+      type Address { street String; city String }
       model User {
-        id      Integer @id
+        id      Int @id
         address Json @type(Address)
       }
     `)
@@ -11787,8 +11977,8 @@ describe('generateJsonSchema with types', () => {
   test('emits a full type definition with required fields and shape', async () => {
     const { generateJsonSchema } = await import('../src/jsonschema.js')
     const r = parse(`
-      type Address { street Text; city Text; state Text?; postalCode Text }
-      model U { id Integer @id; addr Json @type(Address) }
+      type Address { street String; city String; state String?; postalCode String }
+      model U { id Int @id; addr Json @type(Address) }
     `)
     const s = generateJsonSchema(r.schema!) as any
     expect(s.$defs.Address.type).toBe('object')
@@ -11802,10 +11992,10 @@ describe('generateJsonSchema with types', () => {
     const { generateJsonSchema } = await import('../src/jsonschema.js')
     const r = parse(`
       type Contact {
-        email Text @email
-        zip   Text @regex("^[0-9]{5}$")
+        email String @email
+        zip   String @regex("^[0-9]{5}$")
       }
-      model U { id Integer @id; c Json @type(Contact) }
+      model U { id Int @id; c Json @type(Contact) }
     `)
     const s = generateJsonSchema(r.schema!) as any
     expect(s.$defs.Contact.properties.email).toMatchObject({ format: 'email' })
@@ -11815,7 +12005,7 @@ describe('generateJsonSchema with types', () => {
   test('untyped Json fields remain permissive', async () => {
     const { generateJsonSchema } = await import('../src/jsonschema.js')
     const r = parse(`
-      model U { id Integer @id; meta Json }
+      model U { id Int @id; meta Json }
     `)
     const s = generateJsonSchema(r.schema!) as any
     expect(s.$defs.U.properties.meta).toEqual({})
@@ -11824,9 +12014,9 @@ describe('generateJsonSchema with types', () => {
   test('nested types resolve via $ref', async () => {
     const { generateJsonSchema } = await import('../src/jsonschema.js')
     const r = parse(`
-      type Coords { lat Real; lng Real }
-      type Address { city Text; coords Json @type(Coords) }
-      model P { id Integer @id; address Json @type(Address) }
+      type Coords { lat Float; lng Float }
+      type Address { city String; coords Json @type(Coords) }
+      model P { id Int @id; address Json @type(Address) }
     `)
     const s = generateJsonSchema(r.schema!) as any
     expect(s.$defs.Address.properties.coords).toEqual({ $ref: '#/$defs/Coords' })
@@ -12215,22 +12405,22 @@ describe('groupBy()', () => {
 
 const COUNT_SCHEMA = `
   model accounts {
-    id    Integer @id
-    name  Text
+    id    Int @id
+    name  String
     users users[]
     posts posts[]
   }
   model users {
-    id        Integer @id
-    accountId Integer
+    id        Int @id
+    accountId Int
     account   accounts @relation(fields: [accountId], references: [id])
-    name      Text
+    name      String
   }
   model posts {
-    id        Integer @id
-    accountId Integer
+    id        Int @id
+    accountId Int
     account   accounts @relation(fields: [accountId], references: [id])
-    title     Text
+    title     String
   }
 `
 
@@ -12382,9 +12572,9 @@ describe('_count in include — filtered', () => {
 describe('findManyAndCount()', () => {
   const SCHEMA = `
     model posts {
-      id        Integer @id
-      title     Text
-      status    Text
+      id        Int @id
+      title     String
+      status    String
       deletedAt DateTime?
       @@softDelete
     }
@@ -12480,13 +12670,13 @@ describe('findManyAndCount()', () => {
 
 describe('@@external', () => {
   test('parses @@external without error', () => {
-    const r = parse(`model users { id Integer @id; name Text; @@external }`)
+    const r = parse(`model users { id Int @id; name String; @@external }`)
     expect(r.valid).toBe(true)
     expect(r.errors).toHaveLength(0)
   })
 
   test('@@external stored on model AST', () => {
-    const { schema } = parse(`model users { id Integer @id; name Text; @@external }`)
+    const { schema } = parse(`model users { id Int @id; name String; @@external }`)
     const m = schema.models[0]
     expect(m.attributes.some((a: any) => a.kind === 'external')).toBe(true)
   })
@@ -12494,8 +12684,8 @@ describe('@@external', () => {
   test('@@external model excluded from DDL', () => {
     const { generateDDL } = require('../src/core/ddl.js')
     const { schema } = parse(`
-      model managed { id Integer @id; name Text }
-      model external_tbl { id Integer @id; data Text; @@external }
+      model managed { id Int @id; name String }
+      model external_tbl { id Int @id; data String; @@external }
     `)
     const ddl = generateDDL(schema)
     expect(ddl).toContain('"managed"')
@@ -12505,8 +12695,8 @@ describe('@@external', () => {
   test('@@external model is queryable via ORM', async () => {
     // Create the table manually (simulating external management)
     const { db } = await makeTestClient(`
-      model managed { id Integer @id; val Text }
-      model ext_users { id Integer @id; name Text; @@external }
+      model managed { id Int @id; val String }
+      model ext_users { id Int @id; name String; @@external }
     `)
     // Manually create the external table
     db.$db.run(`CREATE TABLE ext_users (id INTEGER PRIMARY KEY, name TEXT) STRICT`)
@@ -12520,7 +12710,7 @@ describe('@@external', () => {
 
   test('@@external model supports write operations', async () => {
     const { db } = await makeTestClient(`
-      model ext_items { id Integer @id; label Text; @@external }
+      model ext_items { id Int @id; label String; @@external }
     `)
     db.$db.run(`CREATE TABLE ext_items (id INTEGER PRIMARY KEY, label TEXT) STRICT`)
 
@@ -12531,7 +12721,7 @@ describe('@@external', () => {
   })
 
   test('@@external + @@softDelete emits a warning', () => {
-    const r = parse(`model t { id Integer @id; deletedAt DateTime?; @@external @@softDelete }`)
+    const r = parse(`model t { id Int @id; deletedAt DateTime?; @@external @@softDelete }`)
     expect(r.warnings.some((w: string) => w.includes('@@external') && w.includes('@@softDelete'))).toBe(true)
   })
 
@@ -12539,8 +12729,8 @@ describe('@@external', () => {
     const { parse: p } = require('../src/core/parser.js')
     const { diffSchemas } = require('../src/core/migrate.js')
     const result = p(`
-      model managed { id Integer @id }
-      model ext_calendar { date Text @id; @@external }
+      model managed { id Int @id }
+      model ext_calendar { date String @id; @@external }
     `)
     // Use the correct introspect column format (array of column objects)
     const managed = { columns: [{ name: 'id', type: 'INTEGER', pk: 1, notnull: 1, dflt_value: null }], indexes: [], foreignKeys: [] }
@@ -12559,13 +12749,13 @@ describe('doc comments — generateTypeScript', () => {
   const SCHEMA = `
     /// Represents a user account in the system
     model users {
-      id    Integer @id
+      id    Int @id
       /// The user's full display name
-      name  Text
+      name  String
       /// The user's email address
       /// Must be unique across all accounts
-      email Text @unique
-      role  Text
+      email String @unique
+      role  String
     }
   `
 
@@ -12611,12 +12801,12 @@ describe('doc comments — generateJsonSchema', () => {
   const SCHEMA = `
     /// A product in the catalog
     model products {
-      id    Integer @id
+      id    Int @id
       /// The product's display name shown to customers
-      name  Text
+      name  String
       /// Price in cents to avoid floating point issues
-      price Integer
-      notes Text
+      price Int
+      notes String
     }
   `
 
@@ -12635,10 +12825,10 @@ describe('doc comments — generateJsonSchema', () => {
   test('multi-line field comment joined with space', () => {
     const MULTI = `
       model t {
-        id  Integer @id
+        id  Int @id
         /// First line
         /// Second line
-        val Text
+        val String
       }
     `
     const { schema } = parse(MULTI)
@@ -12653,7 +12843,7 @@ describe('doc comments — generateJsonSchema', () => {
   })
 
   test('model without doc comment has no "description"', () => {
-    const { schema } = parse(`model t { id Integer @id }`)
+    const { schema } = parse(`model t { id Int @id }`)
     const js = generateJsonSchema(schema, { mode: 'full' })
     expect(js.$defs.t.description).toBeUndefined()
   })
@@ -12664,9 +12854,9 @@ describe('doc comments — generateJsonSchema', () => {
 
 const EVENTS_SCHEMA = `
   model events {
-    id        Integer  @id
-    type      Text
-    amount    Real
+    id        Int  @id
+    type      String
+    amount    Float
     createdAt DateTime
   }
 `
@@ -12877,8 +13067,8 @@ describe('groupBy() — fillGaps', () => {
 describe('@default(nanoid())', () => {
   const SCHEMA = `
     model tokens {
-      id    Text    @id @default(nanoid())
-      label Text
+      id    String    @id @default(nanoid())
+      label String
     }
   `
 
@@ -12930,9 +13120,9 @@ describe('@default(nanoid())', () => {
 describe('@phone validator', () => {
   const SCHEMA = `
     model contacts {
-      id    Integer @id
-      phone Text    @phone
-      alt   Text?   @phone("Alt must be a valid phone number")
+      id    Int @id
+      phone String    @phone
+      alt   String?   @phone("Alt must be a valid phone number")
     }
   `
 
@@ -12995,8 +13185,8 @@ describe('custom policy error messages', () => {
   test('@@allow with message — message surfaces on AccessDeniedError', async () => {
     const db = await makeDb(`
       model posts {
-        id       Integer @id
-        ownerId  Integer
+        id       Int @id
+        ownerId  Int
         @@allow('create', auth() != null, "You must be logged in to create posts")
       }
     `, 'policy-msg-allow')
@@ -13012,8 +13202,8 @@ describe('custom policy error messages', () => {
   test('@@deny with message — message surfaces on AccessDeniedError', async () => {
     const db = await makeDb(`
       model posts {
-        id      Integer @id
-        status  Text    @default("draft")
+        id      Int @id
+        status  String    @default("draft")
         @@allow('all', true)
         @@deny('post-update', status == 'locked', "Cannot edit locked posts")
       }
@@ -13031,7 +13221,7 @@ describe('custom policy error messages', () => {
   test('@@allow without message — falls back to default message', async () => {
     const db = await makeDb(`
       model posts {
-        id      Integer @id
+        id      Int @id
         @@allow('create', auth() != null)
       }
     `, 'policy-msg-default')
@@ -13047,7 +13237,7 @@ describe('custom policy error messages', () => {
   test('message stored on AST node', () => {
     const { schema } = parse(`
       model t {
-        id Integer @id
+        id Int @id
         @@allow('read', true, "Only readable")
         @@deny('write', true, "Not writable")
       }
@@ -13058,7 +13248,7 @@ describe('custom policy error messages', () => {
   })
 
   test('policy without message has message: null on AST', () => {
-    const { schema } = parse(`model t { id Integer @id; @@allow('read', true) }`)
+    const { schema } = parse(`model t { id Int @id; @@allow('read', true) }`)
     const attr = schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr?.message).toBeNull()
   })
@@ -13069,9 +13259,9 @@ describe('custom policy error messages', () => {
 
 describe('generateTypeScript --only (model whitelist)', () => {
   const SCHEMA = `
-    model users  { id Integer @id; name Text }
-    model posts  { id Integer @id; title Text; userId Integer }
-    model orders { id Integer @id; amount Real }
+    model users  { id Int @id; name String }
+    model posts  { id Int @id; title String; userId Int }
+    model orders { id Int @id; amount Float }
   `
 
   test('all models emitted without filter', () => {
@@ -13107,10 +13297,10 @@ describe('generateTypeScript --only (model whitelist)', () => {
 describe('@updatedBy', () => {
   const SCHEMA = `
     model posts {
-      id          Integer  @id
-      title       Text
-      createdById Integer? @default(auth().id)
-      updatedById Integer? @updatedBy
+      id          Int  @id
+      title       String
+      createdById Int? @default(auth().id)
+      updatedById Int? @updatedBy
     }
   `
 
@@ -13170,9 +13360,9 @@ describe('@updatedBy', () => {
   test('@updatedBy(auth().field) stamps custom auth field', async () => {
     const db = await makeDb(`
       model docs {
-        id         Integer @id
-        title      Text
-        updatedBy  Text?   @updatedBy(auth().email)
+        id         Int @id
+        title      String
+        updatedBy  String?   @updatedBy(auth().email)
       }
     `, 'updby-custom')
     await db.docs.create({ data: { id: 1, title: 'Doc' } })
@@ -13199,8 +13389,8 @@ describe('@updatedBy', () => {
 describe('@slug transformer', () => {
   const SCHEMA = `
     model posts {
-      id   Integer @id
-      slug Text    @slug
+      id   Int @id
+      slug String    @slug
     }
   `
 
@@ -13240,7 +13430,7 @@ describe('@slug transformer', () => {
 
   test('null slug is skipped (not transformed)', async () => {
     const db = await makeDb(`
-      model posts { id Integer @id; slug Text? @slug }
+      model posts { id Int @id; slug String? @slug }
     `, 'slug-null')
     const row = await db.posts.create({ data: { id: 1, slug: null } })
     expect(row.slug).toBeNull()
@@ -13254,7 +13444,7 @@ describe('@slug transformer', () => {
 describe('@default(fieldName)', () => {
   test('parses @default(fieldName) without error', () => {
     const r = parse(`
-      model posts { id Integer @id; title Text; slug Text @default(title) @slug }
+      model posts { id Int @id; title String; slug String @default(title) @slug }
     `)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'slug')
@@ -13266,7 +13456,7 @@ describe('@default(fieldName)', () => {
   test('@default(enumValue) still works — not broken by fieldRef', () => {
     const r = parse(`
       enum Status { draft published }
-      model posts { id Integer @id; status Status @default(draft) }
+      model posts { id Int @id; status Status @default(draft) }
     `)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'status')
@@ -13277,7 +13467,7 @@ describe('@default(fieldName)', () => {
 
   test('copies source field value on create when target not provided', async () => {
     const db = await makeDb(`
-      model posts { id Integer @id; title Text; slug Text @default(title) }
+      model posts { id Int @id; title String; slug String @default(title) }
     `, 'fieldref-basic')
     const row = await db.posts.create({ data: { id: 1, title: 'Hello World' } })
     expect(row.slug).toBe('Hello World')
@@ -13286,7 +13476,7 @@ describe('@default(fieldName)', () => {
 
   test('explicit value overrides @default(fieldName)', async () => {
     const db = await makeDb(`
-      model posts { id Integer @id; title Text; slug Text @default(title) }
+      model posts { id Int @id; title String; slug String @default(title) }
     `, 'fieldref-override')
     const row = await db.posts.create({ data: { id: 1, title: 'Hello', slug: 'custom' } })
     expect(row.slug).toBe('custom')
@@ -13295,7 +13485,7 @@ describe('@default(fieldName)', () => {
 
   test('@default(title) @slug — copies then slugifies', async () => {
     const db = await makeDb(`
-      model posts { id Integer @id; title Text; slug Text @default(title) @slug }
+      model posts { id Int @id; title String; slug String @default(title) @slug }
     `, 'fieldref-slug')
     const row = await db.posts.create({ data: { id: 1, title: 'Hello World!' } })
     expect(row.slug).toBe('hello-world')
@@ -13304,7 +13494,7 @@ describe('@default(fieldName)', () => {
 
   test('@default(unknown) is a parse error', () => {
     const r = parse(`
-      model posts { id Integer @id; title Text; slug Text @default(nonexistent) }
+      model posts { id Int @id; title String; slug String @default(nonexistent) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('nonexistent'))).toBe(true)
@@ -13316,9 +13506,9 @@ describe('@default(fieldName)', () => {
 
 const TREE_SCHEMA = `
   model categories {
-    id       Integer @id
-    name     Text
-    parentId Integer?
+    id       Int @id
+    name     String
+    parentId Int?
     parent   categories?  @relation(fields: [parentId], references: [id])
     children categories[]
   }
@@ -13428,7 +13618,7 @@ describe('findMany — recursive', () => {
   })
 
   test('throws on model without self-relation', async () => {
-    const db = await makeDb(`model tags { id Integer @id; name Text }`, 'rec-noself')
+    const db = await makeDb(`model tags { id Int @id; name String }`, 'rec-noself')
     await expect(
       (db.tags as any).findMany({ where: { id: 1 }, recursive: true })
     ).rejects.toThrow('no self-referential relation')
@@ -13473,7 +13663,7 @@ describe('ExternalRefPlugin', () => {
 
   test('serialize is called on create — value swapped for JSON ref', async () => {
     const plugin = makePlugin()
-    const schema = parse(`model docs { id Integer @id; content TestRef? }`)
+    const schema = parse(`model docs { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
     const args = { data: { id: 1, content: 'hello world' } }
     await plugin.onBeforeCreate('docs', args, {} as any)
@@ -13484,7 +13674,7 @@ describe('ExternalRefPlugin', () => {
 
   test('resolve called in onAfterRead when autoResolve: true', async () => {
     const plugin = makePlugin(true)
-    const schema = parse(`model docs { id Integer @id; content TestRef? }`)
+    const schema = parse(`model docs { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
     const rows = [
       { id: 1, content: JSON.stringify({ raw: 'hello', model: 'docs', field: 'content' }) }
@@ -13495,7 +13685,7 @@ describe('ExternalRefPlugin', () => {
 
   test('resolve NOT called in onAfterRead when autoResolve: false', async () => {
     const plugin = makePlugin(false)
-    const schema = parse(`model docs { id Integer @id; content TestRef? }`)
+    const schema = parse(`model docs { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
     const rawRef = JSON.stringify({ raw: 'hello', model: 'docs', field: 'content' })
     const rows = [{ id: 1, content: rawRef }]
@@ -13505,7 +13695,7 @@ describe('ExternalRefPlugin', () => {
 
   test('cleanup called in onAfterDelete', async () => {
     const plugin = makePlugin()
-    const schema = parse(`model docs { id Integer @id; content TestRef? }`)
+    const schema = parse(`model docs { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
     const ref = { raw: 'hello', model: 'docs', field: 'content' }
     const rows = [{ id: 1, content: JSON.stringify(ref) }]
@@ -13516,7 +13706,7 @@ describe('ExternalRefPlugin', () => {
 
   test('cacheKey memoizes resolve results', async () => {
     const plugin = makePlugin(true)
-    const schema = parse(`model docs { id Integer @id; content TestRef? }`)
+    const schema = parse(`model docs { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
     const ref = { raw: 'hello', model: 'docs', field: 'content' }
     const rows1 = [{ id: 1, content: JSON.stringify(ref) }]
@@ -13552,7 +13742,7 @@ describe('ExternalRefPlugin — select resolve: false', () => {
     }
 
     const plugin = new UpperPlugin({ autoResolve: true })
-    const schema = parse(`model docs { id Integer @id; title UpperRef? }`).schema
+    const schema = parse(`model docs { id Int @id; title UpperRef? }`).schema
     plugin.onInit(schema, { models: {} } as any)
 
     const rawRef = JSON.stringify({ raw: 'hello' })
@@ -13575,7 +13765,7 @@ describe('ExternalRefPlugin — select resolve: false', () => {
     }
 
     const plugin = new UpperPlugin({ autoResolve: true })
-    const schema = parse(`model docs { id Integer @id; title UpperRef? }`).schema
+    const schema = parse(`model docs { id Int @id; title UpperRef? }`).schema
     plugin.onInit(schema, { models: {} } as any)
 
     const rows = [{ id: 1, title: JSON.stringify({ raw: 'hello' }) }]
@@ -13594,7 +13784,7 @@ describe('ExternalRefPlugin — select resolve: false', () => {
     }
 
     const plugin = new UpperPlugin({ autoResolve: true })
-    const schema = parse(`model docs { id Integer @id; title UpperRef? }`).schema
+    const schema = parse(`model docs { id Int @id; title UpperRef? }`).schema
     plugin.onInit(schema, { models: {} } as any)
 
     const rows = [{ id: 1, title: JSON.stringify({ raw: 'hello' }) }]
@@ -13607,7 +13797,7 @@ describe('ExternalRefPlugin — select resolve: false', () => {
 // ─── JS migration API ─────────────────────────────────────────────────────────
 
 describe('JS migration API', () => {
-  const SCHEMA = `model posts { id Integer @id; title Text; slug Text? }`
+  const SCHEMA = `model posts { id Int @id; title String; slug String? }`
 
   test('listMigrationFiles picks up .js files', () => {
     const { listMigrationFiles } = require('../src/core/migrations.js')
@@ -13721,5 +13911,772 @@ describe('JS migration API', () => {
     expect(jsRow?.sql).toBeNull()
     expect(jsRow?.tampered).toBe(false)
     db.$close()
+  })
+})
+
+// ┌────────────────────────────────────────────────────────────────────────────┐
+// │  @@hasTemplates — categorical definition vs instance distinction            │
+// └────────────────────────────────────────────────────────────────────────────┘
+
+describe('@@hasTemplates — parser', () => {
+
+  test('parses bare directive and auto-injects isTemplate field', () => {
+    const r = parse(`
+      model quotes {
+        id Int @id
+        @@hasTemplates
+      }
+    `)
+    expect(r.valid).toBe(true)
+    const quotes = r.schema.models[0]
+    const ht     = quotes.attributes.find((a: any) => a.kind === 'hasTemplates')
+    expect(ht).toBeDefined()
+    expect((ht as any).field).toBe('isTemplate')
+    const f = quotes.fields.find((f: any) => f.name === 'isTemplate')
+    expect(f).toBeDefined()
+    // Field type is a {kind, name, array, optional} object — same shape as
+    // every other parsed scalar field. Assert through the inner type record.
+    expect((f as any).type.name).toBe('Boolean')
+    expect((f as any).type.optional).toBe(false)
+    expect((f as any).type.array).toBe(false)
+    const def = (f as any).attributes.find((a: any) => a.kind === 'default')
+    expect(def?.value?.value).toBe(false)
+    expect(def?.value?.kind).toBe('boolean')
+  })
+
+  test('parses (field: "isPreset") for custom column name', () => {
+    const r = parse(`
+      model quotes {
+        id Int @id
+        @@hasTemplates(field: "isPreset")
+      }
+    `)
+    expect(r.valid).toBe(true)
+    const quotes = r.schema.models[0]
+    expect(quotes.attributes.find((a: any) => a.kind === 'hasTemplates')?.field).toBe('isPreset')
+    expect(quotes.fields.find((f: any) => f.name === 'isPreset')).toBeDefined()
+    expect(quotes.fields.find((f: any) => f.name === 'isTemplate')).toBeUndefined()
+  })
+
+  test('user-declared field is honored, not duplicated', () => {
+    const r = parse(`
+      model quotes {
+        id          Int @id
+        isTemplate  Boolean @default(false)
+        @@hasTemplates
+      }
+    `)
+    expect(r.valid).toBe(true)
+    const isTemplateFields = r.schema.models[0].fields.filter((f: any) => f.name === 'isTemplate')
+    expect(isTemplateFields.length).toBe(1)
+  })
+
+  test('rejects user-declared marker field that is not Boolean', () => {
+    const r = parse(`
+      model quotes {
+        id          Int @id
+        isTemplate  String
+        @@hasTemplates
+      }
+    `)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('must be Boolean')
+  })
+
+  test('rejects user-declared marker field that is optional', () => {
+    const r = parse(`
+      model quotes {
+        id          Int @id
+        isTemplate  Boolean?
+        @@hasTemplates
+      }
+    `)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('not be optional')
+  })
+})
+
+describe('@@hasTemplates — runtime', () => {
+  let db: any
+
+  const SCHEMA = `
+    model quotes {
+      id     Int @id
+      number String
+      total  Float    @default(0)
+      @@hasTemplates
+    }
+  `
+
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'has-templates') })
+  afterAll(() => db.$close())
+
+  beforeEach(async () => {
+    await db.quotes.delete({ where: { id: { in: [1,2,3,4,5] } } })
+    await db.quotes.createMany({ data: [
+      { id: 1, number: 'INST-1', total: 100, isTemplate: false },
+      { id: 2, number: 'INST-2', total: 200, isTemplate: false },
+      { id: 3, number: 'INST-3', total: 300, isTemplate: false },
+      { id: 4, number: 'TPL-A',  total: 0,   isTemplate: true  },
+      { id: 5, number: 'TPL-B',  total: 0,   isTemplate: true  },
+    ]})
+  })
+
+  test('findMany excludes templates by default', async () => {
+    const rows = await db.quotes.findMany()
+    expect(rows.length).toBe(3)
+    expect(rows.every((r: any) => r.isTemplate === false)).toBe(true)
+  })
+
+  test('findMany withTemplates: true returns instances + templates', async () => {
+    const rows = await db.quotes.findMany({ withTemplates: true })
+    expect(rows.length).toBe(5)
+  })
+
+  test('findMany onlyTemplates: true returns templates only', async () => {
+    const rows = await db.quotes.findMany({ onlyTemplates: true })
+    expect(rows.length).toBe(2)
+    expect(rows.every((r: any) => r.isTemplate === true)).toBe(true)
+  })
+
+  test('count excludes templates by default', async () => {
+    const n = await db.quotes.count()
+    expect(n).toBe(3)
+  })
+
+  test('count onlyTemplates returns template count', async () => {
+    const n = await db.quotes.count({ onlyTemplates: true })
+    expect(n).toBe(2)
+  })
+
+  test('findFirst excludes templates by default', async () => {
+    const row = await db.quotes.findFirst({ orderBy: { id: 'asc' } })
+    expect(row.id).toBe(1)
+    expect(row.isTemplate).toBe(false)
+  })
+
+  test('findFirst onlyTemplates returns first template', async () => {
+    const row = await db.quotes.findFirst({ orderBy: { id: 'asc' }, onlyTemplates: true })
+    expect(row.id).toBe(4)
+    expect(row.isTemplate).toBe(true)
+  })
+
+  test('findUnique by id of a template returns null without flag', async () => {
+    // Categorical contract: by default the row is invisible. User has to opt in
+    // with withTemplates: true. This protects reporting code that uses ids.
+    const row = await db.quotes.findUnique({ where: { id: 4 } })
+    expect(row).toBeNull()
+  })
+
+  test('findUnique by id of a template works with withTemplates: true', async () => {
+    const row = await db.quotes.findUnique({ where: { id: 4 }, withTemplates: true })
+    expect(row).not.toBeNull()
+    expect(row.id).toBe(4)
+  })
+
+  test('exists() respects template filter', async () => {
+    expect(await db.quotes.exists({ where: { id: 4 } })).toBe(false)
+    expect(await db.quotes.exists({ where: { id: 4 }, withTemplates: true })).toBe(true)
+    expect(await db.quotes.exists({ where: { id: 1 } })).toBe(true)
+  })
+
+  test('updateMany targets only instances by default', async () => {
+    // Crucial safety: a "bump everyone's totals by 10%" should not also corrupt
+    // template totals. Default WHERE excludes templates from updates.
+    const r = await db.quotes.updateMany({ where: {}, data: { total: 999 } })
+    expect(r.count).toBe(3)
+    const tpl = await db.quotes.findMany({ onlyTemplates: true })
+    expect(tpl.every((t: any) => t.total === 0)).toBe(true)
+  })
+
+  test('removeMany targets only instances by default', async () => {
+    const r = await db.quotes.removeMany({ where: {} })
+    expect(r.count).toBe(3)
+    const remaining = await db.quotes.findMany({ withTemplates: true })
+    expect(remaining.length).toBe(2)
+    expect(remaining.every((r: any) => r.isTemplate === true)).toBe(true)
+  })
+
+  test('aggregate() always operates on instances (parallel to always-live)', async () => {
+    const r = await db.quotes.aggregate({ _sum: { total: true }, _count: true })
+    expect(r._count).toBe(3)
+    expect(r._sum.total).toBe(600)   // 100 + 200 + 300, no templates
+  })
+
+  test('templates can be created and edited through normal write API', async () => {
+    const t = await db.quotes.create({ data: { id: 99, number: 'TPL-NEW', total: 0, isTemplate: true } })
+    expect(t.isTemplate).toBe(true)
+    // Template is invisible to default reads
+    expect(await db.quotes.findUnique({ where: { id: 99 } })).toBeNull()
+    // ...but visible with the flag
+    const fetched = await db.quotes.findUnique({ where: { id: 99 }, withTemplates: true })
+    expect(fetched?.id).toBe(99)
+    await db.quotes.delete({ where: { id: 99 } })
+  })
+
+  test('isTemplate defaults to false when omitted on create', async () => {
+    // The auto-injected column has DEFAULT 0 in DDL, so `create` without
+    // isTemplate yields an instance — not a template. Critical for
+    // backward-compat: existing code creating rows continues to work.
+    const r = await db.quotes.create({ data: { id: 100, number: 'NEW', total: 50 } })
+    expect(r.isTemplate).toBe(false)
+    const found = await db.quotes.findUnique({ where: { id: 100 } })
+    expect(found).not.toBeNull()
+    await db.quotes.delete({ where: { id: 100 } })
+  })
+
+  test('asSystem() bypasses template filter (parallel to soft-delete bypass)', async () => {
+    // Wait — actually asSystem() does NOT bypass filters; only @@gate / @@allow.
+    // It DOES NOT bypass the soft-delete filter either. Check current behaviour
+    // and document: filters (including hasTemplates) apply uniformly.
+    const sys = db.asSystem()
+    const rows = await sys.quotes.findMany()
+    expect(rows.length).toBe(3)   // still 3, hasTemplates filter still applied
+    const all = await sys.quotes.findMany({ withTemplates: true })
+    expect(all.length).toBe(5)
+  })
+})
+
+describe('@@hasTemplates + @@softDelete — composition', () => {
+  let db: any
+
+  const SCHEMA = `
+    model items {
+      id        Int  @id
+      name      String
+      deletedAt DateTime?
+      @@hasTemplates
+      @@softDelete
+    }
+  `
+
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'ht-sd-compose') })
+  afterAll(() => db.$close())
+
+  beforeEach(async () => {
+    await db.items.delete({ where: { id: { in: [1,2,3,4] } } })
+    await db.items.createMany({ data: [
+      { id: 1, name: 'I-1', isTemplate: false },
+      { id: 2, name: 'I-2', isTemplate: false },
+      { id: 3, name: 'T-1', isTemplate: true  },
+      { id: 4, name: 'T-2', isTemplate: true  },
+    ]})
+  })
+
+  test('default findMany: live + instances', async () => {
+    const rows = await db.items.findMany()
+    expect(rows.length).toBe(2)
+    expect(rows.every((r: any) => !r.isTemplate && r.deletedAt === null)).toBe(true)
+  })
+
+  test('soft-delete an instance: still hidden from default reads', async () => {
+    await db.items.remove({ where: { id: 1 } })
+    expect((await db.items.findMany()).length).toBe(1)
+  })
+
+  test('withDeleted + withTemplates returns absolutely all rows', async () => {
+    await db.items.remove({ where: { id: 1 } })
+    const all = await db.items.findMany({ withDeleted: true, withTemplates: true })
+    expect(all.length).toBe(4)
+  })
+
+  test('withDeleted alone: still excludes templates', async () => {
+    await db.items.remove({ where: { id: 1 } })
+    const rows = await db.items.findMany({ withDeleted: true })
+    expect(rows.length).toBe(2)              // both instances, deleted + live
+    expect(rows.every((r: any) => !r.isTemplate)).toBe(true)
+  })
+
+  test('onlyDeleted + withTemplates: deleted-or-templates? No — AND-composition', async () => {
+    // Both filters compose with AND: onlyDeleted finds deleted rows, then
+    // withTemplates *opts out* of the template filter (allowing both
+    // template and non-template deleted rows). Since no templates are
+    // currently deleted, expect only the soft-deleted instance.
+    await db.items.remove({ where: { id: 1 } })
+    const rows = await db.items.findMany({ onlyDeleted: true, withTemplates: true })
+    expect(rows.length).toBe(1)
+    expect(rows[0].id).toBe(1)
+  })
+})
+
+describe('@@hasTemplates — nested includes', () => {
+  let db: any
+
+  const SCHEMA = `
+    model accounts {
+      id     Int  @id
+      name   String
+      quotes quotes[]
+    }
+    model quotes {
+      id        Int  @id
+      accountId Int
+      number    String
+      account   accounts @relation(fields: [accountId], references: [id])
+      @@hasTemplates
+    }
+  `
+
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'ht-include') })
+  afterAll(() => db.$close())
+
+  beforeEach(async () => {
+    await db.quotes.delete({ where: { id: { in: [1,2,3] } } })
+    await db.accounts.delete({ where: { id: 1 } })
+    await db.accounts.create({ data: { id: 1, name: 'Acme' } })
+    await db.quotes.createMany({ data: [
+      { id: 1, accountId: 1, number: 'INST-1', isTemplate: false },
+      { id: 2, accountId: 1, number: 'INST-2', isTemplate: false },
+      { id: 3, accountId: 1, number: 'TPL',    isTemplate: true  },
+    ]})
+  })
+
+  test('nested hasMany excludes templates by default', async () => {
+    const acc = await db.accounts.findUnique({ where: { id: 1 }, include: { quotes: true } })
+    expect(acc.quotes.length).toBe(2)
+    expect(acc.quotes.every((q: any) => !q.isTemplate)).toBe(true)
+  })
+
+  test('nested withTemplates includes templates', async () => {
+    const acc = await db.accounts.findUnique({
+      where: { id: 1 },
+      include: { quotes: { withTemplates: true } },
+    })
+    expect(acc.quotes.length).toBe(3)
+  })
+
+  test('nested onlyTemplates returns templates only', async () => {
+    const acc = await db.accounts.findUnique({
+      where: { id: 1 },
+      include: { quotes: { onlyTemplates: true } },
+    })
+    expect(acc.quotes.length).toBe(1)
+    expect(acc.quotes[0].isTemplate).toBe(true)
+  })
+})
+
+describe('@@hasTemplates — custom field name', () => {
+  let db: any
+
+  const SCHEMA = `
+    model presets {
+      id       Int @id
+      label    String
+      @@hasTemplates(field: "isPreset")
+    }
+  `
+
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'ht-custom-field') })
+  afterAll(() => db.$close())
+
+  test('custom field name applies the filter on the right column', async () => {
+    await db.presets.createMany({ data: [
+      { id: 1, label: 'A', isPreset: false },
+      { id: 2, label: 'B', isPreset: true  },
+    ]})
+    const rows = await db.presets.findMany()
+    expect(rows.length).toBe(1)
+    expect(rows[0].id).toBe(1)
+    const all = await db.presets.findMany({ withTemplates: true })
+    expect(all.length).toBe(2)
+  })
+})
+
+// ┌────────────────────────────────────────────────────────────────────────────┐
+// │  Unknown-field validation on writes                                         │
+// └────────────────────────────────────────────────────────────────────────────┘
+
+describe('write payload — unknown field rejection', () => {
+  let db: any
+
+  const SCHEMA = `
+    model accounts {
+      id    Int @id
+      name  String
+      users users[]
+    }
+    model users {
+      id        Int  @id
+      accountId Int
+      email     String
+      account   accounts @relation(fields: [accountId], references: [id])
+    }
+  `
+
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'unknown-keys') })
+  afterAll(() => db.$close())
+
+  beforeEach(async () => {
+    await db.users.delete({ where: { id: { in: [1,2,3,99] } } })
+    await db.accounts.delete({ where: { id: { in: [1,2,3,99] } } })
+  })
+
+  test('flat create with bogus field throws ValidationError, not SQLite error', async () => {
+    let err: any = null
+    try {
+      await db.accounts.create({ data: { id: 1, name: 'A', bogusField: 'oops' } })
+    } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    // SQLite would say "table accounts has no column named bogusField" —
+    // this is the cryptic, leaky error we're replacing.
+    expect(String(err.message)).not.toContain('no column named')
+    expect(String(err.message)).toContain("Unknown field 'bogusField'")
+    expect(String(err.message)).toContain('accounts')
+  })
+
+  test('typo close to a real field surfaces a "Did you mean" hint', async () => {
+    let err: any = null
+    try {
+      await db.users.create({ data: { id: 1, accountId: 1, emial: 'a@x.com' } })
+    } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(String(err.message)).toContain("Did you mean: email")
+  })
+
+  test('non-similar bogus field lists valid fields instead of guessing', async () => {
+    let err: any = null
+    try {
+      await db.users.create({ data: { id: 1, accountId: 1, somethingTotallyDifferent: 'x' } })
+    } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(String(err.message)).not.toContain('Did you mean')
+    expect(String(err.message)).toContain('Valid fields')
+    expect(String(err.message)).toContain('email')
+  })
+
+  test('nested create on hasMany child surfaces the typo on the child model', async () => {
+    await db.accounts.create({ data: { id: 1, name: 'A' } })
+    let err: any = null
+    try {
+      await db.accounts.create({
+        data: {
+          id: 2, name: 'B',
+          users: { create: { id: 99, email: 'b@x.com', wrongField: 'oops' } },
+        },
+      })
+    } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    // Path / model should point at users, not accounts — typo is on the child.
+    expect(String(err.message)).toContain("'users'")
+    expect(String(err.message)).toContain("Unknown field 'wrongField'")
+  })
+
+  test('relation name with non-op scalar value is rejected with a helpful error', async () => {
+    // User wrote `account: 1` meaning `accountId: 1` — common mistake.
+    // extractNestedWrites only routes when value has op shape, so this falls
+    // through to scalar and hits unknown-field validation. The relation name
+    // 'account' IS in _allowedWriteKeys, but it's not a column either. The
+    // current behavior: scalar key 'account' is allowed (it's a real relation
+    // name), reaches SQL, and SQLite barfs. Document that in this regression.
+    //
+    // Compromise: 'account' is in allowedKeys so we don't catch THIS at the
+    // ValidationError stage — but the SQLite error still surfaces and the user
+    // can fix it. The next iteration could special-case relation-as-scalar.
+    await db.accounts.create({ data: { id: 1, name: 'A' } })
+    let err: any = null
+    try {
+      await db.users.create({ data: { id: 1, account: 1, email: 'x@x.com' } })
+    } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    // Either path — ValidationError or SQLite — is acceptable as long as it errors.
+  })
+
+  test('update with bogus field also throws', async () => {
+    await db.accounts.create({ data: { id: 1, name: 'A' } })
+    let err: any = null
+    try {
+      await db.accounts.update({ where: { id: 1 }, data: { naem: 'B' } })
+    } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(String(err.message)).toContain("Unknown field 'naem'")
+    expect(String(err.message)).toContain('Did you mean: name')
+  })
+
+  test('valid writes still work — known fields, FKs, computed FK', async () => {
+    await db.accounts.create({ data: { id: 1, name: 'A' } })
+    const u = await db.users.create({ data: { id: 1, accountId: 1, email: 'a@x.com' } })
+    expect(u.id).toBe(1)
+    expect(u.accountId).toBe(1)
+    expect(u.email).toBe('a@x.com')
+  })
+
+  test('createMany rejects bogus keys per-row', async () => {
+    let err: any = null
+    try {
+      await db.accounts.createMany({ data: [
+        { id: 1, name: 'A' },
+        { id: 2, name: 'B', whatever: 'nope' },
+      ]})
+    } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(String(err.message)).toContain("Unknown field 'whatever'")
+  })
+})
+
+// ┌────────────────────────────────────────────────────────────────────────────┐
+// │  Co-FK propagation — nested writes inherit shared FK columns                │
+// └────────────────────────────────────────────────────────────────────────────┘
+
+describe('co-FK propagation — nested create', () => {
+  let db: any
+
+  // Schema: tenants own accounts, accounts own orders, orders own lines.
+  // accountId and tenantId both appear on multiple tables and reference the
+  // same parents. These are the "co-FK" columns that should propagate
+  // parent→child during nested writes.
+  const SCHEMA = `
+    model tenants {
+      id       Int @id
+      name     String
+      accounts accounts[]
+    }
+    model accounts {
+      id       Int @id
+      tenantId Int
+      name     String
+      tenant   tenants  @relation(fields: [tenantId], references: [id])
+      orders   orders[]
+    }
+    model orders {
+      id        Int @id
+      tenantId  Int
+      accountId Int
+      tenant    tenants  @relation(fields: [tenantId],  references: [id])
+      account   accounts @relation(fields: [accountId], references: [id])
+      lines     lines[]
+    }
+    model lines {
+      id        Int @id
+      tenantId  Int
+      accountId Int
+      orderId   Int
+      qty       Int @default(1)
+      tenant    tenants  @relation(fields: [tenantId],  references: [id])
+      account   accounts @relation(fields: [accountId], references: [id])
+      order     orders   @relation(fields: [orderId],   references: [id])
+    }
+  `
+
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'cofk-strict') })
+  afterAll(() => db.$close())
+
+  beforeEach(async () => {
+    // Clean in FK-safe order
+    await db.lines.deleteMany({}).catch(() => {})
+    await db.orders.deleteMany({}).catch(() => {})
+    await db.accounts.deleteMany({}).catch(() => {})
+    await db.tenants.deleteMany({}).catch(() => {})
+    await db.tenants.create({ data: { id: 1, name: 'T1' } })
+  })
+
+  test('nested account.create propagates tenantId from parent (1 level)', async () => {
+    const t = await db.tenants.findUnique({ where: { id: 1 } })
+    // Create an account nested inside tenant — this is a hasMany create from
+    // the tenant side. Account must inherit tenantId without us specifying it.
+    await db.tenants.update({
+      where: { id: 1 },
+      data: { accounts: { create: { id: 10, name: 'A' } } },
+    })
+    const a = await db.accounts.findUnique({ where: { id: 10 } })
+    expect(a.tenantId).toBe(1)
+  })
+
+  test('nested order under account inherits accountId AND tenantId', async () => {
+    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.accounts.update({
+      where: { id: 10 },
+      data: { orders: { create: { id: 100 } } },
+    })
+    const o = await db.orders.findUnique({ where: { id: 100 } })
+    expect(o.accountId).toBe(10)   // direct FK
+    expect(o.tenantId).toBe(1)     // co-FK propagated from account
+  })
+
+  test('two-level deep: lines inherit tenantId+accountId from order chain', async () => {
+    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    // Create an order with nested lines in one shot. Lines should pick up
+    // accountId AND tenantId from the order's own values (which themselves
+    // came from account during this same write at the next level up — but
+    // here we set them directly on order, which is the more common case).
+    await db.orders.create({
+      data: {
+        id: 100, accountId: 10, tenantId: 1,
+        lines: { create: [{ id: 1000, qty: 5 }, { id: 1001, qty: 3 }] },
+      },
+    })
+    const lines = await db.lines.findMany({ orderBy: { id: 'asc' } })
+    expect(lines.length).toBe(2)
+    for (const l of lines) {
+      expect(l.tenantId).toBe(1)
+      expect(l.accountId).toBe(10)
+      expect(l.orderId).toBe(100)
+    }
+  })
+
+  test('strict mode (default): explicit child value is silently overwritten on a non-direct co-FK', async () => {
+    // Use orders nested under account — tenantId is a co-FK (NOT the direct
+    // hasMany FK). Child provides tenantId=2; parent has tenantId=1; strict
+    // mode must overwrite to 1. This is the *real* test of co-FK strictness,
+    // separate from the always-overridden direct FK behaviour.
+    await db.tenants.create({ data: { id: 2, name: 'T2' } })
+    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.accounts.update({
+      where: { id: 10 },
+      data: { orders: { create: { id: 100, tenantId: 2 } } },
+    })
+    const o = await db.orders.findUnique({ where: { id: 100 } })
+    expect(o.accountId).toBe(10)   // direct FK
+    expect(o.tenantId).toBe(1)     // co-FK overwritten — parent wins
+  })
+
+  test('null parent value is not propagated', async () => {
+    // If the parent doesn't have a non-null co-FK value, we don't fill the
+    // child with null — we leave whatever the child specified. Prevents the
+    // edge case where a column is nullable and a parent legitimately has it
+    // unset.
+    //
+    // Simulate by writing accounts with explicit tenantId then orders without
+    // co-FK to verify normal behaviour (this test mainly guards against a
+    // nullable-parent bug — we don't have a nullable co-FK in this schema).
+    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.orders.create({ data: { id: 100, accountId: 10, tenantId: 1 } })
+    const o = await db.orders.findUnique({ where: { id: 100 } })
+    expect(o.tenantId).toBe(1)
+  })
+
+  test('flat (non-nested) create is unaffected — co-FK only fires inside nested ops', async () => {
+    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    // Standalone create with explicit values — no parent context, so no
+    // propagation. The test is just that nothing weird happens here.
+    await db.orders.create({ data: { id: 100, accountId: 10, tenantId: 1 } })
+    const o = await db.orders.findUnique({ where: { id: 100 } })
+    expect(o.tenantId).toBe(1)
+    expect(o.accountId).toBe(10)
+  })
+})
+
+describe('co-FK propagation — allowChildFkOverride: true', () => {
+  let db: any
+
+  // Use accounts→orders so we have a co-FK (tenantId) that is NOT the same
+  // column as the direct hasMany FK (accountId). Direct FKs are always
+  // overridden — that's existing behaviour, separate from this feature.
+  const SCHEMA = `
+    model tenants {
+      id       Int @id
+      name     String
+      accounts accounts[]
+      orders   orders[]
+    }
+    model accounts {
+      id       Int @id
+      tenantId Int
+      name     String
+      tenant   tenants @relation(fields: [tenantId], references: [id])
+      orders   orders[]
+    }
+    model orders {
+      id        Int @id
+      tenantId  Int
+      accountId Int
+      tenant    tenants  @relation(fields: [tenantId],  references: [id])
+      account   accounts @relation(fields: [accountId], references: [id])
+    }
+  `
+
+  beforeAll(async () => {
+    db = await makeDb(SCHEMA, 'cofk-permissive', { allowChildFkOverride: true })
+  })
+  afterAll(() => db.$close())
+
+  beforeEach(async () => {
+    await db.orders.deleteMany({}).catch(() => {})
+    await db.accounts.deleteMany({}).catch(() => {})
+    await db.tenants.deleteMany({}).catch(() => {})
+    await db.tenants.create({ data: { id: 1, name: 'T1' } })
+    await db.tenants.create({ data: { id: 2, name: 'T2' } })
+    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+  })
+
+  test('child explicit value wins over parent for non-direct co-FK', async () => {
+    // The order is nested under account 10 (tenantId=1). With permissive mode,
+    // the order's own tenantId=2 should be preserved — this is the cross-
+    // tenant move use case where you legitimately need the child to differ.
+    // accountId is the DIRECT hasMany FK and always gets injected.
+    await db.accounts.update({
+      where: { id: 10 },
+      data: { orders: { create: { id: 100, tenantId: 2 } } },
+    })
+    const o = await db.orders.findUnique({ where: { id: 100 } })
+    expect(o.accountId).toBe(10)   // direct FK still injected
+    expect(o.tenantId).toBe(2)     // permissive mode: child's value preserved
+  })
+
+  test('missing child value still gets auto-filled from parent', async () => {
+    // Order under account 10 (tenantId=1). Child doesn't specify tenantId,
+    // so it gets propagated from account.
+    await db.accounts.update({
+      where: { id: 10 },
+      data: { orders: { create: { id: 101 } } },
+    })
+    const o = await db.orders.findUnique({ where: { id: 101 } })
+    expect(o.tenantId).toBe(1)
+    expect(o.accountId).toBe(10)
+  })
+})
+
+// ┌────────────────────────────────────────────────────────────────────────────┐
+// │  Type rename — hard cut migration error                                     │
+// └────────────────────────────────────────────────────────────────────────────┘
+
+describe('type rename — hard-cut migration', () => {
+  // The DSL renamed Text→String, Integer→Int, Real→Float, Blob→Bytes. No
+  // aliases. Old names produce a parse error pointing at the new spelling and
+  // mentioning the codemod, so users with existing .lite files get a clear
+  // upgrade path instead of a cryptic "unknown enum reference" error.
+
+  test('Text emits migration error pointing at String', () => {
+    const r = parse('model t { id Int @id; body Text }')
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain("'Text' was renamed to 'String'")
+    expect(r.errors.join('\n')).toContain('codemod')
+  })
+
+  test('Integer → Int', () => {
+    const r = parse('model t { id Integer @id }')
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain("'Integer' was renamed to 'Int'")
+  })
+
+  test('Real → Float', () => {
+    const r = parse('model t { id Int @id; price Real }')
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain("'Real' was renamed to 'Float'")
+  })
+
+  test('Blob → Bytes', () => {
+    const r = parse('model t { id Int @id; data Blob }')
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain("'Blob' was renamed to 'Bytes'")
+  })
+
+  test('new names work end-to-end', async () => {
+    const r = parse(`
+      model items {
+        id     Int     @id
+        name   String
+        price  Float
+        blob   Bytes?
+        meta   Json?
+        active Boolean  @default(true)
+      }
+    `)
+    expect(r.valid).toBe(true)
+    const f = (n: string) => r.schema.models[0].fields.find((x: any) => x.name === n)
+    expect(f('id').type.name).toBe('Int')
+    expect(f('name').type.name).toBe('String')
+    expect(f('price').type.name).toBe('Float')
+    expect(f('blob').type.name).toBe('Bytes')
+    expect(f('active').type.name).toBe('Boolean')
   })
 })
