@@ -1,0 +1,75 @@
+{
+  "name": "@frontierjs/junction",
+  "version": "0.1.0",
+  "description": "A pragmatic, batteries-included Bun framework",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./transport": "./src/transport/http.ts",
+    "./config": "./src/config/index.ts",
+    "./errors": "./src/core/errors.ts",
+    "./hooks": "./src/core/hooks.ts",
+    "./service": "./src/core/service.ts",
+    "./schema": "./src/core/schema.ts",
+    "./env": "./src/core/env.ts",
+    "./logger": "./src/core/logger.ts",
+    "./litestone": "./src/core/litestone.ts",
+    "./events": "./src/events/index.ts",
+    "./cache": "./src/cache/index.ts",
+    "./scheduler": "./src/plugins/scheduler/index.ts",
+    "./workers": "./src/workers/index.ts",
+    "./filestorage": "./src/storage/filestorage/index.ts",
+    "./database": "./src/storage/database/index.ts",
+    "./mail": "./src/mail/index.ts",
+    "./ai": "./src/plugins/ai/index.ts",
+    "./testing": "./src/testing/index.ts",
+    "./openapi": "./src/plugins/openapi/index.ts",
+    "./webhooks": "./src/plugins/webhooks/index.ts",
+    "./manifest": "./src/plugins/manifest/index.ts",
+    "./devtools": "./src/plugins/devtools/index.ts",
+    "./client": "./src/client/index.ts",
+    "./email": "./src/plugins/email/index.ts",
+    "./channels": "./src/transport/channels.ts",
+    "./middleware": "./src/transport/middleware.ts",
+    "./health": "./src/transport/health.ts",
+    "./auth": "./src/auth/types.ts"
+  },
+  "scripts": {
+    "init": "bun run tools/init.ts",
+    "dev": "bun run --watch example/app.ts",
+    "start": "NODE_ENV=production bun run example/app.ts",
+    "test": "bun test tests/index.test.ts",
+    "test:example": "bun test example/test.ts",
+    "test:all": "bun test tests/index.test.ts example/test.ts",
+    "repl": "bun run tools/repl.ts",
+    "setup": "bun run tools/setup.ts",
+    "setup:audit": "bun run tools/setup.ts audit",
+    "litestone": "bun run tools/litestone.ts",
+    "litestone:audit": "bun run tools/litestone.ts audit"
+  },
+  "peerDependencies": {
+    "@frontierjs/litestone": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@frontierjs/litestone": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@frontierjs/litestone": "latest"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "keywords": [
+    "junction",
+    "framework",
+    "bun",
+    "typescript",
+    "sqlite",
+    "feathers"
+  ],
+  "license": "MIT",
+  "_built": "2026-04-26"
+}

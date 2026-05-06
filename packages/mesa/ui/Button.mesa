@@ -1,0 +1,48 @@
+<script>
+  export let label    = 'Button'
+  export let variant  = 'primary'   // 'primary' | 'secondary' | 'danger' | 'ghost'
+  export let size     = 'md'        // 'sm' | 'md' | 'lg'
+  export let disabled = false
+  export let loading  = false
+  export let icon     = null        // emoji or text prefix
+
+  const bg = {
+    primary:   '#6366f1',
+    secondary: '#f1f5f9',
+    danger:    '#ef4444',
+    ghost:     'transparent',
+  }[variant] ?? '#6366f1'
+
+  const color = variant === 'secondary' ? '#374151' : variant === 'ghost' ? '#6366f1' : '#fff'
+
+  const border = variant === 'ghost'
+    ? '1px solid #6366f1'
+    : variant === 'secondary'
+    ? '1px solid #e2e8f0'
+    : 'none'
+
+  const pad = { sm: '4px 10px', md: '7px 16px', lg: '10px 22px' }[size] ?? '7px 16px'
+  const fs  = { sm: '12px',     md: '13px',      lg: '15px'      }[size] ?? '13px'
+</script>
+
+<button
+  {disabled}
+  style="
+    background:{bg};
+    color:{color};
+    border:{border};
+    padding:{pad};
+    font-size:{fs};
+    border-radius:6px;
+    cursor:{disabled ? 'not-allowed' : 'pointer'};
+    opacity:{disabled ? 0.55 : 1};
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-weight:500;
+    transition:opacity .15s,filter .15s;
+  "
+>
+  {#if loading}⏳{:else if icon}{icon}{/if}
+  {loading ? 'Loading…' : label}
+</button>

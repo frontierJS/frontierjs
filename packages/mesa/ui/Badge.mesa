@@ -1,0 +1,29 @@
+<script>
+  export let label   = ''
+  export let color   = 'blue'    // 'blue' | 'green' | 'yellow' | 'red' | 'gray' | 'purple'
+  export let dot     = false     // show a status dot
+
+  const palettes = {
+    blue:   { bg: '#dbeafe', text: '#1d4ed8', dot: '#3b82f6' },
+    green:  { bg: '#dcfce7', text: '#15803d', dot: '#22c55e' },
+    yellow: { bg: '#fef9c3', text: '#a16207', dot: '#eab308' },
+    red:    { bg: '#fee2e2', text: '#b91c1c', dot: '#ef4444' },
+    gray:   { bg: '#f3f4f6', text: '#374151', dot: '#9ca3af' },
+    purple: { bg: '#ede9fe', text: '#6d28d9', dot: '#8b5cf6' },
+  }
+
+  const p = palettes[color] ?? palettes.blue
+</script>
+
+<span style="
+  display:inline-flex;align-items:center;gap:5px;
+  background:{p.bg};color:{p.text};
+  font-size:11px;font-weight:600;letter-spacing:.03em;
+  padding:2px 8px;border-radius:99px;
+  white-space:nowrap;
+">
+  {#if dot}
+    <span style="width:6px;height:6px;border-radius:50%;background:{p.dot};flex-shrink:0"></span>
+  {/if}
+  {label}
+</span>

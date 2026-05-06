@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesa DevTools</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+  :root {
+    --bg:         #1a1612;
+    --bg2:        #221e19;
+    --bg3:        #2c2722;
+    --border:     #3a342e;
+    --text:       #f0dfc0;
+    --text-dim:   #9a8e7e;
+    --text-dimmer:#5a504a;
+    --orange:     #ee380d;
+    --teal:       #2ec4b6;
+    --pink:       #e8407a;
+    --yellow:     #f5a623;
+    --green:      #4caf7d;
+    --font-mono:  'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    --font-ui:    system-ui, -apple-system, sans-serif;
+    --radius:     6px;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 13px; }
+
+  /* ── Layout ── */
+  .layout { display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 40px 1fr; height: 100vh; }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 12px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+  }
+  .toolbar .logo { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; letter-spacing: .02em; }
+  .toolbar .logo .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--orange); }
+  .toolbar .sep { flex: 1 }
+  .toolbar .badge {
+    font-size: 11px; padding: 2px 7px; border-radius: 10px;
+    background: var(--bg3); color: var(--text-dim); border: 1px solid var(--border);
+  }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dimmer); transition: background .3s; }
+  .status-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #open-app { font-size: 11px; color: var(--text-dim); text-decoration: none; padding: 3px 8px; border-radius: 4px; background: var(--bg3); border: 1px solid var(--border); cursor: pointer; }
+  #open-app:hover { border-color: var(--teal); color: var(--teal); }
+  #clear-log { font-size: 11px; color: var(--text-dim); padding: 3px 8px; border-radius: 4px; background: var(--bg3); border: 1px solid var(--border); cursor: pointer; }
+  #clear-log:hover { border-color: var(--pink); color: var(--pink); }
+
+  /* ── Sidebar — component tree ── */
+  .sidebar {
+    background: var(--bg2); border-right: 1px solid var(--border);
+    overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .sidebar-head { padding: 10px 12px 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dimmer); border-bottom: 1px solid var(--border); }
+  .comp-item {
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+    transition: background .15s;
+  }
+  .comp-item:hover { background: var(--bg3); }
+  .comp-item.active { background: var(--bg3); border-left: 2px solid var(--orange); padding-left: 10px; }
+  .comp-name { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .comp-count { margin-left: auto; font-size: 10px; color: var(--text-dimmer); background: var(--bg); padding: 1px 5px; border-radius: 8px; flex-shrink: 0; }
+  .comp-file { font-size: 10px; color: var(--text-dimmer); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty-sidebar { padding: 20px 12px; color: var(--text-dimmer); font-size: 12px; line-height: 1.6; }
+
+  /* ── Main panel ── */
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
+  .tab {
+    padding: 8px 14px; font-size: 12px; cursor: pointer;
+    color: var(--text-dim); border-bottom: 2px solid transparent;
+    transition: color .15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+
+  /* ── Signals panel ── */
+  .signals-panel { flex: 1; overflow-y: auto; }
+  .no-selection { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-dimmer); font-size: 12px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    padding: 7px 12px; text-align: left; font-size: 10px;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text-dimmer); background: var(--bg2); border-bottom: 1px solid var(--border);
+  }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:hover { background: var(--bg3); }
+  td { padding: 6px 12px; vertical-align: top; }
+  .sig-name { font-family: var(--font-mono); font-size: 12px; color: var(--text); font-weight: 600; }
+  .sig-kind { font-size: 10px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+  .kind-let           { background: #1e3040; color: var(--teal); }
+  .kind-prop          { background: #3a1a28; color: var(--pink); }
+  .kind-derived       { background: #1e2a14; color: var(--green); }
+  .kind-async-derived { background: #1e2a14; color: var(--green); }
+  .kind-async         { background: #2a2014; color: var(--yellow); }
+  .kind-writable-derived { background: #2a1e30; color: #c084fc; }
+  .kind-let-context   { background: #1e3040; color: var(--teal); }
+  .kind-derived-context { background: #1e2a14; color: var(--green); }
+  .sig-value { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); word-break: break-all; }
+  .sig-value .null  { color: var(--text-dimmer); font-style: italic; }
+  .sig-value .bool  { color: var(--orange); }
+  .sig-value .num   { color: var(--yellow); }
+  .sig-value .str   { color: var(--green); }
+  .sig-value .arr   { color: var(--teal); }
+  .sig-value .obj   { color: var(--teal); }
+  .sig-value .fn    { color: var(--text-dimmer); font-style: italic; }
+  .sig-updated { color: var(--orange); font-size: 11px; white-space: nowrap; }
+
+  /* ── Log panel ── */
+  .log-panel { flex: 1; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; }
+  .log-row {
+    display: grid; grid-template-columns: 60px 120px 80px 1fr;
+    padding: 5px 12px; border-bottom: 1px solid var(--border);
+    align-items: baseline; transition: background .1s;
+  }
+  .log-row:hover { background: var(--bg3); }
+  .log-row.flash { animation: flash .4s ease; }
+  @keyframes flash { 0% { background: #ee380d22; } 100% { background: transparent; } }
+  .log-ts   { color: var(--text-dimmer); font-size: 10px; }
+  .log-comp { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-name { color: var(--text); font-weight: 600; }
+  .log-val  { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-empty { padding: 20px 16px; color: var(--text-dimmer); }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Toolbar -->
+  <header class="toolbar">
+    <div class="logo"><div class="dot"></div>Mesa DevTools</div>
+    <div class="sep"></div>
+    <div class="status-dot" id="status-dot"></div>
+    <span class="badge" id="comp-count-badge">0 components</span>
+    <span class="badge" id="sig-count-badge">0 signals</span>
+    <button id="clear-log">Clear log</button>
+    <a id="open-app" href="/" target="_blank">Open app ↗</a>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-head">Components</div>
+    <div id="comp-list">
+      <div class="empty-sidebar">Waiting for app…<br>Open your app and it will<br>appear here automatically.</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="tabs">
+      <div class="tab active" data-tab="signals">Signals</div>
+      <div class="tab" data-tab="log">Update Log <span id="log-badge"></span></div>
+    </div>
+    <div id="panel-signals" class="signals-panel">
+      <div class="no-selection">← Select a component to inspect its signals</div>
+    </div>
+    <div id="panel-log" class="log-panel" style="display:none">
+      <div class="log-empty">No updates yet.</div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+const state = {
+  components: new Map(),  // id → { id, name, file, signals, mountTime }
+  signals:    new Map(),  // id → { id, name, kind, componentId, value, updatedAt }
+  log:        [],
+  selected:   null,
+  activeTab:  'signals',
+}
+
+// ── BroadcastChannel ─────────────────────────────────────────────────────────
+const bc = new BroadcastChannel('mesa-devtools')
+
+bc.onmessage = (e) => {
+  const { type, data } = e.data ?? {}
+  if      (type === 'online')    onOnline()
+  else if (type === 'snapshot')  onSnapshot(data)
+  else if (type === 'mount')     onMount(data)
+  else if (type === 'unmount')   onUnmount(data)
+  else if (type === 'update')    onUpdate(data)
+}
+
+// Request snapshot as soon as we open
+bc.postMessage({ type: 'request-snapshot' })
+
+// ── Event handlers ───────────────────────────────────────────────────────────
+function onOnline() {
+  document.getElementById('status-dot').classList.add('online')
+  bc.postMessage({ type: 'request-snapshot' })
+}
+
+function onSnapshot({ signals = [], components = [], log = [] }) {
+  document.getElementById('status-dot').classList.add('online')
+  state.components.clear()
+  state.signals.clear()
+  for (const c of components) state.components.set(c.id, { ...c })
+  for (const s of signals)    state.signals.set(s.id, { ...s })
+  state.log = log.slice()
+  renderAll()
+}
+
+function onMount({ id, name, file }) {
+  state.components.set(id, { id, name, file, signals: [], mountTime: Date.now() })
+  renderSidebar()
+  updateBadges()
+}
+
+function onUnmount({ id }) {
+  if (state.selected === id) state.selected = null
+  state.components.delete(id)
+  renderSidebar()
+  renderSignals()
+  updateBadges()
+}
+
+function onUpdate({ signalId, name, componentId, value, ts }) {
+  const rec = state.signals.get(signalId)
+  if (rec) {
+    rec.value     = value
+    rec.updatedAt = ts
+  }
+  // Prepend to log
+  state.log.unshift({ signalId, name, componentId, value, ts })
+  if (state.log.length > 200) state.log.length = 200
+
+  if (state.activeTab === 'signals' && state.selected === componentId) renderSignalTable()
+  if (state.activeTab === 'log') prependLogRow({ signalId, name, componentId, value, ts })
+  updateLogBadge()
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function renderAll() {
+  renderSidebar()
+  renderSignals()
+  if (state.activeTab === 'log') renderLog()
+  updateBadges()
+}
+
+function renderSidebar() {
+  const list = document.getElementById('comp-list')
+  if (state.components.size === 0) {
+    list.innerHTML = '<div class="empty-sidebar">No components mounted.<br>Reload your app to capture them.</div>'
+    return
+  }
+  list.innerHTML = ''
+  for (const comp of state.components.values()) {
+    const item = document.createElement('div')
+    item.className = 'comp-item' + (state.selected === comp.id ? ' active' : '')
+    item.dataset.id = comp.id
+    const sigCount = (comp.signals ?? []).length
+    const shortFile = comp.file ? comp.file.split('/').pop() : ''
+    item.innerHTML = `
+      <div style="min-width:0">
+        <div class="comp-name">${esc(comp.name)}</div>
+        ${shortFile ? `<div class="comp-file">${esc(shortFile)}</div>` : ''}
+      </div>
+      <div class="comp-count">${sigCount} sig${sigCount !== 1 ? 's' : ''}</div>`
+    item.addEventListener('click', () => { state.selected = comp.id; renderAll() })
+    list.appendChild(item)
+  }
+}
+
+function renderSignals() {
+  if (state.activeTab !== 'signals') return
+  renderSignalTable()
+}
+
+function renderSignalTable() {
+  const panel = document.getElementById('panel-signals')
+  if (state.selected === null) {
+    panel.innerHTML = '<div class="no-selection">← Select a component to inspect its signals</div>'
+    return
+  }
+  const comp = state.components.get(state.selected)
+  if (!comp) {
+    panel.innerHTML = '<div class="no-selection">Component no longer mounted.</div>'
+    return
+  }
+
+  // Gather signals belonging to this component
+  const sigs = []
+  for (const s of state.signals.values()) {
+    if (s.componentId === state.selected) sigs.push(s)
+  }
+
+  if (sigs.length === 0) {
+    panel.innerHTML = '<div class="no-selection">No signals registered for this component.</div>'
+    return
+  }
+
+  const rows = sigs.map(s => {
+    const ago = s.updatedAt ? timeSince(s.updatedAt) : ''
+    return `<tr>
+      <td><span class="sig-name">${esc(s.name)}</span></td>
+      <td><span class="sig-kind kind-${esc(s.kind)}">${esc(s.kind)}</span></td>
+      <td><div class="sig-value">${renderValue(s.value)}</div></td>
+      <td><span class="sig-updated">${esc(ago)}</span></td>
+    </tr>`
+  }).join('')
+
+  panel.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Name</th><th>Kind</th><th>Value</th><th>Updated</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`
+}
+
+function renderLog() {
+  const panel = document.getElementById('panel-log')
+  if (state.log.length === 0) {
+    panel.innerHTML = '<div class="log-empty">No updates yet.</div>'
+    return
+  }
+  panel.innerHTML = state.log.map(entry => logRowHTML(entry)).join('')
+}
+
+function prependLogRow(entry) {
+  const panel = document.getElementById('panel-log')
+  const empty = panel.querySelector('.log-empty')
+  if (empty) empty.remove()
+  const div = document.createElement('div')
+  div.innerHTML = logRowHTML(entry)
+  const row = div.firstElementChild
+  row.classList.add('flash')
+  panel.prepend(row)
+  // Keep DOM trim
+  while (panel.children.length > 200) panel.lastElementChild.remove()
+}
+
+function logRowHTML(entry) {
+  const comp = state.components.get(entry.componentId)
+  const compName = comp ? comp.name : `#${entry.componentId}`
+  const t = new Date(entry.ts)
+  const ts = `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}:${t.getSeconds().toString().padStart(2,'0')}.${t.getMilliseconds().toString().padStart(3,'0')}`
+  return `<div class="log-row">
+    <span class="log-ts">${ts}</span>
+    <span class="log-comp">${esc(compName)}</span>
+    <span class="log-name">${esc(entry.name)}</span>
+    <span class="log-val">${esc(flatValue(entry.value))}</span>
+  </div>`
+}
+
+// ── Value rendering ───────────────────────────────────────────────────────────
+function renderValue(v) {
+  if (v === null)      return '<span class="null">null</span>'
+  if (v === undefined) return '<span class="null">undefined</span>'
+  if (v === '[Function]') return '<span class="fn">[Function]</span>'
+  if (typeof v === 'boolean') return `<span class="bool">${v}</span>`
+  if (typeof v === 'number')  return `<span class="num">${v}</span>`
+  if (typeof v === 'string')  return `<span class="str">${esc(JSON.stringify(v).slice(0, 80))}</span>`
+  if (Array.isArray(v)) return `<span class="arr">[${v.map(x => flatValue(x)).join(', ').slice(0, 80)}]</span>`
+  return `<span class="obj">${esc(JSON.stringify(v).slice(0, 80))}</span>`
+}
+
+function flatValue(v) {
+  if (v === null || v === undefined) return String(v)
+  if (v === '[Function]') return '[Function]'
+  if (typeof v !== 'object') return String(v)
+  if (Array.isArray(v)) return `[…${v.length}]`
+  return '{…}'
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+function timeSince(ts) {
+  const d = Date.now() - ts
+  if (d < 1000)  return `${d}ms ago`
+  if (d < 60000) return `${(d/1000).toFixed(1)}s ago`
+  return `${Math.floor(d/60000)}m ago`
+}
+
+function updateBadges() {
+  document.getElementById('comp-count-badge').textContent = `${state.components.size} component${state.components.size !== 1 ? 's' : ''}`
+  document.getElementById('sig-count-badge').textContent  = `${state.signals.size} signal${state.signals.size !== 1 ? 's' : ''}`
+}
+
+function updateLogBadge() {
+  const el = document.getElementById('log-badge')
+  el.textContent = state.log.length ? ` (${state.log.length})` : ''
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    state.activeTab = tab.dataset.tab
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab))
+    document.getElementById('panel-signals').style.display = state.activeTab === 'signals' ? '' : 'none'
+    document.getElementById('panel-log').style.display     = state.activeTab === 'log'     ? '' : 'none'
+    if (state.activeTab === 'log') renderLog()
+  })
+})
+
+// ── Clear log ─────────────────────────────────────────────────────────────────
+document.getElementById('clear-log').addEventListener('click', () => {
+  state.log = []
+  document.getElementById('panel-log').innerHTML = '<div class="log-empty">Log cleared.</div>'
+  updateLogBadge()
+})
+
+// ── Live value refresh (signals tab) ─────────────────────────────────────────
+// Re-render the signal table every 2s so "Updated" timestamps stay fresh
+setInterval(() => {
+  if (state.activeTab === 'signals' && state.selected !== null) {
+    renderSignalTable()
+  }
+}, 2000)
+</script>
+</body>
+</html>

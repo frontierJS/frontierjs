@@ -1,0 +1,45 @@
+{
+  "name": "@frontierjs/mesa-vite",
+  "version": "1.0.0",
+  "description": "Vite plugin for Mesa (.mesa and .md) files \u2014 transform, HMR, error overlay, scoped CSS",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js"
+  },
+  "peerDependencies": {
+    "vite": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "unified": {
+      "optional": true
+    },
+    "remark-parse": {
+      "optional": true
+    },
+    "remark-gfm": {
+      "optional": true
+    },
+    "remark-rehype": {
+      "optional": true
+    },
+    "rehype-slug": {
+      "optional": true
+    },
+    "rehype-stringify": {
+      "optional": true
+    }
+  },
+  "notes": {
+    "markdown": "To process .md files, compiler-md.js must be resolvable (same directory as compiler.js). compiler-md.js requires: unified, remark-parse, remark-gfm, remark-rehype, rehype-slug, rehype-stringify."
+  },
+  "keywords": [
+    "vite",
+    "mesa",
+    "plugin",
+    "hmr"
+  ],
+  "license": "MIT",
+  "_built": "2026-05-05"
+}

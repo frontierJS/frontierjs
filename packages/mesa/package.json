@@ -1,0 +1,73 @@
+{
+  "name": "@frontierjs/mesa",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Mesa \u2014 reactive UI language compiler and runtime",
+  "main": "./compiler.js",
+  "module": "./compiler.js",
+  "exports": {
+    ".": {
+      "import": "./compiler.js"
+    },
+    "./runtime.js": {
+      "import": "./runtime.js"
+    },
+    "./runtime": {
+      "import": "./runtime.js"
+    },
+    "./compiler.js": {
+      "import": "./compiler.js"
+    },
+    "./compiler": {
+      "import": "./compiler.js"
+    },
+    "./compiler-md.js": {
+      "import": "./compiler-md.js"
+    },
+    "./compiler-md": {
+      "import": "./compiler-md.js"
+    },
+    "./render.js": {
+      "import": "./render.js"
+    },
+    "./render": {
+      "import": "./render.js"
+    },
+    "./css-inliner.js": {
+      "import": "./css-inliner.js"
+    },
+    "./css-inliner": {
+      "import": "./css-inliner.js"
+    },
+    "./render-component.js": {
+      "import": "./render-component.js"
+    },
+    "./render-component": {
+      "import": "./render-component.js"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "serve": "npx serve ."
+  },
+  "dependencies": {
+    "acorn": "^8.0.0",
+    "astring": "^1.0.0",
+    "css-select": "^7.0.0",
+    "css-tree": "^2.0.0",
+    "css-what": "^8.0.0",
+    "rehype-slug": "^6.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5"
+  },
+  "devDependencies": {
+    "happy-dom": "^14.12.3",
+    "vite": "^8.0.10",
+    "vitest": "^2.0.0"
+  },
+  "_built": "2026-05-05"
+}

@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Junction Devtools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080b10;--surface:#0d1219;--raised:#111926;--border:#1a2535;--border2:#233044;
+  --text:#8fb4cc;--bright:#cce0ee;--muted:#3d566e;
+  --green:#1de07a;--red:#ff4f4f;--amber:#f0a020;--blue:#4da8f8;--purple:#b57cff;--teal:#00d4c8;
+  --mono:'Fira Code',monospace;--display:'Syne',sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12px;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+#app{display:flex;flex-direction:column;height:100vh}
+header{display:flex;align-items:center;gap:16px;padding:0 16px;height:44px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.brand{font-family:var(--display);font-size:14px;font-weight:800;color:var(--bright);letter-spacing:.05em;display:flex;align-items:center;gap:8px}
+.brand .d{color:var(--teal)}.brand .v{font-family:var(--mono);font-weight:400;font-size:10px;color:var(--muted)}
+.pills{display:flex;gap:8px;margin-left:auto}
+.pill{display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:3px;background:var(--raised);border:1px solid var(--border);font-size:10px;color:var(--muted)}
+.pill .dot{width:6px;height:6px;border-radius:50%}.dot.g{background:var(--green);box-shadow:0 0 6px var(--green)}.dot.o{background:var(--muted)}
+.pill b{color:var(--bright);font-weight:500}
+.wsbadge{font-size:10px;padding:2px 7px;border-radius:2px;font-weight:500}
+.wsbadge.live{background:rgba(29,224,122,.12);color:var(--green);border:1px solid rgba(29,224,122,.25)}
+.wsbadge.closed{background:rgba(255,79,79,.1);color:var(--red);border:1px solid rgba(255,79,79,.2)}
+nav{display:flex;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;padding:0 8px}
+.tab{padding:8px 16px;font-size:11px;font-weight:500;color:var(--muted);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px;transition:color .15s}
+.tab:hover{color:var(--text)}.tab.on{color:var(--bright);border-bottom-color:var(--teal)}
+.tab .b{font-size:9px;background:var(--raised);border:1px solid var(--border2);padding:1px 5px;border-radius:10px;color:var(--muted)}
+.tab.on .b{background:rgba(0,212,200,.12);border-color:rgba(0,212,200,.3);color:var(--teal)}
+.panel{display:none;flex:1;overflow:hidden;flex-direction:column}.panel.on{display:flex}
+.bar2{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.bar2 input[type=text]{flex:1;background:var(--raised);border:1px solid var(--border2);border-radius:3px;padding:4px 8px;color:var(--bright);font-family:var(--mono);font-size:11px;outline:none}
+.bar2 input[type=text]::placeholder{color:var(--muted)}.bar2 input[type=text]:focus{border-color:var(--teal)}
+.btn{padding:3px 10px;font-size:10px;font-family:var(--mono);background:var(--raised);border:1px solid var(--border2);border-radius:3px;color:var(--muted);cursor:pointer;letter-spacing:.05em}
+.btn:hover{color:var(--bright)}.btn.red:hover{color:var(--red);border-color:rgba(255,79,79,.4)}.btn.pau{color:var(--amber);border-color:rgba(240,160,32,.4)}
+.fps{display:flex;gap:4px}
+.fp{padding:2px 8px;font-size:10px;border-radius:2px;cursor:pointer;background:var(--raised);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);letter-spacing:.04em}
+.fp.on{background:rgba(0,212,200,.1);border-color:rgba(0,212,200,.35);color:var(--teal)}
+.ltog{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:10px;cursor:pointer;padding:2px 8px;border-radius:2px;border:1px solid var(--border);background:var(--raised);letter-spacing:.04em;user-select:none}
+.ltog input{accent-color:var(--teal);cursor:pointer}.ltog.on{color:var(--teal);border-color:rgba(0,212,200,.35);background:rgba(0,212,200,.08)}
+.tbl{flex:1;overflow-y:auto}
+table{width:100%;border-collapse:collapse}
+thead th{position:sticky;top:0;z-index:10;background:var(--raised);border-bottom:1px solid var(--border2);padding:5px 8px;text-align:left;font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+tbody tr:hover{background:var(--raised)}
+tbody tr.er{background:rgba(255,79,79,.08);border-left:2px solid var(--red)}
+tbody tr.er:hover{background:rgba(255,79,79,.14)}
+tbody td{padding:4px 8px;font-size:11px;white-space:nowrap}
+.tc{color:var(--muted);font-size:10px;width:80px}
+.tb2{font-size:9px;padding:1px 5px;border-radius:2px;font-weight:600;letter-spacing:.06em}
+.ws{background:rgba(181,124,255,.15);color:var(--purple);border:1px solid rgba(181,124,255,.3)}
+.ht{background:rgba(77,168,248,.12);color:var(--blue);border:1px solid rgba(77,168,248,.25)}
+.in{background:rgba(143,180,204,.1);color:var(--muted);border:1px solid var(--border)}
+.sok{color:var(--green);font-size:10px}
+.ser{color:var(--red);font-size:13px;font-weight:700;text-shadow:0 0 6px rgba(255,79,79,.6)}
+.db{display:flex;align-items:center;gap:4px;justify-content:flex-end}
+.bar{height:2px;border-radius:1px;min-width:2px}
+.dn{font-size:10px;color:var(--muted)}
+.xrow td{padding:0}
+.xbody{padding:10px 16px 12px;background:var(--raised);border-bottom:1px solid var(--border2);display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.xs h4{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;font-weight:600}
+.xs pre{font-size:10px;color:var(--text);line-height:1.5;white-space:pre-wrap;word-break:break-all}
+.vok{color:var(--green)}.ver2{color:var(--red)}
+tbody tr.lr{opacity:.82;border-left:2px solid transparent}
+tbody tr.lr:hover{opacity:1;background:var(--raised)}
+tbody tr.lr.lw{border-left-color:rgba(240,160,32,.4)}
+tbody tr.lr.le{border-left-color:rgba(255,79,79,.5);background:rgba(255,79,79,.04)}
+.lb2{font-size:9px;padding:1px 5px;border-radius:2px;font-weight:700;letter-spacing:.08em}
+.ld{background:rgba(143,180,204,.1);color:var(--muted);border:1px solid var(--border)}
+.li{background:rgba(77,168,248,.12);color:var(--blue);border:1px solid rgba(77,168,248,.25)}
+.lw2{background:rgba(240,160,32,.12);color:var(--amber);border:1px solid rgba(240,160,32,.3)}
+.le2{background:rgba(255,79,79,.15);color:var(--red);border:1px solid rgba(255,79,79,.35)}
+.lm{color:var(--text);max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ln{color:var(--muted);font-size:9px;margin-left:6px}
+.sgrid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1px;background:var(--border);align-content:start}
+.scard{background:var(--surface);padding:14px 16px}
+.scard h3{font-family:var(--display);font-size:13px;font-weight:800;color:var(--bright);margin-bottom:8px}
+.sst{font-size:10px;color:var(--muted);margin-top:8px}.sst span{color:var(--text)}
+.clist{flex:1;overflow-y:auto}
+.ci{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border)}
+.ci:hover{background:var(--raised)}
+.cdot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);flex-shrink:0}
+.cu{color:var(--bright);font-weight:500;min-width:160px}.cu .an{color:var(--muted);font-style:italic}
+.cid{color:var(--muted);font-size:10px;flex:1}.cage{color:var(--muted);font-size:10px}
+.nc{padding:40px;text-align:center;color:var(--muted)}
+.mcard{background:var(--raised);border:1px solid var(--border);border-radius:6px;padding:14px 16px}
+.mcard .ml{font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.mcard .mv{font-size:22px;font-weight:600;color:var(--bright);font-variant-numeric:tabular-nums}
+.mcard .ms{font-size:11px;color:var(--muted);margin-top:4px}
+.msec{grid-column:1/-1;font-size:10px;color:var(--teal);letter-spacing:.1em;text-transform:uppercase;padding:4px 0 2px;border-bottom:1px solid var(--border);margin-top:8px}
+.msec:first-child{margin-top:0}
+.elist{flex:1;overflow-y:auto}
+.ei{display:flex;align-items:baseline;gap:10px;padding:5px 12px;border-bottom:1px solid var(--border)}
+.ei:hover{background:var(--raised)}
+.ets{color:var(--muted);font-size:10px;width:80px;flex-shrink:0}
+.en{color:var(--teal);font-weight:500;min-width:160px}
+.ed{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+@keyframes fi{from{background:rgba(0,212,200,.07)}to{background:transparent}}
+tr.nr{animation:fi .5s ease-out}
+@keyframes pu{0%,100%{opacity:1}50%{opacity:.4}}
+.lp{animation:pu 2s infinite}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <div class="brand"><span class="d">&#9672;</span> JUNCTION DEVTOOLS <span class="v" id="av"></span></div>
+  <div class="pills">
+    <div class="pill"><div class="dot g lp" id="wd"></div><b id="sr">&#x2014;</b>&nbsp;req/s</div>
+    <div class="pill"><b id="sc">0</b>&nbsp;connections</div>
+    <div class="pill"><b id="st">0</b>&nbsp;requests</div>
+    <span class="wsbadge closed" id="ws">&#x25CF; disconnected</span>
+  </div>
+</header>
+<nav>
+  <button class="tab on" data-t="feed">Feed <span class="b" id="tfc">0</span></button>
+  <button class="tab" data-t="services">Services <span class="b" id="tsc">0</span></button>
+  <button class="tab" data-t="connections">Connections <span class="b" id="tcc">0</span></button>
+  <button class="tab" data-t="events">Events <span class="b" id="tec">0</span></button>
+  <button class="tab" data-t="metrics">Metrics</button>
+</nav>
+
+<div class="panel on" id="panel-feed">
+  <div class="bar2">
+    <input type="text" id="fi" placeholder="filter  service / method / user&#x2026;"/>
+    <div class="fps">
+      <span class="fp on" data-f="all">ALL</span>
+      <span class="fp" data-f="error">ERR</span>
+      <span class="fp" data-f="ws">WS</span>
+      <span class="fp" data-f="http">HTTP</span>
+    </div>
+    <label class="ltog" id="ltl"><input type="checkbox" id="tl"/> LOGS</label>
+    <button class="btn pau" id="bp" style="display:none">&#x25BA; RESUME</button>
+    <button class="btn" id="bps">&#x23F8; PAUSE</button>
+    <button class="btn red" id="bc">CLEAR</button>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr>
+        <th>TIME</th><th>SERVICE / LVL</th><th>METHOD / MSG</th>
+        <th>VIA</th><th>USER</th><th>RESULT</th><th style="text-align:right">MS</th><th></th>
+      </tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel" id="panel-services">
+  <div class="bar2"><span style="color:var(--muted);font-size:10px;letter-spacing:.08em">REGISTERED SERVICES</span></div>
+  <div class="sgrid" id="sg"></div>
+</div>
+
+<div class="panel" id="panel-connections">
+  <div class="bar2"><span style="color:var(--muted);font-size:10px;letter-spacing:.08em">LIVE WEBSOCKET CONNECTIONS</span></div>
+  <div class="clist" id="cl"><div class="nc">No active connections</div></div>
+</div>
+
+<div class="panel" id="panel-events">
+  <div class="bar2">
+    <span style="color:var(--muted);font-size:10px;letter-spacing:.08em">APP EVENT BUS</span>
+    <button class="btn red" id="bce" style="margin-left:auto">CLEAR</button>
+  </div>
+  <div class="elist" id="el"></div>
+</div>
+
+<div class="panel" id="panel-metrics">
+  <div class="bar2">
+    <span style="color:var(--muted);font-size:10px;letter-spacing:.08em">RUNTIME METRICS</span>
+    <span id="mts" style="color:var(--muted);font-size:10px;margin-left:8px"></span>
+    <button class="btn" id="bmr" style="margin-left:auto">↻ REFRESH</button>
+  </div>
+  <div class="mgrid" id="mg" style="padding:16px;overflow:auto;flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;align-content:start"></div>
+</div>
+</div>
+<script>
+const S={requests:[],logs:[],events:[],connections:new Map(),services:[],paused:false,showLogs:false,filter:'all',query:'',expanded:null,totalReqs:0,recent:[]}
+let ws2,wst
+function conn(){
+  const p=location.protocol==='https:'?'wss':'ws'
+  ws2=new WebSocket(p+'://'+location.host+'/ws')
+  ws2.onopen=()=>{ss('ws','&#x25CF; connected','wsbadge live');ss('wd',null,'dot g lp');clearTimeout(wst)}
+  ws2.onclose=()=>{ss('ws','&#x25CF; disconnected','wsbadge closed');ss('wd',null,'dot o');wst=setTimeout(conn,2000)}
+  ws2.onmessage=e=>{const m=JSON.parse(e.data);const h={state:oS,request:oR,log:oL,connection:oC,disconnect:oD,event:oEv};(h[m.type]||Function)(m.data)}
+}
+function ss(id,t,c){const el=document.getElementById(id);if(!el)return;if(t!==null)el.innerHTML=t;if(c!==null)el.className=c}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function ft(ts){return new Date(ts).toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+function dc(ms){return ms<30?'#1de07a':ms<100?'#f0a020':'#ff4f4f'}
+function dw(ms){return Math.min(40,Math.max(2,Math.sqrt(ms)*2.5))}
+function tb(t){if(t==='websocket')return'<span class="tb2 ws">WS</span>';if(t==='http')return'<span class="tb2 ht">HTTP</span>';return'<span class="tb2 in">INT</span>'}
+
+function oS(d){
+  if(d.app?.name)ss('av',esc(d.app.name+' '+(d.app.version||'')),null)
+  S.services=d.services||[];S.requests=d.requests||[];S.logs=d.logs||[];S.events=d.events||[]
+  S.totalReqs=S.requests.length;S.connections.clear()
+  for(const c of d.connections||[])S.connections.set(c.id,c)
+  rAll()
+}
+function oR(r){
+  S.requests.push(r);if(S.requests.length>500)S.requests.shift()
+  S.totalReqs++;S.recent.push(Date.now());uSt()
+  ss('tfc',S.requests.filter(mf).length+(S.showLogs?S.logs.length:0),null)
+  if(!S.paused)pre(mkRR(r))
+}
+function oL(l){
+  S.logs.push(l);if(S.logs.length>500)S.logs.shift()
+  if(!S.paused&&S.showLogs)pre(mkLR(l))
+}
+function oC(c){S.connections.set(c.id,c);rConns();uSt()}
+function oD(d){S.connections.delete(d.id);rConns();uSt()}
+function oEv(e){
+  S.events.push(e);if(S.events.length>300)S.events.shift()
+  ss('tec',S.events.length,null)
+  document.getElementById('el').prepend(mkEvR(e))
+}
+
+function mkRR(r){
+  const tr=document.createElement('tr')
+  if(r.status==='error')tr.classList.add('er')
+  const c=dc(r.durationMs),w=dw(r.durationMs)
+  tr.innerHTML=`<td class="tc">${ft(r.ts)}</td><td style="color:var(--bright);font-weight:500">${esc(r.service)}</td><td style="color:var(--text)">${esc(r.method)}</td><td>${tb(r.transport)}</td><td style="color:var(--text);font-size:10px">${r.user?esc(r.user):'<span style="color:var(--muted)">&#x2014;</span>'}</td><td style="color:var(--muted);font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${esc(r.resultSummary)}</td><td style="text-align:right;width:60px"><div class="db"><div class="bar" style="width:${w}px;background:${c}"></div><span class="dn" style="color:${c}">${r.durationMs}</span></div></td><td style="text-align:center">${r.status==='ok'?'<span class="sok">&#x2713;</span>':`<span class="ser" title="${esc(r.errorMsg||'')}">&#x2717;</span>`}</td>`
+  tr.addEventListener('click',()=>xpand(r,tr,'r'))
+  return tr
+}
+
+function mkLR(l){
+  const lvl=(l.level||'info').toLowerCase()
+  const clsMap={debug:'ld',info:'li',warn:'lw2',error:'le2'}
+  const tr=document.createElement('tr')
+  tr.classList.add('lr',lvl==='warn'?'lw':lvl==='error'?'le':'')
+  const dd=l.data?esc(JSON.stringify(l.data).slice(0,55)):''
+  const ee=l.error?esc(l.error.message):''
+  tr.innerHTML=`<td class="tc">${ft(l.ts||Date.now())}</td><td><span class="lb2 ${clsMap[lvl]||'li'}">${lvl.toUpperCase()}</span></td><td class="lm" colspan="3">${esc(l.message)}${l.ns?`<span class="ln">[${esc(l.ns)}]</span>`:''}</td><td style="color:var(--muted);font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis" colspan="2">${ee||dd}</td><td></td>`
+  tr.addEventListener('click',()=>xpand(l,tr,'l'))
+  return tr
+}
+
+function mkEvR(e){
+  const d=document.createElement('div');d.className='ei'
+  d.innerHTML=`<span class="ets">${ft(e.ts)}</span><span class="en">${esc(e.name)}</span><span class="ed">${esc(e.brief)}</span>`
+  return d
+}
+
+function pre(tr){tr.classList.add('nr');document.getElementById('tb').prepend(tr)}
+
+function xpand(item,tr,type){
+  const key=type==='r'?item.id:'log-'+item.ts
+  const ex=document.querySelector(`[data-xf="${key}"]`)
+  if(ex){ex.remove();if(S.expanded===key)S.expanded=null;return}
+  if(S.expanded)document.querySelector(`[data-xf="${S.expanded}"]`)?.remove()
+  S.expanded=key
+  const xt=document.createElement('tr');xt.classList.add('xrow');xt.dataset.xf=key
+  if(type==='r'){
+    const q=Object.keys(item.query||{}).length?esc(JSON.stringify(item.query,null,2)):'null'
+    const d=item.data?esc(JSON.stringify(item.data,null,2)):'null'
+    xt.innerHTML=`<td colspan="8"><div class="xbody"><div class="xs"><h4>Query</h4><pre>${q}</pre></div><div class="xs"><h4>Data</h4><pre>${d}</pre></div><div class="xs"><h4>Result</h4>${item.status==='ok'?`<pre class="vok">OK &#x2014; ${esc(item.resultSummary)}</pre>`:`<pre class="ver2">[${item.errorCode}] ${esc(item.errorMsg||'')}</pre>`}<div style="margin-top:8px;font-size:10px;color:var(--muted)">${esc(item.transport)} &#xB7; ${esc(item.ip||'?')} &#xB7; ${ft(item.ts)}</div></div></div></td>`
+  } else {
+    const d=item.data?esc(JSON.stringify(item.data,null,2)):'null'
+    const e=item.error?esc(JSON.stringify(item.error,null,2)):'null'
+    xt.innerHTML=`<td colspan="8"><div class="xbody"><div class="xs"><h4>Message</h4><pre style="color:var(--bright)">${esc(item.message)}</pre>${item.ns?`<pre style="margin-top:4px;color:var(--muted)">ns: ${esc(item.ns)}</pre>`:''}</div><div class="xs"><h4>Data</h4><pre>${d}</pre></div><div class="xs"><h4>Error</h4><pre class="${item.error?'ver2':''}">${e}</pre><div style="margin-top:8px;font-size:10px;color:var(--muted)">${ft(item.ts||Date.now())}</div></div></div></td>`
+  }
+  tr.after(xt)
+}
+
+function mf(r){
+  if(S.filter==='error'&&r.status!=='error')return false
+  if(S.filter==='ws'&&r.transport!=='websocket')return false
+  if(S.filter==='http'&&r.transport!=='http')return false
+  if(S.query){const q=S.query.toLowerCase();return r.service.toLowerCase().includes(q)||r.method.toLowerCase().includes(q)||(r.user||'').toLowerCase().includes(q)}
+  return true
+}
+
+function rAll(){rFeed();rSvcs();rConns();rEvts();uSt()}
+
+function rFeed(){
+  const tb=document.getElementById('tb');tb.innerHTML='';S.expanded=null
+  let items=S.requests.filter(mf).map(r=>({t:'r',ts:r.ts,r}))
+  if(S.showLogs)for(const l of S.logs)items.push({t:'l',ts:l.ts||0,l})
+  items.sort((a,b)=>b.ts-a.ts)
+  ss('tfc',items.length,null)
+  for(const i of items)tb.appendChild(i.t==='r'?mkRR(i.r):mkLR(i.l))
+}
+
+function uSt(){
+  const rps=S.recent.filter(t=>Date.now()-t<1000).length
+  ss('sr',rps,null);ss('sc',S.connections.size,null);ss('st',S.totalReqs,null);ss('tcc',S.connections.size,null)
+}
+
+function rSvcs(){
+  const g=document.getElementById('sg');g.innerHTML=''
+  ss('tsc',S.services.length,null)
+  if(!S.services.length){g.innerHTML='<div style="padding:40px;color:var(--muted);grid-column:1/-1">No services registered</div>';return}
+  const cnt={}; for(const r of S.requests)cnt[r.service]=(cnt[r.service]||0)+1
+  for(const n of S.services){
+    const c=document.createElement('div');c.className='scard'
+    c.innerHTML=`<h3>${esc(n)}</h3><div class="sst"><span>${cnt[n]||0}</span> calls recorded</div>`
+    g.appendChild(c)
+  }
+}
+
+function rConns(){
+  const l=document.getElementById('cl');l.innerHTML=''
+  if(!S.connections.size){l.innerHTML='<div class="nc">No active connections</div>';return}
+  for(const c of S.connections.values()){
+    const age=Math.round((Date.now()-c.connectedAt)/1000)
+    const as=age<60?age+'s':age<3600?Math.floor(age/60)+'m':Math.floor(age/3600)+'h'
+    const d=document.createElement('div');d.className='ci'
+    d.innerHTML=`<div class="cdot"></div><div class="cu">${c.user?esc(c.user):'<span class="an">anonymous</span>'}</div><div class="cid">${esc(c.id.slice(0,12))}&#x2026;</div><div class="cage">${as} ago</div>`
+    l.appendChild(d)
+  }
+}
+
+function rEvts(){
+  const l=document.getElementById('el');l.innerHTML=''
+  for(const e of [...S.events].reverse())l.appendChild(mkEvR(e))
+  ss('tec',S.events.length,null)
+}
+
+// ── Metrics ──────────────────────────────────────────────────────────────
+let mData=null
+
+function card(label,value,sub){
+  const d=document.createElement('div');d.className='mcard'
+  d.innerHTML=`<div class="ml">${label}</div><div class="mv">${value}</div>${sub?`<div class="ms">${sub}</div>`:''}`
+  return d
+}
+function sec(label){const d=document.createElement('div');d.className='msec';d.textContent=label;return d}
+
+function rMetrics(){
+  const g=document.getElementById('mg');if(!g)return
+  if(!mData){g.innerHTML='<div class="nc">Loading metrics…</div>';pollMetrics();return}
+  const m=mData;g.innerHTML=''
+  const req=m.http?.requests??{},res=m.http?.responses??{},c=m.cache??{}
+  const totalReq=Object.values(req).reduce((a,b)=>a+b,0)
+  const totalRes=Object.values(res).reduce((a,b)=>a+b,0)
+  g.appendChild(sec('App'))
+  g.appendChild(card('Uptime',m.uptime+'s',m.app+' v'+m.version))
+  g.appendChild(card('Services',(m.services?.count??0),(m.services?.registered??[]).join(', ')||'none'))
+  g.appendChild(sec('Process'))
+  g.appendChild(card('RSS',m.process?.memoryMb+'MB','heap '+m.process?.heapUsedMb+'/'+m.process?.heapTotalMb+'MB'))
+  g.appendChild(card('PID',m.process?.pid??'—',m.process?.nodeVersion??''))
+  g.appendChild(sec('HTTP'))
+  g.appendChild(card('Total Requests',totalReq,'GET '+req.get+' POST '+req.post+' PATCH '+(req.patch??0)+' DEL '+(req.delete??0)))
+  g.appendChild(card('Responses',totalRes,'json '+(res.json??0)+' file '+(res.file??0)+' err '+(res.error??0)))
+  g.appendChild(card('Online',m.http?.online?'✓ yes':'✗ no',''))
+  g.appendChild(sec('Cache'))
+  g.appendChild(card('Hit Rate',c.hitRate??'n/a','hits '+c.hits+' misses '+c.misses))
+  g.appendChild(card('Size',c.size??0,'sets '+(c.sets??0)+' evicts '+(c.evicts??0)))
+  // Plugin-injected sections (e.g. Caravan jobs)
+  const skip=new Set(['app','version','uptime','ts','process','http','services','cache'])
+  for(const [k,v] of Object.entries(m)){
+    if(!skip.has(k)&&v&&typeof v==='object'){
+      g.appendChild(sec(k.toUpperCase()))
+      for(const [sk,sv] of Object.entries(v)){
+        g.appendChild(card(sk,typeof sv==='object'?JSON.stringify(sv):String(sv),''))
+      }
+    }
+  }
+  const ts=document.getElementById('mts')
+  if(ts)ts.textContent='updated '+new Date(m.ts).toLocaleTimeString()
+}
+
+async function pollMetrics(){
+  // Metrics are embedded in /api/state by the devtools server — same origin, no CORS issue
+  try{
+    const r=await fetch('/api/state');if(!r.ok)return
+    const d=await r.json();if(d.metrics){mData=d.metrics;rMetrics()}
+  }catch{}
+}
+
+document.getElementById('bmr')?.addEventListener('click',pollMetrics)
+
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tab,.panel').forEach(e=>e.classList.remove('on'))
+  b.classList.add('on');document.getElementById('panel-'+b.dataset.t).classList.add('on')
+  if(b.dataset.t==='metrics'){if(!mData)pollMetrics();else rMetrics()}
+}))
+document.querySelectorAll('.fp').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('.fp').forEach(x=>x.classList.remove('on'))
+  p.classList.add('on');S.filter=p.dataset.f;rFeed()
+}))
+document.getElementById('fi').addEventListener('input',e=>{S.query=e.target.value;rFeed()})
+document.getElementById('tl').addEventListener('change',e=>{
+  S.showLogs=e.target.checked
+  document.getElementById('ltl').classList.toggle('on',S.showLogs)
+  rFeed()
+})
+document.getElementById('bps').addEventListener('click',()=>{S.paused=true;ss('bps',null,null);document.getElementById('bps').style.display='none';document.getElementById('bp').style.display=''})
+document.getElementById('bp').addEventListener('click',()=>{S.paused=false;document.getElementById('bp').style.display='none';document.getElementById('bps').style.display='';rFeed()})
+document.getElementById('bc').addEventListener('click',()=>{S.requests=[];S.logs=[];S.expanded=null;document.getElementById('tb').innerHTML='';ss('tfc','0',null)})
+document.getElementById('bce').addEventListener('click',()=>{S.events=[];document.getElementById('el').innerHTML='';ss('tec','0',null)})
+setInterval(()=>{S.recent=S.recent.filter(t=>Date.now()-t<5000);uSt();if(document.getElementById('panel-connections').classList.contains('on'))rConns()},1000)
+setInterval(()=>{if(document.getElementById('panel-metrics')?.classList.contains('on'))pollMetrics()},5000)
+conn()
+</script>
+</body>
+</html>

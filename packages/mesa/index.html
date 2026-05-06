@@ -1,0 +1,3424 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mesa REPL</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+    <script>
+      // Tailwind Play CDN — disable preflight so it doesn't conflict with REPL styles
+      window.tailwind = window.tailwind || {}
+      window.tailwind.config = { corePlugins: { preflight: false } }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* ── Themes ──────────────────────────────────────────────────────────── */
+
+      /* Mesa — desert sunset, pulled from the Mesa logo */
+      :root, [data-theme="mesa"] {
+        --bg0:    #0a0806;       /* near-black with warmth */
+        --bg1:    #110d18;       /* deep violet-black — shadow of the mesa */
+        --bg2:    #1a1428;       /* lifted violet dark */
+        --border: #2a1e40;       /* violet border */
+        --border2:#3d2a5e;       /* brighter violet accent border */
+        --red:    #f53a1a;       /* fiery orange-red — sun edge */
+        --orange: #f5a623;       /* saturated golden amber — sun disk */
+        --orange2:#e8880a;       /* deeper amber */
+        --pink:   #e8407a;       /* electric coral-magenta — cloud highlight */
+        --teal:   #3abfa8;       /* saguaro cactus teal */
+        --text:   #f0d8c0;       /* warm parchment */
+        --muted:  #c87adc;       /* electric violet — cloud purple */
+        --dim:    #5a4878;       /* muted violet — shadow */
+        --err:    #f53a1a;
+        --mono:   'Berkeley Mono', 'JetBrains Mono', 'Fira Code', monospace;
+        --pv-bg:       #faf7f2;
+        --pv-hdr-bg:   #f0ebe2;
+        --pv-hdr-bdr:  #e0d5c5;
+        --pv-hdr-lbl:  #9a7a8a;
+      }
+
+      /* Dark — cool pure dark, neutral grays, blue accent */
+      [data-theme="dark"] {
+        --bg0:    #0f0f0f;
+        --bg1:    #161616;
+        --bg2:    #1e1e1e;
+        --border: #2a2a2a;
+        --border2:#333333;
+        --red:    #f87171;
+        --orange: #60a5fa;
+        --orange2:#3b82f6;
+        --pink:   #c084fc;
+        --teal:   #34d399;
+        --text:   #e5e5e5;
+        --muted:  #a3a3a3;
+        --dim:    #525252;
+        --err:    #ef4444;
+        --mono:   'Berkeley Mono', 'JetBrains Mono', 'Fira Code', monospace;
+        --pv-bg:       #1a1a1a;
+        --pv-hdr-bg:   #111111;
+        --pv-hdr-bdr:  #2a2a2a;
+        --pv-hdr-lbl:  #6b7280;
+      }
+
+      /* Light — warm off-white, ink text */
+      [data-theme="light"] {
+        --bg0:    #f5f4f1;
+        --bg1:    #eceae5;
+        --bg2:    #e4e1db;
+        --border: #d0cdc6;
+        --border2:#b8b4ac;
+        --red:    #c0392b;
+        --orange: #c25e00;
+        --orange2:#a84f00;
+        --pink:   #c0166a;
+        --teal:   #0e7490;
+        --text:   #1a1814;
+        --muted:  #3d3830;
+        --dim:    #8a8278;
+        --err:    #b91c1c;
+        --mono:   'Berkeley Mono', 'JetBrains Mono', 'Fira Code', monospace;
+        --pv-bg:       #ffffff;
+        --pv-hdr-bg:   #f0ede8;
+        --pv-hdr-bdr:  #dedad3;
+        --pv-hdr-lbl:  #7a7068;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        background: var(--bg0);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ── Header ─────────────────────────────────────────────────────────── */
+      #hdr {
+        display: flex;
+        align-items: center;
+        height: 44px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      #logo {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 18px;
+        border-right: 1px solid var(--border);
+        height: 100%;
+        flex-shrink: 0;
+      }
+      #logo .wordmark {
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        color: #fff;
+      }
+      #logo .wordmark em {
+        color: var(--red);
+        font-style: normal;
+      }
+      .vtag {
+        font-size: 8px;
+        color: var(--red);
+        border: 1px solid rgba(238, 56, 13, 0.3);
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: rgba(238, 56, 13, 0.06);
+        letter-spacing: 0.1em;
+      }
+      #ex-area {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 14px;
+        flex: 1;
+      }
+
+      /* ── Examples drawer ──────────────────────────────────────────────────── */
+      #ex-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 100;
+      }
+      #ex-backdrop.open { display: block; }
+
+      #ex-drawer {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 300px;
+        background: var(--bg1);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        z-index: 101;
+        transform: translateX(-100%);
+        transition: transform 0.18s ease;
+      }
+      #ex-drawer.open { transform: translateX(0); }
+
+      #ex-drawer-hdr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 44px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+        background: var(--bg1);
+      }
+      #ex-drawer-title {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      #ex-drawer-close {
+        background: none;
+        border: none;
+        color: var(--dim);
+        cursor: pointer;
+        font-size: 13px;
+        font-family: var(--mono);
+        padding: 4px 6px;
+        border-radius: 3px;
+        transition: color .1s;
+      }
+      #ex-drawer-close:hover { color: var(--text); }
+
+      #ex-search-wrap {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg1);
+        flex-shrink: 0;
+      }
+      #ex-search {
+        width: 100%;
+        background: var(--bg0);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 5px 9px;
+        outline: none;
+        transition: border-color .15s;
+      }
+      #ex-search:focus { border-color: var(--orange); }
+      #ex-search::placeholder { color: var(--dim); }
+
+      #ex-drawer-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 0;
+      }
+      #ex-drawer-body::-webkit-scrollbar { width: 4px; }
+      #ex-drawer-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+      .ex-group {
+        margin-bottom: 2px;
+      }
+      .ex-group-hdr {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 16px 4px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .ex-group-chevron {
+        font-size: 8px;
+        color: var(--dim);
+        transition: transform 0.15s;
+        flex-shrink: 0;
+      }
+      .ex-group.collapsed .ex-group-chevron { transform: rotate(-90deg); }
+      .ex-group-name {
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .ex-group-count {
+        font-size: 9px;
+        color: var(--dim);
+        opacity: 0.5;
+        margin-left: auto;
+      }
+      .ex-group-items {
+        overflow: hidden;
+      }
+      .ex-group.collapsed .ex-group-items { display: none; }
+
+      .ex-item {
+        display: flex;
+        align-items: center;
+        padding: 7px 16px 7px 28px;
+        cursor: pointer;
+        border-left: 2px solid transparent;
+        transition: background 0.08s, border-color 0.08s;
+        gap: 8px;
+      }
+      .ex-item:hover { background: rgba(255,255,255,0.03); }
+      .ex-item.active {
+        border-left-color: var(--orange);
+        background: rgba(254,138,17,0.06);
+      }
+      .ex-item-name {
+        font-size: 11px;
+        color: var(--muted);
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .ex-item.active .ex-item-name { color: var(--text); }
+      .ex-item-file {
+        font-size: 9px;
+        color: var(--dim);
+        flex-shrink: 0;
+      }
+      select {
+        background: var(--bg2);
+        color: var(--text);
+        border: 1px solid var(--border2);
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        outline: none;
+      }
+      #status-area {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 16px;
+        border-left: 1px solid var(--border);
+        height: 100%;
+        flex-shrink: 0;
+      }
+      #sdot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--dim);
+        transition: background 0.2s;
+        flex-shrink: 0;
+      }
+      #smsg {
+        font-size: 9px;
+        letter-spacing: 0.06em;
+        color: var(--dim);
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* ── Layout ──────────────────────────────────────────────────────────── */
+      #main {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+        min-height: 0;
+      }
+      #left {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        flex-shrink: 0;
+        width: 50%;
+        min-width: 200px;
+        max-width: 85%;
+      }
+      #divider {
+        width: 5px;
+        background: var(--border);
+        cursor: col-resize;
+        flex-shrink: 0;
+        position: relative;
+        transition: background 0.15s;
+        z-index: 10;
+      }
+      #divider:hover, #divider.dragging { background: var(--orange); }
+      #right {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        flex: 1;
+        min-width: 200px;
+      }
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* ── Panel header ────────────────────────────────────────────────────── */
+      .ph {
+        display: flex !important;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: .5rem;
+        height: 34px;
+        padding: 0 14px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .pip {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .plbl {
+        font-size: 9px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted);
+        flex: 1;
+      }
+      .cbtn {
+        background: transparent;
+        border: 1px solid var(--border2);
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: 9px;
+        padding: 2px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .cbtn:hover {
+        color: var(--orange);
+        border-color: var(--orange);
+      }
+      .ftag {
+        font-size: 9px;
+        color: var(--dim);
+        border: 1px solid var(--border2);
+        padding: 1px 6px;
+        border-radius: 2px;
+      }
+
+      /* ── Group bar ───────────────────────────────────────────────────────── */
+      #group-bar {
+        display: none;
+        align-items: center;
+        gap: 0;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+        min-height: 28px;
+        padding: 0 6px;
+      }
+      #group-bar::-webkit-scrollbar { display: none; }
+      #group-bar.visible { display: flex; }
+      .gbar-label {
+        font-size: 8px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        padding: 0 8px 0 4px;
+        flex-shrink: 0;
+        white-space: nowrap;
+        border-right: 1px solid var(--border);
+        margin-right: 6px;
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+      }
+      .gbar-item {
+        font-size: 10px;
+        color: var(--dim);
+        padding: 3px 9px;
+        border-radius: 3px;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+        transition: color .1s, background .1s;
+        font-family: var(--mono);
+      }
+      .gbar-item:hover { color: var(--muted); background: rgba(255,255,255,0.04); }
+      .gbar-item.active {
+        color: var(--orange);
+        background: rgba(254,138,17,0.08);
+      }
+      #group-bar.edited .gbar-item { opacity: 0.45; }
+      #group-bar.edited .gbar-item.active { opacity: 0.6; }
+
+      /* ── File tabs ───────────────────────────────────────────────────────── */
+      #file-tabs {
+        display: flex;
+        align-items: stretch;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+        min-height: 30px;
+      }
+      #file-tabs::-webkit-scrollbar { display: none; }
+      .ftab {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 10px 0 12px;
+        font-size: 10.5px;
+        color: var(--dim);
+        border-right: 1px solid var(--border);
+        cursor: pointer;
+        white-space: nowrap;
+        background: transparent;
+        border-top: none;
+        border-bottom: none;
+        border-left: none;
+        font-family: var(--mono);
+        flex-shrink: 0;
+        transition: color .1s;
+      }
+      .ftab:hover { color: var(--muted); }
+      .ftab.active {
+        color: var(--text);
+        background: var(--bg0);
+        border-bottom: 1px solid var(--bg0);
+        margin-bottom: -1px;
+      }
+      .ftab .fname {
+        outline: none;
+        background: transparent;
+        border: none;
+        color: inherit;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        width: 90px;
+        cursor: pointer;
+      }
+      .ftab.active .fname { cursor: text; width: auto; min-width: 60px; max-width: 140px; }
+      .ftab .fclose {
+        font-size: 10px;
+        color: var(--dim);
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0 2px;
+        line-height: 1;
+        font-family: var(--mono);
+        opacity: 0;
+        transition: opacity .1s;
+      }
+      .ftab:hover .fclose,
+      .ftab.active .fclose { opacity: 1; }
+      .ftab .fclose:hover { color: var(--red); }
+      .ftab-add {
+        padding: 0 10px;
+        font-size: 14px;
+        color: var(--dim);
+        cursor: pointer;
+        background: none;
+        border: none;
+        font-family: var(--mono);
+        flex-shrink: 0;
+        transition: color .1s;
+        align-self: center;
+      }
+      .ftab-add:hover { color: var(--orange); }
+
+      /* ── Editor ──────────────────────────────────────────────────────────── */
+      #editor-wrap {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--bg0);
+        position: relative;
+      }
+      /* CodeMirror mount point */
+      #cm-editor {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      #cm-editor .cm-editor {
+        height: 100%;
+        background: var(--bg0);
+        font-family: var(--mono);
+        font-size: 12.5px;
+        outline: none;
+      }
+      #cm-editor .cm-editor.cm-focused { outline: none; }
+      #cm-editor .cm-scroller {
+        font-family: var(--mono);
+        line-height: 1.75;
+        overflow: auto;
+      }
+      #cm-editor .cm-content { padding: 14px 0; caret-color: var(--red); }
+      #cm-editor .cm-line { padding: 0 14px; }
+      /* Gutter (line numbers) */
+      #cm-editor .cm-gutters {
+        background: var(--bg0);
+        border-right: 1px solid var(--border);
+        color: var(--border2);
+      }
+      #cm-editor .cm-lineNumbers .cm-gutterElement {
+        padding: 0 10px 0 6px;
+        min-width: 36px;
+      }
+      /* Cursor */
+      #cm-editor .cm-cursor { border-left-color: var(--red); }
+      /* Selection */
+      #cm-editor .cm-selectionBackground { background: rgba(254,138,17,0.12) !important; }
+      #cm-editor .cm-focused .cm-selectionBackground { background: rgba(254,138,17,0.18) !important; }
+      /* Active line */
+      #cm-editor .cm-activeLine { background: rgba(128,128,128,0.04); }
+      #cm-editor .cm-activeLineGutter { background: rgba(128,128,128,0.04); color: var(--dim); }
+      /* Bracket matching */
+      #cm-editor .cm-matchingBracket { background: rgba(46,196,182,0.15); color: var(--teal) !important; outline: 1px solid rgba(46,196,182,0.3); }
+      /* Fold gutter */
+      #cm-editor .cm-foldGutter { width: 14px; }
+      #cm-editor .cm-foldGutter .cm-gutterElement {
+        padding: 0 2px;
+        color: var(--border2);
+        cursor: pointer;
+        font-size: 10px;
+        line-height: 1.6;
+      }
+      #cm-editor .cm-foldGutter .cm-gutterElement:hover { color: var(--orange); }
+      #cm-editor .cm-foldPlaceholder {
+        background: var(--bg2);
+        border: 1px solid var(--border2);
+        border-radius: 3px;
+        color: var(--dim);
+        padding: 0 5px;
+        font-size: 10px;
+        cursor: pointer;
+      }
+      #cm-editor .cm-foldPlaceholder:hover { color: var(--orange); border-color: var(--orange); }
+
+      /* ── Syntax tokens — shared base (Mesa & Dark themes) */
+      #cm-editor .tok-keyword      { color: var(--pink); }
+      #cm-editor .tok-comment      { color: var(--dim); font-style: italic; }
+      #cm-editor .tok-string       { color: var(--teal); }
+      #cm-editor .tok-number       { color: var(--orange); }
+      #cm-editor .tok-operator     { color: var(--muted); }
+      #cm-editor .tok-punctuation  { color: var(--dim); }
+      #cm-editor .tok-variableName { color: var(--text); }
+      #cm-editor .tok-function     { color: var(--orange); }
+      #cm-editor .tok-typeName     { color: var(--pink); }
+      #cm-editor .tok-tagName      { color: #4a9eff; }
+      #cm-editor .tok-attributeName  { color: var(--teal); }
+      #cm-editor .tok-attributeValue { color: var(--teal); }
+      #cm-editor .tok-angleBracket { color: #4a9eff; }
+      #cm-editor .tok-meta         { color: var(--red); }
+      #cm-editor .tok-invalid      { color: var(--err); }
+
+      /* Light theme — token overrides for readability on white */
+      [data-theme="light"] #cm-editor .cm-selectionBackground { background: rgba(194,94,0,0.12) !important; }
+      [data-theme="light"] #cm-editor .cm-focused .cm-selectionBackground { background: rgba(194,94,0,0.2) !important; }
+      [data-theme="light"] #cm-editor .tok-tagName      { color: #1d6fb5; }
+      [data-theme="light"] #cm-editor .tok-angleBracket { color: #1d6fb5; }
+      /* Hidden fallback textarea */
+      #editor { display: none !important; }
+      #line-nums { display: none !important; }
+      #src-view {
+        flex: 1;
+        background: var(--bg0);
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.75;
+        padding: 14px;
+        overflow-y: auto;
+        display: none;
+        white-space: pre;
+        position: absolute;
+        inset: 0;
+      }
+      #src-view.active {
+        display: block;
+      }
+      /* CM hidden in view mode */
+      #cm-editor.hidden { display: none; }
+      #src-legend {
+        display: flex;
+        flex-shrink: 0;
+        padding: 6px 14px;
+        border-top: 1px solid var(--border);
+        background: var(--bg1);
+        font-size: 9.5px;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+      .legend-item { display: flex; align-items: center; gap: 4px; }
+      .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+      /* Autocomplete dropdown */
+      .cm-tooltip.cm-tooltip-autocomplete {
+        background: var(--bg1) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 4px !important;
+        font-family: var(--mono) !important;
+        font-size: 11.5px !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+      }
+      .cm-tooltip-autocomplete ul li {
+        padding: 3px 10px !important;
+        color: var(--muted) !important;
+      }
+      .cm-tooltip-autocomplete ul li[aria-selected] {
+        background: rgba(254,138,17,0.12) !important;
+        color: var(--text) !important;
+      }
+      .cm-completionLabel { color: var(--text); }
+      .cm-completionDetail { color: var(--dim); font-style: italic; margin-left: 8px; }
+      .cm-completionIcon { color: var(--orange); }
+
+      /* Vim mode status bar */
+      #cm-editor .cm-vim-panel {
+        background: var(--bg1);
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 2px 10px;
+      }
+      #cm-editor .cm-vim-panel input {
+        background: transparent;
+        border: none;
+        outline: none;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 11px;
+        width: 100%;
+      }
+      .view-toggle {
+        background: transparent;
+        border: 1px solid var(--border2);
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: 9px;
+        padding: 2px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .view-toggle:hover { color: var(--teal); border-color: var(--teal); }
+      .view-toggle.viewing { color: var(--orange); border-color: var(--orange); }
+      #err-strip {
+        padding: 8px 14px;
+        background: rgba(157, 29, 23, 0.08);
+        border-top: 1px solid #2a0a0a;
+        flex-shrink: 0;
+        display: none;
+      }
+      .err-line {
+        font-size: 11px;
+        color: var(--err);
+      }
+      .warn-line {
+        font-size: 11px;
+        color: var(--orange);
+      }
+
+      /* ── Tab bar ─────────────────────────────────────────────────────────── */
+      #tab-bar {
+        display: flex;
+        align-items: stretch;
+        height: 34px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .tpip {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--pink);
+        align-self: center;
+        margin: 0 4px 0 12px;
+        flex-shrink: 0;
+      }
+      .tab {
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: 9px;
+        padding: 0 13px;
+        height: 100%;
+        cursor: pointer;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        transition: all 0.12s;
+      }
+      .tab.active {
+        border-bottom-color: var(--red);
+        color: var(--orange);
+      }
+
+      /* ── Tab content ─────────────────────────────────────────────────────── */
+      #tab-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .panel {
+        display: none;
+        flex: 1;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .panel.active {
+        display: flex;
+      }
+
+      /* ── Preview ─────────────────────────────────────────────────────────── */
+      #pv-status {
+        padding: 3px 12px;
+        background: var(--pv-hdr-bg);
+        border-bottom: 1px solid var(--pv-hdr-bdr);
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #pvdot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #d1d5db;
+        transition: background 0.2s;
+      }
+      #pvlbl {
+        font-size: 9px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--pv-hdr-lbl);
+      }
+      #pv-container {
+        flex: 1;
+        overflow: auto;
+        padding: 18px 20px;
+        background: var(--pv-bg);
+      }
+      #pv-container h1,
+      #pv-container h2,
+      #pv-container h3 {
+        margin: 0 0 10px;
+        color: #111;
+        font-size: 15px;
+        font-weight: 600;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      #pv-container p {
+        margin: 0 0 6px;
+        color: #1e1e2e;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      #pv-container hr {
+        border: none;
+        border-top: 1px solid #e5e7eb;
+        margin: 10px 0;
+      }
+      #pv-container label {
+        font-size: 12px;
+        color: #6b7280;
+        font-weight: 500;
+        font-family: inherit;
+      }
+      #pv-container button {
+        background: #1e1e2e;
+        color: #fff;
+        border: none;
+        padding: 5px 13px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        margin: 2px 3px 2px 0;
+        font-family: inherit;
+        transition: background 0.1s;
+      }
+      #pv-container button:hover {
+        background: #374151;
+      }
+      #pv-container input,
+      #pv-container textarea,
+      #pv-container select {
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        padding: 5px 9px;
+        font-size: 13px;
+        font-family: inherit;
+        margin: 2px 3px 2px 0;
+        outline: none;
+        transition: border-color 0.1s;
+      }
+      #pv-container input:focus,
+      #pv-container textarea:focus {
+        border-color: #6366f1;
+      }
+      #pv-container textarea {
+        resize: vertical;
+      }
+      #pv-container strong {
+        font-weight: 600;
+      }
+      #pv-container em {
+        font-style: italic;
+        color: #6b7280;
+      }
+      .mesa-error {
+        margin: 4px 0;
+        padding: 10px 14px;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 6px;
+        color: #991b1b;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        white-space: pre-wrap;
+        line-height: 1.6;
+      }
+
+      /* ── Output ──────────────────────────────────────────────────────────── */
+      #output-stats {
+        padding: 3px 12px 4px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+        font-size: 9px;
+        color: var(--dim);
+      }
+      #output-inner {
+        flex: 1;
+        overflow: auto;
+        padding: 12px 0;
+      }
+
+      /* ── Analysis ────────────────────────────────────────────────────────── */
+      #analysis-tabs {
+        display: flex;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .atab {
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: 9px;
+        padding: 0 14px;
+        height: 30px;
+        cursor: pointer;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        transition: all 0.12s;
+      }
+      .atab.active {
+        border-bottom-color: var(--teal);
+        color: var(--teal);
+      }
+      #analysis-inner {
+        flex: 1;
+        overflow: auto;
+        padding: 12px 14px;
+        font-size: 11.5px;
+        line-height: 1.65;
+      }
+
+      /* ── $: Reference panel ──────────────────────────────────────────────── */
+      #reactivity-inner {
+        flex: 1;
+        overflow: auto;
+        padding: 0;
+      }
+      .rx-section {
+        border-bottom: 1px solid var(--border);
+      }
+      .rx-section-hdr {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px 8px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .rx-section-hdr:hover { background: rgba(255,255,255,0.02); }
+      .rx-chevron {
+        font-size: 8px;
+        color: var(--dim);
+        transition: transform 0.15s;
+      }
+      .rx-section.collapsed .rx-chevron { transform: rotate(-90deg); }
+      .rx-title {
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--orange);
+      }
+      .rx-desc {
+        font-size: 10px;
+        color: var(--dim);
+        margin-left: auto;
+      }
+      .rx-body {
+        padding: 0 16px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .rx-section.collapsed .rx-body { display: none; }
+      .rx-code {
+        background: var(--bg0);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 8px 12px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        line-height: 1.75;
+        white-space: pre;
+        overflow-x: auto;
+        color: var(--text);
+      }
+      .rx-note {
+        font-size: 11px;
+        color: var(--dim);
+        line-height: 1.6;
+        padding: 0 2px;
+      }
+      .rx-note strong { color: var(--muted); }
+      .rx-note code {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--teal);
+        background: var(--bg0);
+        padding: 1px 4px;
+        border-radius: 2px;
+      }
+      .rx-error {
+        font-size: 10px;
+        color: var(--err);
+        padding: 2px;
+      }
+      .rx-error code {
+        font-family: var(--mono);
+        color: var(--err);
+      }
+      .rx-try {
+        display: inline-block;
+        font-size: 9px;
+        color: var(--dim);
+        border: 1px solid var(--border2);
+        border-radius: 3px;
+        padding: 1px 7px;
+        cursor: pointer;
+        margin-top: 4px;
+        transition: all .12s;
+      }
+      .rx-try:hover { color: var(--orange); border-color: var(--orange); }
+      .aj-key   { color: var(--orange2); }
+      .aj-str   { color: var(--teal); }
+      .aj-num   { color: #7ec8e3; }
+      .aj-bool  { color: var(--pink); }
+      .aj-null  { color: var(--dim); }
+      .aj-punc  { color: #545470; }
+      .aj-section {
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin: 14px 0 6px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--border);
+      }
+      .aj-section:first-child { margin-top: 0; }
+      #graph-filter {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        padding: 8px 14px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .gf-pill {
+        font-size: 8px;
+        padding: 2px 7px;
+        border-radius: 2px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition: opacity 0.12s, border-color 0.12s;
+        user-select: none;
+        opacity: 0.45;
+      }
+      .gf-pill:hover { opacity: 0.8; }
+      .gf-pill.active { opacity: 1; border-color: currentColor; }
+      #graph-inner {
+        flex: 1;
+        overflow: auto;
+        padding: 8px 14px 20px;
+      }
+      .g-section {
+        font-size: 8px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin: 8px 0 4px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--border);
+      }
+      .g-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+        flex-wrap: wrap;
+      }
+      .g-badge {
+        font-size: 8px;
+        padding: 1px 6px;
+        border-radius: 2px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+      }
+      .g-debug {
+        font-size: 9px;
+        padding: 1px 5px;
+        border-radius: 2px;
+        letter-spacing: 0.1em;
+        color: var(--dim);
+        border: 1px solid var(--border2);
+        font-family: var(--mono);
+      }
+      .g-deps {
+        font-size: 10px;
+        color: var(--dim);
+      }
+      .g-deps em {
+        color: var(--orange2);
+        font-style: normal;
+      }
+
+      /* ── Loading overlay ─────────────────────────────────────────────────── */
+      #boot-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        background: var(--bg0);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+      }
+      #boot-overlay .logo {
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        color: #fff;
+      }
+      #boot-overlay .logo em {
+        color: var(--red);
+        font-style: normal;
+      }
+      #boot-msg {
+        font-size: 11px;
+        color: var(--dim);
+        letter-spacing: 0.1em;
+      }
+      #boot-error {
+        font-size: 11px;
+        color: var(--err);
+        max-width: 500px;
+        text-align: center;
+        line-height: 1.6;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Loading overlay -->
+    <div id="boot-overlay">
+      <div class="logo">ME<em>SA</em></div>
+      <div id="boot-msg">Loading…</div>
+      <div id="boot-error"></div>
+    </div>
+
+    <!-- Header -->
+    <div id="hdr">
+      <div id="logo">
+        <span class="wordmark">ME<em>SA</em></span>
+        <span class="vtag">v0.5-dev</span>
+      </div>
+      <div id="ex-area">
+        <button class="cbtn" id="ex-btn" title="Browse examples">Examples ▾</button>
+      </div>
+      <div id="status-area">
+        <button class="cbtn" id="open-standalone" title="Compile output + runtime into a self-contained tab">Open standalone ↗</button>
+        <button class="cbtn" id="share-btn" title="Copy shareable link to clipboard">Share ⧉</button>
+        <button class="cbtn" id="vim-btn" title="Toggle vim mode">Vim</button>
+        <button class="cbtn" id="theme-btn" title="Switch theme">Theme</button>
+        <div id="sdot"></div>
+        <span id="smsg">Ready</span>
+      </div>
+    </div>
+
+    <!-- Examples drawer -->
+    <div id="ex-backdrop"></div>
+    <div id="ex-drawer">
+      <div id="ex-drawer-hdr">
+        <span id="ex-drawer-title">Examples</span>
+        <button id="ex-drawer-close" title="Close">✕</button>
+      </div>
+      <div id="ex-search-wrap">
+        <input id="ex-search" type="text" placeholder="Filter examples…" autocomplete="off" spellcheck="false" />
+      </div>
+      <div id="ex-drawer-body">
+        <!-- populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Main layout -->
+    <div id="main">
+      <!-- Left: editor -->
+      <div id="left">
+        <div class="ph">
+          <div class="pip" style="background: var(--red)"></div>
+          <span class="plbl">Files</span>
+          <button class="view-toggle" id="view-toggle" title="Toggle syntax view">◈ View</button>
+          <button class="cbtn" id="copy-src">Copy</button>
+        </div>
+        <div id="group-bar">
+          <!-- populated when an example is loaded -->
+        </div>
+        <div id="file-tabs">
+          <!-- populated dynamically -->
+        </div>
+        <div id="editor-wrap">
+          <div id="editor-row" style="display:flex;flex:1;overflow:hidden;position:relative">
+            <div id="cm-editor"></div>
+            <textarea
+              id="editor"
+              spellcheck="false"
+              autocorrect="off"
+              autocapitalize="off"
+              style="display:none"></textarea>
+            <div id="src-view"></div>
+          </div>
+          <div id="src-legend">
+            <span style="color:var(--dim);font-size:9px">Reactivity:</span>
+            <div class="legend-item"><div class="legend-dot" style="background:#fe8a11"></div><span style="color:#fe8a11">let signal</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#e8407a"></div><span style="color:#e8407a">export let</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#2ec4b6"></div><span style="color:#2ec4b6">const derived</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#7a9a8a"></div><span style="color:#7a9a8a">const static</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#545470"></div><span style="color:#545470">var sampler</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#ee380d"></div><span style="color:#ee380d">$: / directive</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:#4a9eff"></div><span style="color:#4a9eff">HTML tag</span></div>
+          </div>
+        </div>
+        <div id="err-strip"></div>
+      </div>
+
+      <div id="divider" title="Drag to resize"></div>
+
+      <!-- Right: tabs -->
+      <div id="right">
+        <div id="tab-bar">
+          <div class="tpip"></div>
+          <button class="tab active" data-tab="preview">Preview</button>
+          <button class="tab" data-tab="output">Output</button>
+          <button class="tab" data-tab="graph">Graph</button>
+          <button class="tab" data-tab="analysis">Analysis</button>
+          <button class="tab" data-tab="reactivity">$: Ref</button>
+        </div>
+        <div id="tab-content">
+          <!-- Preview -->
+          <div class="panel active" id="panel-preview">
+            <div id="pv-status">
+              <div id="pvdot"></div>
+              <span id="pvlbl">compiling…</span>
+            </div>
+            <div id="pv-container"></div>
+          </div>
+
+          <!-- Output -->
+          <div class="panel" id="panel-output">
+            <div id="output-stats">—</div>
+            <div id="output-inner"></div>
+          </div>
+
+          <!-- Graph -->
+          <div class="panel" id="panel-graph">
+            <div id="graph-filter"></div>
+            <div id="graph-inner">
+              <span style="color: var(--dim)">No analysis yet.</span>
+            </div>
+          </div>
+
+          <!-- Analysis -->
+          <div class="panel" id="panel-analysis">
+            <div id="analysis-tabs">
+              <button class="atab active" data-atab="script">Script</button>
+              <button class="atab" data-atab="template">Template</button>
+            </div>
+            <div id="analysis-inner"></div>
+          </div>
+
+          <!-- $: Reference -->
+          <div class="panel" id="panel-reactivity">
+            <div id="reactivity-inner"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "acorn": "https://esm.sh/acorn@8",
+          "astring": "https://esm.sh/astring@1",
+          "unified": "https://esm.sh/unified@11",
+          "remark-parse": "https://esm.sh/remark-parse@11",
+          "remark-gfm": "https://esm.sh/remark-gfm@4",
+          "remark-rehype": "https://esm.sh/remark-rehype@11",
+          "rehype-slug": "https://esm.sh/rehype-slug@6",
+          "rehype-stringify": "https://esm.sh/rehype-stringify@10",
+          "@codemirror/state": "https://esm.sh/@codemirror/state@6",
+          "@codemirror/view": "https://esm.sh/@codemirror/view@6",
+          "@codemirror/language": "https://esm.sh/@codemirror/language@6",
+          "@codemirror/commands": "https://esm.sh/@codemirror/commands@6",
+          "@codemirror/lang-javascript": "https://esm.sh/@codemirror/lang-javascript@6",
+          "@codemirror/lang-html": "https://esm.sh/@codemirror/lang-html@6",
+          "@codemirror/autocomplete": "https://esm.sh/@codemirror/autocomplete@6",
+          "@lezer/highlight": "https://esm.sh/@lezer/highlight@1",
+          "@replit/codemirror-vim": "https://esm.sh/@replit/codemirror-vim@6"
+        }
+      }
+    </script>
+
+    <script type="module">
+      // ─── Import real compiler + runtime from local files ─────────────────────────
+      import { compile, compileSource } from './compiler.js'
+      import * as $rt from './runtime.js'
+      import { EXAMPLES, EXAMPLE_GROUPS, DEFAULT_EXAMPLE } from './examples.js'
+
+      // ─── CodeMirror 6 setup ───────────────────────────────────────────────────────
+      import { EditorState } from '@codemirror/state'
+      import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view'
+      import { defaultKeymap, historyKeymap, history, indentWithTab } from '@codemirror/commands'
+      import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput, foldGutter, foldKeymap, codeFolding } from '@codemirror/language'
+      import { javascript } from '@codemirror/lang-javascript'
+      import { html } from '@codemirror/lang-html'
+      import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+      import { vim, Vim } from '@replit/codemirror-vim'
+
+      // Mesa token highlight style — maps CM token classes to Mesa colors
+      import { HighlightStyle } from '@codemirror/language'
+      import { tags } from '@lezer/highlight'
+
+      const mesaHighlight = HighlightStyle.define([
+        { tag: tags.keyword,          class: 'tok-keyword' },
+        { tag: tags.comment,          class: 'tok-comment' },
+        { tag: tags.string,           class: 'tok-string' },
+        { tag: tags.number,           class: 'tok-number' },
+        { tag: tags.operator,         class: 'tok-operator' },
+        { tag: tags.punctuation,      class: 'tok-punctuation' },
+        { tag: tags.variableName,     class: 'tok-variableName' },
+        { tag: tags.function(tags.variableName), class: 'tok-function' },
+        { tag: tags.definition(tags.variableName), class: 'tok-function' },
+        { tag: tags.typeName,         class: 'tok-typeName' },
+        { tag: tags.tagName,          class: 'tok-tagName' },
+        { tag: tags.attributeName,    class: 'tok-attributeName' },
+        { tag: tags.attributeValue,   class: 'tok-attributeValue' },
+        { tag: tags.angleBracket,     class: 'tok-angleBracket' },
+        { tag: tags.meta,             class: 'tok-meta' },
+        { tag: tags.invalid,          class: 'tok-invalid' },
+        { tag: tags.self,             class: 'tok-keyword' },
+        { tag: tags.bool,             class: 'tok-number' },
+        { tag: tags.null,             class: 'tok-number' },
+        { tag: tags.propertyName,     class: 'tok-attributeName' },
+      ])
+
+      // Detect language for a file by extension
+      function langForFile(name) {
+        if (name.endsWith('.js') || name.endsWith('.ts')) return javascript()
+        // .mesa files — HTML parser with embedded JS in <script> blocks
+        // Gives HTML tag/attr tab-completion + JS completion in script blocks
+        return html({ selfClosingTags: false })
+      }
+
+      // Build CM extensions list for a given filename
+      let vimEnabled = localStorage.getItem('mesa-vim') === '1'
+
+      function cmExtensions(filename, onUpdate) {
+        const exts = [
+          history(),
+          lineNumbers(),
+          foldGutter(),
+          codeFolding(),
+          highlightActiveLine(),
+          highlightActiveLineGutter(),
+          drawSelection(),
+          closeBrackets(),
+          bracketMatching(),
+          indentOnInput(),
+          autocompletion(),
+          syntaxHighlighting(mesaHighlight),
+          langForFile(filename),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) onUpdate(update.state.doc.toString())
+          }),
+          keymap.of([
+            ...closeBracketsKeymap,
+            ...completionKeymap,
+            ...defaultKeymap,
+            ...historyKeymap,
+            ...foldKeymap,
+            indentWithTab,
+            {
+              key: 'Mod-Enter',
+              run: () => {
+                scheduleCompile(getEditorValue())
+                return true
+              }
+            }
+          ]),
+          EditorView.theme({
+            '&': { height: '100%' },
+            '.cm-scroller': { overflow: 'auto' }
+          }),
+        ]
+        if (vimEnabled) exts.unshift(vim())
+        return exts
+      }
+
+      // Create the CM editor
+      const cmMount = document.getElementById('cm-editor')
+      let cmView = null
+      let cmFallback = false  // true if CM failed to load
+
+      function initCMEditor(initialContent, filename) {
+        if (cmView) { cmView.destroy(); cmView = null }
+        try {
+          const state = EditorState.create({
+            doc: initialContent,
+            extensions: cmExtensions(filename, (newContent) => {
+              files[activeFileIdx].content = newContent
+              if (activeFileIdx === 0) scheduleCompile(newContent)
+              else scheduleCompile(files[0].content)
+              // Dim the group bar when user edits — they've diverged from the example
+              document.getElementById('group-bar')?.classList.add('edited')
+            })
+          })
+          cmView = new EditorView({ state, parent: cmMount })
+        } catch(e) {
+          console.warn('[Mesa REPL] CodeMirror init failed, falling back to textarea:', e)
+          cmFallback = true
+          cmMount.style.display = 'none'
+          document.getElementById('editor').style.display = ''
+        }
+      }
+
+      // Value accessor — works regardless of CM or fallback mode
+      function getEditorValue() {
+        if (cmFallback) return document.getElementById('editor').value
+        return cmView?.state.doc.toString() ?? ''
+      }
+
+      function setEditorValue(content, filename) {
+        if (cmFallback) {
+          const ta = document.getElementById('editor')
+          ta.value = content
+          return
+        }
+        if (!cmView || filename !== (cmView._mesaFilename ?? '')) {
+          // Reinit with new language if filename changed
+          if (cmView) cmView._mesaFilename = filename
+          initCMEditor(content, filename)
+          if (cmView) cmView._mesaFilename = filename
+          return
+        }
+        // Same file — just replace content
+        cmView.dispatch({
+          changes: { from: 0, to: cmView.state.doc.length, insert: content }
+        })
+      }
+
+      // ─── Examples drawer ──────────────────────────────────────────────────────────
+
+      let activeExample = 'counter'
+      const exDrawer   = document.getElementById('ex-drawer')
+      const exBackdrop = document.getElementById('ex-backdrop')
+      let drawerOpen = false
+
+      function keyToLabel(key) {
+        return key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()
+      }
+
+      function openDrawer() {
+        exDrawer.classList.add('open')
+        exBackdrop.classList.add('open')
+        drawerOpen = true
+        // Focus search and highlight active example
+        const search = document.getElementById('ex-search')
+        if (search) { search.value = ''; filterDrawer(''); setTimeout(() => search.focus(), 50) }
+        document.querySelectorAll('.ex-item').forEach(el => {
+          el.classList.toggle('active', el.dataset.key === activeExample)
+        })
+      }
+
+      function closeDrawer() {
+        exDrawer.classList.remove('open')
+        exBackdrop.classList.remove('open')
+        drawerOpen = false
+      }
+
+      function filterDrawer(q) {
+        const query = q.toLowerCase().trim()
+        document.querySelectorAll('.ex-group').forEach(group => {
+          let visibleCount = 0
+          group.querySelectorAll('.ex-item').forEach(item => {
+            const name = item.querySelector('.ex-item-name')?.textContent.toLowerCase() || ''
+            const file = item.querySelector('.ex-item-file')?.textContent.toLowerCase() || ''
+            const groupName = group.querySelector('.ex-group-name')?.textContent.toLowerCase() || ''
+            const match = !query || name.includes(query) || file.includes(query) || groupName.includes(query)
+            item.style.display = match ? '' : 'none'
+            if (match) visibleCount++
+          })
+          // Show/hide group based on whether any items match
+          group.style.display = visibleCount === 0 ? 'none' : ''
+          // Auto-expand groups when searching
+          if (query) group.classList.remove('collapsed')
+        })
+      }
+
+      function buildDrawer() {
+        const body = document.getElementById('ex-drawer-body')
+        body.innerHTML = ''
+
+        for (const [groupName, items] of Object.entries(EXAMPLE_GROUPS)) {
+          const group = document.createElement('div')
+          group.className = 'ex-group'
+
+          const hdr = document.createElement('div')
+          hdr.className = 'ex-group-hdr'
+          hdr.innerHTML = `
+            <span class="ex-group-chevron">▾</span>
+            <span class="ex-group-name">${groupName}</span>
+            <span class="ex-group-count">${items.length}</span>
+          `
+          hdr.addEventListener('click', () => {
+            group.classList.toggle('collapsed')
+          })
+
+          const itemsEl = document.createElement('div')
+          itemsEl.className = 'ex-group-items'
+
+          for (const ex of items) {
+            const item = document.createElement('div')
+            item.className = 'ex-item'
+            item.dataset.key = ex.key
+            if (ex.key === activeExample) item.classList.add('active')
+
+            item.innerHTML = `
+              <span class="ex-item-name">${ex.label ?? keyToLabel(ex.key)}</span>
+              <span class="ex-item-file">${ex.file}</span>
+            `
+            item.addEventListener('click', () => {
+              loadExample(ex.key)
+              closeDrawer()
+            })
+            itemsEl.appendChild(item)
+          }
+
+          group.appendChild(hdr)
+          group.appendChild(itemsEl)
+          body.appendChild(group)
+        }
+      }
+
+      buildDrawer()
+
+      document.getElementById('ex-btn').addEventListener('click', openDrawer)
+      document.getElementById('ex-drawer-close').addEventListener('click', closeDrawer)
+      exBackdrop.addEventListener('click', closeDrawer)
+      document.getElementById('ex-search').addEventListener('input', (e) => filterDrawer(e.target.value))
+      document.getElementById('ex-search').addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); closeDrawer() }
+        // Enter on single visible result — load it
+        if (e.key === 'Enter') {
+          const visible = [...document.querySelectorAll('.ex-item')].filter(el => el.style.display !== 'none')
+          if (visible.length === 1) { loadExample(visible[0].dataset.key); closeDrawer() }
+        }
+      })
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && drawerOpen) closeDrawer()
+      })
+
+      // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+      function execCompiled(js, userImports = {}) {
+        const names = [],
+          vals = []
+        const re = /^import\s+(.+?)\s+from\s+'([^']+)';$/gm
+        let m
+        while ((m = re.exec(js)) !== null) {
+          const spec = m[1].trim(),
+            src = m[2]
+          if (src === '@frontierjs/mesa/runtime.js') continue
+          const mock = userImports[src] || {}
+          if (spec.startsWith('* as ')) {
+            // import * as Foo from '...'
+            names.push(spec.slice(5).trim())
+            vals.push(mock)
+          } else if (spec.startsWith('{')) {
+            // import { foo, bar as baz } from '...'
+            const inner = spec.replace(/^\{|\}$/g, '').trim()
+            inner.split(',').forEach((b) => {
+              const [o, a] = b.trim().split(/\s+as\s+/)
+              names.push((a || o).trim())
+              vals.push(mock[o.trim()])
+            })
+          } else if (spec.includes(',')) {
+            // import Def, { foo } from '...'  (default + named)
+            const [defPart, namedPart] = spec.split(/,\s*\{/)
+            names.push(defPart.trim())
+            vals.push(mock['default'])
+            if (namedPart) {
+              namedPart.replace('}', '').split(',').forEach((b) => {
+                const [o, a] = b.trim().split(/\s+as\s+/)
+                names.push((a || o).trim())
+                vals.push(mock[o.trim()])
+              })
+            }
+          } else {
+            // import Foo from '...'  — default import
+            names.push(spec)
+            vals.push(mock['default'])
+          }
+        }
+        // Strip imports; expose component as __component (not return) so
+        // module-level $$delegate calls and template consts also run.
+        let code = js.replace(/^import\s+.+?from\s+'[^']+';$/gm, '').trim()
+        code = code.replace(/^export default\s+/m, 'const __component = ')
+        // Strip 'export' keyword from named exports in <script module> —
+        // new Function() doesn't allow export declarations.
+        code = code.replace(/^(\s*)export (function|class|const|let|var) /gm, '$1$2 ')
+        code += '\nreturn __component'
+        // eslint-disable-next-line no-new-func
+        return new Function('$runtime', ...names, code)($rt, ...vals)
+      }
+
+      // ─── Multi-file state ─────────────────────────────────────────────────────────
+      // files[0] is always the main component (.mesa). Extra files are plain JS
+      // (stores, utils) that get passed as userImports when mounting.
+      let files = [{ name: 'Counter.mesa', content: '' }]
+      let activeFileIdx = 0
+      let currentInstance = null
+      let debTimer = null
+      let compiledJS = ''
+
+      const editor = document.getElementById('editor')
+      const lineNums = document.getElementById('line-nums')
+
+      // ─── File tab rendering ───────────────────────────────────────────────────────
+      function renderFileTabs() {
+        const bar = document.getElementById('file-tabs')
+        bar.innerHTML = ''
+        files.forEach((f, i) => {
+          const tab = document.createElement('button')
+          tab.className = 'ftab' + (i === activeFileIdx ? ' active' : '')
+
+          const nameEl = document.createElement('input')
+          nameEl.className = 'fname'
+          nameEl.value = f.name
+          nameEl.readOnly = false  // always editable when active; click on inactive switches first
+          nameEl.spellcheck = false
+          nameEl.addEventListener('mousedown', (e) => {
+            if (i !== activeFileIdx) {
+              e.preventDefault()
+              switchToFile(i)
+              // Focus the name input after switching so user can immediately rename
+              setTimeout(() => { nameEl.focus(); nameEl.select() }, 10)
+            }
+          })
+          nameEl.addEventListener('change', () => {
+            const v = nameEl.value.trim()
+            if (v) files[i].name = v
+            scheduleCompile(files[0].content)
+          })
+          nameEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { nameEl.blur(); e.preventDefault() }
+            e.stopPropagation()
+          })
+          nameEl.addEventListener('click', (e) => e.stopPropagation())
+
+          const closeBtn = document.createElement('button')
+          closeBtn.className = 'fclose'
+          closeBtn.textContent = '×'
+          closeBtn.title = 'Remove file'
+          closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation()
+            if (files.length <= 1) return
+            files.splice(i, 1)
+            if (activeFileIdx >= files.length) activeFileIdx = files.length - 1
+            renderFileTabs()
+            setEditorValue(files[activeFileIdx].content, files[activeFileIdx].name)
+            scheduleCompile(files[0].content)
+          })
+
+          tab.appendChild(nameEl)
+          if (i > 0) tab.appendChild(closeBtn)
+          tab.addEventListener('click', () => { if (i !== activeFileIdx) switchToFile(i) })
+          bar.appendChild(tab)
+        })
+
+        const addBtn = document.createElement('button')
+        addBtn.className = 'ftab-add'
+        addBtn.textContent = '+'
+        addBtn.title = 'Add file'
+        addBtn.addEventListener('click', () => {
+          const mesaFiles = files.filter(f => f.name.endsWith('.mesa'))
+          const jsFiles   = files.filter(f => f.name.endsWith('.js'))
+          // Default: next .mesa component or store.js
+          const name = mesaFiles.length === 1 ? 'Btn.mesa' :
+                       jsFiles.length === 0   ? 'store.js' : `file${jsFiles.length + 1}.js`
+          const content = name.endsWith('.mesa')
+            ? '<script>\n  export let label = \'Button\'\n</' + 'script>\n\n<button>{label}</' + 'button>\n'
+            : '// ' + name + '\nexport const store = {}\n'
+          files.push({ name, content })
+          switchToFile(files.length - 1)
+          // Auto-select the filename so user can rename immediately
+          setTimeout(() => {
+            const inputs = document.querySelectorAll('#file-tabs .fname')
+            const last = inputs[inputs.length - 1]
+            if (last) { last.focus(); last.select() }
+          }, 20)
+        })
+        bar.appendChild(addBtn)
+      }
+
+      function switchToFile(idx) {
+        files[activeFileIdx].content = getEditorValue()
+        activeFileIdx = idx
+        setEditorValue(files[idx].content, files[idx].name)
+        renderFileTabs()
+        if (idx === 0) scheduleCompile(files[0].content)
+      }
+
+      // ─── Evaluate / compile extra files for userImports ───────────────────────────
+      async function evalExtraFile(file, allUserImports) {
+        const { name, content } = file
+        // .mesa files — compile then execCompiled, expose as default export (the component fn)
+        if (name.endsWith('.mesa')) {
+          try {
+            const ctx = await compileSource(content, { filename: name, css: false, debug: false })
+            const componentFn = execCompiled(ctx.result, allUserImports)
+            return { default: componentFn }
+          } catch(e) {
+            console.warn(`[Mesa REPL] Error compiling ${name}:`, e.message)
+            return {}
+          }
+        }
+        // Plain .js — strip export keywords, collect named exports via Function()
+        const namedRe = /^export\s+(const|let|var)\s+(\w+)\s*=/gm
+        const fnRe    = /^export\s+function\s+(\w+)/gm
+        const names = [], fnNames = []
+        let m
+        while ((m = namedRe.exec(content)) !== null) names.push(m[2])
+        while ((m = fnRe.exec(content))    !== null) fnNames.push(m[1])
+        let code = content
+          .replace(/^export\s+default\s+/mg,               'var __default = ')
+          .replace(/^export\s+(const|let|var|function|class)\s+/mg, '$1 ')
+        code += '\n'
+        names.forEach(n   => { code += `if(typeof ${n}!=='undefined') __exports.${n}=${n};\n` })
+        fnNames.forEach(n => { code += `if(typeof ${n}!=='undefined') __exports.${n}=${n};\n` })
+        code += 'if(typeof __default!=="undefined") __exports.default=__default;\n'
+        const exports = {}
+        try { new Function('__exports', code)(exports) }
+        catch(e) { console.warn(`[Mesa REPL] Error in ${name}:`, e.message) }
+        return exports
+      }
+
+      // ─── UI helpers ───────────────────────────────────────────────────────────────
+      function setStatus(color, msg) {
+        const colors = { green: '#22c55e', orange: '#fe8a11', red: '#D93025', dim: '#545470' }
+        const c = colors[color] || '#545470'
+        document.getElementById('sdot').style.background = c
+        document.getElementById('smsg').style.color = c
+        document.getElementById('smsg').textContent = msg
+      }
+
+      function setPvStatus(state) {
+        const c =
+          { ok: '#22c55e', error: '#ef4444', compiling: '#fc680a' }[state] || '#d1d5db'
+        document.getElementById('pvdot').style.background = c
+        document.getElementById('pvlbl').textContent =
+          { ok: 'running', error: 'error', compiling: 'compiling…' }[state] || ''
+      }
+
+      function updateLineNums() { /* no-op — CM handles line numbers */ }
+
+      function renderGroupBar(activeName) {
+        const bar = document.getElementById('group-bar')
+        const ex = EXAMPLES[activeName]
+        if (!ex) { bar.classList.remove('visible'); return }
+
+        const group = ex.group
+        const siblings = EXAMPLE_GROUPS[group] || []
+        if (siblings.length <= 1) { bar.classList.remove('visible'); return }
+
+        bar.innerHTML = ''
+        // Group label
+        const lbl = document.createElement('span')
+        lbl.className = 'gbar-label'
+        lbl.textContent = group
+        bar.appendChild(lbl)
+
+        // Sibling pills
+        for (const sib of siblings) {
+          const pill = document.createElement('span')
+          pill.className = 'gbar-item' + (sib.key === activeName ? ' active' : '')
+          pill.textContent = keyToLabel(sib.key)
+          pill.addEventListener('click', () => {
+            if (sib.key !== activeExample) loadExample(sib.key)
+          })
+          bar.appendChild(pill)
+        }
+
+        bar.classList.add('visible')
+        bar.classList.remove('edited')
+        // Scroll active pill into view
+        const activePill = bar.querySelector('.gbar-item.active')
+        if (activePill) activePill.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+      }
+
+      function loadExample(name) {
+        const ex = EXAMPLES[name]
+        if (!ex) return
+        activeExample = name
+        // Reset to single file
+        files = [{ name: ex.file, content: ex.src }]
+        activeFileIdx = 0
+        setEditorValue(ex.src, ex.file)
+        renderFileTabs()
+        renderGroupBar(name)
+        if (typeof setViewMode === 'function') setViewMode(false)
+        scheduleCompile(ex.src)
+        // Sync drawer active highlight
+        document.querySelectorAll('.ex-item').forEach(el => {
+          el.classList.toggle('active', el.dataset.key === name)
+        })
+        // Clear URL hash so the example loads fresh on next visit
+        window.history.replaceState(null, '', location.pathname + location.search)
+      }
+
+      // ─── Compilation ──────────────────────────────────────────────────────────────
+      async function runCompile(src) {
+        setStatus('orange', 'Compiling…')
+        setPvStatus('compiling')
+
+        try {
+          const filename = files[0].name || 'Component.mesa'
+          const ctx = await compileSource(src, { debug: false, css: false, filename })
+          compiledJS = ctx.result
+          const analysis = ctx.analysis
+          const errs  = analysis?.errors   || []
+          const warns = analysis?.warnings || []
+
+          // Error / warning strip
+          const strip = document.getElementById('err-strip')
+          if (errs.length || warns.length) {
+            strip.innerHTML = [
+              ...errs.map((e) => `<div class="err-line">⬡ ${e}</div>`),
+              ...warns.map((w) => `<div class="warn-line">⚠ ${w}</div>`)
+            ].join('')
+            strip.style.display = 'block'
+          } else {
+            strip.style.display = 'none'
+          }
+
+          setStatus(
+            errs.length  ? 'red'    :
+            warns.length ? 'orange' : 'green',
+            errs.length  ? `${errs.length} error(s)` :
+            warns.length ? `${warns.length} warning(s)` : 'OK ✓'
+          )
+
+          // Destroy previous component
+          if (currentInstance) {
+            try { currentInstance.destroy() } catch (_) {}
+            currentInstance = null
+          }
+
+          // Build userImports from extra files (store.js, Btn.mesa, etc.)
+          // Compile in order so later files can import from earlier ones.
+          const userImports = {}
+          for (const f of files.slice(1)) {
+            const exports = await evalExtraFile(f, userImports)
+            const specifiers = ['./' + f.name, '../' + f.name, f.name]
+            specifiers.forEach(s => { userImports[s] = exports })
+          }
+
+          // Resolve @ui/ imports — fetch .mesa files from the ui/ directory
+          // next to index.html. Cached per session to avoid redundant fetches.
+          const uiImportRe = /from\s+'(@ui\/[^']+)'/g
+          const uiMatches = new Set()
+          let uim
+          while ((uim = uiImportRe.exec(compiledJS)) !== null) uiMatches.add(uim[1])
+          for (const spec of uiMatches) {
+            if (userImports[spec]) continue  // already resolved
+            const path = './ui/' + spec.slice('@ui/'.length)
+            try {
+              const res = await fetch(path)
+              if (!res.ok) throw new Error(`HTTP ${res.status}`)
+              const src = await res.text()
+              const uiName = spec.slice('@ui/'.length)
+              const uiCtx = await compileSource(src, { filename: uiName, css: false, debug: false })
+              const uiFn  = execCompiled(uiCtx.result, userImports)
+              userImports[spec] = { default: uiFn }
+            } catch(e) {
+              console.warn(`[Mesa REPL] Could not load ${spec}:`, e.message)
+              userImports[spec] = {}
+            }
+          }
+
+          // Mount new component
+          const container = document.getElementById('pv-container')
+          container.innerHTML = ''
+          try {
+            const componentFn = execCompiled(compiledJS, userImports)
+            const anchor = document.createComment('')
+            container.appendChild(anchor)
+            $rt.flushSync()
+            componentFn(anchor, {}, null)
+            $rt.flushSync()
+            currentInstance = {
+              destroy() {
+                try { $rt.flushSync() } catch (_) {}
+                container.innerHTML = ''
+              }
+            }
+            setPvStatus('ok')
+          } catch (e) {
+            const div = document.createElement('div')
+            div.className = 'mesa-error'
+            div.textContent = 'Runtime error:\n' + e.message
+            container.appendChild(div)
+            setPvStatus('error')
+            console.error('[Mesa REPL] Runtime error:', e)
+          }
+
+          // Update output panel
+          renderOutput(compiledJS)
+          renderGraph(analysis)
+          renderAnalysis(analysis, ctx.DOM)
+          window.__lastMesaAnalysis = { ...analysis, rootFunctions: ctx.script?.rootFunctions }  // used by renderSrcView
+          if (isViewing) renderSrcView(files[0].content)
+          document.getElementById('output-stats').textContent = `${
+            compiledJS.split('\n').length
+          } lines · ${compiledJS.length} chars`
+        } catch (e) {
+          setStatus('red', e.message.slice(0, 80))
+          setPvStatus('error')
+          console.error('[Mesa REPL] Compile error:', e)
+        }
+      }
+
+      function scheduleCompile(src) {
+        clearTimeout(debTimer)
+        debTimer = setTimeout(() => runCompile(src), 250)
+      }
+
+      // ─── Output syntax highlight ──────────────────────────────────────────────────
+      const KEYWORDS = new Set([
+        'const',
+        'let',
+        'var',
+        'function',
+        'async',
+        'await',
+        'return',
+        'if',
+        'else',
+        'for',
+        'while',
+        'try',
+        'catch',
+        'throw',
+        'new',
+        'import',
+        'export',
+        'default',
+        'class',
+        'this',
+        'typeof',
+        'void',
+        'in',
+        'of'
+      ])
+
+      function tokenize(code) {
+        const tokens = []
+        let rest = code
+        const P = [
+          [/^\/\/[^\n]*/, '#4a5568'],
+          [/^`(?:[^`\\]|\\.)*`/, '#48bb78'],
+          [/^'(?:[^'\\]|\\.)*'/, '#48bb78'],
+          [/^"(?:[^"\\]|\\.)*"/, '#48bb78'],
+          [/^\$\$[\w]+/, '#fc680a'],
+          [/^\$runtime/, '#ee380d'],
+          [/^[\w$]+/, null],
+          [/^-?\d+(?:\.\d+)?/, '#e2b96f'],
+          [/^\n/, '__nl'],
+          [/^./, '#666']
+        ]
+        while (rest.length) {
+          let hit = false
+          for (const [re, col] of P) {
+            const m = rest.match(re)
+            if (m) {
+              const c = col === null ? (KEYWORDS.has(m[0]) ? '#6699cc' : '#C49A84') : col
+              tokens.push({ t: m[0], c })
+              rest = rest.slice(m[0].length)
+              hit = true
+              break
+            }
+          }
+          if (!hit) {
+            tokens.push({ t: rest[0], c: '#C49A84' })
+            rest = rest.slice(1)
+          }
+        }
+        return tokens
+      }
+
+      function renderOutput(code) {
+        const tokens = tokenize(code)
+        const lines = [[]]
+        for (const tok of tokens) {
+          if (tok.c === '__nl') {
+            lines.push([])
+            continue
+          }
+          lines[lines.length - 1].push(tok)
+        }
+        const html = lines
+          .map((line, i) => {
+            const cells = line
+              .map(
+                (tok) =>
+                  `<span style="color:${tok.c}">${tok.t
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')}</span>`
+              )
+              .join('')
+            return `<tr>
+      <td style="padding:0 12px;text-align:right;color:#241610;font-size:10.5px;user-select:none;white-space:nowrap;min-width:36px;vertical-align:top">${
+        i + 1
+      }</td>
+      <td style="padding:0 16px 0 0;white-space:pre;font-size:12px;vertical-align:top;font-family:var(--mono)">${
+        cells || '&nbsp;'
+      }</td>
+    </tr>`
+          })
+          .join('')
+        document.getElementById(
+          'output-inner'
+        ).innerHTML = `<table style="border-collapse:collapse;width:100%;line-height:1.7"><tbody>${html}</tbody></table>`
+      }
+
+      // ─── Reactive graph ───────────────────────────────────────────────────────────
+
+      const KW_COLORS = { let: '#fe8a11', const: '#2EC4B6', var: '#fc680a' }
+
+      // Four orthogonal label groups, each with an icon, ordered labels, and per-label colors.
+      const LABEL_GROUPS = [
+        {
+          id: 'mutability', label: 'Mutability', icon: '⊡',
+          labels: ['mutable', 'immutable'],
+          colors: {
+            //                 bright ↔ dark within orange family
+            mutable:   ['#fe8a11', 'rgba(254,138,17,.14)'],   // orange bright — live, changeable
+            immutable: ['#7a420a', 'rgba(122,66,10,.18)'],    // orange dark   — fixed, settled
+          }
+        },
+        {
+          id: 'async', label: 'Async', icon: '◎',
+          labels: ['async', 'sync'],
+          colors: {
+            //                 bright ↔ dark within pink family
+            async: ['#e8407a', 'rgba(232,64,122,.14)'],       // pink bright   — hot, concurrent
+            sync:  ['#6b1f3c', 'rgba(107,31,60,.18)'],        // pink dark     — quiet, settled
+          }
+        },
+        {
+          id: 'effects', label: 'Effects', icon: '$:',
+          labels: ['watch', 'auto-tracked', 'hard', 'soft'],
+          colors: {
+            //                 bright ↔ dark within teal family (watch pair)
+            'watch':        ['#2ec4b6', 'rgba(46,196,182,.14)'],  // teal bright   — explicit, active
+            'auto-tracked': ['#0d5c54', 'rgba(13,92,84,.18)'],    // teal dark     — passive, ambient
+            //                 bright ↔ dark within red family (strictness pair)
+            'hard':         ['#ee380d', 'rgba(238,56,13,.14)'],   // red bright    — strict, required
+            'soft':         ['#5c1a0a', 'rgba(92,26,10,.18)'],    // red dark      — lenient, optional
+          }
+        },
+        {
+          id: 'reactivity', label: 'Reactivity', icon: '◈',
+          labels: ['reactive', 'derived', 'static'],
+          colors: {
+            reactive: ['#c084fc', 'rgba(192,132,252,.14)'],
+            derived:  ['#7c3aed', 'rgba(124,58,237,.14)'],
+            static:   ['#2e1a4a', 'rgba(46,26,74,.18)'],
+          }
+        },
+        {
+          id: 'context', label: 'Context', icon: '⬡',
+          labels: ['provide', 'consume'],
+          colors: {
+            provide: ['#34d399', 'rgba(52,211,153,.14)'],   // green — outward
+            consume: ['#065f46', 'rgba(6,95,70,.18)'],      // dark green — inward
+          }
+        },
+      ]
+
+      // Flat label → [color, bg] lookup
+      const LABEL_COLORS = {}
+      for (const g of LABEL_GROUPS) Object.assign(LABEL_COLORS, g.colors)
+
+      function getVarLabels(v) {
+        const out = []
+        // Mutability first
+        out.push(v.kind === 'const' ? 'immutable' : 'mutable')
+        // Async — always show sync or async
+        out.push(v.isAsync ? 'async' : 'sync')
+        // Reactivity last — so it sits right next to the ← dep arrow
+        if (v.kind === 'var') out.push('static')
+        else if (v.kind === 'const' && !v.isDerived && !v.isAsync) out.push('static')
+        else if (v.kind === 'const') out.push('derived')
+        else if (v.isWritableDerived) out.push('derived')
+        else out.push('reactive')
+        return out
+      }
+
+      function mkBadge(label) {
+        const [color, bg] = LABEL_COLORS[label] || ['#888', 'rgba(128,128,128,.1)']
+        return `<span class="g-badge" style="background:${bg};color:${color}">${label}</span>`
+      }
+
+      let graphActiveFilters = new Set()
+
+      function applyGraphFilter() {
+        document.querySelectorAll('#graph-inner .g-row').forEach((row) => {
+          if (!graphActiveFilters.size) { row.style.opacity = ''; return }
+          const rowLabels = (row.dataset.labels || '').split('|').filter(Boolean)
+          row.style.opacity = rowLabels.some((l) => graphActiveFilters.has(l)) ? '1' : '0.12'
+        })
+      }
+
+      function renderGraphFilter(presentLabels) {
+        const bar = document.getElementById('graph-filter')
+        if (!presentLabels.size) { bar.innerHTML = ''; return }
+
+        const allActive = graphActiveFilters.size === 0
+        let html = `<span class="gf-pill${allActive ? ' active' : ''}" data-filter="__all__"
+          style="color:var(--muted);background:rgba(255,255,255,.04)">all</span>`
+
+        for (const group of LABEL_GROUPS) {
+          const groupLabels = group.labels.filter((l) => presentLabels.has(l))
+          if (!groupLabels.length) continue
+          html += `<span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px">`
+          html += `<span style="font-size:8px;color:var(--dim);letter-spacing:.12em;text-transform:uppercase;user-select:none">${group.icon} ${group.label}</span>`
+          for (const label of groupLabels) {
+            const [color, bg] = LABEL_COLORS[label] || ['#888', 'rgba(128,128,128,.1)']
+            const active = graphActiveFilters.has(label)
+            html += `<span class="gf-pill${active ? ' active' : ''}" data-filter="${label}" style="color:${color};background:${bg}">${label}</span>`
+          }
+          html += `</span>`
+        }
+        bar.innerHTML = html
+
+        bar.querySelectorAll('.gf-pill').forEach((pill) => {
+          pill.addEventListener('click', () => {
+            const f = pill.dataset.filter
+            if (f === '__all__') graphActiveFilters.clear()
+            else if (graphActiveFilters.has(f)) graphActiveFilters.delete(f)
+            else graphActiveFilters.add(f)
+            renderGraphFilter(presentLabels)
+            applyGraphFilter()
+          })
+        })
+      }
+
+      function renderGraph(analysis) {
+        if (!analysis) return
+        const {
+          vars = {}, watchPaths = [], watchHandlers = [],
+          effects = [], errors = [], warnings = [],
+          contextProvides = []
+        } = analysis
+
+        graphActiveFilters.clear()
+        const presentLabels = new Set()
+        let html = ''
+
+        if (errors.length) {
+          html += errors.map((e) =>
+            `<div style="font-size:11px;color:var(--err);padding:4px 0">⬡ ${e}</div>`
+          ).join('')
+        }
+
+        if (warnings.length) {
+          html += warnings.map((w) =>
+            `<div style="font-size:11px;color:var(--orange);padding:4px 0">⚠ ${w}</div>`
+          ).join('')
+        }
+
+        const varArr   = Object.values(vars)
+        const propArr  = varArr.filter((v) => v.isProp && !v.isContextConsume)
+        const localArr = varArr.filter((v) => !v.isProp && !v.isContextConsume)
+        const ctxConsumeArr = varArr.filter((v) => v.isContextConsume)
+
+        // ── Props section ──────────────────────────────────────────────────────
+        if (propArr.length) {
+          html += `<div class="g-section">Props</div>`
+          html += propArr.map((v) => {
+            const labels = getVarLabels(v)
+            labels.forEach((l) => presentLabels.add(l))
+            const deps = v.deps?.length
+              ? `<span class="g-deps">← <em>${v.deps.join(', ')}</em></span>` : ''
+            const badges = labels.map(mkBadge).join('')
+            return `<div class="g-row" data-labels="${labels.join('|')}">
+  <span style="color:${KW_COLORS[v.kind]||'#888'};font-size:11px;min-width:40px">${v.kind}</span>
+  <span style="color:var(--text);font-size:11px;min-width:90px">${v.name}</span>
+  ${badges}${deps}
+</div>`
+          }).join('')
+        }
+
+        // ── Variables section ──────────────────────────────────────────────────
+        if (localArr.length) {
+          html += `<div class="g-section"${propArr.length ? ' style="margin-top:10px"' : ''}>Variables</div>`
+          html += localArr.map((v) => {
+            const labels = getVarLabels(v)
+            labels.forEach((l) => presentLabels.add(l))
+            const deps = v.deps?.length
+              ? `<span class="g-deps">← <em>${v.deps.join(', ')}</em></span>` : ''
+            const badges = labels.map(mkBadge).join('')
+            const kwLabel = v.isWritableDerived ? '$:' : v.kind
+            const kwColor = v.isWritableDerived ? 'var(--dim)' : (KW_COLORS[v.kind] || '#888')
+            return `<div class="g-row" data-labels="${labels.join('|')}">
+  <span style="color:${kwColor};font-size:11px;min-width:40px">${kwLabel}</span>
+  <span style="color:var(--text);font-size:11px;min-width:90px">${v.name}</span>
+  ${badges}${deps}
+</div>`
+          }).join('')
+        }
+
+        // ── $context section ───────────────────────────────────────────────────
+        const hasContext = contextProvides.length || ctxConsumeArr.length
+        if (hasContext) {
+          html += `<div class="g-section" style="margin-top:10px">$context</div>`
+          // Provides
+          html += contextProvides.map((p) => {
+            presentLabels.add('provide')
+            const expr = (p.initRaw || '').slice(0, 30)
+            return `<div class="g-row" data-labels="provide">
+  <span style="color:var(--dim);font-size:11px;min-width:40px">$ctx</span>
+  <span style="color:var(--text);font-size:11px;min-width:90px">.${p.key}</span>
+  ${mkBadge('provide')}
+  <span class="g-deps">= <em>${expr}${p.initRaw?.length > 30 ? '…' : ''}</em></span>
+</div>`
+          }).join('')
+          // Consumes
+          html += ctxConsumeArr.map((v) => {
+            presentLabels.add('consume')
+            const kwColor = KW_COLORS[v.kind] || '#888'
+            return `<div class="g-row" data-labels="consume">
+  <span style="color:${kwColor};font-size:11px;min-width:40px">${v.kind}</span>
+  <span style="color:var(--text);font-size:11px;min-width:90px">${v.name}</span>
+  ${mkBadge('consume')}
+  <span class="g-deps">← <em>$context.${v.contextKey}</em></span>
+</div>`
+          }).join('')
+        }
+
+        // ── Watch handlers ─────────────────────────────────────────────────────
+        if (watchHandlers.length) {
+          html += `<div class="g-section" style="margin-top:10px">$: Watch Handlers</div>`
+          html += watchHandlers.map((h) => {
+            const tag = h.isAsync ? 'async' : 'sync'
+            presentLabels.add(tag)
+            const debugChip = h.debugName
+              ? `<span class="g-debug">$_${h.debugName}</span>` : ''
+            return `<div class="g-row" data-labels="${tag}">
+  <span style="font-size:11px;color:var(--orange2)">[${h.deps.join(', ')}]</span>
+  ${mkBadge(tag)}${debugChip}
+</div>`
+          }).join('')
+        }
+
+        // ── Watch groups ────────────────────────────────────────────────────────
+        const watchGroups = analysis.watchGroups || []
+        if (watchGroups.length) {
+          html += `<div class="g-section" style="margin-top:10px">$: Watch Groups</div>`
+          html += watchGroups.map((g) => {
+            const debugChip = g.debugName
+              ? `<span class="g-debug">$_${g.debugName}</span>` : ''
+            const entrySummary = g.entries.map((e) => {
+              const tag = e.isAsync ? 'async' : 'sync'
+              presentLabels.add(tag)
+              return `<div style="padding-left:14px;padding-top:2px">
+  <span style="font-size:11px;color:var(--orange2)">[${e.deps.join(', ')}]</span>
+  ${mkBadge(tag)}
+</div>`
+            }).join('')
+            return `<div class="g-row" style="flex-direction:column;align-items:flex-start" data-labels="watch">
+  <div>${debugChip || '<span style="color:var(--dim);font-size:11px">group</span>'}</div>
+  ${entrySummary}
+</div>`
+          }).join('')
+        }
+
+        // ── Effects ────────────────────────────────────────────────────────────
+        if (effects.length) {
+          html += `<div class="g-section" style="margin-top:10px">$: Effects</div>`
+          html += effects.map((e, i) => {
+            presentLabels.add('auto-tracked')
+            // Show a snippet of the expression (first 40 chars)
+            const snippet = (e.raw || '').trim().replace(/\s+/g, ' ').slice(0, 40)
+            const label = e.type === 'block' ? `block #${i + 1}` : `effect #${i + 1}`
+            return `<div class="g-row" data-labels="auto-tracked">
+  <span style="font-size:11px;color:var(--teal)">${label}</span>
+  ${mkBadge('auto-tracked')}
+  <span class="g-deps"><em>${snippet}${e.raw?.trim().length > 40 ? '…' : ''}</em></span>
+</div>`
+          }).join('')
+        }
+
+        // ── Path watches ───────────────────────────────────────────────────────
+        if (watchPaths.length) {
+          html += `<div class="g-section" style="margin-top:10px">$: Path Watches</div>`
+          html += watchPaths.map((w) => {
+            const tag = w.soft ? 'soft' : 'hard'
+            presentLabels.add(tag)
+            const debugChip = w.debugName
+              ? `<span class="g-debug">$_${w.debugName}</span>` : ''
+            return `<div class="g-row" data-labels="${tag}">
+  <span style="font-size:11px;color:var(--orange2)">${w.path}</span>
+  ${mkBadge(tag)}${debugChip}
+</div>`
+          }).join('')
+        }
+
+        if (!html)
+          html = '<span style="color:var(--dim);font-size:11px">No reactive variables.</span>'
+
+        document.getElementById('graph-inner').innerHTML = html
+        renderGraphFilter(presentLabels)
+      }
+
+      // ─── Analysis panel ───────────────────────────────────────────────────────────
+
+      let _analysisData = { script: null, template: null }
+      let _activeAtab = 'script'
+
+      function cleanAnalysis(analysis) {
+        // Strip noisy acorn AST nodes and source positions — show semantic data only
+        const stripNode = (v, depth = 0) => {
+          if (depth > 8 || v === null || v === undefined) return v
+          if (typeof v !== 'object') return v
+          if (Array.isArray(v)) return v.map(i => stripNode(i, depth + 1))
+          const out = {}
+          for (const [k, val] of Object.entries(v)) {
+            // Drop raw acorn AST nodes (they're huge and unreadable)
+            if (k === 'initNode' || k === 'type' && val && val.includes && val.includes('Expression')) continue
+            // Drop source offsets — not useful for display
+            if (k === 'nodeStart' || k === 'nodeEnd') continue
+            // Drop internal synthetic markers
+            if (k === '_syntheticInit') continue
+            out[k] = stripNode(val, depth + 1)
+          }
+          return out
+        }
+
+        return {
+          vars: stripNode(analysis.vars),
+          watchPaths: stripNode(analysis.watchPaths),
+          watchHandlers: stripNode(analysis.watchHandlers),
+          watchGroups: stripNode(analysis.watchGroups),
+          contextProvides: analysis.contextProvides || [],
+          effects: (analysis.effects || []).map(e => ({ type: e.type, raw: e.raw?.trim().slice(0, 80) })),
+          reactiveNames: analysis.reactiveNames,
+          errors: analysis.errors,
+          warnings: analysis.warnings,
+        }
+      }
+
+      function cleanDOM(dom) {
+        const strip = (node, depth = 0) => {
+          if (depth > 10 || !node || typeof node !== 'object') return node
+          if (Array.isArray(node)) return node.map(n => strip(n, depth + 1)).filter(n =>
+            // drop pure whitespace text nodes
+            !(n && n.type === 'text' && typeof n.value === 'string' && !n.value.trim())
+          )
+          const out = {}
+          for (const [k, v] of Object.entries(node)) {
+            if (k === 'start' || k === 'end' || k === 'elArg' ||
+                k === 'closedTag' || k === 'voidTag' || k === 'openTag') continue
+            if (typeof v === 'function') continue
+            out[k] = strip(v, depth + 1)
+          }
+          return out
+        }
+        return strip(dom)
+      }
+
+      function jsonToHtml(val, indent = 0) {
+        const pad = '  '.repeat(indent)
+        const pad1 = '  '.repeat(indent + 1)
+        if (val === null) return `<span class="aj-null">null</span>`
+        if (val === undefined) return `<span class="aj-null">undefined</span>`
+        if (typeof val === 'boolean') return `<span class="aj-bool">${val}</span>`
+        if (typeof val === 'number') return `<span class="aj-num">${val}</span>`
+        if (typeof val === 'string') {
+          const esc = val.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          return `<span class="aj-str">"${esc}"</span>`
+        }
+        if (Array.isArray(val)) {
+          if (val.length === 0) return `<span class="aj-punc">[]</span>`
+          const items = val.map(v => `${pad1}${jsonToHtml(v, indent + 1)}`).join(`<span class="aj-punc">,</span>\n`)
+          return `<span class="aj-punc">[</span>\n${items}\n${pad}<span class="aj-punc">]</span>`
+        }
+        const entries = Object.entries(val)
+        if (entries.length === 0) return `<span class="aj-punc">{}</span>`
+        const items = entries.map(([k, v]) =>
+          `${pad1}<span class="aj-key">${k}</span><span class="aj-punc">: </span>${jsonToHtml(v, indent + 1)}`
+        ).join(`<span class="aj-punc">,</span>\n`)
+        return `<span class="aj-punc">{</span>\n${items}\n${pad}<span class="aj-punc">}</span>`
+      }
+
+      // ── Template analysis — clean logic tree ──────────────────────────────────────
+
+      function renderTemplateAnalysis(dom) {
+        if (!dom) return '<span style="color:var(--dim);font-size:11px">No template data.</span>'
+
+        const vars = _analysisData.script?.vars || {}
+
+        // Classify a variable name → label for annotation
+        function classify(name) {
+          const root = name?.split('.')[0]?.split('?')[0]
+          const v = vars[root]
+          if (!v) return null
+          if (v.isWritableDerived)                 return { label: 'writable',  c: '#fc8c30' }
+          if (v.kind === 'let'   && v.isProp)      return { label: 'prop',      c: '#e8407a' }
+          if (v.kind === 'const' && v.isProp)      return { label: 'immutable', c: '#4da89a' }
+          if (v.kind === 'var'   && v.isProp)      return { label: 'snapshot',  c: '#545470' }
+          if (v.kind === 'let')                    return { label: 'reactive',  c: '#f5a623' }
+          if (v.kind === 'const' && v.isDerived)   return { label: 'derived',   c: '#3abfa8' }
+          if (v.kind === 'const')                  return { label: 'static',    c: '#7a9a8a' }
+          if (v.kind === 'var')                    return { label: 'sampler',   c: '#545470' }
+          return null
+        }
+
+        // Extract all identifiers from an expression and annotate the most interesting one
+        function annotate(expr) {
+          if (!expr) return ''
+          // Find identifiers — take first known var
+          const idents = [...expr.matchAll(/\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g)]
+            .map(m => m[1])
+            .filter(n => vars[n])
+          if (!idents.length) return ''
+          // Pick most interesting: prefer let > const/derived > var
+          const ranked = idents.sort((a, b) => {
+            const rank = v => v?.kind === 'let' ? 0 : v?.kind === 'const' ? 1 : 2
+            return rank(vars[a]) - rank(vars[b])
+          })
+          const name = ranked[0]
+          const cls = classify(name)
+          if (!cls) return ''
+          return `<span style="color:${cls.c};font-size:9px;letter-spacing:.06em;opacity:.85"> ← ${cls.label}</span>`
+        }
+
+        // Parse raw directive string into {kind, expr}
+        // e.g. "#if !hasItems" → {kind:'if', expr:'!hasItems'}
+        //      "#each items as item (item.id)" → {kind:'each', expr:'items', rest:'as item (item.id)'}
+        function parseDirective(raw) {
+          if (!raw) return null
+          const s = raw.replace(/^[#:\/]/, '').trim()
+          const m = s.match(/^(\w+)\s*(.*)$/)
+          if (!m) return null
+          return { kind: m[1], body: m[2].trim() }
+        }
+
+        const lines = []
+
+        function pushLine(depth, keyword, kColor, expr, extra, annotation) {
+          const indent = depth * 18
+          const kw = `<span style="color:${kColor};font-size:10px;letter-spacing:.1em;font-weight:600">${keyword}</span>`
+          const ex = expr
+            ? `<span style="font-family:var(--mono);font-size:11px;color:var(--text)">${esc(expr)}</span>`
+            : ''
+          const ext = extra
+            ? `<span style="font-size:10px;color:var(--dim)"> ${esc(extra)}</span>`
+            : ''
+          const ann = annotation || ''
+          lines.push(
+            `<div style="padding:4px 10px 4px ${indent + 10}px;display:flex;align-items:baseline;` +
+            `gap:7px;border-bottom:1px solid rgba(255,255,255,0.03)">` +
+            `${kw}${ex}${ext}${ann}</div>`
+          )
+        }
+
+        function walk(nodes, depth) {
+          if (!nodes) return
+          const arr = Array.isArray(nodes) ? nodes : [nodes]
+          for (const n of arr) {
+            if (!n || typeof n !== 'object') continue
+            if (n.type === 'text') continue
+
+            if (n.type === 'if') {
+              // parts: [{value: '#if expr', body:[...]}, {value: '#else if expr2', body:[...]}, ...]
+              for (const part of (n.parts || [])) {
+                const d = parseDirective(part.value)
+                if (!d) continue
+                if (d.kind === 'if') {
+                  pushLine(depth, 'IF', '#f5a623', d.body, null, annotate(d.body))
+                } else if (d.kind === 'else') {
+                  // ':else if expr'
+                  const sub = d.body.replace(/^if\s+/, '')
+                  if (sub) pushLine(depth, 'ELSE IF', '#f5a623', sub, null, annotate(sub))
+                  else     pushLine(depth, 'ELSE', '#c87adc', null, null, null)
+                }
+                walk(part.body, depth + 1)
+              }
+              if (n.elsePart) {
+                pushLine(depth, 'ELSE', '#c87adc', null, null, null)
+                walk(n.elsePart, depth + 1)
+              }
+            } else if (n.type === 'each') {
+              const d = parseDirective(n.value)
+              // "#each items as item (key)"
+              const eachM = d?.body.match(/^(.+?)\s+as\s+(.+?)(\s+\((.+)\))?$/)
+              if (eachM) {
+                const expr = eachM[1].trim()
+                const as   = eachM[2].trim()
+                const key  = eachM[4] ? `(${eachM[4]})` : ''
+                pushLine(depth, 'EACH', '#3abfa8', expr,
+                  `as ${as}${key ? ' key:' + key : ''}`,
+                  annotate(expr)
+                )
+              } else {
+                pushLine(depth, 'EACH', '#3abfa8', d?.body || '', null, null)
+              }
+              walk(n.mainBlock, depth + 1)
+              if (n.elseBlock || n.elsePart) {
+                pushLine(depth, 'EACH:ELSE', '#c87adc', null, null, null)
+                walk(n.elseBlock || n.elsePart, depth + 1)
+              }
+            } else if (n.type === 'await') {
+              const d = parseDirective(n.value)
+              pushLine(depth, 'AWAIT', '#c87adc', d?.body || '', null, annotate(d?.body))
+              walk(n.mainBlock, depth + 1)
+              if (n.thenValue) {
+                pushLine(depth, 'THEN', '#3abfa8', n.thenValue, null, null)
+                walk(n.thenBlock, depth + 1)
+              }
+              if (n.catchValue) {
+                pushLine(depth, 'CATCH', '#f5a623', n.catchValue, null, null)
+                walk(n.catchBlock, depth + 1)
+              }
+            } else if (n.type === 'key') {
+              const d = parseDirective(n.value)
+              pushLine(depth, 'KEY', '#e8407a', d?.body || '', null, annotate(d?.body))
+              walk(n.mainBlock, depth + 1)
+            } else if (n.type === 'snippet') {
+              const d = parseDirective(n.value)
+              pushLine(depth, 'SNIPPET', '#7ab8f5', d?.body || n.name || '', null, null)
+              walk(n.body, depth + 1)
+            } else if (n.type === 'systag') {
+              const v = n.value || ''
+              if (v.startsWith('@render')) {
+                const expr = v.slice(7).trim()
+                pushLine(depth, 'RENDER', '#7ab8f5', expr, null, null)
+              } else if (v.startsWith('@html')) {
+                pushLine(depth, 'HTML', '#f5a623', v.slice(5).trim(), null, null)
+              } else if (v.startsWith('@attach')) {
+                pushLine(depth, 'ATTACH', '#c49a84', v.slice(7).trim(), null, null)
+              }
+            } else if (n.type === 'node' && n.name === 'mesa') {
+              const tag = 'mesa:' + (n.elArg || '')
+              pushLine(depth, tag.toUpperCase(), '#c87adc', null, null, null)
+              walk(n.body, depth + 1)
+            } else if (n.type === 'node') {
+              walk(n.body, depth)
+            }
+          }
+        }
+
+        walk(dom?.body || dom, 0)
+
+        if (!lines.length) {
+          return '<div style="padding:16px;color:var(--dim);font-size:11px">No logic blocks in this template.</div>'
+        }
+
+        const header = `<div style="padding:6px 10px 6px;font-size:9px;color:var(--dim);` +
+          `letter-spacing:.1em;border-bottom:1px solid var(--border);display:flex;gap:16px">` +
+          `<span>TEMPLATE LOGIC</span>` +
+          `<span style="margin-left:auto;color:var(--border2)">` +
+          `<span style="color:#f5a623">■</span> if/each  ` +
+          `<span style="color:#3abfa8">■</span> each  ` +
+          `<span style="color:#c87adc">■</span> async/key  ` +
+          `<span style="color:#7ab8f5">■</span> snippet` +
+          `</span></div>`
+        return header + lines.join('')
+      }
+
+      function renderAnalysisInner() {
+        const inner = document.getElementById('analysis-inner')
+        const data = _activeAtab === 'script' ? _analysisData.script : _analysisData.template
+        if (!data) { inner.innerHTML = '<span style="color:var(--dim);font-size:11px">No data yet.</span>'; return }
+
+        if (_activeAtab === 'script') {
+          const sections = [
+            ['Variables', data.vars],
+            ['Watch Paths', data.watchPaths],
+            ['Watch Handlers', data.watchHandlers],
+            ['Watch Groups', data.watchGroups],
+            ['Context Provides', data.contextProvides],
+            ['Effects', data.effects],
+            ['Reactive Names', data.reactiveNames],
+            ['Errors', data.errors],
+            ['Warnings', data.warnings],
+          ]
+          inner.innerHTML = sections.map(([label, val]) => {
+            const empty = Array.isArray(val)
+              ? val.length === 0
+              : typeof val === 'object' && Object.keys(val).length === 0
+            if (empty) return ''
+            return `<div class="aj-section">${label}</div><pre style="margin:0;white-space:pre-wrap">${jsonToHtml(val)}</pre>`
+          }).join('')
+        } else {
+          // Template tab — structured directive summary
+          inner.innerHTML = renderTemplateAnalysis(_analysisData.template)
+        }
+      }
+
+      function renderAnalysis(analysis, dom) {
+        _analysisData = {
+          script: cleanAnalysis(analysis),
+          template: cleanDOM(dom)
+        }
+        if (document.getElementById('panel-analysis').classList.contains('active')) {
+          renderAnalysisInner()
+        }
+      }
+
+      // Analysis sub-tab wiring
+      document.querySelectorAll('.atab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.atab').forEach(b => b.classList.remove('active'))
+          btn.classList.add('active')
+          _activeAtab = btn.dataset.atab
+          renderAnalysisInner()
+        })
+      })
+
+      // ── Source view toggle ────────────────────────────────────────────────────────
+      const srcView = document.getElementById('src-view')
+      const viewToggle = document.getElementById('view-toggle')
+      let isViewing = false
+
+      // ─── Mesa-semantic source view ─────────────────────────────────────────────────
+      // Colors variables by reactive role using the last compile's analysis.
+      // Falls back to generic tokenizer for extra JS files (non-Mesa).
+
+      // Reactive role → color. Mirrors the graph panel's color scheme.
+      // Build a lookup from var name → {color, label} using analysis data
+      function buildVarColors(analysis) {
+        const map = {}
+        if (!analysis?.vars) return map
+        const ROLE = {
+          'let':          { color: '#fe8a11', label: 'reactive signal' },
+          'let-prop':     { color: '#e8407a', label: 'reactive prop' },
+          'const':        { color: '#2ec4b6', label: 'derived memo' },
+          'const-static': { color: '#7a9a8a', label: 'static value' },
+          'const-prop':   { color: '#4da89a', label: 'immutable prop' },
+          'var':          { color: '#545470', label: 'non-reactive sampler' },
+          'var-prop':     { color: '#403a50', label: 'snapshot prop' },
+          'writable':     { color: '#fc8c30', label: 'writable derived' },
+          'fn':           { color: '#c49a84', label: 'function' },
+        }
+        for (const [name, v] of Object.entries(analysis.vars)) {
+          let role
+          if (v.isWritableDerived)                  role = 'writable'
+          else if (v.kind === 'let'   && v.isProp)  role = 'let-prop'
+          else if (v.kind === 'const' && v.isProp)  role = 'const-prop'
+          else if (v.kind === 'var'   && v.isProp)  role = 'var-prop'
+          else if (v.kind === 'let')                role = 'let'
+          else if (v.kind === 'const' && v.isDerived) role = 'const'
+          else if (v.kind === 'const')              role = 'const-static'
+          else if (v.kind === 'var')                role = 'var'
+          if (role) map[name] = ROLE[role]
+        }
+        for (const name of Object.keys(analysis.rootFunctions ?? {})) {
+          if (!map[name]) map[name] = ROLE.fn
+        }
+        return map
+      }
+
+      // Escape HTML
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+      // Wrap a token in a colored span with an optional tooltip title
+      function col(color, text, title) {
+        const t = title ? ' title="' + title.replace(/"/g, '&quot;') + '"' : ''
+        return '<span style="color:' + color + '"' + t + '>' + esc(text) + '<\/span>'
+      }
+
+      function renderMesaSrcView(code, analysis) {
+        const varColors = buildVarColors(analysis)
+        // Collect watch dep names for annotation
+        const watchDeps = new Set()
+        ;(analysis?.watchHandlers || []).forEach(h => h.deps?.forEach(d => watchDeps.add(d.split('.')[0])))
+        ;(analysis?.watchPaths || []).forEach(p => watchDeps.add(p.path.split('.')[0]))
+
+        // Split into sections: <script>, <style>, template HTML
+        // We'll tokenize each differently
+        const sections = []
+        let rest = code
+        while (rest.length) {
+          const scriptM = rest.match(new RegExp('^([\\s\\S]*?)(<script(?:\\s[^>]*)?>)([\\s\\S]*?)(<\\/' + 'script>)', 'i'))
+          const styleM  = rest.match(new RegExp('^([\\s\\S]*?)(<style(?:\\s[^>]*)?>)([\\s\\S]*?)(<\\/' + 'style>)',  'i'))
+          // Pick whichever comes first
+          const sIdx = scriptM ? rest.indexOf(scriptM[2]) : Infinity
+          const stIdx = styleM  ? rest.indexOf(styleM[2])  : Infinity
+          if (sIdx === Infinity && stIdx === Infinity) { sections.push({ type: 'tpl', src: rest }); break }
+          if (sIdx <= stIdx && scriptM) {
+            if (scriptM[1]) sections.push({ type: 'tpl', src: scriptM[1] })
+            sections.push({ type: 'script-open', src: scriptM[2] })
+            sections.push({ type: 'script', src: scriptM[3] })
+            sections.push({ type: 'tag-close', src: scriptM[4] })
+            rest = rest.slice(scriptM[1].length + scriptM[2].length + scriptM[3].length + scriptM[4].length)
+          } else if (styleM) {
+            if (styleM[1]) sections.push({ type: 'tpl', src: styleM[1] })
+            sections.push({ type: 'script-open', src: styleM[2] })
+            sections.push({ type: 'script', src: styleM[3] })
+            sections.push({ type: 'tag-close', src: styleM[4] })
+            rest = rest.slice(styleM[1].length + styleM[2].length + styleM[3].length + styleM[4].length)
+          } else break
+        }
+
+        const htmlParts = []
+
+        for (const sec of sections) {
+          if (sec.type === 'script-open' || sec.type === 'tag-close') {
+            htmlParts.push(col('#545470', sec.src))
+          } else if (sec.type === 'script') {
+            htmlParts.push(highlightScript(sec.src, varColors, watchDeps, analysis))
+          } else {
+            // Template section
+            htmlParts.push(highlightTemplate(sec.src, varColors))
+          }
+        }
+
+        return htmlParts.join('')
+      }
+
+      function highlightScript(code, varColors, watchDeps, analysis) {
+        // Tokenize Mesa script: keywords, strings, comments, $: labels, identifiers
+        const out = []
+        let i = 0
+        const ch = () => code[i]
+        const peek = (n=1) => code[i+n]
+
+        while (i < code.length) {
+          // Line comment
+          if (ch() === '/' && peek() === '/') {
+            const end = code.indexOf('\n', i)
+            const s = end === -1 ? code.slice(i) : code.slice(i, end)
+            out.push(col('#545470', s))
+            i += s.length
+            continue
+          }
+          // Block comment
+          if (ch() === '/' && peek() === '*') {
+            const end = code.indexOf('*/', i + 2)
+            const s = end === -1 ? code.slice(i) : code.slice(i, end + 2)
+            out.push(col('#545470', s))
+            i += s.length
+            continue
+          }
+          // Template literal
+          if (ch() === '`') {
+            let s = '`'; i++
+            while (i < code.length && code[i] !== '`') {
+              if (code[i] === '\\') { s += code[i] + (code[i+1]||''); i += 2; continue }
+              s += code[i++]
+            }
+            s += '`'; i++
+            out.push(col('#48bb78', s))
+            continue
+          }
+          // String
+          if (ch() === '"' || ch() === "'") {
+            const q = ch(); let s = q; i++
+            while (i < code.length && code[i] !== q) {
+              if (code[i] === '\\') { s += code[i] + (code[i+1]||''); i += 2; continue }
+              s += code[i++]
+            }
+            s += q; i++
+            out.push(col('#48bb78', s))
+            continue
+          }
+          // $: or $_name: label
+          if (ch() === '$' && (peek() === ':' || peek() === '_')) {
+            const m = code.slice(i).match(/^\$[\w]*\s*:/)
+            if (m) {
+              out.push(col('#ee380d', m[0], 'Mesa reactive annotation'))
+              i += m[0].length
+              continue
+            }
+          }
+          // Identifier or keyword
+          if (/[a-zA-Z_$]/.test(ch())) {
+            const m = code.slice(i).match(/^[a-zA-Z_$][\w$]*/)
+            const word = m[0]; i += word.length
+            const KEYWORDS = { const:1, let:1, var:1, function:1, async:1, await:1,
+              return:1, if:1, else:1, for:1, while:1, export:1, import:1, from:1,
+              default:1, class:1, new:1, typeof:1, void:1, null:1, true:1, false:1,
+              undefined:1, this:1, try:1, catch:1, throw:1, switch:1, case:1, break:1, continue:1 }
+            if (KEYWORDS[word]) {
+              // export let/const/var — color the keyword in the var's role color
+              out.push(col('#6699cc', word))
+            } else if (varColors[word]) {
+              const { color, label } = varColors[word]
+              const hint = watchDeps.has(word) ? `${label} · watched` : label
+              out.push(col(color, word, hint))
+            } else {
+              out.push(col('#c49a84', word))
+            }
+            continue
+          }
+          // Number
+          if (/\d/.test(ch())) {
+            const m = code.slice(i).match(/^\d+\.?\d*/)
+            out.push(col('#e2b96f', m[0]))
+            i += m[0].length
+            continue
+          }
+          // Newline — preserve as-is
+          if (ch() === '\n') { out.push('\n'); i++; continue }
+          // Everything else
+          out.push(esc(ch())); i++
+        }
+        return out.join('')
+      }
+
+      function highlightTemplate(code, varColors) {
+        // Highlight Mesa template: HTML tags, {expr}, {#if}, {#each}, {#key} etc.
+        const out = []
+        let i = 0
+        while (i < code.length) {
+          // Mesa block directive: {#if, {#each, {#key, {:else, {/if etc.
+          if (code[i] === '{' && /[#/:]/.test(code[i+1]||'')) {
+            const end = code.indexOf('}', i)
+            const s = end === -1 ? code.slice(i) : code.slice(i, end + 1)
+            out.push(col('#ee380d', s, 'Mesa directive'))
+            i += s.length
+            continue
+          }
+          // Mesa expression: {expr}
+          if (code[i] === '{') {
+            let depth = 0; let j = i
+            while (j < code.length) {
+              if (code[j] === '{') depth++
+              else if (code[j] === '}') { depth--; if (!depth) { j++; break } }
+              j++
+            }
+            const s = code.slice(i, j)
+            // Highlight the braces in orange, content lighter
+            out.push(`<span style="color:#fe8a11;opacity:.6">{</span>`)
+            out.push(col('#fe8a11', s.slice(1, -1)))
+            out.push(`<span style="color:#fe8a11;opacity:.6">}</span>`)
+            i = j
+            continue
+          }
+          // HTML tag
+          if (code[i] === '<' && /[a-zA-Z/!]/.test(code[i+1]||'')) {
+            // Find tag end (>, or />, but not inside strings)
+            let j = i + 1; let inStr = null
+            while (j < code.length) {
+              if (!inStr && (code[j] === '"' || code[j] === "'")) inStr = code[j]
+              else if (inStr && code[j] === inStr) inStr = null
+              else if (!inStr && code[j] === '>') { j++; break }
+              j++
+            }
+            const tag = code.slice(i, j)
+            const tagNameM = tag.match(/^<\/?([A-Za-z][^\s>\/]*)/)
+            const tagName = tagNameM?.[1] || ''
+            const isComponent = /^[A-Z]/.test(tagName) || tagName.includes(':')
+            const tagColor = isComponent ? '#e8407a' : '#4a9eff'
+            // Parse the tag into: opener (</ or <), name, rest-of-attrs, closer (> or />)
+            const openerM = tag.match(/^(<\/?)([A-Za-z][^\s>\/]*)(.*)$/s)
+            if (openerM) {
+              const [, slash, name, rest] = openerM
+              // Color the name
+              let html = esc(slash) + col(tagColor, name)
+              // Process attrs token by token to avoid regex-on-HTML issues
+              // Split rest into: attr strings, Mesa attrs, and plain text
+              let r = rest
+              while (r.length) {
+                // Mesa bind:/on: prefix
+                const mesaM = r.match(/^(bind:|on:)/)
+                if (mesaM) {
+                  // Read until whitespace or >
+                  const attrM = r.match(/^([^\s=>]+)/)
+                  const attrName = attrM ? attrM[1] : mesaM[1]
+                  html += col('#fe8a11', attrName)
+                  r = r.slice(attrName.length)
+                  continue
+                }
+                // Quoted attribute value ="..."
+                const valM = r.match(/^(=")([^"]*)(")/)
+                if (valM) {
+                  html += '=' + col('#48bb78', '"' + esc(valM[2]) + '"')
+                  r = r.slice(valM[0].length)
+                  continue
+                }
+                // {expr} in attrs
+                if (r[0] === '{') {
+                  let depth = 0, k = 0
+                  while (k < r.length) {
+                    if (r[k] === '{') depth++
+                    else if (r[k] === '}') { depth--; if (!depth) { k++; break } }
+                    k++
+                  }
+                  html += col('#fe8a11', esc(r.slice(0, k)))
+                  r = r.slice(k)
+                  continue
+                }
+                // closer /> or >
+                if (r.startsWith('/>')) { html += '/>'; r = r.slice(2); continue }
+                if (r[0] === '>') { html += '>'; r = r.slice(1); continue }
+                // whitespace and other chars
+                html += esc(r[0]); r = r.slice(1)
+              }
+              out.push(html)
+            } else {
+              out.push(esc(tag))
+            }
+            i = j
+            continue
+          }
+          // HTML comment <!-- -->
+          if (code.slice(i, i+4) === '<!--') {
+            const end = code.indexOf('-->', i)
+            const s = end === -1 ? code.slice(i) : code.slice(i, end + 3)
+            out.push(col('#545470', s))
+            i += s.length
+            continue
+          }
+          // Newline
+          if (code[i] === '\n') { out.push('\n'); i++; continue }
+          // Plain text
+          out.push(esc(code[i])); i++
+        }
+        return out.join('')
+      }
+
+      function renderSrcView(code) {
+        // Get the last analysis from the most recent compile
+        const analysis = window.__lastMesaAnalysis
+        const isMesaFile = files[activeFileIdx]?.name?.endsWith('.mesa') ||
+                           code.startsWith('---\n') ||
+                           code.includes('<script>') || code.includes('<script ')
+        const rendered = isMesaFile
+          ? renderMesaSrcView(code, analysis)
+          : (() => {
+              // Plain JS file — use generic tokenizer
+              const tokens = tokenize(code)
+              const lines = [[]]
+              for (const tok of tokens) {
+                if (tok.c === '__nl') { lines.push([]); continue }
+                lines[lines.length - 1].push(tok)
+              }
+              return lines.map(line =>
+                line.map(tok =>
+                  `<span style="color:${tok.c}">${tok.t
+                    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`
+                ).join('')
+              ).join('\n')
+            })()
+        srcView.innerHTML = rendered
+      }
+
+      function setViewMode(viewing) {
+        isViewing = viewing
+        const cmEl = document.getElementById('cm-editor')
+        if (viewing) {
+          renderSrcView(getEditorValue())
+          srcView.classList.add('active')
+          cmEl.classList.add('hidden')
+          viewToggle.classList.add('viewing')
+          viewToggle.textContent = '✎ Edit'
+        } else {
+          srcView.classList.remove('active')
+          cmEl.classList.remove('hidden')
+          viewToggle.classList.remove('viewing')
+          viewToggle.textContent = '◈ View'
+          cmView?.focus()
+        }
+      }
+
+      viewToggle.addEventListener('click', () => setViewMode(!isViewing))
+
+      // ─── Draggable divider ────────────────────────────────────────────────────────
+      ;(() => {
+        const divider = document.getElementById('divider')
+        const left    = document.getElementById('left')
+        const main    = document.getElementById('main')
+        let dragging  = false
+        let startX    = 0
+        let startW    = 0
+
+        divider.addEventListener('mousedown', (e) => {
+          dragging = true
+          startX   = e.clientX
+          startW   = left.getBoundingClientRect().width
+          divider.classList.add('dragging')
+          document.body.style.cursor    = 'col-resize'
+          document.body.style.userSelect = 'none'
+          e.preventDefault()
+        })
+
+        document.addEventListener('mousemove', (e) => {
+          if (!dragging) return
+          const mainW  = main.getBoundingClientRect().width
+          const delta  = e.clientX - startX
+          const newW   = Math.min(Math.max(startW + delta, 200), mainW - 205)
+          left.style.width = newW + 'px'
+        })
+
+        document.addEventListener('mouseup', () => {
+          if (!dragging) return
+          dragging = false
+          divider.classList.remove('dragging')
+          document.body.style.cursor     = ''
+          document.body.style.userSelect = ''
+        })
+
+        // Touch support
+        divider.addEventListener('touchstart', (e) => {
+          dragging = true
+          startX   = e.touches[0].clientX
+          startW   = left.getBoundingClientRect().width
+          divider.classList.add('dragging')
+          e.preventDefault()
+        }, { passive: false })
+
+        document.addEventListener('touchmove', (e) => {
+          if (!dragging) return
+          const mainW = main.getBoundingClientRect().width
+          const delta = e.touches[0].clientX - startX
+          const newW  = Math.min(Math.max(startW + delta, 200), mainW - 205)
+          left.style.width = newW + 'px'
+        }, { passive: true })
+
+        document.addEventListener('touchend', () => {
+          dragging = false
+          divider.classList.remove('dragging')
+        })
+      })()
+
+      // Textarea event listeners removed — CM handles input/keydown via updateListener + keymap.
+      // Fallback: if CM init failed, wire the textarea manually.
+      document.getElementById('editor').addEventListener('input', () => {
+        if (!cmFallback) return
+        const val = document.getElementById('editor').value
+        files[activeFileIdx].content = val
+        if (activeFileIdx === 0) scheduleCompile(val)
+        else scheduleCompile(files[0].content)
+      })
+
+      // ─── $: Reference panel ───────────────────────────────────────────────────────
+      const RX_SECTIONS = [
+        {
+          title: 'Path watch',
+          desc: 'external objects',
+          code: `import { user, cart } from './store.js'\n\n$: user              // watch entire object\n$: user.name         // surgical — only user.name\n$: cart.total        // ignores cart.items\n$: (cart.items, cart.total)   // multi-path`,
+          note: 'Use on <strong>imported plain JS objects</strong> (store files). Wraps the object in a Proxy — mutations trigger re-renders. Not for local <code>let</code> signals — those re-render on assignment.',
+          error: null,
+          example: 'reactiveObject'
+        },
+        {
+          title: 'Auto-tracked effect',
+          desc: 'runs when any dep changes',
+          code: `$: console.log(count)           // single expression\n$: document.title = name        // assignment\n\n$: {                            // block — multiple statements\n  console.log(count)\n  document.title = name\n}`,
+          note: 'Deps are <strong>auto-detected</strong> — any reactive variable read inside re-runs the effect when it changes. The block form supports <code>if</code>, <code>for</code>, etc.',
+          error: '$: if (x) { } — compiler error. Use $: { if (x) { } } instead.',
+          example: 'watchHandler'
+        },
+        {
+          title: 'Watch + handler',
+          desc: 'explicit dep, untracked handler',
+          code: `$: count, () => save()          // single dep\n$: count, saveRef               // fn reference shorthand\n\n$: (count, name), () => {      // multi-dep\n  sync(count, name)\n}\n\n$: selectedId, async () => {   // async + cleanup\n  const ctrl = new AbortController()\n  $onCleanup(() => ctrl.abort())\n  data = await fetch('/api/' + selectedId, {\n    signal: ctrl.signal\n  }).then(r => r.json())\n}`,
+          note: 'The <strong>handler body is untracked</strong> — only the explicit dep(s) trigger re-runs. The handler is always the <strong>last item after a comma, outside any parens</strong>.',
+          error: null,
+          example: 'watchAsync'
+        },
+        {
+          title: 'Ordered watch group',
+          desc: 'guaranteed execution order',
+          code: `$: {\n  stateSignal, () => resetPage()\n  stateSignal, () => fetchData()\n  stateSignal, () => logAnalytics()\n}`,
+          note: 'Multiple watch+handlers that <strong>must fire in order</strong>. Each subscribes individually — all run on the same flush in declaration order. The <code>$: { }</code> block containing only <code>dep, fn</code> pairs is the ordered group form.',
+          error: null,
+          example: 'orderedGroup'
+        },
+        {
+          title: 'Writable derived',
+          desc: '$: name = expr',
+          code: `$: selected = items[0]   // re-derives when items changes\n$: doubled = count * 2   // re-derives when count changes`,
+          note: 'Re-derives when deps change, but can be <strong>overridden</strong> by <code>bind:value</code> or direct assignment. The override holds until the next dep change — then derivation wins back. For permanent detachment, use <code>let</code> with a watch+handler.',
+          error: null,
+          example: 'writableDerived'
+        },
+        {
+          title: 'Debug label',
+          desc: '$_name: prefix',
+          code: `$_fetchData: selectedId, async () => { ... }\n$_total: total = items.reduce(...)`,
+          note: 'Prefix any <code>$:</code> form with <code>$_name:</code> to attach a <strong>debug label</strong> visible in the Graph panel and runtime dev tools. The underscore is required — <code>$name:</code> without it is a compiler error.',
+          error: null,
+          example: 'debugLabels'
+        },
+      ]
+
+      function buildReactivityRef() {
+        const inner = document.getElementById('reactivity-inner')
+        if (inner.children.length) return // already built
+        inner.innerHTML = ''
+        for (const sec of RX_SECTIONS) {
+          const el = document.createElement('div')
+          el.className = 'rx-section'
+          el.innerHTML = `
+            <div class="rx-section-hdr">
+              <span class="rx-chevron">▾</span>
+              <span class="rx-title">${sec.title}</span>
+              <span class="rx-desc">${sec.desc}</span>
+            </div>
+            <div class="rx-body">
+              <div class="rx-code">${sec.code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+              ${sec.note ? `<p class="rx-note">${sec.note}</p>` : ''}
+              ${sec.error ? `<p class="rx-error">⚠ <code>${sec.error.replace(/</g,'&lt;')}</code></p>` : ''}
+              ${sec.example ? `<span class="rx-try" data-ex="${sec.example}">▶ Try example</span>` : ''}
+            </div>`
+          el.querySelector('.rx-section-hdr').addEventListener('click', () => {
+            el.classList.toggle('collapsed')
+          })
+          const tryBtn = el.querySelector('.rx-try')
+          if (tryBtn) {
+            tryBtn.addEventListener('click', () => {
+              loadExample(tryBtn.dataset.ex)
+              // Switch to preview tab
+              document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'))
+              document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'))
+              document.querySelector('.tab[data-tab="preview"]').classList.add('active')
+              document.getElementById('panel-preview').classList.add('active')
+            })
+          }
+          inner.appendChild(el)
+        }
+      }
+
+      document.querySelectorAll('.tab').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'))
+          document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'))
+          btn.classList.add('active')
+          document.getElementById('panel-' + btn.dataset.tab).classList.add('active')
+          if (btn.dataset.tab === 'output') renderOutput(compiledJS)
+          if (btn.dataset.tab === 'analysis') renderAnalysisInner()
+          if (btn.dataset.tab === 'reactivity') buildReactivityRef()
+        })
+      })
+
+      document.getElementById('copy-src').addEventListener('click', () => {
+        navigator.clipboard?.writeText(getEditorValue()).catch(() => {
+          const el = document.createElement('textarea')
+          el.value = getEditorValue()
+          el.style.cssText = 'position:fixed;top:-9999px;opacity:0'
+          document.body.appendChild(el)
+          el.focus()
+          el.select()
+          document.execCommand('copy')
+          document.body.removeChild(el)
+        })
+        const btn = document.getElementById('copy-src')
+        btn.textContent = 'Copied ✓'
+        btn.style.color = '#fe8a11'
+        btn.style.borderColor = '#fe8a11'
+        setTimeout(() => {
+          btn.textContent = 'Copy'
+          btn.style.color = ''
+          btn.style.borderColor = ''
+        }, 1500)
+      })
+
+      // ─── Open Standalone ──────────────────────────────────────────────────────────
+      // Fetches runtime.js as raw text, creates a blob URL for it, patches the
+      // compiled output to import from that blob URL, wraps in mounting HTML,
+      // and opens the whole thing as a second blob in a new tab.
+      // Works in all modern browsers — module scripts can import other blob URLs.
+
+      document.getElementById('open-standalone').addEventListener('click', async () => {
+        if (!compiledJS) {
+          setStatus('orange', 'Nothing compiled yet')
+          return
+        }
+        const btn = document.getElementById('open-standalone')
+        btn.textContent = 'Opening…'
+        try {
+          // 1. Fetch the runtime as raw source text.
+          const runtimeSrc = await fetch('./runtime.js').then((r) => {
+            if (!r.ok) throw new Error('Could not load runtime.js: ' + r.status)
+            return r.text()
+          })
+
+          // 2. Create a blob URL for the runtime so the compiled module can import it.
+          const runtimeBlob = new Blob([runtimeSrc], { type: 'application/javascript' })
+          const runtimeUrl = URL.createObjectURL(runtimeBlob)
+
+          // 3. Patch the compiled output:
+          //    • swap '@frontierjs/mesa/runtime.js' import for the runtime blob URL
+          //    • replace `export default ` with `const __MesaComponent = `
+          const patchedJS = compiledJS
+            .replace(/from\s+'@frontierjs\/mesa\/runtime\.js'/, `from '${runtimeUrl}'`)
+            .replace(/^export default\s+/m, 'const __MesaComponent = ')
+
+          // 4. Build the full self-contained HTML.
+          const filename = files[0].name || 'Component'
+          const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mesa — ${filename}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+      padding: 24px;
+      background: #faf9f7;
+      color: #1e1e2e;
+    }
+    h1, h2, h3 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+    p  { margin: 0 0 6px; font-size: 14px; line-height: 1.6; }
+    hr { border: none; border-top: 1px solid #e5e7eb; margin: 10px 0; }
+    label { font-size: 12px; color: #6b7280; font-weight: 500; }
+    button {
+      background: #1e1e2e; color: #fff; border: none;
+      padding: 5px 13px; border-radius: 4px; cursor: pointer;
+      font-size: 12px; margin: 2px 3px 2px 0;
+      font-family: inherit; transition: background .1s;
+    }
+    button:hover { background: #374151; }
+    input, textarea, select {
+      border: 1px solid #d1d5db; border-radius: 4px;
+      padding: 5px 9px; font-size: 13px; font-family: inherit;
+      margin: 2px 3px 2px 0; outline: none;
+      transition: border-color .1s;
+    }
+    input:focus, textarea:focus { border-color: #6366f1; }
+    textarea { resize: vertical; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+${patchedJS}
+
+const anchor = document.createComment('')
+document.getElementById('app').appendChild(anchor)
+__MesaComponent(anchor, {}, null)
+<\/script>
+</body>
+</html>`
+
+          // 5. Open in a new tab.
+          const htmlBlob = new Blob([html], { type: 'text/html' })
+          const htmlUrl = URL.createObjectURL(htmlBlob)
+          window.open(htmlUrl, '_blank')
+
+          // Revoke the runtime blob after a delay — the opened tab has its own
+          // reference so a short delay is enough for the module to load.
+          setTimeout(() => URL.revokeObjectURL(runtimeUrl), 10_000)
+          setTimeout(() => URL.revokeObjectURL(htmlUrl), 10_000)
+        } catch (e) {
+          console.error('[Mesa REPL] Open standalone failed:', e)
+          setStatus('red', 'Standalone failed: ' + e.message)
+        } finally {
+          btn.textContent = 'Open standalone ↗'
+        }
+      })
+
+      // ─── Shareable URL — encode/decode file state in URL hash ─────────────────────
+      //
+      // State: { files: [{name, content},...], activeFileIdx: number }
+      // Encoding: JSON → LZString.compressToEncodedURIComponent → #s=<encoded>
+      // LZString keeps hashes short — typical Mesa component compresses 5-10x.
+
+      function encodeState() {
+        const state = {
+          files: files.map(f => ({ name: f.name, content: f.content })),
+          activeFileIdx
+        }
+        return LZString.compressToEncodedURIComponent(JSON.stringify(state))
+      }
+
+      function decodeState(encoded) {
+        try {
+          const json = LZString.decompressFromEncodedURIComponent(encoded)
+          if (!json) return null
+          const state = JSON.parse(json)
+          if (!Array.isArray(state.files) || !state.files.length) return null
+          return state
+        } catch { return null }
+      }
+
+      function getHashState() {
+        const hash = location.hash
+        const m = hash.match(/[#&]s=([^&]*)/)
+        return m ? decodeState(m[1]) : null
+      }
+
+      function pushHashState() {
+        const encoded = encodeState()
+        const newHash = '#s=' + encoded
+        // Use replaceState to avoid polluting browser history on every keystroke
+        window.history.replaceState(null, '', newHash)
+      }
+
+      function copyShareLink() {
+        // Sync current editor content to files before encoding
+        files[activeFileIdx].content = getEditorValue()
+        pushHashState()
+        const url = location.href
+        navigator.clipboard.writeText(url).then(() => {
+          const btn = document.getElementById('share-btn')
+          const prev = btn.textContent
+          btn.textContent = 'Copied! ✓'
+          btn.style.color = 'var(--teal)'
+          setTimeout(() => {
+            btn.textContent = prev
+            btn.style.color = ''
+          }, 2000)
+        }).catch(() => {
+          const inp = document.createElement('input')
+          inp.value = url
+          document.body.appendChild(inp)
+          inp.select()
+          document.execCommand('copy')
+          document.body.removeChild(inp)
+        })
+      }
+
+      document.getElementById('share-btn').addEventListener('click', copyShareLink)
+
+      // ─── Vim mode toggle ──────────────────────────────────────────────────────────
+      const vimBtn = document.getElementById('vim-btn')
+      function updateVimBtn() {
+        vimBtn.textContent = vimEnabled ? 'Vim ✓' : 'Vim'
+        vimBtn.style.color = vimEnabled ? 'var(--orange)' : ''
+        vimBtn.style.borderColor = vimEnabled ? 'var(--orange)' : ''
+      }
+      updateVimBtn()
+      vimBtn.addEventListener('click', () => {
+        vimEnabled = !vimEnabled
+        localStorage.setItem('mesa-vim', vimEnabled ? '1' : '0')
+        updateVimBtn()
+        // Reinit editor to apply/remove vim extension
+        const content = getEditorValue()
+        const filename = files[activeFileIdx].name
+        initCMEditor(content, filename)
+      })
+
+      // ─── Theme toggle ─────────────────────────────────────────────────────────────
+      const THEMES = ['mesa', 'dark', 'light']
+      const themeBtn = document.getElementById('theme-btn')
+      let currentTheme = localStorage.getItem('mesa-theme') || 'mesa'
+
+      function applyTheme(t) {
+        currentTheme = t
+        document.documentElement.setAttribute('data-theme', t)
+        localStorage.setItem('mesa-theme', t)
+        const label = t.charAt(0).toUpperCase() + t.slice(1)
+        themeBtn.textContent = label + ' ◑'
+        themeBtn.style.color = t === 'mesa' ? 'var(--orange)'
+                             : t === 'dark'  ? 'var(--teal)'
+                             : 'var(--muted)'
+        themeBtn.style.borderColor = themeBtn.style.color
+      }
+
+      themeBtn.addEventListener('click', () => {
+        const next = THEMES[(THEMES.indexOf(currentTheme) + 1) % THEMES.length]
+        applyTheme(next)
+      })
+
+      applyTheme(currentTheme)
+
+      // ─── Boot ─────────────────────────────────────────────────────────────────────
+      document.getElementById('boot-msg').textContent = 'Ready'
+      document.getElementById('boot-overlay').style.display = 'none'
+
+      renderFileTabs()
+
+      // Restore from URL hash if present, otherwise load default example
+      const _hashState = getHashState()
+      if (_hashState) {
+        files = _hashState.files
+        activeFileIdx = Math.min(_hashState.activeFileIdx ?? 0, files.length - 1)
+        const _f = files[activeFileIdx]
+        initCMEditor(_f.content, _f.name)
+        renderFileTabs()
+        scheduleCompile(_f.content)
+        setStatus('green', 'Restored from link')
+      } else {
+        loadExample(DEFAULT_EXAMPLE)
+      }
+
+      setStatus('green', 'Ready')
+    </script>
+  </body>
+</html>
