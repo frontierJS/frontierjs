@@ -1,0 +1,7 @@
+---
+title: Lead Detail
+---
+<script>
+  export let data = null
+</script>
+<h1>{data?.lead?.name}</h1>

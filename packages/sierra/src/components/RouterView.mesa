@@ -1,0 +1,30 @@
+<script module>
+  // RouterView — Sierra's router outlet.
+  //
+  // Previously used {#key activeRoute} to remount ChainRenderer on every navigation.
+  // That caused ALL layouts — even shared ones — to be torn down and recreated on
+  // every route change, re-running their instance scripts (console.logs, effects, etc).
+  //
+  // Now: RouterView passes a reactive chain prop. ChainRenderer keys on
+  // entry.component at each depth — so layouts that appear in both the old and new
+  // chain are REUSED. Only levels where the component actually changes remount.
+</script>
+
+<script>
+  import { activeRoute, pendingRoute } from '@frontierjs/sierra/router'
+  import { resolveChain } from '@frontierjs/sierra/router/internals'
+  import ChainRenderer from './ChainRenderer.mesa'
+
+  export let loading = null
+</script>
+
+{#if pendingRoute && loading}
+  {@render loading()}
+{/if}
+
+{#if activeRoute}
+  <ChainRenderer
+    chain={resolveChain(activeRoute)}
+    depth={0}
+  />
+{/if}

@@ -1,0 +1,25 @@
+{
+  "name": "@frontierjs/auth",
+  "version": "1.0.0",
+  "description": "FJS native authentication — createLitestoneAuth + createAuthPlugin",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "@frontierjs/litestone": "*",
+    "@frontierjs/junction": "*"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "keywords": [
+    "frontierjs",
+    "auth",
+    "authentication",
+    "bun"
+  ],
+  "license": "MIT",
+  "_built": "2026-05-07"
+}

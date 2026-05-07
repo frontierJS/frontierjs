@@ -1,0 +1,33 @@
+{
+  "name": "@frontierjs/conduit",
+  "version": "0.1.0",
+  "description": "Outbound transport layer for FrontierJS Junction apps. One interface. Any protocol. Any direction.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Kobami",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts",
+    "./stores/sqlite": "./src/stores/sqlite.ts",
+    "./stores/memory": "./src/stores/memory.ts"
+  },
+  "scripts": {
+    "test":      "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "peerDependencies": {
+    "@frontierjs/junction": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@frontierjs/junction": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@frontierjs/junction": "*"
+  }
+}

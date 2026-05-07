@@ -1,0 +1,6 @@
+---
+title: Blog Post
+render: static
+---
+<script>export let data = null</script>
+<h1>{data?.post?.title}</h1>

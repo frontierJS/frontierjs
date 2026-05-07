@@ -1,0 +1,42 @@
+<script>
+  import { data, params } from '@frontierjs/sierra/router'
+  import ChainRendererInner from './ChainRenderer.mesa'
+
+  export let chain    // { component, ownParams, meta }[]
+  export let depth    // current depth in chain
+
+  const entry     = chain[depth]
+  const Component = entry.component
+  const isLast    = depth === chain.length - 1
+
+  // getRemountKey — for same-route param changes (e.g. /blog/a/ → /blog/b/).
+  // The component at this depth is the same, but ownParams changed.
+  function getRemountKey() {
+    if (!isLast) return null
+    const remount = entry.meta?.remount
+    if (remount === false) return null
+    const own = entry.ownParams ?? []
+    if (own.length === 0) return null
+    if (remount === 'params') return JSON.stringify(params)
+    return own.map(p => params[p]).join('/')
+  }
+</script>
+
+{#if Component}
+  {#key Component}
+    {#if isLast}
+      {#if getRemountKey() !== null}
+        {#key getRemountKey()}
+          <Component data={data} />
+        {/key}
+      {:else}
+        <Component data={data} />
+      {/if}
+    {:else}
+      {#snippet inner()}
+        <ChainRendererInner {chain} depth={depth + 1} />
+      {/snippet}
+      <Component children={inner} />
+    {/if}
+  {/key}
+{/if}

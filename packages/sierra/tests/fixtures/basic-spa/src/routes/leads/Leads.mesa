@@ -1,0 +1,3 @@
+<!-- co-located component — PascalCase, not a route -->
+<script>export let leads = []</script>
+{#each leads as lead}<div>{lead.name}</div>{/each}

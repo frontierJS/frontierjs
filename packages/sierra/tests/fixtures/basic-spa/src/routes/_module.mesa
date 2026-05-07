@@ -1,0 +1,4 @@
+<script>
+  export let children = null
+</script>
+{@render children?.()}

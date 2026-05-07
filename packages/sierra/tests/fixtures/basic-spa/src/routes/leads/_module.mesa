@@ -1,0 +1,10 @@
+<script>
+  import { pageSlots } from 'sierra/router'
+  export let children = null
+  let sidebarFn = null
+  $: pageSlots, () => { sidebarFn = pageSlots.sidebar }
+</script>
+{#if sidebarFn}
+  <aside>{@render sidebarFn?.()}</aside>
+{/if}
+{@render children?.()}

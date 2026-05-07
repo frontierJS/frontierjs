@@ -1,0 +1,229 @@
+// plugin.ts
+// createAuthPlugin(auth, opts): Plugin
+//
+// The transport layer. Mounts /auth/* routes onto the Junction app.
+// Calls IAuth — never touches the database directly.
+// Email sending is handled by the onX callbacks in createLitestoneAuth opts.
+
+import type { IAuth, SessionContext }  from '../junction/index.ts'
+import { parseTtl }                    from '../junction/index.ts'
+import { Unauthorized, BadRequest, TooManyRequests } from '../junction/index.ts'
+import type { AuthPluginOptions }   from './types.ts'
+import type { RateLimitHookOptions }   from '../junction/index.ts'
+
+// ─── Route-level rate limiter ─────────────────────────────────────────────
+// The rateLimitHook from core/hooks.ts operates on ServiceContext, which has
+// ctx.params.ip. Auth routes are plain HTTP handlers with TransportContext,
+// where the IP is at ctx.ip directly. This limiter works with both shapes.
+//
+// Note: this is an in-process Map — it does not survive a multi-process deploy
+// (multiple Bun workers, pm2 cluster, etc.). For horizontal scale, swap the
+// Map for a Redis-backed counter using the same interface.
+
+function makeRouteLimiter(opts: RateLimitHookOptions) {
+  const windowMs = parseTtl(opts.window)
+  const counters = new Map<string, { count: number; resetAt: number }>()
+
+  const gc = setInterval(() => {
+    const now = Date.now()
+    for (const [key, bucket] of counters) {
+      if (bucket.resetAt < now) counters.delete(key)
+    }
+  }, windowMs)
+  if ((gc as any).unref) (gc as any).unref()
+
+  return (ctx: any): void => {
+    const key = ctx.ip ?? 'unknown'
+    const now = Date.now()
+    let bucket = counters.get(key)
+
+    if (!bucket || now > bucket.resetAt) {
+      counters.set(key, { count: 1, resetAt: now + windowMs })
+      return
+    }
+
+    bucket.count++
+
+    if (bucket.count > opts.max) {
+      throw new TooManyRequests(
+        opts.message ?? `Rate limit exceeded — max ${opts.max} per ${opts.window}`
+      )
+    }
+  }
+}
+
+export function createAuthPlugin(
+  auth: IAuth,
+  opts: AuthPluginOptions = {}
+): { name: string; register: (app: any) => void } {
+
+  const {
+    prefix            = '/auth',
+    cookieAuth        = false,
+    loginRateLimit    = { max: 10, window: '15 minutes' },
+    registerRateLimit = { max: 5,  window: '15 minutes' },
+  } = opts
+
+  // sessionTtl: prefer the explicit plugin opt, then read from the auth
+  // instance (_sessionTtl is set by createLitestoneAuth), then fall back to default.
+  // This ensures the cookie maxAge stays in sync with the DB session expiry
+  // without requiring the caller to pass sessionTtl to both call sites.
+  const sessionTtl   = opts.sessionTtl ?? (auth as IAuth & { _sessionTtl?: string })._sessionTtl ?? '30 days'
+  const cookieMaxAge = Math.floor(parseTtl(sessionTtl) / 1000)
+
+  const loginLimiter    = makeRouteLimiter(loginRateLimit)
+  const registerLimiter = makeRouteLimiter(registerRateLimit)
+
+  return {
+    name: '@frontierjs/auth',
+
+    register(app: any) {
+
+      // ── POST /auth/register ──────────────────────────────────────────
+      // Plugin-level only — not on IAuth.
+      // createUser + login in one step. Issues a session token.
+      // Triggers email verification if the IAuth method is implemented.
+
+      app.post(`${prefix}/register`, async (ctx: any) => {
+        registerLimiter(ctx)
+
+        const { email, password, name } = ctx.body ?? {}
+        if (!email)    throw new BadRequest('email is required')
+        if (!password) throw new BadRequest('password is required')
+
+        await auth.createUser({ email, password, name })
+        const result = await auth.login(email, password)
+
+        // Trigger email verification if the IAuth implementation supports it.
+        // The email is sent via the onEmailVerificationRequested callback
+        // configured in createLitestoneAuth opts — not handled here.
+        if (auth.requestEmailVerification) {
+          await auth.requestEmailVerification(result.user.userId).catch(() => {
+            // Non-fatal — user is created and logged in regardless
+          })
+        }
+
+        return respond(ctx, result, cookieAuth, cookieMaxAge, 201)
+      })
+
+      // ── POST /auth/login ─────────────────────────────────────────────
+
+      app.post(`${prefix}/login`, async (ctx: any) => {
+        loginLimiter(ctx)
+
+        const { email, password } = ctx.body ?? {}
+        if (!email)    throw new BadRequest('email is required')
+        if (!password) throw new BadRequest('password is required')
+
+        const result = await auth.login(email, password)
+        return respond(ctx, result, cookieAuth, cookieMaxAge)
+      })
+
+      // ── POST /auth/logout ────────────────────────────────────────────
+
+      app.post(`${prefix}/logout`, async (ctx: any) => {
+        const token = extractToken(ctx)
+        if (token) await auth.logout(token)
+        if (cookieAuth) clearCookie(ctx)
+        return ctx.json({ ok: true })
+      })
+
+      // ── GET /auth/me ─────────────────────────────────────────────────
+
+      app.get(`${prefix}/me`, async (ctx: any) => {
+        if (!ctx.user) throw new Unauthorized('Authentication required')
+        return ctx.json(ctx.user)
+      })
+
+      // ── POST /auth/password-reset/request ────────────────────────────
+      // Always returns ok — never reveals whether the email is registered.
+
+      app.post(`${prefix}/password-reset/request`, async (ctx: any) => {
+        const { email } = ctx.body ?? {}
+        if (!email) throw new BadRequest('email is required')
+
+        if (auth.requestPasswordReset) {
+          await auth.requestPasswordReset(email)
+        }
+
+        return ctx.json({ ok: true })
+      })
+
+      // ── POST /auth/password-reset/confirm ────────────────────────────
+
+      app.post(`${prefix}/password-reset/confirm`, async (ctx: any) => {
+        const { token, password } = ctx.body ?? {}
+        if (!token)    throw new BadRequest('token is required')
+        if (!password) throw new BadRequest('password is required')
+
+        if (!auth.confirmPasswordReset) {
+          throw new BadRequest('Password reset not supported by this auth provider')
+        }
+
+        await auth.confirmPasswordReset(token, password)
+        return ctx.json({ ok: true })
+      })
+
+      // ── POST /auth/email/verify/request ──────────────────────────────
+      // Requires authentication — user must be logged in to request
+      // a new verification email.
+
+      app.post(`${prefix}/email/verify/request`, async (ctx: any) => {
+        if (!ctx.user) throw new Unauthorized('Authentication required')
+
+        const user = ctx.user as SessionContext
+
+        if (auth.requestEmailVerification) {
+          await auth.requestEmailVerification(user.userId)
+        }
+
+        return ctx.json({ ok: true })
+      })
+
+      // ── GET /auth/email/verify?token= ────────────────────────────────
+
+      app.get(`${prefix}/email/verify`, async (ctx: any) => {
+        const token = ctx.query?.token as string | undefined
+        if (!token) throw new BadRequest('token is required')
+
+        if (!auth.verifyEmail) {
+          throw new BadRequest('Email verification not supported by this auth provider')
+        }
+
+        const user = await auth.verifyEmail(token)
+        return ctx.json({ ok: true, user })
+      })
+
+    }
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+function respond(
+  ctx:         any,
+  data:        unknown,
+  cookieAuth:  boolean,
+  cookieMaxAge: number,
+  status = 200
+): Response {
+  if (cookieAuth && (data as any)?.token) {
+    ctx.setCookie?.('session', (data as any).token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure:   process.env.NODE_ENV === 'production',
+      maxAge:   cookieMaxAge,
+    })
+  }
+  return ctx.json(data, status)
+}
+
+function extractToken(ctx: any): string | null {
+  const header = (ctx.headers?.authorization ?? '') as string
+  if (header.startsWith('Bearer ')) return header.slice(7).trim()
+  return ctx.cookies?.session ?? null
+}
+
+function clearCookie(ctx: any): void {
+  ctx.setCookie?.('session', '', { maxAge: 0 })
+}
