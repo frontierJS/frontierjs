@@ -128,9 +128,9 @@ export type WindowSpec = Record<string, WindowFnSpec>
 ```prisma
 /// User account — represents a single company or individual.
 model Account {
-  id    Integer @id
+  id    Int @id
   /// Display name shown in the UI.
-  name  Text
+  name  String
 }
 ```
 

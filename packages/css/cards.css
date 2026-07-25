@@ -1,0 +1,14 @@
+/*
+ * utilities/cards.css
+ * Card = surface + default padding. Visual treatment lives in surface.css.
+ *
+ * Sub-regions bleed to card edges via negative margins to escape card's
+ * own padding. Other composites (alert, toast, dialog) don't need this
+ * because they don't carry their own padding.
+ */
+
+.card { padding: 1.25rem; }
+
+/* Bleed sub-regions to card edges */
+.card > .surface-header { margin: -1.25rem -1.25rem 1rem; }
+.card > .surface-footer { margin: 1rem -1.25rem -1.25rem; }

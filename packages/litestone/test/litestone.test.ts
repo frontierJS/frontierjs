@@ -14680,3 +14680,356 @@ describe('type rename — hard-cut migration', () => {
     expect(f('active').type.name).toBe('Boolean')
   })
 })
+
+// ┌────────────────────────────────────────────────────────────────────────────┐
+// │  @time — 24-hour clock validator                                            │
+// └────────────────────────────────────────────────────────────────────────────┘
+
+describe('@time validator', () => {
+  // Validates strings in HH:MM (default) or HH:MM:SS (with seconds: true).
+  // 24-hour clock, leading zeros required so values sort lexicographically
+  // the same as numerically — this matters for ORDER BY in admin queries
+  // that don't bother parsing.
+
+  test('parses bare @time', () => {
+    const r = parse(`model t { id Int @id; ot String @time }`)
+    expect(r.valid).toBe(true)
+    const a = r.schema.models[0].fields[1].attributes.find((x: any) => x.kind === 'time')
+    expect(a).toBeDefined()
+    expect((a as any).seconds).toBe(false)
+  })
+
+  test('parses @time(seconds: true)', () => {
+    const r = parse(`model t { id Int @id; ot String @time(seconds: true) }`)
+    expect(r.valid).toBe(true)
+    const a = r.schema.models[0].fields[1].attributes.find((x: any) => x.kind === 'time')
+    expect((a as any).seconds).toBe(true)
+  })
+
+  test('parses @time(message: "...")', () => {
+    const r = parse(`model t { id Int @id; ot String @time(message: "bad") }`)
+    expect(r.valid).toBe(true)
+    const a = r.schema.models[0].fields[1].attributes.find((x: any) => x.kind === 'time')
+    expect((a as any).message).toBe('bad')
+  })
+
+  test('rejects non-bool for seconds', () => {
+    const r = parse(`model t { id Int @id; ot String @time(seconds: 1) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('expects true/false')
+  })
+
+  test('runtime: accepts valid HH:MM', async () => {
+    const db = await makeDb(`model bh { id Int @id; openTime String @time }`, 'time-hm-ok')
+    await db.bh.create({ data: { id: 1, openTime: '09:30' } })
+    await db.bh.create({ data: { id: 2, openTime: '00:00' } })
+    await db.bh.create({ data: { id: 3, openTime: '23:59' } })
+    expect(await db.bh.count()).toBe(3)
+    db.$close()
+  })
+
+  test('runtime: rejects malformed HH:MM', async () => {
+    const db = await makeDb(`model bh { id Int @id; openTime String @time }`, 'time-hm-bad')
+    const bad = ['9:30', '24:00', '12:60', '12:34:00', '1230', '', 'abc']
+    for (const v of bad) {
+      let err: any = null
+      try { await db.bh.create({ data: { id: 1, openTime: v } }) } catch (e) { err = e }
+      expect(err).not.toBeNull()
+    }
+    db.$close()
+  })
+
+  test('runtime: seconds: true accepts HH:MM and HH:MM:SS', async () => {
+    const db = await makeDb(`model bh { id Int @id; t String @time(seconds: true) }`, 'time-hms-ok')
+    await db.bh.create({ data: { id: 1, t: '12:00' } })
+    await db.bh.create({ data: { id: 2, t: '12:00:00' } })
+    await db.bh.create({ data: { id: 3, t: '23:59:59' } })
+    expect(await db.bh.count()).toBe(3)
+    db.$close()
+  })
+
+  test('runtime: seconds: true rejects out-of-range', async () => {
+    const db = await makeDb(`model bh { id Int @id; t String @time(seconds: true) }`, 'time-hms-bad')
+    for (const v of ['12:34:60', '24:00:00', '12:60:00']) {
+      let err: any = null
+      try { await db.bh.create({ data: { id: 1, t: v } }) } catch (e) { err = e }
+      expect(err).not.toBeNull()
+    }
+    db.$close()
+  })
+
+  test('custom message via @time(message: ...)', async () => {
+    const db = await makeDb(
+      `model bh { id Int @id; t String @time(message: "open hours: HH:MM only") }`,
+      'time-msg',
+    )
+    let err: any = null
+    try { await db.bh.create({ data: { id: 1, t: 'noon' } }) } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(err.message).toContain('open hours: HH:MM only')
+    db.$close()
+  })
+})
+
+// ┌────────────────────────────────────────────────────────────────────────────┐
+// │  view block — read-only schema views                                        │
+// └────────────────────────────────────────────────────────────────────────────┘
+
+describe('view block — schema views', () => {
+  // Two flavors: regular views (CREATE VIEW, recomputed every read) and
+  // materialized views (real tables + triggers that refresh on writes to
+  // their declared source models). Both are read-only — write methods throw.
+
+  test('regular view: read-only, recomputed on each query', async () => {
+    const db = await makeDb(`
+      model orders {
+        id        Int   @id
+        accountId Int
+        total     Float
+      }
+      view orderTotals {
+        accountId Int
+        total     Float
+        @@sql("SELECT accountId, SUM(total) AS total FROM orders GROUP BY accountId")
+      }
+    `, 'view-regular')
+
+    await db.orders.createMany({ data: [
+      { id: 1, accountId: 1, total: 100 },
+      { id: 2, accountId: 1, total: 50 },
+      { id: 3, accountId: 2, total: 30 },
+    ]})
+
+    const rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
+    expect(rows.length).toBe(2)
+    expect(rows[0]).toEqual({ accountId: 1, total: 150 })
+    expect(rows[1]).toEqual({ accountId: 2, total: 30 })
+
+    db.$close()
+  })
+
+  test('view: write methods throw a clear error', async () => {
+    const db = await makeDb(`
+      model orders { id Int @id; total Float }
+      view dailyTotals {
+        total Float
+        @@sql("SELECT SUM(total) AS total FROM orders")
+      }
+    `, 'view-write-blocked')
+
+    let err: any = null
+    try { await (db as any).dailyTotals.create({ data: { total: 0 } }) }
+    catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(err.message).toContain('view')
+    expect(err.message).toContain('write operations are not supported')
+
+    db.$close()
+  })
+
+  test('materialized view: refreshes automatically on source writes', async () => {
+    // The @@refreshOn([orders]) declaration installs INSERT/UPDATE/DELETE
+    // triggers on the orders table; each fires a DELETE+INSERT against the
+    // materialized table to keep it in sync. Reads hit the materialized
+    // table directly — no recomputation per query.
+    const db = await makeDb(`
+      model orders {
+        id        Int   @id
+        accountId Int
+        total     Float
+      }
+      view orderTotals {
+        accountId Int
+        total     Float
+        @@materialized
+        @@sql("SELECT accountId, SUM(total) AS total FROM orders GROUP BY accountId")
+        @@refreshOn([orders])
+      }
+    `, 'view-materialized')
+
+    await db.orders.createMany({ data: [
+      { id: 1, accountId: 1, total: 100 },
+      { id: 2, accountId: 2, total: 30 },
+    ]})
+
+    let rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
+    expect(rows.length).toBe(2)
+    expect(rows[0].total).toBe(100)
+
+    // Insert another order — the view should auto-refresh.
+    await db.orders.create({ data: { id: 3, accountId: 1, total: 25 } })
+    rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
+    expect(rows[0].total).toBe(125)
+
+    // Delete an order — the view should reflect.
+    await db.orders.delete({ where: { id: 2 } })
+    rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
+    expect(rows.length).toBe(1)
+
+    db.$close()
+  })
+
+  test('view supports findFirst / findUnique / count / exists', async () => {
+    const db = await makeDb(`
+      model orders { id Int @id; accountId Int; total Float }
+      view orderTotals {
+        accountId Int
+        total     Float
+        @@sql("SELECT accountId, SUM(total) AS total FROM orders GROUP BY accountId")
+      }
+    `, 'view-read-methods')
+
+    await db.orders.createMany({ data: [
+      { id: 1, accountId: 1, total: 100 },
+      { id: 2, accountId: 2, total: 30 },
+    ]})
+
+    const first = await db.orderTotals.findFirst({ where: { accountId: 2 } })
+    expect(first?.total).toBe(30)
+
+    const n = await db.orderTotals.count()
+    expect(n).toBe(2)
+
+    expect(await db.orderTotals.exists({ where: { accountId: 1 } })).toBe(true)
+    expect(await db.orderTotals.exists({ where: { accountId: 99 } })).toBe(false)
+
+    db.$close()
+  })
+})
+
+// ┌────────────────────────────────────────────────────────────────────────────┐
+// │  @@fts tokenize parameter                                                   │
+// └────────────────────────────────────────────────────────────────────────────┘
+
+describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
+  // FTS5 ships several tokenizers. unicode61 (default) is word-based with
+  // case folding; trigram does character-overlap matching for substring /
+  // truncation tolerance; porter stems English words; ascii is plain ASCII
+  // fold. Schema picks one; search() and the where {fts} operator both go
+  // through the same FTS5 virtual table.
+
+  test('parses bare @@fts (default unicode61 tokenizer)', () => {
+    const r = parse(`model p { id Int @id; title String; @@fts([title]) }`)
+    expect(r.valid).toBe(true)
+    const a = r.schema.models[0].attributes.find((x: any) => x.kind === 'fts')
+    expect((a as any).tokenize).toBe('unicode61')
+  })
+
+  test('parses @@fts(tokenize: trigram)', () => {
+    const r = parse(`model p { id Int @id; title String; @@fts([title], tokenize: trigram) }`)
+    expect(r.valid).toBe(true)
+    const a = r.schema.models[0].attributes.find((x: any) => x.kind === 'fts')
+    expect((a as any).tokenize).toBe('trigram')
+  })
+
+  test('parses @@fts(tokenize: porter)', () => {
+    const r = parse(`model p { id Int @id; title String; @@fts([title], tokenize: porter) }`)
+    expect(r.valid).toBe(true)
+    expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'fts').tokenize).toBe('porter')
+  })
+
+  test('rejects unknown tokenizer with allowed-list hint', () => {
+    const r = parse(`model p { id Int @id; title String; @@fts([title], tokenize: superfuzzy) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain("unknown tokenizer")
+    expect(r.errors.join('\n')).toContain('unicode61')
+    expect(r.errors.join('\n')).toContain('trigram')
+  })
+
+  test('rejects unknown named argument', () => {
+    const r = parse(`model p { id Int @id; title String; @@fts([title], stem: true) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain("expected 'tokenize'")
+  })
+
+  test('DDL: default tokenizer emits no tokenize clause (back-compat)', () => {
+    const r = parse(`model p { id Int @id; title String; @@fts([title]) }`)
+    const ddl = generateDDL(r.schema)
+    // Confirm the FTS5 CREATE VIRTUAL TABLE has no `tokenize=` clause —
+    // this preserves bit-for-bit DDL parity with pre-Stage-A schemas that
+    // didn't specify a tokenizer.
+    expect(ddl).toContain('USING fts5(')
+    expect(ddl).not.toContain('tokenize=')
+  })
+
+  test("DDL: non-default tokenizer emits tokenize='...' clause", () => {
+    const r = parse(`model p { id Int @id; title String; @@fts([title], tokenize: trigram) }`)
+    const ddl = generateDDL(r.schema)
+    expect(ddl).toContain("tokenize='trigram'")
+  })
+
+  test('runtime: trigram tokenizer matches substrings', async () => {
+    const db = await makeDb(`
+      model flavors {
+        id   Int    @id
+        name String
+        @@fts([name], tokenize: trigram)
+      }
+    `, 'fts-trigram')
+    await db.flavors.createMany({ data: [
+      { id: 1, name: 'Apple Pie' },
+      { id: 2, name: 'Banana Bread' },
+      { id: 3, name: 'Chocolate Mousse' },
+    ]})
+
+    // Trigram tokenizer does substring overlap matching. Truncations and
+    // partial words work; transposed/missing letters generally don't.
+    const cases: Array<[string, number[]]> = [
+      ['App',    [1]],
+      ['Appl',   [1]],
+      ['chocol', [3]],
+      ['ana',    [2]],   // substring of "Banana"
+      ['xyz',    []],
+    ]
+    for (const [q, ids] of cases) {
+      const rows = await db.flavors.search(q)
+      expect(rows.map((r: any) => r.id).sort()).toEqual(ids.slice().sort())
+    }
+    db.$close()
+  })
+
+  test('runtime: porter tokenizer stems English words', async () => {
+    const db = await makeDb(`
+      model articles {
+        id   Int    @id
+        body String
+        @@fts([body], tokenize: porter)
+      }
+    `, 'fts-porter')
+    await db.articles.createMany({ data: [
+      { id: 1, body: 'The cat is running fast' },
+      { id: 2, body: 'Programmers program programs' },
+    ]})
+
+    // Porter stems "running" → "run", so all three forms find the same row.
+    expect((await db.articles.search('run')).map((r: any) => r.id)).toEqual([1])
+    expect((await db.articles.search('running')).map((r: any) => r.id)).toEqual([1])
+    expect((await db.articles.search('runs')).map((r: any) => r.id)).toEqual([1])
+    expect((await db.articles.search('program')).map((r: any) => r.id)).toEqual([2])
+    expect((await db.articles.search('programming')).map((r: any) => r.id)).toEqual([2])
+    db.$close()
+  })
+
+  test('runtime: default tokenizer still does word matching (regression guard)', async () => {
+    // Confirm @@fts without a tokenize: argument behaves exactly like
+    // pre-Stage-A: unicode61, word-based, no stemming, no substring matching.
+    const db = await makeDb(`
+      model posts {
+        id    Int    @id
+        title String
+        body  String
+        @@fts([title, body])
+      }
+    `, 'fts-default-tokenizer')
+    await db.posts.createMany({ data: [
+      { id: 1, title: 'Quick brown fox', body: 'jumps over the lazy dog' },
+      { id: 2, title: 'Cats and dogs',   body: 'are common pets' },
+    ]})
+
+    expect((await db.posts.search('fox')).map((r: any) => r.id)).toEqual([1])
+    expect((await db.posts.search('cats')).map((r: any) => r.id)).toEqual([2])
+    // Partial words (not in unicode61) — should NOT match without trigram
+    expect(await db.posts.search('fo')).toEqual([])
+    db.$close()
+  })
+})

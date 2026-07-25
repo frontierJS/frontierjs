@@ -463,6 +463,16 @@ export async function Command({ file, arg, flag, emit }) {
 
         const stepMeta = extractFrontmatter(stepTemplate)
 
+        // Honor early-abort signaled by the orchestrator (or a previous step).
+        // The step body's own `if (context.config.abort) return` would still
+        // catch this, but checking here means we skip the header log too —
+        // a stuck "[1/N] step-name" line below an error message is confusing.
+        // Cleanup steps that intentionally run on abort can opt in via
+        // `runOnAbort: true` in their frontmatter (e.g. deploy's 09-cleanup).
+        if (config.config?.abort && !stepMeta.runOnAbort) {
+          return
+        }
+
         // Evaluate skip predicate if defined
         if (stepMeta.skip) {
           try {
@@ -640,13 +650,23 @@ export function getConfig(metadata, rawArg, flag) {
   // subsequent calls across the entire process. That bit us in zz-steps.test
   // where scenario 7 sets --step 99, and scenario 8 inherits the leftover
   // step:99 even though it passed flag:{}.
+  //
+  // Flag merge order: defaults first, then command-defined flags overlaid
+  // PER FIELD (not per object). This means a command can re-declare `dry`
+  // to add its own description without losing the inherited `char: 'd'`
+  // from defaultFlags. Without per-field merge, `flags.dry: { type: 'boolean' }`
+  // in a command file would shadow the default's char and break short-flag
+  // resolution.
+  const cmdFlags = metadata.flags || {}
+  const mergedFlags = {}
+  for (const [k, v] of Object.entries(defaultFlags)) mergedFlags[k] = { ...v }
+  for (const [k, v] of Object.entries(cmdFlags)) {
+    mergedFlags[k] = { ...(mergedFlags[k] || {}), ...v }
+  }
   const meta = {
     ...metadata,
-    args:  (metadata.args  || []).map(a => ({ ...a })),
-    flags: {
-      ...Object.fromEntries(Object.entries(defaultFlags).map(([k, v]) => [k, { ...v }])),
-      ...Object.fromEntries(Object.entries(metadata.flags || {}).map(([k, v]) => [k, { ...v }])),
-    }
+    args: (metadata.args || []).map(a => ({ ...a })),
+    flags: mergedFlags,
   }
 
   // Clone the flag object so we don't mutate the caller's input — bootstrap

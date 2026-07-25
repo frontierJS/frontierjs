@@ -1,0 +1,66 @@
+/*
+ * utilities/pills.css
+ * .pill shortcut lives in uno.config.ts.
+ * Tones come from tones.css.
+ *
+ * Default (no tone class) renders muted via the var fallback.
+ * Use for counts and very short data ("12", "99+", "v2").
+ */
+
+.pill {
+  background:     var(--bg-mix, var(--color-muted));
+  color:          var(--on-bg-mix, white);
+  border:         1px solid transparent;
+  font-family:    var(--font-primary);
+  font-weight:    var(--pill-font-weight);
+  text-transform: var(--pill-text-transform);
+  letter-spacing: var(--pill-letter-spacing);
+}
+
+/* ── Removable variant — pill with an inline close button ────────
+ *   <span class="pill success removable">
+ *     resolved-on-call
+ *     <button class="pill-close" aria-label="Remove tag">
+ *       <span class="i-heroicons:x-mark" aria-hidden="true"></span>
+ *     </button>
+ *   </span>
+ *
+ * The close button's hover/focus use color-mix on currentColor, so they
+ * adapt to whatever tone (and theme) the pill carries.
+ */
+.pill.removable {
+  padding-right: 3px;
+  gap:           4px;
+}
+.pill-close {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  width:           1.35em;
+  height:          1.35em;
+  border:          none;
+  border-radius:   999px;
+  background:      transparent;
+  color:           inherit;
+  font:            inherit;
+  line-height:     1;
+  padding:         0;
+  cursor:          pointer;
+  opacity:         0.7;
+  transition:      opacity 120ms, background 120ms;
+}
+.pill-close > svg,
+.pill-close > [class^="i-heroicons"],
+.pill-close > [class*=" i-heroicons"] {
+  width:  0.85em;
+  height: 0.85em;
+}
+.pill-close:hover {
+  opacity:    1;
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+.pill-close:focus-visible {
+  outline:    none;
+  opacity:    1;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 50%, transparent);
+}

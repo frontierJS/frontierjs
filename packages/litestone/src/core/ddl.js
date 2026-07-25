@@ -302,11 +302,17 @@ function createFts(model, tableName) {
 
   const contentCols   = fts.fields.join(', ')
   const hasSoftDelete = model.attributes.some(a => a.kind === 'softDelete')
+  // unicode61 is FTS5's implicit default — only emit a tokenize clause when
+  // the user picked something else. Keeps the DDL clean for the common case
+  // and avoids relying on us hardcoding the same default FTS5 uses internally.
+  const tokenize = fts.tokenize && fts.tokenize !== 'unicode61'
+    ? `,\n  tokenize='${fts.tokenize}'`
+    : ''
   const parts = [
     `CREATE VIRTUAL TABLE IF NOT EXISTS "${tableName}_fts" USING fts5(`,
     `  ${contentCols},`,
     `  content="${tableName}",`,
-    `  content_rowid="id"`,
+    `  content_rowid="id"${tokenize}`,
     `);`,
     ``,
     `-- Triggers to keep FTS index in sync`,

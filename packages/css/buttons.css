@@ -1,0 +1,63 @@
+/*
+ * utilities/buttons.css
+ * .btn shortcut lives in uno.config.ts.
+ *
+ * Tones come from tones.css (.primary, .info, .danger, etc.) — this file
+ * only knows about the .btn shape, variants, and states.
+ */
+
+.btn {
+  background:     var(--bg-mix, var(--color-primary));
+  color:          var(--on-bg-mix, white);
+  border:         1px solid transparent;
+  font-family:    var(--font-primary);
+  font-weight:    var(--btn-font-weight);
+  text-transform: var(--btn-text-transform);
+  letter-spacing: var(--btn-letter-spacing);
+  box-shadow:     var(--shadow-sm);
+}
+
+.btn:focus-visible {
+  outline:    none;
+  box-shadow: 0 0 0 var(--ring-width) color-mix(in srgb, var(--ring) 30%, transparent);
+}
+
+.btn:disabled,
+.btn.disabled {
+  opacity: 0.6;
+  cursor:  not-allowed;
+}
+
+/* ── Variants — read --bg-mix, restructure ─────────────────────── */
+.btn.outlined {
+  background:   var(--surface);
+  color:        var(--bg-mix, var(--color-primary));
+  border-color: var(--bg-mix, var(--color-primary));
+  box-shadow:   none;
+}
+
+.btn.link {
+  background:    transparent;
+  color:         var(--bg-mix, var(--color-primary));
+  box-shadow:    none;
+  padding-left:  0;
+  padding-right: 0;
+}
+.btn.link:hover {
+  text-decoration: underline;
+  filter:          none;
+}
+
+/* ── Icon-only button — equal padding, square via aspect-ratio ──── */
+.btn.icon {
+  padding:      0.45em;   /* equal on all sides; scales with font-size */
+  aspect-ratio: 1;
+  gap:          0;
+}
+.btn.icon > svg,
+.btn.icon > .i-heroicons\:plus,
+.btn.icon > [class^="i-heroicons"],
+.btn.icon > [class*=" i-heroicons"] {
+  width:  1.15em;
+  height: 1.15em;
+}

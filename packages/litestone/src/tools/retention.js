@@ -18,7 +18,7 @@
 //     maxSize   500mb     ← size-based: trim oldest lines when file exceeds limit
 //   }
 
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, rmSync, statSync, openSync, readSync, closeSync } from 'fs'
 
 // ─── Duration parser ──────────────────────────────────────────────────────────
 // Accepts: 30d, 90d, 1y, 24h, 60m, 3600s
@@ -114,9 +114,59 @@ export function runSqliteRetention(rawWriteDb, models, retention) {
 // @param maxSize    size string e.g. '500mb' (optional)
 // @returns          { removed, remaining, reason } or null if nothing to do
 
+// Read just the first line of a file (bounded chunks, no full-file decode).
+function readFirstLine(filePath) {
+  const fd  = openSync(filePath, 'r')
+  const buf = Buffer.allocUnsafe(8192)
+  const chunks = []
+  let pos = 0
+  try {
+    while (true) {
+      const n = readSync(fd, buf, 0, buf.length, pos)
+      if (n === 0) break
+      const nl = buf.indexOf(0x0a)
+      const end = (nl >= 0 && nl < n) ? nl : n
+      chunks.push(buf.slice(0, end).toString('utf8'))
+      if (nl >= 0 && nl < n) break
+      pos += n
+    }
+  } finally {
+    closeSync(fd)
+  }
+  return chunks.join('').trim()
+}
+
 export function compactJsonl(filePath, model, retention, maxSize) {
   if (!existsSync(filePath)) return null
   if (!retention && !maxSize) return null
+
+  const ms       = retention ? parseDuration(retention) : null
+  const maxBytes = maxSize   ? parseSize(maxSize)       : null
+  const cutoff   = ms ? new Date(Date.now() - ms).toISOString() : null
+  // Find the timestamp field — prefer createdAt, fall back to first DateTime
+  const tsField  = ms
+    ? (model.fields.find(f => f.name === 'createdAt' && f.type.name === 'DateTime')?.name ??
+       model.fields.find(f => f.type.name === 'DateTime')?.name)
+    : null
+
+  // ── Cheap pre-checks — skip the full-file read on the common no-op path ────
+  // This runs inside createClient() on EVERY startup; without these checks a
+  // large log file was fully read + JSON.parsed every boot just to discover
+  // nothing needed pruning.
+  const st = statSync(filePath)
+  if (st.size === 0) return null
+  const sizeOk = !maxBytes || st.size <= maxBytes
+  if (sizeOk) {
+    let timeOk = !cutoff || !tsField
+    if (!timeOk) {
+      // Append-only files are oldest-first: if the FIRST line is fresh, all are.
+      try {
+        const ts = JSON.parse(readFirstLine(filePath))?.[tsField]
+        timeOk = !ts || String(ts) >= cutoff
+      } catch { /* malformed first line — fall through to the full pass */ }
+    }
+    if (timeOk) return null
+  }
 
   const raw   = readFileSync(filePath, 'utf8')
   let   lines = raw.split('\n').filter(l => l.trim())
@@ -128,48 +178,41 @@ export function compactJsonl(filePath, model, retention, maxSize) {
 
   // ── Time-based compaction ──────────────────────────────────────────────────
 
-  if (retention) {
-    const ms = parseDuration(retention)
-    if (ms) {
-      const cutoff = new Date(Date.now() - ms).toISOString()
-
-      // Find the timestamp field — prefer createdAt, fall back to first DateTime
-      const tsField =
-        model.fields.find(f => f.name === 'createdAt' && f.type.name === 'DateTime')?.name ??
-        model.fields.find(f => f.type.name === 'DateTime')?.name
-
-      if (tsField) {
-        const before2 = lines.length
-        lines = lines.filter(line => {
-          try {
-            const obj = JSON.parse(line)
-            const ts  = obj[tsField]
-            if (!ts) return true   // no timestamp — keep it
-            return String(ts) >= cutoff
-          } catch {
-            return true            // malformed — keep rather than silently delete
-          }
-        })
-        if (lines.length < before2) reasons.push(`time (${retention})`)
+  if (cutoff && tsField) {
+    const before2 = lines.length
+    lines = lines.filter(line => {
+      try {
+        const obj = JSON.parse(line)
+        const ts  = obj[tsField]
+        if (!ts) return true   // no timestamp — keep it
+        return String(ts) >= cutoff
+      } catch {
+        return true            // malformed — keep rather than silently delete
       }
-    }
+    })
+    if (lines.length < before2) reasons.push(`time (${retention})`)
   }
 
   // ── Size-based compaction ──────────────────────────────────────────────────
 
-  if (maxSize) {
-    const maxBytes = parseSize(maxSize)
-    if (maxBytes) {
-      // Measure byte size including newlines
-      let totalBytes = lines.reduce((sum, l) => sum + Buffer.byteLength(l, 'utf8') + 1, 0)
+  if (maxBytes) {
+    // Measure byte size including newlines
+    const totalBytes = lines.reduce((sum, l) => sum + Buffer.byteLength(l, 'utf8') + 1, 0)
 
-      if (totalBytes > maxBytes) {
-        while (lines.length > 0 && totalBytes > maxBytes) {
-          const removed = lines.shift()
-          totalBytes -= Buffer.byteLength(removed, 'utf8') + 1
-        }
-        reasons.push(`size (${maxSize})`)
+    if (totalBytes > maxBytes) {
+      // Single pass from the end: keep the largest suffix that fits.
+      // (The previous lines.shift() loop was O(n²) array moves — it could
+      // hang startup for minutes the first time a big file crossed the limit.)
+      let keepBytes = 0
+      let cut = lines.length
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const b = Buffer.byteLength(lines[i], 'utf8') + 1
+        if (keepBytes + b > maxBytes) break
+        keepBytes += b
+        cut = i
       }
+      lines = lines.slice(cut)
+      reasons.push(`size (${maxSize})`)
     }
   }
 

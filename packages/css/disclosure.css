@@ -1,0 +1,69 @@
+/*
+ * utilities/disclosure.css
+ * Expand/collapse built on native <details>/<summary> — keyboard, focus,
+ * and toggle state all platform-provided (Principle 4: native over reinvention).
+ *
+ *   <details class="disclosure" open>
+ *     <summary class="disclosure-summary">
+ *       <span>To Do</span>
+ *       <span class="text-muted">(1 / 3)</span>
+ *     </summary>
+ *     <div class="disclosure-body">
+ *       … content …
+ *     </div>
+ *   </details>
+ *
+ * The chevron is a CSS-drawn caret that rotates on open — no icon needed.
+ */
+
+.disclosure {
+  border:        1px solid var(--rule);
+  border-radius: var(--card-radius);
+  overflow:      hidden;
+}
+
+.disclosure-summary {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             0.5rem;
+  padding:         0.625rem 0.875rem;
+  font-weight:     600;
+  cursor:          pointer;
+  user-select:     none;
+  list-style:      none;          /* kill default disclosure triangle (FF) */
+}
+.disclosure-summary::-webkit-details-marker {
+  display: none;                  /* kill default disclosure triangle (WebKit) */
+}
+.disclosure-summary:focus-visible {
+  outline:         none;
+  box-shadow:      inset 0 0 0 var(--ring-width) color-mix(in srgb, var(--ring) 25%, transparent);
+}
+.disclosure-summary:hover {
+  background: var(--surface-sunken);
+}
+
+/* CSS caret — points right when collapsed, down when open */
+.disclosure-summary::after {
+  content:       "";
+  width:         0.45rem;
+  height:        0.45rem;
+  border-right:  2px solid var(--ink-mute);
+  border-bottom: 2px solid var(--ink-mute);
+  transform:     rotate(-45deg);
+  transition:    transform 150ms ease;
+  flex-shrink:   0;
+}
+.disclosure[open] .disclosure-summary::after {
+  transform: rotate(45deg);
+}
+
+.disclosure-body {
+  padding:    0.875rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* When the caret sits beside content that itself ends in a value (like a
+   count), keep them apart: summary uses space-between, so wrap the left
+   side in its own element if you need the caret hugged to the right. */

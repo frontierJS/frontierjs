@@ -1,0 +1,42 @@
+/*
+ * styles/index.css
+ * Single entry point. Import this from your app root.
+ *
+ * Order matters:
+ *   1. Tokens     — root variable defaults
+ *   2. Themes     — overrides under .theme-* classes
+ *   3. Tones      — per-element tone classes (.primary, .danger, …)
+ *   4. Surface    — block visual base (shared by card, alert, toast, dialog, popover)
+ *   5. Utilities  — components, both inline (btn/pill/badge) and block (card/alert/...)
+ */
+
+@import './tokens.css';
+
+@import './themes/default.css';
+@import './themes/sunset.css';
+@import './themes/forest.css';
+@import './themes/midnight.css';
+@import './themes/dark.css';
+@import './themes/elite.css';
+
+@import './utilities/tones.css';
+@import './utilities/surface.css';
+
+@import './utilities/typography.css';
+@import './utilities/buttons.css';
+@import './utilities/pills.css';
+@import './utilities/badges.css';
+@import './utilities/cards.css';
+@import './utilities/alerts.css';
+@import './utilities/toasts.css';
+@import './utilities/popovers.css';
+@import './utilities/drawers.css';
+@import './utilities/form-core.css';
+@import './utilities/tables.css';
+@import './utilities/dialogs.css';
+
+/* Block-tier patterns */
+@import './utilities/bars.css';
+@import './utilities/lists.css';
+@import './utilities/feed.css';
+@import './utilities/disclosure.css';

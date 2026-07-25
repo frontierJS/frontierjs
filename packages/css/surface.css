@@ -1,0 +1,81 @@
+/*
+ * utilities/surface.css
+ *
+ * The block visual base. Every block primitive that wants the surface
+ * treatment — card, alert, toast, dialog, popover — gets it via the
+ * selector groups below. Adding a new composite = add its class name
+ * to the :where() list.
+ *
+ * Sub-regions (.surface-header, .surface-body, .surface-footer) are
+ * shared too. Composites can adjust their bleed/padding via descendant
+ * rules in their own file.
+ */
+
+/* ── Base ─────────────────────────────────────────────────────── */
+:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer) {
+  --surface-bg:     var(--surface);
+  --surface-color:  var(--ink);
+  --surface-border: var(--rule);
+
+  background:    var(--surface-bg);
+  color:         var(--surface-color);
+  border:        1px solid var(--surface-border);
+  border-radius: var(--card-radius);
+  font-family:   var(--font-primary);
+  transition:    background 120ms, border-color 120ms;
+}
+
+/* ── Variants — flip the surface treatment ────────────────────── */
+:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer).raised {
+  --surface-border: transparent;
+  box-shadow:       var(--shadow-md);
+}
+
+:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer).outlined {
+  --surface-bg:     transparent;
+  --surface-border: var(--rule-strong);
+  box-shadow:       none;
+}
+
+:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer).ghost {
+  --surface-bg:     transparent;
+  --surface-border: transparent;
+  box-shadow:       none;
+}
+
+/*
+ * ── Tones — recipe derives surface from --bg-mix ───────────────
+ * tones.css sets --bg-mix; this rule consumes it across every composite.
+ * Adding a new tonal-derived composite = add its class to this list.
+ */
+:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer):is(.primary, .info, .success, .warning, .danger) {
+  --surface-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
+  --surface-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
+  --surface-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
+}
+
+/* ── Shared sub-regions ───────────────────────────────────────── */
+.surface-header,
+.surface-footer {
+  display:     flex;
+  align-items: center;
+  gap:         10px;
+  padding:     0.75rem 1.25rem;
+}
+.surface-header {
+  justify-content: space-between;
+  border-bottom:   1px solid var(--surface-border);
+  font-weight:     600;
+  color:           var(--surface-color);
+}
+.surface-footer {
+  justify-content: flex-end;
+  border-top:      1px solid var(--surface-border);
+  background:      color-mix(in srgb, var(--ink) 3%, transparent);
+}
+.surface-body {
+  padding:     1rem 1.25rem;
+  line-height: 1.55;
+}
+.surface-body > p { margin: 0 0 10px; }
+.surface-body > p:last-child { margin-bottom: 0; }

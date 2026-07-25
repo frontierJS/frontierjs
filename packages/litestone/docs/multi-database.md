@@ -19,23 +19,23 @@ database audit     { path "./audit/"; driver logger;  retention 90d }
 
 ```prisma
 model User {
-  id    Integer @id
-  email Text
+  id    Int @id
+  email String
   // no @@db — goes to 'main' (first database block, or db: option)
 }
 
 model PageView {
-  id        Integer  @id
-  path      Text
-  duration  Integer
+  id        Int  @id
+  path      String
+  duration  Int
   createdAt DateTime @default(now())
   @@db(analytics)
 }
 
 model ApiRequest {
-  method  Text
-  path    Text
-  status  Integer
+  method  String
+  path    String
+  status  Int
   @@db(logs)      // append-only JSONL, no migrations
 }
 
@@ -82,9 +82,9 @@ Mark a model as externally managed — Litestone skips DDL/migrations but still 
 
 ```prisma
 model active_users {
-  id        Integer @id
-  email     Text
-  accountId Integer
+  id        Int @id
+  email     String
+  accountId Int
   @@external
 }
 ```

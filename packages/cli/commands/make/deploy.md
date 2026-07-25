@@ -31,7 +31,7 @@ import { resolve, dirname } from 'path'
 // ─── Dockerfile ───────────────────────────────────────────────────────────────
 
 const makeDockerfile = (appId) => `# FrontierJS API — ${appId}
-# Built on the server via: docker build -t ${appId}:latest -f api/deploy/Dockerfile .
+# Built on the server via: docker build -t ${appId}:latest -f deploy/Dockerfile .
 # No registry required — image lives on the server.
 
 FROM oven/bun:1 AS base
@@ -87,7 +87,7 @@ ${serverLine}
     api: {
       port:       3000,
       health:     '/health',
-      dockerfile: 'api/deploy/Dockerfile',
+      dockerfile: 'deploy/Dockerfile',
       env:        '/apps/${appId}/.env.production',
 
       // Set to true to validate server env against .env.example before deploying
@@ -145,17 +145,17 @@ const created  = []
 echo(`\nScaffolding deploy artifacts for: ${appId}\n`)
 
 // ─── 1. Dockerfile ────────────────────────────────────────────────────────────
-const dockerfileDir  = resolve(context.paths.root, 'api/deploy')
+const dockerfileDir  = resolve(context.paths.root, 'deploy')
 const dockerfilePath = resolve(dockerfileDir, 'Dockerfile')
 
 if (existsSync(dockerfilePath)) {
-  log.warn(`Dockerfile already exists: api/deploy/Dockerfile — skipping`)
+  log.warn(`Dockerfile already exists: deploy/Dockerfile — skipping`)
 } else {
   if (!flag.dry) {
     mkdirSync(dockerfileDir, { recursive: true })
     writeFileSync(dockerfilePath, makeDockerfile(appId), 'utf8')
   }
-  log.success(`Created: api/deploy/Dockerfile`)
+  log.success(`Created: deploy/Dockerfile`)
   created.push(dockerfilePath)
 }
 
@@ -243,7 +243,7 @@ if (hasServer) {
 echo('')
 log.success('Done. Next steps:')
 echo('')
-echo('  1. Review api/deploy/Dockerfile and adjust for your app')
+echo('  1. Review deploy/Dockerfile and adjust for your app')
 echo('  2. Set server/domain in frontier.config.js deploy block')
 echo('  3. Add /health to your Junction server if not present')
 echo('  4. Create .env.example with your required env keys')

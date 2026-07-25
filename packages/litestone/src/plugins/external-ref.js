@@ -59,6 +59,7 @@
 //   page.content // → resolved value directly
 
 import { Plugin } from '../core/plugin.js'
+import { buildWhere } from '../core/query.js'
 
 export class ExternalRefPlugin extends Plugin {
   // Subclasses set this to match the DSL scalar type name
@@ -69,7 +70,8 @@ export class ExternalRefPlugin extends Plugin {
     super()
     this.config      = config
     this._fieldMap   = {}   // { model: { field: { isArray, ...opts } } }
-    this._cache      = new Map()  // cacheKey → resolved value
+    this._cache      = new Map()  // cacheKey → resolved value (bounded LRU)
+    this._cacheMax   = config.cacheSize ?? 1000   // hard cap on cached entries
     this._autoResolve = config.autoResolve ?? false  // subclasses can override default
   }
 
@@ -147,9 +149,22 @@ export class ExternalRefPlugin extends Plugin {
   async _resolveRef(ref, opts) {
     if (!ref) return null
     const key = this.cacheKey(ref)
-    if (key && this._cache.has(key)) return this._cache.get(key)
+    if (key && this._cache.has(key)) {
+      // LRU touch — delete + re-set moves the entry to the back of the Map
+      const hit = this._cache.get(key)
+      this._cache.delete(key)
+      this._cache.set(key, hit)
+      return hit
+    }
     const resolved = await this.resolve(ref, opts)
-    if (key) this._cache.set(key, resolved)
+    if (key) {
+      // Bounded LRU — previously this Map grew without limit, an effective
+      // memory leak for subclasses that cache resolved payloads.
+      if (this._cache.size >= this._cacheMax) {
+        this._cache.delete(this._cache.keys().next().value)
+      }
+      this._cache.set(key, resolved)
+    }
     return resolved
   }
 
@@ -229,32 +244,35 @@ export class ExternalRefPlugin extends Plugin {
     const fields = this._fieldMap[model]
     if (!fields || !args.data) return
 
-    for (const [field, opts] of Object.entries(fields)) {
-      const value = args.data[field]
-      if (!this._isRawValue(value)) continue
+    // Which fields carry incoming raw values? (Others are untouched refs.)
+    const rawFields = Object.entries(fields).filter(([field]) => this._isRawValue(args.data[field]))
+    if (!rawFields.length) return
 
-      // Stash old ref for cleanup after write
-      if (ctx.readDb && args.where) {
-        try {
-          const { buildWhere } = await import('../core/query.js')
-          const params = []
-          const whereSql = buildWhere(args.where, params)
-          if (whereSql) {
+    // Stash old refs for cleanup after write — ONE combined SELECT for all
+    // raw fields (previously: one dynamic import + one SELECT per field).
+    if (ctx.readDb && args.where) {
+      try {
+        const params = []
+        const whereSql = buildWhere(args.where, params)
+        if (whereSql) {
+          const colSql = rawFields.map(([f]) => `"${f}"`).join(', ')
+          const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${model}" WHERE ${whereSql}`).get(...params)
+          for (const [field, opts] of rawFields) {
             if (opts.isArray) {
-              const oldRow = ctx.readDb.query(`SELECT "${field}" FROM "${model}" WHERE ${whereSql}`).get(...params)
-              const oldRefs = this._parseRefArray(oldRow?.[field])
-              for (const oldRef of oldRefs) {
+              for (const oldRef of this._parseRefArray(oldRow?.[field])) {
                 if (oldRef) this._stash(ctx, model, `${field}[${JSON.stringify(oldRef)}]`, oldRef)
               }
             } else {
-              const oldRow = ctx.readDb.query(`SELECT "${field}" FROM "${model}" WHERE ${whereSql}`).get(...params)
               const oldRef = this._parseRef(oldRow?.[field])
               if (oldRef) this._stash(ctx, model, field, oldRef)
             }
           }
-        } catch {}
-      }
+        }
+      } catch {}
+    }
 
+    for (const [field, opts] of rawFields) {
+      const value = args.data[field]
       const id = args.where?.id ?? 'upd'
 
       if (opts.isArray) {
@@ -283,20 +301,25 @@ export class ExternalRefPlugin extends Plugin {
     const fields = this._fieldMap[model]
     if (!fields) return
 
+    // Collect all stale refs first, then clean them up in PARALLEL —
+    // previously each S3 delete was awaited sequentially (N round trips).
+    const cleanups = []
     for (const [field, opts] of Object.entries(fields)) {
       if (opts.isArray) {
-        const stash = this._stashMap.get(ctx) ?? new Map()
+        const stash = this._stashMap.get(ctx)
+        if (!stash) continue
         const prefix = `${model}.${field}[`
-        const toClean = [...stash.entries()].filter(([k]) => k.startsWith(prefix))
-        for (const [k, ref] of toClean) {
+        for (const [k, ref] of stash.entries()) {
+          if (!k.startsWith(prefix)) continue
           stash.delete(k)
-          await this._cleanupRef(ref, { field, model, ctx })
+          cleanups.push(this._cleanupRef(ref, { field, model, ctx }))
         }
         continue
       }
       const oldRef = this._unstash(ctx, model, field)
-      if (oldRef) await this._cleanupRef(oldRef, { field, model, ctx })
+      if (oldRef) cleanups.push(this._cleanupRef(oldRef, { field, model, ctx }))
     }
+    if (cleanups.length) await Promise.all(cleanups)
   }
 
   // ── After delete ──────────────────────────────────────────────────────────

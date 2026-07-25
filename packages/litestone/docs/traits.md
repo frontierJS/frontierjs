@@ -15,8 +15,8 @@ trait SoftDelete {
 }
 
 model Post {
-  id    Integer @id
-  title Text
+  id    Int @id
+  title String
 
   @@trait(Dates)
   @@trait(SoftDelete)
@@ -32,17 +32,17 @@ Most apps end up with the same field clusters on every model: timestamps, soft-d
 ```
 trait Audited {
   createdAt   DateTime @default(now())
-  createdById Integer?
+  createdById Int?
   createdBy   User?    @relation("created", fields: [createdById], references: [id])
   updatedAt   DateTime @updatedAt
-  updatedById Integer?
+  updatedById Int?
   updatedBy   User?    @relation("updated", fields: [updatedById], references: [id])
   @@log(audit)
 }
 
-model Order   { id Integer @id; ...; @@trait(Audited) }
-model Invoice { id Integer @id; ...; @@trait(Audited) }
-model Payment { id Integer @id; ...; @@trait(Audited) }
+model Order   { id Int @id; ...; @@trait(Audited) }
+model Invoice { id Int @id; ...; @@trait(Audited) }
+model Payment { id Int @id; ...; @@trait(Audited) }
 ```
 
 Add a `deletedById` field to `Audited` and all three models pick it up on the next migration.
@@ -96,7 +96,7 @@ trait Dates {
 }
 
 model Post {
-  id        Integer  @id
+  id        Int  @id
   createdAt DateTime @default(now()) @map("created_at")  // host wins, gets a custom column name
   @@trait(Dates)
 }
@@ -105,10 +105,10 @@ model Post {
 **2. Two traits → same field name → parse error.** No silent ordering-based winner.
 
 ```
-trait X { foo Text }
-trait Y { foo Text }
+trait X { foo String }
+trait Y { foo String }
 
-model M { id Integer @id; @@trait(X); @@trait(Y) }
+model M { id Int @id; @@trait(X); @@trait(Y) }
 //        Error: field 'foo' provided by both @@trait(X) and @@trait(Y)
 ```
 
@@ -116,8 +116,8 @@ If you really need both, override on the host:
 
 ```
 model M {
-  id  Integer @id
-  foo Text                // host wins, both trait foos dropped
+  id  Int @id
+  foo String                // host wins, both trait foos dropped
   @@trait(X)
   @@trait(Y)
 }
@@ -131,7 +131,7 @@ A trait can itself include other traits:
 
 ```
 trait Identifiable {
-  id Integer @id     // ❌ Error — @id not allowed in a trait
+  id Int @id     // ❌ Error — @id not allowed in a trait
 }
 
 trait Dates {
@@ -140,14 +140,14 @@ trait Dates {
 }
 
 trait Audited {
-  createdById Integer?
+  createdById Int?
   createdBy   User?    @relation("created", fields: [createdById], references: [id])
   @@log(audit)
   @@trait(Dates)        // includes Dates' fields and attributes
 }
 
 model Order {
-  id Integer @id
+  id Int @id
   @@trait(Audited)      // gets createdById, createdBy, createdAt, updatedAt, @@log(audit)
 }
 ```

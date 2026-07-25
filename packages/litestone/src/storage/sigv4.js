@@ -3,10 +3,16 @@
 
 const enc = new TextEncoder()
 
+const HMAC_ALGO = { name: 'HMAC', hash: 'SHA-256' }
+
+async function importHmacKey(key) {
+  const raw = typeof key === 'string' ? enc.encode(key) : key
+  return crypto.subtle.importKey('raw', raw, HMAC_ALGO, false, ['sign'])
+}
+
 async function hmac(key, data) {
-  const k = typeof key === 'string'
-    ? await crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-    : await crypto.subtle.importKey('raw', key,             { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  // Accept a pre-imported CryptoKey (the cached signing key) or raw material
+  const k = key instanceof CryptoKey ? key : await importHmacKey(key)
   return new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(data)))
 }
 
@@ -25,12 +31,40 @@ function isoDate(d = new Date()) {
 }
 
 // ─── Derive signing key ───────────────────────────────────────────────────────
+// The derived key is valid for a whole UTC day per (secret, region, service),
+// so cache it — AWS SDKs do the same. Without the cache every signed request
+// re-ran the 4-step HMAC chain with a fresh importKey per step (~10 SubtleCrypto
+// round trips per call). The cache stores an imported CryptoKey so the final
+// per-request HMAC skips importKey too. Secrets are not stored in the cache
+// key directly — a short prefix + length disambiguates without retaining the
+// full secret in a second place.
 
-async function signingKey(secret, dateStamp, region, service) {
+const _signingKeyCache = new Map()   // scope string → Promise<CryptoKey>
+const SIGNING_KEY_CACHE_MAX = 16     // (secret, date, region, service) tuples
+
+async function deriveSigningKey(secret, dateStamp, region, service) {
   const kDate    = await hmac(`AWS4${secret}`, dateStamp)
   const kRegion  = await hmac(kDate,   region)
   const kService = await hmac(kRegion, service)
-  return       await hmac(kService, 'aws4_request')
+  const kSigning = await hmac(kService, 'aws4_request')
+  return importHmacKey(kSigning)
+}
+
+function signingKey(secret, dateStamp, region, service) {
+  const cacheKey = `${dateStamp}/${region}/${service}/${secret.length}/${secret.slice(0, 4)}/${secret.slice(-4)}`
+  let hit = _signingKeyCache.get(cacheKey)
+  if (!hit) {
+    hit = deriveSigningKey(secret, dateStamp, region, service)
+    // Evict oldest entries (Map preserves insertion order) — the cache only
+    // ever holds a couple of live day-keys, this is just a leak guard.
+    if (_signingKeyCache.size >= SIGNING_KEY_CACHE_MAX) {
+      _signingKeyCache.delete(_signingKeyCache.keys().next().value)
+    }
+    _signingKeyCache.set(cacheKey, hit)
+    // Don't cache failures
+    hit.catch(() => _signingKeyCache.delete(cacheKey))
+  }
+  return hit
 }
 
 // ─── Sign a request ───────────────────────────────────────────────────────────

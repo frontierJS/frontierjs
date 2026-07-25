@@ -77,15 +77,23 @@ console.log()
 const acme = await tenants.get('acme')
 
 // Standard Litestone client — all ops scoped to acme.db
+// Seed as system — users is gated (@@gate requires level 2+ to read) and
+// nobody is authenticated yet during seeding.
+const acmeAccount = await acme.asSystem().accounts.upsert({
+  where:  { slug: 'acme-corp' },
+  create: { name: 'Acme Corp' },
+  update: {},
+})
+
 const [alice] = await Promise.all([
-  acme.users.upsert({
+  acme.asSystem().users.upsert({
     where:  { email: 'alice@acme.com' },
-    create: { name: 'Alice Chen', email: 'alice@acme.com', role: 'admin', verifiedAt: new Date().toISOString(), activatedAt: new Date().toISOString() },
+    create: { accountId: acmeAccount.id, email: 'alice@acme.com', firstName: 'Alice', lastName: 'Chen', role: 'admin' },
     update: {},
   }),
 ])
 
-console.log(`✓  acme user: ${alice.name} (${alice.email})`)
+console.log(`✓  acme user: ${alice.displayName} (${alice.email})`)
 
 // Auth-scoped client — gate levels + policies apply
 const userDb  = acme.$setAuth(alice)
@@ -99,7 +107,7 @@ console.log()
 
 // Count users across all tenants
 const { total, byTenant } = await tenants.aggregate(
-  db => db.users.count()
+  db => db.asSystem().users.count()
 )
 console.log(`✓  user count across all tenants: ${total}`)
 console.log(`   by tenant:`, byTenant)
@@ -107,7 +115,7 @@ console.log()
 
 // Query only pro/enterprise tenants
 const rows = await tenants.query(
-  db => db.users.findMany(),
+  db => db.asSystem().users.findMany(),
   {
     where:       { plan: 'pro' },
     flatten:     true,

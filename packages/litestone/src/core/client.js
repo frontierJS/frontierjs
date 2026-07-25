@@ -346,16 +346,14 @@ function ensureSequenceTable(db) {
 }
 
 function nextSequenceValue(db, model, field, scopeValue) {
-  // Atomic increment — SQLite serialises all writes so this is race-free
-  db.run(
+  // Atomic increment — SQLite serialises all writes so this is race-free.
+  // Single statement (upsert + RETURNING) instead of upsert-then-select.
+  const row = db.query(
     `INSERT INTO "${SEQUENCE_TABLE}" (model, field, scope, lastNum)
      VALUES (?, ?, ?, 1)
      ON CONFLICT (model, field, scope)
-     DO UPDATE SET lastNum = lastNum + 1`,
-    model, field, String(scopeValue)
-  )
-  const row = db.query(
-    `SELECT lastNum FROM "${SEQUENCE_TABLE}" WHERE model = ? AND field = ? AND scope = ?`
+     DO UPDATE SET lastNum = lastNum + 1
+     RETURNING lastNum`
   ).get(model, field, String(scopeValue))
   return row.lastNum
 }
@@ -990,7 +988,10 @@ function makeTxManager(db) {
   let spCount = 0
 
   function begin() {
-    if (depth === 0) { db.run('BEGIN') }
+    // BEGIN IMMEDIATE (matching the $transaction doc comment): take the write
+    // lock up front. A deferred BEGIN upgrades to a write lock mid-transaction,
+    // which under concurrency surfaces as avoidable SQLITE_BUSY retries.
+    if (depth === 0) { db.run('BEGIN IMMEDIATE') }
     else { spCount++; db.run(`SAVEPOINT sp_${spCount}`) }
     depth++
     return depth === 1 ? null : spCount
@@ -1434,17 +1435,27 @@ function buildEventEmitter(onEvent) {
     listeners[event] = Array.isArray(fns) ? fns : [fns]
   }
 
+  // Precompute the merged (event + change) listener array per event —
+  // previously two array spreads ran on every single write.
+  const merged = {}
+  for (const event of Object.keys(listeners)) {
+    if (event === 'change') continue
+    merged[event] = [...(listeners[event] ?? []), ...(listeners.change ?? [])]
+  }
+  const changeOnly = listeners.change ?? []
+
   return {
     emit(event, eventCtx, clientCtx) {
       // Fire-and-forget — never blocks the caller
-      const fns = [...(listeners[event] ?? []), ...(listeners.change ?? [])]
+      const fns = merged[event] ?? changeOnly
       if (!fns.length) return
-      // setTimeout(0) ensures event fires after the caller's await resolves
-      setTimeout(() => {
+      // setImmediate fires after the caller's await resolves, without the
+      // timer-heap overhead and ~1ms clamping of setTimeout(0)
+      setImmediate(() => {
         for (const fn of fns) {
           try { fn(eventCtx, clientCtx) } catch (e) { console.warn(`litestone event listener error (${event}):`, e) }
         }
-      }, 0)
+      })
     }
   }
 }
@@ -1544,6 +1555,20 @@ function makeTable(
   const _modelToTable = (mName) => {
     const m = ctx.schema?.models.find(x => x.name === mName)
     return m ? modelToTableName(m, ctx.pluralize ?? false) : mName
+  }
+
+  // Cascade targets are a pure function of the (immutable) schema — compute the
+  // BFS once per table instead of on every remove()/removeMany()/restore().
+  // _cascadeParents lets the cascade loop skip the child-PK readback SELECT for
+  // leaf tables: nothing downstream consumes their PKs.
+  let _cascadeTargetsCache = null
+  let _cascadeParents      = null
+  function _cascadeTargets() {
+    if (!_cascadeTargetsCache) {
+      _cascadeTargetsCache = getCascadeTargets(modelName, ctx.relationMap, ctx.softDeleteMap, _modelToTable)
+      _cascadeParents      = new Set(_cascadeTargetsCache.map(t => t.parentModel))
+    }
+    return _cascadeTargetsCache
   }
 
   // ── Transition enforcement ───────────────────────────────────────────────
@@ -2037,6 +2062,18 @@ function makeTable(
   const _rawFilter = globalFilters[accessor]
   const _staticGlobalFilter = (typeof _rawFilter !== 'function') ? (_rawFilter ?? null) : null
   const _dynamicGlobalFilter = (typeof _rawFilter === 'function') ? _rawFilter : null
+
+  // Unique/PK columns eligible as an ON CONFLICT target for the upsert fast
+  // path. Built lazily — schema is immutable after createClient.
+  let _upsertUniqueColsCache = null
+  function _upsertUniqueCols() {
+    if (_upsertUniqueColsCache) return _upsertUniqueColsCache
+    const s = new Set()
+    for (const f of ctx.models[modelName]?.fields ?? []) {
+      if (f.attributes.some(a => a.kind === 'id' || a.kind === 'unique')) s.add(f.name)
+    }
+    return (_upsertUniqueColsCache = s)
+  }
 
   // Pre-compute base SELECT — reused by every buildSQL call
   const _baseSql = `SELECT * FROM "${tableName}"`
@@ -2806,9 +2843,10 @@ WHERE _tree."${fkField}" IS NOT NULL`
 
       // ── rows query (with limit/offset) ──────────────────────────────────
       const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, distinct: distinct === true })
-      const _t0 = performance.now()
+      const _nt = needsTiming()
+      const _t0 = _nt ? performance.now() : 0
       let rows = readAll(readDb.query(sql).all(...params), { mode: 'list', selectedFields: ps?.requestedFields })
-      fireQuery({ operation: 'findMany', args, sql, params, duration: performance.now() - _t0, rowCount: rows.length })
+      fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _t0 : 0, rowCount: rows.length })
       withIncludes(rows, ps, include)
       rows = finalise(rows, ps)
 
@@ -2934,9 +2972,10 @@ WHERE _tree."${fkField}" IS NOT NULL`
       else if (policyResult)        sql += ` WHERE ${policyResult.sql}`
       if (policyResult) params.push(...policyResult.params)
 
-      const _t0 = performance.now()
+      const _nt = needsTiming()
+      const _t0 = _nt ? performance.now() : 0
       const raw = readDb.query(sql).get(...params) ?? {}
-      fireQuery({ operation: 'aggregate', args, sql, params, duration: performance.now() - _t0, rowCount: 1 })
+      fireQuery({ operation: 'aggregate', args, sql, params, duration: _nt ? performance.now() - _t0 : 0, rowCount: 1 })
 
       // Shape result
       const result = {}
@@ -3255,9 +3294,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (limit  != null) sql += ` LIMIT ${Number(limit)}`
       if (offset != null) sql += ` OFFSET ${Number(offset)}`
 
-      const _t0 = performance.now()
+      const _nt = needsTiming()
+      const _t0 = _nt ? performance.now() : 0
       const raw = readDb.query(sql).all(...params)
-      fireQuery({ operation: 'groupBy', args, sql, params, duration: performance.now() - _t0, rowCount: raw.length })
+      fireQuery({ operation: 'groupBy', args, sql, params, duration: _nt ? performance.now() - _t0 : 0, rowCount: raw.length })
 
       // Shape results
       return raw.map(r => {
@@ -3380,33 +3420,38 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // all fire consistently, same as single create().
       const autoId      = ctx.autoIdMap?.[modelName]
       const authDefaults = ctx.authDefaultMap?.[modelName]
-      const rows = data.map(item => {
-        let d = item
-        if (autoId && (d == null || d[autoId.field] == null))
-          d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
-        // Stamp @default(auth().field) values from ctx.auth if not already provided
-        if (authDefaults?.length && ctx.auth) {
-          const stamps = {}
-          for (const { field, authField } of authDefaults) {
-            if ((d == null || d[field] == null) && ctx.auth[authField] != null) {
-              stamps[field] = ctx.auth[authField]
-            }
-          }
-          if (Object.keys(stamps).length) d = { ...(d ?? {}), ...stamps }
-        }
-        // Apply @sequence per row — each row gets its own counter increment
-        d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
-        return writeData(d)
-      })
-
-      // Derive column list from the first processed row (post-transforms)
-      const cols = Object.keys(rows[0])
-      const _cmSql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
-      const stmt = writeDb.prepare(_cmSql)
+      let rows, _cmSql
       let count = 0
       const _nt = needsTiming()
       const _cmT0 = _nt ? performance.now() : 0
+      // The whole batch — including @sequence counter bumps — runs inside one
+      // transaction. Previously applySequences ran per row BEFORE the tx, so a
+      // @sequence model paid 2 auto-commit statements per row (~16x slower) and
+      // counter bumps stayed committed even if the batch insert failed.
       tx.wrap(() => {
+        rows = data.map(item => {
+          let d = item
+          if (autoId && (d == null || d[autoId.field] == null))
+            d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
+          // Stamp @default(auth().field) values from ctx.auth if not already provided
+          if (authDefaults?.length && ctx.auth) {
+            const stamps = {}
+            for (const { field, authField } of authDefaults) {
+              if ((d == null || d[field] == null) && ctx.auth[authField] != null) {
+                stamps[field] = ctx.auth[authField]
+              }
+            }
+            if (Object.keys(stamps).length) d = { ...(d ?? {}), ...stamps }
+          }
+          // Apply @sequence per row — each row gets its own counter increment
+          d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
+          return writeData(d)
+        })
+
+        // Derive column list from the first processed row (post-transforms)
+        const cols = Object.keys(rows[0])
+        _cmSql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+        const stmt = writeDb.prepare(_cmSql)
         for (const row of rows) {
           stmt.run(...cols.map(c => row[c] ?? null))
           count++
@@ -3578,6 +3623,84 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     // ── upsert ──────────────────────────────────────────────────────────────
     async upsert({ where, create: createData, update: updateData, include, select } = {}) {
+      // ── Single-statement fast path ─────────────────────────────────────────
+      // When no hooks / plugins / policies / events / logs / transitions /
+      // soft-delete / global filters / field policies / sequences / nested
+      // writes are in play and `where` targets exactly one unique column,
+      // compile to one cached `INSERT ... ON CONFLICT(col) DO UPDATE ...
+      // RETURNING *` — one round trip instead of findFirst + update/create
+      // (measured ~6x). Any feature that needs the split path falls through
+      // to the original read-then-write implementation below.
+      fastPath: if (
+        !plugins?.hasPlugins && !hookRunner && !emitter &&
+        !ctx.hasPolicies && !tableHasAnyLog && !_tableTransitions &&
+        !softDelete && !hasTemplates && !hasFieldPolicy && !_rawFilter &&
+        !ctx.sequenceMap?.[modelName]?.length &&
+        !ctx.updatedByMap?.[modelName]?.length &&
+        include === undefined && select === undefined &&
+        where && createData && updateData && Object.keys(updateData).length
+      ) {
+        const wKeys = Object.keys(where)
+        if (wKeys.length !== 1) break fastPath
+        const wKey = wKeys[0]
+        const wVal = where[wKey]
+        const wt = typeof wVal
+        if (wVal == null || (wt !== 'string' && wt !== 'number' && wt !== 'bigint' && wt !== 'boolean')) break fastPath
+        if (!_upsertUniqueCols().has(wKey)) break fastPath
+        if (extractNestedWrites(createData).nested.length) break fastPath
+        if (extractNestedWrites(updateData).nested.length) break fastPath
+
+        // Same data massage as create(): auto-@id, auth()/field-ref defaults
+        let cData = createData
+        const _fpAutoId = ctx.autoIdMap?.[modelName]
+        if (_fpAutoId && cData[_fpAutoId.field] == null)
+          cData = { ...cData, [_fpAutoId.field]: _fpAutoId.generate() }
+        const _fpAuthDefaults = ctx.authDefaultMap?.[modelName]
+        if (_fpAuthDefaults?.length && ctx.auth) {
+          const stamps = {}
+          for (const { field, authField } of _fpAuthDefaults) {
+            if (cData[field] == null && ctx.auth[authField] != null) stamps[field] = ctx.auth[authField]
+          }
+          if (Object.keys(stamps).length) cData = { ...cData, ...stamps }
+        }
+        const _fpFieldRefs = ctx.fieldRefDefaultMap?.[modelName]
+        if (_fpFieldRefs?.length) {
+          const stamps = {}
+          for (const { field, sourceField } of _fpFieldRefs) {
+            if (cData[field] == null && cData[sourceField] != null) stamps[field] = cData[sourceField]
+          }
+          if (Object.keys(stamps).length) cData = { ...cData, ...stamps }
+        }
+
+        // writeData runs transforms + validation on both branches' data
+        const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal })
+        const updRow = writeData(updateData)
+        const insCols = Object.keys(insRow)
+        const updCols = Object.keys(updRow).filter(c => c !== wKey)
+        if (!insCols.length || !updCols.length) break fastPath
+
+        const _fpSql =
+          `INSERT INTO "${tableName}" (${insCols.map(c => `"${c}"`).join(', ')}) ` +
+          `VALUES (${insCols.map(() => '?').join(', ')}) ` +
+          `ON CONFLICT("${wKey}") DO UPDATE SET ${updCols.map(c => `"${c}" = ?`).join(', ')} ` +
+          `RETURNING *`
+        const _fpParams = [...insCols.map(c => insRow[c] ?? null), ...updCols.map(c => updRow[c] ?? null)]
+        const _nt = needsTiming()
+        const _fpT0 = _nt ? performance.now() : 0
+        try {
+          const result = read(writeDb.query(_fpSql).get(..._fpParams), { mode: 'single' })
+          fireQuery({ operation: 'upsert', args: { where, create: createData, update: updateData }, sql: _fpSql, params: _fpParams, duration: _nt ? performance.now() - _fpT0 : 0, rowCount: result ? 1 : 0 })
+          return result
+        } catch (e) {
+          // A unique conflict on a DIFFERENT column than the ON CONFLICT target
+          // can't be handled by this statement — fall through to the
+          // read-then-write path, which preserves the original semantics.
+          if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE' || e?.errno === 2067 ||
+              (e?.message && e.message.includes('UNIQUE constraint failed'))) break fastPath
+          throw e
+        }
+      }
+
       // Use findFirst to determine path, but wrap the create in a savepoint so
       // a concurrent insert between our check and our insert doesn't cause a
       // unique constraint error — instead we retry as an update.
@@ -3626,39 +3749,41 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
 
       const autoId = ctx.autoIdMap?.[modelName]
-      const rows = data.map(item => {
-        let d = item
-        if (autoId && (d == null || d[autoId.field] == null))
-          d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
-        d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
-        return writeData(d)
-      })
-
-      const cols    = Object.keys(rows[0])
-      const target  = conflictTarget
-        ? (Array.isArray(conflictTarget) ? conflictTarget : [conflictTarget])
-        : [idField]
-
-      // Build UPDATE SET clause — only the fields that aren't in the conflict target
-      const updateCols = updateFields
-        ? (Array.isArray(updateFields) ? updateFields : [updateFields]).filter(c => cols.includes(c))
-        : cols.filter(c => !target.includes(c))
-
-      let sql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
-
-      if (updateCols.length) {
-        const conflictSql = target.map(c => `"${c}"`).join(', ')
-        const setSql      = updateCols.map(c => `"${c}" = excluded."${c}"`).join(', ')
-        sql += ` ON CONFLICT(${conflictSql}) DO UPDATE SET ${setSql}`
-      } else {
-        sql += ` ON CONFLICT DO NOTHING`
-      }
-
-      const stmt = writeDb.prepare(sql)
+      let sql
       let count = 0
       const _nt = needsTiming()
       const _usT0 = _nt ? performance.now() : 0
+      // Whole batch (incl. @sequence bumps) inside one transaction — see createMany.
       tx.wrap(() => {
+        const rows = data.map(item => {
+          let d = item
+          if (autoId && (d == null || d[autoId.field] == null))
+            d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
+          d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
+          return writeData(d)
+        })
+
+        const cols    = Object.keys(rows[0])
+        const target  = conflictTarget
+          ? (Array.isArray(conflictTarget) ? conflictTarget : [conflictTarget])
+          : [idField]
+
+        // Build UPDATE SET clause — only the fields that aren't in the conflict target
+        const updateCols = updateFields
+          ? (Array.isArray(updateFields) ? updateFields : [updateFields]).filter(c => cols.includes(c))
+          : cols.filter(c => !target.includes(c))
+
+        sql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+
+        if (updateCols.length) {
+          const conflictSql = target.map(c => `"${c}"`).join(', ')
+          const setSql      = updateCols.map(c => `"${c}" = excluded."${c}"`).join(', ')
+          sql += ` ON CONFLICT(${conflictSql}) DO UPDATE SET ${setSql}`
+        } else {
+          sql += ` ON CONFLICT DO NOTHING`
+        }
+
+        const stmt = writeDb.prepare(sql)
         for (const row of rows) {
           stmt.run(...cols.map(c => row[c] ?? null))
           count++
@@ -3684,8 +3809,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const removeFinalSql = removePolicy ? `(${whereSql}) AND (${removePolicy.sql})` : whereSql
       const removeFinalParams = removePolicy ? [...params, ...removePolicy.params] : params
 
-      const row = read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${removeFinalSql}`).get(...removeFinalParams))
-      if (!row) return null
+      // No unconditional pre-SELECT: the soft path gets the row back from
+      // UPDATE ... RETURNING and the hard path from DELETE ... RETURNING, so
+      // remove() is one statement on the common path instead of two. The
+      // pre-delete "before" snapshot for logging is reconstructed from the
+      // RETURNING row (soft delete only changes deletedAt, which was NULL).
 
       if (softDelete) {
         const ts = nowISO()
@@ -3697,12 +3825,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (!softResult) return null
 
         // Cascade soft delete to child tables if @@softDeleteCascade is set
-        if (softDeleteCascade && row) {
-          const cascadeTargets = getCascadeTargets(modelName, ctx.relationMap, ctx.softDeleteMap, _modelToTable)
+        if (softDeleteCascade) {
+          const cascadeTargets = _cascadeTargets()
           if (cascadeTargets.length > 0) {
             // Track affected PK values per table so multi-level cascades work correctly
             // e.g. accounts(id=1) → users(id=1,2) → posts: use users' ids for posts cascade
-            const affectedPKs = new Map([[modelName, [row.id]]])
+            const affectedPKs = new Map([[modelName, [softResult.id]]])
             for (const { childModel, childTable, foreignKey, referencedKey, parentModel, hardDelete } of cascadeTargets) {
               const parentPKs = affectedPKs.get(parentModel) ?? []
               if (!parentPKs.length) continue
@@ -3711,10 +3839,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
                 // @hardDelete: physically remove child rows instead of stamping deletedAt
                 writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs)
                 // Hard-delete children are terminal — no need to track their PKs for further cascade
-              } else {
+              } else if (_cascadeParents.has(childModel)) {
                 writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
                 const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
                 affectedPKs.set(childModel, childPKs)
+              } else {
+                // Leaf child — nothing downstream consumes its PKs, skip the readback SELECT
+                writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
               }
             }
           }
@@ -3723,15 +3854,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (emitter) emitter.emit('remove', { model: modelName, operation: 'remove', result: softResult, schema: ctx.models[modelName] }, ctx)
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', softResult, ctx)
         // ── Logging ──────────────────────────────────────────────────────────
-        if (tableHasAnyLog) emitLogs('delete', [softResult], { before: row })
+        if (tableHasAnyLog) emitLogs('delete', [softResult], { before: { ...softResult, deletedAt: null } })
         return softResult
       }
 
-      const _rmHSql = `DELETE FROM "${tableName}" WHERE ${removeFinalSql}`
+      const _rmHSql = `DELETE FROM "${tableName}" WHERE ${removeFinalSql} RETURNING *`
       const _nt = needsTiming()
       const _rmHT0 = _nt ? performance.now() : 0
-      writeDb.run(_rmHSql, ...removeFinalParams)
-      fireQuery({ operation: 'remove', args: { where }, sql: _rmHSql, params: removeFinalParams, duration: _nt ? performance.now() - _rmHT0 : 0, rowCount: 1 })
+      const row = read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single' })
+      fireQuery({ operation: 'remove', args: { where }, sql: _rmHSql, params: removeFinalParams, duration: _nt ? performance.now() - _rmHT0 : 0, rowCount: row ? 1 : 0 })
+      if (!row) return null
       if (emitter) emitter.emit('remove', { model: modelName, operation: 'remove', result: row, schema: ctx.models[modelName] }, ctx)
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', row, ctx)
       if (plugins?.hasPlugins) await plugins.afterDelete(modelName, [row], ctx)
@@ -3765,7 +3897,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
         // If cascading, fetch affected PKs first so we can cascade precisely
         if (softDeleteCascade) {
-          const cascadeTargets = getCascadeTargets(modelName, ctx.relationMap, ctx.softDeleteMap, _modelToTable)
+          const cascadeTargets = _cascadeTargets()
           if (cascadeTargets.length > 0) {
             const effectiveWhere2 = injectSoftDeleteFilter(where, 'live')
             const params2 = []
@@ -3783,8 +3915,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
                 writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs)
               } else {
                 writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
-                const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
-                affectedPKs.set(childModel, childPKs)
+                if (_cascadeParents.has(childModel)) {
+                  const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
+                  affectedPKs.set(childModel, childPKs)
+                }
               }
             }
           }
@@ -3818,7 +3952,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (!whereSql) throw new Error(`restore on "${tableName}" requires a where clause`)
       // If cascading, restore child tables too (reverse of delete cascade)
       if (softDeleteCascade) {
-        const cascadeTargets = getCascadeTargets(modelName, ctx.relationMap, ctx.softDeleteMap, _modelToTable)
+        const cascadeTargets = _cascadeTargets()
         if (cascadeTargets.length > 0) {
           const params2 = []
           const whereSql2 = buildWhereWithEncryption(effectiveWhere, params2)
@@ -3832,8 +3966,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             const ph = parentPKs.map(() => '?').join(',')
             if (hardDelete) continue  // hard-deleted children are gone — cannot restore
             writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE "${foreignKey}" IN (${ph})`, ...parentPKs)
-            const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
-            affectedPKs.set(childModel, childPKs)
+            if (_cascadeParents.has(childModel)) {
+              const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
+              affectedPKs.set(childModel, childPKs)
+            }
           }
         }
       }
@@ -4069,7 +4205,6 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       // Build base query — apply soft delete filter + any extra where
       const baseParams   = []
-      const inClause     = rowids.map(() => '?').join(', ')
       const idFilter     = { id: { in: rowids } }
       const effectiveWhere = applyHtFilter(
         softDelete
@@ -4583,10 +4718,27 @@ export async function createClient({
     .filter(db => db.driver === 'logger' && !db.logModel)
     .map(db => makeLoggerAutoModel(db.name))
 
+  // View-as-model stubs let ctx.models[viewName] resolve in makeTable for read
+  // operations (findMany etc. on views). View field AST doesn't carry the
+  // `attributes` array that model fields have, so we backfill empty arrays
+  // here — without this, every model loop in DDL/validate that calls
+  // f.attributes.find(...) will throw on the stub.
   const viewModelStubs = (rawSchema.views ?? []).map(view => ({
     name:       view.name,
-    fields:     view.fields,
-    attributes: [{ kind: 'db', name: view.db ?? 'main' }],
+    fields:     view.fields.map(f => ({
+      name:       f.name,
+      type:       f.type,
+      attributes: f.attributes ?? [],
+      comments:   f.comments   ?? [],
+    })),
+    // @@external prevents DDL from trying to CREATE TABLE this stub — the
+    // actual CREATE VIEW / CREATE TABLE-for-materialized-view emit later in
+    // generateDDL handles views correctly. Without @@external, the model loop
+    // would emit a duplicate CREATE TABLE for the view name.
+    attributes: [
+      { kind: 'db', name: view.db ?? 'main' },
+      { kind: 'external' },
+    ],
     comments:   [],
   }))
 
@@ -4827,12 +4979,20 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       ).all()
       if (existing.length === 0) {
         if (!ddlMods) {
-          const [{ generateDDL }, { splitStatements }] = await Promise.all([
+          const [{ generateDDL, generateDDLForDatabase }, { splitStatements }] = await Promise.all([
             import('./ddl.js'), import('./migrate.js')
           ])
-          ddlMods = { generateDDL, splitStatements }
+          ddlMods = { generateDDL, generateDDLForDatabase, splitStatements }
         }
-        for (const stmt of ddlMods.splitStatements(ddlMods.generateDDL(schema))) {
+        // Scope DDL to THIS database's models. Using the full-schema DDL here
+        // put every model's tables into every fresh database in multi-DB
+        // schemas (main got analytics' tables and vice versa), which then
+        // showed up as permanent phantom drift in migration diffs.
+        const hasDbBlocks = schema.databases?.some(d => !d.driver || d.driver === 'sqlite')
+        const ddl = hasDbBlocks
+          ? ddlMods.generateDDLForDatabase(schema, dbName, { foreignKeys: true, pluralize: pluralizeTableNames })
+          : ddlMods.generateDDL(schema, { foreignKeys: true, pluralize: pluralizeTableNames })
+        for (const stmt of ddlMods.splitStatements(ddl)) {
           if (!stmt.startsWith('PRAGMA')) conn.rawWriteDb.run(stmt)
         }
       }
@@ -5051,46 +5211,56 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
   // makeAllTables — builds all table handlers with per-model database routing.
   // Called once for the main client, and again for each asSystem()/setAuth() scope.
+  function buildTableForModel(model, ctx) {
+    const dbName    = modelDbMap[model.name] ?? 'main'
+    const conn      = dbRegistry[dbName] ?? dbRegistry.main
+    const sqlTable  = modelToTableName(model, pluralizeTableNames)
+
+    if (conn.driver === 'jsonl' || conn.driver === 'logger') {
+      return jsonlTableCache[model.name]
+    }
+    return makeTable(
+      conn.readDb,
+      conn.writeDb,
+      sqlTable,
+      model.name,
+      jsonMap[model.name]              ?? new Set(),
+      generatedMap[model.name]         ?? new Set(),
+      computedSets[model.name]         ?? new Set(),
+      softDeleteMap[model.name]        ?? false,
+      ftsMap[model.name]               ?? null,
+      boolMap[model.name]              ?? new Set(),
+      enumMap[model.name]              ?? {},
+      softDeleteCascadeMap[model.name] ?? false,
+      fieldPolicyMap[model.name]       ?? {},
+      fromMap[model.name]              ?? {},
+      ctx,
+    )
+  }
+
   function makeAllTables(ctx) {
     const tables = {}
 
     // ── Models ──────────────────────────────────────────────────────────────
     for (const model of schema.models) {
-      const dbName    = modelDbMap[model.name] ?? 'main'
-      const conn      = dbRegistry[dbName] ?? dbRegistry.main
-      const accessor  = modelToAccessor(model.name)
-      const sqlTable  = modelToTableName(model, pluralizeTableNames)
-
-      if (conn.driver === 'jsonl' || conn.driver === 'logger') {
-        tables[accessor] = jsonlTableCache[model.name]
-      } else {
-        tables[accessor] = makeTable(
-          conn.readDb,
-          conn.writeDb,
-          sqlTable,
-          model.name,
-          jsonMap[model.name]              ?? new Set(),
-          generatedMap[model.name]         ?? new Set(),
-          computedSets[model.name]         ?? new Set(),
-          softDeleteMap[model.name]        ?? false,
-          ftsMap[model.name]               ?? null,
-          boolMap[model.name]              ?? new Set(),
-          enumMap[model.name]              ?? {},
-          softDeleteCascadeMap[model.name] ?? false,
-          fieldPolicyMap[model.name]       ?? {},
-          fromMap[model.name]              ?? {},
-          ctx,
-        )
-      }
+      tables[modelToAccessor(model.name)] = buildTableForModel(model, ctx)
     }
 
     // ── Views ───────────────────────────────────────────────────────────────
     // Views are read-only. Regular views (CREATE VIEW) and materialized views
     // (real tables) both use makeTable for read operations; writes are blocked.
     for (const view of (schema.views ?? [])) {
+      const built = buildTableForView(view, ctx)
+      if (built) tables[view.name] = built
+    }
+
+    return tables
+  }
+
+  function buildTableForView(view, ctx) {
       const dbName = view.db ?? 'main'
       const conn   = dbRegistry[dbName] ?? dbRegistry.main
-      if (conn.driver === 'jsonl' || conn.driver === 'logger') continue
+      if (conn.driver === 'jsonl' || conn.driver === 'logger') return null
 
       const baseTable = makeTable(
         conn.readDb,
@@ -5106,13 +5276,16 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       const writeBlocked = () => {
         throw new Error(`"${view.name}" is a view — write operations are not supported`)
       }
-      tables[view.name] = {
+      return {
         findMany:          baseTable.findMany.bind(baseTable),
         findFirst:         baseTable.findFirst.bind(baseTable),
         findUnique:        baseTable.findUnique.bind(baseTable),
         findFirstOrThrow:  baseTable.findFirstOrThrow.bind(baseTable),
         findUniqueOrThrow: baseTable.findUniqueOrThrow.bind(baseTable),
         count:             baseTable.count.bind(baseTable),
+        exists:            baseTable.exists.bind(baseTable),
+        aggregate:         baseTable.aggregate.bind(baseTable),
+        groupBy:           baseTable.groupBy.bind(baseTable),
         findManyCursor:    baseTable.findManyCursor.bind(baseTable),
         create: writeBlocked, createMany: writeBlocked,
         update: writeBlocked, updateMany: writeBlocked,
@@ -5122,9 +5295,39 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         deleteMany: writeBlocked, search: writeBlocked,
         optimizeFts: writeBlocked,
       }
-    }
+  }
 
-    return tables
+  // Accessor-name → builder lookup, used by the lazy per-auth table proxy.
+  // Built once — schema is immutable after createClient.
+  const _tableBuilders = new Map()
+  for (const model of schema.models) _tableBuilders.set(modelToAccessor(model.name), (ctx) => buildTableForModel(model, ctx))
+  for (const view of (schema.views ?? [])) _tableBuilders.set(view.name, (ctx) => buildTableForView(view, ctx))
+  const _tableAccessorNames = [..._tableBuilders.keys()]
+
+  // Lazily-constructed tables object for auth-scoped clients. $setAuth used to
+  // eagerly rebuild EVERY table (~40 closures per model) per call — ~105µs on a
+  // 15-model schema, paid per request since req.user is a fresh object each
+  // time. Now a table is built on first access, so $setAuth is O(models touched).
+  function makeLazyTables(ctx) {
+    const cache = Object.create(null)
+    const get = (prop) => {
+      if (cache[prop] !== undefined) return cache[prop]
+      const build = _tableBuilders.get(prop)
+      if (!build) return undefined
+      const t = build(ctx)
+      if (t != null) cache[prop] = t
+      return t
+    }
+    return new Proxy({}, {
+      get(_, prop) { return typeof prop === 'string' ? get(prop) : undefined },
+      has(_, prop) { return typeof prop === 'string' && _tableBuilders.has(prop) },
+      ownKeys() { return _tableAccessorNames },
+      getOwnPropertyDescriptor(_, prop) {
+        if (typeof prop === 'string' && _tableBuilders.has(prop))
+          return { configurable: true, enumerable: true, get: () => get(prop) }
+        return undefined
+      },
+    })
   }
 
   const tables = makeAllTables(ctx)
@@ -5337,6 +5540,32 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   //
   // ctxResolver lets each scope resolution see the current ctx — important
   // for auth-scoped clients where ctx.auth changes per $setAuth() call.
+  // Wrap one table accessor: same methods, plus scope properties as getters.
+  // Uses a Proxy so we don't modify the original tableAccessor (which might
+  // be referenced elsewhere — by ctx.tables, by the unscoped client, etc.)
+  function wrapTableWithScopes(tableAccessor, scopeMap, ctxResolver) {
+    return new Proxy(tableAccessor, {
+      get(target, prop) {
+        if (typeof prop === 'string' && scopeMap[prop]) {
+          return buildScopedAccessor(target, [scopeMap[prop]], scopeMap, ctxResolver)
+        }
+        return Reflect.get(target, prop)
+      },
+      has(target, prop) {
+        return Reflect.has(target, prop) || (typeof prop === 'string' && prop in scopeMap)
+      },
+      ownKeys(target) {
+        return [...Reflect.ownKeys(target), ...Object.keys(scopeMap)]
+      },
+      getOwnPropertyDescriptor(target, prop) {
+        if (typeof prop === 'string' && scopeMap[prop]) {
+          return { configurable: true, enumerable: true, get: () => buildScopedAccessor(target, [scopeMap[prop]], scopeMap, ctxResolver) }
+        }
+        return Reflect.getOwnPropertyDescriptor(target, prop)
+      },
+    })
+  }
+
   function installScopes(tablesObj, ctxResolver) {
     if (!Object.keys(scopesByAccessor).length) return tablesObj
 
@@ -5344,33 +5573,36 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     for (const [accessor, scopeMap] of Object.entries(scopesByAccessor)) {
       const tableAccessor = out[accessor]
       if (!tableAccessor) continue
-
-      // Wrap the table accessor: same methods, plus scope properties as getters.
-      // Use a Proxy so we don't modify the original tableAccessor (which might
-      // be referenced elsewhere — by ctx.tables, by the unscoped client, etc.)
-      const wrapper = new Proxy(tableAccessor, {
-        get(target, prop) {
-          if (typeof prop === 'string' && scopeMap[prop]) {
-            return buildScopedAccessor(target, [scopeMap[prop]], scopeMap, ctxResolver)
-          }
-          return Reflect.get(target, prop)
-        },
-        has(target, prop) {
-          return Reflect.has(target, prop) || (typeof prop === 'string' && prop in scopeMap)
-        },
-        ownKeys(target) {
-          return [...Reflect.ownKeys(target), ...Object.keys(scopeMap)]
-        },
-        getOwnPropertyDescriptor(target, prop) {
-          if (typeof prop === 'string' && scopeMap[prop]) {
-            return { configurable: true, enumerable: true, get: () => buildScopedAccessor(target, [scopeMap[prop]], scopeMap, ctxResolver) }
-          }
-          return Reflect.getOwnPropertyDescriptor(target, prop)
-        },
-      })
-      out[accessor] = wrapper
+      out[accessor] = wrapTableWithScopes(tableAccessor, scopeMap, ctxResolver)
     }
     return out
+  }
+
+  // Lazy variant of installScopes for the per-auth table proxies — wraps each
+  // accessor with its scopes on first access instead of spreading (and thereby
+  // materializing) the whole tables object up front.
+  function installScopesLazy(tablesProxy, ctxResolver) {
+    if (!Object.keys(scopesByAccessor).length) return tablesProxy
+    const cache = Object.create(null)
+    const get = (prop) => {
+      if (cache[prop] !== undefined) return cache[prop]
+      const t = tablesProxy[prop]
+      if (t === undefined) return undefined
+      const scopeMap = scopesByAccessor[prop]
+      const wrapped = scopeMap ? wrapTableWithScopes(t, scopeMap, ctxResolver) : t
+      cache[prop] = wrapped
+      return wrapped
+    }
+    return new Proxy({}, {
+      get(_, prop) { return typeof prop === 'string' ? get(prop) : undefined },
+      has(_, prop) { return typeof prop === 'string' && prop in tablesProxy },
+      ownKeys() { return Reflect.ownKeys(tablesProxy) },
+      getOwnPropertyDescriptor(_, prop) {
+        if (typeof prop === 'string' && prop in tablesProxy)
+          return { configurable: true, enumerable: true, get: () => get(prop) }
+        return undefined
+      },
+    })
   }
 
   // Apply scopes to the main tables. Auth/system proxies install their own
@@ -5493,35 +5725,58 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       byDb[dbName].push({ modelName, modelDef, rotatableFields })
     }
 
+    const ROTATE_BATCH = 1000
+
     for (const [dbName, models] of Object.entries(byDb)) {
       const conn = dbRegistry[dbName]
       const rawDb = conn?.rawWriteDb
       if (!rawDb) continue   // jsonl or disabled — skip
 
-      for (const { modelName, modelDef, rotatableFields } of models) {
-        const tableName = modelToTableName(modelDef, pluralizeTableNames)
-        const cols      = rotatableFields.map(f => `"${f}"`).join(', ')
-        // Alias rowid explicitly — when a table has INTEGER PRIMARY KEY, rowid
-        // is an alias for that column and SQLite's driver collapses the duplicate,
-        // dropping the `rowid` key from the returned row object.
-        const rows      = rawDb.query(`SELECT rowid AS __litestone_rowid, ${cols} FROM "${tableName}"`).all()
-        let   updated   = 0
+      // One write transaction per database — per-row auto-commit is ~1000x
+      // slower (one WAL commit per UPDATE). BEGIN IMMEDIATE takes the write
+      // lock up front so we don't upgrade mid-rotation.
+      rawDb.run('BEGIN IMMEDIATE')
+      try {
+        for (const { modelName, modelDef, rotatableFields } of models) {
+          const tableName = modelToTableName(modelDef, pluralizeTableNames)
+          const cols      = rotatableFields.map(f => `"${f}"`).join(', ')
+          // Alias rowid explicitly — when a table has INTEGER PRIMARY KEY, rowid
+          // is an alias for that column and SQLite's driver collapses the duplicate,
+          // dropping the `rowid` key from the returned row object.
+          // Page by rowid instead of loading the whole table into memory.
+          const pageStmt = rawDb.query(
+            `SELECT rowid AS __litestone_rowid, ${cols} FROM "${tableName}" WHERE rowid > ? ORDER BY rowid LIMIT ${ROTATE_BATCH}`
+          )
+          let updated   = 0
+          let lastRowid = -9007199254740991   // below any real rowid
 
-        for (const row of rows) {
-          const sets = []
-          const vals = []
-          for (const fieldName of rotatableFields) {
-            if (row[fieldName] == null) continue
-            const plain = decryptField(row[fieldName], ctx.encKey)
-            sets.push(`"${fieldName}" = ?`)
-            vals.push(encryptField(plain, newKey))
+          while (true) {
+            const rows = pageStmt.all(lastRowid)
+            if (!rows.length) break
+            for (const row of rows) {
+              lastRowid = row.__litestone_rowid
+              const sets = []
+              const vals = []
+              for (const fieldName of rotatableFields) {
+                if (row[fieldName] == null) continue
+                const plain = decryptField(row[fieldName], ctx.encKey)
+                sets.push(`"${fieldName}" = ?`)
+                vals.push(encryptField(plain, newKey))
+              }
+              if (!sets.length) continue
+              // rawDb.query() caches the prepared statement per distinct SQL shape
+              rawDb.query(`UPDATE "${tableName}" SET ${sets.join(', ')} WHERE rowid = ?`).run(...vals, row.__litestone_rowid)
+              updated++
+            }
+            if (rows.length < ROTATE_BATCH) break
           }
-          if (!sets.length) continue
-          rawDb.run(`UPDATE "${tableName}" SET ${sets.join(', ')} WHERE rowid = ?`, ...vals, row.__litestone_rowid)
-          updated++
-        }
 
-        results[modelName] = { rows: updated, fields: rotatableFields.length }
+          results[modelName] = { rows: updated, fields: rotatableFields.length }
+        }
+        rawDb.run('COMMIT')
+      } catch (err) {
+        try { rawDb.run('ROLLBACK') } catch {}
+        throw err
       }
     }
 
@@ -5734,11 +5989,13 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     if (user != null && typeof user === 'object' && _authClients.has(user)) return _authClients.get(user)
 
     const authCtx = { ...ctx, auth: user }
-    const rawAuthTables = makeAllTables(authCtx)
+    // Tables are built lazily on first access — $setAuth per request is
+    // O(models actually touched), not O(all models). See makeLazyTables.
+    const rawAuthTables = makeLazyTables(authCtx)
     authCtx.tables = rawAuthTables
     // Apply scopes — auth ctx is fixed for this $setAuth() call, so the
     // ctxResolver returns authCtx directly. Dynamic where(ctx) sees user.
-    const authTables = installScopes(rawAuthTables, () => authCtx)
+    const authTables = installScopesLazy(rawAuthTables, () => authCtx)
 
     async function authSql(strings, ...values) {
       let query = ''

@@ -82,10 +82,15 @@ export function buildPolicyFilter(modelName, op, ctx, policyMap, schema, relatio
   const sql    = buildFilterSql(modelName, op, params, ctx, policyMap, schema, relationMap, new Set())
   if (!sql) return null
 
-  plog(ctx, op, modelName,
-    `[33m→ WHERE[0m (${sql})`,
-    params.length ? `[2m[${params.map(p => JSON.stringify(p)).join(', ')}][0m` : ''
-  )
+  // Guard BEFORE building the log strings — this path runs on every policied
+  // query, and the template + per-param JSON.stringify were previously
+  // evaluated even with policyDebug off.
+  if (ctx.policyDebug) {
+    plog(ctx, op, modelName,
+      `[33m→ WHERE[0m (${sql})`,
+      params.length ? `[2m[${params.map(p => JSON.stringify(p)).join(', ')}][0m` : ''
+    )
+  }
   return { sql, params }
 }
 

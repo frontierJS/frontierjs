@@ -31,6 +31,7 @@
 
 import { ExternalRefPlugin } from './external-ref.js'
 import { createProvider }     from '../storage/index.js'
+import { buildWhere }         from '../core/query.js'
 import { extname, basename }  from 'path'
 import { existsSync, readFileSync } from 'fs'
 
@@ -228,32 +229,36 @@ class FileStoragePlugin extends ExternalRefPlugin {
     const fields = this._fieldMap[model]
     if (!fields || !args.data) return
 
-    for (const [field, opts] of Object.entries(fields)) {
-      const value = args.data[field]
-      if (!isFileValue(value)) continue
+    // Which fields carry incoming file values?
+    const rawFields = Object.entries(fields).filter(([field]) => isFileValue(args.data[field]))
+    if (!rawFields.length) return
 
-      // keepVersions: don't stash old ref → won't be cleaned up
-      if (!opts.keepVersions && ctx.readDb && args.where) {
-        try {
-          const { buildWhere } = await import('../core/query.js')
-          const params = []
-          const whereSql = buildWhere(args.where, params)
-          if (whereSql) {
+    // Stash old refs for cleanup after write — ONE combined SELECT for all
+    // fields that need it (keepVersions fields are excluded: no stash → no cleanup).
+    const stashFields = rawFields.filter(([, opts]) => !opts.keepVersions)
+    if (stashFields.length && ctx.readDb && args.where) {
+      try {
+        const params = []
+        const whereSql = buildWhere(args.where, params)
+        if (whereSql) {
+          const colSql = stashFields.map(([f]) => `"${f}"`).join(', ')
+          const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${model}" WHERE ${whereSql}`).get(...params)
+          for (const [field, opts] of stashFields) {
             if (opts.isArray) {
-              const oldRow = ctx.readDb.query(`SELECT "${field}" FROM "${model}" WHERE ${whereSql}`).get(...params)
-              const oldRefs = this._parseRefArray(oldRow?.[field])
-              for (const oldRef of oldRefs) {
+              for (const oldRef of this._parseRefArray(oldRow?.[field])) {
                 if (oldRef) this._stash(ctx, model, `${field}[${JSON.stringify(oldRef)}]`, oldRef)
               }
             } else {
-              const oldRow = ctx.readDb.query(`SELECT "${field}" FROM "${model}" WHERE ${whereSql}`).get(...params)
               const oldRef = this._parseRef(oldRow?.[field])
               if (oldRef) this._stash(ctx, model, field, oldRef)
             }
           }
-        } catch {}
-      }
+        }
+      } catch {}
+    }
 
+    for (const [field, opts] of rawFields) {
+      const value = args.data[field]
       const id = args.where?.id ?? 'upd'
       if (opts.isArray) {
         const items = Array.isArray(value) ? value : [value]

@@ -6,13 +6,14 @@
 //   status(db, dir)                      → show applied + pending migrations
 //   verify(db, parseResult, dir)         → check live db against pristine schema
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSync } from 'fs'
 import { resolve, join } from 'path'
 import { Database } from 'bun:sqlite'
 import {
   introspect, buildPristine, buildPristineForDatabase, diffSchemas,
   generateMigrationSQL, summariseDiff, checksum, splitStatements,
 } from './migrate.js'
+import { generateDDLForDatabase } from './ddl.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,25 @@ export function createForDatabase(rawDb, parseResult, dbName, label = 'migration
 // ─── APPLY ────────────────────────────────────────────────────────────────────
 // Applies all pending migration files in chronological order.
 
+// Parsed-SQL cache keyed by file path + mtime. tenants.migrate() calls apply()
+// once per tenant — without this, 500 tenants × 20 migration files means
+// 10,000 redundant readFileSync + splitStatements passes over identical bytes.
+const _sqlFileCache = new Map()
+function loadMigrationSql(filePath) {
+  const mtimeMs = statSync(filePath).mtimeMs
+  const hit = _sqlFileCache.get(filePath)
+  if (hit && hit.mtimeMs === mtimeMs) return hit
+  const sql = readFileSync(filePath, 'utf8')
+  const execSQL = sql
+    .split('\n')
+    .filter(l => !l.trimStart().startsWith('--'))
+    .join('\n')
+  const stmts = splitStatements(execSQL).filter(s => s.length > 0)
+  const entry = { mtimeMs, sql, stmts }
+  _sqlFileCache.set(filePath, entry)
+  return entry
+}
+
 export async function apply(db, dir = './migrations', client = null) {
   const absDir  = resolve(dir)
   const files   = listMigrationFiles(absDir)
@@ -179,12 +199,7 @@ export async function apply(db, dir = './migrations', client = null) {
         recordMigration(db, file, null)   // no SQL content for JS migrations
       } else {
         // ── SQL migration ────────────────────────────────────────────────────
-        const sql    = readFileSync(filePath, 'utf8')
-        const execSQL = sql
-          .split('\n')
-          .filter(l => !l.trimStart().startsWith('--'))
-          .join('\n')
-        const stmts = splitStatements(execSQL).filter(s => s.length > 0)
+        const { sql, stmts } = loadMigrationSql(filePath)
         for (const stmt of stmts) {
           db.run(stmt + ';')
         }
@@ -208,7 +223,11 @@ export async function apply(db, dir = './migrations', client = null) {
   // This is a SQLite-specific edge — Postgres does this automatically via
   // autovacuum, but SQLite has no equivalent.
   if (results.some(r => r.ok)) {
-    try { db.run('ANALYZE') } catch { /* analyze is advisory; never fail migrations on it */ }
+    // analysis_limit bounds the rows sampled per index — an unbounded ANALYZE
+    // full-scans every index of every table, which on a multi-GB DB can add
+    // minutes to the deploy path (and via tenants.migrate(), per tenant).
+    // 400 is SQLite's own recommended value for this use.
+    try { db.run('PRAGMA analysis_limit=400'); db.run('ANALYZE') } catch { /* analyze is advisory; never fail migrations on it */ }
   }
 
   return { applied: results, pending: pending.length }
@@ -294,7 +313,27 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
 //
 // For production use the file-based migration system (create / apply / status).
 
-export function autoMigrate(db, parseResultOrSchema, { pluralize = false } = {}) {
+const AUTO_META_TABLE = '_litestone_meta'
+const AUTO_HASH_KEY   = 'autoMigrate.ddlHash'
+
+function readAutoHash(rawDb) {
+  try {
+    return rawDb.query(`SELECT value FROM "${AUTO_META_TABLE}" WHERE key = ?`).get(AUTO_HASH_KEY)?.value ?? null
+  } catch { return null }   // meta table doesn't exist yet
+}
+
+function writeAutoHash(rawDb, hash) {
+  try {
+    rawDb.run(`CREATE TABLE IF NOT EXISTS "${AUTO_META_TABLE}" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+    rawDb.run(
+      `INSERT INTO "${AUTO_META_TABLE}" (key, value) VALUES (?, ?)
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+      AUTO_HASH_KEY, hash
+    )
+  } catch { /* advisory — a read-only DB just skips the fast path next time */ }
+}
+
+export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force = false } = {}) {
   // Accept either a parseResult or pull it from db.$schema
   const parseResult = parseResultOrSchema ?? { schema: db.$schema, valid: true, errors: [] }
 
@@ -311,6 +350,17 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false } = {})
       continue
     }
 
+    // Fast path: hash the generated DDL and compare to the hash recorded after
+    // the last successful sync. On match, skip the pristine :memory: build and
+    // the double introspection entirely — this is what makes "call on every
+    // startup" actually free. Pass { force: true } to run the full diff anyway
+    // (e.g. after out-of-band DDL changes to the live DB).
+    const ddlHash = checksum(generateDDLForDatabase(parseResult.schema, dbName, { foreignKeys: true, pluralize }) + `|pluralize=${pluralize}`)
+    if (!force && readAutoHash(rawDb) === ddlHash) {
+      results[dbName] = { state: 'in-sync', applied: 0 }
+      continue
+    }
+
     const pristineDb = new Database(':memory:')
     pristineDb.run('PRAGMA foreign_keys = ON')
 
@@ -320,6 +370,7 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false } = {})
       const diffResult     = diffSchemas(pristineSchema, liveSchema, parseResult, dbName, { pluralize })
 
       if (!diffResult.hasChanges) {
+        writeAutoHash(rawDb, ddlHash)
         results[dbName] = { state: 'in-sync', applied: 0 }
         continue
       }
@@ -331,9 +382,10 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false } = {})
         rawDb.run(stmt + ';')
       }
 
+      writeAutoHash(rawDb, ddlHash)
       results[dbName] = { state: 'migrated', applied: stmts.length, sql }
-      // Auto-ANALYZE — see migrations.apply() for rationale.
-      try { rawDb.run('ANALYZE') } catch { /* advisory */ }
+      // Auto-ANALYZE (bounded) — see migrations.apply() for rationale.
+      try { rawDb.run('PRAGMA analysis_limit=400'); rawDb.run('ANALYZE') } catch { /* advisory */ }
     } finally {
       pristineDb.close()
     }

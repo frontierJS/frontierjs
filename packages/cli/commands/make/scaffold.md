@@ -7,6 +7,7 @@ examples:
   - fli scaffold Invoice --fields "number:string total:float status:string due:date"
   - fli scaffold Product --fields "name:string price:float active:boolean" --no-routes
   - fli scaffold Note --fields "title:string body:text" --no-resource
+  - fli scaffold User --skip-schema
   - fli scaffold Contact --fields "name:string email:email phone:string" --dry
 args:
   -
@@ -25,6 +26,10 @@ flags:
   no-resource:
     type: boolean
     description: Skip resource and routes — schema + service only
+    defaultValue: false
+  skip-schema:
+    type: boolean
+    description: Skip schema.lite stanza generation — useful when the model already exists (e.g. from auth:install)
     defaultValue: false
   soft-delete:
     type: boolean
@@ -204,8 +209,8 @@ ${sc}
 
 <script>
   import { setContext } from 'svelte'
-  import Input from '@/components/Forms/Input.svelte'
-  import { useForm } from '@/components/Forms/Form.svelte'
+  import Input from '@/components/Forms/Input.mesa'
+  import { useForm } from '@/components/Forms/Form.mesa'
   import { back, goto } from '@/core/router'
 
   export let ${lower} = make()
@@ -241,7 +246,7 @@ function makeIndexRoute(name, fields) {
   const tds    = displayFields.map(f => `        <td>{${lower}.${f.name}}</td>`).join('\n')
 
   return `<script>
-  import { store, load } from '@/resources/${name}.svelte'
+  import { store, load } from '@/resources/${name}.mesa'
   import { goto } from '@/core/router'
   import { title } from '@/core/app'
 
@@ -252,7 +257,7 @@ ${sc}
 <div class="page">
   <header>
     <h1>${name}s</h1>
-    <a href="/${plural}/new" class="btn">New ${name}</a>
+    <a href="/${plural}/create" class="btn">New ${name}</a>
   </header>
 
   <table>
@@ -267,8 +272,7 @@ ${ths}
         <tr>
 ${tds}
           <td>
-            <a href="/${plural}/{${lower}.id}">View</a>
-            <a href="/${plural}/{${lower}.id}/edit">Edit</a>
+            <a href="/${plural}/{${lower}.id}/">Edit</a>
           </td>
         </tr>
       {/each}
@@ -278,57 +282,15 @@ ${tds}
 `
 }
 
-// ─── Template: route — detail ────────────────────────────────────────────────
+// ─── Template: route — create ─────────────────────────────────────────────────
 
-function makeDetailRoute(name, fields) {
-  const lower  = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural = lower + 's'
-  const sc     = '</' + 'script>'
-  const displayFields = fields.length ? fields : [{ name: 'id' }]
-  const rows   = displayFields.map(f =>
-    `    <tr><th>${toLabel(f.name)}</th><td>{${lower}.${f.name}}</td></tr>`
-  ).join('\n')
-
-  return `<script>
-  import { service } from '@/resources/${name}.svelte'
-  import { goto } from '@/core/router'
-  import { title } from '@/core/app'
-
-  export let id
-  let ${lower} = {}
-  $title = '${name}'
-
-  $: service.get(id).then(r => { ${lower} = r })
-${sc}
-
-<div class="page">
-  <header>
-    <h1>${name}</h1>
-    <a href="/${plural}/{${lower}.id}/edit" class="btn">Edit</a>
-  </header>
-
-  <table class="detail">
-    <tbody>
-${rows}
-    </tbody>
-  </table>
-
-  <footer>
-    <a href="/${plural}">← Back to ${name}s</a>
-  </footer>
-</div>
-`
-}
-
-// ─── Template: route — new ────────────────────────────────────────────────────
-
-function makeNewRoute(name) {
+function makeCreateRoute(name) {
   const lower  = name.charAt(0).toLowerCase() + name.slice(1)
   const plural = lower + 's'
   const sc     = '</' + 'script>'
   return `<script>
-  import ${name}Resource from '@/resources/${name}.svelte'
-  import { make } from '@/resources/${name}.svelte'
+  import ${name}Resource from '@/resources/${name}.mesa'
+  import { make } from '@/resources/${name}.mesa'
   import { title } from '@/core/app'
 
   $title = 'New ${name}'
@@ -342,25 +304,29 @@ ${sc}
 `
 }
 
-// ─── Template: route — edit ───────────────────────────────────────────────────
+// ─── Template: route — edit (also serves as detail) ──────────────────────────
 
 function makeEditRoute(name) {
   const lower  = name.charAt(0).toLowerCase() + name.slice(1)
+  const plural = lower + 's'
   const sc     = '</' + 'script>'
   return `<script>
-  import ${name}Resource from '@/resources/${name}.svelte'
-  import { service, make } from '@/resources/${name}.svelte'
+  import ${name}Resource from '@/resources/${name}.mesa'
+  import { service, make } from '@/resources/${name}.mesa'
   import { title } from '@/core/app'
 
-  export let id
+  export let ${lower}Id
   let ${lower} = make()
   $title = 'Edit ${name}'
 
-  $: service.get(id).then(r => { ${lower} = r })
+  $: service.get(${lower}Id).then(r => { ${lower} = r })
 ${sc}
 
 <div class="page">
-  <header><h1>Edit ${name}</h1></header>
+  <header>
+    <h1>Edit ${name}</h1>
+    <a href="/${plural}" class="btn">← Back</a>
+  </header>
   <${name}Resource bind:${lower} />
 </div>
 `
@@ -412,21 +378,25 @@ const write = (path, content, label) => {
 
 const schemaPath = resolve(context.paths.db, 'schema.lite')
 
-if (!existsSync(schemaPath)) {
-  log.error('schema.lite not found — run fli db:push in an existing project first')
-  return
-}
-
-const existing = readFileSync(schemaPath, 'utf8')
-if (existing.includes(`model ${modelName}`) && !flag.force) {
-  log.warn(`model ${modelName} already exists in schema.lite — skipping (use --force to overwrite)`)
-} else if (flag.dry) {
-  log.dry(`Would append model ${modelName} to schema.lite`)
+if (flag['skip-schema']) {
+  log.info('Skipping schema.lite — assumed to already contain model ' + modelName)
 } else {
-  const stanza = makeSchemaStanza(modelName, fields, flag['soft-delete'])
-  writeFileSync(schemaPath, existing + stanza, 'utf8')
-  log.success(`Appended model        schema.lite`)
-  created.push(schemaPath)
+  if (!existsSync(schemaPath)) {
+    log.error('schema.lite not found — run fli db:push in an existing project first')
+    return
+  }
+
+  const existing = readFileSync(schemaPath, 'utf8')
+  if (existing.includes(`model ${modelName}`) && !flag.force) {
+    log.warn(`model ${modelName} already exists in schema.lite — skipping (use --force to overwrite, or --skip-schema to silence)`)
+  } else if (flag.dry) {
+    log.dry(`Would append model ${modelName} to schema.lite`)
+  } else {
+    const stanza = makeSchemaStanza(modelName, fields, flag['soft-delete'])
+    writeFileSync(schemaPath, existing + stanza, 'utf8')
+    log.success(`Appended model        schema.lite`)
+    created.push(schemaPath)
+  }
 }
 
 // ─── 2. Service ───────────────────────────────────────────────────────────────
@@ -437,7 +407,7 @@ write(servicePath, makeServiceFile(modelName), 'service')
 // ─── 3. Resource ──────────────────────────────────────────────────────────────
 
 if (!flag['no-resource']) {
-  const resourcePath = resolve(context.paths.web, `src/resources/${modelName}.svelte`)
+  const resourcePath = resolve(context.paths.web, `src/resources/${modelName}.mesa`)
   write(resourcePath, makeResourceFile(modelName, fields), 'resource')
 }
 
@@ -446,10 +416,9 @@ if (!flag['no-resource']) {
 if (!skipRoutes) {
   const routesBase = resolve(context.paths.webPages, plural)
 
-  write(resolve(routesBase, 'index.svelte'),      makeIndexRoute(modelName, fields),  'route/list')
-  write(resolve(routesBase, '[id].svelte'),        makeDetailRoute(modelName, fields), 'route/detail')
-  write(resolve(routesBase, 'new.svelte'),         makeNewRoute(modelName),            'route/new')
-  write(resolve(routesBase, '[id]/edit.svelte'),   makeEditRoute(modelName),           'route/edit')
+  write(resolve(routesBase, 'index.mesa'),         makeIndexRoute(modelName, fields), 'route/list')
+  write(resolve(routesBase, 'create.mesa'),        makeCreateRoute(modelName),        'route/create')
+  write(resolve(routesBase, `[${lower}Id].mesa`),  makeEditRoute(modelName),          'route/edit')
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
@@ -462,7 +431,7 @@ if (!flag.dry && created.length) {
     echo('  Next: fli db:push to apply the schema change')
   }
   if (!skipRoutes) {
-    echo(`  Routes: /${plural}  /${plural}/[id]  /${plural}/new  /${plural}/[id]/edit`)
+    echo(`  Routes: /${plural}  /${plural}/create  /${plural}/[${lower}Id]`)
     echo(`  Add a nav link to your layout pointing to /${plural}`)
   }
   echo('')

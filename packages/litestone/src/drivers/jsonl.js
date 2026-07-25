@@ -26,54 +26,48 @@ import { compactJsonl } from '../tools/retention.js'
 
 // ─── File I/O ─────────────────────────────────────────────────────────────────
 
-// Read a single JSON line from a file at a given byte offset.
+// Read a single JSON line from an open fd at a given byte offset.
 // Uses low-level fd seek — O(1), does not scan from the start.
-function readLineAtOffset(filePath, offset) {
-  const fd     = openSync(filePath, 'r')
+// Takes an fd (not a path) so index queries open the file ONCE per query
+// instead of once per result row.
+function readLineAtFd(fd, offset) {
   const chunks = []
   const buf    = Buffer.allocUnsafe(2048)
   let   pos    = offset
 
-  try {
-    while (true) {
-      const n  = readSync(fd, buf, 0, buf.length, pos)
-      if (n === 0) break
-      const nl = buf.indexOf(0x0a, 0)       // 0x0a = '\n'
-      const end = (nl >= 0 && nl < n) ? nl : n
-      chunks.push(buf.slice(0, end).toString('utf8'))
-      if (nl >= 0 && nl < n) break
-      pos += n
-    }
-  } finally {
-    closeSync(fd)
+  while (true) {
+    const n  = readSync(fd, buf, 0, buf.length, pos)
+    if (n === 0) break
+    const nl = buf.indexOf(0x0a, 0)       // 0x0a = '\n'
+    const end = (nl >= 0 && nl < n) ? nl : n
+    chunks.push(buf.slice(0, end).toString('utf8'))
+    if (nl >= 0 && nl < n) break
+    pos += n
   }
 
   const line = chunks.join('').trim()
   return line ? JSON.parse(line) : null
 }
 
-// Load all valid records from a JSONL file into memory.
-function loadAll(filePath) {
-  if (!existsSync(filePath)) return []
-  const content = readFileSync(filePath, 'utf8')
-  const records = []
+// Parse JSONL text into records, appending into `out`.
+function parseLinesInto(out, content) {
   for (const line of content.split('\n')) {
     const t = line.trim()
     if (!t) continue
-    try { records.push(JSON.parse(t)) } catch { /* skip malformed lines */ }
+    try { out.push(JSON.parse(t)) } catch { /* skip malformed lines */ }
   }
-  return records
+  return out
 }
 
-// Append a JSON record to a file. Returns the byte offset where the line was written.
-function appendRecord(filePath, record) {
+// Append a JSON line to a file. Returns { offset, bytes }.
+function appendLine(filePath, line) {
   if (!existsSync(filePath)) {
     mkdirSync(dirname(filePath), { recursive: true })
     appendFileSync(filePath, '', 'utf8')
   }
   const offset = statSync(filePath).size
-  appendFileSync(filePath, JSON.stringify(record) + '\n', 'utf8')
-  return offset
+  appendFileSync(filePath, line, 'utf8')
+  return { offset, bytes: Buffer.byteLength(line, 'utf8') }
 }
 
 // ─── JavaScript query engine (no-index path) ──────────────────────────────────
@@ -226,7 +220,8 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // With @id: INSERT OR REPLACE so re-indexing a known id updates its offset.
     // Without @id: plain INSERT — _offset is always unique (each line has its own position).
     const verb = idName ? 'INSERT OR REPLACE' : 'INSERT'
-    db.prepare(
+    // db.query() caches the compiled statement (db.prepare compiles fresh every call)
+    db.query(
       `${verb} INTO "${model.name}_idx" (${cols.map(c => `"${c}"`).join(', ')}) ` +
       `VALUES (${cols.map(() => '?').join(', ')})`
     ).run(...vals)
@@ -261,22 +256,81 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     const offsetSQL = args.offset ? `OFFSET ${args.offset}` : ''
 
     const sql  = `SELECT "_offset" FROM "${model.name}_idx" ${where} ${orderSQL} ${limitSQL} ${offsetSQL}`.trim()
-    const rows = db.prepare(sql).all(...params)
+    const rows = db.query(sql).all(...params)
+    if (!rows.length) return []
 
-    return rows
-      .map(row => readLineAtOffset(filePath, row._offset))
-      .filter(Boolean)
+    // One fd for the whole result set — previously each row opened and closed
+    // its own file descriptor.
+    const fd = openSync(filePath, 'r')
+    try {
+      return rows
+        .map(row => readLineAtFd(fd, row._offset))
+        .filter(Boolean)
+    } finally {
+      closeSync(fd)
+    }
   }
 
   // ── Full scan path ───────────────────────────────────────────────────────
+  //
+  // Parsed-record cache. The file is append-only, so the cache is valid as
+  // long as the file has only GROWN since the last load — in that case only
+  // the appended byte range is read and parsed. A shrunk or same-size-but-
+  // rewritten file (retention compaction) triggers a full reload.
+  //
+  // Previously every findMany/findFirst/count re-read and re-JSON.parsed the
+  // ENTIRE file (~273ms per query on a 200k-row file, growing forever).
+  // Cached records are internal — query results return the same row objects
+  // only through filter/slice, so writes push CLONES into the cache to keep
+  // caller mutations from leaking in.
+
+  let _cache = null   // { size, mtimeMs, records }
+
+  function loadAllCached() {
+    if (!existsSync(filePath)) { _cache = null; return [] }
+    const st = statSync(filePath)
+
+    if (_cache && st.size === _cache.size && st.mtimeMs === _cache.mtimeMs) {
+      return _cache.records
+    }
+
+    if (_cache && st.size > _cache.size) {
+      // Append-only growth — read and parse just the tail.
+      const fd = openSync(filePath, 'r')
+      try {
+        const len = st.size - _cache.size
+        const buf = Buffer.allocUnsafe(len)
+        let read = 0
+        while (read < len) {
+          const n = readSync(fd, buf, read, len - read, _cache.size + read)
+          if (n === 0) break
+          read += n
+        }
+        parseLinesInto(_cache.records, buf.slice(0, read).toString('utf8'))
+        _cache.size    = st.size
+        _cache.mtimeMs = st.mtimeMs
+        return _cache.records
+      } finally {
+        closeSync(fd)
+      }
+    }
+
+    // Cold load, shrink, or same-size rewrite — full parse.
+    const records = parseLinesInto([], readFileSync(filePath, 'utf8'))
+    _cache = { size: st.size, mtimeMs: st.mtimeMs, records }
+    return records
+  }
 
   function queryFullScan(args) {
-    let records = loadAll(filePath)
+    let records = loadAllCached()
     if (args.where)   records = records.filter(r => matchWhere(r, args.where))
     if (args.orderBy) records = applyOrderBy(records, args.orderBy)
     if (args.offset)  records = records.slice(Number(args.offset))
     if (args.limit)   records = records.slice(0, Number(args.limit))
-    return records
+    // Clone the returned rows — callers may mutate them, and the underlying
+    // objects live in the cache. (Pre-cache behavior returned fresh objects
+    // every query; this preserves that contract.)
+    return records.map(r => ({ ...r }))
   }
 
   // ── Write helpers ────────────────────────────────────────────────────────
@@ -329,25 +383,68 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
   }
 
   async function count(args = {}) {
-    // Fast path: no where clause → just count lines in file
+    // Fast path: no where clause → cached record count (no full-file string
+    // decode; refreshes incrementally via the append-only tail parse)
     if (!args.where) {
-      if (!existsSync(filePath)) return 0
-      const content = readFileSync(filePath, 'utf8')
-      return content.split('\n').filter(l => l.trim()).length
+      return loadAllCached().length
     }
-    const records = await findMany(args)
-    return records.length
+    if (canUseIndex(args.where)) {
+      const db     = getIndexDb()
+      const params = []
+      const whereSQL = buildWhere(args.where, params)
+      const where    = whereSQL ? `WHERE ${whereSQL}` : ''
+      return db.query(`SELECT COUNT(*) AS n FROM "${model.name}_idx" ${where}`).get(...params).n
+    }
+    return loadAllCached().filter(r => matchWhere(r, args.where)).length
+  }
+
+  // Push a freshly-written record into the warm cache (clone — the caller
+  // owns the returned object) so the next read doesn't re-parse the tail.
+  function absorbIntoCache(record, offset, bytes) {
+    if (_cache && _cache.size === offset) {
+      _cache.records.push({ ...record })
+      _cache.size = offset + bytes
+      try { _cache.mtimeMs = statSync(filePath).mtimeMs } catch { _cache = null }
+    }
   }
 
   async function create({ data }) {
     const record = buildRecord(data)
-    const offset = appendRecord(filePath, record)
+    const { offset, bytes } = appendLine(filePath, JSON.stringify(record) + '\n')
+    absorbIntoCache(record, offset, bytes)
     if (hasIndex) insertIndexRecord(record, offset)
     return record
   }
 
   async function createMany({ data }) {
-    return Promise.all(data.map(d => create({ data: d })))
+    if (!data?.length) return []
+    // Serialize the whole batch into ONE buffer + ONE append, and wrap index
+    // inserts in ONE transaction — previously this was N fd open/write/close
+    // cycles and N implicit index-db commits.
+    const records = data.map(d => buildRecord(d))
+    const lines   = records.map(r => JSON.stringify(r) + '\n')
+    const { offset } = appendLine(filePath, lines.join(''))
+
+    let pos = offset
+    const offsets = lines.map(l => { const o = pos; pos += Buffer.byteLength(l, 'utf8'); return o })
+    if (_cache && _cache.size === offset) {
+      for (const r of records) _cache.records.push({ ...r })
+      _cache.size = pos
+      try { _cache.mtimeMs = statSync(filePath).mtimeMs } catch { _cache = null }
+    }
+
+    if (hasIndex) {
+      const db = getIndexDb()
+      db.run('BEGIN')
+      try {
+        for (let i = 0; i < records.length; i++) insertIndexRecord(records[i], offsets[i])
+        db.run('COMMIT')
+      } catch (e) {
+        try { db.run('ROLLBACK') } catch {}
+        throw e
+      }
+    }
+    return records
   }
 
   return {

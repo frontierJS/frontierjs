@@ -1,0 +1,49 @@
+/*
+ * utilities/popovers.css
+ * Popover = surface + floating positioning + slide-in animation.
+ *
+ * Positioning is the consumer's job — use Uno utilities like
+ *   class="popover absolute top-12 left-0"
+ * or anchor positioning (the native [popover] attribute also works).
+ *
+ * Visual treatment (bg, border, radius, tones) comes from surface.css.
+ *
+ * Two ways to use:
+ *
+ *   1) As a plain element with manual show/hide:
+ *      <div class="popover" hidden>…</div>
+ *
+ *   2) Via the native Popover API (Chrome 114+, Safari 17+, Firefox 125+):
+ *      <button popovertarget="menu">Open</button>
+ *      <div id="menu" popover class="popover">…</div>
+ */
+
+.popover {
+  position:   absolute;
+  max-width:  280px;
+  padding:    10px 12px;
+  box-shadow: var(--shadow-md);
+  font-size:  13px;
+  z-index:    50;
+  animation:  popover-in 120ms ease-out;
+}
+
+/* Native [popover] attribute support — kill the default UA styling */
+[popover].popover {
+  margin:    0;
+  border:    1px solid var(--surface-border);
+  inset:     unset;
+  position:  fixed;
+}
+[popover].popover::backdrop {
+  background: transparent;
+}
+
+@keyframes popover-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover { animation: none; }
+}

@@ -1,0 +1,11 @@
+/* themes/sunset.css — Warm oranges, earthy accents. */
+
+.theme-sunset {
+  --color-primary:   #F98E2E;
+  --color-secondary: #9a3412;
+  --color-muted:     #a8a29e;
+  --color-info:      #c2410c;
+  --color-success:   #84cc16;
+  --color-warning:   #facc15;
+  --color-danger:    #dc2626;
+}

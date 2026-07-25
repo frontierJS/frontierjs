@@ -8,6 +8,8 @@ defaults:
 ---
 
 <script>
+import { resolve } from 'path'
+import { existsSync } from 'fs'
 
 // ─── resolveDb ───────────────────────────────────────────────────────────────
 // Returns the db file path for the current environment.
@@ -42,11 +44,7 @@ const requireSchema = (context) => {
 
 const requireDb = (context, flag) => {
   const { full } = resolveDb(context, flag)
-  let exists = false
-  try { exists = require('fs').existsSync(full) } catch {
-    exists = true // assume ok, command will fail naturally if file missing
-  }
-  if (!exists) {
+  if (!existsSync(full)) {
     context.log.error(`Database not found: ${full}`)
     context.log.info('Run: fli db:push  to create it from schema.lite')
     return false

@@ -1,0 +1,17 @@
+/*
+ * utilities/badges.css
+ * .badge shortcut lives in uno.config.ts.
+ * Tones come from tones.css.
+ *
+ * Default (no tone class) renders muted via the var fallback.
+ * Use for categorical status ("active", "pending", "archived").
+ */
+
+.badge {
+  background:     var(--bg-mix, var(--color-muted));
+  color:          var(--on-bg-mix, white);
+  font-family:    var(--font-primary);
+  font-weight:    var(--badge-font-weight);
+  text-transform: var(--badge-text-transform);
+  letter-spacing: var(--badge-letter-spacing);
+}

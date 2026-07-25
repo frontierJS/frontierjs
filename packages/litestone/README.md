@@ -7,9 +7,9 @@ A single `.lite` file declares the **shape** of your data, **access** rules, **l
 ```
 // schema.lite
 type Address {
-  street     Text
-  city       Text
-  postalCode Text
+  street     String
+  city       String
+  postalCode String
 }
 
 trait Dates {
@@ -18,9 +18,9 @@ trait Dates {
 }
 
 model User {
-  id      Integer @id
-  name    Text
-  email   Text  @email
+  id      Int @id
+  name    String
+  email   String  @email
   address Json  @type(Address)
 
   @@trait(Dates)
@@ -206,14 +206,14 @@ Schemas live in a `.lite` file. Syntax is close to Prisma's SDL with SQLite-nati
 enum Plan { starter  pro  enterprise }
 enum Role { admin  member  viewer }
 
-function slug(text: Text): Text {
+function slug(text: String): String {
   @@expr("lower(trim(replace({text}, ' ', '-')))")
 }
 
 model accounts {
-  id        Integer  @id
-  name      Text
-  slug      Text     @slug(name)         // schema function → STORED generated column
+  id        Int  @id
+  name      String
+  slug      String     @slug(name)         // schema function → STORED generated column
   plan      Plan     @default(starter)
   meta      Json?
   createdAt DateTime @default(now())
@@ -223,14 +223,14 @@ model accounts {
 }
 
 model users {
-  id          Integer   @id
+  id          Int   @id
   account     accounts  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId   Integer
-  email       Text      @unique @email @lower
-  name        Text?     @trim
+  accountId   Int
+  email       String      @unique @email @lower
+  name        String?     @trim
   role        Role      @default(member)
-  salary      Real?     @allow('read', auth().role == 'admin')   // field-level policy
-  apiKey      Text?     @secret                                   // encrypted + guarded + audited
+  salary      Float?     @allow('read', auth().role == 'admin')   // field-level policy
+  apiKey      String?     @secret                                   // encrypted + guarded + audited
   deletedAt   DateTime?
 
   @@softDelete
@@ -245,13 +245,13 @@ model users {
 
 | Schema type | SQLite | JS |
 |---|---|---|
-| `Integer` | `INTEGER` | `number` |
-| `Real` | `REAL` | `number` |
-| `Text` | `TEXT` | `string` |
+| `Int` | `INTEGER` | `number` |
+| `Float` | `REAL` | `number` |
+| `String` | `TEXT` | `string` |
 | `Boolean` | `INTEGER` 0/1 | `boolean` (auto-coerced) |
 | `DateTime` | `TEXT` ISO-8601 | `string` |
 | `Json` | `TEXT` | `object` (auto-parsed) |
-| `Blob` | `BLOB` | `Buffer` |
+| `Bytes` | `BLOB` | `Buffer` |
 | `File` | `TEXT` JSON ref | stored in S3/R2/local via FileStorage plugin |
 | `File[]` | `TEXT` JSON array | multiple files, each ref stored in S3/R2/local |
 | `EnumName` | `TEXT` + CHECK | `string` |
@@ -261,7 +261,7 @@ model users {
 ### Field attributes
 
 ```
-@id                              primary key (auto-increment for Integer)
+@id                              primary key (auto-increment for Int)
 @unique                          UNIQUE constraint
 @default(value)                  now(), uuid(), ulid(), nanoid(), true, "string", 42, enumValue
 @default(auth().id)              stamped at write time from ctx.auth
@@ -334,17 +334,17 @@ database logs      { path "./logs/"; driver jsonl; retention 30d }
 database audit     { path "./audit/"; driver logger; retention 90d }
 
 model pageViews {
-  id        Integer  @id
-  path      Text
-  duration  Integer
+  id        Int  @id
+  path      String
+  duration  Int
   createdAt DateTime @default(now())
   @@db(analytics)
 }
 
 model apiRequests {
-  method  Text
-  path    Text
-  status  Integer
+  method  String
+  path    String
+  status  Int
   @@db(logs)     // append-only JSONL — no migrations, no schema changes
 }
 ```
@@ -372,27 +372,27 @@ await db.auditLogs.findMany({ where: { model: 'users' } })  // → audit/ (auto-
 ```prisma
 // SQLite view — created manually or via a JS migration
 model active_users {
-  id        Integer @id
-  email     Text
-  name      Text?
-  accountId Integer
+  id        Int @id
+  email     String
+  name      String?
+  accountId Int
   @@external
 }
 
 // FTS5 virtual table managed by a third-party tool
 model docs_fts {
-  rowid   Integer @id
-  title   Text
-  body    Text
+  rowid   Int @id
+  title   String
+  body    String
   @@external
   @@fts([title, body])
 }
 
 // Table owned by another migration tool (e.g. a legacy schema)
 model legacy_audit_log {
-  id        Integer  @id
-  action    Text
-  actorId   Integer
+  id        Int  @id
+  action    String
+  actorId   Int
   createdAt DateTime
   @@external
 }
@@ -429,10 +429,10 @@ export async function up(db) {
 
 ```prisma
 model active_users {
-  id        Integer @id
-  email     Text
-  name      Text?
-  accountId Integer
+  id        Int @id
+  email     String
+  name      String?
+  accountId Int
   @@external
 }
 ```
@@ -488,9 +488,9 @@ const sysDb  = db.asSystem()           // bypasses @@gate + @@allow/@@deny, unlo
 
 ```prisma
 model posts {
-  id        Integer  @id
-  accountId Integer
-  status    Text     @default("draft")
+  id        Int  @id
+  accountId Int
+  status    String     @default("draft")
 
   // Default is open. First @@allow makes it deny-by-default for that operation.
   @@allow('read',   status == 'published' || accountId == auth().accountId)
@@ -554,9 +554,9 @@ Reserved: `SYSTEM=8` (asSystem() only)  `LOCKED=9` (impassable — not even asSy
 
 ```prisma
 model users {
-  ssn    Text  @encrypted                   // AES-256-GCM, guarded — asSystem() only
-  email  Text  @encrypted(searchable: true)  // HMAC-indexed — equality WHERE works
-  apiKey Text  @secret                       // @encrypted + @guarded(all) + @log(audit)
+  ssn    String  @encrypted                   // AES-256-GCM, guarded — asSystem() only
+  email  String  @encrypted(searchable: true)  // HMAC-indexed — equality WHERE works
+  apiKey String  @secret                       // @encrypted + @guarded(all) + @log(audit)
 }
 ```
 
@@ -810,23 +810,23 @@ litestone migrate dry-run [label]  # preview SQL, no file written
 Reusable named SQL expressions — define once, use on any model:
 
 ```prisma
-function slug(text: Text): Text {
+function slug(text: String): String {
   @@expr("lower(trim(replace({text}, ' ', '-')))")
 }
 
-function fullName(first: Text, last: Text): Text {
+function fullName(first: String, last: String): String {
   @@expr("COALESCE({first}, '') || ' ' || COALESCE({last}, '')")
 }
 
 model users {
-  firstName   Text?
-  lastName    Text?
-  displayName Text  @fullName(firstName, lastName)  // STORED generated column
+  firstName   String?
+  lastName    String?
+  displayName String  @fullName(firstName, lastName)  // STORED generated column
 }
 
 model posts {
-  title Text
-  slug  Text  @slug(title)   // same function, different model
+  title String
+  slug  String  @slug(title)   // same function, different model
 }
 ```
 
@@ -843,9 +843,9 @@ await db.users.findMany({ orderBy: { displayName: 'asc' } })
 
 ```prisma
 model quotes {
-  id          Integer @id
-  accountId   Integer
-  quoteNumber Integer @sequence(scope: accountId)
+  id          Int @id
+  accountId   Int
+  quoteNumber Int @sequence(scope: accountId)
 }
 ```
 
@@ -865,10 +865,10 @@ Computed aggregates and lookups from related models — evaluated at query time,
 
 ```prisma
 model accounts {
-  id           Integer  @id
-  name         Text
-  userCount    Integer  @from(users, count: true)
-  revenue      Real     @from(orders, sum: amount)
+  id           Int  @id
+  name         String
+  userCount    Int  @from(users, count: true)
+  revenue      Float     @from(orders, sum: amount)
   lastOrderAt  DateTime @from(orders, last: true)   // last related object
   hasOverdue   Boolean  @from(invoices, exists: true, where: "due_at < date('now') AND paid = 0")
 }
@@ -955,10 +955,10 @@ Self-referential models (a field referencing the same model) automatically suppo
 
 ```prisma
 model categories {
-  id       Integer     @id
-  name     Text
+  id       Int     @id
+  name     String
   parent   categories? @relation(fields: [parentId], references: [id])
-  parentId Integer?
+  parentId Int?
   children categories[]
 }
 ```
@@ -1186,7 +1186,7 @@ export default {
 
 ```prisma
 model users {
-  fullName Text    @computed
+  fullName String    @computed
   isActive Boolean @computed
 }
 ```
@@ -1349,7 +1349,7 @@ const admin = await users.state({ role: 'admin' }).createOne()
 ```js
 const defFn = generateFactory(schema, 'users')
 // Returns a definition(seq, rng) function that generates valid data from field types + constraints
-// @email → 'users1@test.com', @gte(0) @lte(100) → 50, Text? → null, etc.
+// @email → 'users1@test.com', @gte(0) @lte(100) → 50, String? → null, etc.
 ```
 
 ### generateGateMatrix — permission test cases

@@ -1,0 +1,458 @@
+---
+title: deploy:doctor
+description: Diagnose deployment readiness — local config, project state, and (with --remote) server-side setup
+alias: doctor
+examples:
+  - fli deploy:doctor
+  - fli doctor
+  - fli deploy:doctor --remote
+  - fli deploy:doctor --remote --production
+flags:
+  remote:
+    type: boolean
+    description: Also run server-side probes (requires SSH access)
+    defaultValue: false
+  production:
+    type: boolean
+    description: Target production server when running remote probes
+    defaultValue: false
+  stage:
+    type: boolean
+    description: Target staging server when running remote probes
+    defaultValue: false
+---
+
+<script>
+import { existsSync, readFileSync } from 'fs'
+import { resolve as resolvePath, basename } from 'path'
+
+// Status sigils — keep narrow so the checklist columns line up.
+const PASS = '\x1b[32m✓\x1b[0m' // green
+const FAIL = '\x1b[31m✗\x1b[0m' // red
+const WARN = '\x1b[33m⚠\x1b[0m' // yellow
+const INFO = '\x1b[2m·\x1b[0m'   // dim
+
+// One row of the checklist. `name` is the human-readable label, `status` is
+// 'pass' | 'fail' | 'warn' | 'info', `hint` is a one-line "fix:" message
+// shown in dim text below the row when present.
+const renderCheck = (name, status, hint) => {
+  const sigil = status === 'pass' ? PASS
+              : status === 'fail' ? FAIL
+              : status === 'warn' ? WARN
+              : INFO
+  echo(`  ${sigil}  ${name}`)
+  if (hint) echo(`     \x1b[2m${hint}\x1b[0m`)
+}
+
+const renderHeader = (text) => {
+  echo('')
+  echo(`\x1b[1m${text}\x1b[0m`)
+}
+
+// Heuristic file content search. Used to detect /health route, junction
+// imports, db:migrate script, etc. Returns true on first match across files.
+const fileContains = (paths, needle) => {
+  const re = needle instanceof RegExp ? needle : new RegExp(needle)
+  for (const p of paths) {
+    try { if (re.test(readFileSync(p, 'utf8'))) return true } catch {}
+  }
+  return false
+}
+
+// Pull a key from a parsed package.json's deps + devDeps.
+const hasDep = (pkg, name) => Boolean(
+  pkg?.dependencies?.[name] || pkg?.devDependencies?.[name]
+)
+
+// Read a JSON file, tolerating missing/malformed files.
+const readJson = (path) => {
+  try { return JSON.parse(readFileSync(path, 'utf8')) }
+  catch { return null }
+}
+</script>
+
+Reads `frontier.config.js`, walks through every prerequisite the deploy
+pipeline checks for, and reports what's ready and what isn't. Local
+checks run by default — config completeness, Dockerfile presence, health
+endpoint, env reference, git state. Pass `--remote` to also probe the
+target server (SSH reachability, deploy directory, env file, container
+state).
+
+Junction apps get extra checks: `/ws` route presence, `@frontierjs/junction`
+dependency, and a reminder about the `proxy_read_timeout` quirk with
+long-lived WebSocket connections.
+
+```js
+const target = resolveTarget(flag, context.git)
+
+// ─── Header ───────────────────────────────────────────────────────────────
+const projectName = basename(context.paths.root)
+echo(`\n\x1b[1m${projectName}\x1b[0m  ·  target: \x1b[1m${target}\x1b[0m\n`)
+
+// Track failures + warnings for the final summary
+let failed = 0
+let warned = 0
+const fail = () => failed++
+const warn = () => warned++
+
+// ─── Load frontier.config.js — everything else depends on this ────────────
+const frontierConfig = await loadFrontierConfig(context.paths.root)
+const deployConf     = frontierConfig?.deploy
+
+renderHeader('Config')
+
+if (!frontierConfig) {
+  renderCheck('frontier.config.js', 'fail', 'fix: fli make:deploy')
+  fail()
+  echo('')
+  log.error(`No frontier.config.js found in ${context.paths.root}`)
+  log.info(`Run \x1b[1mfli make:deploy\x1b[0m to scaffold one.`)
+  context.config.abort = true
+  return
+}
+renderCheck('frontier.config.js exists', 'pass')
+
+if (!deployConf) {
+  renderCheck('deploy block in frontier.config.js', 'fail', 'fix: fli make:deploy')
+  fail()
+  echo('')
+  log.error('frontier.config.js has no deploy block')
+  log.info(`Run \x1b[1mfli make:deploy\x1b[0m to add one.`)
+  context.config.abort = true
+  return
+}
+renderCheck('deploy block defined', 'pass')
+
+// ─── Required deploy fields ───────────────────────────────────────────────
+const resolved = resolveDeployConf(deployConf, target)
+if (!resolved) {
+  renderCheck(`deploy.server / deploy.path for target=${target}`, 'fail',
+    `fix: add server and path (or ${target}.server / ${target}.path) to frontier.config.js`)
+  fail()
+} else {
+  renderCheck(`server + path resolve for target=${target}`, 'pass',
+    `${resolved.user}@${resolved.server}:${resolved.path}`)
+}
+
+const appId = deployConf.app_id ?? deployConf.path?.split('/').pop()
+if (appId) {
+  renderCheck('app_id', 'pass', appId)
+} else {
+  renderCheck('app_id', 'warn', 'no app_id and no path to derive from — set deploy.app_id')
+  warn()
+}
+
+// ─── Dockerfile ───────────────────────────────────────────────────────────
+renderHeader('API container')
+
+const dockerfile = deployConf.api?.dockerfile ?? 'api/deploy/Dockerfile'
+const dockerfilePath = resolvePath(context.paths.root, dockerfile)
+if (existsSync(dockerfilePath)) {
+  renderCheck(`Dockerfile at ${dockerfile}`, 'pass')
+} else {
+  renderCheck(`Dockerfile at ${dockerfile}`, 'fail',
+    `fix: fli make:deploy  (or set deploy.api.dockerfile if it lives elsewhere)`)
+  fail()
+}
+
+// ─── api/package.json — db:migrate script ─────────────────────────────────
+// The Dockerfile's CMD runs `bun run db:migrate && bun run src/server.ts`.
+// If db:migrate is missing, the container exits non-zero on every start.
+const apiPkgPath = resolvePath(context.paths.root, 'api', 'package.json')
+const apiPkg     = readJson(apiPkgPath)
+if (!apiPkg) {
+  renderCheck('api/package.json', 'warn', 'not found — entrypoint may not work')
+  warn()
+} else if (!apiPkg.scripts?.['db:migrate']) {
+  renderCheck(`api/package.json has 'db:migrate' script`, 'warn',
+    `the Dockerfile entrypoint runs 'bun run db:migrate' on every start. Add a no-op or real script.`)
+  warn()
+} else {
+  renderCheck(`api/package.json has 'db:migrate' script`, 'pass')
+}
+
+// ─── /health route — required for auto-rollback ───────────────────────────
+// Heuristic: check the API source for a /health route definition.
+// Won't catch dynamic registrations but covers the common case.
+const apiSrcCandidates = [
+  resolvePath(context.paths.root, 'api/src/server.ts'),
+  resolvePath(context.paths.root, 'api/src/server.js'),
+  resolvePath(context.paths.root, 'api/src/index.ts'),
+  resolvePath(context.paths.root, 'api/src/index.js'),
+  resolvePath(context.paths.root, 'api/src/app.ts'),
+]
+const healthPath = deployConf.api?.health ?? '/health'
+const hasHealth  = fileContains(apiSrcCandidates, new RegExp(`['"\`]${healthPath.replace(/\//g, '\\/')}['"\`]`))
+if (hasHealth) {
+  renderCheck(`${healthPath} route in api source`, 'pass')
+} else {
+  renderCheck(`${healthPath} route in api source`, 'warn',
+    `couldn't find a literal "${healthPath}" string — auto-rollback needs a 200 response here`)
+  warn()
+}
+
+// ─── envCheck setup ───────────────────────────────────────────────────────
+renderHeader('Environment')
+
+const envCheckOn = deployConf.api?.envCheck === true || deployConf.api?.env_check === true
+const envExample = resolvePath(context.paths.root, '.env.example')
+const envKeys    = resolvePath(context.paths.root, '.env.keys')
+const refExists  = existsSync(envExample) || existsSync(envKeys)
+
+if (envCheckOn) {
+  if (refExists) {
+    renderCheck('.env.example reference exists (envCheck active)', 'pass',
+      existsSync(envExample) ? '.env.example' : '.env.keys')
+  } else {
+    renderCheck('.env.example reference (envCheck active)', 'warn',
+      'envCheck is enabled but no .env.example/.env.keys found — env validation will skip')
+    warn()
+  }
+} else {
+  renderCheck('envCheck', 'info', 'disabled — set deploy.api.envCheck: true to validate server env before each deploy')
+}
+
+// ─── Junction detection ───────────────────────────────────────────────────
+const junctionDep = hasDep(apiPkg, '@frontierjs/junction')
+                  || hasDep(readJson(resolvePath(context.paths.root, 'package.json')), '@frontierjs/junction')
+const junctionImport = fileContains(apiSrcCandidates, /from\s+['"]@frontierjs\/junction['"]/)
+const isJunction = junctionDep || junctionImport
+
+if (isJunction) {
+  renderHeader('Junction (WebSocket)')
+  renderCheck('@frontierjs/junction detected', 'pass',
+    junctionDep ? 'in package.json' : 'imported in api source')
+
+  // /ws route check — the convention from the deploy:setup nginx template
+  const hasWs = fileContains(apiSrcCandidates, /['"\`]\/ws['"\`]/)
+  if (hasWs) {
+    renderCheck(`/ws route in api source`, 'pass')
+  } else {
+    renderCheck(`/ws route in api source`, 'warn',
+      `the generated nginx config proxies /ws to your API. If your route is elsewhere, update nginx.`)
+    warn()
+  }
+
+  renderCheck('proxy_read_timeout reminder', 'info',
+    `nginx default is 60s — long-lived idle WebSockets get closed. Bump it in the /ws location block if needed.`)
+}
+
+// ─── Git state ────────────────────────────────────────────────────────────
+renderHeader('Source control')
+
+const branch = context.git.branch()
+if (branch) {
+  renderCheck(`branch: ${branch}`, 'pass')
+} else {
+  renderCheck('git repository', 'fail',
+    `the deploy pulls via git on the server — this needs to be a tracked repository`)
+  fail()
+}
+
+if (context.git.isDirty()) {
+  const dirty = context.git.status()
+  renderCheck(`uncommitted changes`, 'warn',
+    `${dirty.length} file(s) — these won't be deployed since the server pulls from origin`)
+  warn()
+} else if (branch) {
+  renderCheck('working tree clean', 'pass')
+}
+
+// Unpushed commits — `git rev-list @{u}..` returns commits ahead of upstream.
+// If no upstream is configured, fall back silently.
+if (branch) {
+  let unpushed = null
+  let upstreamOk = true
+  try {
+    const out = context.exec({
+      command: `git -C "${context.paths.root}" rev-list --count @{u}..HEAD`,
+      stdio:   'pipe',
+    })
+    unpushed = parseInt((out?.toString?.('utf8') ?? out ?? '0').trim()) || 0
+  } catch {
+    // No upstream set or some other failure — surface as a warn since it
+    // means we can't tell if commits are pushed
+    upstreamOk = false
+    renderCheck('upstream tracking', 'warn',
+      `branch has no upstream set — push it once with: git push -u origin ${branch}`)
+    warn()
+  }
+  if (upstreamOk) {
+    if (unpushed > 0) {
+      renderCheck(`commits pushed`, 'warn',
+        `${unpushed} commit(s) not pushed — server will pull origin, your unpushed work won't deploy`)
+      warn()
+    } else {
+      renderCheck('commits pushed', 'pass')
+    }
+  }
+}
+
+// ─── Remote checks ────────────────────────────────────────────────────────
+if (flag.remote) {
+  if (!resolved) {
+    echo('')
+    log.warn('Skipping remote checks — server config not resolved')
+  } else {
+    renderHeader(`Server (${resolved.user}@${resolved.server})`)
+
+    const host = `${resolved.user}@${resolved.server}`
+    const path = resolved.path
+
+    // SSH reachability — use BatchMode to avoid password prompts hanging
+    let sshOk = false
+    try {
+      context.exec({
+        command: `ssh -o ConnectTimeout=5 -o BatchMode=yes ${host} "echo ok" > /dev/null`,
+        stdio: 'pipe',
+      })
+      sshOk = true
+      renderCheck('SSH reachable', 'pass', `connected to ${host}`)
+    } catch {
+      renderCheck('SSH reachable', 'fail',
+        `fix: ssh-copy-id ${host}  (or check that ${resolved.server} is correct)`)
+      fail()
+    }
+
+    if (sshOk) {
+      // Helper for remote probes — returns trimmed stdout, or '' on error.
+      const ssh = (cmd) => {
+        try {
+          const out = context.exec({
+            command: `ssh ${host} "${cmd}"`,
+            stdio: 'pipe',
+          })
+          return (out?.toString?.('utf8') ?? out ?? '').trim()
+        } catch { return '' }
+      }
+
+      // Required server tools — the same list deploy:setup checks
+      for (const tool of ['docker', 'nginx', 'git', 'bun', 'rsync']) {
+        const probe = ssh(`command -v ${tool} > /dev/null 2>&1 && echo ok`)
+        if (probe === 'ok') {
+          renderCheck(`${tool} on server`, 'pass')
+        } else {
+          renderCheck(`${tool} on server`, 'fail',
+            `fix: fli deploy:setup${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}`)
+          fail()
+        }
+      }
+
+      // Deploy directory exists
+      const pathExists = ssh(`[ -d "${path}" ] && echo ok`)
+      if (pathExists === 'ok') {
+        renderCheck(`${path} exists on server`, 'pass')
+
+        // Repo cloned at that path
+        const isRepo = ssh(`[ -d "${path}/.git" ] && echo ok`)
+        if (isRepo === 'ok') {
+          renderCheck(`${path} is a git repository`, 'pass')
+
+          // Repo origin matches local
+          const remoteUrl = ssh(`cd ${path} && git config --get remote.origin.url`)
+          if (remoteUrl) {
+            renderCheck('git remote configured', 'pass', remoteUrl)
+          }
+        } else {
+          renderCheck(`${path}/.git`, 'fail',
+            `fix: fli deploy:setup  (or clone the repo manually at ${path})`)
+          fail()
+        }
+
+        // .env.production
+        const envFile = deployConf.api?.env ?? `${path}/.env.production`
+        const envExists = ssh(`[ -f "${envFile}" ] && echo ok`)
+        if (envExists === 'ok') {
+          renderCheck(`${envFile} exists`, 'pass')
+
+          // If envCheck is on and we have a local reference, count missing keys
+          if (envCheckOn && refExists) {
+            const refContent = readFileSync(existsSync(envExample) ? envExample : envKeys, 'utf8')
+            const required = refContent.split('\n')
+              .map(l => l.trim())
+              .filter(l => l && !l.startsWith('#'))
+              .map(l => l.split('=')[0].trim())
+              .filter(Boolean)
+            const remoteContent = ssh(`cat "${envFile}"`)
+            const remoteKeys = new Set(
+              remoteContent.split('\n')
+                .map(l => l.trim())
+                .filter(l => l && !l.startsWith('#'))
+                .map(l => l.split('=')[0].trim())
+                .filter(Boolean)
+            )
+            const missing = required.filter(k => !remoteKeys.has(k))
+            if (missing.length === 0) {
+              renderCheck(`${envFile} has all ${required.length} required keys`, 'pass')
+            } else {
+              renderCheck(`${envFile} env keys`, 'fail',
+                `${missing.length} missing: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`)
+              fail()
+            }
+          }
+        } else {
+          renderCheck(`${envFile}`, 'fail',
+            `fix: scp .env.production ${host}:${envFile}  (or use fli env:set --remote)`)
+          fail()
+        }
+
+        // Container state
+        const container = `${appId}-api`
+        const containerStatus = ssh(`docker inspect ${container} --format '{{.State.Status}}' 2>/dev/null || echo absent`)
+        if (containerStatus === 'absent' || !containerStatus) {
+          renderCheck(`${container}`, 'info', `not running — first deploy will create it`)
+        } else if (containerStatus === 'running') {
+          renderCheck(`${container} status`, 'pass', containerStatus)
+        } else {
+          renderCheck(`${container} status`, 'warn', containerStatus)
+          warn()
+        }
+
+        // Stale lock
+        const lockContent = ssh(`cat ${path}/.deploy.lock 2>/dev/null`)
+        if (lockContent) {
+          renderCheck('deploy lock', 'warn',
+            `lock present (${lockContent}) — clear with: ssh ${host} "rm ${path}/.deploy.lock"`)
+          warn()
+        } else {
+          renderCheck('deploy lock', 'pass', 'clear')
+        }
+
+        // Litestream — informational only
+        const lsRunning = ssh(`pgrep -x litestream > /dev/null && echo ok`)
+        if (lsRunning === 'ok') {
+          renderCheck('Litestream', 'info', 'running on server (continuous WAL replication)')
+        } else {
+          renderCheck('Litestream', 'info', 'not running on server (optional)')
+        }
+
+      } else {
+        renderCheck(`${path} on server`, 'fail',
+          `fix: fli deploy:setup`)
+        fail()
+      }
+    }
+  }
+}
+
+// ─── Summary ──────────────────────────────────────────────────────────────
+echo('')
+if (failed === 0 && warned === 0) {
+  log.success(`All checks passed${flag.remote ? '' : ' (run with --remote for server-side checks)'}`)
+  log.info(`Ready to deploy → \x1b[1mfli deploy${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}\x1b[0m`)
+} else if (failed === 0) {
+  log.warn(`${warned} warning(s) — these won't block a deploy but are worth fixing`)
+  log.info(`To deploy anyway: \x1b[1mfli deploy${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}\x1b[0m`)
+} else {
+  log.error(`${failed} failure(s)${warned > 0 ? `, ${warned} warning(s)` : ''} — fix the items above before deploying`)
+  if (!flag.remote) {
+    log.info(`After local checks pass, run with --remote to verify the server is ready.`)
+  }
+}
+echo('')
+
+// Doctor is read-only — never run any of the deploy/_steps under any
+// circumstance. Setting abort=true short-circuits the auto-discovered
+// step folder that lives at commands/deploy/_steps/.
+context.config.abort = true
+```

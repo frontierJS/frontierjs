@@ -4,16 +4,16 @@ A `type` is a reusable shape for JSON values. Used as `Json @type(T)` on a field
 
 ```
 type Address {
-  street     Text
-  city       Text
-  state      Text?
-  postalCode Text
-  country    Text @default("US")
+  street     String
+  city       String
+  state      String?
+  postalCode String
+  country    String @default("US")
 }
 
 model User {
-  id      Integer @id
-  name    Text
+  id      Int @id
+  name    String
   address Json @type(Address)
 }
 ```
@@ -76,9 +76,9 @@ A type describes a JSON value, which means anything that doesn't make sense in J
 
 | Construct | In a type? |
 |---|:---:|
-| Scalar fields (`Text`, `Integer`, `Real`, `Boolean`, `DateTime`) | ✓ |
-| Optional fields (`Text?`) | ✓ |
-| Array fields (`Text[]`, `Integer[]`) | ✓ |
+| Scalar fields (`String`, `Int`, `Float`, `Boolean`, `DateTime`) | ✓ |
+| Optional fields (`String?`) | ✓ |
+| Array fields (`String[]`, `Int[]`) | ✓ |
 | Enum fields | ✓ |
 | Nested types (`Json @type(Other)`) | ✓ |
 | Validators (`@email`, `@regex`, `@length`, `@gte`, `@lt`, `@url`, `@minItems`, ...) | ✓ |
@@ -86,7 +86,7 @@ A type describes a JSON value, which means anything that doesn't make sense in J
 | `@computed` fields | ✓ |
 | Literal `@default("US")` | ✓ |
 | Relations (`@relation`) | ✗ |
-| `Blob`, `File` field types | ✗ |
+| `Bytes`, `File` field types | ✗ |
 | `@id`, `@unique`, `@map` | ✗ |
 | `@encrypted`, `@guarded`, `@secret` | ✗ |
 | `@default(now())`, `@default(cuid())`, `@default(auth().id)` | ✗ |
@@ -123,13 +123,13 @@ Validators work the same inside a type as they do on columns:
 
 ```
 type Contact {
-  email Text @email
-  phone Text? @regex("^\\+[0-9]+$")
-  age   Integer @gte(0) @lt(150)
+  email String @email
+  phone String? @regex("^\\+[0-9]+$")
+  age   Int @gte(0) @lt(150)
 }
 
 model User {
-  id      Integer @id
+  id      Int @id
   contact Json @type(Contact)
 }
 ```
@@ -202,30 +202,30 @@ This is the same type info that drives validation on writes — type drift betwe
 
 `json_extract` parses the JSON column for each row evaluated. On a 1000-row scan, typed-JSON filters are roughly 1.5x slower than the same filter on a plain text column. For most applications this is invisible. For very hot queries on large tables, two paths help:
 
-1. **Promote frequently-filtered keys to real columns.** If you're filtering on `address.city` constantly, model `city` as a top-level Text column and keep the rest of the address inside the typed JSON. The query becomes a column scan; the JSON column carries the rest.
+1. **Promote frequently-filtered keys to real columns.** If you're filtering on `address.city` constantly, model `city` as a top-level String column and keep the rest of the address inside the typed JSON. The query becomes a column scan; the JSON column carries the rest.
 
 2. **Use an expression index.** SQLite supports `CREATE INDEX idx_user_city ON user (json_extract(addr, '$.city'))` — Litestone doesn't currently emit these from the schema, but you can create them manually in a migration. The query planner will pick them up automatically.
 
 ### What's NOT supported
 
-- **`has`, `hasEvery`, `hasSome`, `isEmpty`** — these operators are for plain JSON array columns (e.g. `tags Text[]`), not for typed JSON sub-keys. Inside a typed JSON path, use array-shape filtering at the leaf level if needed.
-- **Filtering on array elements inside typed JSON.** A `type Tags { values Text[] }` field's `values` array can be matched as a whole or with `in`, but you can't currently express "any element matches X" inside a typed JSON path. If you need that, use a regular `Text[]` column.
+- **`has`, `hasEvery`, `hasSome`, `isEmpty`** — these operators are for plain JSON array columns (e.g. `tags String[]`), not for typed JSON sub-keys. Inside a typed JSON path, use array-shape filtering at the leaf level if needed.
+- **Filtering on array elements inside typed JSON.** A `type Tags { values String[] }` field's `values` array can be matched as a whole or with `in`, but you can't currently express "any element matches X" inside a typed JSON path. If you need that, use a regular `String[]` column.
 
 ## Nested types
 
 Types can reference other types:
 
 ```
-type Coordinates { lat Real; lng Real }
+type Coordinates { lat Float; lng Float }
 
 type Address {
-  street Text
-  city   Text
+  street String
+  city   String
   coords Json @type(Coordinates)
 }
 
 model Place {
-  id      Integer @id
+  id      Int @id
   address Json @type(Address)
 }
 ```
@@ -238,7 +238,7 @@ Mark the field optional with `Json?` to allow null at the column level:
 
 ```
 model User {
-  id      Integer @id
+  id      Int @id
   address Json? @type(Address)     // can be null
 }
 ```

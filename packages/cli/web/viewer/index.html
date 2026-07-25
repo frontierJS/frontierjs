@@ -57,6 +57,51 @@ function attrsFromProp(name, prop) {
   return a
 }
 
+// ── Palette / typography (must precede any const that reads C) ───────────────
+const { useState } = React;
+const C = {
+  bg: "#0c0b09",
+  surface: "#131411",
+  surface2: "#0f0e0c",
+  border: "#242420",
+  border2: "#2a2824",
+  text: "#f0ede8",
+  textMid: "#c8c4bc",
+  textDim: "#6a6660",
+  textFaint: "#3a3830",
+  amber: "#d4920a",
+  amberBright: "#eaa520",
+  amberDim: "#181205",
+  amberBorder: "#3d2a06",
+  blue: "#4a7fa8",
+  blueBright: "#60a5fa",
+  blueDim: "#081420",
+  blueBorder: "#0e2d4a",
+  green: "#4a9e5c",
+  greenBright: "#4ade80",
+  greenDim: "#071410",
+  greenBorder: "#0e3318",
+  orange: "#c26a1a",
+  orangeBright: "#f08030",
+  orangeDim: "#160a02",
+  orangeBorder: "#3d2008",
+  pink: "#a0366a",
+  pinkBright: "#e060a0",
+  pinkDim: "#160510",
+  pinkBorder: "#4a1030",
+  purple: "#7c3aed",
+  purpleBright: "#a78bfa",
+  purpleDim: "#100d1a",
+  purpleBorder: "#2d1660",
+  teal: "#2dd4bf",
+  tealDim: "#071514",
+  tealBorder: "#0e3330",
+  red: "#cc4444",
+  redDim: "#160505",
+  redBorder: "#5a1414"
+};
+const FONT = "'IBM Plex Mono', 'JetBrains Mono', 'Fira Code', monospace";
+
 // ── Package registry (tier-1 FJS packages) ────────────────────────────────────
 // Canonical chip data — colors, chain points, config descriptions.
 // Merged with installation status from the project map.
@@ -280,49 +325,6 @@ function useProjectMap() {
 
 
 // ── FJSChain (compiled from FJSChain.jsx) ─────────────────────────────────────
-const { useState } = React;
-const C = {
-  bg: "#0c0b09",
-  surface: "#131411",
-  surface2: "#0f0e0c",
-  border: "#242420",
-  border2: "#2a2824",
-  text: "#f0ede8",
-  textMid: "#c8c4bc",
-  textDim: "#6a6660",
-  textFaint: "#3a3830",
-  amber: "#d4920a",
-  amberBright: "#eaa520",
-  amberDim: "#181205",
-  amberBorder: "#3d2a06",
-  blue: "#4a7fa8",
-  blueBright: "#60a5fa",
-  blueDim: "#081420",
-  blueBorder: "#0e2d4a",
-  green: "#4a9e5c",
-  greenBright: "#4ade80",
-  greenDim: "#071410",
-  greenBorder: "#0e3318",
-  orange: "#c26a1a",
-  orangeBright: "#f08030",
-  orangeDim: "#160a02",
-  orangeBorder: "#3d2008",
-  pink: "#a0366a",
-  pinkBright: "#e060a0",
-  pinkDim: "#160510",
-  pinkBorder: "#4a1030",
-  purple: "#7c3aed",
-  purpleBright: "#a78bfa",
-  purpleDim: "#100d1a",
-  purpleBorder: "#2d1660",
-  teal: "#2dd4bf",
-  tealDim: "#071514",
-  tealBorder: "#0e3330",
-  red: "#cc4444",
-  redDim: "#160505",
-  redBorder: "#5a1414"
-};
-const FONT = "'IBM Plex Mono', 'JetBrains Mono', 'Fira Code', monospace";
 const CHAIN_DATA = {
   nodes: [
     // Outgoing (top row, left→right) ─ result/response path

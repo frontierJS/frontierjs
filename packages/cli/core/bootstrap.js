@@ -220,27 +220,56 @@ function printHelp(meta, filePath) {
 // which prints clean error messages and supports --debug for full stacks.
 export async function run(process) {
   const argv = minimist(process.argv.slice(2), { boolean: ['help', 'h', 'dry', 'd'] })
-  let { _: [cmd, ...rawArgs], ...flag } = argv
+  let {
+    _: [cmd, ...rawArgs],
+    ...flag
+  } = argv
   // Treat `?` as an alias for `help`
-  if (cmd === '?') { cmd = 'help' }
+  if (cmd === '?') {
+    cmd = 'help'
+  }
 
-  // fli --help or fli (no command) — show usage
-  if (!cmd || flag.help || flag.h) {
-    const line  = (s) => process.stdout.write(s + '\n')
-    const dim   = (s) => chalk.dim(s)
+  // fli (no command) — show usage.
+  // NOTE: only short-circuit here when there is NO command. `--help`/`-h`
+  // WITH a command name (e.g. `fli crypto:keygen --help`) must fall through
+  // to the per-command help path below. `fli`, `fli --help`, and `fli -h`
+  // still land here because minimist leaves `_` empty, so `cmd` is undefined.
+  if (!cmd) {
+    const line = (s) => process.stdout.write(s + '\n')
+    const dim = (s) => chalk.dim(s)
     const green = (s) => chalk.green(s)
-    const cyan  = (s) => chalk.cyan(s)
+    const cyan = (s) => chalk.cyan(s)
     const amber = (s) => chalk.hex('#f5a623')(s)
     line('')
     line(`  ${amber('fli')}  ${dim('·  frontier cli')}`)
     line('')
     line(`  ${dim('Usage:')}`)
     line(`    ${cyan('fli')} ${green('<command>')} ${dim('[args] [--flags]')}`)
-    line(`    ${cyan('fli')} ${green('<namespace>')}            ${dim('show all commands in a namespace')}`)
-    line(`    ${cyan('fli')} ${green('<command>')} ${dim('--help')}        ${dim('detailed help for a command')}`)
-    line(`    ${cyan('fli')} ${dim('help')} ${green('<command>')}          ${dim('same as --help')}`)
-    line(`    ${cyan('fli')} ${dim('?')} ${green('<query>')}               ${dim('search commands by keyword')}`)
-    line(`    ${cyan('fli')} ${dim('list')}                    ${dim('all commands grouped by namespace')}`)
+    line(
+      `    ${cyan('fli')} ${green('<namespace>')}            ${dim(
+        'show all commands in a namespace'
+      )}`
+    )
+    line(
+      `    ${cyan('fli')} ${green('<command>')} ${dim('--help')}        ${dim(
+        'detailed help for a command'
+      )}`
+    )
+    line(
+      `    ${cyan('fli')} ${dim('help')} ${green('<command>')}          ${dim(
+        'same as --help'
+      )}`
+    )
+    line(
+      `    ${cyan('fli')} ${dim('?')} ${green('<query>')}               ${dim(
+        'search commands by keyword'
+      )}`
+    )
+    line(
+      `    ${cyan('fli')} ${dim('list')}                    ${dim(
+        'all commands grouped by namespace'
+      )}`
+    )
     line('')
     line(`  ${dim('Examples:')}`)
     line(`    ${dim('fli git:commit')}`)
@@ -267,8 +296,8 @@ export async function run(process) {
       return
     }
 
-    const core    = commands.filter(m => m._source === 'core')
-    const project = commands.filter(m => m._source === 'project')
+    const core = commands.filter((m) => m._source === 'core')
+    const project = commands.filter((m) => m._source === 'project')
 
     if (!core.length && !project.length) {
       logger('No commands found.', 'warn')
@@ -281,13 +310,13 @@ export async function run(process) {
     const aliasW = 12
 
     // Colour helpers
-    const dim    = (s) => chalk.dim(s)
-    const green  = (s) => chalk.green(s)
+    const dim = (s) => chalk.dim(s)
+    const green = (s) => chalk.green(s)
     const yellow = (s) => chalk.yellow(s)
-    const cyan   = (s) => chalk.cyan(s)
-    const bold   = (s) => chalk.bold(s)
-    const grey   = (s) => chalk.dim(s)
-    const line   = () => process.stdout.write('\n')
+    const cyan = (s) => chalk.cyan(s)
+    const bold = (s) => chalk.bold(s)
+    const grey = (s) => chalk.dim(s)
+    const line = () => process.stdout.write('\n')
 
     const printRow = (title, alias, desc) => {
       const t = green(title.padEnd(titleW))
@@ -311,12 +340,22 @@ export async function run(process) {
 
     // Header
     line()
-    process.stdout.write(`  ${bold('FLI')}  ${dim('v0.1.0')}  ${dim('·')}  ${dim(commands.length + ' commands')}\n`)
+    process.stdout.write(
+      `  ${bold('FLI')}  ${dim('v0.1.0')}  ${dim('·')}  ${dim(
+        commands.length + ' commands'
+      )}\n`
+    )
     line()
-    process.stdout.write(`  ${dim('Usage:')}  ${cyan('fli')} ${green('<command>')} ${dim('[args] [--flags]')}\n`)
+    process.stdout.write(
+      `  ${dim('Usage:')}  ${cyan('fli')} ${green('<command>')} ${dim('[args] [--flags]')}\n`
+    )
     line()
     process.stdout.write(`  ${dim('─'.repeat(58))}\n`)
-    process.stdout.write(`  ${dim('command'.padEnd(titleW))}  ${dim('alias'.padEnd(aliasW))}  ${dim('description')}\n`)
+    process.stdout.write(
+      `  ${dim('command'.padEnd(titleW))}  ${dim('alias'.padEnd(aliasW))}  ${dim(
+        'description'
+      )}\n`
+    )
     line()
 
     // Core commands grouped by namespace
@@ -347,7 +386,11 @@ export async function run(process) {
     // Footer
     line()
     process.stdout.write(`  ${dim('─'.repeat(58))}\n`)
-    process.stdout.write(`  ${dim('Run')} ${cyan('fli')} ${green('<command>')} ${dim('--help')} ${dim('for detailed usage')}\n`)
+    process.stdout.write(
+      `  ${dim('Run')} ${cyan('fli')} ${green('<command>')} ${dim('--help')} ${dim(
+        'for detailed usage'
+      )}\n`
+    )
     line()
 
     return
@@ -370,15 +413,26 @@ export async function run(process) {
     }
     // bare `fli help` or `fli ?` — show usage
     process.stdout.write('\n')
-    process.stdout.write(chalk.hex('#f5a623')('  fli') + chalk.dim('  ·  frontier cli') + '\n\n')
-    process.stdout.write(chalk.dim('  Run ') + chalk.cyan('fli list') + chalk.dim(' to see all commands') + '\n')
-    process.stdout.write(chalk.dim('  Run ') + chalk.cyan('fli ? <query>') + chalk.dim(' to search') + '\n')
-    process.stdout.write(chalk.dim('  Run ') + chalk.cyan('fli <namespace>') + chalk.dim(' to see a namespace') + '\n\n')
+    process.stdout.write(
+      chalk.hex('#f5a623')('  fli') + chalk.dim('  ·  frontier cli') + '\n\n'
+    )
+    process.stdout.write(
+      chalk.dim('  Run ') + chalk.cyan('fli list') + chalk.dim(' to see all commands') + '\n'
+    )
+    process.stdout.write(
+      chalk.dim('  Run ') + chalk.cyan('fli ? <query>') + chalk.dim(' to search') + '\n'
+    )
+    process.stdout.write(
+      chalk.dim('  Run ') +
+        chalk.cyan('fli <namespace>') +
+        chalk.dim(' to see a namespace') +
+        '\n\n'
+    )
     return
   }
 
   const registry = buildRegistry()
-  const entry    = registry.get(cmd)
+  const entry = registry.get(cmd)
 
   if (!entry) {
     // ── Suggestion engine ────────────────────────────────────────────────────
@@ -390,31 +444,44 @@ export async function run(process) {
     //   4. description keyword fli deploy  →  api:deploy, web:deploy, deploy:all
     const { uniqueCommands } = await import('./registry.js')
     const all = uniqueCommands(registry)
-    const q   = cmd.toLowerCase()
+    const q = cmd.toLowerCase()
 
-    const scored = all.map(m => {
-      const title = m.title.toLowerCase()
-      const alias = (m.alias || '').toLowerCase()
-      const desc  = (m.description || '').toLowerCase()
-      const [ns, name = ''] = title.split(':')
+    const scored = all
+      .map((m) => {
+        const title = m.title.toLowerCase()
+        const alias = (m.alias || '').toLowerCase()
+        const desc = (m.description || '').toLowerCase()
+        const [ns, name = ''] = title.split(':')
 
-      let score = 0
-      if (ns === q)                      score = 100  // exact namespace match
-      else if (alias === q)              score = 95   // exact alias
-      else if (title.startsWith(q + ':')) score = 90  // fli github:c...
-      else if (ns.startsWith(q))         score = 85   // namespace prefix: ws→workspace
-      else if (alias.startsWith(q))      score = 75   // alias prefix
-      else if (title.includes(':' + q))  score = 65   // q is the command name part
-      else if (title.includes(q))        score = 55   // partial anywhere in title
-      else if (name.includes(q))         score = 45   // name part of title
-      else if (alias.includes(q))        score = 35   // alias substring
-      else if (desc.split(' ').includes(q)) score = 25 // whole word in description
+        let score = 0
+        if (ns === q) score = 100
+        // exact namespace match
+        else if (alias === q) score = 95
+        // exact alias
+        else if (title.startsWith(q + ':')) score = 90
+        // fli github:c...
+        else if (ns.startsWith(q)) score = 85
+        // namespace prefix: ws→workspace
+        else if (alias.startsWith(q)) score = 75
+        // alias prefix
+        else if (title.includes(':' + q)) score = 65
+        // q is the command name part
+        else if (title.includes(q)) score = 55
+        // partial anywhere in title
+        else if (name.includes(q)) score = 45
+        // name part of title
+        else if (alias.includes(q)) score = 35
+        // alias substring
+        else if (desc.split(' ').includes(q)) score = 25 // whole word in description
 
-      return { meta: m, score }
-    }).filter(s => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 6)
+        return { meta: m, score }
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
 
     // ── Exact namespace match → show full namespace help ─────────────────────
-    const nsMatches = all.filter(m => m.title.split(':')[0] === q)
+    const nsMatches = all.filter((m) => m.title.split(':')[0] === q)
 
     if (nsMatches.length) {
       await printNamespace(q, nsMatches, flag.verbose || false)
@@ -429,13 +496,18 @@ export async function run(process) {
       process.stdout.write(chalk.dim('  Did you mean?') + '\n\n')
       for (const { meta: m } of scored) {
         const alias = m.alias ? chalk.dim(`  ${m.alias}`) : ''
-        const desc  = m.description ? chalk.dim(`  — ${m.description}`) : ''
+        const desc = m.description ? chalk.dim(`  — ${m.description}`) : ''
         process.stdout.write(`  ${chalk.green(m.title)}${alias}${desc}\n`)
       }
       process.stdout.write('\n')
     } else {
       process.stdout.write('\n')
-      process.stdout.write(chalk.dim('  Run ') + chalk.cyan('fli list') + chalk.dim(' to see all available commands') + '\n\n')
+      process.stdout.write(
+        chalk.dim('  Run ') +
+          chalk.cyan('fli list') +
+          chalk.dim(' to see all available commands') +
+          '\n\n'
+      )
     }
 
     return
@@ -443,7 +515,7 @@ export async function run(process) {
 
   // fli <command> --help  or  fli help <command>
   if (flag.help || flag.h || (cmd === 'help' && rawArgs[0])) {
-    const target = (cmd === 'help') ? registry.get(rawArgs[0]) : entry
+    const target = cmd === 'help' ? registry.get(rawArgs[0]) : entry
     if (!target) {
       logger(`Command "${rawArgs[0]}" not found`, 'error')
       return

@@ -399,17 +399,17 @@ class Parser {
   // ── View block ───────────────────────────────────────────────────────────────
   //
   // view userSummary {
-  //   id          Integer
-  //   name        Text
-  //   accountName Text
+  //   id          Int
+  //   name        String
+  //   accountName String
   //
   //   @@sql("SELECT u.id, u.name, a.name AS accountName FROM users u ...")
   //   @@db(logs)
   // }
   //
   // view accountStats {
-  //   accountId Integer
-  //   total     Integer
+  //   accountId Int
+  //   total     Int
   //
   //   @@materialized
   //   @@sql("SELECT accountId, COUNT(*) AS total FROM events GROUP BY accountId")
@@ -842,6 +842,38 @@ class Parser {
       case 'accept':     return { kind: 'accept', types: this.parseParenString() }   // e.g. @accept("image/*")
       case 'date':       return { kind: 'date',       ...this.parseOptMessage() }
       case 'datetime':   return { kind: 'datetime',   ...this.parseOptMessage() }
+      case 'time': {
+        // @time                       — HH:MM, 24-hour, leading zeros required
+        // @time(seconds: true)        — also accepts HH:MM:SS
+        // @time(message: "...")       — optional custom error message
+        // @time(seconds: true, message: "...")
+        let seconds = false
+        let message = null
+        if (this.check(TK.LPAREN)) {
+          this.eat(TK.LPAREN)
+          // Comma-separated named args. Both `seconds: <bool>` and `message: <string>`.
+          // No positional form — keeps the surface tiny and unambiguous.
+          while (!this.check(TK.RPAREN)) {
+            const name = this.eat(TK.IDENT).value
+            this.eat(TK.COLON)
+            if (name === 'seconds') {
+              const t = this.peek()
+              if (t.type !== TK.BOOL)
+                throw new ParseError(`@time(seconds: ...) expects true/false, got ${t.value}`, t)
+              seconds = this.eat(TK.BOOL).value
+            } else if (name === 'message') {
+              if (!this.check(TK.STRING))
+                throw new ParseError(`@time(message: ...) expects a string`, this.peek())
+              message = this.eat(TK.STRING).value
+            } else {
+              throw new ParseError(`Unknown @time argument '${name}' — expected 'seconds' or 'message'`, this.peek())
+            }
+            if (this.check(TK.COMMA)) this.eat(TK.COMMA)
+          }
+          this.eat(TK.RPAREN)
+        }
+        return { kind: 'time', seconds, ...(message ? { message } : {}) }
+      }
       case 'regex':      return { kind: 'regex',      ...this.parseRegex() }
       case 'length':     return { kind: 'length',     ...this.parseLength() }
       case 'startsWith': return { kind: 'startsWith', ...this.parseTextMessage('startsWith') }
@@ -1264,7 +1296,38 @@ class Parser {
       case 'unique': return { kind: 'uniqueIndex',  fields: this.parseFieldListParen() }
       case 'strict':   return { kind: 'strict' }    // legacy explicit opt-in
       case 'noStrict': return { kind: 'noStrict' }  // opt-out from default strict
-      case 'fts':    return { kind: 'fts',          fields: this.parseFieldListParen() }
+      case 'fts': {
+        // @@fts([field1, field2])                   — default tokenizer (unicode61)
+        // @@fts([field1], tokenize: trigram)        — typo-tolerant char-level matching
+        // @@fts([title], tokenize: porter)          — English stemming
+        // @@fts([title], tokenize: ascii)           — ASCII-only folding
+        //
+        // The tokenizer choice affects what the FTS5 virtual table indexes and
+        // therefore what `search()` matches. unicode61 is word-based; trigram
+        // is character-overlap (fuzzy); porter applies English stemming;
+        // ascii is lowercase-ASCII fold. The model picks one. Unknown values
+        // throw at parse time.
+        const ALLOWED_TOKENIZERS = new Set(['unicode61', 'ascii', 'porter', 'trigram'])
+        this.eat(TK.LPAREN)
+        const fields = this.parseFieldList()
+        let tokenize = 'unicode61'   // FTS5 default — same behavior as before this change
+        if (this.maybeEat(TK.COMMA)) {
+          // Named arg: tokenize: <ident>
+          const argName = this.eat(TK.IDENT).value
+          if (argName !== 'tokenize')
+            throw new ParseError(`@@fts: unknown argument '${argName}' — expected 'tokenize'`, this.peek())
+          this.eat(TK.COLON)
+          tokenize = this.eat(TK.IDENT).value
+          if (!ALLOWED_TOKENIZERS.has(tokenize))
+            throw new ParseError(
+              `@@fts(tokenize: ${tokenize}): unknown tokenizer. ` +
+              `Allowed: ${[...ALLOWED_TOKENIZERS].join(', ')}`,
+              this.peek(),
+            )
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'fts', fields, tokenize }
+      }
       case 'map':    return { kind: 'map',          name: this.parseParenString() }
       case 'external': return { kind: 'external' }  // table exists outside migrations
       case 'softDelete': {

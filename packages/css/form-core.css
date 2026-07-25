@@ -1,0 +1,100 @@
+/*
+ * utilities/form-core.css
+ * .field shortcut lives in uno.config.ts.
+ * Tones come from tones.css — .field reads --bg-mix for state borders.
+ */
+
+.field {
+  --field-bg:     var(--surface);
+  --field-border: var(--rule-strong);
+  --field-color:  var(--ink);
+
+  background:    var(--field-bg);
+  color:         var(--field-color);
+  border:        1px solid var(--field-border);
+  border-radius: var(--field-radius);
+  font-family:   var(--font-primary);
+
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.field::placeholder { color: var(--ink-mute); }
+
+.field:focus {
+  outline:      none;
+  border-color: var(--ring);
+  box-shadow:   0 0 0 var(--ring-width) color-mix(in srgb, var(--ring) 18%, transparent);
+}
+
+.field:disabled {
+  background: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  color:      var(--ink-mute);
+  cursor:     not-allowed;
+}
+
+/* ── State tones — any tone class sets the border via --bg-mix ── */
+.field.info,
+.field.success,
+.field.warning,
+.field.danger {
+  --field-border: var(--bg-mix);
+}
+.field.info:focus,
+.field.success:focus,
+.field.warning:focus,
+.field.danger:focus {
+  box-shadow: 0 0 0 var(--ring-width) color-mix(in srgb, var(--bg-mix) 18%, transparent);
+}
+
+/* ── Type-specific tweaks ─────────────────────────────────────── */
+textarea.field {
+  resize:      vertical;
+  min-height:  80px;
+  font-family: var(--font-primary);
+}
+
+select.field {
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%236b7280' stroke-width='1.5'><polyline points='3,5 6,8 9,5'/></svg>");
+  background-repeat:   no-repeat;
+  background-position: right 12px center;
+  background-size:     12px;
+  padding-right:       36px;
+  cursor:              pointer;
+}
+
+/* ── Composition helpers ──────────────────────────────────────── */
+.field-group {
+  display:        flex;
+  flex-direction: column;
+  gap:            6px;
+}
+.field-group > label {
+  font-size:   13px;
+  font-weight: 500;
+  color:       var(--ink-soft);
+}
+
+.field-hint {
+  font-size: 12px;
+  color:     var(--ink-mute);
+}
+.field-hint.info    { color: var(--color-info); }
+.field-hint.success { color: var(--color-success); }
+.field-hint.warning { color: var(--color-warning); }
+.field-hint.danger  { color: var(--color-danger); }
+
+.field-check {
+  display:     inline-flex;
+  align-items: center;
+  gap:         8px;
+  cursor:      pointer;
+  font-size:   14px;
+  color:       var(--ink);
+}
+.field-check input {
+  width:        16px;
+  height:       16px;
+  margin:       0;
+  cursor:       pointer;
+  accent-color: var(--color-primary);
+}

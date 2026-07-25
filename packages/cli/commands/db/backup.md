@@ -15,7 +15,7 @@ flags:
 ---
 
 <script>
-import { mkdirSync, existsSync } from 'fs'
+import { mkdirSync } from 'fs'
 </script>
 
 ```js

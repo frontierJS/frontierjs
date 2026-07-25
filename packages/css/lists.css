@@ -1,0 +1,87 @@
+/*
+ * utilities/lists.css
+ * Two list patterns, both built on <ul>/<ol> + <li>.
+ *
+ *   Items — lightweight entries (contact methods, nav links, metadata).
+ *           Minimal chrome; .menu variant adds interactive hover.
+ *
+ *   Rows  — record-style entries with a content area and trailing actions
+ *           (checklist items, settings rows, admin list rows).
+ *
+ * Note on naming: the Block-tier vocab term is "Row", but the class is
+ * .list-row to avoid colliding with Bootstrap's grid .row. The vocab
+ * concept and the class name diverge on purpose.
+ */
+
+/* ── Items ─────────────────────────────────────────────────────────
+ *   <ul class="items">
+ *     <li class="item"><a class="link" href="…">…</a></li>
+ *   </ul>
+ */
+.items {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.25rem;
+  list-style:     none;
+  margin:         0;
+  padding:        0;
+}
+.item {
+  display:     flex;
+  align-items: center;
+  gap:         0.5rem;
+}
+
+/* Menu variant — interactive entries with padding + hover */
+.items.menu .item {
+  padding:       0.375rem 0.625rem;
+  border-radius: var(--btn-radius);
+  cursor:        pointer;
+}
+.items.menu .item:hover {
+  background: var(--surface-sunken);
+}
+
+/* ── Rows ──────────────────────────────────────────────────────────
+ *   <ul class="rows divided">
+ *     <li class="list-row">
+ *       <label class="field-check">…</label>
+ *       <div class="row-actions">
+ *         <button class="btn icon">…</button>
+ *       </div>
+ *     </li>
+ *   </ul>
+ */
+.rows {
+  display:        flex;
+  flex-direction: column;
+  list-style:     none;
+  margin:         0;
+  padding:        0;
+}
+.list-row {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             0.75rem;
+  padding:         0.5rem 0.25rem;
+}
+
+/* Divided variant — hairline rules between rows */
+.rows.divided .list-row + .list-row {
+  border-top: 1px solid var(--rule);
+}
+
+/* Hover variant — highlight on row hover (for clickable rows) */
+.rows.hover .list-row:hover {
+  background:    var(--surface-sunken);
+  border-radius: var(--btn-radius);
+}
+
+/* Trailing actions — pushed to the row's end, shrink-proof */
+.row-actions {
+  display:     flex;
+  align-items: center;
+  gap:         0.25rem;
+  flex-shrink: 0;
+}

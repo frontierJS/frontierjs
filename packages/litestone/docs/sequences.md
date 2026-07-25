@@ -6,10 +6,10 @@
 
 ```prisma
 model Invoice {
-  id            Integer @id
-  accountId     Integer
-  invoiceNumber Integer @sequence(scope: accountId)
-  amount        Real
+  id            Int @id
+  accountId     Int
+  invoiceNumber Int @sequence(scope: accountId)
+  amount        Float
   createdAt     DateTime @default(now())
 }
 ```
@@ -49,11 +49,11 @@ A model can have multiple `@sequence` fields with different scopes:
 
 ```prisma
 model Document {
-  id          Integer @id
-  accountId   Integer
-  projectId   Integer
-  docNumber   Integer @sequence(scope: accountId)    // per-account
-  taskNumber  Integer @sequence(scope: projectId)    // per-project
+  id          Int @id
+  accountId   Int
+  projectId   Int
+  docNumber   Int @sequence(scope: accountId)    // per-account
+  taskNumber  Int @sequence(scope: projectId)    // per-project
 }
 ```
 
@@ -63,10 +63,10 @@ Use a compound scope by passing an array:
 
 ```prisma
 model LineItem {
-  id         Integer @id
-  accountId  Integer
-  orderId    Integer
-  lineNumber Integer @sequence(scope: [accountId, orderId])
+  id         Int @id
+  accountId  Int
+  orderId    Int
+  lineNumber Int @sequence(scope: [accountId, orderId])
 }
 ```
 

@@ -28,28 +28,28 @@ enum LeadStatus {
 // Define once — reusable SQL expressions that expand to GENERATED ALWAYS AS columns.
 // Use {paramName} to reference fields — no quote escaping needed.
 
-function slug(text: Text): Text {
+function slug(text: String): String {
   @@expr("lower(trim(replace(replace(replace({text}, ' ', '-'), '.', ''), ',', '')))")
 }
 
-function fullName(first: Text, last: Text): Text {
+function fullName(first: String, last: String): String {
   @@expr("trim(COALESCE({first}, '') || ' ' || COALESCE({last}, ''))")
 }
 
-function initials(first: Text, last: Text): Text {
+function initials(first: String, last: String): String {
   @@expr("upper(substr(COALESCE({first},'?'),1,1)) || upper(substr(COALESCE({last},'?'),1,1))")
 }
 
-function discounted(price: Integer, pct: Real): Integer {
+function discounted(price: Int, pct: Float): Int {
   @@expr("CAST({price} * (1.0 - {pct}) AS INTEGER)")
 }
 
 // ─── Accounts ─────────────────────────────────────────────────────────────────
 
 model accounts {
-  id        Integer  @id
-  name      Text
-  slug      Text     @slug(name)         // STORED generated column — queryable + indexable
+  id        Int  @id
+  name      String
+  slug      String     @slug(name)         // STORED generated column — queryable + indexable
   plan      Plan     @default(starter)   // enum with CHECK constraint
   meta      Json?                        // auto-parsed to/from JSON
   createdAt DateTime @default(now())     // auto-validated ISO-8601
@@ -62,14 +62,14 @@ model accounts {
 // All @@index entries get WHERE "deletedAt" IS NULL (partial indexes)
 
 model users {
-  id          Integer   @id
+  id          Int   @id
   account     accounts  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId   Integer
-  email       Text      @unique @email @lower    // @lower transform before write
-  firstName   Text?     @trim
-  lastName    Text?     @trim
-  displayName Text      @fullName(firstName, lastName)   // generated full name
-  initials    Text      @initials(firstName, lastName)   // generated initials
+  accountId   Int
+  email       String      @unique @email @lower    // @lower transform before write
+  firstName   String?     @trim
+  lastName    String?     @trim
+  displayName String      @fullName(firstName, lastName)   // generated full name
+  initials    String      @initials(firstName, lastName)   // generated initials
   isAdmin     Boolean   @default(false)           // stored as 0/1, returned as true/false
   role        Role      @default(member)
   prefs       Json?
@@ -84,14 +84,14 @@ model users {
 // ─── Products ─────────────────────────────────────────────────────────────────
 
 model products {
-  id        Integer  @id
+  id        Int  @id
   account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId Integer
-  name      Text
-  slug      Text     @slug(name)          // same function, different model
-  price     Integer
-  discount  Real     @default(0.0)
-  salePrice Integer  @discounted(price, discount)  // computed from two fields
+  accountId Int
+  name      String
+  slug      String     @slug(name)          // same function, different model
+  price     Int
+  discount  Float     @default(0.0)
+  salePrice Int  @discounted(price, discount)  // computed from two fields
   createdAt DateTime @default(now())
   deletedAt DateTime?
 
@@ -102,17 +102,17 @@ model products {
 // ─── Leads ────────────────────────────────────────────────────────────────────
 
 model leads {
-  id        Integer    @id
+  id        Int    @id
   account   accounts   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId Integer
-  firstName Text?      @trim
-  lastName  Text?      @trim
-  fullName  Text       @fullName(firstName, lastName)
-  email     Text?      @email
-  phone     Text?
+  accountId Int
+  firstName String?      @trim
+  lastName  String?      @trim
+  fullName  String       @fullName(firstName, lastName)
+  email     String?      @email
+  phone     String?
   status    LeadStatus @default(active)
-  score     Real?      @gte(0) @lte(100)
-  notes     Text?
+  score     Float?      @gte(0) @lte(100)
+  notes     String?
   createdAt DateTime   @default(now())
   deletedAt DateTime?
 
@@ -126,14 +126,14 @@ model leads {
 // db.messages.search('hello world') works out of the box
 
 model messages {
-  id        Integer  @id
+  id        Int  @id
   user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Integer
+  userId    Int
   account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId Integer
-  title     Text?
-  body      Text
-  channel   Text     @default("email")
+  accountId Int
+  title     String?
+  body      String
+  channel   String     @default("email")
   isRead    Boolean  @default(false)
   sentAt    DateTime @default(now())
   deletedAt DateTime?
@@ -148,13 +148,13 @@ model messages {
 // No deletedAt — hard deletes only (audit records should never be soft-deleted)
 
 model audit_logs {
-  id         Integer  @id
+  id         Int  @id
   account    accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId  Integer
-  userId     Integer?
-  action     Text
-  resource   Text
-  resourceId Integer?
+  accountId  Int
+  userId     Int?
+  action     String
+  resource   String
+  resourceId Int?
   meta       Json?
   createdAt  DateTime @default(now())
 

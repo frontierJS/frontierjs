@@ -191,19 +191,49 @@ class TenantRegistry {
 
   // ── Open a connection to a tenant DB ───────────────────────────────────────
 
+  // In-flight opens, memoized per tenant id. Without this, K concurrent get()
+  // calls for the same cold tenant each run a full createClient during the
+  // async gap between the pool check and pool.set — K sets of SQLite handles,
+  // K-1 of them leaked (never $close()d), and at capacity each duplicate
+  // evicts an innocent pool entry (thundering herd on deploy restarts).
+  #opening = new Map()
+
   async #open(id) {
     const cached = this.#pool.get(id)
     if (cached) return cached
 
+    const inflight = this.#opening.get(id)
+    if (inflight) return inflight
+
+    const promise = this.#doOpen(id).finally(() => this.#opening.delete(id))
+    this.#opening.set(id, promise)
+    return promise
+  }
+
+  async #doOpen(id) {
     const path = this.#inMemory ? ':memory:' : this.#dbPath(id)
     if (!this.#inMemory && !existsSync(path))
       throw new Error(`Tenant "${id}" does not exist`)
 
     const encKey = await this.#encryptionFor(id)
+
+    // Multi-DB schemas resolve paths from their database blocks, which would
+    // send EVERY tenant to the same shared files — a cross-tenant isolation
+    // hole. Override every sqlite database to this tenant's own file (all of a
+    // tenant's sqlite databases live in one file, per the documented layout).
+    // jsonl/logger databases stay schema-global by design.
+    const sqliteOverrides = {}
+    if (!this.#inMemory) {
+      for (const d of (this.#parseResult.schema.databases ?? [])) {
+        if (!d.driver || d.driver === 'sqlite') sqliteOverrides[d.name] = { path }
+      }
+    }
+
     const db  = await createClient({
       ...this.#clientOptions,
       parsed:        this.#parseResult,
       db:            path,
+      ...(Object.keys(sqliteOverrides).length ? { databases: sqliteOverrides } : {}),
       encryptionKey: encKey ?? this.#clientOptions.encryptionKey,
     })
 
@@ -252,20 +282,25 @@ class TenantRegistry {
     raw.run('PRAGMA foreign_keys = ON')
 
     if (this.#migrationsDir && existsSync(this.#migrationsDir)) {
-      // Apply migration files — same as running `litestone migrate apply`
-      apply(raw, this.#migrationsDir)
+      // Apply migration files — same as running `litestone migrate apply`.
+      // MUST be awaited: apply() is async, and the raw handle closes below.
+      await apply(raw, this.#migrationsDir)
     } else {
-      // Fall back to fresh DDL from schema.
-      // In multi-DB schemas only generate DDL for the 'main' SQLite database —
-      // jsonl/logger databases are not managed as SQLite files per tenant.
-      const hasDatabaseBlocks = this.#parseResult.schema.databases?.some(
+      // Fall back to fresh DDL from schema. A tenant's single file holds ALL
+      // of the schema's sqlite databases (main + analytics + …), so generate
+      // DDL for every sqlite database — jsonl/logger stay schema-global.
+      const sqliteDbs = (this.#parseResult.schema.databases ?? []).filter(
         d => !d.driver || d.driver === 'sqlite'
       )
-      const ddl = hasDatabaseBlocks
-        ? generateDDLForDatabase(this.#parseResult.schema, 'main')
-        : generateDDL(this.#parseResult.schema)
-      for (const s of splitStatements(ddl))
-        if (s.trim()) raw.run(s)
+      if (sqliteDbs.length) {
+        for (const d of sqliteDbs) {
+          for (const s of splitStatements(generateDDLForDatabase(this.#parseResult.schema, d.name)))
+            if (s.trim()) raw.run(s)
+        }
+      } else {
+        for (const s of splitStatements(generateDDL(this.#parseResult.schema)))
+          if (s.trim()) raw.run(s)
+      }
     }
     raw.close()
 
@@ -460,11 +495,17 @@ class TenantRegistry {
     const results = await this.#fanOut(ids, async (id) => {
       const path   = this.#dbPath(id)
       const raw    = new Database(path)
-      const applied = apply(raw, this.#migrationsDir)
-      raw.close()
-      // Evict cached connection so next access gets a fresh one post-migration
-      this.#pool.delete(id)
-      return { applied }
+      try {
+        // await BEFORE closing — previously this fired-and-forgot the promise,
+        // closed the DB immediately, and reported 0 applied migrations.
+        const result = await apply(raw, this.#migrationsDir)
+        if (result.error) throw new Error(`migration "${result.failed}" failed: ${result.error}`)
+        return { applied: result.applied?.filter(a => a.ok).length ?? 0 }
+      } finally {
+        raw.close()
+        // Evict cached connection so next access gets a fresh one post-migration
+        this.#pool.delete(id)
+      }
     }, concurrency)
 
     const total  = results.reduce((n, r) => n + (r.result?.applied ?? 0), 0)

@@ -1,0 +1,11 @@
+/* themes/midnight.css — Purple accent, deep contrast. */
+
+.theme-midnight {
+  --color-primary:   #8b5cf6;
+  --color-secondary: #4338ca;
+  --color-muted:     #94a3b8;
+  --color-info:      #06b6d4;
+  --color-success:   #10b981;
+  --color-warning:   #f59e0b;
+  --color-danger:    #ef4444;
+}

@@ -4,28 +4,28 @@
 
 ```prisma
 model Account {
-  id    Integer @id
-  name  Text
+  id    Int @id
+  name  String
   users users[]      // hasMany (inferred from the other side)
 }
 
 model User {
-  id        Integer  @id
+  id        Int  @id
   account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId Integer
+  accountId Int
   posts     posts[]
 }
 
 model Post {
-  id       Integer @id
+  id       Int @id
   author   users   @relation(fields: [authorId], references: [id])
-  authorId Integer
+  authorId Int
   tags     tags[]  // implicit many-to-many (no join model needed)
 }
 
 model Tag {
-  id    Integer @id
-  label Text
+  id    Int @id
+  label String
   posts posts[]
 }
 ```
@@ -136,10 +136,10 @@ Computed aggregates from related models, declared in the schema and evaluated at
 
 ```prisma
 model Account {
-  id         Integer  @id
-  name       Text
-  userCount  Integer  @from(users, count: true)
-  revenue    Real     @from(orders, sum: amount)
+  id         Int  @id
+  name       String
+  userCount  Int  @from(users, count: true)
+  revenue    Float     @from(orders, sum: amount)
   lastOrder  DateTime @from(orders, last: true)
   hasOverdue Boolean  @from(invoices, exists: true, where: "due_at < date('now') AND paid = 0")
 }
@@ -155,10 +155,10 @@ Self-referential relations support CTE-based tree traversal:
 
 ```prisma
 model Category {
-  id       Integer     @id
-  name     Text
+  id       Int     @id
+  name     String
   parent   categories? @relation(fields: [parentId], references: [id])
-  parentId Integer?
+  parentId Int?
   children categories[]
 }
 ```

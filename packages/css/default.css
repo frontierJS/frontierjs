@@ -1,0 +1,11 @@
+/* themes/default.css — Blue brand, neutral surfaces. */
+
+.theme-default {
+  --color-primary:   #0d83dd;
+  --color-secondary: #1f2937;
+  --color-muted:     #6b7280;
+  --color-info:      #2EA2C9;
+  --color-success:   #16a34a;
+  --color-warning:   #d4b609;
+  --color-danger:    #F4403A;
+}

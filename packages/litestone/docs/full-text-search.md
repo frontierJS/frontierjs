@@ -1,4 +1,4 @@
-# Full-Text Search
+# Full-String Search
 
 Litestone builds FTS5 virtual tables and sync triggers automatically. `@@fts` gives you a `search()` method on any model.
 
@@ -6,10 +6,10 @@ Litestone builds FTS5 virtual tables and sync triggers automatically. `@@fts` gi
 
 ```prisma
 model Message {
-  id        Integer @id
-  userId    Integer
-  title     Text?
-  body      Text
+  id        Int @id
+  userId    Int
+  title     String?
+  body      String
   createdAt DateTime @default(now())
 
   @@fts([body, title])
@@ -86,9 +86,9 @@ Query a FTS5 virtual table you manage yourself:
 
 ```prisma
 model search_index {
-  rowid Integer @id
-  title Text
-  body  Text
+  rowid Int @id
+  title String
+  body  String
   @@external
   @@fts([title, body])
 }

@@ -39,8 +39,8 @@ Store and query high-dimensional embeddings. Useful for semantic search, recomme
 
 ```prisma
 model Document {
-  id        Integer @id
-  content   Text
+  id        Int @id
+  content   String
   embedding Embedding(1536)
 }
 ```
@@ -63,8 +63,8 @@ A geographic coordinate type with proximity queries.
 
 ```prisma
 model Property {
-  id       Integer @id
-  address  Text
+  id       Int @id
+  address  String
   location LatLng
 }
 ```
@@ -91,8 +91,8 @@ Haversine formula in JS — no SQLite extension required.
 
 ```prisma
 model Post {
-  title Text
-  slug  Text @slug(source: title)
+  title String
+  slug  String @slug(source: title)
 }
 ```
 
@@ -130,10 +130,10 @@ JSON fields with a declared schema — validated on write, typed in TypeScript o
 
 ```prisma
 type Address {
-  street  Text
-  city    Text
-  country Text
-  zip     Text?
+  street  String
+  city    String
+  country String
+  zip     String?
 }
 
 model User {
@@ -167,7 +167,7 @@ Formal state machine definitions at the schema level:
 
 ```prisma
 model Order {
-  status Text @default("draft")
+  status String @default("draft")
   @@transitions([
     { name: "submit",  from: ["draft"],     to: "pending" },
     { name: "approve", from: ["pending"],   to: "approved" },

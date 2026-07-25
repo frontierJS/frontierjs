@@ -33,6 +33,12 @@ const EMAIL_RE    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const URL_RE      = /^https?:\/\/.+/
 const DATE_RE     = /^\d{4}-\d{2}-\d{2}$/
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/
+// 24-hour clock with leading zeros required. Range 00:00 → 23:59. The seconds
+// variant accepts 00:00:00 → 23:59:59. Strict leading zeros mean values sort
+// lexicographically the same as numerically — important for ORDER BY in admin
+// queries that don't bother parsing.
+const TIME_RE_HM   = /^([01]\d|2[0-3]):[0-5]\d$/
+const TIME_RE_HMS  = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/
 // E.164 international format + common local formats
 const PHONE_RE    = /^\+?[\d\s\-().]{7,20}$/
 
@@ -42,6 +48,11 @@ const VALIDATORS = {
   url:         (v)          => URL_RE.test(String(v)),
   date:        (v)          => DATE_RE.test(String(v)),
   datetime:    (v)          => ISO_DATE_RE.test(String(v)),
+  // @time(seconds: true) accepts HH:MM:SS as well as HH:MM. Default is
+  // strict HH:MM (no seconds). Either form: 24-hour, leading zeros.
+  time:        (v, seconds) => seconds
+                                 ? (TIME_RE_HM.test(String(v)) || TIME_RE_HMS.test(String(v)))
+                                 : TIME_RE_HM.test(String(v)),
   phone:       (v)          => PHONE_RE.test(String(v)),
   regex:       (v, pattern) => new RegExp(pattern).test(String(v)),
   length:      (v, min, max) => {
@@ -67,6 +78,9 @@ export const DEFAULT_MESSAGES = {
   phone:      () => 'must be a valid phone number',
   date:       () => 'must be a valid date in YYYY-MM-DD format (e.g. 2026-04-06)',
   datetime:   () => 'must be a valid ISO 8601 datetime',
+  time:       (seconds) => seconds
+                            ? 'must be a 24-hour time in HH:MM or HH:MM:SS format (e.g. 09:30 or 09:30:45)'
+                            : 'must be a 24-hour time in HH:MM format (e.g. 09:30)',
   regex:      (p) => `must match pattern ${p}`,
   length:     (min, max) => {
     if (min != null && max != null) return `length must be between ${min} and ${max}`
@@ -236,6 +250,14 @@ function validateField(fieldName, value, attributes) {
         defaultMsg = DEFAULT_MESSAGES[kind]()
         break
 
+      case 'time':
+        // @time(seconds: true) accepts HH:MM:SS as well as HH:MM. Default
+        // (seconds: false) accepts HH:MM only — strict 24-hour clock format
+        // with leading zeros required so admin tools can sort lexicographically.
+        pass       = VALIDATORS.time(value, attr.seconds === true)
+        defaultMsg = DEFAULT_MESSAGES.time(attr.seconds === true)
+        break
+
       case 'regex':
         pass       = VALIDATORS.regex(value, attr.pattern)
         defaultMsg = DEFAULT_MESSAGES.regex(attr.pattern)
@@ -335,7 +357,7 @@ export function validate(data, model, computedFns, typeMap) {
 
 export function buildValidationMap(schema) {
   const VALIDATOR_KINDS = new Set([
-    'email','url','phone','date','datetime','regex','length','startsWith','endsWith',
+    'email','url','phone','date','datetime','time','regex','length','startsWith','endsWith',
     'contains','lt','lte','gt','gte','trim','lower','upper',
   ])
 

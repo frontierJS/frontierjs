@@ -4,8 +4,8 @@
 **Runtime:** Bun  
 **Package name:** `@frontierjs/cli` (global binary via `bun link`, command: `fli`)  
 **Scope:** `@frontierjs`  
-**Repo:** `~/outlaw/packages/fli` (or standalone) — moving to `~/code/FRONTIER/frontierjs/packages/cli`  
-**Last updated:** April 2026
+**Repo location:** `packages/cli` inside the FJS monorepo  
+**Last updated:** May 2026
 
 ---
 
@@ -30,24 +30,24 @@ A modular CLI automation platform where every command is a plain `.md` file. Com
 
 Both are scanned at startup. Project commands override core commands with the same title.
 
-### Core files
+### Core engine files (~2900 LOC)
 
 | File | Role |
 |---|---|
-| `bin/fli.js` | CLI entrypoint — sets roots, registers loader, runs bootstrap |
+| `bin/fli.js` | CLI entrypoint — sets globals, registers loader, sweeps stale `.fli-tmp/`, runs bootstrap |
 | `bin/server.js` | Web GUI server entrypoint |
-| `bin/diagnose.js` | Standalone diagnostics — checks env, paths, loader |
-| `core/bootstrap.js` | Parses argv, resolves command, handles `--help`, `list --json`, `? <query>` search |
-| `core/compiler.js` | `.md` → ESM — extracts frontmatter, script block, main `js` block |
-| `core/registry.js` | Scans both roots, builds a `Map`, skips `_steps/`, labels source |
-| `core/runtime.js` | Builds context, validates args/flags, runs command or `_steps/` sequence |
-| `core/server.js` | HTTP: `GET /api/commands`, `GET /api/commands/:name`, `POST /api/run/:name` (SSE) |
+| `bin/diagnose.js` | Self-check tool for the install |
+| `core/bootstrap.js` | Parses argv, resolves command, handles `--help` / `list` / search |
+| `core/compiler.js` | `.md` → ESM — frontmatter parser, `<script>` extractor, prose-vs-code segments, sourceURL pragma |
+| `core/registry.js` | Scans both roots, builds a Map keyed by title and alias, skips `_steps/`, labels source, warns on collisions |
+| `core/runtime.js` | Builds context, validates args/flags via `getConfig`, runs command or `_steps/` sequence, manages temp files |
+| `core/server.js` | HTTP: `GET /api/commands`, `GET /api/commands/:name`, `POST /api/run/:name` (SSE), 2-second registry cache |
 | `core/config.js` | Loads `.fli.json` from `projectRoot` into `global.fliConfig` |
-| `core/ports.js` | Port schema, formula, socket probe, lock manager, session lifecycle |
-| `core/prose.js` | Terminal markdown renderer with `{{var}}` interpolation for dry-run |
-| `core/utils.js` | `logger`, `findFilesPlugin`, `loadFrontierConfig` |
-| `web/index.html` | Single-file Web GUI — sidebar, forms, SSE output, syntax highlighting |
-| `web/viewer/index.html` | FJSChain viewer — pre-compiled from `FJSChain.jsx`, served by `project:view` |
+| `core/utils.js` | `logger`, `findFilesPlugin`, `loadEnv`, `loadFrontierConfig`, `findProjectRoot` |
+| `core/prose.js` | Prose-driven dry-run — interpolates `context.vars` into prose section |
+| `core/ports.js` | Port broker — `[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit scheme, lock file at `~/.fli/sessions.lock` |
+| `web/index.html` | Single-file Web GUI — sidebar, segmented form/source view, SSE output, syntax highlighting |
+| `web/viewer/index.html` | FJSChain — visual chain-of-responsibility diagram for `project:view` |
 
 ### Command file anatomy
 
@@ -55,452 +55,341 @@ Both are scanned at startup. Project commands override core commands with the sa
 commands/namespace/name.md
 │
 ├── YAML frontmatter   → title, description, alias, args, flags
-├── <script> block     → helper functions, imports (shared CLI + GUI)
-├── prose              → shown in Web GUI; dry-run rendered in terminal
+├── <script> block     → helper functions, imports (shared across CLI + GUI)
+├── prose              → shown in Web GUI source view
 └── ```js block        → main body — runs on execute
 ```
 
-### schema.lite model naming convention
-
-Model names are **PascalCase singular** — `Lead`, `User`, `Account`, not `leads`, `users`, `accounts`. This matches how resources and services reference them (`model: 'Lead'`). All `make:*` commands and `auth:install` enforce this. Litestone JSON Schema output uses these names as `$defs` keys.
-
-### `_module.md` convention
-
-Namespaces with shared helpers use a `_module.md` file — a `<script>` block with imports and utilities available to every command in that namespace. Not a runnable command (excluded from `fli list`).
-
-**Critical rule:** Commands must never re-import anything already in `_module.md` — duplicate identifier runtime error results.
-
-Namespaces using `_module.md`: `auth`, `cloudflare`, `completion`, `db`, `deploy`, `github`, `project`.
-
-The `project` `_module.md` provides: `existsSync`, `readFileSync`, `readdirSync`, `writeFileSync`, `resolve`, `basename`, `execSync`, plus `freshJsonSchema`, `scanFiles`, `extractServiceMeta`, `extractResourceMeta`, `parseMigrationFiles`, `extractServerMeta`, `TIER1_PACKAGES`.
-
-`createServer` (http) is the only thing `project:view` adds in its own `<script>` block — everything else comes from `_module.md`.
-
-Litestone JSON Schema extensions confirmed in output and consumed by `project:map` / `project:view`: `x-gate` (per-operation gate levels on model entries), `x-relations` (array of related model refs).
+The compiler emits **literate-style segments** — prose and code blocks interleaved, each tracked separately. The Web GUI renders them inline so command source looks like a tutorial: prose explanation, then the code block it explains, then more prose. CLI execution still ignores prose entirely.
 
 ### `_steps/` convention
 
-Large commands break into numbered step files sharing `context.config`. Named step directories (`_steps-docker/`, `_steps-rollback/`, `_steps-setup/`) are supported — the orchestrator selects which directory to run at runtime.
+Large commands break into numbered step files sharing `context.config`:
+
+```
+commands/deploy/
+  index.md            ← orchestrator: sets context.config.stepsDir based on frontier.config.js
+  _steps/             ← legacy CapRover deploy
+  _steps-docker/      ← Docker/SSH/nginx deploy (default for new apps)
+  _steps-rollback/    ← rollback flow
+  _steps-setup/       ← first-time server setup
+```
+
+The orchestrator sets `context.config.stepsDir = '_steps-docker'` (or another folder) and the runtime dispatches to the right one. Step files share `context.config` mutation so each can read what previous steps set.
+
+**Step abort behavior**: if a step or orchestrator sets `context.config.abort = true`, subsequent steps are skipped without logging their headers. Steps that need to run on abort (cleanup, lock release) opt in via `runOnAbort: true` in their frontmatter.
 
 ### Context object
 
+Available as top-level locals in every `js` block:
+
 ```js
 arg          // positional args by name
-flag         // named flags (--dry always present)
+flag         // named flags (--dry always present, --debug hidden but present)
 log          // log.info / .success / .warn / .error / .dry
-context      // .paths .env .exec .execute .config .echo .git
-echo()       // ZX stdout
+context      // full context — .paths .env .exec .execute .config .echo .git .vars
+echo()       // ZX stdout, also used by Web GUI to capture command output
 question()   // interactive prompt
 $``          // ZX shell execution
 ```
 
-### `frontier.config.js`
+`context.git` provides: `branch()`, `status()`, `isDirty()`, `lastTag()`, `hasChangesSince()`, `isAffected()`, `log()`. Defaults to `paths.root` for the dir but accepts an override.
 
-Projects using the Docker deploy pipeline define this at project root. Read via `loadFrontierConfig(root)`. Scaffold with `fli make:deploy`.
-
----
-
-## Current command count: 140
-
-### Core commands (in `commands/`)
-
-#### `admin` (1)
-| Command | Alias | Description |
-|---|---|---|
-| `admin:generate` | `admin-gen` | Generate gate-aware CRUD admin UI from schema.lite — list, detail, create, edit per model |
-
-#### `ai` (1)
-| Command | Alias | Description |
-|---|---|---|
-| `ai:ask` | `ask` | Ask Claude — streams response, `--file` `--system` `--model` |
-
-#### `api` (4)
-| Command | Alias | Description |
-|---|---|---|
-| `api:deploy` | `api-deploy` | Deploy API via SSH |
-| `api:dev` | `api-dev` | Start API dev server |
-| `api:model` | — | Delegate to `make:model` |
-| `api:service` | — | Delegate to `make:service` |
-
-#### `auth` (5)
-| Command | Alias | Description |
-|---|---|---|
-| `auth:create-user` | `create-user` | Create user directly in database |
-| `auth:install` | `auth-install` | Install FJS auth — PascalCase models: User, Credential, Session, Verification |
-| `auth:list-users` | `list-users` | List users |
-| `auth:revoke-sessions` | `revoke-sessions` | Revoke all sessions for a user |
-| `auth:rotate-key` | `rotate-key` | Rotate ENCRYPTION_KEY, re-encrypt @secret fields |
-
-#### `browser` (4)
-| Command | Alias | Description |
-|---|---|---|
-| `browser:captain` | `captain` | Open `$DEV_CAPTAIN` |
-| `browser:live` | `live` | Open `$LIVE_SITE_URL` |
-| `browser:open` | `open` | Open any URL |
-| `browser:servers` | `servers` | Open `$SERVERS_URL` |
-
-#### `caprover` (6)
-| Command | Alias | Description |
-|---|---|---|
-| `caprover:backup` | `cap-backup` | Trigger app backup |
-| `caprover:create` | `cap-create` | Register new app |
-| `caprover:login` | `cap-login` | Login with config file |
-| `caprover:setup` | `cap-setup` | Run server setup wizard |
-| `caprover:ssl` | `cap-ssl` | Enable/renew SSL |
-| `caprover:update` | `cap-update` | Deploy app from local directory |
-
-#### `cloudflare` (5)
-| Command | Alias | Description |
-|---|---|---|
-| `cloudflare:dns` | `cf:dns` | Manage DNS records |
-| `cloudflare:pages` | `cf:pages` | Manage Pages projects |
-| `cloudflare:purge` | `cf:purge` | Purge cache |
-| `cloudflare:workers` | `cf:workers` | List Workers scripts |
-| `cloudflare:zones` | `cf:zones` | List zones |
-
-#### `completion` (4)
-| Command | Alias | Description |
-|---|---|---|
-| `completion:generate` | `cgen` | Print shell completion script |
-| `completion:install` | `ci` | Install tab completion |
-| `completion:query` | `cq` | Return completions for current line (called by shell on Tab) |
-| `completion:refresh` | `cr` | Rebuild completion cache |
-
-#### `crypto` (1)
-| Command | Alias | Description |
-|---|---|---|
-| `crypto:keygen` | `keygen` | Generate keys. For ENCRYPTION_KEY: `--format hex --length 32` → 64 hex chars (32 bytes, AES-256) |
-
-#### `db` (15)
-| Command | Alias | Description |
-|---|---|---|
-| `db:backup` | `db-backup` | Timestamped sqlite backup |
-| `db:columns` | `db-columns` | List columns for a table |
-| `db:db` | `db` | Interactive sqlite3 shell or query |
-| `db:download` | `db-download` | SCP production db |
-| `db:import` | `db-import` | **5-step:** remote backup → scp → restore → extras |
-| `db:jsonschema` | `db-jsonschema` | Generate JSON Schema via `bunx litestone jsonschema` |
-| `db:migrate` | `db-migrate` | Create and apply migration |
-| `db:pull` | `db-pull` | Introspect live db → schema.lite |
-| `db:push` | `db-push` | Apply schema.lite directly |
-| `db:reset` | `db-reset` | **3-step:** rm → `bunx litestone migrate reset` → push |
-| `db:schema` | `make-schema` | Append PascalCase singular model stub to schema.lite |
-| `db:seed` | `db-seed` | Run db seeder |
-| `db:status` | `db-status` | Pending migrations + schema match |
-| `db:studio` | `studio` | Open Litestone Studio |
-| `db:tables` | `db-tables` | `sqlite3 <db> '.schema'` or table sizes — no npm |
-
-#### `deploy` (7)
-| Command | Alias | Description |
-|---|---|---|
-| `deploy:all` | `deploy` | Multi-step — Docker or legacy CapRover based on `frontier.config.js` |
-| `deploy:local` | `dlocal` | Build/run API Docker image locally |
-| `deploy:logs` | `dlogs` | Stream logs from API container |
-| `deploy:rollback` | `rollback` | **3-step** rollback |
-| `deploy:run` | `drun` | One-off command in API container |
-| `deploy:setup` | `setup-server` | **7-step** server readiness wizard |
-| `deploy:status` | `dstatus` | Containers, disk, last deploy info |
-
-#### `env` (6)
-| Command | Alias | Description |
-|---|---|---|
-| `env:copy` | `ecopy` | `.env` → `.env.example` stripped |
-| `env:delete` | `edel` | Remove key from `.env` |
-| `env:get` | `eget` | Read value from `.env` |
-| `env:list` | `elist` | List all keys (masked) |
-| `env:pull` | `epull` | Pull from caprover / url / gist / ssh / file |
-| `env:set` | `eset` | Set or update key in `.env` |
-
-#### `fetch` (2)
-| Command | Alias | Description |
-|---|---|---|
-| `fetch:image` | `fimg` | Fetch URL, return blob info |
-| `fetch:json` | `fget` | Fetch URL → JSON; `:3000/path` shorthand |
-
-#### `fli` (8)
-| Command | Alias | Description |
-|---|---|---|
-| `fli:doctor` | `doctor` | Check FLI setup |
-| `fli:edit` | `edit` | Open command file in `$EDITOR` |
-| `fli:env` | `config` | Open `~/.config/fli/.env` |
-| `fli:gui` | `gui` | Start Web GUI on port **8500** |
-| `fli:init` | `init` | Scaffold `cli/src/routes/` |
-| `fli:setup` | `setup` | PATH setup instructions |
-| `fli:update` | `update` | `git pull + bun install` in fliRoot |
-| `fli:validate` | `validate` | Cross-realm integrity check |
-
-#### `git` (7)
-| Command | Alias | Description |
-|---|---|---|
-| `git:changelog` | `changelog` | Generate CHANGELOG.md |
-| `git:commit` | `gc` | Conventional commit prompt |
-| `git:pull` | `gpl` | Pull with branch info |
-| `git:push` | `gp` | Push to origin |
-| `git:release` | `gr` | Tag + changelog + push |
-| `git:stash` | `gstash` | Stash / pop / list |
-| `git:status` | `gs` | Clean status summary |
-
-#### `github` (3)
-| Command | Alias | Description |
-|---|---|---|
-| `github:clone` | `gh:clone` | Clone a GitHub repo |
-| `github:create` | `gh:create` | Create repo from template |
-| `github:prs` | `gh:prs` | List open pull requests |
-
-#### `make` (9)
-| Command | Alias | Description |
-|---|---|---|
-| `make:command` | `new` | Scaffold new FLI `.md` command |
-| `make:component` | `mkc` | Svelte component |
-| `make:deploy` | `mkdeploy` | Scaffold Dockerfile + `frontier.config.js` |
-| `make:model` | `mkmodel` | Append PascalCase singular model to schema.lite |
-| `make:resource` | `mkresource` | Svelte resource component |
-| `make:route` | `mkroute` | Svelte route |
-| `make:scaffold` | `scaffold` | Full vertical slice — PascalCase schema + service + resource + 4 routes |
-| `make:schema` | `mkschema` | Alias for `make:model` |
-| `make:service` | `mksvc` | Scaffold Junction service file |
-
-#### `npm` (14)
-| Command | Alias | Description |
-|---|---|---|
-| `npm:audit` | `audit` | Security audit |
-| `npm:info` | `ninfo` | Registry metadata |
-| `npm:install` | `ni` | Install deps |
-| `npm:link` | `npm-link` | Link/unlink local package |
-| `npm:login` | `npm-login` | Login |
-| `npm:outdated` | `outdated` | Show outdated deps |
-| `npm:publish` | `pub` | Publish |
-| `npm:release` | `release` | **5-step** release pipeline |
-| `npm:run` | `nr` | Run any npm script |
-| `npm:size` | `pkgsize` | Bundle size via bundlephobia |
-| `npm:tag` | `tag` | Manage dist-tags |
-| `npm:unpublish` | `unpub` | Unpublish with confirmation |
-| `npm:version` | `version` | Bump version |
-| `npm:whoami` | `whoami` | Show logged-in npm user |
-
-#### `ports` (2)
-| Command | Alias | Description |
-|---|---|---|
-| `ports:dev` | `dev` | Claim port session, inject `FLI_PORT_*` env vars |
-| `ports:status` | `ps` | Show active sessions — `--clean` prunes stale |
-
-#### `project` (2)
-| Command | Alias | Description |
-|---|---|---|
-| `project:map` | `pmap` | Structural snapshot — schema, services, resources, migrations, installed FJS packages |
-| `project:view` | `pview` | Serve FJSChain visual diagram on port **8501** |
-
-#### `site` (3)
-| Command | Alias | Description |
-|---|---|---|
-| `site:clone` | `clone` | Clone from kobamisites |
-| `site:deploy` | `site-deploy` | `npm run deploy:site` |
-| `site:serve` | `serve` | Serve dist/ with npx serve |
-
-#### `utils` (12)
-| Command | Alias | Description |
-|---|---|---|
-| `utils:check-deps` | `check-deps` | `npx npm-check-updates` |
-| `utils:dev` | `dev` | Smart dev server (bun or npm) |
-| `utils:diff-env` | `diff-env` | Diff `.env` vs template |
-| `utils:killnode` | `kill` | `killall node` |
-| `utils:note` | `note` | Scaffold dated `.md` note |
-| `utils:pack` | `pack` | Zip folder excluding media/build |
-| `utils:password` | `password` | Hash or generate secret |
-| `utils:qrcode` | `qrcode` | QR code from URL |
-| `utils:ssh` | `ssh` | SSH to dev/stage/prod |
-| `utils:tunnel` | `tunnel` | Run cloudflared tunnel |
-| `utils:vpn` | `vpn` | WireGuard up/down/status |
-| `utils:zip` | `zip` | `npm run zip` |
-
-#### `web` (6)
-| Command | Alias | Description |
-|---|---|---|
-| `web:build` | `web-build` | Production build |
-| `web:component` | — | Delegate to `make:component` |
-| `web:deploy` | `web-deploy` | Deploy web app via SSH |
-| `web:dev` | `web-dev` | `npm run dev` |
-| `web:resource` | — | Delegate to `make:resource` |
-| `web:route` | — | Delegate to `make:route` |
-
-#### `workspace` (13)
-| Command | Alias | Description |
-|---|---|---|
-| `workspace:add` | `ws:add` | Move/copy repo into `packages/` |
-| `workspace:changed` | `ws:changed` | Packages changed since last tag |
-| `workspace:clean` | `ws:clean` | Delete build artifacts across workspace |
-| `workspace:exec` | `ws:exec` | Run command in every package |
-| `workspace:graph` | `ws:graph` | Dependency graph |
-| `workspace:init` | `ws:init` | Scaffold monorepo root |
-| `workspace:install` | `ws:install` | `bun install` at root |
-| `workspace:link` | `ws:link` | Write `workspace:*` dep between packages |
-| `workspace:list` | `ws:list` | All packages, versions, deps |
-| `workspace:publish` | `ws:pub` | **3-step:** version → publish → push all |
-| `workspace:run` | `ws:run` | Run script across packages |
-| `workspace:status` | `ws:status` | Git status across all packages |
-| `workspace:version` | `ws:version` | Bump versions without publishing |
-
-### Project commands (in `cli/src/routes/`)
-
-| Command | Alias | Description |
-|---|---|---|
-| `hello:exec` | `lsd` | Demo: list files |
-| `hello:greet` | `greet` | Demo: greeting |
+`context.paths` exposes: `root`, `wiki`, `tests`, `cli`, `api`, `db`, `web`, `webPages`, `webComponents`, `webResources`, `site`, `siteContent`, `siteMedia`, `mobile`, `extension`.
 
 ---
 
-## Multi-step commands
+## Current command count: 147 commands across 25 namespaces
 
-| Command | Steps dir | Count | What it does |
-|---|---|---|---|
-| `npm:release` | `_steps/` | 5 | test → build → version → publish → git push |
-| `workspace:publish` | `_steps/` | 3 | version all → publish all → push all |
-| `db:reset` | `_steps/` | 3 | rm → `bunx litestone migrate reset` → push |
-| `db:import` | `_steps/` | 5 | mkdir → ssh backup → scp → restore → extras |
-| `deploy:all` | `_steps/` | 3 | legacy CapRover |
-| `deploy:all` | `_steps-docker/` | 9 | preflight → env-check → pull → build-web → build-api → backup → swap → health → cleanup |
-| `deploy:rollback` | `_steps-rollback/` | 3 | rollback web → api → report |
-| `deploy:setup` | `_steps-setup/` | 7 | check deps → install → dirs → repo → nginx → ssl → report |
+### Namespaces with `_module.md` (shared helpers)
+
+`auth`, `cloudflare`, `completion`, `db`, `deploy`, `github`, `project`
+
+These provide functions and constants that prepend to every command in the namespace. The runtime loads them once at startup and merges into the compiled output.
+
+### Recent additions (last few sessions)
+
+- **`site:audit`** (alias `audit`) — first-time setup walkthrough for fresh ksite clones. Per-action confirmation, `--force` to bypass `config_ranSetup` guard, `--skip` for category, `--yes` to auto-accept. Cross-platform JS file edits (no `sed -i` hacks).
+- **`site:update`** (alias `site-update`) — pulls KSITE_DIR canonical, mirrors framework dirs to local site. `--force` to skip version-gate and dirty-checkout warning, `--no-install` to skip final npm install. Major-version compatibility check between local and canonical site/package.json.
+- **`deploy:doctor`** (alias `doctor`) — read-only deploy readiness checker. Local checks (config, Dockerfile, /health route, env reference, git state), Junction-aware checks (`@frontierjs/junction` detection, `/ws` route, proxy_read_timeout reminder), and `--remote` for server-side probes (SSH, required tools, deploy dir, .env.production, container state, lock).
+- **`make:fetch-config`** (alias `mkfetchconfig`) — scaffolds a `fetch.config.js` template with all options shown commented-out.
+- **`fli:update`** (alias `update`) — monorepo-aware self-update via `git pull` + `bun install` in the fli source tree. `--branch`, `--no-install`, `--no-link` flags.
+- **`site:fetch`** (alias `site-fetch`) — sitemap/URL→markdown converter using turndown + linkedom. Validates config (errors abort, warnings continue), prints destination upfront, sitemap-index recursion, namespace-loc filtering, HTTP timeout/retry. Uses `context.paths.siteContent` and `context.paths.siteMedia`.
+
+### Existing namespace breakdown (147 commands)
+
+Top counts: `npm` (14), `db` (14), `utils` (11), `make` (10), `workspace` (8), `git` (7), `env` (6), `caprover` (6), `fli` (6), `web` (5), `site` (5), `api` (4), `browser` (4), and the deploy namespace's 8 commands plus 4 step folders, plus various smaller namespaces (`admin`, `auth`, `cloudflare`, `completion`, `crypto`, `ai`, `fetch`, `github`, `ports`, `project`, `literate`).
 
 ---
 
-## Port brokering (`core/ports.js`)
+## Deployment system (deploy:* namespace)
 
-```
-[ENV][CATEGORY][PROJECT][SERVICE]
+Three modes coexist:
 
-ENV       7=test  8=dev  9=prod
-CATEGORY  0=fe  1=be  2=widgetDev  3=widgetServe  4=ext  5=tooling
+1. **Modern Docker/SSH/nginx** — triggered by `frontier.config.js` having a `deploy` block. Used for new FJS apps, especially Junction.
+2. **Legacy CapRover** — fallback when no `deploy` block. Uses `DEV_SERVER`/`STAGE_SERVER`/`PROD_SERVER` env vars.
+3. **ksite-specific** — `site:deploy` for static-site projects, separate code path.
 
-Global tooling (fixed, within 85xx):
-  8500  →  fli gui
-  8501  →  fli pview (FJSChain)
-  8502  →  db studio
+### Modern deploy pipeline (10 steps)
 
-GLOBAL = { gui: 8500, pview: 8501, studio: 8502 }
-Ports 8500–8502 are reserved — dynamic assignment skips them.
+| Step | Function | Skippable |
+|---|---|---|
+| `01-preflight` | SSH check, validate config, acquire `${path}/.deploy.lock`, detect Litestream | no |
+| `01b-env-check` | Diff `.env.example` against server's `.env.production` | yes (gated by `envCheck: true`) |
+| `02-pull` | `git pull` on server, capture short SHA, set `imageTag = ${appId}:${commit}` | no |
+| `03-build-web` | `bun build` on server, copy `dist/` → `releases/${commit}/`, merge previous release's hashed assets, prune | yes (gated by `web: false`) |
+| `04-build-api` | `docker build -t ${imageTag} -f ${dockerfile} .` on server | no |
+| `05-backup` | `sqlite3 .backup` of prod DB → timestamped file, prune old | yes (gated by `db.backup: false`) |
+| `06-swap` | Rename old container to `_replaced`, stop with `--time 10`, start new one with mounts and env-file | no |
+| `07-health` | Poll `/health` for 20s — auto-rolls back to `_replaced` on failure | no |
+| `08-release-web` | Atomic symlink swap `current → releases/${commit}`, `nginx -s reload` | yes (gated by `web: false`) |
+| `09-cleanup` | Remove `_replaced` container, prune images, release deploy lock — runs on abort too via `runOnAbort: true` | always |
+
+### Key design choices in deploy
+
+- Built on the server, not pushed (no Docker registry needed)
+- Versioned web releases via symlinks for atomic cutover
+- SQLite single-writer respected — old container stopped before new starts; ~3-10s gap during migrations
+- Auto-rollback on health failure (rename `_replaced` back, start it)
+- Stale client protection — previous release's hashed assets merged into new release with `cp -rn` so cached HTML clients can still load `app-x9y8z7.js`
+- Deploy lock at `${path}/.deploy.lock` prevents concurrent deploys to same server
+
+### Junction-specific notes
+
+The `deploy:setup` nginx template includes a `/ws` location block with WebSocket upgrade headers. Default `proxy_read_timeout` is 60s — long-lived idle Junction WebSockets get closed unless this is bumped. The `deploy:doctor` command surfaces this as a reminder when `@frontierjs/junction` is detected.
+
+`/health` route is critical — auto-rollback won't work without it. Doctor heuristically greps for it in `api/src/server.{ts,js}`, `api/src/index.{ts,js}`, `api/src/app.ts`.
+
+### `frontier.config.js` deploy block shape
+
+```js
+export default {
+  deploy: {
+    server: 'myapp.com',
+    user: 'deploy',          // default
+    path: '/apps/myapp',
+    app_id: 'myapp',         // defaults to last segment of path
+
+    api: {
+      port: 3000,
+      health: '/health',
+      dockerfile: 'api/deploy/Dockerfile',
+      env: '/apps/myapp/.env.production',
+      envCheck: true,        // validates server env before deploy
+    },
+    web: {
+      domain: 'myapp.com',
+      keep_releases: 3,
+      ssl: { cert: '/etc/ssl/myapp.pem', key: '/etc/ssl/myapp.key' },
+    },
+    db: {
+      path: '/apps/myapp/db',
+      file: 'production.db',
+      keep_backups: 5,
+    },
+
+    production: { server: 'prod.myapp.com' },  // per-target overrides
+    stage:      { server: 'stg.myapp.com'  },
+  },
+}
 ```
 
-Key exports: `port()`, `decode()`, `isPortInUse()`, `claimSession()`, `releaseSession()`, `autoRelease()`, `getSessionStatus()`, `GLOBAL`.
+### Deploy commands available
 
----
+`fli deploy` (alias for `deploy:all`), `fli deploy:doctor`, `fli deploy:local`, `fli deploy:setup`, `fli deploy:status`, `fli deploy:logs`, `fli deploy:run`, `fli deploy:rollback`. `fli make:deploy` to scaffold the Dockerfile, deploy block, and health endpoint hint.
 
-## `project:view` — FJSChain Viewer
+### Deploying a new Junction app — the path
 
-Serves `web/viewer/index.html` — pre-compiled self-contained HTML, no Babel/JSX at runtime, CDN React. Refreshing the browser tab regenerates the project map live.
+```
+1. fli make:deploy --server <host> --domain <domain>
+   → scaffolds api/deploy/Dockerfile, deploy block in frontier.config.js, prints health hint
 
-**Script order in `index.html`:**
-1. CDN React + `const { useEffect } = React`
-2. Project map helpers (`buildProjectMap`, `resolveFieldType`, `TIER1_REGISTRY`, etc.)
-3. `useProjectMap` hook — fetches `/data`, calls `buildProjectMap`
-4. FJSChain compiled block — declares `useState`, `FONT`, all FJSChain internals
-5. `FJSChainWithData` — passes `data={data}` prop to `<FJSChain />`
-6. `ReactDOM.createRoot` mount
+2. Add /health and /ws routes to your Junction API (returns 200 / handles WebSocket)
 
-**`extractServerMeta(root)`** scans `server.ts` + `auth.ts` for 5 tier-1 FJS package signals: `auth`, `conduit`, `caravan`, `notifications`, `litestream`. Returns `{ serverFile, packages: [{id, label, realm, installed}], mailer }`.
+3. fli deploy:doctor
+   → checks everything is wired correctly. Junction-aware. No network.
 
-**Chip rendering:** installed = full color; uninstalled = 45% opacity, grey dot, "not installed" label. Sierra realm = 35% opacity when no resources found.
+4. fli deploy:local
+   → builds the Dockerfile, runs locally on :3001, polls /health
+   → if this fails, fli deploy will fail too — fix here first
 
-**All sample data zeroed:** `DB_SCHEMA`, `MIGRATIONS`, `HEALTH_PACKAGES`, `HEALTH_GAPS`, `CHANNELS_DATA`, `RELATIONS_DATA`, `PACKAGE_REGISTRY`, `ROUTES_DATA`, `CLI_DATA`, all realm nouns. Everything from live project map.
+5. fli deploy:setup
+   → SSH check, install missing deps on server, create directories, clone repo,
+     write nginx config (/ws proxy already in template), optional SSL
 
----
+6. ssh <host> + populate /apps/<appId>/.env.production
+   (or: fli env:set --remote KEY=value)
 
-## `fli:validate`
+7. fli deploy:doctor --remote
+   → server-side probes: SSH, tools, deploy dir, env keys, container, lock
 
-Runs `bunx litestone jsonschema` for fresh schema, then checks:
-- Service `model:` → PascalCase model exists in schema
-- Resource `model:`/`service:` → model + service file exist
-- Route `@/resources/Name` imports → file exists
-- `ENCRYPTION_KEY` in `.env` if schema has `@secret`/`@guarded` (grepped from `schema.lite` directly — litestone strips these). Validates key = 64 hex chars (32 bytes AES-256)
-- `_module.md` `requires:` vars in `.env` (warn, not error)
-
-Exit code 1 on errors. `--layer schema|services|resources|env` to scope.
+8. fli deploy
+   → runs the 9 docker steps. ~30-60s. Auto-rollback on failure.
+```
 
 ---
 
 ## Test suite
 
-| File | Covers |
-|---|---|
-| `compiler.test.js` | `extractFrontmatter`, `transformMarkdown`, `compileCli` |
-| `runtime.test.js` | `getConfig` — arg/flag validation, short-chars, options |
-| `registry.test.js` | Dual-root scanning, source labelling, `_steps/` exclusion |
-| `server.test.js` | All endpoints, SSE, CORS |
-| `config.test.js` | `loadConfig` / `getConfig` |
-| `deploy-helpers.test.js` | `loadFrontierConfig`, `resolveTarget`, `resolveDeployConf` |
-| `deploy-dispatch.test.js` | Step dir selection, Docker vs legacy |
-| `zz-steps.test.js` | `_steps/` execution — sequence, skip, `--step`, optional |
+**150/150 passing across 8 test files. 2,500+ expect() calls.**
 
-Run: `npm test` · Deploy only: `npm run test:deploy`
+| File | Tests | What it covers |
+|---|---|---|
+| `tests/compiler.test.js` | 35 | `extractFrontmatter`, `transformMarkdown`, `compileCli`, `extractSegments`, echo context shadowing |
+| `tests/runtime.test.js` | 15 | `getConfig` — arg/flag validation, short-chars, options enum, deep-clone, defaultFlags isolation |
+| `tests/registry.test.js` | 18 | Dual-root scanning, source labelling, `_steps/` exclusion, `fli list --json`, alias/title collision warns |
+| `tests/server.test.js` | 25 | API endpoints, SSE streaming, CORS, segments shape in metadata, registry cache TTL |
+| `tests/config.test.js` | 10 | `loadConfig` / `getConfig` — no file, merge, partial, malformed JSON |
+| `tests/zz-steps.test.js` | 8 | All `_steps/` execution scenarios |
+| `tests/deploy-helpers.test.js` | 24 | `resolveTarget`, `resolveDeployConf`, `loadFrontierConfig` |
+| `tests/deploy-dispatch.test.js` | 17 | End-to-end fixture-based dispatch logic for docker vs legacy mode |
+
+Run: `bun test` (or `npm test` for the explicit pre-batch order).
 
 ---
 
 ## Web GUI
 
-**Port:** 8500 (override: `FLI_PORT=8080`) · **Start:** `fli gui`
+**Port:** 8500 (override: `FLI_PORT=8080`)  
+**Start:** `fli gui` or `bun bin/server.js`
 
-Features: sidebar with core/project split + namespace grouping + live search (`fli ? <query>` in CLI too) · auto-generated forms · source view · SSE streaming · `⎘ copy cmd` · three themes: Mesa, Dark, Light · minimum font size **14px** throughout.
+Layout:
+- Collapsible sidebar with core/project split, namespace grouping, command palette (`Ctrl+K`/`Cmd+K`), live search
+- Form panel with auto-generated forms from frontmatter (args → inputs, booleans → toggles)
+- Resizable output panel with SSE streaming, color-coded by log level
+- Three themes (Mesa, Dark, Light)
+- Source view (collapsible) with **literate segments** — prose and code blocks interleaved, prose rendered via `mdToHtml`, code via single-pass syntax highlighter
+- ⎘ copy cmd button — builds full CLI string from current form state
+- Sidebar refresh after `done` event
 
----
-
-## FrontierJS monorepo
-
-```
-~/code/FRONTIER/frontierjs/
-  package.json             ← private, workspaces: ["packages/*"]
-  packages/
-    cli/                   ← @frontierjs/cli (this repo, binary: fli)
-    junction/
-    auth/
-    litestone/
-    conduit/
-    caravan/
-    sierra/
-    notifications/
-    vscode-fjs/            ← VS Code extension (vsce publish, not npm)
-```
-
-Cross-package deps use `workspace:*`. For external app projects: `bun link` in each FJS package, then `bun link @frontierjs/<name>` in the app. Add to app's `.bunfig.toml` to survive `bun install`:
-```toml
-[install.scopes]
-"@frontierjs" = { link = true }
-```
+API: `GET /api/commands`, `GET /api/commands/:name` (with segments), `POST /api/run/:name` (SSE).
 
 ---
 
 ## Configuration
 
-### `.fli.json`
+### `.fli.json` (project root)
+
 ```json
-{ "routesDir": "cli/src/routes", "defaultNamespace": "hello", "editor": "code" }
+{
+  "routesDir":        "cli/src/routes",
+  "defaultNamespace": "hello",
+  "editor":           "code"
+}
 ```
 
 ### Environment variables
+
 ```bash
-FLI_PORT=8500
-WORKSPACE_DIR=~/outlaw
+# FLI behaviour
+FLI_PORT=8500              # Web GUI port
+FLI_DEBUG=1                # Enable full stack traces (or pass --debug)
+WORKSPACE_DIR=~/outlaw     # Workspace root (all ws-* commands)
+KSITE_DIR=~/.../ksite      # Local clone of canonical ksite (for site:update)
 ANTHROPIC_API_KEY=sk-...
-GITHUB_TOKEN=...
-CF_API_TOKEN=...
-WEB_DIR=web  API_DIR=api  DB_DIR=db  CLI_DIR=cli
-DEV_SERVER=user@dev.example.com  PROD_SERVER=ela.prod
-CAPROVER_URL=https://captain.example.com  CAPROVER_TOKEN=...
+
+# Project directories (override defaults)
+WEB_DIR=web
+API_DIR=api
+DB_DIR=db
+SITE_DIR=site
+CLI_DIR=cli
+
+# Server targets (legacy CapRover deploys + utils:ssh)
+DEV_SERVER, DEV_SERVER_PATH
+STAGE_SERVER, STAGE_SERVER_PATH
+PROD_SERVER, PROD_SERVER_PATH
+
+# CapRover (caprover:* commands)
+DEV_CAPTAIN, CAPROVER_URL, CAPROVER_TOKEN
+```
+
+### Port schema
+
+`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod. Global tooling on `8500` (gui), `8501` (pview), `8502` (studio). Dynamic project ports assigned at runtime via `~/.fli/sessions.lock` with O_EXCL file lock for atomicity.
+
+### Temp files
+
+Compiled command shims live at `<fliRoot>/.fli-tmp/<pid>/c_*.mjs`. Created lazily on first compile, removed on exit. Stale-PID sweep at every fli startup. `.gitignore` includes `.fli-tmp/` and the legacy `.__fli_*.mjs` pattern.
+
+---
+
+## Recent engine improvements (worth knowing about)
+
+These were the substantive runtime changes in recent sessions, in case behavior elsewhere depends on them:
+
+1. **`getConfig` deep-clones `defaultFlags` per-call.** Previously a process-wide leak — setting `--step 99` in one call leaked into all subsequent calls. Affected web GUI sessions running multiple commands sequentially.
+2. **`getConfig` per-key-merges command flags with defaults.** A command can re-declare `dry` to add its own description without losing inherited `char: 'd'` from defaultFlags. Without this, short-flag resolution silently broke for any command that re-declared a default flag.
+3. **Step abort honored before logging.** When `context.config.abort = true`, subsequent steps don't log their `[N/M] step-name` header. Cleanup steps opt back in via `runOnAbort: true`. Silently fixed the "stuck step header" output in `deploy:status`, `deploy:logs`, and any other `deploy:*` command that early-exits.
+4. **Server registry cached for 2 seconds.** Sidebar load + meta fetch + run share one filesystem scan instead of three.
+5. **`bootstrap.js` doesn't import `zx/globals`.** Saves ~100ms cold start on read-only commands (`fli list`, `fli help`, search). Compiled commands still import it themselves.
+6. **`compileCli` emits a `sourceURL=file://...` pragma** so Node stack traces reference the `.md` file, not the temp shim. Bun ignores this — known limitation.
+7. **`loadEnv` accepts `{override: true}`** for project `.env` to win over global `~/.config/fli/.env`. Handles multi-line quoted values and `\n \r \t` escapes inside double quotes.
+8. **Atomic `claimSession`** via O_EXCL guard file to prevent two concurrent fli processes from claiming the same project ID. Stale guard files reclaimed via PID liveness probe.
+9. **Bounded module cache** (256-entry LRU) so long-running GUI sessions don't accumulate stale entries from edited files.
+10. **`findFreeServicePort`** probes all 10 service slots in parallel via `Promise.all`. ~10× faster on cold scans.
+
+---
+
+## Known issues / pending notes
+
+| Item | Status | Priority |
+|---|---|---|
+| `sourceURL` pragma works on Node, ignored on Bun | partial | low |
+| Frontmatter regex non-greedy but breaks on stray `---` in body | deferred | very low |
+| Registry's `mod.prose` leftover from before segments refactor | cosmetic | very low |
+| `utils:qrcode` requires `npm install qrcode` | known | low |
+| `fli dev` port-broker orchestration | designed, not implemented | medium |
+| TUI interface | planned | medium |
+
+All previously-pending test fixes (deploy-helpers, deploy-dispatch, zz-steps) are resolved. All carryover engine bugs from past sessions are resolved.
+
+---
+
+## On the horizon
+
+1. **`fli dev` orchestrator** — reads `.fli.json` for required service categories, uses port broker to start them. Infrastructure is in place; needs the user-facing command + config conventions.
+2. **`fli init`** — bootstrap experience for new contributors. Currently it's "clone, cd packages/cli, bun install, bun link" — could be a one-shot command.
+3. **TUI** — full-screen Ink shell vs. `--interactive` flag wizard mode. Open question.
+4. **Test namespace** (`fli test:plan` / `fli test:run`) — turning the "tests as canonical AI context" workflow into actual fli commands.
+5. **`fli make:command` review** — should be checked for compatibility with the literate-segments style.
+6. **README** — none of the deep accumulated knowledge is user-facing yet. Would help with onboarding.
+7. **Cold start ~225ms** — mostly Bun warmup. `bun build --compile` would cut this dramatically once the API surface stabilizes.
+
+---
+
+## Dev setup
+
+```bash
+cd packages/cli
+bun install
+bun link          # makes `fli` available globally
+fli gui           # Web GUI at http://localhost:8500
+```
+
+```bash
+# Recommended .env additions
+WORKSPACE_DIR=~/outlaw
+KSITE_DIR=~/.../ksite-canonical
+ANTHROPIC_API_KEY=sk-...
 ```
 
 ---
 
-## Known limitations / pending
+## Approach & patterns
 
-| Item | Status |
-|---|---|
-| `utils:qrcode` | Stubbed — requires `npm install qrcode` |
-| TUI interface | Planned |
-| Node ESM module cache | `zz-steps.test.js` scenarios 8–9 skipped |
-| `fli dev` spawning | `ports:dev` injects ports but doesn't spawn processes |
-| `ws:link` FJS symlinking | Planned — `bun link` all FJS packages + link into target in one shot |
+- **Iterative, file-driven sessions**: zip uploads, run commands immediately, paste errors back, expect targeted fixes.
+- **State doc as handoff artifact**: this file is the source of truth carried forward to each new session.
+- **Concise communication preference**: "caveman mode" available via skill file when detail isn't needed.
+- **Namespace consistency enforced**: all workspace aliases use colon format (`ws:*`), all tooling ports in `85xx` range.
+- **Verify before assuming**: redirect when about to write against an unknown format. The runtime has multiple cases where this prevented hours of debugging (litestone JSON Schema, Bun ESM cache semantics, frontmatter edge cases).
 
----
+## Tools & resources
 
-## Futures
-
-All three previously planned items shipped (`fli validate`, `fli scaffold`, `fli admin:generate`). Futures list currently empty — add new items here.
+- **Runtime**: Bun, ZX globals (only in compiled commands), `bunx` for package execution
+- **Frontend**: Svelte (resources/routes), Ink (planned TUI)
+- **Testing**: `bun test` (built-in), Playwright for E2E elsewhere, `bunx litestone` for JSON Schema validation
+- **Visualization**: FJSChain (compiled JSX → plain JS, self-contained HTML viewer)
+- **Port management**: `core/ports.js` with lock manager at `~/.fli/sessions.lock`
+- **Deploy infrastructure**: SSH + Docker + nginx, no external platform required (CapRover is legacy fallback only)
+- **Monorepo scope**: `@frontierjs`

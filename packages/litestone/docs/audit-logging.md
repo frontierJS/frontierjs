@@ -20,9 +20,9 @@ Log every write (create, update, delete) on a model:
 
 ```prisma
 model User {
-  id    Integer @id
-  email Text
-  name  Text?
+  id    Int @id
+  email String
+  name  String?
   @@log(audit)
 }
 ```
@@ -35,8 +35,8 @@ Log reads and writes of a specific sensitive field:
 
 ```prisma
 model User {
-  salary Real?   @log(audit)
-  apiKey Text?   @secret    // @secret implies @log(audit) automatically
+  salary Float?   @log(audit)
+  apiKey String?   @secret    // @secret implies @log(audit) automatically
 }
 ```
 
@@ -113,8 +113,8 @@ The auto-generated model name for a logger database is `<dbName>Logs` — `audit
 
 ```prisma
 model User {
-  apiKey Text? @secret                 // @encrypted + @guarded(all) + @log(audit)
-  token  Text? @secret(rotate: false)  // same, but excluded from $rotateKey
+  apiKey String? @secret                 // @encrypted + @guarded(all) + @log(audit)
+  token  String? @secret(rotate: false)  // same, but excluded from $rotateKey
 }
 ```
 

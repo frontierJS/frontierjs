@@ -11,9 +11,9 @@ import { makeTestClient } from '@frontierjs/litestone/testing'
 
 const { db, factories } = await makeTestClient(`
   model User {
-    id    Integer @id
-    email Text    @unique
-    role  Text    @default("member")
+    id    Int @id
+    email String    @unique
+    role  String    @default("member")
   }
 `, {
   seed:          42,           // deterministic RNG — same seed = same data every run
@@ -97,7 +97,7 @@ import { generateFactory } from '@frontierjs/litestone/testing'
 const defFn = generateFactory(schema, 'users')
 // @email → 'users1@test.com'
 // @gte(0) @lte(100) → 50
-// Text? → null
+// String? → null
 // Boolean → true/false
 // Enum → random valid value
 ```

@@ -48,50 +48,50 @@ const SCHEMA = `
   // Public-ish data — anyone can read, admins manage, owners delete
   // @@gate("2.5.5.6") = READER.ADMIN.ADMIN.OWNER
   model accounts {
-    id   Integer @id
-    name Text
+    id   Int @id
+    name String
     @@gate("2.5.5.6")
   }
 
   // Catalog — even visitors browse, members buy, owners delete
   // @@gate("1.4.4.6") = VISITOR.USER.USER.OWNER
   model products {
-    id    Integer @id
-    name  Text
-    price Integer
+    id    Int @id
+    name  String
+    price Int
     @@gate("1.4.4.6")
   }
 
   // Sales leads — creators can add, members manage, owners delete
   // @@gate("3.3.4.6") = CREATOR.CREATOR.USER.OWNER
   model leads {
-    id   Integer @id
-    name Text
+    id   Int @id
+    name String
     @@gate("3.3.4.6")
   }
 
   // Messaging — readers see it, members write it, admins moderate (delete)
   // Named syntax: separate read from write from delete
   model messages {
-    id   Integer @id
-    body Text
+    id   Int @id
+    body String
     @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
   }
 
   // Audit trail — admins read, only background jobs write, delete is locked forever
   // @@gate("5.8.8.9") = ADMIN.SYSTEM.SYSTEM.LOCKED
   model audit_logs {
-    id     Integer @id
-    action Text
+    id     Int @id
+    action String
     @@gate("5.8.8.9")
   }
 
   // System config — admins read, only system creates, everything else locked
   // Named syntax with write shorthand then override delete
   model config {
-    id  Integer @id
-    key Text
-    val Text
+    id  Int @id
+    key String
+    val String
     @@gate(read: ADMINISTRATOR, create: SYSTEM, update: LOCKED, delete: LOCKED)  // SYSADMIN also ok for read
   }
 `
@@ -121,7 +121,9 @@ tmpDb.close()
 
 // ─── Client ───────────────────────────────────────────────────────────────────
 
-const db = await createClient(TMP, parseResult, {
+const db = await createClient({
+  db:     TMP,
+  parsed: parseResult,
   plugins: [
     new GatePlugin({
       async getLevel(user, model) {

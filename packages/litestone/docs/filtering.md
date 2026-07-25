@@ -49,7 +49,7 @@
 ## Array fields
 
 ```js
-// JSON array fields (Text[] etc.)
+// JSON array fields (String[] etc.)
 { tags: { has: 'sqlite' } }                  // contains element
 { tags: { hasEvery: ['sqlite', 'bun'] } }    // contains all
 { tags: { hasSome: ['sqlite', 'mysql'] } }   // contains at least one

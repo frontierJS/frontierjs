@@ -19,8 +19,8 @@ Encrypts the value at rest using AES-256-GCM. Implies `@guarded(all)` — only r
 
 ```prisma
 model User {
-  ssn  Text @encrypted
-  dob  Text @encrypted
+  ssn  String @encrypted
+  dob  String @encrypted
 }
 ```
 
@@ -42,7 +42,7 @@ Stores an HMAC of the plaintext alongside the ciphertext, enabling equality WHER
 
 ```prisma
 model User {
-  email Text @encrypted(searchable: true)
+  email String @encrypted(searchable: true)
 }
 ```
 
@@ -66,8 +66,8 @@ database audit {
 }
 
 model User {
-  apiKey Text? @secret                   // encrypted + guarded + audited
-  token  Text? @secret(rotate: false)    // same but excluded from $rotateKey
+  apiKey String? @secret                   // encrypted + guarded + audited
+  token  String? @secret(rotate: false)    // same but excluded from $rotateKey
 }
 ```
 
@@ -100,8 +100,8 @@ Not encryption, but related — these hide fields from reads unless `asSystem()`
 
 ```prisma
 model User {
-  passwordHash Text @guarded(all)   // excluded everywhere unless asSystem()
-  internalNote Text @guarded        // excluded from findMany/findFirst, returned by findUnique
+  passwordHash String @guarded(all)   // excluded everywhere unless asSystem()
+  internalNote String @guarded        // excluded from findMany/findFirst, returned by findUnique
 }
 ```
 

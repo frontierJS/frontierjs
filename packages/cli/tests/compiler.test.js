@@ -330,18 +330,23 @@ echo('hello from command')
 `
     const source = compileCli(md)
 
-    // Write to temp file so zx/globals resolves correctly
-    const { writeFileSync, unlinkSync } = await import('fs')
-    const { resolve } = await import('path')
+    // Write to a managed temp dir so we don't leave files at fliRoot.
+    // .fli-tmp/<pid>/ is auto-created and swept by bin/fli.js — but that's
+    // for runtime use, not tests. We just write here and unlink synchronously
+    // before the test ends so nothing persists if the process exits abruptly.
+    const { writeFileSync, unlinkSync, mkdirSync } = await import('fs')
+    const { resolve, join } = await import('path')
     const { pathToFileURL } = await import('url')
 
-    const tmp = resolve(global.fliRoot || '.', '__echo_test__.mjs')
+    const tmpDir = resolve(global.fliRoot || '.', '.fli-tmp', `test-${process.pid}`)
+    mkdirSync(tmpDir, { recursive: true })
+    const tmp = join(tmpDir, `__echo_test_${Date.now()}.mjs`)
     writeFileSync(tmp, source)
     let mod
     try {
       mod = await import(pathToFileURL(tmp))
     } finally {
-      setTimeout(() => { try { unlinkSync(tmp) } catch {} }, 200)
+      try { unlinkSync(tmp) } catch {}
     }
 
     // Run with context.echo set — should call our function, not globalThis.echo
@@ -374,17 +379,19 @@ echo('fallback echo')
 `
     const source = compileCli(md)
 
-    const { writeFileSync: wf2, unlinkSync: ul2 } = await import('fs')
-    const { resolve: res2 } = await import('path')
+    const { writeFileSync: wf2, unlinkSync: ul2, mkdirSync: mk2 } = await import('fs')
+    const { resolve: res2, join: join2 } = await import('path')
     const { pathToFileURL: p2url } = await import('url')
 
-    const tmp = res2(global.fliRoot || '.', '__echo_test2__.mjs')
+    const tmpDir2 = res2(global.fliRoot || '.', '.fli-tmp', `test-${process.pid}`)
+    mk2(tmpDir2, { recursive: true })
+    const tmp = join2(tmpDir2, `__echo_test2_${Date.now()}.mjs`)
     wf2(tmp, source)
     let mod
     try {
       mod = await import(p2url(tmp))
     } finally {
-      setTimeout(() => { try { ul2(tmp) } catch {} }, 200)
+      try { ul2(tmp) } catch {}
     }
 
     // Run without context.echo — globalThis.echo (ZX) should handle it

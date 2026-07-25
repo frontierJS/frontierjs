@@ -31,8 +31,8 @@ const SCHEMA = `
   enum Role { admin member viewer }
 
   model accounts {
-    id        Integer @id
-    name      Text
+    id        Int @id
+    name      String
     plan      Plan    @default(starter)
     createdAt DateTime @default(now())
 
@@ -40,10 +40,10 @@ const SCHEMA = `
   }
 
   model users {
-    id        Integer  @id
+    id        Int  @id
     account   accounts @relation(fields: [accountId], references: [id])
-    accountId Integer
-    email     Text     @unique @email @lower
+    accountId Int
+    email     String     @unique @email @lower
     role      Role     @default(member)
     createdAt DateTime @default(now())
     deletedAt DateTime?
@@ -52,11 +52,11 @@ const SCHEMA = `
   }
 
   model posts {
-    id        Integer  @id
+    id        Int  @id
     account   accounts @relation(fields: [accountId], references: [id])
-    accountId Integer
-    title     Text
-    body      Text?
+    accountId Int
+    title     String
+    body      String?
     published Boolean  @default(false)
     createdAt DateTime @default(now())
     deletedAt DateTime?
@@ -101,7 +101,9 @@ if (!existsSync(DB_PATH)) {
 // The getLevel() function is called once per model per request and cached —
 // in a real app this would look up the user's role from the session/JWT.
 
-const db = await createClient(DB_PATH, parseResult, {
+const db = await createClient({
+  db:     DB_PATH,
+  parsed: parseResult,
   plugins: [
     new GatePlugin({
       getLevel(user, _model) {

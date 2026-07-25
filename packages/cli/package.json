@@ -8,7 +8,7 @@
   "dependencies": {
     "linkedom": "^0.18.12",
     "turndown": "^7.2.4",
-    "zx": "^8.3.2"
+    "zx": "^8.8.5"
   },
   "scripts": {
     "test": "bun test tests/compiler.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js tests/deploy-helpers.test.js && bun test tests/zz-steps.test.js tests/deploy-dispatch.test.js",

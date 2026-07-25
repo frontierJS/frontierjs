@@ -22,11 +22,11 @@ That clause is part of every `SELECT`, `UPDATE`, and `DELETE` that touches this 
 
 ```prisma
 model Post {
-  id        Integer  @id
-  accountId Integer
-  ownerId   Integer  @default(auth().id)
-  status    Text     @default("draft")
-  title     Text
+  id        Int  @id
+  accountId Int
+  ownerId   Int  @default(auth().id)
+  status    String     @default("draft")
+  title     String
 
   @@allow('read',   status == 'published' || accountId == auth().accountId)
   @@allow('create', auth() != null)
@@ -74,8 +74,8 @@ const result = await userDb.posts.findMany({ policyDebug: true })
 
 ```prisma
 model User {
-  salary Real?   @allow('read',  auth().role == 'admin')   // hidden unless admin
-  apiKey Text?   @allow('write', auth().role == 'admin')   // read-only unless admin
+  salary Float?   @allow('read',  auth().role == 'admin')   // hidden unless admin
+  apiKey String?   @allow('write', auth().role == 'admin')   // read-only unless admin
 }
 ```
 
@@ -145,7 +145,7 @@ GatePlugin checks run before row-level policies. If a user's level is below the 
 
 ```prisma
 model Post {
-  ownerId Integer @default(auth().id)
+  ownerId Int @default(auth().id)
 
   @@gate("1.2.4.6")                           // level check first
   @@allow('update', ownerId == auth().id)     // row check second
@@ -158,8 +158,8 @@ Stamp a field from `ctx.auth` at create time — no SQL DEFAULT emitted:
 
 ```prisma
 model Post {
-  ownerId   Integer  @default(auth().id)
-  ownerType Text     @default(auth().type)
+  ownerId   Int  @default(auth().id)
+  ownerType String     @default(auth().type)
 }
 ```
 

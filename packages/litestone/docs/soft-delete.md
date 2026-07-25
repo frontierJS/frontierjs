@@ -6,8 +6,8 @@ Add `@@softDelete` to a model and Litestone handles all the details: filtering, 
 
 ```prisma
 model Post {
-  id        Integer  @id
-  title     Text
+  id        Int  @id
+  title     String
   deletedAt DateTime?
 
   @@softDelete
@@ -41,8 +41,8 @@ Use `@@softDelete(cascade)` to propagate soft-deletes through FK children:
 
 ```prisma
 model Account {
-  id        Integer @id
-  name      Text
+  id        Int @id
+  name      String
   users     users[]
   sessions  sessions[] @hardDelete   // hard-deleted when account is soft-deleted
   deletedAt DateTime?
@@ -50,16 +50,16 @@ model Account {
 }
 
 model User {
-  id        Integer  @id
-  accountId Integer
+  id        Int  @id
+  accountId Int
   account   accounts @relation(fields: [accountId], references: [id])
   deletedAt DateTime?
   @@softDelete
 }
 
 model Session {
-  id        Integer @id
-  userId    Integer
+  id        Int @id
+  userId    Int
   deletedAt DateTime?
   @@softDelete
 }
@@ -110,7 +110,7 @@ await db.post.count({ withDeleted: true })                       // all rows
 
 ```prisma
 model Order {
-  status    Text  // 'pending' → 'cancelled' → soft-delete allowed
+  status    String  // 'pending' → 'cancelled' → soft-delete allowed
   deletedAt DateTime?
   @@softDelete
   @@transitions([

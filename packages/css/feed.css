@@ -1,0 +1,74 @@
+/*
+ * utilities/feed.css
+ * Chronological event stream — timestamped entries plotted on a timeline.
+ *
+ * Markup (per the Feed vocab term + Principle 2):
+ *   <ol class="feed">
+ *     <li>
+ *       <article class="feed-item">
+ *         <span class="feed-dot success" aria-hidden="true"></span>
+ *         <div class="feed-content">
+ *           <div class="text-muted text-sm">2 days ago</div>
+ *           <div>Form response added</div>
+ *         </div>
+ *       </article>
+ *     </li>
+ *   </ol>
+ *
+ * <ol> because chronological order is semantically meaningful. Each entry
+ * is wrapped in <article> because each is a self-contained event unit.
+ * The feed-dot reads --bg-mix, so any tone class colours it.
+ */
+
+.feed {
+  list-style: none;
+  margin:     0;
+  padding:    0;
+}
+
+.feed > li {
+  padding-bottom: 1.25rem;
+}
+.feed > li:last-child {
+  padding-bottom: 0;
+}
+
+.feed-item {
+  display:               grid;
+  grid-template-columns: 0.625rem 1fr;
+  gap:                   0.75rem;
+  position:              relative;
+  /* article reset — feed-item is an <article> but shouldn't inherit
+     surface treatment; it's a layout grid, not a surface. */
+  background:            transparent;
+  border:                none;
+  border-radius:         0;
+  padding:               0;
+}
+
+.feed-dot {
+  width:         0.625rem;
+  height:        0.625rem;
+  margin-top:    0.3rem;
+  border-radius: 9999px;
+  background:    var(--bg-mix, var(--color-muted));
+  flex-shrink:   0;
+}
+
+/* Connecting line: runs down the dot column from below one dot toward
+   the next. Hidden on the last entry. */
+.feed > li:not(:last-child) .feed-item::after {
+  content:    "";
+  position:   absolute;
+  top:        0.95rem;
+  bottom:     -1.25rem;
+  left:       0.3125rem;
+  transform:  translateX(-50%);
+  width:      1px;
+  background: var(--rule);
+}
+
+.feed-content {
+  min-width:   0;          /* allow long content to wrap, not overflow */
+  line-height: 1.5;
+}

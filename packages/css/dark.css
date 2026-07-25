@@ -1,0 +1,12 @@
+/* themes/dark.css — Inverted neutrals, same brand colors. */
+
+.theme-dark {
+  --surface:        #1a1a1a;
+  --surface-raised: #252525;
+  --surface-sunken: #0f0f0f;
+  --ink:            #f5f5f5;
+  --ink-soft:       #c5c5c5;
+  --ink-mute:       #8a8a8a;
+  --rule:           #2d2d2d;
+  --rule-strong:    #404040;
+}

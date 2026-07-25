@@ -1,0 +1,77 @@
+/*
+ * utilities/drawers.css
+ * Drawer = surface + off-canvas positioning. Built on native <dialog>
+ * so focus trap, escape-to-close, and backdrop come for free.
+ *
+ * Usage:
+ *   <dialog class="drawer from-right">
+ *     <div class="surface-header">…</div>
+ *     <div class="surface-body">…</div>
+ *     <div class="surface-footer">…</div>
+ *   </dialog>
+ *
+ * Open via element.showModal(); close via element.close().
+ */
+
+.drawer {
+  /* Override dialog's centered margins */
+  margin:        0;
+  padding:       0;
+  width:         320px;
+  max-width:     90vw;
+  height:        100vh;
+  max-height:    100vh;
+  border-radius: 0;
+  box-shadow:    var(--shadow-lg);
+}
+
+.drawer::backdrop {
+  background:      rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+/* ── Edge variants ──────────────────────────────────────────── */
+.drawer.from-right {
+  margin-left: auto;
+  animation:   drawer-slide-from-right 200ms ease-out;
+}
+.drawer.from-left {
+  margin-right: auto;
+  animation:    drawer-slide-from-left 200ms ease-out;
+}
+.drawer.from-top,
+.drawer.from-bottom {
+  width:      100%;
+  max-width:  100%;
+  height:     auto;
+  max-height: 80vh;
+}
+.drawer.from-top {
+  margin-bottom: auto;
+  animation:     drawer-slide-from-top 200ms ease-out;
+}
+.drawer.from-bottom {
+  margin-top: auto;
+  animation:  drawer-slide-from-bottom 200ms ease-out;
+}
+
+@keyframes drawer-slide-from-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes drawer-slide-from-left {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes drawer-slide-from-top {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes drawer-slide-from-bottom {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer { animation: none; }
+}

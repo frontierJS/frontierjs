@@ -6,13 +6,13 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 
 | Schema type | SQLite storage | JS type |
 |---|---|---|
-| `Integer` | `INTEGER` | `number` |
-| `Real` | `REAL` | `number` |
-| `Text` | `TEXT` | `string` |
+| `Int` | `INTEGER` | `number` |
+| `Float` | `REAL` | `number` |
+| `String` | `TEXT` | `string` |
 | `Boolean` | `INTEGER` 0/1 | `boolean` (auto-coerced) |
 | `DateTime` | `TEXT` ISO-8601 | `string` |
 | `Json` | `TEXT` | `object` (auto-parsed) |
-| `Blob` | `BLOB` | `Buffer` |
+| `Bytes` | `BLOB` | `Buffer` |
 | `File` | `TEXT` JSON ref | bytes in S3/R2/local (FileStorage plugin) |
 | `File[]` | `TEXT` JSON array | multiple files |
 | `EnumName` | `TEXT` + CHECK | `string` |
@@ -23,7 +23,7 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 
 ### Identity & constraints
 ```
-@id                              primary key (auto-increment for Integer @id)
+@id                              primary key (auto-increment for Int @id)
 @unique                          UNIQUE constraint
 @map("column_name")              custom DB column name
 ```
@@ -227,23 +227,23 @@ Any attempt to transition outside the declared `@from` values throws `Transition
 Reusable named SQL expressions — define once, reference on any model:
 
 ```prisma
-function slug(text: Text): Text {
+function slug(text: String): String {
   @@expr("lower(trim(replace({text}, ' ', '-')))")
 }
 
-function fullName(first: Text, last: Text): Text {
+function fullName(first: String, last: String): String {
   @@expr("COALESCE({first}, '') || ' ' || COALESCE({last}, '')")
 }
 
 model User {
-  firstName   Text?
-  lastName    Text?
-  displayName Text  @fullName(firstName, lastName)  // → STORED generated column
+  firstName   String?
+  lastName    String?
+  displayName String  @fullName(firstName, lastName)  // → STORED generated column
 }
 
 model Post {
-  title Text
-  slug  Text  @slug(title)   // same function, different model
+  title String
+  slug  String  @slug(title)   // same function, different model
 }
 ```
 
@@ -268,8 +268,8 @@ Paths resolve relative to the importing file. Circular imports are deduplicated.
 ```prisma
 /// A registered user account.
 model User {
-  id    Integer @id
-  email Text    /// The user's primary email address.
+  id    Int @id
+  email String    /// The user's primary email address.
   role  Role    /// Access level — affects what the user can see and do.
 }
 ```

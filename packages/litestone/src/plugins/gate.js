@@ -138,6 +138,8 @@ function buildAccessMap(schema) {
 // Clamp to 0–7: user code can return SYSADMIN(7) via user.isSystemAdmin.
 // Only the runtime (asSystem) can set SYSTEM(8).
 
+const SYSTEM_RESOLVER = async () => 8
+
 function makeLevelCache(getLevel, auth) {
   const cache = new Map()
   return async (model) => {
@@ -171,10 +173,11 @@ function checkLevel(required, userLevel, model, operation) {
 
 // ─── Nested write preflight ───────────────────────────────────────────────────
 
+const OP_KEYS = new Set(['create', 'connect', 'connectOrCreate', 'disconnect', 'delete', 'update'])
+
 function collectNestedOps(data, tableName, relationMap, ops = []) {
   if (!data || typeof data !== 'object') return ops
   const rels = relationMap[tableName] ?? {}
-  const OP_KEYS = new Set(['create', 'connect', 'connectOrCreate', 'disconnect', 'delete', 'update'])
 
   for (const [key, val] of Object.entries(data)) {
     if (!(key in rels) || !val || typeof val !== 'object') continue
@@ -213,6 +216,10 @@ export class GatePlugin extends Plugin {
     this._getLevel    = getLevel
     this._accessMap   = {}
     this._relationMap = {}
+    // Per-ctx level resolvers. A ctx object is stable for the lifetime of a
+    // scoped client ($setAuth), so caching here delivers the documented
+    // "getLevel() called at most once per model per request" behavior.
+    this._resolvers   = new WeakMap()
   }
 
   onInit(schema, ctx) {
@@ -226,9 +233,13 @@ export class GatePlugin extends Plugin {
   // User getLevel() return values are clamped to 0–7 (SYSADMIN max).
 
   _resolver(ctx) {
-    if (ctx.isSystem) return async () => 8  // SYSTEM level
-    const auth = ctx.auth ?? null
-    return makeLevelCache(this._getLevel, auth)
+    if (ctx.isSystem) return SYSTEM_RESOLVER  // SYSTEM level
+    let resolver = this._resolvers.get(ctx)
+    if (!resolver) {
+      resolver = makeLevelCache(this._getLevel, ctx.auth ?? null)
+      this._resolvers.set(ctx, resolver)
+    }
+    return resolver
   }
 
   // ── Gate check helper ───────────────────────────────────────────────────────

@@ -1,0 +1,71 @@
+/*
+ * tokens.css
+ * Root variable contracts. Themes override any of these.
+ * Import after Uno's preflights, before component utilities.
+ */
+
+:root {
+  /* ── Semantic colors ──────────────────────────────────────── */
+  --color-primary:   #0d83dd;
+  --color-secondary: #1f2937;
+  --color-muted:     #6b7280;
+  --color-info:      #2EA2C9;
+  --color-success:   #16a34a;
+  --color-warning:   #d4b609;
+  --color-danger:    #F4403A;
+
+  /* ── Neutral surfaces ─────────────────────────────────────── */
+  --surface:        #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f5f5f5;
+  --ink:            #1c1b18;
+  --ink-soft:       #5a564e;
+  --ink-mute:       #8b867b;
+  --rule:           #e7e3d8;
+  --rule-strong:    #d4cfc0;
+
+  /* ── Component radii ──────────────────────────────────────── */
+  --btn-radius:   6px;
+  --card-radius:  8px;
+  --field-radius: 6px;
+
+  /* ── Button typography ────────────────────────────────────── */
+  --btn-font-weight:    600;
+  --btn-text-transform: none;
+  --btn-letter-spacing: normal;
+
+  /* ── Pill typography ──────────────────────────────────────── */
+  --pill-font-weight:    600;
+  --pill-text-transform: none;
+  --pill-letter-spacing: normal;
+
+  /* ── Badge typography ─────────────────────────────────────── */
+  --badge-font-weight:    600;
+  --badge-text-transform: uppercase;
+  --badge-letter-spacing: 0.04em;
+
+  /* ── Shadows ──────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06);
+
+  /* ── Focus ring ───────────────────────────────────────────── */
+  --ring:       var(--color-primary);
+  --ring-width: 3px;
+
+  /* ── Fonts ────────────────────────────────────────────────── */
+  --font-primary: system-ui, sans-serif;
+  --font-mono:    ui-monospace, monospace;
+}
+
+/* ── Respect prefers-reduced-motion ─────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration:       0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration:      0.01ms !important;
+    scroll-behavior:          auto !important;
+  }
+}

@@ -1,0 +1,73 @@
+/*
+ * utilities/tables.css
+ * .table shortcut lives in uno.config.ts.
+ * Tones come from tones.css applied to <tr>.
+ */
+
+.table {
+  --table-bg:      var(--surface);
+  --table-border:  var(--rule);
+  --table-head-bg: var(--surface-sunken);
+
+  width:           100%;
+  background:      var(--table-bg);
+  border:          1px solid var(--table-border);
+  border-radius:   var(--card-radius);
+  border-collapse: separate;
+  border-spacing:  0;
+  overflow:        hidden;
+  font-family:     var(--font-primary);
+  font-size:       14px;
+  color:           var(--ink);
+}
+
+.table th {
+  background:     var(--table-head-bg);
+  color:          var(--ink-mute);
+  font-size:      11px;
+  font-weight:    600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align:     left;
+  padding:        10px 14px;
+}
+
+.table td {
+  padding:    10px 14px;
+  text-align: left;
+}
+
+.table tbody tr + tr td { border-top: 1px solid var(--table-border); }
+
+/* ── Variants ─────────────────────────────────────────────────── */
+.table.striped tbody tr:nth-child(odd) td {
+  background: var(--surface-sunken);
+}
+
+.table.hover tbody tr:hover td {
+  background: color-mix(in srgb, var(--ring) 5%, var(--table-bg));
+}
+
+.table.compact th,
+.table.compact td {
+  padding:   6px 10px;
+  font-size: 13px;
+}
+
+/*
+ * ── Row tones — recipe applies when <tr> has a tone class ──────
+ * .info / .success / .warning / .danger from tones.css set --bg-mix on the row.
+ */
+.table tbody tr.info td,
+.table tbody tr.success td,
+.table tbody tr.warning td,
+.table tbody tr.danger td {
+  background: color-mix(in srgb, var(--bg-mix) 8%, var(--table-bg));
+}
+
+/* ── Actions column helper ────────────────────────────────────── */
+.table-actions {
+  display:         flex;
+  gap:             6px;
+  justify-content: flex-end;
+}

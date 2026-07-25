@@ -1,0 +1,19 @@
+/*
+ * utilities/tones.css
+ * Single source of truth for tone semantics.
+ *
+ * Every tone sets two variables:
+ *   --bg-mix      The tone hue
+ *   --on-bg-mix   The contrast color for text on that hue
+ *
+ * Every component (btn, pill, badge, card, table, dialog, field…) reads
+ * these two vars. Adding a new tone = one line here, zero component edits.
+ */
+
+.primary   { --bg-mix: var(--color-primary);   --on-bg-mix: white; }
+.secondary { --bg-mix: var(--color-secondary); --on-bg-mix: white; }
+.muted     { --bg-mix: var(--color-muted);     --on-bg-mix: white; }
+.info      { --bg-mix: var(--color-info);      --on-bg-mix: white; }
+.success   { --bg-mix: var(--color-success);   --on-bg-mix: white; }
+.warning   { --bg-mix: var(--color-warning);   --on-bg-mix: #1f2937; }
+.danger    { --bg-mix: var(--color-danger);    --on-bg-mix: white; }

@@ -221,21 +221,46 @@ export async function loadFrontierConfig(projectRoot) {
 }
 
 // ─── findProjectRoot ──────────────────────────────────────────────────────────
-// Walk up from `start` until we find a package.json. Returns that directory,
-// or `start` if none found. Used by all bin entry points to set
-// global.projectRoot before anything else loads.
+// Walk up from `start` to locate the user's project root. Priority order:
 //
-// fliRootSelf is passed in to avoid claiming fli's own package as the user's
-// project when fli is run from inside its own checkout (development mode):
-// we don't walk past fliRoot, but if cwd IS already inside fliRoot, that's
-// considered intentional and we use it as the project root anyway.
+//   1. `.fli.json`  — explicit project marker. Deepest match wins. Lets users
+//                     override the default boundary for monorepos and other
+//                     nested-package setups.
+//   2. `.git/`      — git repository root. Treats the whole repo as one project
+//                     even when there are nested package.jsons (e.g. ksite sites
+//                     with their own deps, or workspace member packages).
+//   3. `package.json` — legacy fallback for projects that aren't in git.
+//
+// `fliRootSelf` is FLI's own checkout — we skip the `.git/` check if cwd is
+// inside it, so running FLI from within its own source doesn't try to treat
+// FLI as the user's project.
+//
+// Falls back to `start` if nothing matches.
 export function findProjectRoot(start, fliRootSelf) {
-  let dir = start
-  while (true) {
-    if (existsSync(resolve(dir, 'package.json')) && dir !== fliRootSelf) return dir
-    if (existsSync(resolve(dir, 'package.json'))) return dir
-    const parent = resolve(dir, '..')
-    if (parent === dir) return start
-    dir = parent
+  const walkUp = (dir, marker) => {
+    while (true) {
+      if (existsSync(resolve(dir, marker))) return dir
+      const parent = resolve(dir, '..')
+      if (parent === dir) return null
+      dir = parent
+    }
   }
+
+  // 1. .fli.json — explicit marker, deepest wins
+  const explicit = walkUp(start, '.fli.json')
+  if (explicit) return explicit
+
+  // 2. .git/ — git repo root, skip if running inside fli's own checkout
+  const insideFliRoot = fliRootSelf && (start === fliRootSelf || start.startsWith(fliRootSelf + '/'))
+  if (!insideFliRoot) {
+    const gitRoot = walkUp(start, '.git')
+    if (gitRoot) return gitRoot
+  }
+
+  // 3. package.json — legacy fallback
+  const pkgRoot = walkUp(start, 'package.json')
+  if (pkgRoot && pkgRoot !== fliRootSelf) return pkgRoot
+  if (pkgRoot) return pkgRoot
+
+  return start
 }

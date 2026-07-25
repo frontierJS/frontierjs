@@ -49,7 +49,7 @@ const db = await createClient({
   // Schema source — pick one
   path:    './schema.lite',        // path to .lite file
   // parsed: parseResult,          // pre-parsed result (for multi-file schemas)
-  // schema: `model t { id Integer @id }`, // inline schema string
+  // schema: `model t { id Int @id }`, // inline schema string
 
   db:            './app.db',       // DB path (omit if schema has database blocks)
   encryptionKey: process.env.ENC_KEY,  // 64-char hex = 32 bytes (required for @encrypted/@secret)

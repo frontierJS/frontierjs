@@ -1544,6 +1544,12 @@ td:hover .copy-btn { opacity: 1; }
 .pip.red    { background:#ff4d6d; }
 .pip.yellow { background:#f7b731; }
 .pip.green  { background:#4af2a1; }
+/* --readonly mode: hide every mutating control (server enforces too) */
+body.readonly #btnNewRow, body.readonly #btnDeleteRow, body.readonly #btnRestoreRow,
+body.readonly #btnImport, body.readonly #btnMigApply, body.readonly #btnMigCreate,
+body.readonly #btnMigAuto, body.readonly #panelStats .toolbar .edit-btn,
+body.readonly #rotateKeySection, body.readonly #liteSaveBtn,
+body.readonly button[onclick^="saveCurrentQuery"], body.readonly button[onclick^="deleteSavedQuery"] { display: none !important; }
 </style>
 </head>
 <body>
@@ -1551,6 +1557,8 @@ td:hover .copy-btn { opacity: 1; }
 <header>
   <div class="logo">Litestone <span>Studio</span></div>
   <div class="db-path" id="dbPath">—</div>
+  <div class="db-path" id="tenantBadge" style="display:none;border-color:var(--accent2);color:var(--accent2);cursor:pointer" title="Click to return to the main project" onclick="tenantClose()">🏢 —</div>
+  <div class="db-path" id="readonlyBadge" style="display:none;border-color:var(--warn,#e2b93d);color:var(--warn,#e2b93d)">read-only</div>
   <div class="db-filter-pills" id="dbFilterPills" style="display:none"></div>
   <div class="header-stats">
     <span><span class="stat-val" id="hdrSize">—</span> size</span>
@@ -1598,6 +1606,14 @@ td:hover .copy-btn { opacity: 1; }
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         REPL
       </div>
+      <div class="nav-item" id="navTenants" onclick="showTool('tenants')" style="display:none">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+        Tenants
+      </div>
+      <div class="nav-item" id="navQlog" onclick="showTool('qlog')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="12" y2="13"/></svg>
+        Query Log
+      </div>
       <div class="nav-item" id="navTransform" onclick="showTool('transform')">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
         Transform
@@ -1616,19 +1632,30 @@ td:hover .copy-btn { opacity: 1; }
   <div class="main">
 
     <!-- Browse panel -->
-    <div class="panel active" id="panelBrowse">
+    <div class="panel active" id="panelBrowse" style="position:relative">
       <div class="toolbar">
         <span style="font-size:12px;color:var(--muted)" id="browseTableLabel">Select a table →</span>
-        <input class="search-input" id="browseSearch" placeholder="Filter rows..." oninput="filterRows()" />
+        <input class="search-input" id="browseSearch" placeholder="Search rows (server-side)..." oninput="searchChanged()" />
         <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="showDeleted" onchange="loadTable(currentTable)" style="accent-color:var(--accent2)">
+          <input type="checkbox" id="showDeleted" onchange="resetAndLoad()" style="accent-color:var(--accent2)">
           show deleted
         </label>
+        <select id="pageSizeSel" onchange="pageSizeChanged()" title="Rows per page"
+                style="background:var(--bg2,rgba(255,255,255,0.05));color:var(--muted);border:1px solid rgba(255,255,255,0.1);border-radius:6px;font-size:11px;padding:3px 6px">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="250">250</option>
+        </select>
         <div class="spacer"></div>
         <button class="edit-btn" onclick="openNewRow()" title="Insert a new row" id="btnNewRow" style="display:none">＋ Row</button>
-        <button class="edit-btn danger" onclick="deleteSelectedRow()" title="Delete selected row" id="btnDeleteRow" style="display:none;opacity:.5" disabled>🗑</button>
-        <button class="export-btn" onclick="exportCSV()" title="Export current view as CSV">⬇ CSV</button>
-        <button class="export-btn" onclick="exportJSON()" title="Export current view as JSON">⬇ JSON</button>
+        <button class="edit-btn" onclick="openRowDetail()" title="Row details — record + relations (i)" id="btnRowDetail" style="display:none;opacity:.5" disabled>☰</button>
+        <button class="edit-btn" onclick="restoreSelected()" title="Restore selected soft-deleted rows" id="btnRestoreRow" style="display:none;opacity:.5" disabled>↺</button>
+        <button class="edit-btn danger" onclick="deleteSelectedRow()" title="Delete selected row(s)" id="btnDeleteRow" style="display:none;opacity:.5" disabled>🗑</button>
+        <button class="export-btn" onclick="openImport()" title="Import rows from CSV or JSON" id="btnImport" style="display:none">⬆ Import</button>
+        <input type="file" id="importFile" accept=".csv,.json,application/json,text/csv" style="display:none" onchange="importFileChosen(this.files[0])">
+        <button class="export-btn" onclick="exportTable('csv')" title="Export the FULL table (respects search + show-deleted) as CSV">⬇ CSV</button>
+        <button class="export-btn" onclick="exportTable('json')" title="Export the FULL table (respects search + show-deleted) as JSON">⬇ JSON</button>
         <div class="pagination">
           <button class="btn" onclick="prevPage()">←</button>
           <span id="pageInfo">—</span>
@@ -1639,6 +1666,7 @@ td:hover .copy-btn { opacity: 1; }
         <div class="empty">Select a table to browse</div>
       </div>
       <div class="new-row-bar" id="newRowBar"></div>
+      <div id="rowDrawer" style="display:none;position:absolute;top:0;right:0;bottom:0;width:420px;max-width:70%;background:var(--surface,#12141a);border-left:1px solid rgba(255,255,255,0.12);box-shadow:-12px 0 32px rgba(0,0,0,0.45);z-index:40;overflow:auto"></div>
     </div>
 
     <!-- SQL Query panel -->
@@ -1650,7 +1678,16 @@ td:hover .copy-btn { opacity: 1; }
         <div class="sql-controls">
           <button class="btn primary" onclick="runSQL()">▶ Run  <span style="color:var(--muted)">Ctrl+Enter</span></button>
           <button class="btn" onclick="clearSQL()">Clear</button>
+          <select id="savedQuerySel" onchange="loadSavedQuery()" style="background:rgba(255,255,255,0.05);color:var(--muted);border:1px solid rgba(255,255,255,0.1);border-radius:6px;font-size:11px;padding:3px 6px;max-width:180px">
+            <option value="">— saved queries —</option>
+          </select>
+          <button class="btn" onclick="saveCurrentQuery()" title="Save current SQL under a name">☆ Save</button>
+          <button class="btn" onclick="deleteSavedQuery()" title="Delete the selected saved query">✕</button>
+          <select id="sqlHistorySel" onchange="loadHistoryQuery()" style="background:rgba(255,255,255,0.05);color:var(--muted);border:1px solid rgba(255,255,255,0.1);border-radius:6px;font-size:11px;padding:3px 6px;max-width:160px">
+            <option value="">— history —</option>
+          </select>
           <div class="spacer"></div>
+          <span style="font-size:10px;color:var(--muted);opacity:.7" title="Raw SQL bypasses row policies — it does not use the Acting-as user">runs as system</span>
           <span id="sqlStatus" style="font-size:11px;color:var(--muted)"></span>
         </div>
         <div id="sqlError" class="sql-error" style="display:none"></div>
@@ -1670,6 +1707,8 @@ td:hover .copy-btn { opacity: 1; }
       <div class="er-controls">
         <button class="er-btn" onclick="erLayout()">⟳ Reset layout</button>
         <button class="er-btn" onclick="erFitAll()">⊡ Fit all</button>
+        <button class="er-btn" onclick="erExport('svg')" title="Download the diagram as SVG">⬇ SVG</button>
+        <button class="er-btn" onclick="erExport('png')" title="Download the diagram as PNG">⬇ PNG</button>
       </div>
     </div>
 
@@ -1683,6 +1722,7 @@ td:hover .copy-btn { opacity: 1; }
             <div class="lite-status-dot" id="liteStatusDot"></div>
             <span id="liteStatusText">—</span>
           </div>
+          <button class="er-btn" onclick="liteCodemod()" title="Migrate renamed types (Integer→Int, Text→String, …)">⚕ Codemod</button>
           <button class="er-btn" onclick="liteSave()" id="liteSaveBtn" disabled>Save</button>
           <button class="er-btn" onclick="liteReload()">↺ Reload</button>
         </div>
@@ -1690,12 +1730,20 @@ td:hover .copy-btn { opacity: 1; }
           <textarea class="lite-editor" id="liteEditor" spellcheck="false"
             placeholder="Loading schema…"></textarea>
           <div class="lite-errors" id="liteErrors" style="display:none"></div>
+          <div id="liteDiff" style="display:none;border-top:1px solid rgba(255,255,255,0.08);max-height:220px;overflow:auto;padding:10px 14px;font-size:12px"></div>
         </div>
       </div>
     </div>
 
     <!-- Migrations panel -->
     <div class="panel" id="panelMigrations">
+      <div class="toolbar">
+        <span style="font-size:12px;color:var(--muted)">Migrations</span>
+        <div class="spacer"></div>
+        <button class="edit-btn" id="btnMigApply"  onclick="migApplyPending()" style="display:none" title="Apply all pending migration files">▶ Apply pending</button>
+        <button class="edit-btn" id="btnMigCreate" onclick="migCreateFile()"   style="display:none" title="Write a migration file from the pending schema diff">✍ Create migration</button>
+        <button class="edit-btn" id="btnMigAuto"   onclick="migAutoNow()"      style="display:none" title="Dev: apply the pending diff directly to the database (no migration file)">⚡ autoMigrate</button>
+      </div>
       <div class="migrations-panel" id="migPanel">
         <div class="loading"><div class="spinner"></div> Loading…</div>
       </div>
@@ -1732,9 +1780,62 @@ td:hover .copy-btn { opacity: 1; }
     </div>
 
     <!-- Stats panel -->
+    <!-- Tenants panel -->
+    <div class="panel" id="panelTenants">
+      <div class="toolbar">
+        <span style="font-size:12px;color:var(--muted)">Tenants</span>
+        <div class="spacer"></div>
+        <span id="tenantCount" style="font-size:11px;color:var(--muted)"></span>
+        <button class="edit-btn" id="btnTenantBack" onclick="tenantClose()" style="display:none">← Main project</button>
+        <button class="edit-btn" onclick="tenantMigrateAll()" title="Apply pending migrations to every tenant">▶ Migrate all</button>
+        <button class="edit-btn" onclick="loadTenants()" title="Refresh">⟳</button>
+      </div>
+      <div class="data-grid-wrap" id="tenantList" style="font-size:12px">
+        <div class="loading"><div class="spinner"></div> Loading…</div>
+      </div>
+    </div>
+
+    <!-- Query Log panel -->
+    <div class="panel" id="panelQlog">
+      <div class="toolbar">
+        <span style="font-size:12px;color:var(--muted)">Query Log</span>
+        <input class="search-input" id="qlogFilter" placeholder="Filter (sql, model, operation)..." oninput="qlogRender()" />
+        <select id="qlogMinDur" onchange="qlogRender()" title="Minimum duration"
+                style="background:rgba(255,255,255,0.05);color:var(--muted);border:1px solid rgba(255,255,255,0.1);border-radius:6px;font-size:11px;padding:3px 6px">
+          <option value="0">all durations</option>
+          <option value="5">≥ 5ms</option>
+          <option value="20">≥ 20ms</option>
+          <option value="100">≥ 100ms</option>
+        </select>
+        <div class="spacer"></div>
+        <span id="qlogCount" style="font-size:11px;color:var(--muted)">0 queries</span>
+        <button class="edit-btn" id="qlogPauseBtn" onclick="qlogTogglePause()" title="Pause/resume live capture">⏸</button>
+        <button class="edit-btn danger" onclick="qlogClear()" title="Clear the log">✕ Clear</button>
+      </div>
+      <div class="data-grid-wrap" id="qlogList" style="font-size:12px">
+        <div class="empty">No queries yet — browse a table, run the REPL, or use the app.<br>
+        <span style="font-size:11px;opacity:.7">Every ORM operation through Studio's client is captured here. Click a row to open it in the Query Analyzer.</span></div>
+      </div>
+    </div>
+
     <div class="panel" id="panelStats">
-      <div class="stats-grid" id="statsGrid">
-        <div class="loading"><div class="spinner"></div></div>
+      <div class="toolbar">
+        <span style="font-size:12px;color:var(--muted)">Maintenance</span>
+        <div class="spacer"></div>
+        <button class="edit-btn" onclick="maintRun('backup', 'Back up all databases (with VACUUM INTO)?')" title="Hot backup of every SQLite database">⛃ Backup</button>
+        <button class="edit-btn" onclick="maintRun('vacuum', 'VACUUM rebuilds each database file to reclaim free pages. Continue?')" title="Reclaim free pages">♺ Vacuum</button>
+        <button class="edit-btn" onclick="maintRun('analyze')" title="Refresh query-planner statistics (bounded ANALYZE)">σ Analyze</button>
+        <button class="edit-btn" onclick="maintRun('checkpoint')" title="Checkpoint + truncate the WAL file">⇥ Checkpoint</button>
+        <button class="edit-btn" onclick="maintRun('integrity')" title="PRAGMA quick_check on every database">✓ Integrity</button>
+        <button class="edit-btn" onclick="maintRun('optimize-fts')" title="Merge FTS5 index segments on @@fts models">⌕ FTS</button>
+      </div>
+      <div style="overflow:auto;flex:1;min-height:0">
+        <div id="maintResult" style="display:none;margin:10px 16px;padding:10px 14px;border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:12px;font-family:inherit"></div>
+        <div class="stats-grid" id="statsGrid">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+        <div id="diskUsage" style="padding:0 16px 12px"></div>
+        <div id="rotateKeySection" style="padding:0 16px 24px"></div>
       </div>
     </div>
 
@@ -1885,8 +1986,14 @@ let currentCursor = null
 let prevCursors   = []
 let allRows       = []
 let filteredRows  = []
+let currentTableAppendOnly = false   // jsonl/logger drivers — no update/delete
 let sortCol       = null
-let sortDir       = 1   // 1 = asc, -1 = desc
+let sortDir       = 1   // 1 = asc, -1 = desc  (server-side sort)
+let serverSearch  = ''             // server-side search text
+let searchDebounce = null
+let pageSize      = 50
+let currentTotal  = null           // filtered total row count from server
+let selectedIds   = new Set()      // bulk-selection PK values (stringified)
 let schema        = null
 let softDeleteMap = {}
 let multiDb       = false
@@ -1896,11 +2003,14 @@ let currentAuth   = null  // null = asSystem(), object = $setAuth(user)
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
+const STUDIO_TOKEN = new URLSearchParams(location.search).get('token')
+const authHeaders = () => STUDIO_TOKEN ? { 'Authorization': 'Bearer ' + STUDIO_TOKEN } : {}
+
 async function api(path, body, method) {
   const isGet = method === 'GET' || (!body && !method)
-  const res = await fetch(API + path, isGet ? {} : {
+  const res = await fetch(API + path, isGet ? { headers: authHeaders() } : {
     method: method ?? 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body)
   })
   return res.json()
@@ -1910,6 +2020,16 @@ async function api(path, body, method) {
 
 async function boot() {
   const info = await api('/info')
+  if (info.tenantsEnabled) document.getElementById('navTenants').style.display = ''
+  if (info.activeTenant) {
+    activeTenantId = info.activeTenant
+    const b = document.getElementById('tenantBadge')
+    b.style.display = ''; b.textContent = `🏢 ${info.activeTenant}`
+  }
+  if (info.readonly) {
+    document.getElementById('readonlyBadge').style.display = ''
+    document.body.classList.add('readonly')
+  }
   multiDb   = info.multiDb   || false
   databases = info.databases || []
 
@@ -1958,6 +2078,8 @@ function getEditableFields() {
 }
 
 function startCellEdit(e, tr, row) {
+  // Append-only drivers (jsonl/logger) don't support update — block cell edit
+  if (currentTableAppendOnly) return
   // Don't edit special cells
   const td = e.target.closest('td')
   if (!td) return
@@ -2002,8 +2124,10 @@ function startCellEdit(e, tr, row) {
       let val
       if (inp.type === 'checkbox') val = inp.checked
       else if (inp.value.trim() === '') val = null
-      else if (field.type.name === 'Integer') val = parseInt(inp.value) || null
-      else if (field.type.name === 'Real') val = parseFloat(inp.value) || null
+      // NB: type names are 'Int'/'Float' (renamed from 'Integer'/'Real'),
+      // and NaN-checks instead of `|| null` so entering 0 stays 0.
+      else if (field.type.name === 'Int')   { const n = parseInt(inp.value, 10); val = Number.isNaN(n) ? null : n }
+      else if (field.type.name === 'Float') { const n = parseFloat(inp.value);   val = Number.isNaN(n) ? null : n }
       else val = inp.value
       await saveCellEdit(tr, row, col, val, td, originalContent)
     }
@@ -2036,17 +2160,23 @@ async function saveCellEdit(tr, row, col, newVal, td, originalContent) {
 }
 
 async function deleteSelectedRow() {
-  const tr = document.querySelector('#dataGrid tr.row-selected')
-  if (!tr || !tr.dataset.rowJson) return
-  const row     = JSON.parse(tr.dataset.rowJson)
-  const idField = getIdField()
-  const where   = { [idField]: row[idField] }
-  const isSoft  = softDeleteMap[currentTable]
-  if (!confirm(`Delete this row?${isSoft ? ' (soft delete — sets deletedAt)' : ''}`)) return
+  const ids = selectionTargets()
+  if (!ids.length || !currentTable) return
+  const isSoft = softDeleteMap[currentTable]
+  const what   = ids.length === 1 ? 'this row' : `${ids.length} rows`
+  if (!confirm(`Delete ${what}?${isSoft ? ' (soft delete — sets deletedAt)' : ' (permanent)'}`)) return
   try {
-    const res = await api('/row/delete', { table: currentTable, where, soft: isSoft, auth: currentAuth })
-    if (res.error) throw new Error(res.error)
-    toast('Deleted', 'ok')
+    if (ids.length === 1 && !selectedIds.size) {
+      // Single click-selected row — keep the original single-row path
+      const where = { [getIdField()]: ids[0] }
+      const res = await api('/row/delete', { table: currentTable, where, soft: isSoft, auth: currentAuth })
+      if (res.error) throw new Error(res.error)
+      toast('Deleted', 'ok')
+    } else {
+      const res = await api('/rows/bulk', { table: currentTable, action: 'delete', ids, auth: currentAuth })
+      if (res.error) throw new Error(res.error)
+      toast(`Deleted ${res.count} row${res.count === 1 ? '' : 's'}${isSoft ? ' (soft)' : ''}`, 'ok')
+    }
     document.getElementById('btnDeleteRow').disabled = true
     document.getElementById('btnDeleteRow').style.opacity = '.5'
     loadTablePage()
@@ -2094,8 +2224,8 @@ async function saveNewRow(inputs) {
   for (const f of fields) {
     const v = inputs[f.name]?.value.trim()
     if (!v) continue
-    if (f.type.name === 'Integer') data[f.name] = parseInt(v) || null
-    else if (f.type.name === 'Real') data[f.name] = parseFloat(v) || null
+    if (f.type.name === 'Int')        { const n = parseInt(v, 10); data[f.name] = Number.isNaN(n) ? null : n }
+    else if (f.type.name === 'Float') { const n = parseFloat(v);   data[f.name] = Number.isNaN(n) ? null : n }
     else if (f.type.name === 'Boolean') data[f.name] = v === 'true' || v === '1'
     else if (f.type.name === 'Json') { try { data[f.name] = JSON.parse(v) } catch { toast('Invalid JSON in ' + f.name, 'err'); return } }
     else data[f.name] = v
@@ -2230,7 +2360,7 @@ function appendTableItem(list, model, counts) {
 
 // ── Table select ──────────────────────────────────────────────────────────────
 
-function selectTable(name) {
+function selectTable(name, { skipLoad = false } = {}) {
   currentTable  = name
   currentCursor = null
   prevCursors   = []
@@ -2240,33 +2370,63 @@ function selectTable(name) {
   const dbName  = dbAttr?.name ?? 'main'
   const dbDef   = databases.find(d => d.name === dbName)
   const isJsonl = dbDef?.driver === 'jsonl' || dbDef?.driver === 'logger'
+  currentTableAppendOnly = isJsonl
+  // Per-table view state resets
+  serverSearch = ''
+  const searchInput = document.getElementById('browseSearch')
+  if (searchInput) searchInput.value = ''
+  sortCol = null; sortDir = 1
+  selectedIds.clear()
   // Show/hide edit buttons — hide for JSONL/logger tables (append-only)
   document.getElementById('btnNewRow').style.display    = name ? '' : 'none'
   document.getElementById('btnDeleteRow').style.display = (name && !isJsonl) ? '' : 'none'
   document.getElementById('btnDeleteRow').disabled = true
   document.getElementById('btnDeleteRow').style.opacity = '.5'
+  // Import works on any table that supports create (incl. jsonl append)
+  document.getElementById('btnImport').style.display = name ? '' : 'none'
+  document.getElementById('btnRowDetail').style.display = name ? '' : 'none'
+  closeRowDetail()
+  updateBulkButtons()
   closeNewRow()
   document.querySelectorAll('.table-item').forEach(el => {
-    el.classList.toggle('active', el.textContent.trim().startsWith(name))
+    el.classList.toggle('active', el.dataset.table === name)
   })
   const label = multiDb ? `${name} · ${dbName}` : name
   document.getElementById('browseTableLabel').textContent = label
-  loadTable(name)
+  if (!skipLoad) loadTable(name)
 }
 
+let _loadSeq = 0
 async function loadTable(name) {
   if (!name) return
+  const seq = ++_loadSeq
   document.getElementById('dataGrid').innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>'
 
   const withDeleted = document.getElementById('showDeleted').checked
 
-  const data = await api('/table', { table: name, cursor: currentCursor, withDeleted, auth: currentAuth })
+  const data = await api('/table', {
+    table: name, cursor: currentCursor, withDeleted, auth: currentAuth,
+    search: serverSearch || undefined,
+    orderBy: sortCol ? { col: sortCol, dir: sortDir === -1 ? 'desc' : 'asc' } : undefined,
+    pageSize,
+  })
+  // A newer load superseded this one (rapid filter/sort/toggle) — drop the
+  // stale response instead of letting it overwrite the fresher grid.
+  if (seq !== _loadSeq) return
+  if (data.error) { document.getElementById('dataGrid').innerHTML = `<div class="empty">${esc(data.error)}</div>`; return }
   allRows      = data.items || []
   filteredRows = allRows
+  currentTotal = data.total ?? null
+  selectedIds.clear()
+  updateBulkButtons()
 
   renderTable(data.columns, allRows)
+  const page = prevCursors.length + 1
+  const totalStr = currentTotal != null
+    ? `${currentTotal.toLocaleString()} row${currentTotal === 1 ? '' : 's'}${serverSearch ? ' matching' : ''}`
+    : `${allRows.length} rows`
   document.getElementById('pageInfo').textContent =
-    `${allRows.length} rows${data.hasMore ? ' (more →)' : ''}`
+    `${totalStr}${currentTotal != null && currentTotal > pageSize ? ` · page ${page}` : ''}${data.hasMore ? ' →' : ''}`
 
   // Store next cursor
   window._nextCursor = data.nextCursor
@@ -2279,27 +2439,42 @@ async function loadTable(name) {
 // Alias — reload the current page of the current table
 function loadTablePage() { loadTable(currentTable) }
 
+// Reset pagination and reload — used when search / sort / page size / show-deleted changes
+function resetAndLoad() {
+  currentCursor = null
+  prevCursors   = []
+  loadTable(currentTable)
+}
+
+function searchChanged() {
+  clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => {
+    const v = document.getElementById('browseSearch').value
+    if (v === serverSearch) return
+    serverSearch = v
+    resetAndLoad()
+  }, 300)
+}
+
+function pageSizeChanged() {
+  pageSize = parseInt(document.getElementById('pageSizeSel').value) || 50
+  resetAndLoad()
+}
+
 // ── Render table ──────────────────────────────────────────────────────────────
 
-function sortedRows(rows) {
-  if (!sortCol) return rows
-  return [...rows].sort((a, b) => {
-    const av = a[sortCol], bv = b[sortCol]
-    if (av === null || av === undefined) return 1
-    if (bv === null || bv === undefined) return -1
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sortDir
-    return String(av).localeCompare(String(bv)) * sortDir
-  })
-}
+// Rows arrive already sorted by the server (ORDER BY in SQL) — no client sort.
+function sortedRows(rows) { return rows }
 
 function clickSort(col) {
   if (sortCol === col) {
-    sortDir = sortDir === 1 ? -1 : 1
+    if (sortDir === -1) { sortCol = null; sortDir = 1 }   // third click clears sort
+    else sortDir = -1
   } else {
     sortCol = col
     sortDir = 1
   }
-  renderTable(null, filteredRows.length ? filteredRows : allRows)
+  resetAndLoad()   // server-side sort across the WHOLE table, not just this page
 }
 
 function renderTable(columns, rows) {
@@ -2312,12 +2487,18 @@ function renderTable(columns, rows) {
   const display = sortedRows(rows)
   const fkCols  = getFKCols()
   const dateCols = getDateCols()
+  const idField = getIdField()
+  // Selection checkboxes need a PK and a writable driver
+  const selectable = !currentTableAppendOnly && idField && rows.length && rows[0][idField] !== undefined
   let html = '<table><thead><tr>'
+  if (selectable) {
+    html += `<th class="sel-cell" style="width:26px" onclick="event.stopPropagation()"><input type="checkbox" id="selAll" onchange="toggleSelectAll(this.checked)" style="accent-color:var(--accent2)"></th>`
+  }
   for (const col of cols) {
     const typeInfo = getColType(col)
     const arrow = sortCol === col ? (sortDir === 1 ? ' ↑' : ' ↓') : ''
     const active = sortCol === col ? ' sort-active' : ''
-    html += `<th class="sortable${active}" onclick="clickSort('${col}')">`
+    html += `<th class="sortable${active}" onclick="clickSort('${col}')" title="Sort by ${esc(col)} (server-side)">`
     html += `${esc(col)}<span class="col-type">${typeInfo}</span>`
     html += `<span class="sort-arrow">${arrow || '↕'}</span></th>`
   }
@@ -2327,6 +2508,11 @@ function renderTable(columns, rows) {
     const isDeleted = row.deletedAt != null
     const rowJson   = esc(JSON.stringify(row))
     html += `<tr class="${isDeleted?'cell-del':''}" onclick="rowClick(event, this, ${rowJson})" ondblclick="startCellEdit(event, this, ${rowJson})">`
+    if (selectable) {
+      const idVal = esc(JSON.stringify(row[idField]))
+      const checked = selectedIds.has(String(row[idField])) ? ' checked' : ''
+      html += `<td class="sel-cell" onclick="event.stopPropagation()"><input type="checkbox" class="row-sel" data-id="${idVal}" onchange="toggleSelect(${idVal}, this.checked)"${checked} style="accent-color:var(--accent2)"></td>`
+    }
     for (const col of cols) {
       html += `<td data-col="${esc(col)}">${formatCell(row[col], col, fkCols[col], dateCols)}</td>`
     }
@@ -2335,6 +2521,70 @@ function renderTable(columns, rows) {
 
   html += '</tbody></table>'
   document.getElementById('dataGrid').innerHTML = html
+}
+
+// ── Bulk selection ────────────────────────────────────────────────────────────
+
+function toggleSelect(id, on) {
+  if (on) selectedIds.add(String(id)); else selectedIds.delete(String(id))
+  updateBulkButtons()
+}
+
+function toggleSelectAll(on) {
+  const idField = getIdField()
+  document.querySelectorAll('#dataGrid input.row-sel').forEach(cb => { cb.checked = on })
+  if (on) for (const r of allRows) { if (r[idField] !== undefined) selectedIds.add(String(r[idField])) }
+  else selectedIds.clear()
+  updateBulkButtons()
+}
+
+function updateBulkButtons() {
+  const del = document.getElementById('btnDeleteRow')
+  const res = document.getElementById('btnRestoreRow')
+  const n   = selectedIds.size
+  const rowPicked = !!document.querySelector('#dataGrid tr.row-selected')
+  if (del && !del.style.display.includes('none')) {
+    del.disabled = !(n || rowPicked)
+    del.style.opacity = del.disabled ? '.5' : '1'
+    del.textContent = n > 1 ? `🗑 ${n}` : '🗑'
+  }
+  const det = document.getElementById('btnRowDetail')
+  if (det) {
+    det.disabled = !rowPicked
+    det.style.opacity = det.disabled ? '.5' : '1'
+  }
+  if (res) {
+    const isSoft = softDeleteMap[currentTable]
+    res.style.display = (currentTable && isSoft && !currentTableAppendOnly) ? '' : 'none'
+    res.disabled = !(n || rowPicked)
+    res.style.opacity = res.disabled ? '.5' : '1'
+    res.textContent = n > 1 ? `↺ ${n}` : '↺'
+  }
+}
+
+// Ids to act on: checkbox selection wins; fall back to the click-highlighted row
+function selectionTargets() {
+  if (selectedIds.size) {
+    return [...selectedIds].map(s => { try { return JSON.parse(s) } catch { return s } })
+  }
+  const tr = document.querySelector('#dataGrid tr.row-selected')
+  if (tr?.dataset.rowJson) {
+    const row = JSON.parse(tr.dataset.rowJson)
+    const id  = row[getIdField()]
+    if (id !== undefined) return [id]
+  }
+  return []
+}
+
+async function restoreSelected() {
+  const ids = selectionTargets()
+  if (!ids.length || !currentTable) return
+  try {
+    const res = await api('/rows/bulk', { table: currentTable, action: 'restore', ids, auth: currentAuth })
+    if (res.error) throw new Error(res.error)
+    toast(`Restored ${res.count} row${res.count === 1 ? '' : 's'}`, 'ok')
+    loadTablePage()
+  } catch (e) { toast(e.message, 'err') }
 }
 
 function getFKCols() {
@@ -2374,10 +2624,7 @@ function rowClick(e, tr, row) {
   document.querySelectorAll('#dataGrid tr.row-selected').forEach(el => el.classList.remove('row-selected'))
   tr.classList.add('row-selected')
   tr.dataset.rowJson = JSON.stringify(row)
-  const btn = document.getElementById('btnDeleteRow')
-  if (btn && !btn.style.display.includes('none')) {
-    btn.disabled = false; btn.style.opacity = '1'
-  }
+  updateBulkButtons()
 }
 
 function getColType(col) {
@@ -2404,13 +2651,13 @@ function formatCell(val, col, fkTarget, dateCols) {
     return `<span class="cell-date" title="${esc(fmtDateDisplay(String(val)) + '  ·  ' + fmtRelative(String(val)))}">${esc(String(val))}</span>`
   if (typeof val === 'number') {
     if (fkTarget) {
-      return `<span class="cell-fk" title="Jump to ${fkTarget.table}" onclick="event.stopPropagation();jumpToFK('${fkTarget.table}','${fkTarget.col}',${JSON.stringify(val)})">${val} <span class="fk-arrow">→</span></span>`
+      return `<span class="cell-fk" title="Jump to ${fkTarget.table}" onclick="event.stopPropagation();jumpToFK('${fkTarget.table}','${fkTarget.col}',${esc(JSON.stringify(val))})">${val} <span class="fk-arrow">→</span></span>`
     }
     return `<span class="cell-num">${val.toLocaleString()}</span>${copy(val)}`
   }
   if (col === 'id' || col.endsWith('Id') || col.endsWith('_id')) {
     if (fkTarget && val != null) {
-      return `<span class="cell-fk" title="Jump to ${fkTarget.table}" onclick="event.stopPropagation();jumpToFK('${fkTarget.table}','${fkTarget.col}',${JSON.stringify(val)})">${esc(String(val))} <span class="fk-arrow">→</span></span>`
+      return `<span class="cell-fk" title="Jump to ${fkTarget.table}" onclick="event.stopPropagation();jumpToFK('${fkTarget.table}','${fkTarget.col}',${esc(JSON.stringify(val))})">${esc(String(val))} <span class="fk-arrow">→</span></span>`
     }
     return `<span class="cell-id">${esc(String(val))}</span>${copy(val)}`
   }
@@ -2467,14 +2714,14 @@ function copyCell(val) {
 }
 
 function jumpToFK(table, col, val) {
-  selectTable(table)
-  // Wait for table to load then jump to matching row
-  setTimeout(() => {
-    const input = document.getElementById('browseSearch')
-    input.value = String(val)
-    filterRows()
-    toast(`Showing ${col} = ${val} in ${table}`, 'ok')
-  }, 300)
+  // selectTable resets search state; set the search AFTER so the (single)
+  // load runs with the FK value as a server-side filter — no timing race.
+  selectTable(table, { skipLoad: true })
+  const input = document.getElementById('browseSearch')
+  input.value  = String(val)
+  serverSearch = String(val)
+  resetAndLoad()
+  toast(`Showing ${col} = ${val} in ${table}`, 'ok')
 }
 
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
@@ -2496,20 +2743,18 @@ function prevPage() {
 
 // ── Filter ────────────────────────────────────────────────────────────────────
 
+// Filter is now server-side (see searchChanged) — this remains as the
+// "clear filter" entry point used by keyboard shortcuts.
 function filterRows() {
-  const q = document.getElementById('browseSearch').value.toLowerCase()
-  if (!q) { renderTable(null, allRows); return }
-  const filtered = allRows.filter(r =>
-    JSON.stringify(r).toLowerCase().includes(q)
-  )
-  renderTable(null, filtered)
-  document.getElementById('pageInfo').textContent = `${filtered.length} of ${allRows.length}`
+  const v = document.getElementById('browseSearch').value
+  if (v !== serverSearch) { serverSearch = v; resetAndLoad() }
 }
 
 // ── SQL ───────────────────────────────────────────────────────────────────────
 
 async function runSQL() {
   const sql = document.getElementById('sqlEditor').value.trim()
+  pushSqlHistory(sql.trim())
   if (!sql) return
 
   document.getElementById('sqlError').style.display = 'none'
@@ -2858,6 +3103,60 @@ async function loadMigrations() {
     // Only show db label when there are multiple databases
     renderMigStatus(rows, diffInfo, dbCount > 1 ? dbName : null)
   }
+
+  // Toggle action buttons based on what's actionable
+  const allRowsFlat = Object.values(data.status || {}).flat()
+  const hasPending  = allRowsFlat.some(r => r.state === 'pending')
+  const hasDiff     = Object.values(data.diffs || {}).some(d => d.sql)
+  window._migDiffSqls = Object.entries(data.diffs || {}).filter(([, d]) => d.sql).map(([n, d]) => ({ db: n, sql: d.sql }))
+  document.getElementById('btnMigApply').style.display  = hasPending ? '' : 'none'
+  document.getElementById('btnMigCreate').style.display = hasDiff    ? '' : 'none'
+  document.getElementById('btnMigAuto').style.display   = hasDiff    ? '' : 'none'
+}
+
+// ── Migration actions ─────────────────────────────────────────────────────────
+
+async function migApplyPending() {
+  if (!confirm('Apply all pending migration files to the database(s)?')) return
+  try {
+    const res = await api('/migrations/apply', {})
+    if (res.error) throw new Error(res.error)
+    if (!res.ok) {
+      const firstErr = Object.values(res.results || {}).find(r => r.error || r.failed)
+      throw new Error(firstErr?.error || `migration "${firstErr?.failed}" failed`)
+    }
+    toast(`Applied ${res.applied} migration${res.applied === 1 ? '' : 's'}`, 'ok')
+    loadMigrations()
+  } catch (e) { toast(e.message, 'err') }
+}
+
+async function migAutoNow() {
+  const sqls = window._migDiffSqls || []
+  const preview = sqls.map(s => `── ${s.db} ──\n${s.sql}`).join('\n\n')
+  if (!confirm(`autoMigrate will run this SQL directly against the live database(s):\n\n${preview.slice(0, 1500)}${preview.length > 1500 ? '\n…(truncated — full SQL shown in the panel)' : ''}\n\nProceed?`)) return
+  try {
+    const res = await api('/migrations/auto', {})
+    if (res.error || res.ok === false) throw new Error(res.error || 'autoMigrate failed')
+    const migrated = Object.entries(res.results || {}).filter(([, r]) => r.state === 'migrated')
+    toast(migrated.length
+      ? `Migrated: ${migrated.map(([n, r]) => `${n} (${r.applied} stmts)`).join(', ')}`
+      : 'Already in sync', 'ok')
+    loadMigrations()
+  } catch (e) { toast(e.message, 'err') }
+}
+
+async function migCreateFile() {
+  const label = prompt('Migration label (used in the filename):', 'change')
+  if (label == null) return
+  try {
+    const res = await api('/migrations/create', { label })
+    if (res.error) throw new Error(res.error)
+    const made = Object.entries(res.results || {}).filter(([, r]) => r.created)
+    toast(made.length
+      ? `Created: ${made.map(([, r]) => r.file).join(', ')}`
+      : 'Schema already in sync — nothing to create', made.length ? 'ok' : 'err')
+    loadMigrations()
+  } catch (e) { toast(e.message, 'err') }
 }
 
 function copyDiff(dbName) {
@@ -2873,6 +3172,119 @@ function highlightSQL(sql) {
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
+
+// ── Maintenance actions ───────────────────────────────────────────────────────
+
+function fmtBytes(n) {
+  if (n == null) return '—'
+  if (n < 1024) return n + ' B'
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB'
+  return (n / 1073741824).toFixed(2) + ' GB'
+}
+
+async function maintRun(action, confirmMsg) {
+  if (confirmMsg && !confirm(confirmMsg)) return
+  const box = document.getElementById('maintResult')
+  box.style.display = ''
+  box.innerHTML = `<span style="color:var(--muted)">Running ${action}…</span>`
+  try {
+    const res = await api(`/maint/${action}`, action === 'backup' ? { vacuum: true } : {})
+    if (res.error) throw new Error(res.error)
+    let html = `<div style="font-weight:600;margin-bottom:6px;color:${res.ok ? 'var(--accent)' : 'var(--danger)'}">${res.ok ? '✓' : '✗'} ${action}</div>`
+    if (action === 'backup') {
+      const entries = res.result.path ? { main: res.result } : res.result
+      html += Object.entries(entries).map(([n, r]) => `<div>${esc(n)}: ${esc(r.path)} <span style="color:var(--muted)">(${fmtBytes(r.size)})</span></div>`).join('')
+    } else if (res.results) {
+      html += Object.entries(res.results).map(([n, r]) => {
+        if (r.error) return `<div>${esc(n)}: <span style="color:var(--danger)">${esc(r.error)}</span></div>`
+        const bits = []
+        if (r.freedBytes != null)    bits.push(`freed ${fmtBytes(r.freedBytes)}`)
+        if (r.walPages != null)      bits.push(`${r.checkpointed ?? 0}/${r.walPages} WAL pages checkpointed`)
+        if (r.messages)              bits.push(r.messages.join('; '))
+        if (r.ms != null)            bits.push(`${r.ms}ms`)
+        return `<div>${esc(n)}: <span style="color:var(--muted)">${esc(bits.join(' · ') || 'ok')}</span></div>`
+      }).join('')
+      if (res.message) html += `<div style="color:var(--muted)">${esc(res.message)}</div>`
+    }
+    box.innerHTML = html
+    toast(`${action} done`, res.ok ? 'ok' : 'err')
+    if (action === 'vacuum' || action === 'checkpoint' || action === 'backup') loadStats()
+  } catch (e) {
+    box.innerHTML = `<span style="color:var(--danger)">✗ ${esc(e.message)}</span>`
+    toast(e.message, 'err')
+  }
+}
+
+// ── Disk usage (per table / index) ────────────────────────────────────────────
+
+async function loadDiskUsage() {
+  const el = document.getElementById('diskUsage')
+  el.innerHTML = ''
+  try {
+    const data = await api('/perf/sizes')
+    let html = ''
+    for (const [dbName, info] of Object.entries(data.perDb || {})) {
+      if (!info.ok) { html += `<div style="color:var(--muted);font-size:11px;padding:6px 0">${esc(dbName)}: sizes unavailable (${esc(info.error || '')})</div>`; continue }
+      if (!info.tables?.length) continue
+      const max = Math.max(...info.tables.map(t => (t.tableBytes || 0) + (t.indexBytes || 0)), 1)
+      html += `<div class="perf-section-header" style="margin-top:14px">Disk usage — ${esc(dbName)}${info.estimated ? ' <span style="opacity:.6;font-weight:400">(estimated)</span>' : ''}</div>`
+      html += info.tables.slice(0, 20).map(t => {
+        const total = (t.tableBytes || 0) + (t.indexBytes || 0)
+        const pct   = Math.max(1, Math.round(total / max * 100))
+        const idxStr = t.indexBytes != null ? ` + ${fmtBytes(t.indexBytes)} idx` : (t.indexes.length ? ` · ${t.indexes.length} idx` : '')
+        return `<div style="display:flex;align-items:center;gap:10px;padding:3px 0;font-size:12px">
+          <span style="width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.table)}</span>
+          <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:10px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:var(--accent2);opacity:.7"></div>
+          </div>
+          <span style="width:150px;text-align:right;color:var(--muted)">${fmtBytes(t.tableBytes)}${idxStr}</span>
+        </div>`
+      }).join('')
+    }
+    el.innerHTML = html
+  } catch {}
+}
+
+// ── Encryption key rotation ───────────────────────────────────────────────────
+
+function renderRotateKey() {
+  const el = document.getElementById('rotateKeySection')
+  const secretModels = (schema?.models ?? []).filter(m =>
+    m.fields.some(f => f.attributes?.some(a => a.kind === 'secret' || a.kind === 'encrypted')))
+  if (!secretModels.length) { el.innerHTML = ''; return }
+  el.innerHTML = `
+    <div class="perf-section-header" style="margin-top:14px">Encryption key rotation</div>
+    <div style="font-size:12px;color:var(--muted);margin:4px 0 8px">
+      Re-encrypts @secret fields on: ${secretModels.map(m => esc(m.name)).join(', ')}.
+      Runs in a single transaction per database.
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input class="search-input" id="rotateKeyInput" placeholder="New key — 64 hex characters" style="max-width:520px;font-family:inherit" spellcheck="false">
+      <button class="edit-btn danger" onclick="rotateKeyNow()">⟳ Rotate key</button>
+    </div>
+    <div id="rotateKeyResult" style="font-size:12px;margin-top:8px"></div>`
+}
+
+async function rotateKeyNow() {
+  const key = document.getElementById('rotateKeyInput').value.trim()
+  const out = document.getElementById('rotateKeyResult')
+  if (!/^[0-9a-fA-F]{64}$/.test(key)) { toast('Key must be exactly 64 hex characters', 'err'); return }
+  if (!confirm('Rotate the encryption key now?\n\nAll @secret fields will be re-encrypted with the new key. After this, the app must be restarted with the NEW key in its environment.')) return
+  out.innerHTML = '<span style="color:var(--muted)">Rotating…</span>'
+  try {
+    const res = await api('/maint/rotate-key', { newKey: key })
+    if (res.error || res.ok === false) throw new Error(res.error || 'rotation failed')
+    const statStr = Object.entries(res.stats).map(([m, s]) => `${m}: ${s.rows} rows / ${s.fields} field${s.fields === 1 ? '' : 's'}`).join(' · ')
+    out.innerHTML = `<span style="color:var(--accent)">✓ Rotated in ${res.ms}ms — ${esc(statStr || 'nothing to rotate')}</span><br>
+      <span style="color:var(--warn, #e2b93d)">⚠ ${esc(res.note)}</span>`
+    document.getElementById('rotateKeyInput').value = ''
+    toast('Key rotated', 'ok')
+  } catch (e) {
+    out.innerHTML = `<span style="color:var(--danger)">✗ ${esc(e.message)}</span>`
+    toast(e.message, 'err')
+  }
+}
 
 async function loadStats() {
   const data = await api('/stats')
@@ -3019,16 +3431,19 @@ async function loadStats() {
 // ── Tool navigation ───────────────────────────────────────────────────────────
 
 function showTool(tool) {
-  const tools = ['browse','query','schema','migrations','stats','repl','transform','perf','lite']
+  const tools = ['browse','query','schema','migrations','stats','repl','qlog','tenants','transform','perf','lite']
   for (const t of tools) {
     document.getElementById('panel' + cap(t)).classList.toggle('active', t === tool)
     document.getElementById('nav' + cap(t)).classList.toggle('active', t === tool)
   }
   if (tool === 'migrations') loadMigrations()
-  if (tool === 'stats')      loadStats()
+  if (tool === 'stats')      { loadStats(); loadDiskUsage(); renderRotateKey() }
   if (tool === 'transform')  txInit()
   if (tool === 'perf')        perfInit()
   if (tool === 'lite')        liteInit()
+  if (tool === 'qlog') qlogStart(); else qlogStop()
+  if (tool === 'tenants')    loadTenants()
+  if (tool === 'query')      refreshSavedQueries()
 }
 
 function cap(s) { return s[0].toUpperCase() + s.slice(1) }
@@ -3137,6 +3552,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearTimeout(_liteValidateTimer)
     liteValidate(ed.value)
     _liteValidateTimer = setTimeout(() => liteServerValidate(ed.value), 600)
+    liteQueueDiff()
   })
 })
 
@@ -3200,7 +3616,7 @@ const TABLE_METHODS = [
   'remove','removeMany',
   'delete','deleteMany',
   'restore',
-]
+, 'upsertMany', 'findFirstOrThrow', 'findUniqueOrThrow', 'optimizeFts', 'exists', 'aggregate', 'groupBy']
 const DB_HELPERS = [
   '$transaction','$backup','$attach','$detach',
   '$close','$schema','$relations','$softDelete',
@@ -3689,27 +4105,144 @@ document.addEventListener('click', e => {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
-function exportCSV() {
-  const rows = filteredRows.length ? filteredRows : allRows
-  if (!rows.length) return
-  const cols = Object.keys(rows[0])
-  const lines = [
-    cols.join(','),
-    ...rows.map(r => cols.map(c => {
-      const v = r[c]
-      if (v === null || v === undefined) return ''
-      const s = typeof v === 'object' ? JSON.stringify(v) : String(v)
-      return s.includes(',') || s.includes('"') || s.includes('\n')
-        ? '"' + s.replace(/"/g, '""') + '"'
-        : s
-    }).join(','))
-  ]
-  download(`${currentTable}.csv`, lines.join('\n'), 'text/csv')
+// Server-side export — streams the ENTIRE table (not just the loaded page),
+// honoring the active search and show-deleted state.
+async function exportTable(format) {
+  if (!currentTable) return
+  toast(`Exporting ${currentTable}…`, 'ok')
+  try {
+    const res = await fetch(API + '/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        table: currentTable, format,
+        search: serverSearch || undefined,
+        withDeleted: document.getElementById('showDeleted').checked,
+        auth: currentAuth,
+      }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `Export failed (${res.status})`)
+    }
+    const blob = await res.blob()
+    const a    = document.createElement('a')
+    a.href     = URL.createObjectURL(blob)
+    a.download = `${currentTable}.${format === 'csv' ? 'csv' : 'json'}`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    toast(`Downloaded ${a.download}`, 'ok')
+  } catch (e) { toast(e.message, 'err') }
 }
 
-function exportJSON() {
-  const rows = filteredRows.length ? filteredRows : allRows
-  download(`${currentTable}.json`, JSON.stringify(rows, null, 2), 'application/json')
+// ── Import (CSV / JSON) ───────────────────────────────────────────────────────
+
+function openImport() {
+  if (!currentTable) return
+  document.getElementById('importFile').value = ''
+  document.getElementById('importFile').click()
+}
+
+// Minimal RFC-4180-ish CSV parser: quoted fields, escaped quotes, newlines in quotes
+function parseCSV(text) {
+  const rows = []
+  let row = [], field = '', inQ = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++ }
+        else inQ = false
+      } else field += ch
+    } else if (ch === '"') inQ = true
+    else if (ch === ',') { row.push(field); field = '' }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++
+      row.push(field); field = ''
+      if (row.length > 1 || row[0] !== '') rows.push(row)
+      row = []
+    } else field += ch
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row) }
+  return rows
+}
+
+async function importFileChosen(file) {
+  if (!file || !currentTable) return
+  const model = schema?.models.find(m => m.name === currentTable)
+  if (!model) return
+  const fieldByName = Object.fromEntries(model.fields.map(f => [f.name, f]))
+
+  let rawRows = []
+  try {
+    const text = await file.text()
+    if (file.name.endsWith('.json') || text.trimStart().startsWith('[')) {
+      const parsed = JSON.parse(text)
+      if (!Array.isArray(parsed)) throw new Error('JSON must be an array of objects')
+      rawRows = parsed
+    } else {
+      const grid = parseCSV(text)
+      if (grid.length < 2) throw new Error('CSV needs a header row and at least one data row')
+      const header = grid[0]
+      rawRows = grid.slice(1).map(cells =>
+        Object.fromEntries(header.map((h, i) => [h.trim(), cells[i] ?? ''])))
+    }
+  } catch (e) { toast(`Parse failed: ${e.message}`, 'err'); return }
+  if (!rawRows.length) { toast('No rows found in file', 'err'); return }
+
+  // Map columns → model fields; coerce values by field type; drop unknowns
+  const incoming = Object.keys(rawRows[0] ?? {})
+  const known    = incoming.filter(c => fieldByName[c] && fieldByName[c].type.kind !== 'relation'
+    && !fieldByName[c].attributes?.some(a => ['computed', 'generated'].includes(a.kind)))
+  const dropped  = incoming.filter(c => !known.includes(c))
+  if (!known.length) { toast('No columns match this model’s fields', 'err'); return }
+
+  const summary = `Import ${rawRows.length.toLocaleString()} rows into ${currentTable}?\n\n`
+    + `Mapped columns:  ${known.join(', ')}`
+    + (dropped.length ? `\nIgnored columns: ${dropped.join(', ')}` : '')
+  if (!confirm(summary)) return
+
+  const coerce = (f, v) => {
+    if (v === '' || v == null) return undefined       // let defaults apply
+    const t = f.type.name
+    if (f.type.array || t === 'Json') {
+      if (typeof v === 'object') return v
+      try { return JSON.parse(v) } catch { return undefined }
+    }
+    if (t === 'Int')     { const n = parseInt(v, 10); return Number.isNaN(n) ? undefined : n }
+    if (t === 'Float')   { const n = parseFloat(v);   return Number.isNaN(n) ? undefined : n }
+    if (t === 'Boolean') return v === true || v === 'true' || v === '1' || v === 1 || v === 'yes'
+    return typeof v === 'object' ? JSON.stringify(v) : String(v)
+  }
+  const rows = rawRows.map(r => {
+    const out = {}
+    for (const c of known) {
+      const v = coerce(fieldByName[c], r[c])
+      if (v !== undefined) out[c] = v
+    }
+    return out
+  })
+
+  // Send in chunks so very large files don't build one giant request
+  const CHUNK = 2000
+  let inserted = 0, failed = 0
+  const errors = []
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    toast(`Importing… ${Math.min(i + CHUNK, rows.length)} / ${rows.length}`, 'ok')
+    const res = await api('/import', { table: currentTable, rows: rows.slice(i, i + CHUNK), auth: currentAuth })
+    if (res.error && res.inserted === undefined) { toast(res.error, 'err'); return }
+    inserted += res.inserted ?? 0
+    failed   += res.failed ?? 0
+    if (res.errors?.length) errors.push(...res.errors.map(e => ({ ...e, row: e.row + i })))
+  }
+  loadTablePage()
+  if (failed) {
+    const detail = errors.slice(0, 8).map(e => `  row ${e.row}: ${e.error}`).join('\n')
+    alert(`Imported ${inserted} rows, ${failed} failed.\n\nFirst errors:\n${detail}${errors.length > 8 ? `\n  …and ${errors.length - 8} more` : ''}`)
+    toast(`Imported ${inserted}, ${failed} failed`, 'err')
+  } else {
+    toast(`Imported ${inserted} row${inserted === 1 ? '' : 's'}`, 'ok')
+  }
 }
 
 function download(name, content, type) {
@@ -3740,6 +4273,7 @@ document.addEventListener('keydown', e => {
       break
     case 'Escape':
       const s = document.getElementById('browseSearch')
+      if (document.getElementById('rowDrawer').style.display !== 'none') { closeRowDetail(); return }
       if (s.value) { s.value = ''; filterRows() }
       s.blur()
       break
@@ -3748,6 +4282,9 @@ document.addEventListener('keydown', e => {
       break
     case 'ArrowLeft':
       if (e.altKey) prevPage()
+      break
+    case 'i': case 'I':
+      if (document.querySelector('#dataGrid tr.row-selected')) openRowDetail()
       break
   }
 })
@@ -4144,7 +4681,7 @@ async function txPreview() {
   const steps    = txSerializeSteps()
 
   try {
-    const res = await api('/transform/preview', { srcDb, steps })
+    const res = await api('/transform/preview', { srcDb, steps, outPath: document.getElementById('txOutPath')?.value || undefined, filenameFn: document.getElementById('txFilenameFn')?.value || undefined })
     if (res.error) {
       log.innerHTML = `<div class="log-line err">✗ ${esc(res.error)}</div>`
       return
@@ -4261,6 +4798,387 @@ function txInit() {
 
 let perfActiveIssue = -1
 let perfIssues      = []
+// ── Tenants ───────────────────────────────────────────────────────────────────
+
+let activeTenantId = null
+
+async function loadTenants() {
+  const list = document.getElementById('tenantList')
+  const data = await api('/tenants')
+  document.getElementById('tenantCount').textContent =
+    data.tenants?.length ? `${data.tenants.length} tenants · ${data.openCount ?? 0} open` : ''
+  if (!data.enabled) { list.innerHTML = '<div class="empty">No tenant registry found.<br><span style="font-size:11px;opacity:.7">Create tenants with createTenantRegistry() or litestone tenant create — Studio auto-detects tenants-registry.db next to schema.lite.</span></div>'; return }
+  if (data.error)    { list.innerHTML = `<div class="empty">${esc(data.error)}</div>`; return }
+  if (!data.tenants.length) { list.innerHTML = '<div class="empty">Registry is empty — no tenants yet</div>'; return }
+  list.innerHTML = '<table><thead><tr><th>tenant</th><th>meta</th><th>size</th><th></th></tr></thead><tbody>' +
+    data.tenants.map(t => `
+      <tr class="${t.active ? 'row-selected' : ''}">
+        <td style="font-weight:600">${esc(t.id)}${t.active ? ' <span class="soft-badge" style="background:rgba(74,242,161,.15);color:var(--accent)">active</span>' : ''}</td>
+        <td style="color:var(--muted)">${esc(JSON.stringify(t.meta ?? {}))}</td>
+        <td>${fmtBytes(t.size)}</td>
+        <td>${t.active
+          ? '<button class="edit-btn" onclick="tenantClose()">← close</button>'
+          : `<button class="edit-btn" onclick="tenantOpen('${esc(t.id)}')">Open in Studio →</button>`}</td>
+      </tr>`).join('') + '</tbody></table>'
+  document.getElementById('btnTenantBack').style.display = data.activeTenant ? '' : 'none'
+}
+
+async function tenantOpen(id) {
+  const res = await api('/tenants/open', { id })
+  if (res.error) { toast(res.error, 'err'); return }
+  activeTenantId = id
+  const badge = document.getElementById('tenantBadge')
+  badge.style.display = ''
+  badge.textContent = `🏢 ${id}`
+  toast(`Studio is now viewing tenant "${id}"`, 'ok')
+  loadTenants()
+  if (currentTable) resetAndLoad()
+}
+
+async function tenantClose() {
+  const res = await api('/tenants/open', {})
+  if (res.error) { toast(res.error, 'err'); return }
+  activeTenantId = null
+  document.getElementById('tenantBadge').style.display = 'none'
+  toast('Back to the main project database', 'ok')
+  loadTenants()
+  if (currentTable) resetAndLoad()
+}
+
+async function tenantMigrateAll() {
+  if (!confirm('Apply pending migrations to EVERY tenant?')) return
+  const res = await api('/tenants/migrate', {})
+  if (res.error) { toast(res.error, 'err'); return }
+  const failed = res.failed?.length ? ` — ${res.failed.length} FAILED` : ''
+  toast(`${res.migrations ?? 0} migrations across ${res.tenants ?? 0} tenants${failed}`, res.failed?.length ? 'err' : 'ok')
+  if (res.failed?.length) alert('Failed tenants:\n' + res.failed.map(f => `  ${f.tenantId}: ${f.error}`).join('\n'))
+}
+
+// ── Row detail drawer ─────────────────────────────────────────────────────────
+
+async function openRowDetail() {
+  const tr = document.querySelector('#dataGrid tr.row-selected')
+  if (!tr?.dataset.rowJson || !currentTable) return
+  const row = JSON.parse(tr.dataset.rowJson)
+  const idField = getIdField()
+  if (row[idField] === undefined) { toast('Row has no primary key', 'err'); return }
+  const drawer = document.getElementById('rowDrawer')
+  drawer.style.display = ''
+  drawer.innerHTML = '<div class="loading" style="padding:20px"><div class="spinner"></div></div>'
+  const d = await api('/row/detail', { table: currentTable, id: row[idField], auth: currentAuth })
+  if (d.error) { drawer.innerHTML = `<div class="empty">${esc(d.error)}</div>`; return }
+  const fieldRows = Object.entries(d.row).map(([k, v]) => `
+    <div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px">
+      <span style="width:120px;color:var(--muted);flex-shrink:0">${esc(k)}</span>
+      <span style="word-break:break-all;white-space:pre-wrap">${v === null ? '<span class="cell-null">∅</span>' : esc(typeof v === 'object' ? JSON.stringify(v, null, 1) : String(v))}</span>
+    </div>`).join('')
+  const parentRows = d.parents.length ? d.parents.map(p => `
+    <div style="padding:5px 0;font-size:12px">
+      <span class="sql-log-model">${esc(p.table)}</span>
+      <span style="color:var(--muted)">via ${esc(p.fk)} = ${esc(String(p.value))}</span>
+      ${p.row ? `<span style="margin-left:6px">${esc(p.row.name ?? p.row.displayName ?? p.row.email ?? p.row.title ?? ('#' + p.value))}</span>` : '<span class="cell-null">missing</span>'}
+      <span class="cell-fk" style="margin-left:6px" onclick="drawerJump('${esc(p.table)}', ${JSON.stringify(String(p.value))})">open →</span>
+    </div>`).join('') : '<div style="color:var(--muted);font-size:12px;padding:4px 0">none</div>'
+  const childRows = d.children.length ? d.children.map(c => `
+    <div style="padding:5px 0;font-size:12px">
+      <span class="sql-log-model">${esc(c.table)}</span>
+      <span style="color:var(--muted)">${c.count} row${c.count === 1 ? '' : 's'} via ${esc(c.fk)}</span>
+      ${c.count ? `<span class="cell-fk" style="margin-left:6px" onclick="drawerJump('${esc(c.table)}', ${JSON.stringify(String(d.row[d.idField]))})">view →</span>` : ''}
+    </div>`).join('') : '<div style="color:var(--muted);font-size:12px;padding:4px 0">none</div>'
+  drawer.innerHTML = `
+    <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.1)">
+      <span style="font-weight:600">${esc(currentTable)} · ${esc(String(row[idField]))}</span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="edit-btn" onclick="closeRowDetail()">✕</button>
+    </div>
+    <div style="padding:12px 16px">
+      <div class="perf-section-header">Record</div>${fieldRows}
+      <div class="perf-section-header" style="margin-top:14px">Belongs to</div>${parentRows}
+      <div class="perf-section-header" style="margin-top:14px">Referenced by</div>${childRows}
+    </div>`
+}
+
+function closeRowDetail() { document.getElementById('rowDrawer').style.display = 'none' }
+
+function drawerJump(table, val) {
+  closeRowDetail()
+  const accessor = schema?.models.find(m => m.name === table) ? table : table
+  jumpToFK(accessor, 'id', val)
+}
+
+// ── SQL saved queries + history ───────────────────────────────────────────────
+
+let _sqlHistory = []
+
+async function refreshSavedQueries() {
+  const sel = document.getElementById('savedQuerySel')
+  const res = await api('/queries')
+  const current = sel.value
+  sel.innerHTML = '<option value="">— saved queries —</option>' +
+    (res.queries ?? []).map(q => `<option value="${q.id}" data-sql="${esc(q.sql)}">${esc(q.name)}</option>`).join('')
+  sel.value = current
+}
+
+function loadSavedQuery() {
+  const sel = document.getElementById('savedQuerySel')
+  const opt = sel.selectedOptions[0]
+  if (opt?.dataset.sql) document.getElementById('sqlEditor').value = opt.dataset.sql
+}
+
+async function saveCurrentQuery() {
+  const sql = document.getElementById('sqlEditor').value.trim()
+  if (!sql) { toast('Nothing to save', 'err'); return }
+  const name = prompt('Save query as:', '')
+  if (!name?.trim()) return
+  const res = await api('/queries', { name: name.trim(), sql })
+  if (res.error) { toast(res.error, 'err'); return }
+  toast(`Saved "${name.trim()}"`, 'ok')
+  refreshSavedQueries()
+}
+
+async function deleteSavedQuery() {
+  const sel = document.getElementById('savedQuerySel')
+  if (!sel.value) { toast('Select a saved query first', 'err'); return }
+  const name = sel.selectedOptions[0].textContent
+  if (!confirm(`Delete saved query "${name}"?`)) return
+  await api('/queries/delete', { id: Number(sel.value) })
+  toast('Deleted', 'ok')
+  sel.value = ''
+  refreshSavedQueries()
+}
+
+function pushSqlHistory(sql) {
+  if (!sql?.trim()) return
+  _sqlHistory = [sql, ..._sqlHistory.filter(q => q !== sql)].slice(0, 25)
+  const sel = document.getElementById('sqlHistorySel')
+  sel.innerHTML = '<option value="">— history —</option>' +
+    _sqlHistory.map((q, i) => `<option value="${i}">${esc(q.length > 48 ? q.slice(0, 48) + '…' : q)}</option>`).join('')
+}
+
+function loadHistoryQuery() {
+  const sel = document.getElementById('sqlHistorySel')
+  if (sel.value !== '') document.getElementById('sqlEditor').value = _sqlHistory[Number(sel.value)]
+  sel.value = ''
+}
+
+// ── ER diagram export ─────────────────────────────────────────────────────────
+
+function buildErSvg() {
+  const cards = [...document.querySelectorAll('#erCanvas .er-table')]
+  if (!cards.length) return null
+  const links = document.getElementById('erSvg')
+  const pad = 30
+  let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0
+  const boxes = cards.map(el => {
+    const x = el.offsetLeft, y = el.offsetTop, w = el.offsetWidth, h = el.offsetHeight
+    minX = Math.min(minX, x); minY = Math.min(minY, y)
+    maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h)
+    return { el, x, y, w, h }
+  })
+  const W = maxX - minX + pad * 2, H = maxY - minY + pad * 2
+  const colors = { 'er-db-main': '#4af2a1', 'er-db-jsonl': '#39d0c4', 'er-db-logger': '#f0a35e' }
+  let out = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="ui-monospace, Menlo, monospace">`
+  out += `<rect width="${W}" height="${H}" fill="#0b0d12"/>`
+  // links first (shift into export coords)
+  for (const pathEl of links.querySelectorAll('path')) {
+    const d = pathEl.getAttribute('d')
+    if (d) out += `<g transform="translate(${pad - minX},${pad - minY})"><path d="${d}" fill="none" stroke="#3d4457" stroke-width="1.5"/></g>`
+  }
+  for (const b of boxes) {
+    const model  = b.el.dataset.model
+    const m      = schema.models.find(x => x.name === model)
+    const dbCls  = [...b.el.classList].find(c => c.startsWith('er-db-'))
+    const accent = colors[dbCls] ?? '#7aa2f7'
+    const x = b.x - minX + pad, y = b.y - minY + pad
+    out += `<g><rect x="${x}" y="${y}" width="${b.w}" height="${b.h}" rx="8" fill="#161a22" stroke="${accent}" stroke-opacity="0.55"/>`
+    out += `<text x="${x + 12}" y="${y + 20}" fill="${accent}" font-size="12" font-weight="bold">${esc(model)}</text>`
+    let fy = y + 40
+    for (const f of (m?.fields ?? [])) {
+      if (f.type.kind === 'relation' && f.type.array) continue
+      if (fy > y + b.h - 10) break
+      const isPk = f.attributes.some(a => a.kind === 'id')
+      out += `<text x="${x + 12}" y="${fy}" fill="#c7cdda" font-size="10">${isPk ? '🔑 ' : ''}${esc(f.name)}</text>`
+      out += `<text x="${x + b.w - 12}" y="${fy}" fill="#5b6478" font-size="10" text-anchor="end">${esc(f.type.name)}${f.type.array ? '[]' : ''}${f.type.optional ? '?' : ''}</text>`
+      fy += 15
+    }
+    out += '</g>'
+  }
+  out += '</svg>'
+  return { svg: out, W, H }
+}
+
+function erExport(format) {
+  const built = buildErSvg()
+  if (!built) { toast('Nothing to export', 'err'); return }
+  if (format === 'svg') {
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([built.svg], { type: 'image/svg+xml' }))
+    a.download = 'schema-diagram.svg'
+    a.click(); URL.revokeObjectURL(a.href)
+    toast('Downloaded schema-diagram.svg', 'ok')
+    return
+  }
+  const img = new Image()
+  const url = URL.createObjectURL(new Blob([built.svg], { type: 'image/svg+xml' }))
+  img.onload = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = built.W * 2; canvas.height = built.H * 2   // 2x for crispness
+    const ctx = canvas.getContext('2d')
+    ctx.scale(2, 2); ctx.drawImage(img, 0, 0)
+    URL.revokeObjectURL(url)
+    canvas.toBlob(blob => {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'schema-diagram.png'
+      a.click(); URL.revokeObjectURL(a.href)
+      toast('Downloaded schema-diagram.png', 'ok')
+    }, 'image/png')
+  }
+  img.onerror = () => { URL.revokeObjectURL(url); toast('PNG export failed — try SVG', 'err') }
+  img.src = url
+}
+
+// ── Codemod + live diff for the schema editor ─────────────────────────────────
+
+async function liteCodemod() {
+  const ed = document.getElementById('liteEditor')
+  const res = await api('/schema-codemod', { source: ed.value })
+  if (res.error) { toast(res.error, 'err'); return }
+  if (!res.changes) { toast('No renamed types found — schema is current', 'ok'); return }
+  ed.value = res.source
+  ed.dispatchEvent(new Event('input'))
+  toast(`Codemod: ${res.changes} rename${res.changes === 1 ? '' : 's'} applied — review and Save`, 'ok')
+}
+
+let _liteDiffTimer = null
+function liteQueueDiff() {
+  clearTimeout(_liteDiffTimer)
+  _liteDiffTimer = setTimeout(async () => {
+    const box = document.getElementById('liteDiff')
+    const src = document.getElementById('liteEditor').value
+    try {
+      const res = await api('/schema-diff', { source: src })
+      if (!res.valid) { box.style.display = 'none'; return }
+      const changed = Object.entries(res.diffs).filter(([, d]) => d.hasChanges)
+      if (!changed.length) { box.style.display = 'none'; return }
+      box.style.display = ''
+      box.innerHTML = '<div class="perf-section-header" style="margin:0 0 6px">This edit would change</div>' +
+        changed.map(([db, d]) => `
+          <div style="margin-bottom:8px">
+            <div style="color:var(--accent2);font-weight:600;font-size:11px;margin-bottom:3px">${esc(db)}</div>
+            <pre style="margin:0;white-space:pre-wrap;color:var(--muted);font-size:11px">${esc(d.summary ?? '')}</pre>
+          </div>`).join('')
+    } catch { box.style.display = 'none' }
+  }, 900)
+}
+
+// ── Query Log panel ───────────────────────────────────────────────────────────
+// Live view of the server-side query ring buffer. Polls incrementally (only
+// entries newer than the last seen id) every 2s while the panel is open.
+
+let qlogEntries = []       // local mirror, oldest → newest, capped
+let qlogAfter   = 0        // last seen entry id
+let qlogTimer   = null
+let qlogPaused  = false
+const QLOG_UI_MAX = 2000
+
+function qlogStart() {
+  if (qlogTimer) return
+  qlogPoll()
+  qlogTimer = setInterval(qlogPoll, 2000)
+}
+
+function qlogStop() {
+  if (qlogTimer) { clearInterval(qlogTimer); qlogTimer = null }
+}
+
+function qlogTogglePause() {
+  qlogPaused = !qlogPaused
+  document.getElementById('qlogPauseBtn').textContent = qlogPaused ? '▶' : '⏸'
+  toast(qlogPaused ? 'Query log paused' : 'Query log resumed', 'ok')
+}
+
+async function qlogPoll() {
+  if (qlogPaused) return
+  try {
+    const res = await api('/querylog', { after: qlogAfter })
+    if (!res.entries?.length) return
+    qlogEntries.push(...res.entries)
+    qlogAfter = res.entries[res.entries.length - 1].id
+    if (qlogEntries.length > QLOG_UI_MAX) qlogEntries.splice(0, qlogEntries.length - QLOG_UI_MAX)
+    qlogRender()
+  } catch {}
+}
+
+async function qlogClear() {
+  await api('/querylog', { clear: true })
+  qlogEntries = []
+  qlogAfter   = 0
+  qlogRender()
+}
+
+function qlogRender() {
+  const list   = document.getElementById('qlogList')
+  const filter = document.getElementById('qlogFilter').value.trim().toLowerCase()
+  const minDur = parseFloat(document.getElementById('qlogMinDur').value) || 0
+
+  let shown = qlogEntries
+  if (minDur) shown = shown.filter(e => e.duration >= minDur)
+  if (filter) shown = shown.filter(e =>
+    (e.sql ?? '').toLowerCase().includes(filter) ||
+    (e.model ?? '').toLowerCase().includes(filter) ||
+    (e.operation ?? '').toLowerCase().includes(filter))
+
+  document.getElementById('qlogCount').textContent =
+    `${shown.length}${shown.length !== qlogEntries.length ? ` of ${qlogEntries.length}` : ''} queries`
+
+  if (!shown.length) {
+    list.innerHTML = '<div class="empty">No matching queries</div>'
+    return
+  }
+
+  // Newest first; cap the DOM at 300 rows for snappy rendering
+  const rows = shown.slice(-300).reverse()
+  list.innerHTML = rows.map(e => {
+    const durCls = e.duration >= 100 ? ' very-slow' : e.duration >= 20 ? ' slow' : ''
+    const time   = new Date(e.ts).toTimeString().slice(0, 8)
+    const sqlTxt = e.sql ? esc(e.sql.length > 220 ? e.sql.slice(0, 220) + '…' : e.sql) : '<span class="cell-null">—</span>'
+    return `<div class="sql-log-item" style="cursor:pointer;padding:7px 14px" onclick="qlogAnalyze(${e.id})" title="Open in Query Analyzer">
+      <div class="sql-log-meta">
+        <span style="color:var(--muted);font-size:10px">${time}</span>
+        <span class="sql-log-op">${esc(e.operation)}</span>
+        ${e.model ? `<span class="sql-log-model">${esc(e.model)}</span>` : ''}
+        ${multiDb && e.database ? `<span class="sql-log-db">${esc(e.database)}</span>` : ''}
+        ${e.rowCount != null ? `<span class="sql-log-rows">${e.rowCount} row${e.rowCount === 1 ? '' : 's'}</span>` : ''}
+        ${e.actorId != null ? `<span class="sql-log-rows">as ${esc(String(e.actorId))}</span>` : ''}
+        <span class="sql-log-dur${durCls}">${e.duration}ms</span>
+      </div>
+      <div class="sql-log-sql">${sqlTxt}</div>
+    </div>`
+  }).join('')
+}
+
+// Click-through: open this query in the Performance panel's Query Analyzer
+function qlogAnalyze(id) {
+  const e = qlogEntries.find(x => x.id === id)
+  if (!e?.sql) { toast('No SQL captured for this entry', 'err'); return }
+  // Inline bound params (best effort) so the analyzer sees runnable SQL
+  let sql = e.sql
+  if (Array.isArray(e.params) && e.params.length) {
+    let i = 0
+    sql = sql.replace(/\?/g, () => {
+      if (i >= e.params.length) return '?'
+      const v = e.params[i++]
+      if (v == null) return 'NULL'
+      return typeof v === 'number' ? String(v) : `'${String(v).replace(/'/g, "''")}'`
+    })
+  }
+  showTool('perf')
+  perfShowTab('query')
+  document.getElementById('perfQueryInput').value = sql
+  perfAnalyze()
+}
+
 let perfTabActive   = 'advisor'
 
 function perfShowTab(tab) {
@@ -4407,7 +5325,7 @@ function perfRenderPlan(res) {
       <span class="plan-rating ${node.rating}">${node.rating}</span>
       <div class="plan-node-body">
         <div class="plan-detail">${esc(node.detail)}</div>
-        ${node.advice ? `<div class="plan-advice">${node.advice}</div>` : ''}
+        ${node.advice ? `<div class="plan-advice">${esc(node.advice)}</div>` : ''}
       </div>
     </div>`).join('')
 

@@ -1,0 +1,39 @@
+/*
+ * themes/elite.css
+ * Navy + lime, uppercase, sharp corners, Montserrat.
+ * Demonstrates a theme overriding the full token surface — not just colors.
+ */
+
+.theme-elite {
+  /* Colors */
+  --color-primary:   #9fc612;
+  --color-secondary: #1d3b4c;
+  --color-muted:     #6b7280;
+  --color-info:      #1d3b4c;
+  --color-success:   #3a7d1e;
+  --color-warning:   #ca8a04;
+  --color-danger:    #b22222;
+
+  /* Sharp corners */
+  --btn-radius:   0;
+  --card-radius:  0;
+  --field-radius: 0;
+
+  /* Button — heavy, uppercase, tracked */
+  --btn-font-weight:    700;
+  --btn-text-transform: uppercase;
+  --btn-letter-spacing: 0.1em;
+
+  /* Badge & pill — heavier, wider tracking */
+  --badge-font-weight:    700;
+  --badge-letter-spacing: 0.08em;
+  --pill-text-transform:  uppercase;
+  --pill-letter-spacing:  0.05em;
+
+  /* Slightly more pronounced shadow */
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+
+  /* Typography */
+  --font-primary: 'Montserrat', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', monospace;
+}

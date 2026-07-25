@@ -1,0 +1,72 @@
+/*
+ * utilities/bars.css
+ * Horizontal structural strips: action bars, section headers, labeled dividers.
+ *
+ * These are layout-only patterns — no surface treatment by default. Compose
+ * with surface classes (.raised, .outlined) if you want a contained toolbar.
+ */
+
+/* ── Bar — a strip of action controls ─────────────────────────────
+ * Default is split (groups pushed to both edges) since action bars
+ * usually carry navigation on one side and actions on the other.
+ * Modifiers re-align for toolbar-style (left) or centered strips.
+ *
+ *   <div class="bar">
+ *     <div class="cluster"> … left group … </div>
+ *     <div class="cluster"> … right group … </div>
+ *   </div>
+ */
+.bar {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             0.75rem;
+  padding:         0.5rem 0;
+}
+.bar.start  { justify-content: flex-start; }
+.bar.center { justify-content: center; }
+.bar.end    { justify-content: flex-end; }
+
+/* Bordered variant — a contained toolbar with a bottom rule */
+.bar.bordered {
+  padding:       0.5rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* ── Section header — heading on the left, affordance on the right ─
+ * The canonical "Tags  [+]" pattern: a Section's title paired with a
+ * single trailing control.
+ *
+ *   <div class="section-header">
+ *     <h3 id="tags-heading">Tags</h3>
+ *     <button class="btn icon" aria-label="Add tag">…</button>
+ *   </div>
+ */
+.section-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             0.5rem;
+  margin-bottom:   0.5rem;
+}
+
+/* ── Divider label — a centered label on a horizontal rule ─────────
+ * Day separators in a feed, "OR" between options, section breaks.
+ *
+ *   <div class="divider-label"><span>Thursday 05/21</span></div>
+ */
+.divider-label {
+  display:     flex;
+  align-items: center;
+  gap:         0.75rem;
+  margin:      0.5rem 0;
+  color:       var(--ink-mute);
+  font-size:   0.8125rem;
+}
+.divider-label::before,
+.divider-label::after {
+  content: "";
+  flex:    1;
+  height:  1px;
+  background: var(--rule);
+}

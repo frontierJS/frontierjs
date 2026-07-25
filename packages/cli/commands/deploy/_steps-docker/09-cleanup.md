@@ -1,6 +1,7 @@
 ---
 title: 09-cleanup
 description: Remove _replaced container, prune old images, release deploy lock
+runOnAbort: true
 ---
 
 ```js
