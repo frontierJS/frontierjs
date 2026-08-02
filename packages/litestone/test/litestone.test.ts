@@ -2725,7 +2725,7 @@ describe('updatedAt auto-trigger', () => {
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain('posts_updatedAt')
     expect(ddl).toContain('AFTER UPDATE ON')
-    expect(ddl).toContain('WHEN NEW."updatedAt" = OLD."updatedAt"')
+    expect(ddl).toContain('WHEN NEW."updatedAt" IS OLD."updatedAt"')
   })
 
   test('no trigger on models without updatedAt', () => {
@@ -10677,6 +10677,72 @@ describe('Scopes', () => {
     expect(await db.customer.findUnique({ where: { id: 1 } })).toMatchObject({ id: 1, name: 'Alice' })
     db.$close()
   })
+
+  // ── Writes under a scope ──────────────────────────────────────────────────
+
+  test('create through a scope stamps the scope where as a data default', async () => {
+    const db = await buildDb({ Customer: { premium: { where: { tier: 'premium' } } } })
+    const c = await db.customer.premium.create({ data: { id: 10, name: 'Zed' } })
+    expect(c.tier).toBe('premium')   // stamped, overriding the column default 'free'
+    db.$close()
+  })
+
+  test('caller data overrides the scope default', async () => {
+    const db = await buildDb({ Customer: { premium: { where: { tier: 'premium' } } } })
+    const c = await db.customer.premium.create({ data: { id: 11, name: 'Zed', tier: 'free' } })
+    expect(c.tier).toBe('free')
+    db.$close()
+  })
+
+  test('createMany stamps every row', async () => {
+    const db = await buildDb({ Customer: { premium: { where: { tier: 'premium' } } } })
+    await db.customer.premium.createMany({ data: [{ id: 12, name: 'A' }, { id: 13, name: 'B' }] })
+    const rows = await db.customer.findMany({ where: { id: { in: [12, 13] } } })
+    expect(rows.every((r: any) => r.tier === 'premium')).toBe(true)
+    db.$close()
+  })
+
+  test('update through a scope is constrained to the subset', async () => {
+    const db = await buildDb({ Customer: { active: { where: { status: 'active' } } } })
+    // Bob (id 2) is inactive → updating him through .active matches nothing
+    expect(await db.customer.active.update({ where: { id: 2 }, data: { name: 'HACKED' } })).toBeNull()
+    expect((await db.customer.findUnique({ where: { id: 2 } })).name).toBe('Bob')
+    // Alice (id 1) is active → update goes through
+    expect((await db.customer.active.update({ where: { id: 1 }, data: { name: 'Alice2' } })).name).toBe('Alice2')
+    db.$close()
+  })
+
+  test('updateMany through a scope only touches the subset', async () => {
+    const db = await buildDb({ Customer: { active: { where: { status: 'active' } } } })
+    await db.customer.active.updateMany({ data: { tier: 'enterprise' } })
+    expect((await db.customer.findMany({ where: { tier: 'enterprise' } })).map((c: any) => c.id).sort()).toEqual([1, 3, 4])
+    db.$close()
+  })
+
+  test('dynamic where scope stamps from auth on create', async () => {
+    const db = await buildDb({ Customer: { mine: { where: (ctx: any) => ({ ownerId: ctx.auth?.id }) } } })
+    const c = await db.$setAuth({ id: 99 }).customer.mine.create({ data: { id: 20, name: 'Mine' } })
+    expect(c.ownerId).toBe(99)
+    db.$close()
+  })
+
+  test('explicit data:{} on a scope suppresses stamping', async () => {
+    const db = await buildDb({ Customer: { filterOnly: { where: { tier: 'premium' }, data: {} } } })
+    const c = await db.customer.filterOnly.create({ data: { id: 21, name: 'NoStamp', tier: 'free' } })
+    expect(c.tier).toBe('free')
+    db.$close()
+  })
+
+  test('chained scopes stamp all their defaults', async () => {
+    const db = await buildDb({ Customer: {
+      active:  { where: { status: 'active' } },
+      premium: { where: { tier: 'premium' } },
+    } })
+    const c = await db.customer.active.premium.create({ data: { id: 22, name: 'Both' } })
+    expect(c.status).toBe('active')
+    expect(c.tier).toBe('premium')
+    db.$close()
+  })
 })
 
 // ─── Traits ───────────────────────────────────────────────────────────────────
@@ -14286,7 +14352,10 @@ describe('@@hasTemplates — custom field name', () => {
 // │  Unknown-field validation on writes                                         │
 // └────────────────────────────────────────────────────────────────────────────┘
 
-describe('write payload — unknown field rejection', () => {
+describe('write payload — unknown fields are silently stripped', () => {
+  // Policy (2026-08-01): unknown keys in `data` are mass-assignment-stripped,
+  // not rejected — a form/request body can be passed straight in. A typo on a
+  // REQUIRED field still fails loudly, via the required-field pre-flight.
   let db: any
 
   const SCHEMA = `
@@ -14311,54 +14380,43 @@ describe('write payload — unknown field rejection', () => {
     await db.accounts.delete({ where: { id: { in: [1,2,3,99] } } })
   })
 
-  test('flat create with bogus field throws ValidationError, not SQLite error', async () => {
-    let err: any = null
-    try {
-      await db.accounts.create({ data: { id: 1, name: 'A', bogusField: 'oops' } })
-    } catch (e) { err = e }
-    expect(err).not.toBeNull()
-    // SQLite would say "table accounts has no column named bogusField" —
-    // this is the cryptic, leaky error we're replacing.
-    expect(String(err.message)).not.toContain('no column named')
-    expect(String(err.message)).toContain("Unknown field 'bogusField'")
-    expect(String(err.message)).toContain('accounts')
+  test('flat create with bogus field succeeds — key stripped, no SQLite error', async () => {
+    const row = await db.accounts.create({ data: { id: 1, name: 'A', bogusField: 'oops' } })
+    expect(row.name).toBe('A')
+    expect('bogusField' in row).toBe(false)
   })
 
-  test('typo close to a real field surfaces a "Did you mean" hint', async () => {
+  test('typo on a required field still fails loudly — as "required", not as SQL', async () => {
     let err: any = null
     try {
       await db.users.create({ data: { id: 1, accountId: 1, emial: 'a@x.com' } })
     } catch (e) { err = e }
     expect(err).not.toBeNull()
-    expect(String(err.message)).toContain("Did you mean: email")
+    // 'emial' is stripped; the pre-flight then reports the real field missing.
+    expect(String(err.message)).toContain('email is required')
+    expect(String(err.message)).not.toContain('NOT NULL constraint failed')
   })
 
-  test('non-similar bogus field lists valid fields instead of guessing', async () => {
-    let err: any = null
-    try {
-      await db.users.create({ data: { id: 1, accountId: 1, somethingTotallyDifferent: 'x' } })
-    } catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(String(err.message)).not.toContain('Did you mean')
-    expect(String(err.message)).toContain('Valid fields')
-    expect(String(err.message)).toContain('email')
-  })
-
-  test('nested create on hasMany child surfaces the typo on the child model', async () => {
+  test('bogus extra key alongside complete data is dropped without complaint', async () => {
     await db.accounts.create({ data: { id: 1, name: 'A' } })
-    let err: any = null
-    try {
-      await db.accounts.create({
-        data: {
-          id: 2, name: 'B',
-          users: { create: { id: 99, email: 'b@x.com', wrongField: 'oops' } },
-        },
-      })
-    } catch (e) { err = e }
-    expect(err).not.toBeNull()
-    // Path / model should point at users, not accounts — typo is on the child.
-    expect(String(err.message)).toContain("'users'")
-    expect(String(err.message)).toContain("Unknown field 'wrongField'")
+    const u = await db.users.create({
+      data: { id: 1, accountId: 1, email: 'a@x.com', somethingTotallyDifferent: 'x' },
+    })
+    expect(u.email).toBe('a@x.com')
+    expect('somethingTotallyDifferent' in u).toBe(false)
+  })
+
+  test('nested create on hasMany child strips the bogus key on the child model', async () => {
+    await db.accounts.create({ data: { id: 1, name: 'A' } })
+    await db.accounts.create({
+      data: {
+        id: 2, name: 'B',
+        users: { create: { id: 99, email: 'b@x.com', wrongField: 'oops' } },
+      },
+    })
+    const child = await db.users.findUnique({ where: { id: 99 } })
+    expect(child.email).toBe('b@x.com')
+    expect('wrongField' in child).toBe(false)
   })
 
   test('relation name with non-op scalar value is rejected with a helpful error', async () => {
@@ -14381,15 +14439,11 @@ describe('write payload — unknown field rejection', () => {
     // Either path — ValidationError or SQLite — is acceptable as long as it errors.
   })
 
-  test('update with bogus field also throws', async () => {
+  test('update with bogus field strips it — target field untouched', async () => {
     await db.accounts.create({ data: { id: 1, name: 'A' } })
-    let err: any = null
-    try {
-      await db.accounts.update({ where: { id: 1 }, data: { naem: 'B' } })
-    } catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(String(err.message)).toContain("Unknown field 'naem'")
-    expect(String(err.message)).toContain('Did you mean: name')
+    const row = await db.accounts.update({ where: { id: 1 }, data: { naem: 'B' } })
+    expect(row.name).toBe('A')            // typo'd key dropped, nothing changed
+    expect('naem' in row).toBe(false)
   })
 
   test('valid writes still work — known fields, FKs, computed FK', async () => {
@@ -14400,16 +14454,14 @@ describe('write payload — unknown field rejection', () => {
     expect(u.email).toBe('a@x.com')
   })
 
-  test('createMany rejects bogus keys per-row', async () => {
-    let err: any = null
-    try {
-      await db.accounts.createMany({ data: [
-        { id: 1, name: 'A' },
-        { id: 2, name: 'B', whatever: 'nope' },
-      ]})
-    } catch (e) { err = e }
-    expect(err).not.toBeNull()
-    expect(String(err.message)).toContain("Unknown field 'whatever'")
+  test('createMany strips bogus keys per-row', async () => {
+    await db.accounts.createMany({ data: [
+      { id: 1, name: 'A' },
+      { id: 2, name: 'B', whatever: 'nope' },
+    ]})
+    const rows = await db.accounts.findMany({ where: { id: { in: [1, 2] } } })
+    expect(rows).toHaveLength(2)
+    expect(rows.every((r: any) => !('whatever' in r))).toBe(true)
   })
 })
 
@@ -15031,5 +15083,430 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
     // Partial words (not in unicode61) — should NOT match without trigram
     expect(await db.posts.search('fo')).toEqual([])
     db.$close()
+  })
+})
+
+// ─── Named (labeled) relations — Prisma parity ────────────────────────────────
+
+describe('named relations — @relation("label")', () => {
+  const SCHEMA = `
+model Task {
+  id      Int    @id
+  title   String
+  user    User?  @relation("user", fields: [userId], references: [id])
+  userId  Int?
+  members User[] @relation("members")
+  @@map("tasks")
+}
+model User {
+  id           Int       @id
+  name         String
+  tasks        Task[]    @relation("user")
+  assignments  Task[]    @relation("members")
+  messages     Message[] @relation("user")
+  messagesSent Message[] @relation("sentByUser")
+  @@map("users")
+}
+model Message {
+  id       Int    @id
+  body     String
+  user     User?  @relation("user", fields: [userId], references: [id])
+  userId   Int?
+  sentBy   User?  @relation("sentByUser", fields: [sentById], references: [id])
+  sentById Int?
+  @@map("messages")
+}
+model Tag {
+  id     Int   @id
+  name   String
+  groups Tag[] @relation("TagToTag")
+  tags   Tag[] @relation("TagToTag")
+  @@map("tags")
+}`
+
+  let db: any
+  beforeAll(async () => { db = await createClient({ schema: SCHEMA, db: ':memory:' }) })
+  afterAll(() => db.$close())
+
+  test('join tables use Prisma layout (_label, A/B columns)', () => {
+    const jts = db.$db.query(`SELECT name, sql FROM sqlite_master WHERE name IN ('_members','_TagToTag')`).all()
+    expect(jts.length).toBe(2)
+    for (const jt of jts) {
+      expect(jt.sql).toContain('"A"')
+      expect(jt.sql).toContain('"B"')
+    }
+  })
+
+  test('m2m coexists with an FK between the same models', async () => {
+    const u1 = await db.user.create({ data: { name: 'Sam' } })
+    const u2 = await db.user.create({ data: { name: 'Ana' } })
+    const t  = await db.task.create({ data: { title: 'Ship', userId: u1.id } })
+    await db.task.update({ where: { id: t.id }, data: { members: { connect: [{ id: u2.id }] } } })
+    const tm = await db.task.findUnique({ where: { id: t.id }, include: { user: true, members: true } })
+    expect(tm.user.name).toBe('Sam')
+    expect(tm.members.map((m: any) => m.name)).toEqual(['Ana'])
+    const ua = await db.user.findUnique({ where: { id: u2.id }, include: { assignments: true, tasks: true } })
+    expect(ua.assignments.length).toBe(1)
+    expect(ua.tasks.length).toBe(0)
+  })
+
+  test('two labeled hasMany relations between the same pair', async () => {
+    const a = await db.user.create({ data: { name: 'A' } })
+    const b = await db.user.create({ data: { name: 'B' } })
+    await db.message.create({ data: { body: 'hi', userId: a.id, sentById: b.id } })
+    const ia = await db.user.findUnique({ where: { id: a.id }, include: { messages: true, messagesSent: true } })
+    const ib = await db.user.findUnique({ where: { id: b.id }, include: { messages: true, messagesSent: true } })
+    expect([ia.messages.length, ia.messagesSent.length]).toEqual([1, 0])
+    expect([ib.messages.length, ib.messagesSent.length]).toEqual([0, 1])
+  })
+
+  test('self many-to-many with directional fields', async () => {
+    const p = await db.tag.create({ data: { name: 'colors' } })
+    const c = await db.tag.create({ data: { name: 'red' } })
+    await db.tag.update({ where: { id: p.id }, data: { tags: { connect: { id: c.id } } } })
+    const pi = await db.tag.findUnique({ where: { id: p.id }, include: { tags: true, groups: true } })
+    const ci = await db.tag.findUnique({ where: { id: c.id }, include: { tags: true, groups: true } })
+    expect(pi.tags.map((t: any) => t.name)).toEqual(['red'])
+    expect(pi.groups.length).toBe(0)
+    expect(ci.groups.map((t: any) => t.name)).toEqual(['colors'])
+  })
+
+  test('disconnect, set, and _count on named m2m', async () => {
+    const t = await db.task.create({ data: { title: 'X' } })
+    const u = await db.user.create({ data: { name: 'M' } })
+    const v = await db.user.create({ data: { name: 'N' } })
+    await db.task.update({ where: { id: t.id }, data: { members: { set: [{ id: u.id }, { id: v.id }] } } })
+    await db.task.update({ where: { id: t.id }, data: { members: { disconnect: { id: u.id } } } })
+    const r = await db.task.findUnique({ where: { id: t.id }, include: { _count: { select: { members: true } } } })
+    expect(r._count.members).toBe(1)
+  })
+
+  test('mismatched labels are a parse error', () => {
+    const r = parse(`
+model A { id Int @id; bs B[] @relation("x") }
+model B { id Int @id; as A[] @relation("y") }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toContain('labeled')
+  })
+})
+
+// ─── Relation filters (some/every/none/is) + include where ────────────────────
+
+describe('relation filters + include where', () => {
+  const SCHEMA = `
+model Author { id Int @id; name String; posts Post[]; tags Tag[] }
+model Post   { id Int @id; author Author @relation(fields:[authorId],references:[id]); authorId Int; title String; published Boolean @default(false) }
+model Tag    { id Int @id; label String; authors Author[] }`
+  let db: any
+  beforeAll(async () => {
+    db = await createClient({ schema: SCHEMA, db: ':memory:' })
+    const a1 = await db.author.create({ data: { name: 'Ann' } })
+    const a2 = await db.author.create({ data: { name: 'Bo' } })
+    const a3 = await db.author.create({ data: { name: 'Cy' } })   // no posts
+    await db.post.createMany({ data: [
+      { authorId: a1.id, title: 'p1', published: true },
+      { authorId: a1.id, title: 'p2', published: false },
+      { authorId: a2.id, title: 'p3', published: true },
+      { authorId: a2.id, title: 'p4', published: true },
+    ]})
+    const t = await db.tag.create({ data: { label: 'featured' } })
+    await db.author.update({ where: { id: a1.id }, data: { tags: { connect: { id: t.id } } } })
+  })
+  afterAll(() => db.$close())
+
+  test('some — hasMany', async () => {
+    const r = await db.author.findMany({ where: { posts: { some: { published: true } } } })
+    expect(r.map((a: any) => a.name).sort()).toEqual(['Ann', 'Bo'])
+  })
+  test('none — hasMany', async () => {
+    const r = await db.author.findMany({ where: { posts: { none: { published: true } } } })
+    expect(r.map((a: any) => a.name).sort()).toEqual(['Cy'])   // no published (Cy has none at all)
+  })
+  test('every — hasMany (vacuously true for empty)', async () => {
+    const r = await db.author.findMany({ where: { posts: { every: { published: true } } } })
+    expect(r.map((a: any) => a.name).sort()).toEqual(['Bo', 'Cy'])   // Bo all-published, Cy empty
+  })
+  test('some — manyToMany', async () => {
+    const r = await db.author.findMany({ where: { tags: { some: { label: 'featured' } } } })
+    expect(r.map((a: any) => a.name)).toEqual(['Ann'])
+  })
+  test('relation filter composes with scalar filter', async () => {
+    const r = await db.author.findMany({ where: { name: { contains: 'o' }, posts: { some: { title: 'p3' } } } })
+    expect(r.map((a: any) => a.name)).toEqual(['Bo'])
+  })
+  test('include { where } filters the related rows', async () => {
+    const a = await db.author.findFirst({ where: { name: 'Ann' }, include: { posts: { where: { published: true } } } })
+    expect(a.posts.length).toBe(1)
+    expect(a.posts[0].published).toBe(true)
+  })
+  test('include { where } on m2m', async () => {
+    const a = await db.author.findFirst({ where: { name: 'Ann' }, include: { tags: { where: { label: 'featured' } } } })
+    expect(a.tags.length).toBe(1)
+    const none = await db.author.findFirst({ where: { name: 'Ann' }, include: { tags: { where: { label: 'nope' } } } })
+    expect(none.tags.length).toBe(0)
+  })
+})
+
+// ─── @edge / @scoped ──────────────────────────────────────────────────────────
+
+describe('@edge / @scoped — parse + DDL', () => {
+  const SCHEMA = `
+model User { id Int @id; name String; @@auth }
+model Project { id Int @id; name String; tasks Task[] }
+model Task {
+  id Int @id; title String; projects Project[]
+  isImportant Boolean @edge(ref: Project) @default(false)
+  note String? @edge(ref: Project)
+  myFlag Boolean @scoped @default(false)
+}`
+  test('normalizes @edge / @scoped descriptors with defaults', () => {
+    const r = parse(SCHEMA)
+    expect(r.valid).toBe(true)
+    const task = r.schema.models.find((m: any) => m.name === 'Task')
+    expect(task.fields.find((f: any) => f.name === 'isImportant').edge)
+      .toMatchObject({ ref: 'Project', key: 'projectId', as: 'projectEdge', onMissing: 'error', auth: false })
+    expect(task.fields.find((f: any) => f.name === 'myFlag').edge)
+      .toMatchObject({ ref: 'User', key: 'userId', as: 'mine', auth: true })
+  })
+  test('edge fields are not host columns; decorate join gets column; side table created', async () => {
+    const ddl = generateDDL(parse(SCHEMA).schema)
+    expect(ddl).toMatch(/_project_task[\s\S]*?"isImportant"[\s\S]*?PRIMARY KEY/)
+    expect(ddl).toMatch(/CREATE TABLE IF NOT EXISTS "_task_user"/)
+    const db: any = await createClient({ schema: SCHEMA, db: ':memory:' })
+    const cols = db.$db.query(`PRAGMA table_info("task")`).all().map((c: any) => c.name)
+    expect(cols).not.toContain('isImportant')
+    expect(cols).not.toContain('myFlag')
+    db.$close()
+  })
+})
+
+describe('@edge — parse guardrails', () => {
+  test('D2 — @edge at a belongsTo ref errors', () => {
+    const r = parse(`
+model P { id Int @id }
+model T { id Int @id; pId Int; p P @relation(fields: [pId], references: [id]); x Boolean @edge(ref: P) @default(false) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/belongsTo/)
+  })
+  test('D6 — derived key shadowing a column errors', () => {
+    const r = parse(`
+model U { id Int @id }
+model T { id Int @id; userId Int; rating Int @edge(ref: U, key: userId) @default(0) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/collides with an existing column/)
+  })
+  test('D7 — namespace colliding with a field errors', () => {
+    const r = parse(`
+model P { id Int @id; tasks T[] }
+model T { id Int @id; projects P[]; pEdge Int; x Boolean @edge(ref: P) @default(false) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/namespace 'pEdge' collides/)
+  })
+  test('D10 — two edges to same ref, same key, different namespaces errors', () => {
+    const r = parse(`
+model P { id Int @id; tasks T[] }
+model T { id Int @id; projects P[]; a Boolean @edge(ref: P, as: x) @default(false); b Boolean @edge(ref: P, as: y) @default(false) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/different namespaces|D10/)
+  })
+  test('D11 — fields sharing a namespace with different keys errors', () => {
+    const r = parse(`
+model P { id Int @id; tasks T[] }
+model T { id Int @id; projects P[]; a Boolean @edge(ref: P, as: s, key: k1) @default(false); b Boolean @edge(ref: P, as: s, key: k2) @default(false) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/two dimensions|D11/)
+  })
+  test('valid — Joe/Sally double-duty (belongsTo + @scoped) passes', () => {
+    const r = parse(`
+model User { id Int @id; @@auth }
+model T { id Int @id; userId Int; user User @relation(fields: [userId], references: [id]); flag Boolean @scoped @default(false) }`)
+    expect(r.valid).toBe(true)
+  })
+  test('valid — two edges to same ref, disambiguated, passes', () => {
+    const r = parse(`
+model P { id Int @id; tasks T[] }
+model T { id Int @id; projects P[]; team Int @edge(ref: P, as: t, key: teamPid) @default(0); cli Int @edge(ref: P, as: c, key: cliPid) @default(0) }`)
+    expect(r.valid).toBe(true)
+  })
+})
+
+describe('@edge / @scoped — runtime', () => {
+  const SCHEMA = `
+model User { id Int @id; name String; @@auth }
+model Project { id Int @id; name String; tasks Task[] }
+model Task {
+  id Int @id; title String; projects Project[]
+  isImportant Boolean @edge(ref: Project) @default(false)
+  note String? @edge(ref: Project)
+  myFlag Boolean @scoped @default(false)
+}`
+  let db: any, u1: any, u2: any, p: any, tasks: any[]
+  beforeEach(async () => {
+    db = await createClient({ schema: SCHEMA, db: ':memory:' })
+    u1 = await db.user.create({ data: { name: 'Sally' } })
+    u2 = await db.user.create({ data: { name: 'Joe' } })
+    p  = await db.project.create({ data: { name: 'Web' } })
+    tasks = []
+    for (const t of ['A', 'B', 'C']) tasks.push(await db.task.create({ data: { title: t, projects: { connect: { id: p.id } } } }))
+  })
+  afterEach(() => db.$close())
+
+  test('decorate write + traversal read (with defaults)', async () => {
+    await db.task.update({ where: { id: tasks[0].id }, data: { projectEdge: { isImportant: true, note: 'hot' } }, scopedBy: { projectId: p.id } })
+    const proj = await db.project.findFirst({ where: { id: p.id }, include: { tasks: true } })
+    expect(proj.tasks.find((t: any) => t.title === 'A').projectEdge).toEqual({ isImportant: true, note: 'hot' })
+    expect(proj.tasks.find((t: any) => t.title === 'B').projectEdge).toEqual({ isImportant: false, note: null })
+  })
+  test('decorate flat read via scopedBy', async () => {
+    await db.task.update({ where: { id: tasks[0].id }, data: { projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })
+    const [a] = await db.task.findMany({ where: { title: 'A' }, scopedBy: { projectId: p.id } })
+    expect(a.projectEdge.isImportant).toBe(true)
+  })
+  test('D12 — write to a non-member throws EDGE_NO_MEMBERSHIP', async () => {
+    const p2 = await db.project.create({ data: { name: 'Other' } })
+    await expect(db.task.update({ where: { id: tasks[0].id }, data: { projectEdge: { isImportant: true } }, scopedBy: { projectId: p2.id } }))
+      .rejects.toMatchObject({ code: 'EDGE_NO_MEMBERSHIP' })
+  })
+  test('unbound non-auth write throws', async () => {
+    await expect(db.task.update({ where: { id: tasks[0].id }, data: { projectEdge: { isImportant: true } } }))
+      .rejects.toThrow(/cannot resolve dimension/)
+  })
+  test('@scoped write + per-viewer isolation', async () => {
+    await db.$setAuth(u1).task.update({ where: { id: tasks[1].id }, data: { mine: { myFlag: true } } })
+    const sally = await db.$setAuth(u1).task.findFirst({ where: { id: tasks[1].id } })
+    const joe   = await db.$setAuth(u2).task.findFirst({ where: { id: tasks[1].id } })
+    expect(sally.mine.myFlag).toBe(true)
+    expect(joe.mine.myFlag).toBe(false)
+  })
+  test('@scoped no-viewer read → defaults (D3)', async () => {
+    const sys = await db.task.findFirst({ where: { id: tasks[0].id } })
+    expect(sys.mine).toEqual({ myFlag: false })
+  })
+  test('decorate filter + count + compose with scalar filter', async () => {
+    for (const t of [tasks[0], tasks[2]])
+      await db.task.update({ where: { id: t.id }, data: { projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })
+    const imp = await db.task.findMany({ where: { projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })
+    expect(imp.map((t: any) => t.title).sort()).toEqual(['A', 'C'])
+    expect(await db.task.count({ where: { projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })).toBe(2)
+    const combo = await db.task.findMany({ where: { title: { in: ['A', 'B'] }, projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })
+    expect(combo.map((t: any) => t.title)).toEqual(['A'])
+  })
+  test('@scoped filter isolates per viewer', async () => {
+    await db.$setAuth(u1).task.update({ where: { id: tasks[1].id }, data: { mine: { myFlag: true } } })
+    expect((await db.$setAuth(u1).task.findMany({ where: { mine: { myFlag: true } } })).map((t: any) => t.title)).toEqual(['B'])
+    expect((await db.$setAuth(u2).task.findMany({ where: { mine: { myFlag: true } } })).length).toBe(0)
+  })
+  test('unbound non-auth filter throws', async () => {
+    await expect(db.task.findMany({ where: { projectEdge: { isImportant: true } } })).rejects.toThrow(/not bound/)
+  })
+  test('$scopedBy binder — write/read/filter and chaining with $setAuth', async () => {
+    const proj = db.$scopedBy({ projectId: p.id })
+    await proj.task.update({ where: { id: tasks[0].id }, data: { projectEdge: { isImportant: true } } })
+    expect((await proj.task.findFirst({ where: { id: tasks[0].id } })).projectEdge.isImportant).toBe(true)
+    expect((await proj.task.findMany({ where: { projectEdge: { isImportant: true } } })).map((t: any) => t.title)).toEqual(['A'])
+    const both = db.$scopedBy({ projectId: p.id }).$setAuth(u1)
+    await both.task.update({ where: { id: tasks[0].id }, data: { mine: { myFlag: true } } })
+    const r = await both.task.findFirst({ where: { id: tasks[0].id } })
+    expect(r.projectEdge.isImportant).toBe(true)
+    expect(r.mine.myFlag).toBe(true)
+  })
+  test('create with edge + connect in one call', async () => {
+    const t = await db.task.create({ data: { title: 'D', projects: { connect: { id: p.id } }, projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })
+    expect((await db.task.findFirst({ where: { id: t.id }, scopedBy: { projectId: p.id } })).projectEdge.isImportant).toBe(true)
+  })
+})
+
+describe('@edge — incremental autoMigrate', () => {
+  test('adds decorate column + side table to an existing DB, preserving data', async () => {
+    const { autoMigrate } = await import('../src/core/migrations.js')
+    const path = join(tmpdir(), `edge_mig_${Date.now()}.db`)
+    const v1 = `model Project { id Int @id; name String; tasks Task[] }
+model Task { id Int @id; title String; projects Project[] }`
+    let db: any = await createClient({ schema: v1, db: path })
+    const p = await db.project.create({ data: { name: 'Web' } })
+    await db.task.create({ data: { title: 'Ship', projects: { connect: { id: p.id } } } })
+    db.$close()
+
+    const v2 = `model User { id Int @id; name String; @@auth }
+model Project { id Int @id; name String; tasks Task[] }
+model Task { id Int @id; title String; projects Project[]; isImportant Boolean @edge(ref: Project) @default(false); myFlag Boolean @scoped @default(false) }`
+    db = await createClient({ schema: v2, db: path })
+    autoMigrate(db)
+
+    const jcols = db.$db.query(`PRAGMA table_info("_project_task")`).all().map((c: any) => c.name)
+    expect(jcols).toContain('isImportant')
+    expect(db.$db.query(`SELECT name FROM sqlite_master WHERE name='_task_user'`).all().length).toBe(1)
+
+    const [t] = await db.task.findMany({})
+    expect(t.title).toBe('Ship')   // old row survived
+    await db.task.update({ where: { id: t.id }, data: { projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })
+    expect((await db.task.findFirst({ where: { id: t.id }, scopedBy: { projectId: p.id } })).projectEdge.isImportant).toBe(true)
+    db.$close()
+    rmSync(path, { force: true }); rmSync(path + '-wal', { force: true }); rmSync(path + '-shm', { force: true })
+  })
+})
+
+describe('@edge — eject to model', () => {
+  test('composite PK (two @id fields) generates valid, executable DDL', () => {
+    const r = parse(`model J { a Int @id; b Int @id; x Int @default(0) }`)
+    expect(r.valid).toBe(true)
+    const ddl = generateDDL(r.schema)
+    expect(ddl).toMatch(/PRIMARY KEY \("a", "b"\)/)
+    const mem = new Database(':memory:')
+    expect(() => mem.run(ddl)).not.toThrow()
+    mem.close()
+  })
+  test('decorate eject plan — model text, rename, rewire', async () => {
+    const { ejectEdge } = await import('../src/tools/eject.js')
+    const schema = parse(`
+model Project { id Int @id; tasks Task[] }
+model Task { id Int @id; projects Project[]; isImportant Boolean @edge(ref: Project) @default(false); note String? @edge(ref: Project) }`).schema
+    const plan = ejectEdge(schema, 'Task.projectEdge')
+    expect(plan.newModelName).toBe('ProjectTask')
+    expect(plan.newTable).toBe('project_task')
+    expect(plan.storage).toBe('decorate')
+    expect(plan.fields.sort()).toEqual(['isImportant', 'note'])
+    expect(plan.model).toContain('projectId Int @id')
+    expect(plan.model).toContain('taskId Int @id')
+    expect(plan.model).toContain('isImportant Boolean @default(false)')
+    expect(plan.rename).toBe('ALTER TABLE "_project_task" RENAME TO "project_task";')
+    expect(plan.rewire.join(' ')).toMatch(/implicit m2m/)
+  })
+  test('@scoped eject plan — create-own, no m2m to rewire', async () => {
+    const { ejectEdge } = await import('../src/tools/eject.js')
+    const schema = parse(`
+model User { id Int @id; @@auth }
+model Task { id Int @id; myFlag Boolean @scoped @default(false); myNote String? @scoped }`).schema
+    const plan = ejectEdge(schema, 'Task.mine')
+    expect(plan.newModelName).toBe('TaskUser')
+    expect(plan.model).toContain('taskId Int @id')
+    expect(plan.model).toContain('userId Int @id')
+    expect(plan.rewire.join(' ')).toMatch(/no m2m to rewire/)
+  })
+  test('full round-trip — eject preserves data and the ejected model is queryable', async () => {
+    const { ejectEdge, applyEject } = await import('../src/tools/eject.js')
+    const { autoMigrate } = await import('../src/core/migrations.js')
+    const path = join(tmpdir(), `eject_${Date.now()}.db`)
+    const v1 = `
+model Project { id Int @id; name String; tasks Task[] }
+model Task { id Int @id; title String; projects Project[]; isImportant Boolean @edge(ref: Project) @default(false) }`
+    let db: any = await createClient({ schema: v1, db: path })
+    const p = await db.project.create({ data: { name: 'Web' } })
+    const t = await db.task.create({ data: { title: 'Ship', projects: { connect: { id: p.id } } } })
+    await db.task.update({ where: { id: t.id }, data: { projectEdge: { isImportant: true } }, scopedBy: { projectId: p.id } })
+    const plan = ejectEdge(db.$schema, 'Task.projectEdge')
+    applyEject(db.$db, plan)
+    db.$close()
+
+    const v2 = `
+model Project { id Int @id; name String; taskLinks ProjectTask[] }
+model Task { id Int @id; title String; projectLinks ProjectTask[] }
+${plan.model}`
+    expect(parse(v2).valid).toBe(true)
+    db = await createClient({ schema: v2, db: path })
+    autoMigrate(db)
+    expect(await db.projectTask.findMany({})).toEqual([{ projectId: p.id, taskId: t.id, isImportant: true }])
+    db.$close()
+    rmSync(path, { force: true }); rmSync(path + '-wal', { force: true }); rmSync(path + '-shm', { force: true })
   })
 })

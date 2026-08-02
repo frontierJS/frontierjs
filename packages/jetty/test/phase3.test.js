@@ -682,6 +682,109 @@ group('useStore fallback')
   if (wrapped.value.length === 2) ok('useStore unsubscribe stops updates')
 }
 
+// --- FindParams threading ---
+//
+// service.find used to be written `(query, _params) => _call(...)` — the
+// second argument was accepted and dropped, so paging or ordering a list
+// through a jetty resource silently returned the server's default page.
+// Sierra's copy of this file carried the identical bug.
+
+group('createResource — FindParams reach the adapter')
+{
+  const { _registerActivePort } = await import('../src/resources/active-port.js')
+  const { createResource } = await import('../src/resources/resource.js')
+
+  const port = mockPagePort()
+  _registerActivePort(port)
+
+  // find(query, params) puts params on args, structured — not flattened.
+  {
+    let seen = null
+    port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
+    const r = createResource('leads')
+    await r.service.find({ status: 'new' }, { limit: 25, offset: 50, orderBy: 'name' })
+
+    if (JSON.stringify(seen?.query) === '{"status":"new"}') ok('find keeps query as filters only')
+    if (seen?.params?.limit === 25 && seen?.params?.offset === 50 && seen?.params?.orderBy === 'name') {
+      ok('find forwards FindParams to the adapter')
+    } else bad('find forwards FindParams to the adapter', JSON.stringify(seen))
+  }
+
+  // Omitted when empty, so adapters that ignore params see the old args.
+  {
+    let seen = null
+    port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
+    const r = createResource('leads')
+    await r.service.find({ status: 'new' })
+    if (!('params' in (seen ?? {}))) ok('find omits params entirely when none are given')
+    else bad('find omits params entirely when none are given', JSON.stringify(seen))
+  }
+
+  // get(id, params)
+  {
+    let seen = null
+    port._enqueueResponse((_t, payload) => { seen = payload.args; return { id: '1' } })
+    const r = createResource('leads')
+    await r.service.get('1', { select: ['id', 'name'] })
+    if (JSON.stringify(seen?.params?.select) === '["id","name"]') ok('get forwards FindParams')
+    else bad('get forwards FindParams', JSON.stringify(seen))
+  }
+
+  // getOptions falls back to optionsQuery.params
+  {
+    let seen = null
+    port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
+    const r = createResource({
+      service: 'categories',
+      optionsQuery: { query: { active: true }, params: { orderBy: 'name', limit: 500 } },
+    })
+    await r.service.getOptions()
+    if (JSON.stringify(seen?.query) === '{"active":true}' && seen?.params?.limit === 500) {
+      ok('getOptions falls back to optionsQuery.params')
+    } else bad('getOptions falls back to optionsQuery.params', JSON.stringify(seen))
+  }
+
+  // A before hook can set pagination, same as Sierra.
+  {
+    let seen = null
+    port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
+    const r = createResource('leads', {
+      hooks: { before: { find: [ctx => { ctx.findParams.limit = 5 }] } },
+    })
+    await r.service.find({})
+    if (seen?.params?.limit === 5) ok('a before hook can set ctx.findParams.limit')
+    else bad('a before hook can set ctx.findParams.limit', JSON.stringify(seen))
+  }
+
+  // load(query, params) — store.populate accepted params all along; load
+  // never passed any, so the store could only hold the default page.
+  {
+    let seen = null
+    port._enqueueResponse((_t, payload) => { seen = payload.args; return [{ id: 1 }, { id: 2 }] })
+    const r = createResource('leads')
+    const rows = await r.load({ status: 'new' }, { limit: 2 })
+
+    if (seen?.params?.limit === 2) ok('load forwards FindParams')
+    else bad('load forwards FindParams', JSON.stringify(seen))
+    if (Array.isArray(rows) && rows.length === 2) ok('load resolves to the rows, matching Sierra')
+    else bad('load resolves to the rows, matching Sierra', JSON.stringify(rows))
+    if (r.store.get().length === 2) ok('load populates the store')
+  }
+
+  // The store holds rows whether find returns an array or a list envelope.
+  {
+    port._enqueueResponse(() => ({
+      kind: 'list', object: 'leads', errors: [],
+      data: [{ id: 7 }], total: 99, limit: 1, offset: 0,
+    }))
+    const r = createResource('leads')
+    const rows = await r.load({})
+    if (Array.isArray(rows) && rows[0]?.id === 7) ok('load unwraps a list envelope to rows')
+    else bad('load unwraps a list envelope to rows', JSON.stringify(rows))
+    if (r.store.get()[0]?.id === 7) ok('store holds rows, not the envelope')
+  }
+}
+
 // --- summary ---
 
 console.log('')

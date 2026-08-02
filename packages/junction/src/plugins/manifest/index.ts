@@ -18,6 +18,7 @@
 
 import type { App, Plugin } from '../../core/app.ts'
 import type { HookMap }     from '../../core/hooks.ts'
+import { customMethodNames } from '../../core/service.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -83,10 +84,13 @@ export function manifestPlugin(opts: ManifestPluginOptions = {}): Plugin {
   return {
     name: 'manifest',
 
-    // boot() runs after all plugins have registered but before the HTTP server
-    // starts — routes added here are still accepted by the router.
-    // ready() runs after the server starts — router is already built, too late.
-    async boot(app: App): Promise<void> {
+    // Routes mount in register() — the standard phase for route mounting
+    // across all plugins (webhooks, openapi, manifest). Manifest content is
+    // generated lazily per request, so services registered in later phases
+    // are still fully visible. (Previously mounted in boot() with a comment
+    // explaining why ready() was too late — register() is simply earlier
+    // and consistent.)
+    async register(app: App): Promise<void> {
       if (devOnly && process.env.NODE_ENV === 'production') return
       const prefix = (app.config as Record<string, unknown>).apiPrefix as string ?? ''
 
@@ -155,21 +159,14 @@ function buildAppMeta(app: App): AppMeta {
   }
 }
 
-// Standard service keys — not custom methods
-const STANDARD_KEYS = new Set([
-  'find', 'get', 'create', 'patch', 'remove', 'restore',
-  '_find', '_get', '_create', '_patch', '_remove', '_restore',
-  'hooks', 'name', 'model', '_hookMap', '_pipelines', '_compiledPipelines',
-  '_schemas', '_meta',
-])
-
 function buildServices(app: App): ServiceManifest[] {
   return app.services.values().map(svc => {
     const s    = svc as Record<string, unknown>
     const meta = (s._meta as Record<string, unknown>) ?? {}
 
-    const customMethods = Object.keys(svc)
-      .filter(k => !STANDARD_KEYS.has(k) && typeof s[k] === 'function')
+    // Was a local STANDARD_KEYS copy that had drifted — it omitted `update`
+    // and `_update`, so every service advertised `update` as a custom action.
+    const customMethods = customMethodNames(svc)
 
     return {
       name:       svc.name,

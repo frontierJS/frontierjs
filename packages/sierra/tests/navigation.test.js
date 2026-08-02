@@ -23,17 +23,17 @@ import {
   setParams,
   updateParams,
   isActive,
-  activeRoute,
-  pendingRoute,
-  params,
-  meta,
-  data,
-  loadError,
-  pageSlots,
   page,
   provideSlot,
   nodes,
+  _resetPage,
 } from '../src/router/index.js'
+import { watchProxy } from '@frontierjs/mesa/runtime'
+
+// The router writes through its own watchProxy handle, so tests that seed state
+// must do the same — a raw `page.x = v` updates the object but notifies nobody.
+// watchProxy is cached per object, so this is that same proxy instance.
+const _p = watchProxy(page)
 
 // ─── Fixture tree ─────────────────────────────────────────────────────────────
 
@@ -213,13 +213,13 @@ function waitForNav() {
 beforeEach(() => {
   installWindowMock('/')
   // Reset signals
-  activeRoute.set(null)
-  pendingRoute.set(null)
-  params.set({})
-  meta.set({})
-  data.set(null)
-  loadError.set(null)
-  pageSlots.set({})
+  _p.route = (null)
+  _p.pending = (null)
+  _p.params = ({})
+  _p.meta = ({})
+  _p.data = (null)
+  _p.error = (null)
+  _p.slots = ({})
 })
 
 afterEach(() => {
@@ -234,7 +234,7 @@ describe('initRouter', () => {
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
     // activeRoute is set during the initial _navigate() call, which is async
-    expect(activeRoute.get()).not.toBeNull()
+    expect(page.route).not.toBeNull()
   })
 
   test('navigates to current URL on boot', async () => {
@@ -242,7 +242,7 @@ describe('initRouter', () => {
     const tree = makeTree()
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
-    expect(activeRoute.get()?.id).toBe('leads')
+    expect(page.route?.id).toBe('leads')
   })
 
   test('sets params from boot URL', async () => {
@@ -250,7 +250,7 @@ describe('initRouter', () => {
     const tree = makeTree()
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
-    expect(params.get().slug).toBe('hello-world')
+    expect(page.params.slug).toBe('hello-world')
   })
 
   test('sets meta from matched route on boot', async () => {
@@ -258,7 +258,7 @@ describe('initRouter', () => {
     const tree = makeTree()
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
-    expect(meta.get().title).toBe('Login')
+    expect(page.meta.title).toBe('Login')
   })
 })
 
@@ -271,7 +271,7 @@ describe('goto', () => {
     await waitForNav()
 
     await goto('/blog/')
-    expect(activeRoute.get()?.id).toBe('blog')
+    expect(page.route?.id).toBe('blog')
   })
 
   test('updates params signal for dynamic route', async () => {
@@ -280,7 +280,7 @@ describe('goto', () => {
     await waitForNav()
 
     await goto('/blog/my-post/')
-    expect(params.get().slug).toBe('my-post')
+    expect(page.params.slug).toBe('my-post')
   })
 
   test('updates meta signal', async () => {
@@ -289,8 +289,8 @@ describe('goto', () => {
     await waitForNav()
 
     await goto('/login/')
-    expect(meta.get().title).toBe('Login')
-    expect(meta.get().reset).toBe(true)
+    expect(page.meta.title).toBe('Login')
+    expect(page.meta.reset).toBe(true)
   })
 
   test('sets pendingRoute during navigation then clears it', async () => {
@@ -298,15 +298,17 @@ describe('goto', () => {
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
 
+    // No .subscribe() on a plain object. Sample page.pending mid-flight instead:
+    // goto() sets it before awaiting the component load and clears it on commit.
     const pendingValues = []
-    const unsub = pendingRoute.subscribe(v => pendingValues.push(v))
-    await goto('/blog/')
-    unsub()
+    const nav = goto('/blog/')
+    pendingValues.push(page.pending)     // during
+    await nav
+    pendingValues.push(page.pending)     // after
 
-    // Should have gone: null → context object → null
-    const nonNulls = pendingValues.filter(v => v !== null)
-    expect(nonNulls.length).toBeGreaterThan(0)
-    expect(pendingRoute.get()).toBeNull()
+    expect(pendingValues[0]).not.toBeNull()
+    expect(pendingValues[1]).toBeNull()
+    expect(page.pending).toBeNull()
   })
 
   test('with query params builds URL and sets them in params signal', async () => {
@@ -315,8 +317,8 @@ describe('goto', () => {
     await waitForNav()
 
     await goto('/blog/', { page: 2, q: 'hello' })
-    expect(params.get().page).toBe(2)
-    expect(params.get().q).toBe('hello')
+    expect(page.params.page).toBe(2)
+    expect(page.params.q).toBe('hello')
   })
 
   test('clears pageSlots on navigation', async () => {
@@ -326,10 +328,10 @@ describe('goto', () => {
 
     // Simulate a page having provided a slot
     provideSlot('sidebar', function() {})
-    expect(pageSlots.get().sidebar).toBeDefined()
+    expect(page.slots.sidebar).toBeDefined()
 
     await goto('/blog/')
-    expect(pageSlots.get()).toEqual({})
+    expect(page.slots).toEqual({})
   })
 
   test('falls through to catch-all for unmatched path', async () => {
@@ -338,7 +340,7 @@ describe('goto', () => {
     await waitForNav()
 
     await goto('/does-not-exist/')
-    expect(activeRoute.get()?.id).toBe('[...404]')
+    expect(page.route?.id).toBe('[...404]')
   })
 })
 
@@ -350,13 +352,13 @@ describe('beforeNavigate', () => {
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
     await goto('/blog/')
-    const routeBefore = activeRoute.get()?.id
+    const routeBefore = page.route?.id
 
     const unsub = beforeNavigate(() => false)
     await goto('/login/')
     unsub()
 
-    expect(activeRoute.get()?.id).toBe(routeBefore)
+    expect(page.route?.id).toBe(routeBefore)
   })
 
   test('guard can redirect (return path string)', async () => {
@@ -371,7 +373,7 @@ describe('beforeNavigate', () => {
     await goto('/login/')
     unsub()
 
-    expect(activeRoute.get()?.id).toBe('blog')
+    expect(page.route?.id).toBe('blog')
   })
 
   test('guard receives from and to context', async () => {
@@ -401,7 +403,7 @@ describe('beforeNavigate', () => {
     await goto('/login/')
     unsub()
 
-    expect(activeRoute.get()?.id).toBe('login')
+    expect(page.route?.id).toBe('login')
   })
 
   test('guard returning true allows navigation', async () => {
@@ -413,7 +415,7 @@ describe('beforeNavigate', () => {
     await goto('/login/')
     unsub()
 
-    expect(activeRoute.get()?.id).toBe('login')
+    expect(page.route?.id).toBe('login')
   })
 
   test('unsubscribe removes the guard', async () => {
@@ -425,7 +427,7 @@ describe('beforeNavigate', () => {
     unsub() // remove immediately
 
     await goto('/login/')
-    expect(activeRoute.get()?.id).toBe('login')
+    expect(page.route?.id).toBe('login')
   })
 
   test('multiple guards all run in order', async () => {
@@ -456,7 +458,7 @@ describe('beforeNavigate', () => {
     u1(); u2()
 
     expect(ran).toEqual([1])
-    expect(activeRoute.get()?.id).toBe('blog')
+    expect(page.route?.id).toBe('blog')
   })
 })
 
@@ -503,7 +505,7 @@ describe('afterNavigate', () => {
 
     let routeIdAtHookTime
     const unsub = afterNavigate(() => {
-      routeIdAtHookTime = activeRoute.get()?.id
+      routeIdAtHookTime = page.route?.id
     })
     await goto('/login/')
     unsub()
@@ -528,21 +530,21 @@ describe('afterNavigate', () => {
 // ─── load() integration ───────────────────────────────────────────────────────
 
 describe('load() integration', () => {
-  test('page signal merges meta + path + params on navigation', async () => {
+  test('page merges meta + path + params on navigation', async () => {
     const tree = makeTree()
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
 
     await goto('/leads/')
-    expect(page.get().path).toBe('/leads/')
-    expect(page.get().params).toEqual({})
+    expect(page.path).toBe('/leads/')
+    expect(page.params).toEqual({})
 
     await goto('/leads/42/')
-    expect(page.get().path).toBe('/leads/42/')
-    expect(page.get().params).toMatchObject({ leadId: '42' })
+    expect(page.path).toBe('/leads/42/')
+    expect(page.params).toMatchObject({ leadId: '42' })
   })
 
-  test('page signal contains route meta fields', async () => {
+  test('page spreads route frontmatter onto itself', async () => {
     const tree = makeTree()
     // Add meta to a route node
     const leadsNode = tree.children.find(n => n.id === 'leads')
@@ -551,8 +553,8 @@ describe('load() integration', () => {
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
     await goto('/leads/')
-    expect(page.get().section).toBe('CRM')
-    expect(page.get().icon).toBe('👥')
+    expect(page.section).toBe('CRM')
+    expect(page.icon).toBe('👥')
   })
 
     test('load() result is committed to data signal', async () => {
@@ -566,8 +568,8 @@ describe('load() integration', () => {
     await waitForNav()
 
     await goto('/leads/lead-001/')
-    expect(data.get()?.lead?.id).toBe('lead-001')
-    expect(data.get()?.lead?.name).toBe('Acme')
+    expect(page.data?.lead?.id).toBe('lead-001')
+    expect(page.data?.lead?.name).toBe('Acme')
   })
 
   test('load() receives params from URL', async () => {
@@ -596,17 +598,17 @@ describe('load() integration', () => {
     await waitForNav()
 
     await goto('/leads/lead-001/')
-    expect(activeRoute.get()?.id).toBe('blog')
+    expect(page.route?.id).toBe('blog')
   })
 
   test('routes without loaders leave data as null', async () => {
     const tree = makeTree()
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
-    data.set({ stale: true })  // simulate previous nav data
+    _p.data = ({ stale: true })  // simulate previous nav data
 
     await goto('/blog/')
-    expect(data.get()).toBeNull()
+    expect(page.data).toBeNull()
   })
 
   test('failed load() sets loadError signal', async () => {
@@ -621,7 +623,7 @@ describe('load() integration', () => {
     await waitForNav()
 
     await goto('/leads/lead-001/')
-    expect(loadError.get()).toBe(err)
+    expect(page.error).toBe(err)
   })
 
   test('failed load() stays on route and sets loadError (not redirected to 404)', async () => {
@@ -639,16 +641,16 @@ describe('load() integration', () => {
 
     await goto('/leads/lead-001/')
     // Stays on the matched route, not redirected to 404
-    expect(activeRoute.get()?.id).toBe('leads.[leadId]')
+    expect(page.route?.id).toBe('leads.[leadId]')
     // loadError signal carries the error for the page to display
-    expect(loadError.get()).toBe(err)
+    expect(page.error).toBe(err)
     // data is null when load() threw
-    expect(data.get()).toBeNull()
+    expect(page.data).toBeNull()
   })
 
   test('successful load() clears loadError', async () => {
     const tree = makeTree()
-    loadError.set(new Error('stale error'))
+    _p.error = (new Error('stale error'))
 
     const loaders = {
       'leads.[leadId]': () => Promise.resolve({
@@ -659,7 +661,7 @@ describe('load() integration', () => {
     await waitForNav()
 
     await goto('/leads/lead-001/')
-    expect(loadError.get()).toBeNull()
+    expect(page.error).toBeNull()
   })
 })
 
@@ -687,7 +689,7 @@ describe('meta redirect', () => {
     await waitForNav()
 
     await goto('/old-blog/')
-    expect(activeRoute.get()?.id).toBe('blog')
+    expect(page.route?.id).toBe('blog')
   })
 })
 
@@ -702,8 +704,8 @@ describe('setParams / updateParams', () => {
 
     await setParams({ page: 2 })
     await waitForNav()
-    expect(params.get().page).toBe(2)
-    expect(params.get().q).toBeUndefined()
+    expect(page.params.page).toBe(2)
+    expect(page.params.q).toBeUndefined()
   })
 
   test('updateParams merges into current params', async () => {
@@ -714,8 +716,8 @@ describe('setParams / updateParams', () => {
 
     await updateParams(cur => ({ ...cur, page: 2 }))
     await waitForNav()
-    expect(params.get().page).toBe(2)
-    expect(params.get().q).toBe('hello')
+    expect(page.params.page).toBe(2)
+    expect(page.params.q).toBe('hello')
   })
 })
 
@@ -761,10 +763,10 @@ describe('pageSlots lifecycle', () => {
 
     provideSlot('sidebar', function sidebar() {})
     provideSlot('toolbar', function toolbar() {})
-    expect(Object.keys(pageSlots.get())).toHaveLength(2)
+    expect(Object.keys(page.slots)).toHaveLength(2)
 
     await goto('/blog/')
-    expect(pageSlots.get()).toEqual({})
+    expect(page.slots).toEqual({})
   })
 
   test('pageSlots is cleared even when load() fails', async () => {
@@ -779,16 +781,16 @@ describe('pageSlots lifecycle', () => {
 
     provideSlot('sidebar', function() {})
     await goto('/leads/lead-001/')
-    expect(pageSlots.get()).toEqual({})
+    expect(page.slots).toEqual({})
   })
 
   test('provideSlot within same nav cycle accumulates slots', () => {
-    pageSlots.set({})
+    _p.slots = ({})
     const fn1 = function a() {}
     const fn2 = function b() {}
     provideSlot('a', fn1)
     provideSlot('b', fn2)
-    const slots = pageSlots.get()
+    const slots = page.slots
     expect(slots.a).toBe(fn1)
     expect(slots.b).toBe(fn2)
   })
@@ -827,7 +829,7 @@ describe('layouts eager loading', () => {
     const { resolveChain, getComponents } = await import('../src/router/internals.js')
     // Navigate to a route that uses the root layout
     await goto('/blog/')
-    const chain = resolveChain(activeRoute.get())
+    const chain = resolveChain(page.route)
     // Chain should have 2 entries: layout + page
     expect(chain.length).toBe(2)
     // Layout entry (index 0, not last) should have a component function
@@ -841,7 +843,7 @@ describe('layouts eager loading', () => {
     // No layouts argument — defaults to {}
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
-    expect(activeRoute.get()?.id).toBe('root')
+    expect(page.route?.id).toBe('root')
   })
 
   test('layouts map with empty object does not throw', async () => {

@@ -24,7 +24,8 @@ export {
 } from './src/core/errors.ts'
 
 // ─── Services ─────────────────────────────────────────────────────────────
-export { createService, createBaseService, ServiceRegistry, callService, setServiceCache } from './src/core/service.ts'
+export { createService, createBaseService, ServiceRegistry, callService, setServiceCache,
+         SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames } from './src/core/service.ts'
 export type { Service, ServiceDefinition, BaseServiceOptions, CacheDeclaration, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
@@ -41,7 +42,9 @@ export type { Hook, AroundHook, HookMap, ResolvedPipeline, CircuitBreakerOptions
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
 export { bridge, jsonResponse, errorResponse, redirectResponse } from './src/transport/bridge.ts'
-export type { ServiceContext, ServiceMethod, AnyMethod }          from './src/transport/bridge.ts'
+export type { ServiceContext, ServiceMethod, AnyMethod, ServiceContextLocals, CallOptions, RequestMeta } from './src/transport/bridge.ts'
+export type { QueryDirectives } from './src/core/context.ts'
+export { requestMeta } from './src/transport/bridge.ts'
 
 // ─── Transport ────────────────────────────────────────────────────────────
 export { HttpTransport }                                          from './src/transport/http.ts'
@@ -60,8 +63,8 @@ export type {
 export type { IAuth, SessionContext, CreateUserInput, ApiKeyOptions, RateLimitHookOptions } from './src/auth/types.ts'
 
 // ─── Events ───────────────────────────────────────────────────────────────
-export { createScheduler }                                        from './src/plugins/scheduler/index.ts'
-export type { JobFn, JobHandle, SchedulerStats }                  from './src/plugins/scheduler/index.ts'
+export { createScheduler }                                        from './src/scheduler/index.ts'
+export type { JobFn, JobHandle, SchedulerStats }                  from './src/scheduler/index.ts'
 
 export { createEventBus }                                         from './src/events/index.ts'
 export type { IEventBus, EventHandler }                           from './src/events/index.ts'
@@ -85,8 +88,17 @@ export { createResendMailer, createSmtpMailer, mailerPlugin, createMessage, Mail
 export type { IMail, MailMessage, MailAttachment, SendResult, SmtpMailerOptions, ResendOptions } from './src/mail/index.ts'
 
 // ─── AI ───────────────────────────────────────────────────────────────────
-export { AIRegistry, AIBuilder, createOpenAIModel, createAnthropicModel } from './src/plugins/ai/index.ts'
-export type { IAIModel, AIRequest, AIResponse, AIMessage }               from './src/plugins/ai/index.ts'
+export { AIRegistry, AIBuilder, createOpenAIModel, createAnthropicModel } from './src/ai/index.ts'
+export type { IAIModel, AIRequest, AIResponse, AIMessage }               from './src/ai/index.ts'
+
+// ─── Result envelope ──────────────────────────────────────────────────────
+// One module owns wrap/unwrap/inspect. Import these instead of reaching into
+// `.data` — that habit is what let the same find() answer three different ways.
+export { wrapResult, unwrapResult, resultData,
+         isServiceResult, isListResult,
+         single, list, toBulkFailure }                            from './src/core/envelope.ts'
+export type { ResultKind, ListResult, SingleResult,
+              UnwrapOptions, BulkFailure }                        from './src/core/envelope.ts'
 
 // ─── Schema ───────────────────────────────────────────────────────────────
 export { createSchema, v }                                        from './src/core/schema.ts'
@@ -94,10 +106,12 @@ export type { Schema, FieldDef, SchemaOptions, CompiledSchema, ValidationResult,
 
 // ─── Litestone ───────────────────────────────────────────────────────────
 export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
-         deriveModelName, withLitestoneDb,
-         createLitestoneService, jsonSchemaToJunctionSchema }       from './src/core/litestone.ts'
+         deriveModelName, accessorCandidates, withLitestoneDb,
+         sessionGateLevel, LEVELS,
+         jsonSchemaToJunctionSchema }                              from './src/core/litestone.ts'
+export type { GradableUser } from './src/core/litestone.ts'
 export type { LitestoneServiceOptions, ParsedQuery,
-              LitestoneServiceConfig, LitestoneJsonSchema,
+              LitestoneJsonSchema,
               LitestoneQueryEvent }                                   from './src/core/litestone.ts'
 
 // ─── Channels ─────────────────────────────────────────────────────────────

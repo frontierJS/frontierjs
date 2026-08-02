@@ -20,13 +20,16 @@ const CREATE_TABLE = `
   )
 `
 
+// bun:sqlite is synchronous. The ConduitStore interface is async so that a
+// networked registry is implementable — these methods satisfy it without
+// pretending to do I/O off-thread.
 export function createSQLiteStore(db: Database): ConduitStore {
 
-  function init() {
+  async function init() {
     db.run(CREATE_TABLE)
   }
 
-  function get(id: string): TargetDescriptor | null {
+  async function get(id: string): Promise<TargetDescriptor | null> {
     const row = db.query(`
       SELECT * FROM conduit_targets WHERE id = $id
     `).get({ $id: id }) as RawRow | null
@@ -34,7 +37,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
     return row ? deserialize(row) : null
   }
 
-  function set(descriptor: TargetDescriptor): void {
+  async function set(descriptor: TargetDescriptor): Promise<void> {
     // registered_at is intentionally excluded from the UPDATE clause —
     // we never overwrite the original registration timestamp on heartbeat.
     db.run(`
@@ -57,11 +60,11 @@ export function createSQLiteStore(db: Database): ConduitStore {
     })
   }
 
-  function deleteTarget(id: string): void {
+  async function deleteTarget(id: string): Promise<void> {
     db.run(`DELETE FROM conduit_targets WHERE id = $id`, { $id: id })
   }
 
-  function list(): TargetDescriptor[] {
+  async function list(): Promise<TargetDescriptor[]> {
     const rows = db.query(`
       SELECT * FROM conduit_targets ORDER BY registered_at ASC
     `).all() as RawRow[]
@@ -69,7 +72,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
     return rows.map(deserialize)
   }
 
-  function touch(id: string): void {
+  async function touch(id: string): Promise<void> {
     db.run(`
       UPDATE conduit_targets SET last_seen_at = $now WHERE id = $id
     `, { $id: id, $now: Date.now() })

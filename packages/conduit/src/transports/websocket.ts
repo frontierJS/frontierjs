@@ -5,10 +5,12 @@
 // ============================================================
 
 import { BaseTransport } from './base.ts'
+import { ConduitStreamError } from '../types.ts'
 import type {
   ConduitRequest,
   ConduitResult,
   ConduitChunk,
+  CredentialResolver,
   TargetDescriptor
 } from '../types.ts'
 
@@ -24,6 +26,11 @@ interface WireMessage {
   method?: string
   path?:   string
   body?:   unknown
+  // Set on a request that expects a stream of chunks rather than a single
+  // response. This lives on the envelope, not inside `body`: injecting a
+  // marker into the caller's payload collides with their key namespace and
+  // destroys any body that is not a plain object.
+  stream?: boolean
   error?:  string
   seq?:    number
 }
@@ -52,8 +59,13 @@ export class WebSocketTransport extends BaseTransport {
 
   onReconnect?: (target: string) => void
 
-  constructor(descriptor: TargetDescriptor) {
-    super(descriptor)
+  // NOTE(§1.1): this transport still applies no authentication — neither on
+  // the upgrade nor per frame. The resolver is threaded through so the fix
+  // has somewhere to read from, but the mechanism is an open design question
+  // (the standard WebSocket constructor cannot set headers, and signing a
+  // frame does not fit a headers-shaped helper). Tracked as Tier 2.
+  constructor(descriptor: TargetDescriptor, credentials: CredentialResolver) {
+    super(descriptor, credentials)
   }
 
   async send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
@@ -104,7 +116,20 @@ export class WebSocketTransport extends BaseTransport {
 
   async *stream(req: ConduitRequest): AsyncIterable<ConduitChunk> {
     const ws = await this.getConnection()
-    if (!ws) return
+
+    // Throw rather than return: an unreachable agent and an agent with no
+    // output are otherwise indistinguishable to the consumer, and the
+    // documented contract is that stream() throws when it cannot be
+    // established (§2.3).
+    if (!ws) {
+      throw new ConduitStreamError({
+        kind:      'connection_failed',
+        target:    this.descriptor.id,
+        protocol:  this.protocol,
+        message:   `Cannot connect to ${this.descriptor.id}`,
+        retryable: true,
+      })
+    }
 
     const id = crypto.randomUUID()
 
@@ -123,7 +148,8 @@ export class WebSocketTransport extends BaseTransport {
       type:   'request',
       method: req.method,
       path:   req.path,
-      body:   { ...req.body as object, _stream: true }
+      body:   req.body,      // passed through untouched
+      stream: true
     })
 
     try {

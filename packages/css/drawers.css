@@ -1,5 +1,5 @@
 /*
- * utilities/drawers.css
+ * drawers.css
  * Drawer = surface + off-canvas positioning. Built on native <dialog>
  * so focus trap, escape-to-close, and backdrop come for free.
  *
@@ -14,6 +14,12 @@
  */
 
 .drawer {
+  /* Positioning — was the `drawer` Uno shortcut (fixed top-0 bottom-0
+     right-0). For a modal <dialog> the UA stylesheet already supplies
+     this; declaring it keeps .drawer working on a plain element too. */
+  position: fixed;
+  inset:    0;
+
   /* Override dialog's centered margins */
   margin:        0;
   padding:       0;
@@ -70,8 +76,4 @@
 @keyframes drawer-slide-from-bottom {
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .drawer { animation: none; }
 }

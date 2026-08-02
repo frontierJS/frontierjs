@@ -497,7 +497,7 @@ function makeApiCoreHooksTs() {
 // Global hooks attached at the App level — run on every service call.
 // withLitestoneDb scopes the db client to the current request's user
 // (ctx.params.db = db.$setAuth(ctx.user)) so policies + plugins see
-// who's calling. createLitestoneService reads ctx.params.db automatically.
+// who's calling. createService reads ctx.params.db automatically.
 
 import { withLitestoneDb } from '@frontierjs/junction/litestone'
 import { db } from './db.ts'
@@ -627,6 +627,11 @@ export default {
   junction: {
     url:      \`\${location.protocol === 'https:' ? 'wss:' : 'ws:'}//\${location.host}\`,
     tokenKey: '${appName}_token',
+    // Must match the API's config.apiPrefix (api/config/default.ts). Junction
+    // defaults to no prefix — services at /{service} — so this line and that
+    // one move together or the client requests paths the server never
+    // registered.
+    apiPrefix: '/api',
   },
 }
 `

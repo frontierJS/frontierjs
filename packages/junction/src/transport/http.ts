@@ -6,11 +6,17 @@
 
 import { Router }                         from './router.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
-import { parseBody, parseQuery, extractIP } from './body.ts'
-import { serveStatic, StaticOptions }     from './static.ts'
+import { parseBody, parseQuery, parseCookies, extractIP } from './body.ts'
+import { serveStatic }                    from './static.ts'
+// `type` matters: StaticOptions is an interface, and importing it as a value
+// breaks any runtime that strips types rather than transpiling — Node's
+// --experimental-strip-types fails with "does not provide an export named
+// 'StaticOptions'". Bun transpiles fully so it never noticed.
+import type { StaticOptions }             from './static.ts'
 import { bridge, jsonResponse, errorResponse } from './bridge.ts'
 import { toFrameworkError }               from '../core/errors.ts'
-import { createStats, TransportStats }    from './types.ts'
+import { createStats }                    from './types.ts'
+import type { TransportStats }            from './types.ts'
 import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
               WsData, WsContext, WsHandlerSet }  from './types.ts'
 import type { RouteSegment }              from './router.ts'
@@ -20,17 +26,10 @@ import type { IAuth }                     from '../auth/types.ts'
 
 // ─── Cookie helpers ──────────────────────────────────────────────────────────
 
-function parseCookieHeader(header: string): Record<string, string> {
-  if (!header) return {}
-  return Object.fromEntries(
-    header.split(';').flatMap(part => {
-      const [k, ...rest] = part.trim().split('=')
-      const key = k?.trim()
-      if (!key) return []
-      return [[key, decodeURIComponent(rest.join('=').trim())]]
-    })
-  )
-}
+// Cookie parsing unified on body.ts's parseCookies — this file previously
+// carried its own divergent implementation (extra intermediate arrays per
+// request, and an unguarded decodeURIComponent that threw on malformed
+// values).
 
 function serializeSetCookie(
   name:  string,
@@ -64,8 +63,14 @@ const COMPRESSIBLE_TYPES = new Set([
 // Below this threshold compression overhead exceeds the saving
 const MIN_COMPRESS_BYTES = 1024
 
-const EMPTY_HEADERS:  Record<string, string> = Object.freeze({})
 const ENCODER  = new TextEncoder()  // singleton — not per-request
+
+// Frozen response-header constants — Response copies the init object into
+// its own Headers, so these are safe to share across every request instead
+// of allocating a fresh literal per helper call.
+const H_JSON = Object.freeze({ 'content-type': 'application/json' })
+const H_TEXT = Object.freeze({ 'content-type': 'text/plain; charset=utf-8' })
+const H_HTML = Object.freeze({ 'content-type': 'text/html; charset=utf-8' })
 
 // ─── HTTP Transport options ───────────────────────────────────────────────
 
@@ -83,6 +88,15 @@ export interface HttpTransportOptions {
   auth?:        IAuth
   powered?:     string     // X-Powered-By header value
   onError?:     (err: unknown, ctx?: TransportContext) => void
+  /**
+   * Trust x-forwarded-for / x-real-ip headers for client IP resolution.
+   * Enable ONLY when a trusted reverse proxy (nginx, Caddy, a load
+   * balancer) sits in front of the app and sets these headers itself.
+   * Default false: the socket address is used, because the forwarding
+   * headers are client-settable and would let attackers spoof their way
+   * past IP-keyed rate limiting and DDoS protection.
+   */
+  trustProxy?:  boolean
 }
 
 // ─── HTTP Transport ───────────────────────────────────────────────────────
@@ -95,11 +109,46 @@ export class HttpTransport {
   private _opts:        HttpTransportOptions
   private _server:      ReturnType<typeof Bun.serve> | null = null
   private _ddos:        Map<string, { count: number; reset: number }> = new Map()
+  private _ddosGc:      ReturnType<typeof setInterval> | null = null
   private _wsRoutes: Array<{ segments: RouteSegment[]; handlers: WsHandlerSet }> = []
+
+  // Request-independent response helpers, built ONCE per transport.
+  // _buildContext used to allocate all of these as fresh closures on every
+  // request; they only touch `this.stats`, so one shared set suffices.
+  private _sharedHelpers: Pick<TransportContext,
+    'json' | 'text' | 'html' | 'redirect' | 'stream' | 'empty'>
 
   constructor(opts: HttpTransportOptions = {}) {
     this.router = new Router()
     this.stats  = createStats()
+
+    const stats = this.stats
+    this._sharedHelpers = {
+      json: (data, status = 200) => {
+        stats.response.json++
+        return new Response(JSON.stringify(data), { status, headers: H_JSON })
+      },
+      text: (data, status = 200) => {
+        stats.response.text++
+        return new Response(data, { status, headers: H_TEXT })
+      },
+      html: (data, status = 200) => {
+        stats.response.html++
+        return new Response(data, { status, headers: H_HTML })
+      },
+      redirect: (location, status = 302) => {
+        stats.response.redirect++
+        return new Response(null, { status, headers: { location } })
+      },
+      stream: (readable, type, status = 200) => {
+        stats.response.stream++
+        return new Response(readable, { status, headers: { 'content-type': type } })
+      },
+      empty: (status = 204) => {
+        stats.response.empty++
+        return new Response(null, { status })
+      },
+    }
     this._opts  = {
       port:        3000,
       hostname:    '0.0.0.0',
@@ -110,15 +159,16 @@ export class HttpTransport {
     }
 
     // GC: prune expired DDoS counters every window interval so the map
-    // doesn't accumulate every IP the server has ever seen.
+    // doesn't accumulate every IP the server has ever seen. Handle is kept
+    // so stop() can clear it — previously it ran forever after shutdown.
     if (opts.ddos?.enabled) {
-      const gcInterval = setInterval(() => {
+      this._ddosGc = setInterval(() => {
         const now = Date.now()
         for (const [ip, rec] of this._ddos) {
           if (rec.reset < now) this._ddos.delete(ip)
         }
       }, opts.ddos.window ?? 60_000)
-      if (gcInterval.unref) gcInterval.unref()
+      if (this._ddosGc.unref) this._ddosGc.unref()
     }
   }
 
@@ -152,7 +202,21 @@ export class HttpTransport {
     return this._server
   }
 
+  // Swap the auth implementation used for session resolution. Public API —
+  // core's app.setAuth() previously reached into the private _opts field
+  // via type-erasing casts, which no type-checker could protect.
+  setAuth(auth: IAuth): void {
+    this._opts.auth = auth
+  }
+
   stop(): Promise<void> {
+    // Clear the DDoS GC timer and counters regardless of server state.
+    if (this._ddosGc) {
+      clearInterval(this._ddosGc)
+      this._ddosGc = null
+    }
+    this._ddos.clear()
+
     if (!this._server) return Promise.resolve()
     // Bun's stop() without force:true drains open connections gracefully.
     const p = this._server.stop()
@@ -178,7 +242,7 @@ export class HttpTransport {
   // router.build() must have been called first (or call app.start()).
   //
   // Usage in tests:
-  //   const res = await app.http.fetch(new Request('http://localhost/api/users'))
+  //   const res = await app.http.fetch(new Request('http://localhost/users'))
   async fetch(req: Request): Promise<Response> {
     const mockServer = { upgrade: () => false }
     return this._handle(req, mockServer as ReturnType<typeof Bun.serve>)
@@ -192,9 +256,16 @@ export class HttpTransport {
     const url    = new URL(req.url)
     const path   = url.pathname
 
+    // Resolve the client IP ONCE per request, from the socket address —
+    // the only client-unforgeable source. Forwarding headers are consulted
+    // only when trustProxy is explicitly enabled (see HttpTransportOptions).
+    const remoteAddr = (server as { requestIP?: (r: Request) => { address: string } | null })
+      .requestIP?.(req)?.address
+    const clientIP = extractIP(req, remoteAddr, this._opts.trustProxy)
+
     // ── DDoS protection ────────────────────────────────────────────
     if (this._opts.ddos?.enabled) {
-      const ip  = extractIP(req)
+      const ip  = clientIP
       const now = Date.now()
       const rec = this._ddos.get(ip)
 
@@ -219,20 +290,21 @@ export class HttpTransport {
       return this._handleUpgrade(req, server, url, path) ?? new Response('Not Found', { status: 404 })
     }
 
-    // ── Static file serving ────────────────────────────────────────
-    if (this._opts.static && method === 'GET') {
-      const staticRoot = this._opts.static.root
-      if (path.startsWith('/')) {
-        const staticResp = await serveStatic(req, path, this._opts.static)
-        if (staticResp) {
-          this.stats.response.file++
-          return staticResp
-        }
+    // ── Route lookup — Tier 1 O(1) then Tier 2 ────────────────────
+    // Routes are checked BEFORE static files: the router lookup is an
+    // in-memory match while static serving stats the filesystem, so with
+    // the old static-first order every API GET paid a disk probe. Dynamic
+    // routes therefore now take precedence over same-path static files.
+    const match = this.router.lookup(method, path)
+
+    // ── Static file serving (only for unrouted GETs) ───────────────
+    if (!match && this._opts.static && method === 'GET') {
+      const staticResp = await serveStatic(req, path, this._opts.static)
+      if (staticResp) {
+        this.stats.response.file++
+        return staticResp
       }
     }
-
-    // ── Route lookup — Tier 1 O(1) then Tier 2 ────────────────────
-    const match = this.router.lookup(method, path)
 
     if (!match) {
       return this._notFound(path)
@@ -293,7 +365,7 @@ export class HttpTransport {
     const query = parseQuery(url.search)
 
     // ── Build transport context ────────────────────────────────────
-    const ctx = this._buildContext(req, url, query, headers, parsed, match.params, user)
+    const ctx = this._buildContext(req, url, query, headers, parsed, match.params, user, clientIP)
 
     // ── Track method stats ─────────────────────────────────────────
     this._trackMethod(method)
@@ -358,23 +430,45 @@ export class HttpTransport {
   private async _finalizeWithHeaders(response: Response, ctx: TransportContext, acceptEncoding: string): Promise<Response> {
     const canDecorate = response.status !== 204 && response.status !== 304
 
-    // Apply any Set-Cookie headers queued by handler via ctx.setCookie()
-    const cookieHeaders = (ctx as unknown as { __pendingCookies?: typeof pendingCookies }).__pendingCookies
-    if (cookieHeaders?.length) {
-      const headers2 = new Headers(response.headers)
-      for (const [name, value, opts] of cookieHeaders) {
-        headers2.append('set-cookie', serializeSetCookie(name, value, opts as Parameters<typeof serializeSetCookie>[2]))
-      }
-      response = new Response(response.body, { status: response.status, headers: headers2 })
+    const extra         = ctx as Record<string, unknown>
+    const cookieHeaders = extra.__pendingCookies    as Array<[string, string, Record<string, unknown>]> | undefined
+    const cors          = extra.__cors               as Record<string, string> | undefined
+    const security      = extra.__securityHeaders    as Record<string, string> | undefined
+    const rateLimit     = extra.__rateLimit          as Record<string, string> | undefined
+    const correlation   = extra.__correlationHeaders as Record<string, string> | undefined
+
+    const needsCacheControl = canDecorate && response.status >= 200 && response.status < 300
+    const hasExtras =
+      !!(cookieHeaders?.length || cors || security || rateLimit || correlation) ||
+      !!(this._opts.powered && canDecorate)
+
+    // Compression decision is readable without cloning anything.
+    const rawContentType = response.headers.get('content-type') ?? ''
+    const willCompress =
+      this._opts.compress !== false &&
+      canDecorate &&
+      acceptEncoding.includes('gzip') &&
+      COMPRESSIBLE_TYPES.has(rawContentType.split(';')[0].trim()) &&
+      !response.headers.has('content-encoding')
+
+    // TRUE no-op fast path: nothing to add, nothing to rewrite, nothing to
+    // compress → hand the handler's Response straight back (no Headers copy,
+    // no Response clone). Covers 204/304, redirects, errors, pre-encoded
+    // bodies, and non-compressible small responses with no middleware headers.
+    if (!hasExtras && !needsCacheControl && !willCompress) {
+      return response
     }
 
-    const extra       = ctx as Record<string, unknown>
-    const cors        = extra.__cors               as Record<string, string> | undefined
-    const security    = extra.__securityHeaders    as Record<string, string> | undefined
-    const rateLimit   = extra.__rateLimit          as Record<string, string> | undefined
-    const correlation = extra.__correlationHeaders as Record<string, string> | undefined
-
+    // ONE Headers copy for everything below — cookies included (previously
+    // the cookie path built its own intermediate Headers + Response clone).
     const headers = new Headers(response.headers)
+
+    if (cookieHeaders?.length) {
+      for (const [name, value, opts] of cookieHeaders) {
+        headers.append('set-cookie', serializeSetCookie(name, value, opts as Parameters<typeof serializeSetCookie>[2]))
+      }
+    }
+
     if (cors)        for (const [k, v] of Object.entries(cors))        headers.set(k, v)
     if (security)    for (const [k, v] of Object.entries(security))    headers.set(k, v)
     if (rateLimit)   for (const [k, v] of Object.entries(rateLimit))   headers.set(k, v)
@@ -407,17 +501,8 @@ export class HttpTransport {
     }
 
     // ── Compression ─────────────────────────────────────────────────────────
-    const contentType = headers.get('content-type') ?? ''
-    const mimeType    = contentType.split(';')[0].trim()
-
-    const shouldCompress =
-      this._opts.compress !== false &&
-      canDecorate &&
-      acceptEncoding.includes('gzip') &&
-      COMPRESSIBLE_TYPES.has(mimeType) &&
-      !headers.has('content-encoding')
-
-    if (!shouldCompress) {
+    // Decision was made up top (willCompress) from the original headers.
+    if (!willCompress) {
       return new Response(response.body, { status: response.status, headers })
     }
 
@@ -446,14 +531,25 @@ export class HttpTransport {
     headers: Record<string, string>,
     parsed:  Awaited<ReturnType<typeof parseBody>>,
     params:  Record<string, string>,
-    user:    ReturnType<typeof Object.create>
+    user:    ReturnType<typeof Object.create>,
+    clientIP?: string
   ): TransportContext {
 
-    const ip = extractIP(req)
+    // IP was already resolved (socket-address-first) in _handle — reuse it
+    // rather than re-parsing headers.
+    const ip = clientIP ?? extractIP(req)
     const pendingCookies: Array<[string, string, Record<string, unknown>]> = []
 
-    // Build response helpers bound to this request
+    // Lazy cookie parse — most API traffic is bearer-token and never reads
+    // ctx.cookies, so don't pay header parsing until first access.
+    let _cookies: Record<string, string> | undefined
+
+    // Build response helpers bound to this request. The request-independent
+    // helpers (json/text/html/redirect/stream/empty) are shared, prebuilt
+    // closures — see _sharedHelpers in the constructor.
     const ctx: TransportContext = {
+      ...this._sharedHelpers,
+
       method:   req.method.toUpperCase(),
       path:     url.pathname,
       params,
@@ -465,39 +561,6 @@ export class HttpTransport {
       protocol: url.protocol.startsWith('https') ? 'https' : 'http',
       host:     url.host,
       user,
-
-      // Response helpers — return Response objects, not void
-      json: (data, status = 200) => {
-        this.stats.response.json++
-        return new Response(JSON.stringify(data), {
-          status,
-          headers: { 'content-type': 'application/json' }
-        })
-      },
-
-      text: (data, status = 200) => {
-        this.stats.response.text++
-        return new Response(data, {
-          status,
-          headers: { 'content-type': 'text/plain; charset=utf-8' }
-        })
-      },
-
-      html: (data, status = 200) => {
-        this.stats.response.html++
-        return new Response(data, {
-          status,
-          headers: { 'content-type': 'text/html; charset=utf-8' }
-        })
-      },
-
-      redirect: (location, status = 302) => {
-        this.stats.response.redirect++
-        return new Response(null, {
-          status,
-          headers: { location }
-        })
-      },
 
       file: async (filePath, download) => {
         this.stats.response.file++
@@ -521,25 +584,18 @@ export class HttpTransport {
         return staticResp ?? new Response(file, { headers })
       },
 
-      stream: (readable, type, status = 200) => {
-        this.stats.response.stream++
-        return new Response(readable, {
-          status,
-          headers: { 'content-type': type }
-        })
-      },
-
-      empty: (status = 204) => {
-        this.stats.response.empty++
-        return new Response(null, { status })
-      },
-
       // ── Pagination envelope ────────────────────────────────────
       // Builds a consistent { data, total, limit, offset, next, prev }
       // response with absolute next/prev URLs derived from the current request.
 
-      paginate: (data, total, { limit, skip }) => {
+      paginate: (data, total, opts) => {
         this.stats.response.json++
+
+        // Accept both `skip` (legacy) and `offset` (canonical) as the same thing.
+        const { limit } = opts as { limit: number }
+        const skip = (opts as { skip?: number; offset?: number }).skip
+          ?? (opts as { offset?: number }).offset
+          ?? 0
 
         const base   = `${url.protocol}//${url.host}${url.pathname}`
 
@@ -633,7 +689,9 @@ export class HttpTransport {
         }
       },
 
-      cookies:   parseCookieHeader(req.headers.get('cookie') ?? ''),
+      get cookies() {
+        return _cookies ??= parseCookies(req.headers.get('cookie') ?? '')
+      },
       setCookie: (name, value, opts = {}) => {
         pendingCookies.push([name, value, opts])
         ;(ctx as unknown as { __pendingCookies: typeof pendingCookies }).__pendingCookies = pendingCookies
@@ -676,7 +734,11 @@ export class HttpTransport {
 
     const query   = parseQuery(url.search)   // reuse the URL already parsed in _handle
     const headers = Object.fromEntries(req.headers.entries())
-    const ip      = extractIP(req)
+    const ip      = extractIP(
+      req,
+      (server as { requestIP?: (r: Request) => { address: string } | null }).requestIP?.(req)?.address,
+      this._opts.trustProxy
+    )
 
     // Store everything needed to build WsContext in ws.data.
     // user is null here — resolved asynchronously in _wsOpen.

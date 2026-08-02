@@ -158,44 +158,93 @@ export function createToolbarUI(buffer, config, onPause, onResume, onClear) {
   let _statusText = ''
   let _newCount   = 0
 
-  function updatePill() {
-    const reqs   = buffer.requests.all()
-    const errors = reqs.filter(r => r.status === 'error').length
-    const avgMs  = reqs.length ? Math.round(reqs.reduce((s, r) => s + (r.durationMs ?? 0), 0) / reqs.length) : 0
-    const newBadge = _newCount > 0 ? `<span class="fjs-pill-new">${_newCount} new</span>` : ''
-    const status = _statusText ? `<span class="fjs-pill-offline">${_statusText}</span>` : ''
+  // Pill structure is built once. It used to be reassigned via innerHTML on
+  // every inbound message — including status-only updates — which reparsed the
+  // markup and discarded/recreated five elements each time. Now only the text
+  // nodes that actually changed are written.
+  pill.innerHTML =
+    `<span class="fjs-pill-logo">◈ FJS</span>` +
+    `<span class="fjs-pill-stat"><span data-n>0</span> req</span>` +
+    `<span class="fjs-pill-stat">err <span data-e>0</span></span>` +
+    `<span class="fjs-pill-stat">avg <span data-a>0ms</span></span>` +
+    `<span class="fjs-pill-new" hidden></span>` +
+    `<span class="fjs-pill-offline" hidden></span>`
 
-    pill.innerHTML =
-      `<span class="fjs-pill-logo">◈ FJS</span>` +
-      `<span class="fjs-pill-stat"><span>${reqs.length}</span> req</span>` +
-      `<span class="fjs-pill-stat">err <span>${errors}</span></span>` +
-      `<span class="fjs-pill-stat">avg <span>${avgMs}ms</span></span>` +
-      `${newBadge}${status}`
+  const _pn = pill.querySelector('[data-n]')
+  const _pe = pill.querySelector('[data-e]')
+  const _pa = pill.querySelector('[data-a]')
+  const _pnew = pill.querySelector('.fjs-pill-new')
+  const _poff = pill.querySelector('.fjs-pill-offline')
+
+  function setText(node, value) {
+    const v = String(value)
+    if (node.textContent !== v) node.textContent = v
   }
 
+  function updatePill() {
+    let errors = 0, total = 0, n = 0
+    // Single pass — previously filter() + reduce() each built an intermediate.
+    for (const r of buffer.requests.all()) {
+      n++
+      if (r.status === 'error') errors++
+      total += r.durationMs ?? 0
+    }
+    setText(_pn, n)
+    setText(_pe, errors)
+    setText(_pa, (n ? Math.round(total / n) : 0) + 'ms')
+
+    if (_newCount > 0) { setText(_pnew, `${_newCount} new`); _pnew.hidden = false }
+    else _pnew.hidden = true
+
+    if (_statusText) { setText(_poff, _statusText); _poff.hidden = false }
+    else _poff.hidden = true
+  }
+
+  // Coalesce onto a frame. render() is called once per inbound WebSocket
+  // message, and a burst of 50 messages in one tick previously meant 50 full
+  // panel rebuilds — each one clearing tabContent and re-creating every row.
+  // Now a burst collapses to a single paint.
+  let _frame = 0
+  const _schedule = typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame
+    : (fn) => setTimeout(fn, 16)
+
   function render() {
+    if (_frame) return
+    _frame = 1
+    _schedule(() => {
+      _frame = 0
+      updatePill()
+      if (panelOpen) renderActive()
+    })
+  }
+
+  /** Render synchronously — for tests and for the initial paint. */
+  function renderNow() {
+    _frame = 0
     updatePill()
     if (panelOpen) renderActive()
   }
 
   function setStatus(text) {
     _statusText = text
-    updatePill()
+    render()
   }
 
   function addNewCount(n) {
     _newCount += n
-    updatePill()
+    render()
   }
 
   function clearNewCount() {
     _newCount = 0
-    updatePill()
+    render()
   }
 
   return {
     root,
     render,
+    renderNow,
     setStatus,
     addNewCount,
     clearNewCount,

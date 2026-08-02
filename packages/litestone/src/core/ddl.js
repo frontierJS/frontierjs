@@ -138,7 +138,7 @@ function defaultExpr(attr) {
 
 // ─── Column definition ────────────────────────────────────────────────────────
 
-function columnDef(field, schema = null) {
+function columnDef(field, schema = null, compositePk = false) {
   const parts = [`  "${field.name}" ${sqlType(field.type)}`]
 
   // NOT NULL — unless optional, and not for GENERATED/funcCall columns
@@ -151,9 +151,10 @@ function columnDef(field, schema = null) {
     parts.push('NOT NULL')
   }
 
-  // PRIMARY KEY (single-column — composite handled at table level)
+  // PRIMARY KEY (single-column only — a composite PK is emitted once at the
+  // table level by tableConstraints, so suppress the per-column keyword then).
   const isId = field.attributes.find(a => a.kind === 'id')
-  if (isId) parts.push('PRIMARY KEY')
+  if (isId && !compositePk) parts.push('PRIMARY KEY')
 
   // UNIQUE
   const isUnique = field.attributes.find(a => a.kind === 'unique')
@@ -202,7 +203,7 @@ function columnDef(field, schema = null) {
 
 // ─── Table constraints ────────────────────────────────────────────────────────
 
-function tableConstraints(model) {
+function tableConstraints(model, schema, pluralize = false) {
   const lines = []
 
   // Composite primary key — if more than one @id field
@@ -227,7 +228,11 @@ function tableConstraints(model) {
 
     const fromCols = rel.fields.map(f => `"${f}"`).join(', ')
     const toCols   = rel.references.map(f => `"${f}"`).join(', ')
-    let fk = `  FOREIGN KEY (${fromCols}) REFERENCES "${field.type.name}" (${toCols})`
+    // Resolve the TARGET's actual table name — @@map / pluralize aware.
+    // Referencing the raw model name broke every FK on @@map'd schemas.
+    const targetModel = schema?.models.find(m => m.name === field.type.name)
+    const targetTable = targetModel ? modelToTableName(targetModel, pluralize) : field.type.name
+    let fk = `  FOREIGN KEY (${fromCols}) REFERENCES "${targetTable}" (${toCols})`
     if (rel.onDelete) fk += ` ON DELETE ${rel.onDelete.toUpperCase().replace('SETNULL', 'SET NULL').replace('NOACTION', 'NO ACTION')}`
     if (rel.onUpdate) fk += ` ON UPDATE ${rel.onUpdate.toUpperCase().replace('SETNULL', 'SET NULL').replace('NOACTION', 'NO ACTION')}`
     lines.push(fk)
@@ -249,20 +254,23 @@ function enumCheck(field, schema) {
 
 // ─── CREATE TABLE ─────────────────────────────────────────────────────────────
 
-function createTable(model, schema, tableName) {  // schema needed for funcCall expansion; tableName pre-derived
+function createTable(model, schema, tableName, pluralize = false) {  // schema needed for funcCall expansion; tableName pre-derived
   const strict = isStrict(model)
 
   // Exclude relation navigation fields (virtual, no column) and @computed/@from fields (app-layer only).
   // @generated fields ARE included — they become GENERATED ALWAYS AS columns in SQLite.
   const columnFields = model.fields.filter(f =>
     f.type.kind !== 'relation' &&
+    f.type.kind !== 'implicitM2M' &&             // implicit m2m is stored in a join table, not a host column
     !f.attributes.find(a => a.kind === 'computed') &&
-    !f.attributes.find(a => a.kind === 'from')
+    !f.attributes.find(a => a.kind === 'from') &&
+    !f.attributes.find(a => a.kind === 'edge')   // @edge/@scoped live on a join/side table
   )
 
-  const colDefs      = columnFields.map(f => columnDef(f, schema))
+  const pkCount      = model.fields.filter(f => f.attributes.some(a => a.kind === 'id')).length
+  const colDefs      = columnFields.map(f => columnDef(f, schema, pkCount > 1))
   const enumChecks   = columnFields.map(f => enumCheck(f, schema)).filter(Boolean)
-  const constraints  = tableConstraints(model)
+  const constraints  = tableConstraints(model, schema, pluralize)
   const allDefs      = [...colDefs, ...enumChecks, ...constraints]
 
   const strictClause = strict ? ' STRICT' : ''
@@ -370,7 +378,7 @@ function createUpdatedAtTrigger(model, tableName) {
     `-- Auto-update updatedAt on every row change`,
     `CREATE TRIGGER IF NOT EXISTS "${tableName}_updatedAt"`,
     `AFTER UPDATE ON "${tableName}"`,
-    `WHEN NEW."updatedAt" = OLD."updatedAt"`,
+    `WHEN NEW."updatedAt" IS OLD."updatedAt"`,
     `BEGIN`,
     `  UPDATE "${tableName}" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;`,
     `END;`,
@@ -411,8 +419,20 @@ function topoSort(models) {
   }
 
   if (sorted.length !== models.length) {
-    const cycle = models.filter(m => !sorted.includes(m)).map(m => m.name)
-    throw new Error(`Circular foreign key reference detected between: ${cycle.join(', ')}`)
+    // Circular FK references (e.g. Account.ownerId → User, User.accountId →
+    // Account) are legal in SQLite: CREATE TABLE may reference a table that
+    // doesn't exist yet — FKs resolve lazily at DML time. Emit the models
+    // stuck in the cycle in declaration order instead of failing. Kahn's
+    // output above still orders everything OUTSIDE the cycle correctly.
+    const emitted = new Set(sorted.map(m => m.name))
+    const cyclic  = models.filter(m => !emitted.has(m.name))
+    if (typeof console !== 'undefined') {
+      console.warn(
+        `[litestone] Circular foreign key reference between: ${cyclic.map(m => m.name).join(', ')} — ` +
+        `emitting in declaration order (SQLite resolves FKs lazily, so this is safe).`
+      )
+    }
+    sorted.push(...cyclic)
   }
 
   return sorted
@@ -423,36 +443,203 @@ function topoSort(models) {
 // Join table name: _modela_modelb (alphabetical, lowercase)
 // Columns:        modelaId, modelbId (camelCase of model name + "Id")
 
-export function detectM2MPairs(schema) {
-  const pairs = []
-  const seen  = new Set()
+// Detect implicit many-to-many relations — one entry per RELATION, not per
+// model pair. Labeled relations (@relation("members") / @relation(name: "members"))
+// pair by label, so two models can carry several m2m relations side by side,
+// including self-relations (Tag ↔ Tag).
+//
+// Join table naming (Prisma parity for labeled relations):
+//   unlabeled, distinct models →  _modela_modelb   cols: modelaId / modelbId  (legacy)
+//   labeled                    →  _<label>          cols: "A" / "B"            (Prisma layout)
+//   self (labeled or not)      →  cols "A" / "B"    ("A" = first-declared field's far side)
+//
+// "A" is the alphabetically-first model (Prisma convention), so existing
+// Prisma SQLite files line up byte-for-byte with labeled relations.
+
+const relLabel = (field) => field.attributes?.find(a => a.kind === 'relation')?.name ?? null
+
+export function detectM2MPairs(schema, pluralize = false) {
+  const rels = []
+  const seen = new Set()
 
   for (const model of schema.models) {
     for (const field of model.fields) {
       if (field.type.kind !== 'implicitM2M') continue
-      const [a, b] = [model.name, field.type.name].sort()
-      const key    = `${a}__${b}`
+      const label  = relLabel(field)
+      const target = schema.models.find(m => m.name === field.type.name)
+      if (!target) continue
+      const self   = target.name === model.name
+
+      // Find the mirror field: same label (or both unlabeled), pointing back.
+      const mirror = self
+        ? model.fields.find(f => f !== field && f.type.kind === 'implicitM2M' && f.type.name === model.name && relLabel(f) === label)
+        : target.fields.find(f => f.type.kind === 'implicitM2M' && f.type.name === model.name && relLabel(f) === label)
+      if (!mirror) continue   // parser validation reports this — skip here
+
+      // Dedupe: one entry per relation (label + sorted models, or self field pair)
+      const [a, b] = [model.name, target.name].sort()
+      const key = self
+        ? `${a}__${a}__${label ?? [field.name, mirror.name].sort().join('~')}`
+        : `${a}__${b}__${label ?? ''}`
       if (seen.has(key)) continue
       seen.add(key)
 
-      const colA      = a.charAt(0).toLowerCase() + a.slice(1) + 'Id'
-      const colB      = b.charAt(0).toLowerCase() + b.slice(1) + 'Id'
-      const joinTable = `_${a.toLowerCase()}_${b.toLowerCase()}`
-      pairs.push({ modelA: a, modelB: b, joinTable, colA, colB })
+      const mA = schema.models.find(m => m.name === a)
+      const mB = schema.models.find(m => m.name === b)
+      const tableA = mA ? modelToTableName(mA, pluralize) : a
+      const tableB = mB ? modelToTableName(mB, pluralize) : b
+
+      if (self) {
+        // Deterministic direction: first-DECLARED field is the "A end" —
+        // traversing it returns ids stored in column "A".
+        const fields   = model.fields.filter(f => f.type.kind === 'implicitM2M' && f.type.name === model.name && relLabel(f) === label)
+        const [f1, f2] = fields          // declaration order
+        rels.push({
+          relName: label, self: true,
+          modelA: a, modelB: b, tableA, tableB,
+          joinTable: label ? `_${label}` : `_${a.toLowerCase()}_${b.toLowerCase()}`,
+          colA: 'A', colB: 'B',
+          fieldA: f2?.name ?? null,   // field on modelA whose join column is colA…
+          fieldB: f1?.name ?? null,   // …see buildRelationMap for the self mapping
+          selfFields: { [f1.name]: { selfKey: 'B', targetKey: 'A' },
+                        ...(f2 ? { [f2.name]: { selfKey: 'A', targetKey: 'B' } } : {}) },
+        })
+      } else {
+        const fieldOnA = (model.name === a ? field : mirror).name
+        const fieldOnB = (model.name === a ? mirror : field).name
+        const labeled  = label != null
+        rels.push({
+          relName: label, self: false,
+          modelA: a, modelB: b, tableA, tableB,
+          joinTable: labeled ? `_${label}` : `_${a.toLowerCase()}_${b.toLowerCase()}`,
+          colA: labeled ? 'A' : a.charAt(0).toLowerCase() + a.slice(1) + 'Id',
+          colB: labeled ? 'B' : b.charAt(0).toLowerCase() + b.slice(1) + 'Id',
+          fieldA: fieldOnA,
+          fieldB: fieldOnB,
+        })
+      }
     }
   }
-  return pairs
+  return rels
 }
 
 export function generateJoinTableDDL(pair, ifNotExists = true) {
   const ie = ifNotExists ? 'IF NOT EXISTS ' : ''
+  // @edge columns decorating this join (added by collectEdges via generateDDL).
+  const edgeCols = (pair.edgeColumns ?? []).map(c => `${c},`)
   return [
     `CREATE TABLE ${ie}"${pair.joinTable}" (`,
-    `  "${pair.colA}" INTEGER NOT NULL REFERENCES "${pair.modelA}"("id") ON DELETE CASCADE,`,
-    `  "${pair.colB}" INTEGER NOT NULL REFERENCES "${pair.modelB}"("id") ON DELETE CASCADE,`,
+    `  "${pair.colA}" INTEGER NOT NULL REFERENCES "${pair.tableA ?? pair.modelA}"("id") ON DELETE CASCADE,`,
+    `  "${pair.colB}" INTEGER NOT NULL REFERENCES "${pair.tableB ?? pair.modelB}"("id") ON DELETE CASCADE,`,
+    ...edgeCols,
     `  PRIMARY KEY ("${pair.colA}", "${pair.colB}")`,
     `) STRICT;`,
     `CREATE INDEX IF NOT EXISTS "${pair.joinTable}_${pair.colB}_idx" ON "${pair.joinTable}"("${pair.colB}");`,
+  ].join('\n')
+}
+
+// ─── @edge / @scoped storage ──────────────────────────────────────────────────
+// An @edge value lives on a relationship, never on its host row. Two shapes:
+//   decorate   — columns added to an existing implicit-m2m join table (the ref
+//                already has a mutual Model[] relation to the host)
+//   create-own — a dedicated side table (hostId, dimId, <cols>) when no such
+//                relation exists (the @scoped / personalization case)
+// Both are byte-for-byte the explicit join model you'd hand-write, so eject is
+// a rename with no data migration.
+
+const _lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1)
+
+// Every @edge field across the schema, with its resolved descriptor.
+export function collectEdges(schema) {
+  const edges = []
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const e = field.attributes.find(a => a.kind === 'edge')
+      if (!e) continue
+      edges.push({ hostModel: model, hostName: model.name, field, ...e })
+    }
+  }
+  return edges
+}
+
+// Classify each edge as decorate (matches an m2m pair) or create-own (its own
+// side table), returning { pairs, ownGroups } ready for DDL. Mutates pairs by
+// attaching `.edgeColumns`.
+export function planEdgeStorage(schema, m2mPairs, pluralize = false) {
+  const ownGroups = new Map()   // sideTable → { sideTable, hostTable, dimTable, hostCol, dimCol, cols }
+  for (const edge of collectEdges(schema)) {
+    const refModel = schema.models.find(m => m.name === edge.ref)
+    const pair = m2mPairs.find(p => {
+      const set = new Set([p.modelA, p.modelB])
+      return set.has(edge.hostName) && set.has(edge.ref)
+    })
+    const colDef = columnDef(edge.field, schema)
+    if (pair) {
+      (pair.edgeColumns ??= []).push(colDef)
+    } else {
+      const hostTable = modelToTableName(edge.hostModel, pluralize)
+      const dimTable  = refModel ? modelToTableName(refModel, pluralize) : edge.ref
+      const hostCol   = `${_lowerFirst(edge.hostName)}Id`
+      const dimCol    = edge.key
+      const [la, lb]  = [edge.hostName, edge.ref].map(_lowerFirst).sort()
+      const sideTable = `_${la}_${lb}`
+      const g = ownGroups.get(sideTable) ?? { sideTable, hostTable, dimTable, hostCol, dimCol, cols: [] }
+      g.cols.push(colDef)
+      ownGroups.set(sideTable, g)
+    }
+  }
+  return { pairs: m2mPairs, ownGroups: [...ownGroups.values()] }
+}
+
+// Runtime edge map: per-model, per-field storage descriptor the client uses to
+// read/write/filter edge values. Naming here is authoritative — it MUST match the
+// DDL (join columns from detectM2MPairs, side tables from planEdgeStorage), so
+// both derive from the same helpers.
+//   decorate → { storage, table: <joinTable>, hostCol, dimCol, col, ... }
+//   own      → { storage, table: <sideTable>, hostCol, dimCol, col, hostTable, dimTable, ... }
+export function buildEdgeMap(schema, pluralize = false) {
+  const m2mPairs = detectM2MPairs(schema, pluralize)
+  const map = {}
+  for (const edge of collectEdges(schema)) {
+    const host     = edge.hostName
+    const refModel = schema.models.find(m => m.name === edge.ref)
+    const pair = m2mPairs.find(p => {
+      const s = new Set([p.modelA, p.modelB])
+      return s.has(host) && s.has(edge.ref)
+    })
+    let desc
+    if (pair) {
+      const hostCol = host      === pair.modelA ? pair.colA : pair.colB
+      const dimCol  = edge.ref  === pair.modelA ? pair.colA : pair.colB
+      desc = { storage: 'decorate', table: pair.joinTable, hostCol, dimCol }
+    } else {
+      const hostTable = modelToTableName(edge.hostModel, pluralize)
+      const dimTable  = refModel ? modelToTableName(refModel, pluralize) : edge.ref
+      const [la, lb]  = [host, edge.ref].map(_lowerFirst).sort()
+      desc = { storage: 'own', table: `_${la}_${lb}`, hostCol: `${_lowerFirst(host)}Id`, dimCol: edge.key, hostTable, dimTable }
+    }
+    const defAttr = edge.field.attributes.find(a => a.kind === 'default')
+    desc = {
+      ...desc,
+      field: edge.field.name, col: edge.field.name, type: edge.field.type,
+      ref: edge.ref, key: edge.key, as: edge.as, onMissing: edge.onMissing, auth: edge.auth,
+      default: defAttr ? defAttr.value : undefined,
+    }
+    ;(map[host] ??= {})[edge.field.name] = desc
+  }
+  return map
+}
+
+export function generateEdgeSideTableDDL(g, ifNotExists = true) {
+  const ie = ifNotExists ? 'IF NOT EXISTS ' : ''
+  return [
+    `CREATE TABLE ${ie}"${g.sideTable}" (`,
+    `  "${g.hostCol}" INTEGER NOT NULL REFERENCES "${g.hostTable}"("id") ON DELETE CASCADE,`,
+    `  "${g.dimCol}" INTEGER NOT NULL REFERENCES "${g.dimTable}"("id") ON DELETE CASCADE,`,
+    ...g.cols.map(c => `${c},`),
+    `  PRIMARY KEY ("${g.hostCol}", "${g.dimCol}")`,
+    `) STRICT;`,
+    `CREATE INDEX IF NOT EXISTS "${g.sideTable}_${g.dimCol}_idx" ON "${g.sideTable}"("${g.dimCol}");`,
   ].join('\n')
 }
 
@@ -557,7 +744,7 @@ export function generateDDL(schema, { foreignKeys = true, pluralize = false } = 
       parts.push(model.comments.map(c => `-- ${c}`).join('\n'))
     }
 
-    parts.push(createTable(model, schema, tableName))
+    parts.push(createTable(model, schema, tableName, pluralize))
 
     const indexes = createIndexes(model, isSoftDelete(model), tableName)
     if (indexes.length) parts.push(indexes.join('\n'))
@@ -571,10 +758,15 @@ export function generateDDL(schema, { foreignKeys = true, pluralize = false } = 
     sections.push(parts.join('\n'))
   }
 
-  // Implicit m2m join tables (generated after all models so FKs resolve)
-  const m2mPairs = detectM2MPairs(schema)
+  // Implicit m2m join tables (generated after all models so FKs resolve).
+  // @edge columns decorate these; @edge/@scoped with no relation get side tables.
+  const m2mPairs = detectM2MPairs(schema, pluralize)
+  const { ownGroups } = planEdgeStorage(schema, m2mPairs, pluralize)
   for (const pair of m2mPairs) {
     sections.push(generateJoinTableDDL(pair))
+  }
+  for (const g of ownGroups) {
+    sections.push(generateEdgeSideTableDDL(g))
   }
 
   // Views — after all tables since they reference them
@@ -628,7 +820,7 @@ export function generateViewDDL(view) {
  * Generate DDL for a single model — useful for migrations.
  */
 export function generateTableDDL(model, schema, { pluralize = false } = {}) {
-  return createTable(model, schema, modelToTableName(model, pluralize))
+  return createTable(model, schema, modelToTableName(model, pluralize), pluralize)
 }
 
 /**

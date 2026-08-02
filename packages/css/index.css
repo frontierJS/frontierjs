@@ -1,42 +1,78 @@
 /*
- * styles/index.css
+ * index.css
  * Single entry point. Import this from your app root.
  *
- * Order matters:
- *   1. Tokens     — root variable defaults
- *   2. Themes     — overrides under .theme-* classes
- *   3. Tones      — per-element tone classes (.primary, .danger, …)
- *   4. Surface    — block visual base (shared by card, alert, toast, dialog, popover)
- *   5. Utilities  — components, both inline (btn/pill/badge) and block (card/alert/...)
+ * Plain CSS, no build step, no UnoCSS. All files live flat in the package
+ * root; the groupings below are logical, not directory paths.
+ *
+ * ── Cascade layers ──────────────────────────────────────────────────
+ *
+ * Later layers win, regardless of selector specificity. That replaces the
+ * old "order matters, don't reshuffle the imports" convention with an
+ * explicit contract:
+ *
+ *   tokens      :root variable defaults
+ *   themes      .theme-* overrides of those tokens
+ *   tones       tone vocabulary (.primary, .danger, …)
+ *   base        the two lineage bases — chip (inline), surface (block)
+ *   layout      composition helpers (stack, cluster, center, split)
+ *   components  btn, pill, badge, card, field, table, dialog, …
+ *   patterns    block-tier layout patterns (bar, list, feed, disclosure)
+ *   a11y        visually-hidden, skip link — last, so nothing outranks
+ *               them without a deliberate unlayered override
+ *
+ * Three consequences worth knowing:
+ *
+ * 1. Unlayered CSS beats every layer, so consumer styles override this
+ *    package by default — no !important, no specificity war.
+ *
+ * 2. Specificity still decides *within* a layer, so the :where() bases in
+ *    chip.css and surface.css stay overridable by their own composites.
+ *
+ * 3. `layout` sits before `components`/`patterns` on purpose: it lets
+ *    `.bar` beat `.center` on the `display` property. See layout.css.
  */
 
-@import './tokens.css';
+@layer tokens, themes, tones, base, layout, components, patterns, a11y;
 
-@import './themes/default.css';
-@import './themes/sunset.css';
-@import './themes/forest.css';
-@import './themes/midnight.css';
-@import './themes/dark.css';
-@import './themes/elite.css';
+@import './tokens.css' layer(tokens);
 
-@import './utilities/tones.css';
-@import './utilities/surface.css';
+/* Themes */
+@import './default.css'  layer(themes);
+@import './sunset.css'   layer(themes);
+@import './forest.css'   layer(themes);
+@import './midnight.css' layer(themes);
+@import './dark.css'     layer(themes);
+@import './elite.css'    layer(themes);
 
-@import './utilities/typography.css';
-@import './utilities/buttons.css';
-@import './utilities/pills.css';
-@import './utilities/badges.css';
-@import './utilities/cards.css';
-@import './utilities/alerts.css';
-@import './utilities/toasts.css';
-@import './utilities/popovers.css';
-@import './utilities/drawers.css';
-@import './utilities/form-core.css';
-@import './utilities/tables.css';
-@import './utilities/dialogs.css';
+/* Foundation */
+@import './tones.css'   layer(tones);
+@import './chip.css'    layer(base);
+@import './surface.css' layer(base);
+@import './layout.css'  layer(layout);
+
+/* Frame + Page tiers — the app shell and the routed page */
+@import './frame.css' layer(components);
+
+/* Components */
+@import './typography.css' layer(components);
+@import './buttons.css'    layer(components);
+@import './pills.css'      layer(components);
+@import './badges.css'     layer(components);
+@import './cards.css'      layer(components);
+@import './alerts.css'     layer(components);
+@import './toasts.css'     layer(components);
+@import './popovers.css'   layer(components);
+@import './drawers.css'    layer(components);
+@import './form-core.css'  layer(components);
+@import './tables.css'     layer(components);
+@import './dialogs.css'    layer(components);
 
 /* Block-tier patterns */
-@import './utilities/bars.css';
-@import './utilities/lists.css';
-@import './utilities/feed.css';
-@import './utilities/disclosure.css';
+@import './bars.css'       layer(patterns);
+@import './lists.css'      layer(patterns);
+@import './feed.css'       layer(patterns);
+@import './disclosure.css' layer(patterns);
+
+/* Accessibility primitives — last layer on purpose */
+@import './a11y.css' layer(a11y);

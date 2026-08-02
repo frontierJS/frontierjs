@@ -13,14 +13,16 @@
 //   Full rebuild:  drop col, change type, change NOT NULL, change DEFAULT,
 //                  change PK, change FK, change CHECK, add @@strict
 
-import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateViewDDL, modelToTableName } from './ddl.js'
+import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL } from './ddl.js'
 import { createHash } from 'crypto'
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
 // Works on any db handle with .prepare() (Bun Database).
 // Returns: { tableName: { columns, indexes, foreignKeys, strict } }
 
-const INTERNAL = /^(_litestone_|_[a-z]+_[a-z]+$|sqlite_|.*_fts$|.*_fts_data$|.*_fts_idx$|.*_fts_content$|.*_fts_docsize$|.*_fts_config$)/
+// Underscore prefix = machinery tables: _litestone_*, implicit-m2m join tables
+// (_task_user, _members, _TagToTag), matching Prisma's convention.
+const INTERNAL = /^(_|sqlite_|.*_fts$|.*_fts_data$|.*_fts_idx$|.*_fts_content$|.*_fts_docsize$|.*_fts_config$)/
 
 export function introspect(db) {
   const schema = {}
@@ -96,10 +98,18 @@ export function introspect(db) {
 // Splits a SQL string into individual statements.
 // Naive semicolon-split fails on trigger bodies (BEGIN...END contains semicolons).
 // This tracks BEGIN/END depth so we only split at top-level semicolons.
+// Only a CREATE TRIGGER opens a BEGIN...END body. A bare BEGIN at the start
+// of a statement is a *transaction* and must end at its own semicolon —
+// counting it as body depth fused everything after it (COMMIT never
+// decrements) into one giant statement, which then reached db.run() as a
+// single multi-statement string where a failing statement is silently
+// skipped instead of raised.
+const TRIGGER_HEAD = /^CREATE\s+(TEMP(ORARY)?\s+)?TRIGGER\b/i
+
 export function splitStatements(sql) {
   const stmts = []
   let   cur   = ''
-  let   depth = 0   // nesting level inside BEGIN...END
+  let   depth = 0   // nesting level inside a CREATE TRIGGER's BEGIN...END body
 
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i]
@@ -134,12 +144,20 @@ export function splitStatements(sql) {
     // Track BEGIN/END depth for trigger bodies
     // Look for word boundaries to avoid matching "UNBOUNDED" etc.
     const word5 = sql.slice(i, i+5).toUpperCase()
+    const word4 = sql.slice(i, i+4).toUpperCase()
     const word3 = sql.slice(i, i+3).toUpperCase()
     const prevIsWord = i > 0 && /\w/.test(sql[i-1])
     const nextIsWordAt = (n) => /\w/.test(sql[i+n] ?? '')
 
     if (!prevIsWord && word5 === 'BEGIN' && !nextIsWordAt(5)) {
-      depth++
+      // Body depth only when this statement is a CREATE TRIGGER; a
+      // transaction BEGIN stays an ordinary statement.
+      if (TRIGGER_HEAD.test(cur.trimStart())) depth++
+    } else if (!prevIsWord && word4 === 'CASE' && !nextIsWordAt(4)) {
+      // CASE...END inside a trigger body — count it so its END doesn't
+      // close the trigger body early. Outside a body, CASE is not ours
+      // to track.
+      if (depth > 0) depth++
     } else if (!prevIsWord && word3 === 'END' && !nextIsWordAt(3)) {
       if (depth > 0) depth--
     }
@@ -377,12 +395,27 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
 
 // ─── SQL generation ───────────────────────────────────────────────────────────
 
-function rebuildSQL(model, parseResult, pluralize = false) {
-  const targetFields   = model.fields.filter(f => f.type.kind !== 'relation')
+function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
+  // Must match createTable's physical columns exactly — implicit m2m and @edge
+  // fields have no host column, so they can't appear in the INSERT ... SELECT.
+  const targetFields   = model.fields.filter(f =>
+    f.type.kind !== 'relation' &&
+    f.type.kind !== 'implicitM2M' &&
+    !f.attributes.find(a => a.kind === 'edge')
+  )
   const targetColNames = targetFields.map(f => f.name)
-  const cols           = targetColNames.map(n => `"${n}"`).join(', ')
   const tableName      = modelToTableName(model, pluralize)
   const tmp            = `${tableName}__new`
+
+  // Copy only columns the OLD table also has. A column that is being ADDED in
+  // this rebuild must not appear in the SELECT: SQLite resolves an unknown
+  // double-quoted identifier as a string literal, so `SELECT "bio" FROM old`
+  // doesn't error — it writes the literal 'bio' into every row (or fails the
+  // whole copy when the target column's type rejects TEXT). Omitting added
+  // columns lets their DEFAULT (or NULL) fill them.
+  const addedNames = new Set((diff?.cols?.added ?? []).map(c => c.name))
+  const copyNames  = targetColNames.filter(n => !addedNames.has(n))
+  const copyCols   = copyNames.map(n => `"${n}"`).join(', ')
 
   const fullDDL   = generateTableDDL(model, parseResult.schema, { pluralize })
   const isStrict  = fullDDL.trimEnd().endsWith('STRICT;')
@@ -395,8 +428,12 @@ function rebuildSQL(model, parseResult, pluralize = false) {
   lines.push(body)
   lines.push(isStrict ? `) STRICT;` : `);`)
   lines.push(``)
-  lines.push(`INSERT INTO "${tmp}" (${cols})`)
-  lines.push(`  SELECT ${cols} FROM "${tableName}";`)
+  if (copyNames.length) {
+    lines.push(`INSERT INTO "${tmp}" (${copyCols})`)
+    lines.push(`  SELECT ${copyCols} FROM "${tableName}";`)
+  } else {
+    lines.push(`-- no columns shared with the old table — nothing to copy`)
+  }
   lines.push(``)
   lines.push(`DROP TABLE "${tableName}";`)
   lines.push(`ALTER TABLE "${tmp}" RENAME TO "${tableName}";`)
@@ -410,6 +447,18 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
   lines.push(`PRAGMA foreign_keys = OFF;`)
   lines.push(`BEGIN;`)
   lines.push(``)
+
+  // Implicit m2m join tables are invisible to introspection (underscore
+  // prefix), so the diff never lists them — emit them unconditionally with
+  // IF NOT EXISTS so adding an m2m to an existing DB creates its join table.
+  {
+    const pairs = detectM2MPairs(parseResult.schema, pluralize)
+    if (pairs.length) {
+      lines.push(`-- ─── implicit m2m join tables (idempotent) ${'─'.repeat(24)}`)
+      for (const pair of pairs) lines.push(generateJoinTableDDL(pair, true))
+      lines.push(``)
+    }
+  }
 
   if (newTables.length) {
     lines.push(`-- ─── new tables ${'─'.repeat(52)}`)
@@ -454,7 +503,24 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
       const model = parseResult.schema.models.find(m => modelToTableName(m, pluralize) === d.name)
 
       if (d.needsRebuild) {
-        lines.push(rebuildSQL(model, parseResult, pluralize))
+        // A rebuild that ADDS a NOT NULL column with no DEFAULT has no value
+        // to give existing rows — same rule as blockedAdds on the ALTER path.
+        // Emit the whole rebuild commented out with the fix options instead
+        // of generating SQL that destroys or corrupts the table.
+        const blocked = (d.cols?.added ?? []).filter(c => c.notnull && c.default == null)
+        if (blocked.length) {
+          lines.push(`-- "${d.name}": rebuild BLOCKED — adds NOT NULL column(s) with no DEFAULT:`)
+          for (const c of blocked) lines.push(`--     ${c.name} ${c.type}`)
+          lines.push(`-- Existing rows have no value for them. Fix one of:`)
+          lines.push(`--   • add a @default() to the field, or make it optional (?)`)
+          lines.push(`--   • hand-write the copy below with a value expression for each blocked column`)
+          lines.push(`--   • if the table is empty, uncomment the rebuild as-is`)
+          lines.push(rebuildSQL(model, parseResult, pluralize, d).split('\n').map(l => `-- ${l}`).join('\n'))
+          lines.push(``)
+          continue
+        }
+
+        lines.push(rebuildSQL(model, parseResult, pluralize, d))
         lines.push(``)
         const idxSQL = generateIndexDDL(model, false, { pluralize })
         if (idxSQL.length) {

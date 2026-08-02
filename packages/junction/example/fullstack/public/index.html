@@ -1,0 +1,84 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>FrontierJS — end to end</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; max-width: 44rem; margin: 3rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.1rem; letter-spacing: .02em; text-transform: uppercase; opacity: .6; }
+  li { display: flex; gap: .75rem; align-items: baseline; padding: .5rem 0; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+  li b { flex: 1; font-weight: 600; }
+  li small { opacity: .55; }
+  button { font: inherit; cursor: pointer; border-radius: .4rem; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); background: none; color: inherit; padding: .2rem .6rem; }
+  form { display: flex; gap: .5rem; margin: 1.25rem 0; }
+  input { flex: 1; font: inherit; padding: .4rem .6rem; border-radius: .4rem; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); background: none; color: inherit; }
+  #log { margin-top: 2rem; font-family: ui-monospace, monospace; font-size: .8rem; opacity: .65; white-space: pre-wrap; }
+  ul { list-style: none; padding: 0; }
+</style>
+
+<h1>posts — live</h1>
+<ul id="list"></ul>
+
+<form id="new">
+  <input name="title" placeholder="New post title" required>
+  <button type="submit">Create</button>
+</form>
+
+<div id="log"></div>
+
+<script type="module">
+// ── The Resource leg ──────────────────────────────────────────────────────
+//
+// This is the third file of the three. It names the service and nothing else:
+// no field list, no URL, no event wiring. `client.resource(name)` returns
+//
+//   service — CRUD calls over WS (falling back to HTTP)
+//   store   — a reactive list, kept in sync by server push events
+//   load    — populate the store from the server
+//
+// Sierra's createResource() sits directly on top of this same call and adds
+// schema-driven make() defaults from db/schema.lite.
+
+import { createJunctionClient } from '/client.js'
+
+const log = (...a) => (document.getElementById('log').textContent += a.join(' ') + '\n')
+
+const client = createJunctionClient({ url: location.origin })
+
+// @@gate("0.4.4.5") — reads are public, writes need a user. The demo login
+// hands out a token; nothing about that is declared in the service.
+const { token } = await (await fetch('/login', { method: 'POST' })).json()
+client.token = token
+
+const { service, store, load } = client.resource('posts')
+
+// The store is the only thing the view reads. Every change — ours or another
+// tab's — arrives the same way.
+store.subscribe(posts => {
+  document.getElementById('list').innerHTML = posts.map(p => `
+    <li>
+      <b>${p.title}</b>
+      <small>${p.published ? 'published' : 'draft'}</small>
+      <button data-id="${p.id}">delete</button>
+    </li>`).join('')
+})
+
+await load()
+log(`loaded ${store.get().length} posts`)
+
+client.on('event', (name, data) => log(`← ${name}`, JSON.stringify(data)))
+
+document.getElementById('new').addEventListener('submit', async e => {
+  e.preventDefault()
+  const title = new FormData(e.target).get('title')
+  e.target.reset()
+  await service.create({ title })      // no local store update — the push event does it
+})
+
+document.getElementById('list').addEventListener('click', async e => {
+  if (e.target.tagName !== 'BUTTON') return
+  await service.remove(e.target.dataset.id)
+})
+
+// Open this page in two tabs to see it: both stores follow the same events.
+log('ready — open a second tab to watch them stay in sync')
+</script>

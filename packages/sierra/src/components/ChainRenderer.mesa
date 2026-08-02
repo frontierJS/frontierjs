@@ -1,6 +1,11 @@
 <script>
-  import { data, params } from '@frontierjs/sierra/router'
+  import { page } from '@frontierjs/sierra/router'
   import ChainRendererInner from './ChainRenderer.mesa'
+
+  // `page` is a plain object — inert until watched. These declarations are what
+  // make this component track navigation; without them the reads below compile
+  // to static values and the outlet would never update.
+  $: (page.data, page.params)
 
   export let chain    // { component, ownParams, meta }[]
   export let depth    // current depth in chain
@@ -17,8 +22,8 @@
     if (remount === false) return null
     const own = entry.ownParams ?? []
     if (own.length === 0) return null
-    if (remount === 'params') return JSON.stringify(params)
-    return own.map(p => params[p]).join('/')
+    if (remount === 'params') return JSON.stringify(page.params)
+    return own.map(p => page.params[p]).join('/')
   }
 </script>
 
@@ -27,10 +32,10 @@
     {#if isLast}
       {#if getRemountKey() !== null}
         {#key getRemountKey()}
-          <Component data={data} />
+          <Component data={page.data} />
         {/key}
       {:else}
-        <Component data={data} />
+        <Component data={page.data} />
       {/if}
     {:else}
       {#snippet inner()}

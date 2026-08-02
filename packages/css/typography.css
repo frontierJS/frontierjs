@@ -1,5 +1,5 @@
 /*
- * utilities/typography.css
+ * typography.css
  * Heading scale (element + class pairs).
  * Text color utilities.
  */
@@ -23,6 +23,26 @@ h6, .h6 {
   font-weight:    600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+/*
+ * ── Link ──────────────────────────────────────────────────────
+ * The Inline-tier "Link" term. It was referenced by the anatomy examples
+ * in lists.css but never actually defined; .btn.link is a button that
+ * looks like a link, which is a different thing.
+ *
+ * Reads --bg-mix, so `class="link danger"` works like any other tone.
+ */
+.link {
+  color:           var(--bg-mix, var(--color-primary));
+  text-decoration: none;
+  cursor:          pointer;
+}
+.link:hover { text-decoration: underline; }
+.link:focus-visible {
+  outline:        2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius:  2px;
 }
 
 /* ── Text color utilities ─────────────────────────────────────── */

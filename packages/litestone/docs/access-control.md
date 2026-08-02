@@ -85,9 +85,23 @@ model User {
 
 `asSystem()` always sees and writes all fields. Conflicts with `@guarded` and `@secret`.
 
-## GatePlugin — level-based access control
+## Gates — level-based access control
 
 Assigns numeric levels to users (0–7) and declares the minimum level required per operation.
+
+**Gates are enforced by default.** If any model declares `@@gate`, Litestone
+installs the standard resolver (`FrontierGateGetLevel` — reads `verifiedAt`,
+`activatedAt`, `role`, `isAdmin`, `isOwner`, `isSystemAdmin` off the auth
+object) automatically. A declared gate is never silently inert. Models without
+`@@gate` are completely ungated.
+
+```js
+// Nothing to install — @@gate in the schema is enough:
+const db = await createClient({ path: './schema.lite', db: './app.db' })
+```
+
+To map identity to levels yourself, install your own `GatePlugin` — it replaces
+the default resolver entirely:
 
 ```js
 import { GatePlugin, LEVELS } from '@frontierjs/litestone'
@@ -122,22 +136,43 @@ const db = await createClient({ plugins: [gate], ... })
 
 ### @@gate syntax
 
+The canonical form is **named**: level names per operation, self-documenting,
+no decoder ring.
+
 ```prisma
-@@gate("R.C.U.D")      // four positions: Read.Create.Update.Delete — required level for each op
+model Post {
+  @@gate(read: VISITOR, write: USER, delete: OWNER)
+}
+
+model AdminSetting {
+  @@gate(read: ADMINISTRATOR, write: ADMINISTRATOR, delete: LOCKED)
+}
+```
+
+Keys: `read`, `create`, `update`, `delete`, and the shorthand `write`, which
+expands to create + update + delete unless one of those is given explicitly:
+
+```prisma
+@@gate(read: STRANGER, write: USER)                  // 0.4.4.4
+@@gate(read: READER, write: USER, delete: OWNER)     // 2.4.4.6 — delete overrides write
+@@gate(write: USER)                                  // 0.4.4.4 — read defaults to STRANGER
+```
+
+Missing keys cascade: `read` defaults to `STRANGER` (0), `create` from `read`,
+`update` from `create`, `delete` from `update`.
+
+**Compact form** — the same four positions as a digit string
+(`Read.Create.Update.Delete`), useful once you know the level scale by heart:
+
+```prisma
+@@gate("R.C.U.D")      // four positions — required level for each op
 @@gate("4")            // shorthand: all ops require USER (level 4+)
 @@gate("2.4.4.6")      // READER to read, USER to write, OWNER to delete
 @@gate("1.8.8.9")      // anyone can read, SYSTEM to write, LOCKED to delete
 ```
 
-```prisma
-model Post {
-  @@gate("1.3.4.6")    // VISITOR=read, CREATOR=create, USER=update, OWNER=delete
-}
-
-model AdminSetting {
-  @@gate("5.5.5.9")    // ADMINISTRATOR for all ops, LOCKED to delete
-}
-```
+Both forms compile to the same gate; use whichever reads better — new schemas
+and all documentation examples use the named form.
 
 ## Combining both systems
 

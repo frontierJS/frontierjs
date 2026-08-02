@@ -18,6 +18,11 @@ export interface IEventBus {
    *  Unlike on('*', ...), the handler receives the actual event name,
    *  making it suitable for logging, auditing, and webhook fan-out. */
   onAny(handler: (event: string, data: unknown) => void):        () => void
+  /** True if anything is listening — for `event` specifically, or via
+   *  '*' / onAny wildcards. With no argument: true if ANY listener exists.
+   *  Lets hot paths skip event-object allocation entirely when nobody
+   *  is subscribed (the common case for telemetry). */
+  hasListeners(event?: string):                                  boolean
 }
 
 // ─── In-process implementation ────────────────────────────────────────────
@@ -150,6 +155,18 @@ export function createEventBus(): IEventBus {
         handler(p.__event, p.__data)
       }
       return this.on('__any__', wrapped)
+    },
+
+    // ── hasListeners ─────────────────────────────────────────────
+
+    hasListeners(event?: string): boolean {
+      if (handlers.get('__any__')?.size) return true
+      if (handlers.get('*')?.size)       return true
+      if (event !== undefined) return !!handlers.get(event)?.size
+      for (const set of handlers.values()) {
+        if (set.size) return true
+      }
+      return false
     }
   }
 }

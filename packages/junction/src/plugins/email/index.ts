@@ -1,4 +1,11 @@
 // email/index.ts — public interface for @frontierjs/junction/email
+//
+// The PROVIDER-FACING email layer: 3rd-party provider integrations
+// (Resend/Postmark/Sendgrid campaign senders) and the higher-level
+// system/campaign email features. Builds on src/mail — Junction's
+// internal mail system — whose SMTP client (src/mail/smtp.ts) is the
+// shared transport. See src/mail/index.ts for the division of
+// responsibility.
 
 export { email }                          from './plugin.ts'
 export { sendSystemEmail,

@@ -1,5 +1,5 @@
 /*
- * utilities/tones.css
+ * tones.css
  * Single source of truth for tone semantics.
  *
  * Every tone sets two variables:
@@ -8,12 +8,62 @@
  *
  * Every component (btn, pill, badge, card, table, dialog, field…) reads
  * these two vars. Adding a new tone = one line here, zero component edits.
+ *
+ * ── Why these are registered as non-inheriting ──────────────────────
+ *
+ * Custom properties inherit by default, and `var(--bg-mix, fallback)`
+ * only reaches its fallback when the property is unset on the element
+ * *and* on every ancestor. Unregistered, a tone therefore bleeds into
+ * every descendant that reads it:
+ *
+ *   <div class="alert danger">
+ *     <button class="btn">Undo</button>   ← renders red-on-red
+ *     <span class="pill">3</span>         ← renders red, not muted
+ *   </div>
+ *
+ * `inherits: false` scopes a tone to the element that declares it, so
+ * descendants fall back to their own defaults. `syntax: "*"` with no
+ * initial-value leaves the property guaranteed-invalid when unset, which
+ * is precisely what makes those var() fallbacks fire.
+ *
+ * The contract this creates: a rule that reads --bg-mix must sit on the
+ * same element that carries the tone class. Where a descendant needs the
+ * value — the tinted <td> in tables.css, the tinted header in dialogs.css
+ * — the toned element derives the result into a normal (inheriting)
+ * property and passes that down instead.
+ *
+ * Browsers without @property support (pre-Firefox 128) fall back to the
+ * old inheriting behaviour: leaky, but not broken.
  */
 
-.primary   { --bg-mix: var(--color-primary);   --on-bg-mix: white; }
-.secondary { --bg-mix: var(--color-secondary); --on-bg-mix: white; }
-.muted     { --bg-mix: var(--color-muted);     --on-bg-mix: white; }
-.info      { --bg-mix: var(--color-info);      --on-bg-mix: white; }
-.success   { --bg-mix: var(--color-success);   --on-bg-mix: white; }
-.warning   { --bg-mix: var(--color-warning);   --on-bg-mix: #1f2937; }
-.danger    { --bg-mix: var(--color-danger);    --on-bg-mix: white; }
+@property --bg-mix {
+  syntax:   "*";
+  inherits: false;
+}
+
+@property --on-bg-mix {
+  syntax:   "*";
+  inherits: false;
+}
+
+/*
+ * A tone is one variable. The contrast color is no longer declared here:
+ * every tone used to assert `--on-bg-mix: white` (warning excepted)
+ * regardless of how light the hue actually was, which failed WCAG AA on
+ * 15 of the 35 tone x theme combinations — worst 1.99:1, on the primary
+ * button of a real client theme.
+ *
+ * chip.css now derives it from the fill's luminance, which is AA for any
+ * hue. --on-bg-mix survives as the override: set it on a tone or inside a
+ * theme to pin a specific text color, e.g. to put a soft slate on warning
+ * instead of the computed black:
+ *
+ *   .theme-x .warning { --on-bg-mix: #1f2937; }
+ */
+.primary   { --bg-mix: var(--color-primary);   }
+.secondary { --bg-mix: var(--color-secondary); }
+.muted     { --bg-mix: var(--color-muted);     }
+.info      { --bg-mix: var(--color-info);      }
+.success   { --bg-mix: var(--color-success);   }
+.warning   { --bg-mix: var(--color-warning);   }
+.danger    { --bg-mix: var(--color-danger);    }

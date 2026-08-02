@@ -13,7 +13,7 @@ import {
   introspect, buildPristine, buildPristineForDatabase, diffSchemas,
   generateMigrationSQL, summariseDiff, checksum, splitStatements,
 } from './migrate.js'
-import { generateDDLForDatabase } from './ddl.js'
+import { generateDDLForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -156,6 +156,43 @@ function loadMigrationSql(filePath) {
   return entry
 }
 
+// ─── Statement execution ─────────────────────────────────────────────────────
+// apply() and autoMigrate() own the transaction. Generated migration files
+// still carry `BEGIN;`/`COMMIT;` and the foreign_keys pragma pair so they can
+// be read and run by hand in a sqlite shell — the runner strips those and
+// provides the real thing: one transaction per migration, ROLLBACK on
+// failure, FK pragma managed around the transaction. Trusting the in-file
+// pair meant a mid-file failure left the connection inside an open
+// transaction with foreign_keys still OFF, and no ROLLBACK ever ran.
+
+const TXN_CONTROL = /^(BEGIN|COMMIT|ROLLBACK|END)\b/i
+const FK_PRAGMA   = /^PRAGMA\s+foreign_keys\b/i
+
+function executableStatements(stmts) {
+  return stmts.filter(s => {
+    const t = s.trim()
+    return t.length > 0 && !TXN_CONTROL.test(t) && !FK_PRAGMA.test(t)
+  })
+}
+
+// Runs statements inside one owned transaction. `record` (optional) runs as
+// the final step INSIDE the transaction, so the migration bookkeeping commits
+// atomically with the schema change itself.
+function runInTransaction(rawDb, stmts, record = null) {
+  rawDb.run('PRAGMA foreign_keys = OFF')
+  rawDb.run('BEGIN')
+  try {
+    for (const stmt of stmts) rawDb.run(stmt + ';')
+    if (record) record()
+    rawDb.run('COMMIT')
+  } catch (e) {
+    try { rawDb.run('ROLLBACK') } catch { /* no open txn — nothing to roll back */ }
+    throw e
+  } finally {
+    try { rawDb.run('PRAGMA foreign_keys = ON') } catch { /* advisory */ }
+  }
+}
+
 export async function apply(db, dir = './migrations', client = null) {
   const absDir  = resolve(dir)
   const files   = listMigrationFiles(absDir)
@@ -200,10 +237,7 @@ export async function apply(db, dir = './migrations', client = null) {
       } else {
         // ── SQL migration ────────────────────────────────────────────────────
         const { sql, stmts } = loadMigrationSql(filePath)
-        for (const stmt of stmts) {
-          db.run(stmt + ';')
-        }
-        recordMigration(db, file, sql)
+        runInTransaction(db, executableStatements(stmts), () => recordMigration(db, file, sql))
       }
 
       const elapsed = (performance.now() - t0).toFixed(0)
@@ -369,18 +403,63 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       const pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
       const diffResult     = diffSchemas(pristineSchema, liveSchema, parseResult, dbName, { pluralize })
 
+      // Join tables (and @edge/@scoped side tables) are invisible to
+      // introspection — ensure they exist even when the model diff is in sync
+      // (e.g. an m2m or an @edge added to an existing DB).
+      try {
+        const dbModels = parseResult.schema.models.filter(m =>
+          (m.attributes?.find(a => a.kind === 'db')?.name ?? 'main') === dbName)
+        const scoped = { ...parseResult.schema, models: dbModels }
+        const m2mPairs = detectM2MPairs(scoped, pluralize)
+        // planEdgeStorage attaches @edge columns to their pairs and collects
+        // create-own side-table groups.
+        const { ownGroups } = planEdgeStorage(scoped, m2mPairs, pluralize)
+        for (const pair of m2mPairs) {
+          for (const stmt of splitStatements(generateJoinTableDDL(pair, true)))
+            if (stmt.trim()) rawDb.run(stmt)
+          // Add any @edge columns missing from an already-existing join table —
+          // CREATE IF NOT EXISTS is a no-op once the join exists.
+          if (pair.edgeColumns?.length) {
+            const have = new Set(rawDb.query(`PRAGMA table_info("${pair.joinTable}")`).all().map(c => c.name))
+            for (const colDef of pair.edgeColumns) {
+              const name = colDef.match(/"([^"]+)"/)?.[1]
+              if (name && !have.has(name)) rawDb.run(`ALTER TABLE "${pair.joinTable}" ADD COLUMN ${colDef.trim()}`)
+            }
+          }
+        }
+        for (const g of ownGroups) {
+          for (const stmt of splitStatements(generateEdgeSideTableDDL(g, true)))
+            if (stmt.trim()) rawDb.run(stmt)
+        }
+      } catch { /* advisory — migration files remain the source of truth */ }
+
       if (!diffResult.hasChanges) {
         writeAutoHash(rawDb, ddlHash)
         results[dbName] = { state: 'in-sync', applied: 0 }
         continue
       }
 
-      const sql   = generateMigrationSQL(diffResult, parseResult, { pluralize })
-      const stmts = splitStatements(sql).filter(s => s.trim().length > 0)
-
-      for (const stmt of stmts) {
-        rawDb.run(stmt + ';')
+      // Same rule as file migrations: a rebuild that adds a NOT NULL column
+      // with no DEFAULT has no value for existing rows. Refuse loudly instead
+      // of applying commented-out SQL and marking the db in-sync — the hash is
+      // NOT written, so this surfaces on every startup until the schema is fixed.
+      const blockedCols = diffResult.tableDiffs.flatMap(d =>
+        d.needsRebuild
+          ? (d.cols?.added ?? []).filter(c => c.notnull && c.default == null).map(c => `${d.name}.${c.name}`)
+          : [])
+      if (blockedCols.length) {
+        results[dbName] = {
+          state:  'blocked',
+          reason: `rebuild adds NOT NULL column(s) with no DEFAULT: ${blockedCols.join(', ')} — ` +
+                  `add a @default() or make the field optional (?)`,
+        }
+        continue
       }
+
+      const sql   = generateMigrationSQL(diffResult, parseResult, { pluralize })
+      const stmts = executableStatements(splitStatements(sql))
+
+      runInTransaction(rawDb, stmts)
 
       writeAutoHash(rawDb, ddlHash)
       results[dbName] = { state: 'migrated', applied: stmts.length, sql }

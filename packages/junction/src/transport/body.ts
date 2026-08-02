@@ -67,6 +67,16 @@ export async function parseBody(
     return { type: 'empty', data: null, files: [], size: 0 }
   }
 
+  // Enforce the size limit BEFORE buffering. A declared Content-Length over
+  // the limit is rejected without reading a single body byte — otherwise a
+  // client could push an arbitrarily large body fully into memory before
+  // the 413 fires. (The post-read check below still covers chunked bodies
+  // that arrive without a Content-Length.)
+  const declaredLength = parseInt(req.headers.get('content-length') ?? '', 10)
+  if (Number.isFinite(declaredLength) && declaredLength > maxSize) {
+    throw new Error(`Request body exceeds ${maxSize} bytes`)
+  }
+
   // Read body as ArrayBuffer — single allocation
   let buffer: ArrayBuffer
   try {
@@ -77,7 +87,7 @@ export async function parseBody(
 
   const size = buffer.byteLength
 
-  // Enforce size limit
+  // Enforce size limit (chunked / undeclared-length bodies)
   if (size > maxSize) {
     throw new Error(`Request body exceeds ${maxSize} bytes`)
   }
@@ -130,51 +140,54 @@ export async function parseBody(
 // ─── URL-encoded parser ──────────────────────────────────────────────────
 
 function parseUrlEncoded(text: string): Record<string, string | string[]> {
-  const result: Record<string, string | string[]> = {}
-
-  if (!text) return result
-
-  for (const pair of text.split('&')) {
-    const eqIdx = pair.indexOf('=')
-    if (eqIdx === -1) continue
-
-    const key   = decodeURIComponent(pair.slice(0, eqIdx).replace(/\+/g, ' '))
-    const value = decodeURIComponent(pair.slice(eqIdx + 1).replace(/\+/g, ' '))
-
-    const existing = result[key]
-    if (existing === undefined) {
-      result[key] = value
-    } else if (Array.isArray(existing)) {
-      existing.push(value)
-    } else {
-      result[key] = [existing, value]
-    }
-  }
-
-  return result
+  return parsePairs(text, true)
 }
 
 // ─── Query string parser ─────────────────────────────────────────────────
 
-export function parseQuery(search: string): Record<string, string> {
-  const result: Record<string, string> = {}
-  if (!search) return result
+// ─── Shared pair-parsing core ─────────────────────────────────────────────
+// One implementation behind BOTH parseQuery (query strings, last-wins) and
+// parseUrlEncoded (form bodies, repeated keys accumulate into arrays) —
+// they were previously two near-identical loops that had already diverged.
 
-  const qs = search.startsWith('?') ? search.slice(1) : search
+// Malformed percent-encoding ('%zz') used to throw out of decodeURIComponent
+// and surface as an uncaught 500; degrade to the literal text instead.
+function decodePart(s: string): string {
+  try { return decodeURIComponent(s.replace(/\+/g, ' ')) } catch { return s }
+}
+
+function parsePairs(
+  qs:         string,
+  accumulate: boolean
+): Record<string, string | string[]> {
+  const result: Record<string, string | string[]> = {}
   if (!qs) return result
 
   for (const pair of qs.split('&')) {
     const eqIdx = pair.indexOf('=')
     if (eqIdx === -1) {
-      result[decodeURIComponent(pair)] = ''
-    } else {
-      const key   = decodeURIComponent(pair.slice(0, eqIdx).replace(/\+/g, ' '))
-      const value = decodeURIComponent(pair.slice(eqIdx + 1).replace(/\+/g, ' '))
-      result[key] = value
+      if (!accumulate && pair) result[decodePart(pair)] = ''   // bare key → '' (query semantics)
+      continue
     }
+    const key   = decodePart(pair.slice(0, eqIdx))
+    const value = decodePart(pair.slice(eqIdx + 1))
+    if (!accumulate) {
+      result[key] = value                    // last value wins
+      continue
+    }
+    const existing = result[key]
+    if (existing === undefined)          result[key] = value
+    else if (Array.isArray(existing))    existing.push(value)
+    else                                 result[key] = [existing, value]
   }
 
   return result
+}
+
+export function parseQuery(search: string): Record<string, string> {
+  if (!search) return {}
+  const qs = search.startsWith('?') ? search.slice(1) : search
+  return parsePairs(qs, false) as Record<string, string>
 }
 
 // ─── Cookie parser ────────────────────────────────────────────────────────
@@ -188,7 +201,11 @@ export function parseCookies(cookieHeader: string): Record<string, string> {
     if (eqIdx === -1) continue
     const key   = pair.slice(0, eqIdx).trim()
     const value = pair.slice(eqIdx + 1).trim()
-    if (key) result[key] = decodeURIComponent(value)
+    // NOTE: no '+ → space' here — '+' is a literal in cookie values.
+    // Malformed %-sequences degrade to the raw text instead of throwing.
+    if (key) {
+      try { result[key] = decodeURIComponent(value) } catch { result[key] = value }
+    }
   }
 
   return result
@@ -196,15 +213,32 @@ export function parseCookies(cookieHeader: string): Record<string, string> {
 
 // ─── IP extraction ────────────────────────────────────────────────────────
 
-export function extractIP(req: Request, remoteAddr?: string): string {
-  // x-forwarded-for: client, proxy1, proxy2 — take first
+export function extractIP(req: Request, remoteAddr?: string, trustProxy = false): string {
+  // The socket address is the only value the CLIENT cannot forge.
+  // x-forwarded-for / x-real-ip are attacker-settable request headers, so
+  // they are only consulted when the operator has explicitly declared that
+  // a trusted reverse proxy sits in front of the app (trustProxy: true) —
+  // otherwise a client could spoof its way past IP-keyed rate limiting and
+  // DDoS protection with a random header per request.
+  if (trustProxy) {
+    const forwarded = req.headers.get('x-forwarded-for')
+    if (forwarded) return forwarded.split(',')[0].trim()
+
+    const realIP = req.headers.get('x-real-ip')
+    if (realIP) return realIP.trim()
+  }
+
+  if (remoteAddr) return remoteAddr
+
+  // No socket address available (tests / mock server): fall back to the
+  // proxy headers as a best effort, then localhost.
   const forwarded = req.headers.get('x-forwarded-for')
   if (forwarded) return forwarded.split(',')[0].trim()
 
   const realIP = req.headers.get('x-real-ip')
   if (realIP) return realIP.trim()
 
-  return remoteAddr ?? '127.0.0.1'
+  return '127.0.0.1'
 }
 
 // ─── Multipart parser ────────────────────────────────────────────────────

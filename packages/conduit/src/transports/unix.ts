@@ -9,6 +9,7 @@ import type {
   ConduitRequest,
   ConduitResult,
   ConduitChunk,
+  CredentialResolver,
   TargetDescriptor
 } from '../types.ts'
 
@@ -18,10 +19,11 @@ export class UnixTransport extends BaseTransport {
   readonly protocol = 'unix' as const
 
   constructor(
-    descriptor: TargetDescriptor,
+    descriptor:  TargetDescriptor,
+    credentials: CredentialResolver,
     private opts: { timeout_ms?: number } = {}
   ) {
-    super(descriptor)
+    super(descriptor, credentials)
   }
 
   async send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {

@@ -2,15 +2,17 @@
  * sierra/junction — Junction WebSocket client integration
  *
  * Initialised by virtual:sierra at boot.
- * Exposes connected and reconnecting signals for use in components.
+ * Exposes a plain `status` object for use in components — see below.
  *
- * import { connected, reconnecting, login, logout, useStore } from 'sierra/junction'
+ * import { status, login, logout, useStore } from 'sierra/junction'
  */
 
-import { signal } from '../router/signals.js'
 import { beforeNavigate, goto } from '../router/index.js'
 import { configureFetch } from '../fetch/index.js'
-import { createSignal } from '@frontierjs/mesa/runtime'
+import { createSignal, watchProxy } from '@frontierjs/mesa/runtime'
+
+// Model schemas generated from the .lite file — see build/schema-plugin.js.
+export { registerSchemas, schemaFor, allSchemas, hasSchemas } from './schema-registry.js'
 import { createJunctionClient } from '@frontierjs/junction/client'
 
 // Resource factory — re-exported from the resource module
@@ -22,13 +24,54 @@ export { createResource, createStore, createMakeFromSchema } from './resource.js
 let _client = null
 let _tokenKey = 'junction_token'
 
-// ─── Public signals ───────────────────────────────────────────────────────────
+/**
+ * Resolves once the Junction WebSocket has been confirmed by the server, or
+ * after a 2 s grace period, whichever comes first. Already resolved when there
+ * is no stored token (nothing to wait for).
+ *
+ * Await this only if you specifically need the WebSocket transport. You almost
+ * certainly don't: the client's _wsCall() falls back to HTTP whenever the
+ * socket isn't ready, so service calls made during connection work fine — they
+ * just take the HTTP path for the first request or two.
+ *
+ * initJunction used to await this internally, and virtual:sierra emitted
+ * `await initJunction(...)` at the top level of the app entry — so every
+ * returning visitor (i.e. anyone with a stored token) had first paint blocked
+ * on a full round-trip plus the server's verifySession, up to a 2 s cap, purely
+ * to make the first service call prefer WebSocket over HTTP.
+ *
+ * @type {Promise<void>}
+ */
+export let whenReady = Promise.resolve()
 
-/** Mesa signal — true when Junction WebSocket is connected */
-export const connected = signal(false)
+// ─── Public state ───────────────────────────────────────────────────────────
 
-/** Mesa signal — null when stable, { attempt, delay } when reconnecting */
-export const reconnecting = signal(null)
+/**
+ * Connection state — a plain object, not signals.
+ *
+ * Components make the fields they care about reactive with a `$:` path watch:
+ *
+ *   import { status } from '@frontierjs/sierra/junction'
+ *   $: status.connected
+ *   <span>{status.connected ? 'online' : 'offline'}</span>
+ *
+ * Nothing here is reactive on its own — that is the point. Mesa's VISION §5 and
+ * RULE 8 put shared state in plain JavaScript, and RULE 43 makes replacement the
+ * reactive operation. This module is the writer, so it holds its own proxy
+ * handle below and mutates through that (RULE 45).
+ *
+ * @property {boolean} connected     true when the WebSocket is open
+ * @property {object|null} reconnecting  null when stable, { attempt, delay } otherwise
+ */
+export const status = {
+  connected: false,
+  reconnecting: null,
+}
+
+// The writer's handle. watchProxy is cached per object and idempotent, so this
+// is the same proxy instance every component's `$:` watch resolves to — a write
+// through it fires exactly the paths that are watched, and nothing else.
+const _status = watchProxy(status)
 
 // ─── Client accessor ──────────────────────────────────────────────────────────
 
@@ -174,12 +217,32 @@ function _wrapDebug(client) {
 
 /**
  * Boot Junction integration. Called by virtual:sierra.
- * @param {object} config — junction config from sierra.config.js
+ *
+ * Synchronous — see the note on `whenReady` above. Returns nothing; the
+ * WebSocket connects in the background.
+ *
+ * @param {object} config              junction config from sierra.config.js
+ * @param {string} [config.apiPrefix]  URL prefix for service routes. Must match
+ *        the server's `apiPrefix`. Default '' — services at /{service}.
+ * @param {string} [config.authPrefix] URL prefix for @frontierjs/auth routes,
+ *        default '/auth'. Independent of apiPrefix.
+ * @param {boolean|'verbose'} [config.debug]
+ *        `true`      — log every service call with request/response payloads
+ *        `'verbose'` — additionally log every client event
+ *        Both retain payloads in the console; leave off unless debugging.
  */
-export async function initJunction(config) {
+export function initJunction(config) {
   if (!config?.url) return
 
-  const client = createJunctionClient({ url: config.url })
+  // apiPrefix must match the server's `apiPrefix` config. Both default to ''
+  // — Junction registers services at /{service} unless an app opts into a
+  // prefix — so a default Sierra app talking to a default Junction app needs
+  // no configuration here at all.
+  const client = createJunctionClient({
+    url:        config.url,
+    apiPrefix:  config.apiPrefix,
+    authPrefix: config.authPrefix,
+  })
   const auth = config.auth ?? {}
   const services = config.services ?? {}
   const tokenKey = config.tokenKey ?? 'junction_token'
@@ -188,9 +251,17 @@ export async function initJunction(config) {
   _client = client
   _tokenKey = tokenKey
 
-  // Wrap with debug logger — enabled if config.debug is true,
-  // or automatically in Vite dev mode.
-  if (config.debug || import.meta.env?.DEV) {
+  // Request logger — opt-in via `junction: { debug: true }`.
+  //
+  // This used to be `config.debug || import.meta.env?.DEV`, i.e. on for every
+  // dev session. It wraps all seven service methods and console.debug()s
+  // `{ request: args }` and `{ response: result }` for each call. Objects
+  // logged to the console are retained by devtools, so on a WebSocket-heavy
+  // app every response payload stayed reachable for the lifetime of the tab —
+  // enough to skew memory profiling and to make the console itself sluggish.
+  //
+  // Set debug: true when you want it.
+  if (config.debug) {
     _wrapDebug(client)
   }
 
@@ -200,24 +271,24 @@ export async function initJunction(config) {
     baseUrl: config.baseUrl,
   })
 
-  // ── Connection signals ───────────────────────────────────────────────────
-  // Note: connected and reconnecting are already Mesa-bridged by virtual:sierra
-  // before initJunction is called — so these .set() calls propagate to Mesa.
+  // ── Connection state ─────────────────────────────────────────────────────
+  // Writes go through _status so path watches fire. Assigning `status.connected`
+  // directly would update the object but notify nobody (RULE 45).
 
   // Sync initial value from client.connected (avoids flash on first render)
-  connected.set(client.connected ?? false)
+  _status.connected = client.connected ?? false
 
   client.on('connect', () => {
-    connected.set(true)
-    reconnecting.set(null)
+    _status.connected = true
+    _status.reconnecting = null
   })
 
   client.on('disconnect', () => {
-    connected.set(false)
+    _status.connected = false
   })
 
   client.on('reconnecting', (info) => {
-    reconnecting.set(info)
+    _status.reconnecting = info
   })
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -228,14 +299,16 @@ export async function initJunction(config) {
     : null
 
   if (storedToken) {
+    // setToken opens the socket itself when none is open, so there is no
+    // separate connect() call here — it would return early anyway.
     client.setToken(storedToken)
-    // Wait for the WS to open before we return — this ensures the first
-    // resource load() sees _wsReady=true and goes WS rather than HTTP.
-    // 2s timeout: if the API is unreachable the app still boots via HTTP.
-    await new Promise(resolve => {
+
+    // Expose the readiness promise instead of awaiting it. Boot continues
+    // immediately; anything that genuinely needs the WebSocket transport can
+    // await whenReady. See the note on its declaration above.
+    whenReady = new Promise(resolve => {
       const timer = setTimeout(resolve, 2000)
       client.once('connect', () => { clearTimeout(timer); resolve() })
-      client.connect()
     })
   }
 
@@ -295,7 +368,9 @@ export async function initJunction(config) {
 
   // ── Dev mode — wildcard event logging ────────────────────────────────────
 
-  if (import.meta.env?.DEV) {
+  // Wildcard event logging — also opt-in, for the same reason. Every event on
+  // the client, with its full payload, held by the console.
+  if (config.debug === 'verbose') {
     client.on('*', (event, ...args) => {
       console.log(`[Junction] ${event}`, ...args)
     })

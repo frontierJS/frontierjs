@@ -14,9 +14,23 @@ import {
 } from '../src/router/internals.js'
 
 import {
-  pageSlots,
   provideSlot,
+  page,
+  _resetPage,
 } from '../src/router/index.js'
+import {
+  watchProxy, watchPath, createEffect, flushSync, setRenderEnvironment,
+} from '@frontierjs/mesa/runtime'
+
+// Path watching is a no-op outside a browser (RULE 19) — watchProxy returns the
+// object unchanged and watchPath returns dead stubs. These tests exercise the
+// reactive path, so tell the runtime it is in a browser.
+setRenderEnvironment(true)
+
+// The router writes through its own watchProxy handle, so tests that seed state
+// must do the same — a raw `page.x = v` updates the object but notifies nobody.
+// watchProxy is cached per object, so this is that same proxy instance.
+const _p = watchProxy(page)
 
 // ─── Fixture tree ─────────────────────────────────────────────────────────────
 
@@ -209,17 +223,17 @@ describe('remount key computation', () => {
 describe('provideSlot / pageSlots', () => {
   // Reset pageSlots before each test (simulates navigation clearing slots)
   beforeEach(() => {
-    pageSlots.set({})
+    _p.slots = ({})
   })
 
   test('pageSlots starts empty', () => {
-    expect(pageSlots.get()).toEqual({})
+    expect(page.slots).toEqual({})
   })
 
   test('provideSlot registers a named snippet function', () => {
     const sidebarFn = function sidebar(__anchor) {}
     provideSlot('sidebar', sidebarFn)
-    expect(pageSlots.get().sidebar).toBe(sidebarFn)
+    expect(page.slots.sidebar).toBe(sidebarFn)
   })
 
   test('provideSlot registers multiple slots independently', () => {
@@ -227,7 +241,7 @@ describe('provideSlot / pageSlots', () => {
     const toolbar = function toolbar(__anchor) {}
     provideSlot('sidebar', sidebar)
     provideSlot('toolbar', toolbar)
-    const slots = pageSlots.get()
+    const slots = page.slots
     expect(slots.sidebar).toBe(sidebar)
     expect(slots.toolbar).toBe(toolbar)
   })
@@ -241,7 +255,7 @@ describe('provideSlot / pageSlots', () => {
     provideSlot('sidebar', 'not a function')
     provideSlot('toolbar', 42)
     provideSlot('header', null)
-    expect(pageSlots.get()).toEqual({})
+    expect(page.slots).toEqual({})
   })
 
   test('provideSlot merges into existing slots (does not clear others)', () => {
@@ -250,32 +264,40 @@ describe('provideSlot / pageSlots', () => {
     provideSlot('sidebar', sidebar)
     provideSlot('toolbar', toolbar)
     // sidebar should still be there after toolbar is added
-    expect(pageSlots.get().sidebar).toBe(sidebar)
-    expect(pageSlots.get().toolbar).toBe(toolbar)
+    expect(page.slots.sidebar).toBe(sidebar)
+    expect(page.slots.toolbar).toBe(toolbar)
   })
 
-  test('pageSlots.set({}) clears all slots (simulates navigation)', () => {
+  test('_p.slots = ({}) clears all slots (simulates navigation)', () => {
     provideSlot('sidebar', function() {})
     provideSlot('toolbar', function() {})
-    pageSlots.set({})
-    expect(pageSlots.get()).toEqual({})
+    _p.slots = ({})
+    expect(page.slots).toEqual({})
   })
 
-  test('pageSlots notifies subscribers when a slot is provided', () => {
-    let callCount = 0
-    const unsub = pageSlots.subscribe(() => callCount++)
-    // subscribe() calls immediately with current value → callCount = 1
-    provideSlot('sidebar', function() {})
-    expect(callCount).toBe(2)
-    unsub()
+  test('providing a slot fires a page.slots path watch', () => {
+    // `page` is a plain object — there is no .subscribe(). Consumers declare
+    // `$: page.slots`, which the compiler turns into watchPath + a proxy read.
+    // This is that, by hand.
+    const [watch] = watchPath(page, 'slots')
+    let runs = 0
+    const dispose = createEffect(() => { watch(); runs++ })
+    flushSync()
+    const before = runs
+
+    provideSlot('sidebar', function () {})
+    flushSync()
+
+    expect(runs).toBeGreaterThan(before)
+    dispose()
   })
 
-  test('pageSlots.get() returns current snapshot of all slots', () => {
+  test('page.slots returns current snapshot of all slots', () => {
     const fn1 = function a() {}
     const fn2 = function b() {}
     provideSlot('a', fn1)
     provideSlot('b', fn2)
-    const snap = pageSlots.get()
+    const snap = page.slots
     expect(Object.keys(snap)).toEqual(['a', 'b'])
     expect(snap.a).toBe(fn1)
     expect(snap.b).toBe(fn2)

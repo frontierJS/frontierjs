@@ -19,6 +19,7 @@
 
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { isListResult } from '../../core/envelope.ts'
 
 export interface DevtoolsOptions {
   port?:       number      // default 4000
@@ -82,8 +83,8 @@ function summarise(result: unknown): string {
   if (result === null || result === undefined) return 'null'
   if (typeof result !== 'object') return String(result)
   const r = result as Record<string, unknown>
-  if (r.object === 'list' && Array.isArray(r.data)) {
-    return `list(${(r.data as unknown[]).length})`
+  if (isListResult(result)) {
+    return `list(${(result.data as unknown[]).length})`
   }
   if (Array.isArray(result)) return `array(${result.length})`
   const keys = Object.keys(r)
@@ -156,6 +157,9 @@ export function devtools(opts: DevtoolsOptions = {}) {
 
   let adminServer: ReturnType<typeof Bun.serve> | null = null
   let appRef: import('../../core/app.ts').App | null = null
+  // Unsubscribe fns for every bus/telemetry/channel subscription made in
+  // register() — drained by shutdown() so nothing outlives the plugin.
+  const _unsubs: Array<() => void> = []
   const startedAt = Date.now()
 
   return {
@@ -168,7 +172,10 @@ export function devtools(opts: DevtoolsOptions = {}) {
       // No longer uses an around hook — subscribes to the telemetry bus instead.
       // This means devtools captures calls regardless of hook pipeline state,
       // and does not add latency to the call path.
-      app.telemetry.on('junction.call', (event: unknown) => {
+      // Every subscription's unsubscribe fn is collected in _unsubs so
+      // shutdown() can fully detach — previously all of these (and a
+      // bus.emit monkey-patch) survived shutdown.
+      _unsubs.push(app.telemetry.on('junction.call', (event: unknown) => {
         const e = event as import('../../core/service.ts').TelemetryEvent
         const entry: RequestEntry = {
           id:            crypto.randomUUID(),
@@ -188,49 +195,49 @@ export function devtools(opts: DevtoolsOptions = {}) {
         }
         requests.push(entry)
         broadcast({ type: 'request', data: entry })
-      })
+      }))
 
       // ── Forward fine-grained telemetry for Sierra toolbar waterfall ─
       // junction.call (end) is already forwarded above as 'request'.
       // These additional events let the Sierra toolbar render per-hook
       // timing bars and Litestone query rows grouped by telemetryId.
-      app.telemetry.on('junction.call.start', (event: unknown) => {
+      _unsubs.push(app.telemetry.on('junction.call.start', (event: unknown) => {
         broadcast({ type: 'call_start', data: event })
-      })
+      }))
 
-      app.telemetry.on('junction.hook', (event: unknown) => {
+      _unsubs.push(app.telemetry.on('junction.hook', (event: unknown) => {
         broadcast({ type: 'hook', data: event })
-      })
+      }))
 
-      app.telemetry.on('litestone.query', (event: unknown) => {
+      _unsubs.push(app.telemetry.on('litestone.query', (event: unknown) => {
         broadcast({ type: 'query', data: event })
-      })
+      }))
 
       // ── Track app events ───────────────────────────────────────────
-      // Use wildcard if the event bus supports it, otherwise known events
+      // Observe via onAny() — the bus API built for exactly this — instead
+      // of monkey-patching bus.emit (which was never reverted and wrapped
+      // every emit for the life of the process).
       const bus = (app as unknown as Record<string, unknown>).events as
         import('../../events/index.ts').IEventBus | undefined
 
-      if (bus?.on) {
-        const origEmit = bus.emit.bind(bus)
-        bus.emit = (name: string, ...args: unknown[]) => {
+      if (bus?.onAny) {
+        _unsubs.push(bus.onAny((name: string, data: unknown) => {
           const entry: EventEntry = {
             ts:    Date.now(),
             name,
-            brief: brief(args[0]),
+            brief: brief(data),
           }
           events.push(entry)
           broadcast({ type: 'event', data: entry })
-          return origEmit(name, ...args)
-        }
+        }))
       }
 
       // ── Track WS connections via channels plugin ───────────────────
       const channelManager = (app as unknown as Record<string, unknown>).channels as
-        { on?: (event: string, handler: (...a: unknown[]) => void) => void } | undefined
+        { on?: (event: string, handler: (...a: unknown[]) => void) => (() => void) | void } | undefined
 
       if (channelManager?.on) {
-        channelManager.on('connection', (session: unknown, conn: unknown) => {
+        const u1 = channelManager.on('connection', (session: unknown, conn: unknown) => {
           const c = conn as Record<string, unknown>
           const s = session as Record<string, unknown> | null
           const entry: ConnectionEntry = {
@@ -244,8 +251,12 @@ export function devtools(opts: DevtoolsOptions = {}) {
           const connEvt: EventEntry = { ts: Date.now(), name: 'ws:connect', brief: entry.user ?? 'anonymous' }
           events.push(connEvt); broadcast({ type: 'event', data: connEvt })
         })
+        if (typeof u1 === 'function') _unsubs.push(u1)
 
-        channelManager.on('disconnect', (_session: unknown, conn: unknown) => {
+        // NOTE: disconnect handlers are invoked with (conn) as the FIRST
+        // argument (see ChannelManager.handleDisconnect) — the old callback
+        // read the second parameter and always saw undefined.
+        const u2 = channelManager.on('disconnect', (conn: unknown) => {
           const c = conn as Record<string, unknown>
           const id = String(c?.id ?? '')
           const existing = connections.get(id)
@@ -254,17 +265,33 @@ export function devtools(opts: DevtoolsOptions = {}) {
           const discEvt: EventEntry = { ts: Date.now(), name: 'ws:disconnect', brief: existing?.user ?? 'anonymous' }
           events.push(discEvt); broadcast({ type: 'event', data: discEvt })
         })
+        if (typeof u2 === 'function') _unsubs.push(u2)
       }
 
       // ── Start admin server ─────────────────────────────────────────
+      // Fail CLOSED: in production the admin surface (request logs, params,
+      // event stream, live WS feed) must never be served without an auth
+      // gate. If no `auth` option was configured, refuse to bind at all
+      // rather than silently serving unauthenticated.
+      if (isProd && !opts.auth) {
+        console.warn(
+          '[Junction devtools] NODE_ENV=production and no `auth` option configured — ' +
+          'devtools admin server NOT started. Pass devtools({ auth: async (req) => boolean }) to enable it in production.'
+        )
+        return
+      }
+
       const htmlPath = join(dirname(fileURLToPath(import.meta.url)), 'admin.html')
 
       adminServer = Bun.serve({
         port,
 
         async fetch(req, server) {
-          // Auth gate
-          if (isProd && opts.auth) {
+          // Auth gate — when an auth fn is configured it applies in EVERY
+          // environment it's provided for; in production the server refuses
+          // to start without one (checked at boot), so there is no
+          // unauthenticated production path.
+          if (opts.auth) {
             const allowed = await opts.auth(req)
             if (!allowed) return new Response('Unauthorized', { status: 401 })
           }
@@ -281,12 +308,9 @@ export function devtools(opts: DevtoolsOptions = {}) {
           if (url.pathname === '/api/state') {
             const services = app.services.list()
             const mem      = process.memoryUsage()
-            const stats    = (app as Record<string, unknown>).http as
-              { stats?: { request: Record<string, number>; response: Record<string, number>; performance: { online: boolean } } } | undefined
-            const httpStats = stats?.stats
-            const cache    = (app as Record<string, unknown>).cache as
-              { stats?: () => Record<string, unknown> } | undefined
-            const cStats   = cache?.stats?.() ?? {}
+            // app.http and app.cache are typed App fields — no casts needed.
+            const httpStats = app.http?.stats
+            const cStats    = app.cache?.stats?.() ?? {}
             const hits     = (cStats.hits as number) ?? 0
             const misses   = (cStats.misses as number) ?? 0
             const hitRate  = hits + misses > 0
@@ -367,7 +391,21 @@ export function devtools(opts: DevtoolsOptions = {}) {
     },
 
     shutdown() {
+      // Detach every observer registered in register() — telemetry
+      // subscriptions, the events onAny tap, and channel listeners.
+      for (const unsub of _unsubs.splice(0)) {
+        try { unsub() } catch {}
+      }
+
+      // Close any connected admin clients before stopping the server.
+      for (const ws of adminSockets) {
+        try { ws.close(1001, 'devtools shutting down') } catch {}
+      }
+      adminSockets.clear()
+
       adminServer?.stop()
+      adminServer = null
+      appRef = null
     },
 
     writer,

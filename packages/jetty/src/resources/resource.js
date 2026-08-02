@@ -15,6 +15,17 @@
 //   Jetty:  this module subscribes to harbor channels named `${name}:created`,
 //           `${name}:patched`, `${name}:removed` and updates the store.
 //
+// Return shapes — same contract as Sierra, see its resource.js header:
+//   service.find(query, params) / getOptions()  → the list envelope
+//                                                 { kind, object, data, total, limit, offset }
+//   service.get/create/patch/remove/restore     → the record
+//   load(query, params)                         → the ROWS (and sets the store)
+//   store.get()                                 → the ROWS, never an envelope
+//
+// The rows live at `.data` on a find. Use load()/store for rendering a list,
+// and service.find() when you need `total` for a pager. jetty's store accepts
+// a bare array too, since an adapter is free to hand one back.
+//
 // See docs/future-refactors.md for the planned Option B extraction. Until that
 // lands, this file is the canonical jetty-side implementation. Drift between
 // here and Sierra's resource.js is the risk — if you change one, audit the
@@ -37,7 +48,7 @@ import { runPhase, runAroundHooks, mergeHooks } from './hooks.js'
  *   service: object,
  *   store:   ReturnType<typeof createStore>,
  *   make:    (spec?: object) => object,
- *   load:    (query?: object) => Promise<any>,
+ *   load:    (query?: object, params?: object) => Promise<object[]>,
  *   context: { model: string, service: string, idField: string },
  *   hooks:   (incoming: object) => void,
  * }}
@@ -112,7 +123,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // --- the call pipeline ---
 
-  async function _call(method, id, data, query = {}) {
+  async function _call(method, id, data, query = {}, findParams = {}) {
     // If the port isn't ready yet (e.g. resource imported during SSR / pre-mount),
     // throw a clear error rather than hanging. Apps should call resources from
     // within component lifecycle, not at module top level, when the port is ready.
@@ -132,7 +143,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       method,
       id:      id   ?? null,
       data:    data ?? null,
-      query,             // travels over the wire
+      query,             // filters — travels over the wire
+      findParams,        // limit / offset / orderBy / select — also the wire
       params:  {},       // client-side only — never sent to server
       result:  null,
       error:   null,
@@ -174,21 +186,34 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // --- service proxy (mirrors Sierra's surface) ---
 
+  // params is Junction's FindParams — { limit, offset, orderBy, select }. It
+  // rides ctx.findParams and is handed to the adapter alongside the query.
+  // find() used to name the argument `_params` and drop it on the floor, so
+  // paging an ordered list through a jetty resource silently returned the
+  // server's default page. Same bug lived in Sierra's copy of this file.
   const service = {
-    find:    (query, _params) => _call('find',    null, null, query ?? {}),
-    get:     (id)             => _call('get',     id,   null, {}),
-    create:  (data)           => _call('create',  null, data, {}),
-    patch:   (id, data)       => _call('patch',   id,   data, {}),
-    remove:  (id)             => _call('remove',  id,   null, {}),
-    restore: (id)             => _call('restore', id,   null, {}),
+    find:    (query, params) => _call('find',    null, null, query ?? {}, params ?? {}),
+    get:     (id, params)    => _call('get',     id,   null, {},          params ?? {}),
+    create:  (data)          => _call('create',  null, data, {}),
+    patch:   (id, data)      => _call('patch',   id,   data, {}),
+    remove:  (id)            => _call('remove',  id,   null, {}),
+    restore: (id)            => _call('restore', id,   null, {}),
 
     /** create if no id, patch if has id */
     upsert: (data) => data?.[idField]
       ? _call('patch',  data[idField], data, {})
       : _call('create', null,          data, {}),
 
-    /** fetch options list — uses optionsQuery by default */
-    getOptions: (query) => _call('find', null, null, query ?? optionsQuery?.query ?? {}),
+    /**
+     * fetch options list — uses optionsQuery by default.
+     * optionsQuery is `{ query, params }`; params carries the FindParams a
+     * select list usually wants (orderBy: 'name', a limit above the default page).
+     */
+    getOptions: (query, params) => _call(
+      'find', null, null,
+      query  ?? optionsQuery?.query  ?? {},
+      params ?? optionsQuery?.params ?? {},
+    ),
 
     /** subscribe to a server-pushed event for this service */
     on(event, handler) {
@@ -204,9 +229,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     call: (method, id, data) => _call(method, id, data, {}),
   }
 
-  // load() — populate the local store via service.find
-  async function load(query) {
-    return store.populate(service, query ?? {})
+  // load() — populate the local store via service.find.
+  // store.populate already accepted a params argument; load() never passed one,
+  // so the store could only ever hold the server's default page.
+  async function load(query, params) {
+    return store.populate(service, query ?? {}, params ?? {})
   }
 
   // hooks() — append hooks after creation
@@ -245,9 +272,19 @@ async function dispatch(port, serviceName, method, ctx) {
   // Build the args object based on method semantics.
   // Harbor's router forwards `args` to adapter.call(service, method, args) —
   // the adapter is responsible for mapping that onto the wire format.
+  //
+  // `params` is Junction's FindParams and is kept STRUCTURED here rather than
+  // flattened into $limit/$offset/... Flattening is a wire concern and the
+  // adapter owns the wire; doing it here would hardcode one adapter's dialect
+  // into the resource layer. Omitted entirely when empty so adapters that
+  // ignore it see the same args they always did.
+  const params = ctx.findParams && Object.keys(ctx.findParams).length > 0
+    ? ctx.findParams
+    : null
+
   let args
   switch (method) {
-    case 'find':              args = { query: ctx.query };                       break
+    case 'find':               args = { query: ctx.query };                       break
     case 'get':                args = { id: ctx.id ?? ctx.query };                break
     case 'create':             args = { data: ctx.data };                         break
     case 'patch':              args = { id: ctx.id, data: ctx.data };             break
@@ -255,6 +292,7 @@ async function dispatch(port, serviceName, method, ctx) {
     case 'restore':            args = { id: ctx.id };                             break
     default:                   args = { id: ctx.id, data: ctx.data, method };     break
   }
+  if (params) args.params = params
 
   return port.request('service:call', {
     service: serviceName,

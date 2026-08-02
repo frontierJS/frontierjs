@@ -514,8 +514,17 @@ export function webhooks(opts: WebhookOptions): Plugin {
         `${Math.floor(retryInterval / 1000)} seconds`,
         async () => {
           const overdue = await store.pendingRetries(Date.now())
+          if (!overdue.length) return
+          // Batch registration lookups: one query per DISTINCT webhook, not
+          // one per delivery (the old N+1 did up to `limit` sequential round
+          // trips per tick even when every delivery shared one registration).
+          const regCache = new Map<string, WebhookRegistration | null>()
           for (const delivery of overdue) {
-            const reg = await store.getRegistration(delivery.webhookId)
+            let reg = regCache.get(delivery.webhookId)
+            if (reg === undefined) {
+              reg = await store.getRegistration(delivery.webhookId)
+              regCache.set(delivery.webhookId, reg)
+            }
             if (!reg || !reg.active) continue
             attemptAndRecord(reg, delivery).catch(() => {})
           }
@@ -576,35 +585,62 @@ export function webhooks(opts: WebhookOptions): Plugin {
         _attemptAndRecord: attemptAndRecord,
       }
 
-      // Attach to app
-      ;(app as unknown as Record<string, unknown>).webhooks = manager
+      // Attach to app — typed optional field on the App interface
+      app.webhooks = manager
 
       // ── HTTP routes ─────────────────────────────────────────────
       // Powers REPL commands and any management UI the app builds.
+      //
+      // SECURITY: these routes manage HMAC signing credentials and delivery
+      // payloads. They require an authenticated session. Fail-closed rule:
+      // if the app has no auth configured, the routes respond 401 in
+      // production (never open) and remain open only in development.
 
-      const apiPrefix = (app.config as import('../../config/index.ts').AppConfig).apiPrefix ?? '/api'
+      // Default '' — Junction's own default (core/app.ts registerServiceRoutes),
+      // so these sit alongside the service routes wherever the app put them.
+      // This defaulted to '/api', which parked them under a prefix no other
+      // route in a default app uses.
+      const apiPrefix = (app.config as import('../../config/index.ts').AppConfig).apiPrefix ?? ''
+
+      type RouteCtx = Parameters<Parameters<typeof app.get>[1]>[0]
+      const guard = (ctx: RouteCtx): ReturnType<RouteCtx['json']> | null => {
+        if (ctx.user) return null                                    // authenticated session
+        const isProd = process.env.NODE_ENV === 'production'
+        if (!app.auth && !isProd) return null                        // dev convenience only
+        return ctx.json({ error: 'Unauthorized' }, 401)
+      }
+
+      // The HMAC secret is shown exactly once — in the POST /webhooks
+      // response that created the registration. Every other read path
+      // strips it so a leaked session or logged response can't be used
+      // to forge signed deliveries.
+      const redact = ({ secret: _secret, ...rest }: WebhookRegistration) => rest
 
       // Registration
       app.get(`${apiPrefix}/webhooks`, async (ctx) => {
+        const denied = guard(ctx); if (denied) return denied
         const hooks = await store.list()
-        return ctx.json(hooks)
+        return ctx.json(hooks.map(redact))
       })
 
       app.post(`${apiPrefix}/webhooks`, async (ctx) => {
+        const denied = guard(ctx); if (denied) return denied
         const body = ctx.body as { url?: string; events?: string[]; secret?: string }
         if (!body?.url)           return ctx.json({ error: 'url required' }, 400)
         if (!body?.events?.length) return ctx.json({ error: 'events required' }, 400)
         const hook = await store.register(body.url, body.events, body.secret)
-        return ctx.json(hook, 201)
+        return ctx.json(hook, 201)   // includes secret — the one and only time
       })
 
       app.get(`${apiPrefix}/webhooks/{id}`, async (ctx) => {
+        const denied = guard(ctx); if (denied) return denied
         const hook = await store.getRegistration(ctx.params.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
-        return ctx.json(hook)
+        return ctx.json(redact(hook))
       })
 
       app.delete(`${apiPrefix}/webhooks/{id}`, async (ctx) => {
+        const denied = guard(ctx); if (denied) return denied
         const hook = await store.getRegistration(ctx.params.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
         await store.unregister(ctx.params.id)
@@ -613,6 +649,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
 
       // Test ping
       app.post(`${apiPrefix}/webhooks/{id}/test`, async (ctx) => {
+        const denied = guard(ctx); if (denied) return denied
         const hook = await store.getRegistration(ctx.params.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
         const delivery = await store.createDelivery(hook.id, 'webhook:test', { test: true, ts: Date.now() })
@@ -628,6 +665,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
 
       // Delivery history
       app.get(`${apiPrefix}/webhook-deliveries`, async (ctx) => {
+        const denied = guard(ctx); if (denied) return denied
         const webhookId  = ctx.query.webhookId
         const limit      = parseInt(ctx.query.limit ?? '50', 10)
         const deliveries = await store.getDeliveries(webhookId, limit)
@@ -635,6 +673,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
       })
 
       app.get(`${apiPrefix}/webhook-deliveries/{id}`, async (ctx) => {
+        const denied = guard(ctx); if (denied) return denied
         const d = await store.getDelivery(ctx.params.id)
         if (!d) return ctx.json({ error: 'Not found' }, 404)
         return ctx.json(d)
@@ -642,6 +681,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
 
       // Manual retry
       app.post(`${apiPrefix}/webhook-deliveries/{id}/retry`, async (ctx) => {
+        const denied = guard(ctx); if (denied) return denied
         const result = await manager.retry(ctx.params.id)
         if (!result) return ctx.json({ error: 'Not found' }, 404)
         return ctx.json(result)

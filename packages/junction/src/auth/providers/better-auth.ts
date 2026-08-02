@@ -250,23 +250,25 @@ function isApiKeyFormat(token: string): boolean {
 // Mounts Better Auth's own HTTP handler at /auth/* routes.
 // Lets Better Auth handle its own login/oauth/session endpoints.
 
-export function createBetterAuthPlugin(auth: BetterAuthInstance) {
+export function createBetterAuthPlugin(auth: BetterAuthInstance): import('../../core/app.ts').Plugin {
   return {
     name: 'better-auth',
 
-    register(app: { get: Function; post: Function; put: Function; patch: Function; delete: Function }) {
+    // Uses the real App/RouteHandler types — this plugin previously defined
+    // its own ad-hoc structural app type ({ get: Function; ... }).
+    register(app: import('../../core/app.ts').App) {
 
       // Mount Better Auth's handler on all /auth/* routes.
       // Better Auth handles: /auth/sign-in, /auth/sign-up, /auth/callback, etc.
-      const handler = async (ctx: { $raw: { $req: Request } }) => {
-        return auth.handler(ctx.$raw.$req)
+      const handler: import('../../transport/types.ts').RouteHandler = async (ctx) => {
+        return auth.handler((ctx.$raw as { $req: Request }).$req)
       }
 
-      app.get   ('/auth/{path}', handler as Function)
-      app.post  ('/auth/{path}', handler as Function)
-      app.put   ('/auth/{path}', handler as Function)
-      app.patch ('/auth/{path}', handler as Function)
-      app.delete('/auth/{path}', handler as Function)
+      app.get   ('/auth/{path}', handler)
+      app.post  ('/auth/{path}', handler)
+      app.put   ('/auth/{path}', handler)
+      app.patch ('/auth/{path}', handler)
+      app.delete('/auth/{path}', handler)
     }
   }
 }

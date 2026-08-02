@@ -104,9 +104,10 @@ export interface TransportContext {
 
   // Pagination envelope — wraps an array with total/limit/skip and
   // pre-built next/prev URLs based on the current request URL.
-  //   ctx.paginate(rows, total, { limit: 20, skip: 0 })
-  //   → { data, total, limit, skip, next, prev }
-  paginate: (data: unknown[], total: number, opts: { limit: number; skip: number }) => Response
+  //   ctx.paginate(rows, total, { limit: 20, offset: 0 })
+  //   // `skip` accepted as a legacy alias for `offset`
+  //   → { data, total, limit, offset, next, prev }
+  paginate: (data: unknown[], total: number, opts: { limit: number; offset?: number; skip?: number }) => Response
 
   // Server-Sent Events — returns an open stream response.
   // The returned sender lets you push events and close the stream.

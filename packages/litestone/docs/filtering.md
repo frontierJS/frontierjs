@@ -152,3 +152,46 @@ const db = await createClient({
 ```
 
 Dynamic filters (function form) receive `ctx` so they can reference `ctx.auth`.
+
+## Relation filters
+
+Filter parent rows by conditions on a related model — compiles to a correlated
+`EXISTS` subquery (no join, no row duplication):
+
+```js
+// authors who have at least one published post
+db.author.findMany({ where: { posts: { some: { published: true } } } })
+
+// authors with no published posts (or no posts at all)
+db.author.findMany({ where: { posts: { none: { published: true } } } })
+
+// authors whose posts are ALL published (vacuously true when they have none)
+db.author.findMany({ where: { posts: { every: { published: true } } } })
+```
+
+`some` / `every` / `none` work on `hasMany` and implicit many-to-many relations.
+For a to-one (`belongsTo`) relation use `is` / `isNot`:
+
+```js
+db.post.findMany({ where: { author: { is:    { name: 'Ann' } } } })
+db.post.findMany({ where: { author: { isNot: { name: 'Ann' } } } })
+```
+
+Relation filters compose with scalar filters and `AND`/`OR`/`NOT`, and nest
+(a relation filter's inner `where` can itself contain relation filters).
+
+## Filtering an include
+
+`include` accepts a `where` to filter the related rows that come back — the
+parent is still returned, but only matching children are attached:
+
+```js
+const author = await db.author.findFirst({
+  where:   { id: 1 },
+  include: { posts: { where: { published: true } } },   // only published posts
+})
+// author.posts → just the published ones
+```
+
+Works on `hasMany` and many-to-many includes. On a `belongsTo` include a
+non-matching `where` yields `null` for that relation.

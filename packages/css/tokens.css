@@ -4,6 +4,35 @@
  * Import after Uno's preflights, before component utilities.
  */
 
+/*
+ * ── Breakpoints ─────────────────────────────────────────────────────
+ *
+ * sm 640px · md 768px · lg 1024px · xl 1280px · 2xl 1536px
+ *
+ * These are deliberately NOT custom properties. A custom property cannot
+ * be used in a media query — `@media (min-width: var(--bp-md))` does not
+ * work, and never has — so shipping --bp-* tokens would look themable
+ * and silently do nothing. The numbers are written literally wherever
+ * the package needs them, and documented here so consumers match.
+ *
+ * The scale is Tailwind's, which is also UnoCSS's default, so apps that
+ * still run Uno alongside this package get one set of breakpoints
+ * rather than two that nearly agree.
+ */
+
+/*
+ * Border-box sizing. UnoCSS's preflight used to supply this; the package
+ * depends on it (.field and .table are width:100% with padding and a
+ * border), so it ships it now that there is no build step. It sits in the
+ * earliest layer, making it the weakest rule here — any consumer reset
+ * overrides it.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 :root {
   /* ── Semantic colors ──────────────────────────────────────── */
   --color-primary:   #0d83dd;
@@ -28,6 +57,20 @@
   --btn-radius:   6px;
   --card-radius:  8px;
   --field-radius: 6px;
+  --pill-radius:  9999px;
+
+  /*
+   * --badge-radius is deliberately NOT declared here. Badges follow
+   * --btn-radius via a use-site fallback in badges.css, so a theme that
+   * squares off buttons squares off badges too, for free.
+   *
+   * Declaring `--badge-radius: var(--btn-radius)` at :root would look
+   * equivalent and silently isn't: the var() resolves once, against
+   * :root's own --btn-radius, and the computed 6px then inherits past
+   * any .theme-* override. Alias tokens have to resolve at the use site.
+   *
+   * Set --badge-radius in a theme only to diverge from --btn-radius.
+   */
 
   /* ── Button typography ────────────────────────────────────── */
   --btn-font-weight:    600;
@@ -43,6 +86,19 @@
   --badge-font-weight:    600;
   --badge-text-transform: uppercase;
   --badge-letter-spacing: 0.04em;
+
+  /*
+   * ── Container ─────────────────────────────────────────────
+   * --container-pad steps up at the breakpoints; see layout.css.
+   */
+  --container-max:    1280px;
+  --container-narrow: 768px;
+  --container-pad:    1rem;
+
+  /* ── App frame ────────────────────────────────────────────── */
+  --topbar-height:  3.5rem;
+  --sidebar-width:  15rem;
+  --screen-pad:     1.5rem;
 
   /* ── Shadows ──────────────────────────────────────────────── */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);

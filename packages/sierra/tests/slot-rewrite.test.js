@@ -58,7 +58,7 @@ describe('rewriteMesaSlots', () => {
 // ── rewriteLayoutSlots (layout side) ─────────────────────────────────────────
 
 describe('rewriteLayoutSlots', () => {
-  it('rewrites <slot name="X" /> to pageSlots conditional render', () => {
+  it('rewrites <slot name="X" /> to a page.slots conditional render', () => {
     const src = `
 <script>
   export let children = null
@@ -75,7 +75,7 @@ describe('rewriteLayoutSlots', () => {
 
   it('rewrites <slot name="X">fallback</slot> with fallback content', () => {
     const src = `
-<script>import { pageSlots } from '@frontierjs/sierra/router'</script>
+<script>import { page } from '@frontierjs/sierra/router'</script>
 <div>
   <slot name="sidebar">
     <p>Default sidebar</p>
@@ -89,7 +89,7 @@ describe('rewriteLayoutSlots', () => {
 
   it('rewrites $slots.X to __slot_X', () => {
     const src = `
-<script>import { pageSlots } from '@frontierjs/sierra/router'</script>
+<script>import { page } from '@frontierjs/sierra/router'</script>
 <div>
   {#if $slots.sidebar}
     <aside><slot name="sidebar" /></aside>
@@ -100,17 +100,17 @@ describe('rewriteLayoutSlots', () => {
     expect(out).not.toContain('$slots.sidebar')
   })
 
-  it('auto-injects pageSlots import when missing', () => {
+  it('auto-injects the page import when missing', () => {
     const src = `
 <script>
   export let children = null
 </script>
 <div><slot name="sidebar" /><slot /></div>`
     const out = rewriteLayoutSlots(src)
-    expect(out).toContain("import { pageSlots } from '@frontierjs/sierra/router'")
+    expect(out).toContain("import { page } from '@frontierjs/sierra/router'")
   })
 
-  it('adds pageSlots to existing sierra/router import', () => {
+  it('adds page to an existing sierra/router import', () => {
     const src = `
 <script>
   import { isActive } from '@frontierjs/sierra/router'
@@ -118,10 +118,10 @@ describe('rewriteLayoutSlots', () => {
 </script>
 <div><slot name="sidebar" /><slot /></div>`
     const out = rewriteLayoutSlots(src)
-    expect(out).toContain('isActive, pageSlots')
+    expect(out).toContain('isActive, page')
   })
 
-  it('injects __slot_ let + watch for each named slot', () => {
+  it('injects __slot_ let + page.slots watch for each named slot', () => {
     const src = `
 <script>
   import { pageSlots } from '@frontierjs/sierra/router'
@@ -129,7 +129,7 @@ describe('rewriteLayoutSlots', () => {
 <div><slot name="sidebar" /><slot /></div>`
     const out = rewriteLayoutSlots(src)
     expect(out).toContain('let __slot_sidebar = null')
-    expect(out).toContain("$: pageSlots, () => { __slot_sidebar = pageSlots.sidebar ?? null }")
+    expect(out).toContain("$: page.slots, () => { __slot_sidebar = page.slots.sidebar ?? null }")
   })
 
   it('does not modify source with no slot elements', () => {
@@ -139,7 +139,7 @@ describe('rewriteLayoutSlots', () => {
 
   it('rewrites default <slot /> to children render', () => {
     const src = `
-<script>import { pageSlots } from '@frontierjs/sierra/router'</script>
+<script>import { page } from '@frontierjs/sierra/router'</script>
 <main><slot /></main>`
     const out = rewriteLayoutSlots(src)
     expect(out).toContain('{@render children?.()}')

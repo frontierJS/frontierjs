@@ -56,6 +56,42 @@ const MAX_AGE      = 60        // seconds
 const ETAG_PREFIX  = 'W/"'
 const RANGE_RE     = /^bytes=(\d*)-(\d*)$/
 
+// ─── Compressed-output cache ──────────────────────────────────────────────
+// Static files are immutable between mtime changes, yet gzip was re-run
+// synchronously on EVERY request (full read + CPU-bound compression on the
+// event loop). Cache the gzipped bytes keyed by path+mtime+size — an mtime
+// change produces a new key and the stale entry ages out via the size cap.
+
+const GZIP_CACHE_MAX_ENTRIES = 256
+const GZIP_CACHE_MAX_BYTES   = 32 * 1024 * 1024   // 32 MB budget
+const _gzipCache = new Map<string, Uint8Array>()
+let   _gzipCacheBytes = 0
+
+function cachedGzip(key: string, raw: Uint8Array): Uint8Array {
+  const hit = _gzipCache.get(key)
+  if (hit) return hit
+
+  const gzipped = Bun.gzipSync(raw)
+
+  // Evict oldest entries (Map insertion order) until the new one fits.
+  while (
+    _gzipCache.size >= GZIP_CACHE_MAX_ENTRIES ||
+    (_gzipCacheBytes + gzipped.byteLength > GZIP_CACHE_MAX_BYTES && _gzipCache.size > 0)
+  ) {
+    const oldestKey = _gzipCache.keys().next().value as string
+    const oldest    = _gzipCache.get(oldestKey)!
+    _gzipCache.delete(oldestKey)
+    _gzipCacheBytes -= oldest.byteLength
+  }
+
+  // Don't cache single blobs bigger than the whole budget — serve one-off.
+  if (gzipped.byteLength <= GZIP_CACHE_MAX_BYTES) {
+    _gzipCache.set(key, gzipped)
+    _gzipCacheBytes += gzipped.byteLength
+  }
+  return gzipped
+}
+
 // ─── Static file handler ──────────────────────────────────────────────────
 
 export interface StaticOptions {
@@ -141,8 +177,14 @@ export async function serveStatic(
   const canCompress    = compress && acceptEncoding.includes('gzip') && COMPRESSIBLE[mimeType]
 
   if (canCompress && size > 256) {
-    const raw    = await file.arrayBuffer()
-    const gzipped = Bun.gzipSync(new Uint8Array(raw))
+    // Cached by path+mtime+size — identical requests reuse the compressed
+    // bytes instead of re-reading and re-gzipping the file every time.
+    const cacheKey = `${file.name ?? ''}:${file.lastModified}:${size}`
+    let gzipped = _gzipCache.get(cacheKey)
+    if (!gzipped) {
+      const raw = await file.arrayBuffer()
+      gzipped   = cachedGzip(cacheKey, new Uint8Array(raw))
+    }
     headers['content-encoding'] = 'gzip'
     headers['content-length']   = String(gzipped.byteLength)
     headers['vary']             = 'Accept-Encoding'

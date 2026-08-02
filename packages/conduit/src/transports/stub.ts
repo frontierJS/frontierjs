@@ -16,10 +16,12 @@
 // ============================================================
 
 import { BaseTransport } from './base.ts'
+import { createNullResolver } from '../credentials.ts'
 import type {
   ConduitRequest,
   ConduitResult,
   ConduitChunk,
+  CredentialResolver,
   Protocol,
   TargetDescriptor
 } from '../types.ts'
@@ -39,8 +41,14 @@ export class StubTransport extends BaseTransport {
   private mocks           = new Map<string, MockEntry>()
   private defaultResponse: MockEntry = { data: { ok: true }, status: 200 }
 
-  constructor(descriptor: TargetDescriptor, protocol: Protocol = 'http') {
-    super(descriptor)
+  // The stub never builds auth headers, so it defaults to a resolver that
+  // resolves nothing rather than requiring test setup to supply one.
+  constructor(
+    descriptor:  TargetDescriptor,
+    protocol:    Protocol = 'http',
+    credentials: CredentialResolver = createNullResolver()
+  ) {
+    super(descriptor, credentials)
     this.protocol = protocol
   }
 

@@ -195,7 +195,7 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 //
 // typedJsonMap: { fieldName: typeDecl } — only typed-Json fields appear here.
 
-export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null) {
+export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null) {
   if (!where) return ''
   if (typeof where === 'string') return where
 
@@ -233,19 +233,32 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
   for (const [key, val] of Object.entries(where)) {
     if (key === 'AND') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
       continue
     }
     if (key === 'OR') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' OR ')})`)
       continue
     }
     if (key === 'NOT') {
-      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap)
+      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter)
       if (inner) clauses.push(`NOT (${inner})`)
       continue
+    }
+
+    // ── Relation filters: some / every / none / is / isNot ──────────────────
+    // When `key` names a relation (resolved by the client-supplied relFilter),
+    // compile a correlated EXISTS/NOT EXISTS subquery instead of a column test.
+    // relFilter returns: SQL string (a clause), '' (relation but no-op), or
+    // undefined (not a relation → fall through to normal column handling).
+    if (relFilter && val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+      const relSql = relFilter(key, val, params, tableAlias)
+      if (relSql !== undefined) {
+        if (relSql) clauses.push(relSql)
+        continue
+      }
     }
     if (key === '$raw') {
       // val is a RawClause from the sql tag: { _litestoneRaw: true, sql, params }

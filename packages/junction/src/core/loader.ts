@@ -5,6 +5,7 @@
 // Manual registration always takes precedence.
 
 import { join }              from 'node:path'
+import { createService }     from './service.ts'
 import type { Service }     from './service.ts'
 import type { ServiceRegistry } from './service.ts'
 
@@ -37,7 +38,23 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
         continue
       }
 
-      const service = factory(app) as Service
+      let service = factory(app) as Service
+
+      // Bare method object (e.g. a factory returning createBaseService(...)
+      // directly, without createService) — wrap it into a full service with
+      // the filename-derived name. This makes the minimal service file:
+      //
+      //   export function createPostsService() {
+      //     return createBaseService({ model: 'posts' })
+      //   }
+      //
+      // fully registrable: name from the filename, db from app.db.
+      if (service && typeof service === 'object' && typeof service.hooks !== 'function') {
+        service = createService({
+          name: deriveName(filename),
+          ...(service as unknown as Record<string, unknown>),
+        })
+      }
 
       if (!service?.name) {
         // Derive name from filename if not set on the service

@@ -6,94 +6,76 @@
 import type { TransportContext } from './types.ts'
 import { toFrameworkError, FrameworkError } from '../core/errors.ts'
 
-// ─── Context shape ────────────────────────────────────────────────────────
-// What every hook and service method sees. Single object throughout the pipeline.
+// ─── Context types — moved to core (core/context.ts) ─────────────────────
+// The service layer's vocabulary (ServiceContext, ServiceResult, hook and
+// method types, request meta, freezeUser) is owned by core; this module
+// re-exports it so existing `from '.../transport/bridge.ts'` imports keep
+// working unchanged.
+import {
+  RESERVED_PARAMS, runWithMeta, requestMeta, freezeUser,
+  type ServiceContext, type ServiceContextLocals, type ServiceResult,
+  type ServiceMethod, type AnyMethod, type HookType,
+  type CallOptions, type RequestMeta, type QueryDirectives,
+} from '../core/context.ts'
+import { isListResult, unwrapResult } from '../core/envelope.ts'
 
-export interface ServiceContext {
-  // ── routing ──────────────────────────────────────────────────────────
-  service:   string
-  method:    AnyMethod     // 'find'|'get'|'create'|'patch'|'remove'|'restore'|custom
-  type:      HookType      // set by hook pipeline
-  transport: 'http' | 'websocket' | 'internal'
-  model:     string        // set by createService from ServiceDefinition.name
-
-  // ── call inputs ───────────────────────────────────────────────────────
-  id:    string | number | null
-  // query is top-level — NOT params.query.
-  // Reserved params ($limit $offset $orderBy $select $first $wrap) are
-  // stripped by the bridge before reaching service methods.
-  query: Record<string, unknown>
-  data:  Record<string, unknown> | Record<string, unknown>[] | null
-
-  // ── ambient context ────────────────────────────────────────────────────
-  params: {
-    user:    import('../auth/types.ts').SessionContext | null
-    headers: Record<string, string>
-    ip:      string
-    [key: string]: unknown   // hooks and plugins attach here (db, workspace, etc.)
-  }
-
-  // ── app reference ─────────────────────────────────────────────────────
-  app: import('../core/app.ts').App
-
-  // ── lifecycle ─────────────────────────────────────────────────────────
-  // result is null in before hooks. Populated envelope in after hooks.
-  result:  ServiceResult | null
-  error:   FrameworkError | null
-
-  // ── HTTP-specific ─────────────────────────────────────────────────────
-  statusCode?: number          // override HTTP status
-  dispatch?:   unknown | false // separate payload for real-time broadcast; false = suppress
-
-  // escape hatch — never use in services or hooks
-  $raw: TransportContext | null
-
-  // instrumentation — set by callService, undefined for bypass (_find etc.)
-  telemetryId?: string
-
-  // cleanup callbacks — called in callService finally block after pipeline completes
-  // used by litestone tap and any other per-request teardown
-  _cleanups?: Array<() => void>
+export {
+  RESERVED_PARAMS, runWithMeta, requestMeta, freezeUser,
 }
-
-// ─── Hook type ────────────────────────────────────────────────────────────
-export type HookType = 'before' | 'after' | 'around' | 'error'
-
-// ─── Result envelope ──────────────────────────────────────────────────────
-// Consistent shape in all after hooks regardless of method.
-// object = model name for singles (e.g. 'lead'), 'list' for collections.
-// errors carries partial failures for bulk ops only — always [] for non-bulk.
-export interface ServiceResult {
-  object:  string
-  data:    unknown | unknown[]
-  errors:  unknown[]
-  total?:  number   // paginated find only
-  limit?:  number
-  offset?: number
+export type {
+  ServiceContext, ServiceContextLocals, ServiceResult,
+  ServiceMethod, AnyMethod, HookType,
+  CallOptions, RequestMeta,
 }
-
-export type ServiceMethod = 'find' | 'get' | 'create' | 'patch' | 'remove' | 'restore'
-export type AnyMethod     = ServiceMethod | string
-
-// ─── Reserved query params ────────────────────────────────────────────────
-// Stripped from ctx.query before reaching Litestone / service methods.
-// $first and $wrap are transport-only — never reach service layer.
-export const RESERVED_PARAMS = new Set([
-  '$limit', '$offset', '$orderBy', '$select', '$first', '$wrap'
-])
 
 // ─── HTTP method → service method map ────────────────────────────────────
+// REST/Feathers semantics: PUT = full replace (update), PATCH = merge
+// (patch). PUT mapped to patch before update() existed; services that take
+// PUT traffic need an update method (db-backed services get one for free).
 const METHOD_MAP: Record<string, ServiceMethod> = {
   'GET':    'find',
   'POST':   'create',
-  'PUT':    'patch',
+  'PUT':    'update',
   'PATCH':  'patch',
   'DELETE': 'remove',
 }
 
 // CRUD methods that cannot be overridden via X-Service-Method header.
 // Custom action names pass through — callService validates existence.
-const CRUD_METHOD_BLOCK = new Set(['find', 'get', 'create', 'patch', 'remove'])
+const CRUD_METHOD_BLOCK = new Set(['find', 'get', 'create', 'update', 'patch', 'remove'])
+
+// ─── Wire `$directive` → structured QueryDirectives ──────────────────────
+// The ONLY place the `$` convention is understood. Everything past the bridge
+// reads ctx.directives, which has no prefixes and no strings-that-mean-numbers.
+
+const truthy = (v: unknown) => v === true || v === 'true' || v === '1'
+
+function num(v: unknown): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined
+  const n = Number(v)
+  return Number.isFinite(n) ? n : undefined
+}
+
+function parseDirectives(rawQuery: Record<string, unknown>): QueryDirectives {
+  const d: QueryDirectives = {}
+
+  const limit  = num(rawQuery.$limit)
+  const offset = num(rawQuery.$offset)
+  if (limit  !== undefined) d.limit  = limit
+  if (offset !== undefined) d.offset = offset
+
+  if (rawQuery.$orderBy  !== undefined) d.orderBy  = rawQuery.$orderBy
+  if (rawQuery.$select   !== undefined) d.select   = rawQuery.$select
+  if (rawQuery.$populate !== undefined) d.populate = rawQuery.$populate
+
+  if (typeof rawQuery.$search === 'string' && rawQuery.$search !== '') {
+    d.search = rawQuery.$search
+  }
+  if (rawQuery.$withDeleted !== undefined) d.withDeleted = truthy(rawQuery.$withDeleted)
+  if (rawQuery.$onlyDeleted !== undefined) d.onlyDeleted = truthy(rawQuery.$onlyDeleted)
+
+  return d
+}
 
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
@@ -118,11 +100,18 @@ export const bridge = {
     const rawQuery   = raw.query as Record<string, unknown> ?? {}
 
     // ── X-Service-Method header — whitelist only ──────────────────────
-    const headerMethod = (raw.headers?.['x-service-method'] ?? '').toLowerCase()
+    // Case is preserved for custom actions (getStats stays getStats — the
+    // old blanket toLowerCase() made every camelCase action a guaranteed
+    // 404). Built-ins (restore/upsert) and the CRUD block-list still match
+    // case-insensitively.
+    const rawHeaderMethod = (raw.headers?.['x-service-method'] ?? '').trim()
+    const headerLower     = rawHeaderMethod.toLowerCase()
     let serviceMethod: AnyMethod = METHOD_MAP[httpMethod] ?? 'find'
 
-    if (headerMethod && !CRUD_METHOD_BLOCK.has(headerMethod)) {
-      serviceMethod = headerMethod
+    if (rawHeaderMethod && !CRUD_METHOD_BLOCK.has(headerLower)) {
+      serviceMethod = (headerLower === 'upsert' || headerLower === 'restore')
+        ? headerLower
+        : rawHeaderMethod
     }
 
     // ── Routing ────────────────────────────────────────────────────────
@@ -135,14 +124,31 @@ export const bridge = {
       }
     }
 
-    // ── Strip reserved params from ctx.query — single pass ─────────────
+    // ── Split the query string in two — single pass ────────────────────
+    // `$`-prefixed keys are DIRECTIVES (how to shape the result); everything
+    // else is a FILTER (which records). The bridge is the only place that
+    // knows about the `$` convention — it is wire syntax, not a data model.
+    //
+    // This used to only strip the reserved keys and throw them away, while
+    // parseQuery downstream looked for those exact keys on ctx.query. The
+    // transport deleted precisely what the query builder was written to read,
+    // so $limit / $offset / $orderBy / $select were all silently inert.
     const query: Record<string, unknown> = {}
     for (const k in rawQuery) {
       if (!RESERVED_PARAMS.has(k)) query[k] = rawQuery[k]
     }
+    const directives = parseDirectives(rawQuery)
 
     // ── Build ctx.data — merge body + multipart files ──────────────────
     const data = (() => {
+      // An ARRAY body is a bulk write and must survive as an array.
+      // `{ ...[a, b] }` produces `{ 0: a, 1: b }`, so a bulk POST arrived at
+      // the service as one malformed record with numeric keys — Array.isArray
+      // was false, the bulk branch never ran, and the service created a single
+      // row out of the indices. Bulk create over HTTP could not work.
+      // (Files are multipart, which is never an array body.)
+      if (Array.isArray(raw.body)) return raw.body as Record<string, unknown>[]
+
       const body: Record<string, unknown> =
         raw.body && typeof raw.body === 'object'
           ? { ...raw.body as Record<string, unknown> }
@@ -174,12 +180,18 @@ export const bridge = {
       model,
       id:        raw.params.id ?? null,
       query,
+      directives,
       data,
-      params: {
-        headers: raw.headers,
-        ip:      raw.ip,
-        user:    raw.user,
+      auth: {
+        user: raw.user,
       },
+      client: {
+        ip:        raw.ip,
+        userAgent: raw.headers?.['user-agent'],
+        headers:   raw.headers,
+      },
+      route:  { ...raw.params },   // path-pattern captures (:id, :room, …)
+      locals: {},
       app:       appRef ?? ({} as import('../core/app.ts').App),
       result:    null,
       error:     null,
@@ -193,6 +205,14 @@ export const bridge = {
   // Singles unwrapped by default. Lists always envelope.
   // $wrap=true opts singles into the envelope.
 
+  /**
+   * ServiceContext → HTTP Response.
+   *
+   * `wrap` is tri-state, mirroring `$wrap` on the wire:
+   *   undefined → the default rule
+   *   true      → envelope everything, singles included
+   *   false     → unwrap everything, lists included (bare array)
+   */
   toResponse(ctx: ServiceContext, rawWrap?: boolean): Response {
     if (ctx.error) return errorResponse(ctx.error)
 
@@ -206,44 +226,66 @@ export const bridge = {
 
     const status = ctx.statusCode ?? (ctx.method === 'create' ? 201 : 200)
 
-    // List — always envelope
-    if (result.object === 'list') {
-      return jsonResponse(result, status)
-    }
-
-    // Single — unwrap by default, envelope if $wrap requested
-    if (rawWrap) {
-      return jsonResponse(result, status)
-    }
-
-    return jsonResponse(result.data, status)
+    // The framework's one rule, stated once: a list keeps its envelope (it
+    // carries total/limit/offset, which have nowhere else to live), a single
+    // unwraps to the record. $wrap=true opts a single into the envelope too.
+    //
+    // Branching on `kind` rather than `object === 'list'` — `object` is now
+    // always the service name, so a service literally named 'list' no longer
+    // changes how its singles serialize.
+    return jsonResponse(
+      unwrapResult(result, {
+        single: rawWrap === true  ? 'envelope' : 'data',
+        list:   rawWrap === false ? 'data'     : 'envelope',
+      }),
+      status
+    )
   },
 
   // ── Internal service call context ────────────────────────────────────
+  // opts carries only what you VARY per call. auth is deep-cloned
+  // (frozen-propagates), locals starts fresh {} (never inherits the
+  // caller's — this is what kills the shared-mutation footgun).
+  // Request-wide metadata (correlation/idempotency/locale) is NOT here
+  // — it rides the AsyncLocalStorage store and is read via requestMeta().
 
   internal(
     service: string,
     method:  ServiceMethod,
     data:    Record<string, unknown> | null = null,
-    params:  Partial<ServiceContext['params']> & { query?: Record<string, unknown> } = {},
+    opts:    CallOptions & { query?: Record<string, unknown> } = {},
     appRef?: import('../core/app.ts').App
   ): ServiceContext {
-    const { query = {}, ...restParams } = params
+    const { query = {}, auth, transport = 'internal', locals, directives } = opts
+    // An internal caller may still hand us a `$`-spelled query (older code,
+    // and tests that predate ctx.directives). Translate rather than ignore:
+    // explicit opts.directives wins, `$` keys are the fallback.
+    const fromQuery = parseDirectives(query)
+    const filters: Record<string, unknown> = {}
+    for (const k in query) {
+      if (!RESERVED_PARAMS.has(k)) filters[k] = query[k]
+    }
     return {
       service,
       method,
       type:      'before',
-      transport: 'internal',
+      transport,
       model:     service,
       id:        (data as Record<string, unknown>)?.id as string ?? null,
-      query,
+      query:      filters,
+      directives: { ...fromQuery, ...directives },
       data,
-      params: {
-        headers: {},
-        ip:      '127.0.0.1',
-        user:    null,
-        ...restParams,
+      auth: {
+        // Shared frozen reference — same immutability guarantee the old
+        // per-call structuredClone gave, without deep-clone cost on every
+        // internal call (see freezeUser).
+        user: auth?.user ? freezeUser(auth.user) : null,
       },
+      client: {
+        headers: {},
+      },
+      route:  {},
+      locals: locals ? { ...locals } : {},   // fresh; explicit seed only
       app:       appRef ?? ({} as import('../core/app.ts').App),
       result:    null,
       error:     null,

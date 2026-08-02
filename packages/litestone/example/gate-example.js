@@ -1,26 +1,26 @@
 // example/gate-example.js
-// Demonstrates the GatePlugin with different user types.
+// Demonstrates gates with different user types.
 // Self-contained — creates its own temp DB, no seed required.
 //
 // Run:  bun example/gate-example.js
 //
 // ─── @@gate notation ─────────────────────────────────────────────────────────
-// The four positions map to: Read . Create . Update . Delete
-// Levels: 0=STRANGER 1=VISITOR 2=READER 3=CREATOR 4=USER 5=ADMIN 6=OWNER
-//         7=SYSTEM (only asSystem()) 8=LOCKED (nobody, ever)
+// Named (canonical):  @@gate(read: READER, write: USER, delete: OWNER)
+//   Keys: read, create, update, delete — plus `write`, shorthand for
+//   create+update+delete unless one is given explicitly.
+// Compact:            @@gate("2.4.4.6")   ← same gate as digits, R.C.U.D
+// Shorthand:          @@gate("4")         ← all four ops = USER
 //
-// Numeric:  @@gate("2.4.4.6")
-// Named:    @@gate("READER.USER.USER.OWNER")   ← same thing, coming soon
-// Shorthand:@@gate("4")                        ← all four ops = USER
-// Partial:  @@gate("2.4")                      ← R=READER C=USER U=USER D=USER
+// Levels: 0=STRANGER 1=VISITOR 2=READER 3=CREATOR 4=USER 5=ADMINISTRATOR
+//         6=OWNER 7=SYSADMIN 8=SYSTEM (only asSystem()) 9=LOCKED (nobody, ever)
+//
+// Gates are enforced by default whenever a model declares @@gate — this demo
+// installs its own GatePlugin to show a custom getLevel() with per-role,
+// per-model levels (Spatie-style).
 
-import { createClient, GatePlugin, LEVELS, AccessDeniedError } from '../src/index.js'
-import { parse }                from '../src/core/parser.js'
-import { generateDDL }          from '../src/core/ddl.js'
-import { splitStatements }      from '../src/core/migrate.js'
-import { Database }             from 'bun:sqlite'
-import { dirname, resolve }     from 'path'
-import { fileURLToPath }        from 'url'
+import { createClient, autoMigrate, GatePlugin, LEVELS } from '../src/index.js'
+import { dirname, resolve }       from 'path'
+import { fileURLToPath }          from 'url'
 import { unlinkSync, existsSync } from 'fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -31,99 +31,79 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const ROLE_LEVELS = {
   'field-manager': {
-    accounts:   LEVELS.READER,        // 2 — read only
-    products:   LEVELS.READER,        // 2 — read only
-    leads:      LEVELS.USER,          // 4 — full member access
-    messages:   LEVELS.USER,          // 4 — can send messages
-    audit_logs: LEVELS.STRANGER,      // 0 — no access at all
-    config:     LEVELS.STRANGER,      // 0 — no access at all
+    Account:  LEVELS.READER,        // 2 — read only
+    Product:  LEVELS.READER,        // 2 — read only
+    Lead:     LEVELS.USER,          // 4 — full member access
+    Message:  LEVELS.USER,          // 4 — can send messages
+    AuditLog: LEVELS.STRANGER,      // 0 — no access at all
+    Config:   LEVELS.STRANGER,      // 0 — no access at all
   },
 }
 
 // ─── Demo schema ──────────────────────────────────────────────────────────────
-// Each model shows the numeric gate AND the equivalent named levels as a comment.
-// Two models (messages, config) also show how you might express one-liner semantics.
+// Model names are PascalCase and singular — always (accessor = camelCase:
+// model AuditLog → db.auditLog). Named gates are canonical; the compact digit
+// equivalent is shown in each comment.
 
 const SCHEMA = `
-  // Public-ish data — anyone can read, admins manage, owners delete
-  // @@gate("2.5.5.6") = READER.ADMIN.ADMIN.OWNER
-  model accounts {
+  // Public-ish data — anyone verified can read, admins manage, owners delete
+  // Compact: @@gate("2.5.5.6")
+  model Account {
     id   Int @id
     name String
-    @@gate("2.5.5.6")
+    @@gate(read: READER, write: ADMINISTRATOR, delete: OWNER)
   }
 
   // Catalog — even visitors browse, members buy, owners delete
-  // @@gate("1.4.4.6") = VISITOR.USER.USER.OWNER
-  model products {
+  // Compact: @@gate("1.4.4.6")
+  model Product {
     id    Int @id
     name  String
     price Int
-    @@gate("1.4.4.6")
+    @@gate(read: VISITOR, write: USER, delete: OWNER)
   }
 
   // Sales leads — creators can add, members manage, owners delete
-  // @@gate("3.3.4.6") = CREATOR.CREATOR.USER.OWNER
-  model leads {
+  // Compact: @@gate("3.3.4.6")
+  model Lead {
     id   Int @id
     name String
-    @@gate("3.3.4.6")
+    @@gate(read: CREATOR, create: CREATOR, update: USER, delete: OWNER)
   }
 
   // Messaging — readers see it, members write it, admins moderate (delete)
-  // Named syntax: separate read from write from delete
-  model messages {
+  model Message {
     id   Int @id
     body String
     @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
   }
 
-  // Audit trail — admins read, only background jobs write, delete is locked forever
-  // @@gate("5.8.8.9") = ADMIN.SYSTEM.SYSTEM.LOCKED
-  model audit_logs {
+  // Audit trail — admins read, only background jobs write, delete locked forever
+  // Compact: @@gate("5.8.8.9")
+  model AuditLog {
     id     Int @id
     action String
-    @@gate("5.8.8.9")
+    @@gate(read: ADMINISTRATOR, write: SYSTEM, delete: LOCKED)
   }
 
   // System config — admins read, only system creates, everything else locked
-  // Named syntax with write shorthand then override delete
-  model config {
+  model Config {
     id  Int @id
     key String
     val String
-    @@gate(read: ADMINISTRATOR, create: SYSTEM, update: LOCKED, delete: LOCKED)  // SYSADMIN also ok for read
+    @@gate(read: ADMINISTRATOR, create: SYSTEM, update: LOCKED, delete: LOCKED)
   }
 `
 
 // ─── Bootstrap temp DB ────────────────────────────────────────────────────────
+// createClient + autoMigrate + ORM seeding — no hand-written DDL or raw SQL.
 
 const TMP = resolve(__dirname, '.gate-demo.db')
 if (existsSync(TMP)) unlinkSync(TMP)
 
-const parseResult = parse(SCHEMA)
-if (!parseResult.valid) {
-  console.error('Schema errors:', parseResult.errors.join('\n'))
-  process.exit(1)
-}
-
-const tmpDb = new Database(TMP)
-for (const stmt of splitStatements(generateDDL(parseResult.schema))) {
-  if (!stmt.startsWith('PRAGMA')) tmpDb.run(stmt)
-}
-tmpDb.run(`INSERT INTO accounts   VALUES (1, 'Acme Corp')`)
-tmpDb.run(`INSERT INTO products   VALUES (1, 'Widget', 4999)`)
-tmpDb.run(`INSERT INTO leads      VALUES (1, 'Alice')`)
-tmpDb.run(`INSERT INTO messages   VALUES (1, 'Hello world')`)
-tmpDb.run(`INSERT INTO audit_logs VALUES (1, 'user.login')`)
-tmpDb.run(`INSERT INTO config     VALUES (1, 'max_users', '50')`)
-tmpDb.close()
-
-// ─── Client ───────────────────────────────────────────────────────────────────
-
 const db = await createClient({
   db:     TMP,
-  parsed: parseResult,
+  schema: SCHEMA,
   plugins: [
     new GatePlugin({
       async getLevel(user, model) {
@@ -136,7 +116,7 @@ const db = await createClient({
 
         if (user.isSuperAdmin) return LEVELS.ADMINISTRATOR
 
-        // Per-role, per-model levels
+        // Per-role, per-model levels — model is the model name ('Lead')
         const rolePerms = ROLE_LEVELS[user.role]
         if (rolePerms) return rolePerms[model] ?? LEVELS.VISITOR
 
@@ -150,6 +130,18 @@ const db = await createClient({
   ]
 })
 
+autoMigrate(db)
+
+{
+  const sys = db.asSystem()
+  await sys.account.create({ data: { id: 1, name: 'Acme Corp' } })
+  await sys.product.create({ data: { id: 1, name: 'Widget', price: 4999 } })
+  await sys.lead.create({ data: { id: 1, name: 'Alice' } })
+  await sys.message.create({ data: { id: 1, body: 'Hello world' } })
+  await sys.auditLog.create({ data: { id: 1, action: 'user.login' } })
+  await sys.config.create({ data: { id: 1, key: 'max_users', val: '50' } })
+}
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 async function attempt(label, fn) {
@@ -159,7 +151,7 @@ async function attempt(label, fn) {
     console.log(`  ✓  ${label.padEnd(28)} → ${count} row(s)`)
   } catch (e) {
     if (e.code === 'ACCESS_DENIED') {
-      const req = e.required === 8 ? 'LOCKED' : e.required === 7 ? 'SYSTEM' : `${e.required}`
+      const req = e.required === 9 ? 'LOCKED' : e.required === 8 ? 'SYSTEM' : `${e.required}`
       console.log(`  ✗  ${label.padEnd(28)} → denied (user=${e.got ?? '?'} < ${req})`)
     } else {
       console.log(`  !  ${label.padEnd(28)} → ${e.message}`)
@@ -181,47 +173,48 @@ const scenarios = [
                                                   currentAccountId: 1, ownedAccountIds: [1] } },
 ]
 
-console.log('\n╔════════════════════════════════════════════════════════════════╗')
-console.log('║  Litestone GatePlugin — access level demo                      ║')
-console.log('╠════════════════════════════════════════════════════════════════╣')
-console.log('║  accounts   "2.5.5.6"  READER  . ADMIN  . ADMIN  . OWNER      ║')
-console.log('║  products   "1.4.4.6"  VISITOR . USER   . USER   . OWNER      ║')
-console.log('║  leads      "3.3.4.6"  CREATOR . CREATOR. USER   . OWNER      ║')
-console.log('║  messages   (read:READER, write:USER, delete:ADMIN)             ║')
-console.log('║  audit_logs "5.8.8.9"  ADMIN   . SYSTEM . SYSTEM . LOCKED     ║')
-console.log('║  config     (read:ADMIN, create:SYSTEM, update:LOCKED, d:LOCKED)║')
-console.log('╚════════════════════════════════════════════════════════════════╝\n')
+console.log('\n╔══════════════════════════════════════════════════════════════════════╗')
+console.log('║  Litestone gates — access level demo                                 ║')
+console.log('╠══════════════════════════════════════════════════════════════════════╣')
+console.log('║  Account  (read:READER,  write:ADMINISTRATOR, delete:OWNER)          ║')
+console.log('║  Product  (read:VISITOR, write:USER,          delete:OWNER)          ║')
+console.log('║  Lead     (read:CREATOR, create:CREATOR, update:USER, delete:OWNER)  ║')
+console.log('║  Message  (read:READER,  write:USER,          delete:ADMINISTRATOR)  ║')
+console.log('║  AuditLog (read:ADMINISTRATOR, write:SYSTEM,  delete:LOCKED)         ║')
+console.log('║  Config   (read:ADMINISTRATOR, create:SYSTEM, update+delete:LOCKED)  ║')
+console.log('╚══════════════════════════════════════════════════════════════════════╝\n')
 
 for (const { label, user } of scenarios) {
   console.log(`─── ${label}`)
   const userDb = db.$setAuth(user)
-  await attempt('read   accounts',   () => userDb.accounts.findMany())
-  await attempt('read   products',   () => userDb.products.findMany())
-  await attempt('read   leads',      () => userDb.leads.findMany())
-  await attempt('read   audit_logs', () => userDb.audit_logs.findMany())
-  await attempt('read   config',     () => userDb.config.findMany())
-  await attempt('create lead',       async () => {
-    const r = await userDb.leads.create({ data: { id: 999, name: 'Test' } })
-    await db.asSystem().leads.delete({ where: { id: 999 } }).catch(() => {})
+  await attempt('read   Account',  () => userDb.account.findMany())
+  await attempt('read   Product',  () => userDb.product.findMany())
+  await attempt('read   Lead',     () => userDb.lead.findMany())
+  await attempt('read   AuditLog', () => userDb.auditLog.findMany())
+  await attempt('read   Config',   () => userDb.config.findMany())
+  await attempt('create Lead',     async () => {
+    const r = await userDb.lead.create({ data: { id: 999, name: 'Test' } })
+    await db.asSystem().lead.delete({ where: { id: 999 } }).catch(() => {})
     return r
   })
   console.log()
 }
 
-console.log('─── asSystem() — bypasses all gates ─────────────────────────────')
+console.log('─── asSystem() — bypasses all gates except LOCKED ───────────────')
 const sys = db.asSystem()
-await attempt('read   audit_logs', () => sys.audit_logs.findMany())
-await attempt('create audit_log',  async () => {
-  const r = await sys.audit_logs.create({ data: { id: 888, action: 'system.test' } })
-  await sys.audit_logs.delete({ where: { id: 888 } })
+await attempt('read   AuditLog', () => sys.auditLog.findMany())
+await attempt('create AuditLog', async () => {
+  const r = await sys.auditLog.create({ data: { id: 888, action: 'system.test' } })
+  // cleanup delete is LOCKED — swallow it so the create's ✓ shows through
+  await sys.auditLog.delete({ where: { id: 888 } }).catch(() => {})
   return r
 })
-await attempt('create config',     async () => {
+await attempt('create Config',   async () => {
   const r = await sys.config.create({ data: { id: 888, key: 'debug', val: 'true' } })
-  await sys.config.delete({ where: { id: 888 } })
+  await sys.config.delete({ where: { id: 888 } }).catch(() => {})
   return r
 })
-await attempt('update config',     () =>
+await attempt('update Config',   () =>
   sys.config.update({ where: { id: 1 }, data: { val: '100' } })
 )
 

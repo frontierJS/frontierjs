@@ -2,7 +2,7 @@
 // Auto-generates an OpenAPI 3.1 spec from the service registry and schemas.
 //
 // Two modes:
-//   1. Plugin — mounts GET /api/openapi.json automatically
+//   1. Plugin — mounts GET {apiPrefix}/openapi.json automatically
 //   2. Standalone — call generateOpenAPI(app) to get the spec object
 //
 // Schema registration:
@@ -29,6 +29,7 @@
 
 import type { App, Plugin }      from '../../core/app.ts'
 import type { CompiledSchema, Schema, FieldDef } from '../../core/schema.ts'
+import { customMethodNames }     from '../../core/service.ts'
 
 // ─── Options ──────────────────────────────────────────────────────────────
 
@@ -373,7 +374,8 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions): OASpec {
     const service    = app.services.get(serviceName)!
     const tag        = serviceName
 
-    // Auto-schemas from createLitestoneService — manual opts.schemas take precedence
+    // Auto-schemas from a service's explicit `schema` option — manual
+    // opts.schemas take precedence
     const autoSchemas = (service as Record<string, unknown>)._schemas as
       { create?: import('../../core/schema.ts').CompiledSchema; patch?: import('../../core/schema.ts').CompiledSchema } | undefined
 
@@ -399,17 +401,11 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions): OASpec {
     spec.paths[resourcePath].delete = buildOperation(serviceName, 'remove', svcSchemas.remove)
 
     // ── Action routes ──────────────────────────────────────────────
-    // Custom methods live directly on the service object (no `actions` key).
-    // Detect them by excluding all reserved CRUD + internal keys.
-    const RESERVED_SERVICE_KEYS = new Set([
-      'name', 'model', 'find', 'get', 'create', 'patch', 'remove', 'restore',
-      '_find', '_get', '_create', '_patch', '_remove', '_restore',
-      'hooks', 'paginate', 'allowBulk', 'cache', 'softDelete', 'idField', 'db',
-      '_hookMap', '_pipelines', '_compiledPipelines',
-    ])
-    const customMethods = Object.keys(service).filter(
-      k => !RESERVED_SERVICE_KEYS.has(k) && typeof (service as Record<string, unknown>)[k] === 'function'
-    )
+    // Custom methods live directly on the service object (no `actions` key),
+    // so "is this an action?" is decided by core/service.ts — this was a local
+    // copy of the reserved-key set that had drifted (it omitted `update` and
+    // `_update`, so both were documented as custom actions on every service).
+    const customMethods = customMethodNames(service)
     // Custom actions — dispatched via X-Service-Method header on POST /{id}.
     // Each action gets its own path entry for Swagger UI discoverability.
     // The path slug is documentation-only; the wire format uses the header.
@@ -454,7 +450,7 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions): OASpec {
   }
 
   // ── Merge extra paths — from opts and from app._openapiExtraPaths ──
-  const appExtraPaths = (app as Record<string, unknown>)._openapiExtraPaths as
+  const appExtraPaths = app._openapiExtraPaths as
     Record<string, unknown> | undefined
 
   const allExtra = { ...(appExtraPaths ?? {}), ...(opts.extraPaths ?? {}) }
@@ -475,16 +471,34 @@ export function openapi(opts: OpenAPIOptions): Plugin {
     register(app: App): void {
       // Expose a helper so other plugins can inject paths before spec generation
       // Usage in a plugin's register(): app.addOpenApiPaths({ '/auth/login': { post: {...} } })
-      ;(app as Record<string, unknown>).addOpenApiPaths = (paths: Record<string, unknown>) => {
-        const existing = (app as Record<string, unknown>)._openapiExtraPaths as Record<string, unknown> ?? {}
-        ;(app as Record<string, unknown>)._openapiExtraPaths = { ...existing, ...paths }
+      app.addOpenApiPaths = (paths: Record<string, unknown>) => {
+        const existing = app._openapiExtraPaths ?? {}
+        ;app._openapiExtraPaths = { ...existing, ...paths }
       }
       const prefix   = (app.config as Record<string, unknown>).apiPrefix as string ?? ''
       const endpoint = opts.path ?? `${prefix}/openapi.json`
 
+      // The registry is static after boot, so generate + stringify the spec
+      // ONCE on first request instead of rebuilding the whole document
+      // (service reflection included) per hit. addOpenApiPaths() and any
+      // late service registration invalidate the cache.
+      let specCache: string | null = null
+      let specSvcCount = -1
+      const prevAdd = app.addOpenApiPaths!
+      app.addOpenApiPaths = (paths: Record<string, unknown>) => {
+        prevAdd(paths)
+        specCache = null
+      }
+
       app.get(endpoint, () => {
-        const spec = generateOpenAPI(app, opts)
-        return new Response(JSON.stringify(spec, null, 2), {
+        // Cheap invalidation probe: late-registered services change the
+        // service count, which busts the cache.
+        const svcCount = app.services.list().length
+        if (!specCache || specSvcCount !== svcCount) {
+          specSvcCount = svcCount
+          specCache = JSON.stringify(generateOpenAPI(app, opts), null, 2)
+        }
+        return new Response(specCache, {
           headers: { 'content-type': 'application/json' }
         })
       })

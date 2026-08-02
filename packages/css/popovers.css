@@ -1,5 +1,5 @@
 /*
- * utilities/popovers.css
+ * popovers.css
  * Popover = surface + floating positioning + slide-in animation.
  *
  * Positioning is the consumer's job — use Uno utilities like
@@ -42,8 +42,4 @@
 @keyframes popover-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .popover { animation: none; }
 }

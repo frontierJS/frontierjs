@@ -82,6 +82,14 @@ import {
   $$eachBlock,
   ifBlock,
   awaitBlock,
+  track,
+  trackDerived,
+  get as trackedGet,
+  $$eachBlock,
+  push_component,
+  pop_component,
+  contextProvide,
+  contextRead,
   // Boundary / Mounted
   boundaryBlock,
   mountedBlock,
@@ -99,6 +107,7 @@ import {
   // Watch proxy
   watchProxy,
   watchPath,
+  localWatchProxy,
   // Async state
   makeAsyncState,
   asyncDerived,
@@ -394,15 +403,22 @@ describe('createMemo', () => {
     expect(computations).toBe(2)
   })
 
-  it('downstream effect re-runs when memo is dirty (synchronous runtime behaviour)', () => {
-    // NOTE: suppressing re-runs when memo value is unchanged requires a
-    // two-phase scheduler. Our synchronous runtime doesn't have one — laziness
-    // is the priority. This documents current known behaviour.
+  it('does NOT re-run downstream effects when the memo value is unchanged', () => {
+    // The memo settles in its own flush tier and propagates from the recompute,
+    // not from the invalidation — so a derivation that lands on the same value
+    // cuts off propagation entirely.
     const [count, setCount] = createSignal(2)
     const isEven = createMemo(() => count() % 2 === 0)
     let runs = 0
     createEffect(() => { isEven(); runs++ })
-    setCount(4) // still even — dirty flag still propagates
+    setCount(4) // still even — must not reach the effect
+    flushSync()
+    expect(runs).toBe(1)
+    setCount(6)
+    setCount(8)
+    flushSync()
+    expect(runs).toBe(1)
+    setCount(5) // now it actually changes
     flushSync()
     expect(runs).toBe(2)
   })
@@ -415,6 +431,137 @@ describe('createMemo', () => {
     setX(2)
     flushSync()
     expect(b()).toBe(6)
+  })
+
+  it('a chain of memos settles within one flush, without intermediate runs', () => {
+    const [x, setX] = createSignal(1)
+    const a = createMemo(() => x() + 1)
+    const b = createMemo(() => a() * 2)
+    const seen = []
+    createEffect(() => { seen.push([x(), a(), b()]) })
+    setX(2)
+    flushSync()
+    // One consistent observation — no pass where b still reflects the old a.
+    expect(seen).toEqual([[1, 2, 4], [2, 3, 6]])
+  })
+
+  it('a write to a dep from inside the memo body is not swallowed', () => {
+    const [n, setN] = createSignal(1)
+    // `dirty` is cleared before fn() runs, so this re-invalidates rather than
+    // being erased by the recompute that is already in progress.
+    const m = createMemo(() => { const v = n(); if (v === 1) setN(2); return v * 10 })
+    m()
+    flushSync()
+    expect(n()).toBe(2)
+    expect(m()).toBe(20)
+  })
+
+  it('stays lazy when nothing is subscribed', () => {
+    const [count, setCount] = createSignal(0)
+    let computations = 0
+    const memo = createMemo(() => { computations++; return count() * 2 })
+    memo()
+    setCount(1)
+    flushSync()
+    expect(computations).toBe(1)
+  })
+
+  it('a disposed memo neither recomputes nor resurrects its subscriptions', () => {
+    const [x, setX] = createSignal(1)
+    let computations = 0
+    let memo
+    const dispose = createEffect(() => {
+      memo = createMemo(() => { computations++; return x() * 2 })
+      memo()
+    })
+    const before = computations
+    dispose()
+    setX(5)
+    flushSync()
+    expect(computations).toBe(before)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §3c  Flush resilience — error containment and cycle detection
+// ─────────────────────────────────────────────────────────────────────────────
+describe('equals applies consistently', () => {
+  const deepEq = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+  it('createWritableSignal honours equals on manual writes as well as derivations', () => {
+    const [t, setT] = createSignal(1)
+    const [read, write] = createWritableSignal(
+      () => ({ v: t() > 0 ? 1 : 0 }), { equals: deepEq }
+    )
+    let runs = 0
+    createEffect(() => { read(); runs++ })
+    flushSync()
+
+    // A recompute that lands on an equals-equal value stays silent…
+    const afterInit = runs
+    setT(2); flushSync()
+    expect(runs).toBe(afterInit)
+
+    // …and so must a manual write of a value the same comparator calls equal.
+    // opts used to reach the memo half only, so this notified via Object.is.
+    write({ v: 1 }); flushSync()
+    expect(runs).toBe(afterInit)
+
+    // A genuinely different value still propagates.
+    write({ v: 99 }); flushSync()
+    expect(runs).toBe(afterInit + 1)
+  })
+
+  it('signal and memo agree on what equals means', () => {
+    const [r1, w1] = createSignal({ v: 1 }, { equals: deepEq })
+    const sigFirst = r1()
+    w1({ v: 1 })
+    expect(r1()).toBe(sigFirst)          // equal → old identity retained
+
+    const [s, setS] = createSignal(1)
+    const m = createMemo(() => ({ v: s() > 0 ? 1 : 0 }), { equals: deepEq })
+    const memoFirst = m()
+    setS(2); flushSync()
+    expect(m()).toBe(memoFirst)          // same rule on the memo
+  })
+
+  it('the comparator is not invoked against undefined on a memo first run', () => {
+    let sawUndefined = false
+    const spy = (a, b) => { if (a === undefined) sawUndefined = true; return Object.is(a, b) }
+    createMemo(() => 5, { equals: spy })()
+    expect(sawUndefined).toBe(false)
+  })
+})
+
+describe('flush resilience', () => {
+  it('one throwing effect does not drop the rest of the generation', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const [s, set] = createSignal(0)
+      let after = 0
+      createEffect(() => { if (s() === 1) throw new Error('boom') })
+      createEffect(() => { s(); after++ })
+      set(1)
+      expect(() => flushSync()).not.toThrow()
+      // The effect queued behind the thrower still ran for this write — it is
+      // not merely delayed, it would never be re-notified for this value.
+      expect(after).toBe(2)
+      expect(spy).toHaveBeenCalled()
+    } finally { spy.mockRestore() }
+  })
+
+  it('a cyclic effect pair is reported and dropped instead of hanging', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const [a, setA] = createSignal(0)
+      const [b, setB] = createSignal(0)
+      createEffect(() => { setB(a() + 1) })
+      createEffect(() => { setA(b() + 1) })
+      setA(1)
+      expect(() => flushSync()).not.toThrow()
+      const msg = spy.mock.calls.map((c) => String(c[0])).join('\n')
+      expect(msg).toMatch(/Update cycle detected/)
+    } finally { spy.mockRestore() }
   })
 })
 
@@ -1992,6 +2139,317 @@ describe('watchProxy / watchPath', () => {
 // The old _fireSignal bailed when path was '' (falsy).
 // Fixed by normalising '' → '__root__' sentinel.
 
+describe('track() stores values, trackDerived() derives', () => {
+  it('a zero-arg callback prop is stored, not invoked', () => {
+    let fired = 0
+    const cb = () => { fired++; return 'RET' }
+    // Exactly what the compiler emits for `export let ondone`. Arity used to
+    // decide this, so `<Child ondone={() => n++} />` was memoised and called
+    // during setup, and on:click bound the return value instead of the callback.
+    const sig = track(cb, undefined, undefined, null)
+    expect(fired).toBe(0)
+    expect(trackedGet(sig)).toBe(cb)
+    trackedGet(sig)()
+    expect(fired).toBe(1)
+  })
+
+  it('a named zero-arg function prop is stored, not invoked', () => {
+    let fired = 0
+    function bump() { fired++ }
+    const sig = track(bump, undefined, undefined, null)
+    expect(fired).toBe(0)
+    expect(trackedGet(sig)).toBe(bump)
+  })
+
+  it('trackDerived memoises and tracks its dependencies', () => {
+    const [n, setN] = createSignal(1)
+    const d = trackDerived(() => n() * 2, undefined, undefined, null)
+    expect(trackedGet(d)).toBe(2)
+    setN(5); flushSync()
+    expect(trackedGet(d)).toBe(10)
+  })
+})
+
+describe('{#each}{:else} teardown', () => {
+  it('does not leak else-block effects across toggles', () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const anchor = document.createComment('each')
+    root.appendChild(anchor)
+    const [items, setItems] = createSignal([1])
+    const [tick, setTick] = createSignal(0)
+    let runs = 0
+
+    $$eachBlock(anchor, 0, () => items(), (x) => x,
+      (getItem) => { const s = document.createElement('span'); s.textContent = String(getItem()); return s },
+      () => {
+        const s = document.createElement('span')
+        createEffect(() => { tick(); runs++ })
+        return s
+      })
+    flushSync()
+
+    for (let i = 0; i < 5; i++) {
+      setItems([]); flushSync()
+      setItems([1]); flushSync()
+    }
+    // Ended non-empty: no else block should be alive at all. Each toggle used to
+    // strand another live copy, since the else block had no owner node.
+    const before = runs
+    setTick(1); flushSync()
+    expect(runs - before).toBe(0)
+
+    setItems([]); flushSync()
+    const b2 = runs
+    setTick(2); flushSync()
+    expect(runs - b2).toBe(1)   // exactly one
+  })
+})
+
+describe('block teardown across async boundaries', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+
+  it('{#if} removes a branch whose {#await} has already resolved', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const ifAnchor = document.createComment('if')
+    root.appendChild(ifAnchor)
+    const [show, setShow] = createSignal(0)
+    let resolveIt
+    const p = new Promise((r) => { resolveIt = r })
+
+    ifBlock(ifAnchor, () => show(), [() => {
+      const frag = document.createDocumentFragment()
+      const aw = document.createComment('await')
+      frag.appendChild(aw)
+      awaitBlock(aw, () => p,
+        () => { const s = document.createElement('span'); s.textContent = 'pending'; return s },
+        (v) => { const s = document.createElement('span'); s.textContent = 'resolved:' + v; return s },
+        null)
+      return frag
+    }])
+    flushSync()
+    resolveIt('X'); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('resolved:X')
+
+    // The await swap replaced the very nodes ifBlock had recorded as the branch
+    // bounds, so removal used to walk from a detached node and remove nothing.
+    setShow(null); flushSync(); await tick()
+    expect(root.textContent).toBe('')
+  })
+
+  it('effects created in {:then} are disposed with their owner', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const anchor = document.createComment('await')
+    root.appendChild(anchor)
+    const [n, setN] = createSignal(1)
+    let runs = 0
+    let resolveIt
+    const p = new Promise((r) => { resolveIt = r })
+
+    const dispose = createEffect(() => {
+      awaitBlock(anchor, () => p, null, () => {
+        const s = document.createElement('span')
+        createEffect(() => { s.textContent = 'n=' + n(); runs++ })
+        return s
+      }, null)
+    })
+    flushSync()
+    resolveIt('go'); await tick(); flushSync(); await tick()
+    expect(runs).toBeGreaterThan(0)
+
+    dispose()
+    const before = runs
+    setN(2); flushSync()
+    expect(runs).toBe(before)   // built in a microtask — used to have no owner at all
+  })
+})
+
+describe('component setup that throws does not poison later mounts', () => {
+  it('unwinds on the initial effect run, and rethrows', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(() => createEffect(() => {
+        push_component('Boom', 'Boom.mesa')
+        contextProvide('leaked', () => 'from-boom')
+        throw new Error('setup failed')   // the emitted pop_component never runs
+      })).toThrow('setup failed')
+
+      push_component('Next', 'Next.mesa')
+      expect(contextRead('leaked')).toBe(null)
+      pop_component()
+    } finally { spy.mockRestore() }
+  })
+
+  it('unwinds from inside the flush loop', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const [s, set] = createSignal(0)
+      createEffect(() => {
+        if (s() === 1) {
+          push_component('Boom2', 'Boom2.mesa')
+          contextProvide('leaked2', () => 'x')
+          throw new Error('re-run failed')
+        }
+      })
+      set(1)
+      expect(() => flushSync()).not.toThrow()
+      push_component('After', 'After.mesa')
+      expect(contextRead('leaked2')).toBe(null)
+      pop_component()
+    } finally { spy.mockRestore() }
+  })
+
+  it('mount() rethrows but leaves the stacks usable', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const label = document.createComment('x')
+    host.appendChild(label)
+    expect(() => mount(label, () => {
+      push_component('Boom3', 'Boom3.mesa')
+      contextProvide('leaked3', () => 'x')
+      throw new Error('mount failed')
+    })).toThrow('mount failed')
+
+    push_component('After3', 'After3.mesa')
+    expect(contextRead('leaked3')).toBe(null)
+    pop_component()
+  })
+})
+
+describe('localWatchProxy — subtree watches on a local object', () => {
+  const mkSig = () => {
+    const [read, write] = createSignal(undefined, { equals: () => false })
+    let n = 0
+    createEffect(() => { read(); n++ })
+    return { pair: [read, () => write(undefined)], get n() { return n } }
+  }
+
+  it('a write notifies every covering watch, not just the nearest', () => {
+    const a = mkSig(), abc = mkSig(), whole = mkSig()
+    const obj = { a: { b: { c: 1 } }, other: 1 }
+    const proxy = localWatchProxy(obj, { a: a.pair, 'a.b.c': abc.pair, '': whole.pair })
+    flushSync()
+    const b = [a.n, abc.n, whole.n]
+    proxy.a.b.c = 99
+    flushSync()
+    // The exact-match early return used to stop here, leaving `$: a` unfired.
+    expect(a.n).toBeGreaterThan(b[0])
+    expect(abc.n).toBeGreaterThan(b[1])
+    expect(whole.n).toBeGreaterThan(b[2])
+  })
+
+  it('a sibling subtree stays silent', () => {
+    const a = mkSig(), whole = mkSig()
+    const obj = { a: { b: 1 }, other: 1 }
+    const proxy = localWatchProxy(obj, { a: a.pair, '': whole.pair })
+    flushSync()
+    const b = [a.n, whole.n]
+    proxy.other = 5
+    flushSync()
+    expect(a.n).toBe(b[0])
+    expect(whole.n).toBeGreaterThan(b[1])
+  })
+
+  it('a key containing a dot is one segment, not a path', () => {
+    const a = mkSig()
+    const obj = { 'a.real': 1, a: { real: 2 } }
+    const proxy = localWatchProxy(obj, { a: a.pair })
+    flushSync()
+    const before = a.n
+    proxy['a.real'] = 9
+    flushSync()
+    expect(a.n).toBe(before)
+  })
+
+  it('array mutators fire the watches covering the array', () => {
+    const items = mkSig()
+    const obj = { items: [1, 2] }
+    const proxy = localWatchProxy(obj, { items: items.pair })
+    flushSync()
+    const before = items.n
+    proxy.items.push(3)
+    flushSync()
+    expect(items.n).toBeGreaterThan(before)
+    expect(obj.items).toEqual([1, 2, 3])
+  })
+})
+
+describe('watchProxy — keeping raw state plain', () => {
+  const watch = (obj, path) => {
+    const [read] = watchPath(obj, path)
+    let n = 0
+    createEffect(() => { read(); n++ })
+    return { get n() { return n } }
+  }
+
+  it('does not write proxies into the raw object', () => {
+    const store = { items: [{ id: 1 }, { id: 2 }], selected: null }
+    const proxy = watchProxy(store)
+    proxy.selected = proxy.items[0]          // the ubiquitous "select a row"
+    expect(store.selected).toBe(store.items[0])
+    expect(store.items.indexOf(store.selected)).toBe(0)
+    expect(() => structuredClone(store)).not.toThrow()
+  })
+
+  it('strips proxies out of freshly built containers', () => {
+    const store = { items: [{ id: 1 }, { id: 2 }, { id: 3 }] }
+    const proxy = watchProxy(store)
+    proxy.items = proxy.items.filter((i) => i.id !== 2)   // elements read as proxies
+    expect(store.items).toHaveLength(2)
+    expect(() => structuredClone(store)).not.toThrow()
+    expect(store.items.some((i) => i.id === 2)).toBe(false)
+  })
+
+  it('passes Date / Map / Set through instead of throwing', () => {
+    const store = { when: new Date(0), tags: new Set(), byId: new Map() }
+    const proxy = watchProxy(store)
+    expect(() => proxy.when.getTime()).not.toThrow()
+    expect(proxy.when.getTime()).toBe(0)
+    expect(() => proxy.tags.add('x')).not.toThrow()
+    expect(store.tags.has('x')).toBe(true)
+    expect(() => proxy.byId.set('k', 1)).not.toThrow()
+    expect(store.byId.get('k')).toBe(1)
+  })
+
+  it('delete notifies the watches covering the key', () => {
+    const store = { prefs: { theme: 'dark', lang: 'en' } }
+    const proxy = watchProxy(store)
+    const whole = watch(store, ''), prefs = watch(store, 'prefs.theme')
+    flushSync()
+    const b = [whole.n, prefs.n]
+    delete proxy.prefs.theme
+    flushSync()
+    expect('theme' in store.prefs).toBe(false)
+    expect(whole.n).toBeGreaterThan(b[0])
+    expect(prefs.n).toBeGreaterThan(b[1])
+  })
+
+  it('deleting a key that was not there notifies nothing', () => {
+    const store = { a: 1 }
+    const proxy = watchProxy(store)
+    const whole = watch(store, '')
+    flushSync()
+    const before = whole.n
+    delete proxy.nope
+    flushSync()
+    expect(whole.n).toBe(before)
+  })
+
+  it('a getter tracks the properties it reads', () => {
+    const store = { first: 'Ada', last: 'L', get full() { return this.first + ' ' + this.last } }
+    const proxy = watchProxy(store)
+    watch(store, 'first')                    // watch the getter's INPUT
+    const seen = []
+    createEffect(() => { seen.push(proxy.full) })
+    flushSync()
+    proxy.first = 'Grace'
+    flushSync()
+    expect(seen).toEqual(['Ada L', 'Grace L'])
+  })
+})
+
 describe('[FIX 1] watchPath — whole-object / root sentinel', () => {
   it('watchPath("") fires when any top-level property is set', () => {
     const store = { name: 'Alice', age: 30 }
@@ -2018,6 +2476,48 @@ describe('[FIX 1] watchPath — whole-object / root sentinel', () => {
     proxy.prefs.theme = 'light'
     flushSync()
     expect(fired).toBeGreaterThan(1)
+  })
+
+  it('a watch covers its whole subtree at any depth, and no sibling', () => {
+    const store = { user: { preferences: { theme: 'dark' }, name: 'Ada' }, other: { z: 1 } }
+    const proxy = watchProxy(store)
+    const watch = (path) => {
+      const [read] = watchPath(store, path)
+      let n = 0
+      createEffect(() => { read(); n++ })
+      return { get n() { return n } }
+    }
+    const whole = watch(''), prefs = watch('user.preferences'), name = watch('user.name')
+    flushSync()
+    let b = [whole.n, prefs.n, name.n]
+
+    // Two levels below the `user.preferences` watch — the depth that the old
+    // single-parent hop silently missed.
+    proxy.user.preferences.theme = 'light'
+    flushSync()
+    expect(whole.n).toBeGreaterThan(b[0])
+    expect(prefs.n).toBeGreaterThan(b[1])
+    expect(name.n).toBe(b[2])          // sibling stays silent — the surgical part
+
+    b = [whole.n, prefs.n, name.n]
+    proxy.other.z = 2
+    flushSync()
+    expect(whole.n).toBeGreaterThan(b[0])
+    expect(prefs.n).toBe(b[1])
+    expect(name.n).toBe(b[2])
+  })
+
+  it('a key containing a dot is one segment, not a path', () => {
+    const store = { a: { real: 1 }, 'a.real': 'unrelated' }
+    const proxy = watchProxy(store)
+    const [read] = watchPath(store, 'a')
+    let fired = 0
+    createEffect(() => { read(); fired++ })
+    flushSync()
+    const before = fired
+    proxy['a.real'] = 'changed'
+    flushSync()
+    expect(fired).toBe(before)         // must NOT be mistaken for a.real
   })
 
   it('watchPath("") and watchPath("name") can both be active on the same object', () => {

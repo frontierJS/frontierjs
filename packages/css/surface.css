@@ -1,57 +1,73 @@
 /*
- * utilities/surface.css
+ * surface.css
  *
  * The block visual base. Every block primitive that wants the surface
- * treatment — card, alert, toast, dialog, popover — gets it via the
- * selector groups below. Adding a new composite = add its class name
- * to the :where() list.
+ * treatment — card, alert, toast, dialog, popover, drawer — gets it from
+ * the single rule below. Adding a composite = add its name to the
+ * :where() list, once. (It used to mean editing five selector lists.)
+ *
+ * ── The tone recipe carries no tone names ───────────────────────────
+ *
+ * tones.css sets --bg-mix. Each --surface-tint-* below is computed from
+ * it, so when no tone class is present --bg-mix is guaranteed-invalid,
+ * the color-mix() is invalid at computed-value time, and the tint
+ * variable falls back to the untoned default on the line below.
+ *
+ * So every tone in tones.css works on every surface composite for free —
+ * including .secondary and .muted, which the old
+ * `:is(.primary, .info, .success, .warning, .danger)` list silently
+ * skipped. Adding a tone is now one line in tones.css and nothing here,
+ * which is what the docs always claimed.
+ *
+ * A composite opts out of tinting by resetting the tint variables to
+ * `initial`, which re-fires the fallbacks (dialogs.css does this to route
+ * its tone to the header instead of the modal body).
  *
  * Sub-regions (.surface-header, .surface-body, .surface-footer) are
  * shared too. Composites can adjust their bleed/padding via descendant
  * rules in their own file.
  */
 
-/* ── Base ─────────────────────────────────────────────────────── */
 :where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer) {
-  --surface-bg:     var(--surface);
-  --surface-color:  var(--ink);
-  --surface-border: var(--rule);
+  --surface-tint-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
+  --surface-tint-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
+  --surface-tint-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
 
+  --surface-bg:     var(--surface-tint-bg,     var(--surface));
+  --surface-border: var(--surface-tint-border, var(--rule));
+  --surface-color:  var(--surface-tint-color,  var(--ink));
+
+  display:       block;
   background:    var(--surface-bg);
   color:         var(--surface-color);
   border:        1px solid var(--surface-border);
   border-radius: var(--card-radius);
   font-family:   var(--font-primary);
   transition:    background 120ms, border-color 120ms;
-}
 
-/* ── Variants — flip the surface treatment ────────────────────── */
-:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer).raised {
-  --surface-border: transparent;
-  box-shadow:       var(--shadow-md);
-}
-
-:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer).outlined {
-  --surface-bg:     transparent;
-  --surface-border: var(--rule-strong);
-  box-shadow:       none;
-}
-
-:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer).ghost {
-  --surface-bg:     transparent;
-  --surface-border: transparent;
-  box-shadow:       none;
-}
-
-/*
- * ── Tones — recipe derives surface from --bg-mix ───────────────
- * tones.css sets --bg-mix; this rule consumes it across every composite.
- * Adding a new tonal-derived composite = add its class to this list.
- */
-:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer):is(.primary, .info, .success, .warning, .danger) {
-  --surface-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
-  --surface-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
-  --surface-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
+  /*
+   * ── Variants ────────────────────────────────────────────────────
+   * These sit after the tone recipe, so a variant now beats the tint on
+   * the properties it owns. That is a change: previously .outlined and
+   * .ghost were declared before the tone rule and lost to it, so a toned
+   * .outlined card still drew a tinted background. Each variant keeps
+   * the tint on the parts it does render.
+   */
+  &.raised {
+    --surface-bg:     var(--surface-tint-bg, var(--surface-raised));
+    --surface-border: transparent;
+    box-shadow:       var(--shadow-md);
+  }
+  &.outlined {
+    --surface-bg:     transparent;
+    --surface-border: var(--surface-tint-border, var(--rule-strong));
+    box-shadow:       none;
+  }
+  &.ghost {
+    --surface-bg:     transparent;
+    --surface-border: transparent;
+    box-shadow:       none;
+  }
 }
 
 /* ── Shared sub-regions ───────────────────────────────────────── */

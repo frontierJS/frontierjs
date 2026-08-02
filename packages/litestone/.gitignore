@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# SQLite databases + WAL/SHM sidecars (runtime artifacts)
+*.db
+*.db-wal
+*.db-shm
+
+# Litestone runtime output dirs — ROOT-ANCHORED so they never match
+# source dirs like src/storage/ (the FileStorage plugin source).
+/storage/
+/audit/
+/logs/
+
+*.log
+.DS_Store
+.env
+.env.*

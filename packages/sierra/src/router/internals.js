@@ -168,10 +168,13 @@ function _walkTreeForLayouts(node, parentLayout, components) {
 /**
  * Get the ordered layout chain for a node (outermost first).
  *
+ * Exported so the router can load exactly the layouts a route needs before
+ * committing the navigation, instead of loading every layout in the app at boot.
+ *
  * @param {object} routeNode
  * @returns {string[]} — array of layout file paths, root first
  */
-function getLayoutChainForNode(routeNode) {
+export function getLayoutChainForNode(routeNode) {
   if (!routeNode.layout) return []  // reset: true — no layouts
 
   const chain = []
@@ -204,6 +207,69 @@ function getComponentByFile(filePath) {
  */
 export function registerFileComponent(filePath, factory) {
   _fileToComponent.set(filePath, factory)
+}
+
+/** Has a component already been registered for this file path? */
+export function hasFileComponent(filePath) {
+  return _fileToComponent.has(filePath)
+}
+
+/**
+ * Load the layout components a route needs, if not already loaded.
+ *
+ * Lives here rather than in the router because prefetch.js needs it too and
+ * cannot import from router/index.js (which imports prefetch.js).
+ *
+ * Layouts used to be loaded eagerly for the whole app at initRouter, so every
+ * layout chunk sat on the critical path regardless of route — including for
+ * `reset: true` routes that render no layout. Loading per-route works because
+ * the router awaits this before committing activeRoute, so resolveChain() never
+ * sees a chain entry with component === undefined.
+ *
+ * Failures are reported and skipped rather than thrown: a broken layout should
+ * not make a route unreachable, and resolveChain() already omits missing
+ * entries.
+ *
+ * @param {object} node                  route node
+ * @param {Record<string, Function>} layouts  file path → () => import(...)
+ * @param {(type: string, ctx: string, err: Error) => void} [onError]
+ */
+export async function loadLayoutChain(node, layouts, onError) {
+  if (!node) return
+  const chain = getLayoutChainForNode(node)
+  if (chain.length === 0) return   // reset: true, or no layouts in the tree
+
+  await Promise.all(chain.map(async (filePath) => {
+    if (_fileToComponent.has(filePath)) return
+    const factory = layouts?.[filePath]
+    if (!factory) return
+    try {
+      const mod = await factory()
+      if (mod?.default) registerFileComponent(filePath, mod.default)
+    } catch (err) {
+      onError?.('layout', filePath, err)
+    }
+  }))
+}
+
+/**
+ * Drop all module-level registries.
+ *
+ * Test seam, and a note on production behaviour: _fileToComponent,
+ * _layoutParents, _chainCache and _entryCache all live at module scope for the
+ * lifetime of the module. That is fine for a single app instance — which is the
+ * only case in a browser — but it means calling initRouter() twice in one
+ * process (tests, SSR, a re-mounted micro-frontend) inherits the previous
+ * tree's registrations. buildLayoutMap's `if (!_layoutParents.has(...))` guard
+ * makes that stale rather than merged.
+ */
+export function _resetInternals() {
+  _loadedModules.clear()
+  _loadedComponents.clear()
+  _fileToComponent.clear()
+  _layoutParents.clear()
+  _chainCache.clear()
+  _entryCache.clear()
 }
 
 /**

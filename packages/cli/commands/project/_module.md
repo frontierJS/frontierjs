@@ -33,7 +33,7 @@ const scanFiles = (dir, ...exts) => {
 
 // ─── extractServiceMeta ───────────────────────────────────────────────────────
 // Reads a .service.ts file and extracts name, model, hooks, custom methods.
-// Covers createLitestoneService({ hooks: { before: { ... }, after: { ... } } })
+// Covers createService({ hooks: { before: { ... }, after: { ... } } })
 // and the chained svc.hooks({ ... }) form.
 
 const extractServiceMeta = (src, filename) => {
@@ -65,7 +65,7 @@ const extractServiceMeta = (src, filename) => {
   // Custom methods: any function key not in the CRUD reserved set
   const RESERVED = new Set([
     'find','get','create','patch','remove','restore',
-    'createLitestoneService','createService','hooks',
+    'createService','hooks',
   ])
   const customRe = /(?:async\s+)?(\w+)\s*(?:\([^)]*ctx[^)]*\)|:\s*async\s*(?:\([^)]*ctx[^)]*\)))/g
   const customMethods = []

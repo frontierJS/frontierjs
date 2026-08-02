@@ -13,6 +13,31 @@ export interface SessionContext {
   role?:        string
   scopes?:      string[]
   authMethod:   'session' | 'apiKey' | 'oauth' | 'created' | 'verified'
+
+  // ── Standing, for @@gate ──────────────────────────────────────────────
+  // Read by sessionGateLevel() (core/litestone.ts) to grade a caller on
+  // Litestone's 0–7 scale. All optional, and the distinction between
+  // `undefined` and `null` is the whole design:
+  //
+  //   undefined → the app does not model this stage. Not an objection.
+  //   null      → the app models it and this user has not reached it.
+  //
+  // So an app with no verification flow leaves verifiedAt unset and its
+  // sessions grade as USER; an app that has one sets it to null until the
+  // user verifies, and those sessions grade as VISITOR. Absence never means
+  // "not yet" — otherwise every app would have to restate a lifecycle it
+  // does not have in order to make @@gate usable at all.
+
+  /** When the user verified (email, phone, …). null = modelled, not verified. */
+  verifiedAt?:     Date | string | null
+  /** When the account became active (plan chosen, invite accepted, …). */
+  activatedAt?:    Date | string | null
+  /** App-level administrator → ADMINISTRATOR (5). */
+  isAdmin?:        boolean
+  /** Account/tenant owner → OWNER (6). */
+  isOwner?:        boolean
+  /** Global super-admin, a real revocable human → SYSADMIN (7). */
+  isSystemAdmin?:  boolean
 }
 
 // ─── Full auth interface ──────────────────────────────────────────────────

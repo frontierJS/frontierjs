@@ -29,6 +29,7 @@
 - [audit-logging.md](audit-logging.md) — @log, @@log, logger driver, onLog callback
 - [multi-database.md](multi-database.md) — database blocks, drivers (sqlite/jsonl/logger), @@db, @@external
 - [sequences.md](sequences.md) — @sequence per-scope auto-increment
+- [edge-fields.md](edge-fields.md) — @edge / @scoped: per-relationship & per-viewer values, scopedBy binder, eject-to-model
 
 ## Infrastructure
 - [performance.md](performance.md) — WAL, dual connections, select:false, indexes, fast paths

@@ -5,18 +5,51 @@ import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSy
 import { resolve, relative, join, dirname }       from 'path'
 import { Database }                                from 'bun:sqlite'
 
-// All imports from sibling source files MUST use import.meta.dir — never bare
-// relative paths. Bare relative imports resolve from the symlink location
-// (node_modules/.bin/) when installed via bun link, not from the real file.
-const D = import.meta.dir
+// Imports of sibling source files MUST use literal relative specifiers — never
+// `import.meta.dir + path`. Two reasons:
+//   1. Computed specifiers are invisible to the bundler, so `bun build --compile`
+//      emits a binary that resolves them against /$bunfs/root at runtime and dies
+//      with "Cannot find module". Literal specifiers get embedded.
+//   2. A wrong computed path fails only when that command runs; a wrong literal
+//      one fails at build time.
+// Bun resolves symlinks before resolving relative imports, so these still work
+// when the CLI is reached through node_modules/.bin/ under `bun link`.
+//
+// import.meta.dir remains correct for locating files NEXT TO the source at
+// runtime — but see IS_COMPILED: inside a standalone binary there is no such
+// directory, so on-disk assets must be embedded instead (see studio.html).
+import { parse }                                       from '../core/parser.js'
+import { buildPristine, introspect, diffSchemas,
+         generateMigrationSQL, summariseDiff }         from '../core/migrate.js'
+import { create, apply, status, verify,
+         createForDatabase, listMigrationFiles,
+         appliedMigrations }                           from '../core/migrations.js'
+import { modelToAccessor }                             from '../core/ddl.js'
 
-const { parse }                                       = await import(D + '/../core/parser.js')
-const { buildPristine, introspect, diffSchemas,
-        generateMigrationSQL, summariseDiff }         = await import(D + '/../core/migrate.js')
-const { create, apply, status, verify,
-        createForDatabase, listMigrationFiles,
-        appliedMigrations }                           = await import(D + '/../core/migrations.js')
-const { modelToAccessor }                             = await import(D + '/../core/ddl.js')
+// Assets that must survive `bun build --compile`. A text import is embedded in
+// the binary; readFileSync(import.meta.dir + ...) is not.
+import STUDIO_HTML       from './studio.html'      with { type: 'text' }
+import SEED_CALENDAR_SQL from './seeds/calendar.sql' with { type: 'text' }
+
+// Version for `--version`. An import, not a readFileSync: the path has to work
+// from source, from an installed package (reached via a node_modules/.bin
+// symlink), and from inside a compiled binary where there is no package.json
+// on disk at all.
+import { version as PKG_VERSION } from '../../package.json' with { type: 'json' }
+
+// True when running from a standalone binary. Stamped in by scripts/build-binary.js
+// via `--define process.env.LITESTONE_COMPILED="1"`; undefined when run from source.
+//
+// Do NOT sniff import.meta.dir for this. It reads /$bunfs/root in a plain
+// --compile binary, but `--bytecode` bakes in the BUILD MACHINE's absolute source
+// path instead — so a path-based check silently returns false in exactly the build
+// we ship, and any import.meta.dir path resolution points at a directory that does
+// not exist on the user's machine. Verified on Bun 1.3.11.
+const IS_COMPILED = process.env.LITESTONE_COMPILED === '1'
+
+// Seeds that ship inside the package, as name → SQL text. Embedded rather than
+// read from src/tools/seeds/ so they exist in a compiled binary too.
+const BUILTIN_SEEDS = { calendar: SEED_CALENDAR_SQL }
 
 // ─── Colours ──────────────────────────────────────────────────────────────────
 
@@ -173,6 +206,7 @@ const HELP = `
     ${cyan('litestone introspect')} <db>              reverse-engineer db → schema.lite
     ${cyan('litestone diagram')}                    ER diagram (opens in studio)
     ${cyan('litestone optimize')} [table]            optimize FTS5 indexes (all or one table)
+    ${cyan('litestone edge eject')} <Model>.<field>  promote an @edge/@scoped field to a real model [--apply]
     ${cyan('litestone backup')} [dest]               backup all databases (SQLite + JSONL/logger)
     ${cyan('litestone replicate')} [config.js]       stream WAL to S3/R2 via litestream
     ${cyan('litestone rsync')} <dest>              sync all SQLite DBs to a destination via sqlite3_rsync
@@ -575,7 +609,7 @@ async function cmdDryRun(label, cfg) {
 
       const pristineDb = new Database(':memory:')
       const pristine   = multi
-        ? (await import(import.meta.dir + '/../core/migrate.js')).buildPristineForDatabase(pristineDb, parseResult, name)
+        ? (await import('../core/migrate.js')).buildPristineForDatabase(pristineDb, parseResult, name)
         : buildPristine(pristineDb, parseResult)
       pristineDb.close()
 
@@ -625,7 +659,7 @@ async function cmdApply(cfg) {
         .some(f => f.endsWith('.js') && !new Set(appliedMigrations(rawDb).map(m => m.name)).has(f))
       let lsClient = null
       if (hasPendingJs) {
-        const { createClient } = await import(import.meta.dir + '/../core/client.js')
+        const { createClient } = await import('../core/client.js')
         lsClient = await createClient({ parsed: parseResult, db: rawDb, encryptionKey: getEncKey() })
       }
 
@@ -782,8 +816,18 @@ async function cmdVerify(cfg) {
 async function cmdRepl(cfg) {
   header('litestone repl')
 
+  // The REPL is the one command that cannot run from a compiled binary: it
+  // drives `bun repl` as a subprocess and feeds it a temp file that imports
+  // core/client.js by absolute path. Inside a binary those paths are /$bunfs
+  // entries that a separate bun process cannot see. Fail loudly rather than
+  // emitting a confusing "Cannot find module /$bunfs/root/..." from the child.
+  if (IS_COMPILED)
+    fatal(`${cyan('litestone repl')} is not available in the standalone binary.\n` +
+          `     It drives a separate ${cyan('bun repl')} process that needs the package on disk.\n` +
+          `     Run it from an installed package instead: ${cyan('bunx @frontierjs/litestone repl')}`)
+
   const parseResult = loadSchema(cfg.schema)
-  const { isSoftDelete } = await import(import.meta.dir + '/../core/ddl.js')
+  const { isSoftDelete } = await import('../core/ddl.js')
 
   // Model names are PascalCase singular; accessors on the client are camelCase.
   const models    = parseResult.schema.models.map(m => m.name)
@@ -791,6 +835,8 @@ async function cmdRepl(cfg) {
   const softTbls  = parseResult.schema.models.filter(m => isSoftDelete(m)).map(m => modelToAccessor(m.name))
   const enums     = parseResult.schema.enums.map(e => e.name)
 
+  // import.meta.dir is only trustworthy here because IS_COMPILED gated us out
+  // above — under `--bytecode` it resolves to the build machine's source path.
   const replServer = resolve(import.meta.dir, 'repl-server.js')  // same tools/ dir
 
   const dbDisplay = parseResult.schema.databases.length
@@ -859,7 +905,7 @@ async function cmdRepl(cfg) {
 // ─── Tenant management ────────────────────────────────────────────────────────
 
 async function cmdTenant(subCmd, args, cfg) {
-  const { createTenantRegistry } = await import(import.meta.dir + '/../tenant.js')
+  const { createTenantRegistry } = await import('../tenant.js')
 
   if (!cfg.schema) fatal('No schema found. Use --schema ./db/schema.lite')
 
@@ -1038,12 +1084,12 @@ function parsePlanDetail(detail) {
 async function cmdStudio(cfg) {
   header('litestone studio')
 
-  const { isSoftDelete }  = await import(import.meta.dir + '/../core/ddl.js')
+  const { isSoftDelete }  = await import('../core/ddl.js')
   const { statSync, readdirSync } = await import('fs')
-  const { createClient }  = await import(import.meta.dir + '/../core/client.js')
+  const { createClient }  = await import('../core/client.js')
   const { status: migStatus, apply: migApply, autoMigrate: migAuto,
-          create: migCreate, createForDatabase: migCreateForDb } = await import(import.meta.dir + '/../core/migrations.js')
-  const { diffSchemas, buildPristine, generateMigrationSQL, summariseDiff } = await import(import.meta.dir + '/../core/migrate.js')
+          create: migCreate, createForDatabase: migCreateForDb } = await import('../core/migrations.js')
+  const { diffSchemas, buildPristine, generateMigrationSQL, summariseDiff } = await import('../core/migrate.js')
 
   const port        = parseInt(getFlag('port') ?? '5001')
   const parseResult = loadSchema(cfg.schema)
@@ -1076,7 +1122,7 @@ async function cmdStudio(cfg) {
   let   _tenantRegistry = null
   async function getRegistry() {
     if (!_tenantRegistry) {
-      const { createTenantRegistry } = await import(import.meta.dir + '/../tenant.js')
+      const { createTenantRegistry } = await import('../tenant.js')
       _tenantRegistry = await createTenantRegistry({
         parsed:        parseResult,
         path:          resolve(cfg.schema),
@@ -1093,8 +1139,7 @@ async function cmdStudio(cfg) {
   const softDeleteMap = {}
   for (const model of activeDb.$schema.models)
     softDeleteMap[model.name] = isSoftDelete(model)
-  const htmlPath    = `${import.meta.dir}/studio.html`
-  const html        = readFileSync(htmlPath, 'utf8')
+  const html        = STUDIO_HTML
 
   // ── Persistent query log ───────────────────────────────────────────────────
   // Ring buffer fed by $tapQuery — captures every ORM operation Studio's
@@ -1537,7 +1582,7 @@ async function cmdStudio(cfg) {
           for (const [dbName, handle] of Object.entries(activeRawDbs)) {
             if (!handle) continue
             try {
-              const { buildPristineForDatabase } = await import(import.meta.dir + '/../core/migrate.js')
+              const { buildPristineForDatabase } = await import('../core/migrate.js')
               const pristineDb  = new Database(':memory:')
               const pristine    = buildPristineForDatabase(pristineDb, parseResult, dbName)
               pristineDb.close()
@@ -1629,7 +1674,7 @@ async function cmdStudio(cfg) {
           if (typeof source !== 'string') return json({ error: 'source required' }, 400)
           const parsed = parse(source)
           if (!parsed.valid) return json({ valid: false, errors: parsed.errors, diffs: {} })
-          const { buildPristineForDatabase } = await import(import.meta.dir + '/../core/migrate.js')
+          const { buildPristineForDatabase } = await import('../core/migrate.js')
           const diffs = {}
           for (const [dbName, handle] of Object.entries(rawDbs)) {
             if (!handle) continue
@@ -2101,7 +2146,7 @@ async function cmdStudio(cfg) {
           if (!existsSync(absDb)) return json({ error: `DB not found: ${absDb}` }, 404)
           try {
             const { Database } = await import('bun:sqlite')
-            const { introspectSQL } = await import(import.meta.dir + '/transform/framework.js')
+            const { introspectSQL } = await import('../transform/framework.js')
             const tmpDb = new Database(absDb, { readonly: true })
             const rawSchema = introspectSQL(tmpDb)
             const source = {}
@@ -2145,8 +2190,8 @@ async function cmdStudio(cfg) {
           if (!existsSync(absDb)) return json({ error: `DB not found: ${absDb}` }, 404)
           if (!steps?.length) return json({ error: 'No steps provided' }, 400)
           try {
-            const { $, execute } = await import(import.meta.dir + '/transform/framework.js')
-            const { run }        = await import(import.meta.dir + '/transform/runner.js')
+            const { $, execute } = await import('../transform/framework.js')
+            const { run }        = await import('../transform/runner.js')
 
             // Build pipeline from serialized steps
             const pipeline = steps.map(s => {
@@ -2325,7 +2370,7 @@ async function cmdStudio(cfg) {
 async function cmdTypes(outArg, cfg) {
   header('litestone types')
 
-  const { generateTypeScript } = await import(import.meta.dir + '/typegen.js')
+  const { generateTypeScript } = await import('./typegen.js')
   // statSync already imported at top level
   const parseResult = loadSchema(cfg.schema)
 
@@ -2370,7 +2415,7 @@ async function cmdTypes(outArg, cfg) {
 async function cmdJsonSchema(cfg) {
   header('litestone jsonschema')
 
-  const { generateJsonSchema } = await import(import.meta.dir + '/../jsonschema.js')
+  const { generateJsonSchema } = await import('../jsonschema.js')
   const parseResult = loadSchema(cfg.schema)
 
   const format            = getFlag('format') ?? 'definitions'
@@ -2509,7 +2554,7 @@ async function cmdDoctor() {
           } : null
         )
       } else {
-        const { parse: parseSchema } = await import(import.meta.dir + '/../core/parser.js')
+        const { parse: parseSchema } = await import('../core/parser.js')
         const { readFileSync: rfs } = await import('fs')
         const result = parseSchema(rfs(schemaPath, 'utf8'))
         if (!result.valid) {
@@ -2547,8 +2592,8 @@ async function cmdDoctor() {
           // Build list of SQLite databases to check:
           // multi-DB schemas declare them in database blocks; single-DB uses cfg.db
           const { Database: DB } = await import('bun:sqlite')
-          const { status: migStatus } = await import(import.meta.dir + '/../core/migrations.js')
-          const { buildPristineForDatabase, diffSchemas, introspect } = await import(import.meta.dir + '/../core/migrate.js')
+          const { status: migStatus } = await import('../core/migrations.js')
+          const { buildPristineForDatabase, diffSchemas, introspect } = await import('../core/migrate.js')
           const migrationsBase = resolve(getFlag('migrations') ?? cfg.migrations ?? './migrations')
 
           const sqliteDbs = result.schema.databases.filter(d => !d.driver || d.driver === 'sqlite')
@@ -2637,7 +2682,7 @@ async function cmdDoctor() {
                 // Performance checks against the live DB. All advisory.
                 const perfLabel = 'PERF' + (dbsToCheck.length > 1 ? `(${label})` : '')
                 try {
-                  const { modelToTableName } = await import(import.meta.dir + '/../core/ddl.js')
+                  const { modelToTableName } = await import('../core/ddl.js')
                   const resolveTableName = (m) => {
                     const mapAttr = m.attributes?.find(a => a.kind === 'map')
                     if (mapAttr?.name) return mapAttr.name
@@ -2882,7 +2927,7 @@ async function cmdIntrospect(dbArg, cfg) {
   const noCamel  = flag('no-camel')
 
   const { Database: DB } = await import('bun:sqlite')
-  const { generateLiteSchema } = await import(import.meta.dir + '/introspect.js')
+  const { generateLiteSchema } = await import('./introspect.js')
 
   const db = new DB(abs, { readonly: true })
   const liteSchema = generateLiteSchema(db, { camelCase: !noCamel })
@@ -2921,8 +2966,8 @@ async function cmdSeed(seederArg, cfg) {
     fatal(`Seeder not found: ${absSeeder}\n     Create a seeder file or set ${cyan('seeder')} in litestone.config.js`)
 
   const parseResult = loadSchema(cfg.schema)
-  const { createClient } = await import(import.meta.dir + '/../core/client.js')
-  const { runSeeder }    = await import(import.meta.dir + '/seeder.js')
+  const { createClient } = await import('../core/client.js')
+  const { runSeeder }    = await import('../seeder.js')
 
   const db = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
 
@@ -2978,9 +3023,6 @@ async function cmdSeedRun(seedName, cfg) {
   const { Database } = await import('bun:sqlite')
   const { readdirSync, readFileSync } = await import('fs')
 
-  // Bundled seeds dir — ships with the package.
-  const builtinSeedsDir = resolve(import.meta.dir, 'seeds')
-
   // User seeds dir — explicit config wins, otherwise ./seeds/.
   const userSeedsDir = cfg.seedsDir
     ?? (existsSync(resolve('./seeds')) ? resolve('./seeds') : null)
@@ -2988,19 +3030,20 @@ async function cmdSeedRun(seedName, cfg) {
   const dbPath = getFlag('db') ? resolve(getFlag('db')) : cfg.db
   const force  = flag('force')
 
-  // ── Catalogue helper — returns Map<name, { source, file }> ─────────────
-  // User seeds with the same name as a built-in seed override the built-in
-  // (last-write-wins on the Map).
+  // ── Catalogue helper — returns Map<name, { source, file, sql, display }> ───
+  // Built-ins come from BUILTIN_SEEDS (embedded at build time, so they exist in
+  // a compiled binary); user seeds are read from disk. User seeds with the same
+  // name as a built-in override it (last-write-wins on the Map).
   const catalogue = () => {
     const out = new Map()
-    for (const dir of [builtinSeedsDir, userSeedsDir]) {
-      if (!dir || !existsSync(dir)) continue
-      for (const f of readdirSync(dir)) {
+    for (const [name, sql] of Object.entries(BUILTIN_SEEDS))
+      out.set(name, { source: 'builtin', file: null, sql, display: '(bundled)' })
+    if (userSeedsDir && existsSync(userSeedsDir)) {
+      for (const f of readdirSync(userSeedsDir)) {
         if (!f.endsWith('.sql') && !f.endsWith('.js')) continue
-        const name = f.replace(/\.(sql|js)$/, '')
-        out.set(name, {
-          source: dir === builtinSeedsDir ? 'builtin' : 'user',
-          file:   resolve(dir, f),
+        const file = resolve(userSeedsDir, f)
+        out.set(f.replace(/\.(sql|js)$/, ''), {
+          source: 'user', file, sql: null, display: rel(file),
         })
       }
     }
@@ -3027,10 +3070,10 @@ async function cmdSeedRun(seedName, cfg) {
     }
 
     console.log(`  ${dim('Available seeds:')}\n`)
-    for (const [name, { source, file }] of [...seeds.entries()].sort()) {
+    for (const [name, { source, display }] of [...seeds.entries()].sort()) {
       const status = applied.has(name) ? green('✓ applied') : dim('· pending')
       const tag    = source === 'builtin' ? dim('(built-in)') : dim('(user)')
-      console.log(`    ${status}  ${name.padEnd(20)} ${tag}  ${dim(rel(file))}`)
+      console.log(`    ${status}  ${name.padEnd(20)} ${tag}  ${dim(display)}`)
     }
     console.log()
     return
@@ -3049,10 +3092,10 @@ async function cmdSeedRun(seedName, cfg) {
   }
 
   const seedFile = seedRef.file
-  const isJs     = seedFile.endsWith('.js')
+  const isJs     = seedFile?.endsWith('.js') ?? false
 
   console.log(`  ${dim('Seed:')}     ${cyan(seedName)} ${dim(`(${seedRef.source})`)}`)
-  console.log(`  ${dim('File:')}     ${rel(seedFile)}`)
+  console.log(`  ${dim('File:')}     ${seedRef.display}`)
   console.log(`  ${dim('Database:')} ${rel(dbPath)}\n`)
 
   const raw = new Database(dbPath)
@@ -3080,7 +3123,7 @@ async function cmdSeedRun(seedName, cfg) {
       const parseResult = cfg.schema ? loadSchema(cfg.schema) : null
       if (!parseResult)
         fatal(`No schema found. Set ${cyan('schema')} in litestone.config.js to use JS seeds.`)
-      const { createClient } = await import(import.meta.dir + '/../core/client.js')
+      const { createClient } = await import('../core/client.js')
       const db = await createClient({ parsed: parseResult, db: dbPath, encryptionKey: getEncKey() })
       const mod = await import(`file://${seedFile}`)
       const fn  = mod.default ?? Object.values(mod).find(v => typeof v === 'function')
@@ -3091,8 +3134,8 @@ async function cmdSeedRun(seedName, cfg) {
         db.$close()
       }
     } else {
-      // SQL seed — execute directly
-      const sql = readFileSync(seedFile, 'utf8')
+      // SQL seed — embedded text for built-ins, on-disk for user seeds
+      const sql = seedRef.sql ?? readFileSync(seedFile, 'utf8')
       // Split on semicolons but keep multi-statement CTEs intact
       // Use SQLite's exec() which handles multi-statement SQL natively
       raw.exec(sql)
@@ -3119,10 +3162,34 @@ async function cmdSeedRun(seedName, cfg) {
 
 
 
+async function cmdEdgeEject(target, cfg, apply) {
+  header('litestone edge eject')
+  const parseResult = loadSchema(cfg.schema)
+  const { ejectEdge, applyEject, formatEjectPlan } = await import('./eject.js')
+  let plan
+  try {
+    plan = ejectEdge(parseResult.schema, target, { pluralize: cfg.pluralize })
+  } catch (e) {
+    fatal(e.message)
+  }
+  console.log(formatEjectPlan(plan))
+  if (apply) {
+    const rawDb = openDb(cfg.db)
+    try {
+      applyEject(rawDb, plan)
+      console.log(`\n  ${green('✓')}  renamed ${plan.oldTable} → ${plan.newTable} (data preserved)`)
+    } finally {
+      rawDb.close()
+    }
+  } else {
+    console.log(`\n  ${dim('dry run — pass --apply to run the rename in step 4')}`)
+  }
+}
+
 async function cmdOptimize(targetTable, cfg) {
   header('litestone optimize')
 
-  const { createClient } = await import(import.meta.dir + '/../core/client.js')
+  const { createClient } = await import('../core/client.js')
   const parseResult = loadSchema(cfg.schema)
   const db = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
 
@@ -3174,7 +3241,7 @@ async function cmdOptimize(targetTable, cfg) {
 async function cmdBackup(dest, cfg) {
   header('litestone backup')
 
-  const { createClient }                    = await import(import.meta.dir + '/../core/client.js')
+  const { createClient }                    = await import('../core/client.js')
   const { mkdirSync, cpSync, readdirSync }  = await import('fs')
 
   const parseResult = loadSchema(cfg.schema)
@@ -3311,8 +3378,8 @@ async function cmdBackup(dest, cfg) {
 async function cmdDbPush(cfg) {
   header('litestone db push')
 
-  const { autoMigrate }  = await import(import.meta.dir + '/../core/migrations.js')
-  const { createClient } = await import(import.meta.dir + '/../core/client.js')
+  const { autoMigrate }  = await import('../core/migrations.js')
+  const { createClient } = await import('../core/client.js')
 
   const parseResult = loadSchema(cfg.schema)
   const schema      = parseResult.schema
@@ -3496,8 +3563,7 @@ async function main() {
   const [cmd, sub, ...rest] = positional
 
   if (flag('version') || cmd === 'version' || flag('v')) {
-    const { version } = JSON.parse(readFileSync(D + '/../package.json', 'utf8'))
-    console.log(`litestone v${version}`)
+    console.log(`litestone v${PKG_VERSION}`)
     return
   }
 
@@ -3524,6 +3590,15 @@ async function main() {
     return
   }
 
+  if (cmd === 'edge') {
+    if (sub !== 'eject') fatal(`Unknown edge subcommand "${sub ?? ''}". Use: eject`)
+    const target = rest.find(a => !a.startsWith('--'))
+    if (!target) fatal('Usage: litestone edge eject <Model>.<field> [--apply]')
+    const cfg = await loadConfig()
+    await cmdEdgeEject(target, cfg, flag('apply'))
+    return
+  }
+
   if (cmd === 'backup') {
     const cfg = await loadConfig()
     await cmdBackup(sub ?? null, cfg)
@@ -3538,7 +3613,7 @@ async function main() {
 
   if (cmd === 'replicate') {
     const configPath = sub ?? './litestone.config.js'
-    const { replicate } = await import(import.meta.dir + '/replicate.js')
+    const { replicate } = await import('./replicate.js')
     replicate(configPath, { verbose: true }).catch(err => {
       console.error(`\n  ${red('✗')}  ${err.message}\n`)
       if (flag('debug')) console.error(err.stack)
@@ -3637,8 +3712,8 @@ async function main() {
       }
     }
 
-    const { preview, execute } = await import(import.meta.dir + '/transform/framework.js')
-    const { run }              = await import(import.meta.dir + '/transform/runner.js')
+    const { preview, execute } = await import('../transform/framework.js')
+    const { run }              = await import('../transform/runner.js')
 
     if (previewMode) {
       await preview(configPath)

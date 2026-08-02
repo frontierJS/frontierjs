@@ -266,7 +266,7 @@ export function generateEnvExample(spec: EnvSpec): string {
       lines.push(`# ${field.description}`)
     }
 
-    const required = field.required ? ' (required)' : ''
+    const required = field.required ? 'required' : ''
     const typeNote = field.type && field.type !== 'string' ? ` [${field.type}]` : ''
     const meta     = `${required}${typeNote}`.trim()
     if (meta) lines.push(`# ${meta}`)

@@ -1,5 +1,5 @@
 /*
- * utilities/feed.css
+ * feed.css
  * Chronological event stream — timestamped entries plotted on a timeline.
  *
  * Markup (per the Feed vocab term + Principle 2):
@@ -38,12 +38,6 @@
   grid-template-columns: 0.625rem 1fr;
   gap:                   0.75rem;
   position:              relative;
-  /* article reset — feed-item is an <article> but shouldn't inherit
-     surface treatment; it's a layout grid, not a surface. */
-  background:            transparent;
-  border:                none;
-  border-radius:         0;
-  padding:               0;
 }
 
 .feed-dot {

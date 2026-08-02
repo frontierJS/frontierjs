@@ -1,7 +1,10 @@
 /// schema.lite — Litestone example schema
 /// Demonstrates: multi-DB, JSONL, logger driver, row-level policies,
 ///               field-level @allow, enums, functions, generated columns,
-///               soft delete, FTS5, relations, GatePlugin
+///               soft delete, FTS5, relations, gates
+///
+/// Model names are PascalCase and singular — always. The client accessor is
+/// the camelCase of the model name: model Lead → db.lead.
 ///
 /// Run:  bun seed.ts          — seed all databases
 ///       bun seed.ts --studio — seed + open studio
@@ -73,17 +76,17 @@ function discounted(price: Int, pct: Float): Int {
 
 // ─── Accounts ─────────────────────────────────────────────────────────────────
 
-model accounts {
+model Account {
   id        Int  @id
   name      String
-  slug      String     @slug(name)
+  slug      String   @slug(name)
   plan      Plan     @default(starter)
   meta      Json?
   createdAt DateTime @default(now())
 
   @@db(main)
   @@index([slug])
-  @@gate("2.5.5.6")
+  @@gate(read: READER, write: ADMINISTRATOR, delete: OWNER)
   @@allow('read', auth() != null)
 }
 
@@ -94,18 +97,18 @@ model accounts {
 //   @secret            — encrypted + guarded + audit logged (via @log(audit))
 //   @@log(audit)       — model-level audit log: create/update/delete
 
-model users {
+model User {
   id          Int   @id
-  account     accounts  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId   Int
-  email       String      @unique @email @lower
-  firstName   String?     @trim
-  lastName    String?     @trim
-  displayName String      @fullName(firstName, lastName)
-  initials    String      @initials(firstName, lastName)
+  email       String    @unique @email @lower
+  firstName   String?   @trim
+  lastName    String?   @trim
+  displayName String    @fullName(firstName, lastName)
+  initials    String    @initials(firstName, lastName)
   role        Role      @default(member)
-  salary      Float?     @allow('read', auth().role == 'admin')
-  apiKey      String?     @secret
+  salary      Float?    @allow('read', auth().role == 'admin')
+  apiKey      String?   @secret
   prefs       Json?
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
@@ -115,7 +118,7 @@ model users {
   @@index([accountId])
   @@index([email])
   @@index([displayName])
-  @@gate("2.4.4.6")
+  @@gate(read: READER, write: USER, delete: OWNER)
   @@allow('read',   accountId == auth().accountId)
   @@allow('update', id == auth().id || auth().role == 'admin')
   @@allow('delete', auth().role == 'admin')
@@ -124,15 +127,15 @@ model users {
 
 // ─── Products ─────────────────────────────────────────────────────────────────
 
-model products {
+model Product {
   id        Int  @id
-  account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId Int
   name      String
-  slug      String     @slug(name)
+  slug      String   @slug(name)
   price     Int
-  discount  Float     @default(0.0)
-  salePrice Int  @discounted(price, discount)
+  discount  Float    @default(0.0)
+  salePrice Int      @discounted(price, discount)
   createdAt DateTime @default(now())
   deletedAt DateTime?
 
@@ -140,23 +143,23 @@ model products {
   @@softDelete
   @@index([slug])
   @@index([salePrice])
-  @@gate("1.4.4.6")
+  @@gate(read: VISITOR, write: USER, delete: OWNER)
   @@allow('read', true)
 }
 
 // ─── Leads ────────────────────────────────────────────────────────────────────
 
-model leads {
+model Lead {
   id        Int    @id
-  account   accounts   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId Int
-  firstName String?      @trim
-  lastName  String?      @trim
-  fullName  String       @fullName(firstName, lastName)
-  email     String?      @email
+  firstName String?    @trim
+  lastName  String?    @trim
+  fullName  String     @fullName(firstName, lastName)
+  email     String?    @email
   phone     String?
   status    LeadStatus @default(active)
-  score     Float?      @gte(0) @lte(100)
+  score     Float?     @gte(0) @lte(100)
   notes     String?
   createdAt DateTime   @default(now())
   deletedAt DateTime?
@@ -166,7 +169,7 @@ model leads {
   @@index([accountId])
   @@index([status])
   @@index([fullName])
-  @@gate("3.3.4.6")
+  @@gate(read: CREATOR, create: CREATOR, update: USER, delete: OWNER)
   @@allow('read',   accountId == auth().accountId)
   @@allow('create', accountId == auth().accountId)
   @@allow('update', accountId == auth().accountId)
@@ -175,15 +178,15 @@ model leads {
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 
-model messages {
+model Message {
   id        Int  @id
-  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    Int
-  account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId Int
   title     String?
   body      String
-  channel   String     @default("email")
+  channel   String   @default("email")
   isRead    Boolean  @default(false)
   sentAt    DateTime @default(now())
   deletedAt DateTime?
@@ -194,15 +197,15 @@ model messages {
   @@index([userId])
   @@index([accountId])
   @@index([channel])
-  @@gate("2.4.4.5")
+  @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
   @@allow('read', accountId == auth().accountId)
 }
 
 // ─── Analytics — separate SQLite database ─────────────────────────────────────
 // Page view aggregations live in analytics.db, not the main app db.
-// Queried via db.pageViews — routes automatically to the analytics connection.
+// Queried via db.pageView — routes automatically to the analytics connection.
 
-model pageViews {
+model PageView {
   id        Int  @id
   path      String
   accountId Int?
@@ -220,7 +223,7 @@ model pageViews {
   @@allow('create', true)
 }
 
-model dailyStats {
+model DailyStat {
   id          Int  @id
   date        String
   accountId   Int?
@@ -238,9 +241,9 @@ model dailyStats {
 // ─── Request log — JSONL database ─────────────────────────────────────────────
 // Append-only HTTP request log. No migrations needed — JSONL driver manages files.
 // retention 30d prunes rows older than 30 days on startup.
-// Writes append to ./logs/apiRequests.jsonl
+// Writes append to ./logs/apiRequest.jsonl
 
-model apiRequests {
+model ApiRequest {
   method    String
   path      String
   status    Int
@@ -257,5 +260,5 @@ model apiRequests {
 
 // ─── Audit log — logger database ─────────────────────────────────────────────
 // driver logger auto-creates auditLogs in audit.db with the unified log shape.
-// Users model writes here via @secret (expands to @log(audit)) and @@log(audit).
-// Query via: db.auditLogs.findMany({ where: { model: 'users' } })
+// User model writes here via @secret (expands to @log(audit)) and @@log(audit).
+// Query via: db.auditLogs.findMany({ where: { model: 'User' } })

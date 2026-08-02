@@ -88,15 +88,15 @@ const sys = db.asSystem()   // bypass policies for seeding
 
 // Accounts
 const [acme, globex, initech] = await Promise.all([
-  sys.accounts.create({ data: { id: 1, name: 'Acme Corp',  plan: 'pro',        meta: { seats: 25, region: 'us-east' } } }),
-  sys.accounts.create({ data: { id: 2, name: 'Globex',     plan: 'starter',    meta: { seats: 5 } } }),
-  sys.accounts.create({ data: { id: 3, name: 'Initech',    plan: 'enterprise', meta: { seats: 100 } } }),
+  sys.account.create({ data: { id: 1, name: 'Acme Corp',  plan: 'pro',        meta: { seats: 25, region: 'us-east' } } }),
+  sys.account.create({ data: { id: 2, name: 'Globex',     plan: 'starter',    meta: { seats: 5 } } }),
+  sys.account.create({ data: { id: 3, name: 'Initech',    plan: 'enterprise', meta: { seats: 100 } } }),
 ])
 console.log(`  ✓  accounts (main):  ${[acme, globex, initech].map(a => a.name).join(', ')}`)
 console.log(`       slugs:          ${[acme, globex, initech].map(a => a.slug).join(', ')}`)
 
 // Users — salary shows field-level @allow; apiKey uses @secret
-const userResult = await sys.users.createMany({ data: [
+const userResult = await sys.user.createMany({ data: [
   { id: 1, accountId: acme.id,    email: 'alice@acme.com',    firstName: 'Alice',   lastName: 'Chen',   role: 'admin',  salary: 140000, apiKey: 'key_alice_abc123' },
   { id: 2, accountId: acme.id,    email: 'bob@acme.com',      firstName: 'Bob',     lastName: 'Torres', role: 'member', salary:  95000  },
   { id: 3, accountId: acme.id,    email: 'carol@acme.com',    firstName: 'Carol',   lastName: 'Ruiz',   role: 'member', salary:  87000  },
@@ -105,39 +105,39 @@ const userResult = await sys.users.createMany({ data: [
   { id: 6, accountId: initech.id, email: 'frank@initech.com', firstName: 'Frank',   lastName: 'Liu',    role: 'admin',  salary: 155000, apiKey: 'key_frank_mno456' },
   { id: 7, accountId: initech.id, email: 'grace@initech.com', firstName: 'Grace',   lastName: 'Walsh',  role: 'viewer', salary:  68000  },
 ] })
-const alice = await sys.users.findUnique({ where: { id: 1 } })
+const alice = await sys.user.findUnique({ where: { id: 1 } })
 console.log(`  ✓  users (main):     ${userResult.count} created`)
 console.log(`       displayName:    "${alice!.displayName}"  initials: "${alice!.initials}"`)
 
 // Demonstrate @secret — apiKey is encrypted at rest, invisible without asSystem()
-const aliceAsUser = await db.$setAuth({ id: 1, accountId: 1, role: 'member' }).users.findUnique({ where: { id: 1 } })
-const aliceAsSys  = await sys.users.findUnique({ where: { id: 1 } })
+const aliceAsUser = await db.$setAuth({ id: 1, accountId: 1, role: 'member', verifiedAt: '2026-01-01', activatedAt: '2026-01-01' }).user.findUnique({ where: { id: 1 } })
+const aliceAsSys  = await sys.user.findUnique({ where: { id: 1 } })
 console.log(`       apiKey (member context): ${(aliceAsUser as any).apiKey === undefined ? 'undefined ✓ (stripped by @secret)' : 'visible ✗'}`)
 console.log(`       apiKey (asSystem):       ${(aliceAsSys as any).apiKey ? 'decrypted ✓' : 'missing ✗'}`)
 
 // Demonstrate field-level @allow — salary only visible to role=admin
-const aliceAdmin  = await db.$setAuth({ id: 1, accountId: 1, role: 'admin'  }).users.findFirst({ where: { id: 1 } })
-const bobMember   = await db.$setAuth({ id: 2, accountId: 1, role: 'member' }).users.findFirst({ where: { id: 1 } })
+const aliceAdmin  = await db.$setAuth({ id: 1, accountId: 1, role: 'admin', verifiedAt: '2026-01-01', activatedAt: '2026-01-01' }).user.findFirst({ where: { id: 1 } })
+const bobMember   = await db.$setAuth({ id: 2, accountId: 1, role: 'member', verifiedAt: '2026-01-01', activatedAt: '2026-01-01' }).user.findFirst({ where: { id: 1 } })
 console.log(`       salary (admin):          ${(aliceAdmin as any).salary !== undefined ? '$' + (aliceAdmin as any).salary.toLocaleString() + ' ✓' : 'missing ✗'}`)
 console.log(`       salary (member):         ${(bobMember as any).salary === undefined ? 'undefined ✓ (stripped by @allow)' : 'visible ✗'}`)
 
 // Soft-delete grace
-await sys.users.remove({ where: { id: 7 } })
+await sys.user.remove({ where: { id: 7 } })
 console.log(`       grace soft-deleted (grace@initech.com)`)
 
 // Products
-const prodResult = await sys.products.createMany({ data: [
+const prodResult = await sys.product.createMany({ data: [
   { id: 1, accountId: acme.id,    name: 'Widget Pro',  price: 9900,  discount: 0.10 },
   { id: 2, accountId: acme.id,    name: 'Widget Lite', price: 4900,  discount: 0.00 },
   { id: 3, accountId: globex.id,  name: 'Gadget Plus', price: 14900, discount: 0.20 },
   { id: 4, accountId: initech.id, name: 'Tool Suite',  price: 29900, discount: 0.15 },
 ] })
-const widgetPro = await sys.products.findUnique({ where: { id: 1 } })
+const widgetPro = await sys.product.findUnique({ where: { id: 1 } })
 console.log(`  ✓  products (main):  ${prodResult.count} created`)
 console.log(`       "Widget Pro" → slug: "${widgetPro!.slug}"  salePrice: $${(widgetPro!.salePrice / 100).toFixed(2)}`)
 
 // Leads — demonstrate @@deny('update', status == 'archived')
-const leadResult = await sys.leads.createMany({ data: [
+const leadResult = await sys.lead.createMany({ data: [
   { id: 1, accountId: acme.id,    firstName: 'Sara',  lastName: 'Park',   email: 'sara@co.co',       status: 'active',    score: 87.5 },
   { id: 2, accountId: acme.id,    firstName: 'James', lastName: 'Wright', email: 'james@biz.io',     status: 'converted', score: 94.0 },
   { id: 3, accountId: acme.id,    firstName: 'Lily',  lastName: 'Santos', email: 'lily@startup.com', status: 'active',    score: 62.3 },
@@ -149,12 +149,14 @@ const leadResult = await sys.leads.createMany({ data: [
 console.log(`  ✓  leads (main):     ${leadResult.count} created`)
 
 // Show @@deny in action — archived lead cannot be updated by regular user
-const acmeMember = db.$setAuth({ id: 1, accountId: 1, role: 'member' })
-const archivedUpdate = await acmeMember.leads.update({ where: { id: 5 }, data: { score: 50 } })
+// Session objects carry the fields the default gate resolver reads
+// (verifiedAt/activatedAt/role → level 4 USER; see FrontierGateGetLevel).
+const acmeMember = db.$setAuth({ id: 1, accountId: 1, role: 'member', verifiedAt: '2026-01-01', activatedAt: '2026-01-01' })
+const archivedUpdate = await acmeMember.lead.update({ where: { id: 5 }, data: { score: 50 } })
 console.log(`       update archived lead (Mia):  ${archivedUpdate === null ? 'null ✓ (@@deny blocked it)' : 'updated ✗'}`)
 
 // Messages — FTS5 indexed
-const msgResult = await sys.messages.createMany({ data: [
+const msgResult = await sys.message.createMany({ data: [
   { id: 1,  userId: 1, accountId: acme.id,    title: 'Welcome',          body: 'Welcome to Litestone — SQLite-first query client for Bun.' },
   { id: 2,  userId: 1, accountId: acme.id,    title: 'Schema functions', body: 'Schema functions let you define reusable SQL expressions like slug and fullName.' },
   { id: 3,  userId: 2, accountId: acme.id,    title: null,               body: 'The SQLite migration ran cleanly. All generated columns are populated correctly.' },
@@ -170,7 +172,7 @@ console.log(`  ✓  messages (main):  ${msgResult.count} created (FTS5 indexed)`
 
 // ─── Analytics database ───────────────────────────────────────────────────────
 
-const pvResult = await sys.pageViews.createMany({ data: [
+const pvResult = await sys.pageView.createMany({ data: [
   { id: 1,  path: '/dashboard',  accountId: 1, userId: 1, country: 'US', device: 'desktop', duration: 142 },
   { id: 2,  path: '/leads',      accountId: 1, userId: 1, country: 'US', device: 'desktop', duration: 67  },
   { id: 3,  path: '/dashboard',  accountId: 1, userId: 2, country: 'CA', device: 'mobile',  duration: 38  },
@@ -182,7 +184,7 @@ const pvResult = await sys.pageViews.createMany({ data: [
 ] })
 console.log(`  ✓  pageViews (analytics): ${pvResult.count} created`)
 
-const statsResult = await sys.dailyStats.createMany({ data: [
+const statsResult = await sys.dailyStat.createMany({ data: [
   { id: 1, date: '2026-04-10', accountId: 1, views: 45, uniqueUsers: 12, avgDuration: 98.5 },
   { id: 2, date: '2026-04-10', accountId: 2, views: 22, uniqueUsers: 6,  avgDuration: 134.2 },
   { id: 3, date: '2026-04-10', accountId: 3, views: 31, uniqueUsers: 8,  avgDuration: 76.0 },
@@ -193,7 +195,7 @@ console.log(`  ✓  dailyStats (analytics): ${statsResult.count} created`)
 
 // ─── JSONL database — append-only request log ─────────────────────────────────
 
-await sys.apiRequests.createMany({ data: [
+await sys.apiRequest.createMany({ data: [
   { method: 'GET',  path: '/api/users',    status: 200, duration: 4,   userId: 1, accountId: 1, ip: '10.0.0.1' },
   { method: 'POST', path: '/api/leads',    status: 201, duration: 12,  userId: 1, accountId: 1, ip: '10.0.0.1' },
   { method: 'GET',  path: '/api/messages', status: 200, duration: 8,   userId: 2, accountId: 1, ip: '10.0.0.2' },
@@ -202,11 +204,11 @@ await sys.apiRequests.createMany({ data: [
   { method: 'GET',  path: '/api/leads',    status: 200, duration: 5,   userId: 6, accountId: 3, ip: '10.0.0.4' },
   { method: 'DELETE', path: '/api/users/7', status: 200, duration: 9,  userId: 6, accountId: 3, ip: '10.0.0.4' },
 ] })
-const logCount = await sys.apiRequests.count()
+const logCount = await sys.apiRequest.count()
 console.log(`  ✓  apiRequests (logs):    ${logCount} appended to JSONL`)
 
 // Read logs back — query by status, duration
-const errors = await sys.apiRequests.findMany({ where: { status: { gte: 400 } } })
+const errors = await sys.apiRequest.findMany({ where: { status: { gte: 400 } } })
 console.log(`       errors (status >= 400): ${errors.length} — "${errors[0]?.error}"`)
 
 // ─── Audit logger — seed some traceable writes + reads ───────────────────────
@@ -215,12 +217,12 @@ console.log(`       errors (status >= 400): ${errors.length} — "${errors[0]?.e
 // createMany bypasses emitLogs, so we do a few targeted single-row ops here.
 
 // Single creates — each fires @@log(audit) → auditLogs entry
-const auditUser1 = await sys.users.create({ data: {
+const auditUser1 = await sys.user.create({ data: {
   id: 8, accountId: acme.id, email: 'audit1@acme.com',
   firstName: 'Audit', lastName: 'One', role: 'viewer', salary: 55000
 }})
-await sys.users.update({ where: { id: 8 }, data: { salary: 58000 } })
-await sys.users.remove({ where: { id: 8 } })
+await sys.user.update({ where: { id: 8 }, data: { salary: 58000 } })
+await sys.user.remove({ where: { id: 8 } })
 
 // @secret defaults to reads:false — reads are high-volume and opt-in.
 // To audit apiKey reads, declare: apiKey Text? @secret @log(audit, reads: true)
@@ -234,19 +236,19 @@ console.log()
 console.log('  Databases:')
 console.log(`    main       ./example.db`)
 console.log(`    analytics  ./analytics.db`)
-console.log(`    logs       ./logs/apiRequests.jsonl`)
+console.log(`    logs       ./logs/apiRequest.jsonl`)
 console.log(`    audit      ./audit/auditLogs.jsonl  (logger driver — auto-populated)`)
 console.log()
 
 const counts = {
-  'accounts  (main)':      await sys.accounts.count(),
-  'users     (main)':      await sys.users.count(),
-  'products  (main)':      await sys.products.count(),
-  'leads     (main)':      await sys.leads.count(),
-  'messages  (main)':      await sys.messages.count(),
-  'pageViews (analytics)': await sys.pageViews.count(),
-  'dailyStats(analytics)': await sys.dailyStats.count(),
-  'apiReqs   (logs)':      await sys.apiRequests.count(),
+  'accounts  (main)':      await sys.account.count(),
+  'users     (main)':      await sys.user.count(),
+  'products  (main)':      await sys.product.count(),
+  'leads     (main)':      await sys.lead.count(),
+  'messages  (main)':      await sys.message.count(),
+  'pageViews (analytics)': await sys.pageView.count(),
+  'dailyStats(analytics)': await sys.dailyStat.count(),
+  'apiReqs   (logs)':      await sys.apiRequest.count(),
   'auditLogs (audit)':     await sys.auditLogs.count(),
 }
 const maxLen = Math.max(...Object.keys(counts).map(k => k.length))
@@ -258,7 +260,7 @@ for (const [t, n] of Object.entries(counts))
 console.log()
 
 // FTS search
-const ftsResults = await sys.messages.search('sqlite', { limit: 3 })
+const ftsResults = await sys.message.search('sqlite', { limit: 3 })
 console.log(`  FTS search "sqlite" → ${ftsResults.length} results`)
 
 // onQuery hook — show any slow queries captured during seed
@@ -272,22 +274,22 @@ if (slowQueries.length) {
 // $tapQuery — capture SQL for a single expression (Studio REPL uses this)
 const captured: any[] = []
 const stop = db.$tapQuery((e: any) => captured.push(e))
-await sys.leads.findMany({ where: { status: 'active' }, orderBy: { score: 'desc' }, limit: 3 })
+await sys.lead.findMany({ where: { status: 'active' }, orderBy: { score: 'desc' }, limit: 3 })
 stop()
 console.log(`  $tapQuery: captured ${captured.length} quer${captured.length === 1 ? 'y' : 'ies'}`)
 console.log(`       SQL: ${captured[0]?.sql?.slice(0, 60)}…`)
 
 // Row-level policy demo — acme member can only see their own account's leads
-const acmeLeads  = await acmeMember.leads.findMany()
+const acmeLeads  = await acmeMember.lead.findMany()
 const otherLeads = acmeLeads.filter((l: any) => l.accountId !== 1)
 console.log(`  Policy: acme member sees ${acmeLeads.length} leads (${otherLeads.length} from other accounts — should be 0)`)
 
 // Cross-DB query — analytics from main app session
-const topPages = await sys.pageViews.findMany({ orderBy: { duration: 'desc' }, limit: 3 })
+const topPages = await sys.pageView.findMany({ orderBy: { duration: 'desc' }, limit: 3 })
 console.log(`  Cross-DB: top pages by duration — ${topPages.map((p: any) => p.path).join(', ')}`)
 
 // Cursor pagination
-const page = await sys.products.findManyCursor({ limit: 2, orderBy: { salePrice: 'desc' } })
+const page = await sys.product.findManyCursor({ limit: 2, orderBy: { salePrice: 'desc' } })
 console.log(`  Cursor pagination (salePrice DESC, limit 2): ${page.items.map((p: any) => p.name).join(', ')}  hasMore: ${page.hasMore}`)
 
 console.log()

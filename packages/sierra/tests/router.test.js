@@ -7,7 +7,8 @@
 
 import { describe, test, expect } from 'vitest'
 import { matchRoute, normalizePath, buildUrl, parseQueryParams } from '../src/router/match.js'
-import { signal, derived } from '../src/router/signals.js'
+import { signal } from '../src/router/signals.js'
+import { flushSync } from '@frontierjs/mesa/runtime.js'
 
 // ─── Fixture tree ─────────────────────────────────────────────────────────────
 
@@ -255,7 +256,13 @@ describe('signal', () => {
   test('holds initial value', () => {
     const s = signal(42)
     expect(s.get()).toBe(42)
-    expect(s.value).toBe(42)
+    // `.value` was removed. It was an untracked read: the virtual:sierra bridge
+    // patched `.get` but left the `.value` getter pointing at the old closure,
+    // so an effect reading `.value` never re-ran. In templates the compiler's
+    // accessor rewrite turned `{s.value}` into `s.get().value` — a property
+    // lookup on the value object — so the same syntax meant two different
+    // things depending on where it appeared.
+    expect(s.value).toBeUndefined()
   })
 
   test('set updates value', () => {
@@ -271,12 +278,27 @@ describe('signal', () => {
     expect(received).toBe('hello')
   })
 
-  test('subscribe called on change', () => {
+  test('subscribe coalesces writes within a tick', () => {
     const s = signal(0)
     const values = []
     s.subscribe(v => values.push(v))  // initial call
     s.set(1)
     s.set(2)
+    flushSync()
+    // BEHAVIOUR CHANGE: signals are Mesa signals now, and Mesa coalesces writes
+    // through queueMicrotask. A subscriber sees the latest value once per flush
+    // rather than every intermediate value — previously this was [0, 1, 2].
+    // This is the same mechanism that makes a navigation's eight signal commits
+    // produce one render instead of eight.
+    expect(values).toEqual([0, 2])
+  })
+
+  test('subscribe sees each value when flushed between writes', () => {
+    const s = signal(0)
+    const values = []
+    s.subscribe(v => values.push(v))
+    s.set(1); flushSync()
+    s.set(2); flushSync()
     expect(values).toEqual([0, 1, 2])
   })
 
@@ -285,8 +307,10 @@ describe('signal', () => {
     const values = []
     const unsub = s.subscribe(v => values.push(v))
     s.set(1)
+    flushSync()          // let the write land before unsubscribing
     unsub()
     s.set(2)
+    flushSync()
     expect(values).toEqual([0, 1])
   })
 
@@ -299,33 +323,9 @@ describe('signal', () => {
   })
 })
 
-describe('derived', () => {
-  test('computes from sources', () => {
-    const a = signal(2)
-    const b = signal(3)
-    const sum = derived([a, b], (av, bv) => av + bv)
-    expect(sum.get()).toBe(5)
-    expect(sum.value).toBe(5)
-  })
-
-  test('updates when source changes', () => {
-    const a = signal(1)
-    const b = signal(2)
-    const sum = derived([a, b], (av, bv) => av + bv)
-    a.set(10)
-    expect(sum.get()).toBe(12)
-  })
-
-  test('derived subscribe works', () => {
-    const a = signal(1)
-    const doubled = derived([a], av => av * 2)
-    const values = []
-    doubled.subscribe(v => values.push(v))
-    a.set(5)
-    a.set(10)
-    expect(values).toEqual([2, 10, 20])
-  })
-})
+// describe('derived') removed — derived() no longer exists. It was exported,
+// imported once by router/index.js, never called, recomputed k+1 times at
+// creation for k sources, and had no unsubscribe path. Use Mesa's createMemo.
 
 // ─── findCatchAll (via load() error path) ─────────────────────────────────────
 

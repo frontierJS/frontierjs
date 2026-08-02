@@ -10,7 +10,9 @@
 
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { buildThemeScript } from '../theme/index.js'
+// From theme/script.js, not theme/index.js: this runs in Node during the
+// build, and theme/index.js pulls in the client signal runtime.
+import { buildThemeScript } from '../theme/script.js'
 
 /**
  * @param {object} themeConfig — sierra.config.js theme object

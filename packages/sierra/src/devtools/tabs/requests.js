@@ -25,7 +25,10 @@ export function createRequestsTab(buffer, config) {
     tr.className = 'fjs-req-row' + (req.status === 'error' ? ' fjs-row-error' : '')
     tr.dataset.id = req.id
 
-    const ts      = new Date(req.ts).toLocaleTimeString()
+    // toLocaleTimeString is surprisingly expensive (Intl formatting) and the
+    // value never changes for a given request, so compute it once per entry
+    // rather than once per row per render.
+    const ts = req._ts ??= new Date(req.ts).toLocaleTimeString()
     const durBar  = Math.min(100, Math.round((req.durationMs / 500) * 100))
     const badge   = `<span class="fjs-badge fjs-badge-${(req.transport||'http').toLowerCase()}">${req.transport||'HTTP'}</span>`
     const status  = req.status === 'error' ? '✗' : '✓'
@@ -65,12 +68,24 @@ export function createRequestsTab(buffer, config) {
   }
 
   function render() {
-    table.innerHTML = ''
-    const rows = [...buffer.requests.all()].reverse()
-    for (const req of rows) {
-      if (_filter && !`${req.service} ${req.method} ${req.status}`.toLowerCase().includes(_filter)) continue
-      table.appendChild(_row(req))
+    // Build into a fragment and swap once — appending row-by-row to the live
+    // table forces layout per row. reversed() yields newest-first straight from
+    // the ring, avoiding the array copy + reverse() the previous version did on
+    // every render.
+    const frag = document.createDocumentFragment()
+    const iter = buffer.requests.reversed
+      ? buffer.requests.reversed()
+      : [...buffer.requests.all()].reverse()
+
+    for (const req of iter) {
+      if (_filter) {
+        const hay = req._hay ??= `${req.service} ${req.method} ${req.status}`.toLowerCase()
+        if (!hay.includes(_filter)) continue
+      }
+      frag.appendChild(_row(req))
     }
+
+    table.replaceChildren(frag)
   }
 
   return { el, render }

@@ -22,11 +22,20 @@
  *     initRouter(tree, components, options)
  */
 
-import { signal, derived } from './signals.js'
+import { watchProxy } from '@frontierjs/mesa/runtime'
 import { matchRoute, normalizePath, buildUrl, parseQueryParams } from './match.js'
-import { registerModule, buildLayoutMap, registerFileComponent, hmrInvalidate, getComponents } from './internals.js'
+import {
+  registerModule, buildLayoutMap, registerFileComponent, hmrInvalidate, getComponents,
+  loadLayoutChain,
+} from './internals.js'
 import { sierraFetch } from '../fetch/index.js'
-import { initPrefetch, prefetch as _prefetch, _prefetchCache } from './prefetch.js'
+import {
+  initPrefetch,
+  prefetch as _prefetch,
+  _prefetchCacheTake,
+  _prefetchCacheHas,
+  scanPrefetchLinks,
+} from './prefetch.js'
 
 /** Programmatic prefetch — preloads route chunk + data */
 export { _prefetch as prefetch }
@@ -42,6 +51,7 @@ let _tree = null
 let _components = {}
 let _loaders = {}
 let _options = {}
+let _layouts = {}
 
 // Scroll position storage — keyed by history.state.index
 const _scrollPositions = new Map()
@@ -66,56 +76,88 @@ function _reportError(type, context, err) {
   }
 }
 
-export const params = signal({})
+/**
+ * The page — a plain object holding everything about the current route.
+ *
+ * Not a signal. Components make the fields they use reactive with a `$:` path
+ * watch (VISION §4.1, RULE 43):
+ *
+ *   import { page } from '@frontierjs/sierra/router'
+ *   $: (page.params, page.data)
+ *   <h1>{page.title}</h1>
+ *   <p>{page.params.slug}</p>
+ *
+ * This replaces the eight separate signals that preceded it — params,
+ * activeRoute, pendingRoute, meta, data, loadError, pageSlots and the old page
+ * descriptor. One object means one thing to import, one thing to watch, and
+ * nothing for the compiler's externalSignals map to know about.
+ *
+ * ── Reserved field names ──────────────────────────────────────────────────
+ * A route's frontmatter is spread onto this object, so `{page.title}` works
+ * directly. The fields below are set by the router and therefore reserved —
+ * frontmatter using one of these names is overwritten, and the scanner warns.
+ *
+ * @property {string}      path     current pathname + search
+ * @property {object}      params   route params — { slug: 'x' }
+ * @property {object}      meta     the raw frontmatter object, un-spread
+ * @property {object|null} route    the matched route node (was `activeRoute`)
+ * @property {object|null} pending  in-flight route during navigation, else null
+ * @property {*}           data     value returned by the route's load()
+ * @property {Error|null}  error    error thrown by the most recent load()
+ * @property {object}      slots    named slots registered via provideSlot()
+ */
+export const page = {
+  path:    '/',
+  params:  {},
+  meta:    {},
+  route:   null,
+  pending: null,
+  data:    null,
+  error:   null,
+  slots:   {},
+}
 
-/** Currently rendered route node */
-export const activeRoute = signal(null)
+// Field names the router owns. Frontmatter keys matching these are shadowed —
+// the scanner reports it. Defined in its own dependency-free module so the
+// build pipeline can read it without importing the client router.
+export { PAGE_RESERVED } from './page-fields.js'
+import { PAGE_RESERVED } from './page-fields.js'
 
-/** In-flight route during navigation, null when idle */
-export const pendingRoute = signal(null)
-
-/** Current route's frontmatter + .meta.js meta */
-export const meta = signal({})
+// The router's write handle. Every mutation goes through this so path watches
+// fire — assigning `page.x` directly would update the object and notify nobody
+// (RULE 45).
+//
+// Resolved per write rather than captured at import time. watchProxy is a
+// no-op when there is no DOM (RULE 19), so a handle taken at module load in a
+// non-browser environment is the raw object forever — even if the environment
+// changes afterwards, which is exactly what mesa-render and the test suite do
+// via setRenderEnvironment(). watchProxy caches per object, so this is a
+// WeakMap hit.
+const _w = () => watchProxy(page)
 
 /**
- * Reactive page descriptor — the full context for the current page.
- * Merges the layout chain's frontmatter (outermost first, innermost wins)
- * with the page's own frontmatter, plus live routing state.
+ * Reset `page` to its initial state.
  *
- * Layout _module.mesa frontmatter contributes first — page frontmatter overrides.
- * _module.meta.js exports override .mesa frontmatter at the same level.
+ * Test seam. `page` is module-scoped for the lifetime of the module, so without
+ * this a test's state leaks into the next one — the same hazard `_resetInternals`
+ * and `_resetPrefetch` exist for.
  *
- * Usage (in any page or layout):
- *   import { page } from 'sierra/router'
- *   <title>{page.title}</title>
- *   <p>Section: {page.section}</p>
+ * Writes go through the proxy so any live watchers see the reset.
  */
-export const page = signal({})
-
-/** Alias for activeRoute — same object */
-export const node = activeRoute
-
-/** Data returned by the current route's load() function — null if no loader */
-export const data = signal(null)
-
-/** Error thrown by the most recent load() call — null when clean */
-export const loadError = signal(null)
-
-/**
- * Named slot registry — cleared on every navigation, populated by page components
- * during their render via provideSlot(). Layouts read from this reactively to
- * display page-defined named content areas (sidebars, toolbars, breadcrumbs…).
- *
- * Usage in a page component:
- *   {#snippet sidebar()}…{/snippet}
- *   {provideSlot('sidebar', sidebar)}
- *
- * Usage in a layout:
- *   let sidebarFn = null
- *   $: { sidebarFn = pageSlots.sidebar }
- *   {#if sidebarFn}{@render sidebarFn?.()}{/if}
- */
-export const pageSlots = signal({})
+export function _resetPage() {
+  _w().path    = '/'
+  _w().params  = {}
+  _w().meta    = {}
+  _w().route   = null
+  _w().pending = null
+  _w().data    = null
+  _w().error   = null
+  _w().slots   = {}
+  // Drop any frontmatter keys a previous route spread onto the object.
+  for (const k of Object.keys(page)) {
+    if (!PAGE_RESERVED.includes(k)) delete page[k]
+  }
+}
 
 /**
  * Register a named slot from the current page component.
@@ -130,8 +172,8 @@ export const pageSlots = signal({})
  */
 export function provideSlot(name, snippetFn) {
   if (typeof snippetFn !== 'function') return null
-  const current = pageSlots.get()
-  pageSlots.set({ ...current, [name]: snippetFn })
+  const current = _w().slots
+  _w().slots = { ...current, [name]: snippetFn }
   return null
 }
 
@@ -150,7 +192,7 @@ export const router = {
     sessionStorage.removeItem('sierra_return_path')
     return path
   },
-  get meta() { return meta.get() },
+  get meta() { return page.meta },
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -176,22 +218,25 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
   // Build the layout hierarchy map for RouterView's chain resolution
   buildLayoutMap(tree, components)
 
-  // Eagerly load all layout components so resolveChain() can always find them.
-  // Layouts are used by every route — lazy loading them per-navigation would cause
-  // the chain to render with component=undefined on first visit to any layout-using route.
-  if (typeof window !== 'undefined') {
-    for (const [filePath, factory] of Object.entries(layouts)) {
-      factory().then(mod => {
-        if (mod?.default) registerFileComponent(filePath, mod.default)
-      }).catch(err => {
-        _reportError('layout', filePath, err)
-      })
-    }
-  }
+  _layouts = layouts
+
+  // Layouts are NOT loaded eagerly.
+  //
+  // This used to invoke every factory in the layouts map on boot, so an app with
+  // a dozen section layouts pulled a dozen chunks onto the critical path — and
+  // did it even for routes with `reset: true`, which render no layout at all.
+  // The justification was that resolveChain() would otherwise see
+  // component === undefined on first visit to a layout-using route.
+  //
+  // That is a sequencing problem, not a preloading one. _navigate() already
+  // awaits the page component before committing signals; loadLayoutChain()
+  // below awaits the layouts that route actually needs, in the same place. The
+  // chain is complete before activeRoute is set, so resolveChain() never sees a
+  // hole, and layouts a session never visits are never fetched.
 
   // Boot the prefetch system with the same tree/components/loaders
   if (typeof window !== 'undefined') {
-    initPrefetch(tree, components, loaders, options)
+    initPrefetch(tree, components, loaders, options, layouts)
   }
 
   // Take control of scroll restoration
@@ -212,11 +257,25 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
     // Delegate link clicks
     document.addEventListener('click', _handleClick)
 
-    // Navigate to current URL on boot
-    _navigate(window.location.pathname + window.location.search, {
-      replace: true,
-      scroll: false,
-      isPopstate: false,
+    // Navigate to current URL on boot.
+    //
+    // Deferred by one microtask on purpose. initRouter() runs during
+    // virtual:sierra's module evaluation, which completes *before* the app
+    // entry mounts the root component — so any guard registered in component
+    // setup (the usual place: App.mesa's <script>) would not yet be in
+    // _beforeGuards when the guard loop runs, and the initial navigation would
+    // commit unguarded. That made auth guards protect client-side navigation to
+    // a route while leaving a direct load or refresh of it wide open.
+    //
+    // Static imports and the mount call that follows them run in the same
+    // synchronous turn, so a microtask scheduled here lands after the app has
+    // mounted and registered its guards.
+    queueMicrotask(() => {
+      _navigate(window.location.pathname + window.location.search, {
+        replace: true,
+        scroll: false,
+        isPopstate: false,
+      })
     })
   }
 }
@@ -306,10 +365,11 @@ export function afterNavigate(fn) {
  */
 export function isActive(path, options = {}) {
   const { exact = false } = options
-  // Reading activeRoute here makes this function reactive — Mesa's compiler
-  // will re-evaluate any template expression calling isActive() whenever
-  // activeRoute changes, because we touched the signal inside.
-  activeRoute.get()  // subscribe to activeRoute changes
+  // Reading page.route through the proxy makes this function reactive — a
+  // template expression calling isActive() re-evaluates whenever the route
+  // changes, because the read subscribes the calling effect to that path.
+  // Requires the caller's component to declare `$: page.route`.
+  _w().route
   const current = normalizePath(window.location.pathname, _options.trailingSlash)
   const target = normalizePath(path, _options.trailingSlash)
 
@@ -365,11 +425,11 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
     return
   }
 
-  const _fromNode = activeRoute.get()
+  const _fromNode = page.route
   const toNode = match.node
 
   // Build from context with the actual current URL (not just the route pattern).
-  // activeRoute.get() has .path = the pattern (/blog/:slug/), but the real URL
+  // page.route has .path = the pattern (/blog/:slug/), but the real URL
   // is window.location.pathname + window.location.search.
   const fromContext = _fromNode
     ? {
@@ -379,7 +439,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
         // not the route pattern (/blog/:slug/)
         path: normalizePath(window.location.pathname, _options.trailingSlash)
           + window.location.search,
-        params: params.get(),
+        params: page.params,
         node: _fromNode,
       }
     : null
@@ -394,9 +454,12 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
     node: toNode,
   }
 
-  // Run before-navigation guards (skip during HMR re-navigation)
+  // Run before-navigation guards (skip during HMR re-navigation).
+  // Snapshot the array: guards may await, and a registration landing during
+  // that await would otherwise be picked up by the in-flight loop, so the same
+  // navigation would be judged by a guard set that changed underneath it.
   if (!isPopstate && !_hmr) {
-    for (const guard of _beforeGuards) {
+    for (const guard of [..._beforeGuards]) {
       const result = await guard({ from: fromContext, to: toContext })
 
       if (result === false) return  // cancelled
@@ -420,8 +483,13 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   }
 
   // Set pending route
-  pendingRoute.set(toContext)
+  _w().pending = toContext
   _navigating = true
+
+  // Load the layout chain and the page component together — they're independent
+  // network requests, so serialising them would add a round-trip to every first
+  // visit. Started here, awaited below.
+  const layoutsReady = loadLayoutChain(toNode, _layouts, _reportError)
 
   // Load component (lazy) and register with internals
   const componentFactory = _components[toNode.id]
@@ -437,11 +505,15 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       }
     } catch (err) {
       _reportError('component', toNode.file ?? toNode.id, err)
-      pendingRoute.set(null)
+      _w().pending = null
       _navigating = false
       return
     }
   }
+
+  // Chain must be complete before activeRoute is committed below, or
+  // ChainRenderer renders a layout depth with component === undefined.
+  await layoutsReady
 
   // Run load() if this route has a .meta.js companion
   let loadedData = null
@@ -450,10 +522,11 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
     try {
       // Check prefetch cache first — avoids a second round-trip when the user
       // hovered or moused-down on the link before clicking.
+      // Cached payloads expire (see PREFETCH_CACHE_TTL) so a route prefetched
+      // long ago doesn't serve stale data on eventual navigation.
       const cacheKey = `${toNode.id}:${normalized}${search}`
-      if (_prefetchCache.has(cacheKey)) {
-        loadedData = _prefetchCache.get(cacheKey)
-        _prefetchCache.delete(cacheKey)  // consume once
+      if (_prefetchCacheHas(cacheKey)) {
+        loadedData = _prefetchCacheTake(cacheKey)   // consume once
       } else {
         // Lazy-import the loader module
         const loaderMod = await loaderFactory()
@@ -469,14 +542,14 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
 
           // load() can return a redirect string
           if (typeof loadedData === 'string' && loadedData.startsWith('/')) {
-            pendingRoute.set(null)
+            _w().pending = null
             _navigating = false
             return _navigate(loadedData, { replace: true, scroll })
           }
         }
       }
 
-      loadError.set(null)
+      _w().error = null
     } catch (err) {
       // load() errors are data-layer failures (e.g. "not found", API error).
       // They are NOT framework errors — don't show the dev overlay.
@@ -485,7 +558,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       if (import.meta.env?.DEV) {
         console.warn(`[Sierra] load() error for ${toNode.file ?? toNode.id}:`, err?.message ?? err)
       }
-      loadError.set(err)
+      _w().error = err
 
       // Stay on this route — let the page render its loadError state.
       // Do NOT redirect to catch-all (that's for route-not-found, not data errors).
@@ -510,26 +583,39 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   }
 
   // Commit all signals atomically
-  params.set(toContext.params)
-  activeRoute.set(toNode)
-  meta.set(toNode.meta ?? {})
+  // Commit. Written field by field rather than replacing the object, so each
+  // path watch fires only for what actually changed — a component watching
+  // `page.params` doesn't re-render because `page.data` arrived.
+  //
+  // Frontmatter is spread first; the router's own fields are assigned after and
+  // therefore win. PAGE_RESERVED lists them, and the scanner warns when a route
+  // declares one.
+  const _meta = toNode.meta ?? {}
+  for (const [k, v] of Object.entries(_meta)) {
+    if (PAGE_RESERVED.includes(k)) continue
+    if (page[k] !== v) _w()[k] = v
+  }
 
-  // Rebuild page descriptor — merges meta with live routing state
-  page.set({
-    ...(toNode.meta ?? {}),
-    path:   normalized + search,
-    params: toContext.params,
-  })
-  data.set(loadedData)
-  pendingRoute.set(null)
-  pageSlots.set({})  // clear page slots — new page will repopulate during its render
+  _w().meta    = _meta
+  _w().path    = normalized + search
+  _w().params  = toContext.params
+  _w().route   = toNode
+  _w().data    = loadedData
+  _w().pending = null
+  _w().slots   = {}   // cleared — the new page repopulates during its render
   _navigating = false
 
   // Scroll behavior
   _handleScroll(scroll, hash, isPopstate)
 
+  // Re-scan for eager prefetch links in the newly rendered page. Delegation
+  // covers hover/mousedown without any registration, but `visible` and
+  // `immediate` need to find their elements. Deferred so the new route's DOM
+  // exists by the time we query.
+  if (typeof window !== 'undefined') queueMicrotask(scanPrefetchLinks)
+
   // Run after-navigation hooks
-  for (const hook of _afterHooks) {
+  for (const hook of [..._afterHooks]) {
     hook({ from: fromContext, to: toContext })
   }
 }

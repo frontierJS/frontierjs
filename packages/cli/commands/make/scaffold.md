@@ -144,24 +144,30 @@ function makeSchemaStanza(name, fields, softDelete) {
 function makeServiceFile(name) {
   const lower  = name.charAt(0).toLowerCase() + name.slice(1)
   const plural = lower + 's'
-  return `import { createLitestoneService } from '@frontierjs/junction'
-import { authenticate, publish }   from '@frontierjs/junction'
+  return `import { createService, authenticate } from '@frontierjs/junction'
 
-export default createLitestoneService({
+export default createService({
   name:   '${plural}',
-  model:  '${plural}',
+  model:  '${lower}',
   schema: jsonSchema,
+
+  // Broadcast mutations to the '${plural}' channel.
+  //
+  // SCOPE THIS BEFORE YOU SHIP. Every connection in the channel receives every
+  // row, and @@allow policies are enforced when a row is READ - a broadcast does
+  // not re-evaluate them per subscriber. For per-tenant delivery:
+  //
+  //   channel: (rows, ctx) => ctx.app.channel(\`workspace:\${ctx.auth.user?.workspaceId}\`)
+  //
+  // Set channel:false to turn broadcasting off for this service.
+  channel: '${plural}',
+
   hooks: {
     before: {
       create: [authenticate],
       patch:  [authenticate],
       remove: [authenticate],
     },
-    after: {
-      create: [publish((_r, ctx) => ctx.app.channel?.('${plural}') ?? null)],
-      patch:  [publish((_r, ctx) => ctx.app.channel?.('${plural}') ?? null)],
-      remove: [publish((_r, ctx) => ctx.app.channel?.('${plural}') ?? null)],
-    }
   }
 })
 `

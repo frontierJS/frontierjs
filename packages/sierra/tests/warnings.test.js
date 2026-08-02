@@ -462,3 +462,60 @@ describe('warnUnexportedSnippets — mesa:slot suppression', () => {
     expect(warnings).toHaveLength(0)
   })
 })
+
+// ─── Reserved frontmatter keys ────────────────────────────────────────────────
+//
+// Frontmatter is spread onto `page`, so `{page.title}` works directly — but the
+// router assigns its own fields afterwards and wins. A route declaring `data:`
+// or `path:` would see its value silently replaced by the loader result or the
+// URL. PAGE_RESERVED names those fields; this warns rather than letting it pass.
+
+describe('warnReservedFrontmatter', () => {
+  const RESERVED = ['path', 'params', 'meta', 'route', 'pending', 'data', 'error', 'slots']
+
+  const collect = async (tree) => {
+    const { warnReservedFrontmatter } = await import('../src/build/warnings.js')
+    const out = []
+    warnReservedFrontmatter(tree, RESERVED, (m) => out.push(m))
+    return out
+  }
+
+  test('flags a reserved key', async () => {
+    const out = await collect({
+      id: 'blog', file: 'src/routes/blog/index.mesa',
+      meta: { title: 'Blog', data: 'oops' }, children: [],
+    })
+    expect(out).toHaveLength(1)
+    expect(out[0]).toContain("'data' is reserved")
+    expect(out[0]).toContain('page.meta.data')
+  })
+
+  test('ignores non-reserved keys', async () => {
+    const out = await collect({
+      id: 'blog', file: 'x.mesa',
+      meta: { title: 'Blog', description: 'd', robots: 'index' }, children: [],
+    })
+    expect(out).toEqual([])
+  })
+
+  test('walks the whole tree', async () => {
+    const out = await collect({
+      id: 'root', file: 'a.mesa', meta: {}, children: [
+        { id: 'a', file: 'b.mesa', meta: { path: '/x' }, children: [
+          { id: 'b', file: 'c.mesa', meta: { slots: {} }, children: [] },
+        ] },
+      ],
+    })
+    expect(out).toHaveLength(2)
+  })
+
+  test('reports each file+key pair once', async () => {
+    const node = { id: 'a', file: 'dup.mesa', meta: { data: 1, error: 2 }, children: [] }
+    const out = await collect({ id: 'root', file: 'r.mesa', meta: {}, children: [node, node] })
+    expect(out).toHaveLength(2)
+  })
+
+  test('tolerates a missing tree', async () => {
+    expect(await collect(null)).toEqual([])
+  })
+})

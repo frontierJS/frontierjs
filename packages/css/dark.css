@@ -1,6 +1,13 @@
-/* themes/dark.css — Inverted neutrals, same brand colors. */
+/* dark.css — Inverted neutrals, same brand colors. */
 
 .theme-dark {
+  /*
+   * Tells the UA to render native form controls, scrollbars, and the
+   * <select> dropdown dark. Without it those stay light, and the theme
+   * only looks dark until you focus an input.
+   */
+  color-scheme: dark;
+
   --surface:        #1a1a1a;
   --surface-raised: #252525;
   --surface-sunken: #0f0f0f;
@@ -9,4 +16,13 @@
   --ink-mute:       #8a8a8a;
   --rule:           #2d2d2d;
   --rule-strong:    #404040;
+
+  /*
+   * The default shadows are near-black at 4–10% alpha, which is invisible
+   * against a #1a1a1a surface. Dark UIs need markedly more opacity to
+   * read as elevation at all.
+   */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.4);
 }

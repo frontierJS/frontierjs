@@ -1,0 +1,25 @@
+/// db/schema.lite — the seed.
+///
+/// Everything downstream derives from this file:
+///
+///   the table            ← autoMigrate(db)
+///   CRUD + pagination    ← createBaseService({}) reads the model
+///   401s                 ← @@gate, via the derived gateAuth hook
+///   400s                 ← the field rules below, via the derived autoValidate hook
+///   make() defaults      ← generateJsonSchema, shipped to the browser
+///
+/// Model names are PascalCase and singular — ALWAYS. The client accessor is the
+/// camelCase of the model name, so `model Post` is reached as `db.post`, and a
+/// service named 'posts' (from posts.service.ts) resolves to it.
+
+model Post {
+  id        Int      @id
+  title     String   @length(1, 80) @trim
+  body      String?
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  /// read is public, writes need a user: "0.4.4.5" is
+  /// read 0 (STRANGER) . create 4 (USER) . update 4 . delete 5 (ADMINISTRATOR)
+  @@gate("0.4.4.5")
+}

@@ -16,7 +16,8 @@
 //     before: { create: [validateSchema(UserSchema)] }
 //   })
 
-import type { ServiceContext } from '../transport/bridge.ts'
+import type { ServiceContext } from './context.ts'
+import { partitionBulk }       from './envelope.ts'
 import { BadRequest }          from './errors.ts'
 
 // ─── Field definition ─────────────────────────────────────────────────────
@@ -88,6 +89,22 @@ export function createSchema(schema: Schema, opts: SchemaOptions = {}): Compiled
   return buildCompiledSchema(schema, opts)
 }
 
+// Nested object schemas are compiled ONCE per schema object and cached —
+// previously buildCompiledSchema() ran on every validate() call for every
+// nested field, rebuilding the entire compiled closure set per request.
+// WeakMap keying means schema literals shared across createSchema() calls
+// compile once and the cache never pins garbage.
+const _nestedCompiled = new WeakMap<Schema, CompiledSchema>()
+
+function compileNested(schema: Schema): CompiledSchema {
+  let c = _nestedCompiled.get(schema)
+  if (!c) {
+    c = buildCompiledSchema(schema)
+    _nestedCompiled.set(schema, c)
+  }
+  return c
+}
+
 function buildCompiledSchema(schema: Schema, opts: SchemaOptions = {}): CompiledSchema {
 
   // Pre-compile any string patterns to RegExp once at build time,
@@ -125,14 +142,31 @@ function buildCompiledSchema(schema: Schema, opts: SchemaOptions = {}): Compiled
           }
         }
 
-        // Required check
-        if ((value === undefined || value === null) && !def.nullable) {
+        // Absent key.
+        //
+        // Presence and nullability are different questions: `nullable` says the
+        // VALUE may be null, not that the key must be present. Guarding this
+        // branch with `!def.nullable` made it unreachable for nullable fields,
+        // so an absent optional field fell through to type validation and was
+        // rejected as the wrong type. In Litestone every `String?` is nullable,
+        // which meant a model with one optional field could not be created
+        // without sending an explicit null for it:
+        //
+        //   POST /posts {"title":"Hi"}   → 400 body: body must be a string
+        //   POST /posts {"title":"Hi","body":null}  → 201
+        //
+        // i.e. optional fields were mandatory.
+        if (value === undefined) {
           if (def.required) {
             errors.push({ field, message: `${field} is required` })
-            continue
           }
-          // Not required — skip
-          if (value === undefined) continue
+          continue
+        }
+
+        // Explicit null on a field that does not accept it.
+        if (value === null && !def.nullable && def.required) {
+          errors.push({ field, message: `${field} is required` })
+          continue
         }
 
         // Null allowed
@@ -190,8 +224,22 @@ function buildCompiledSchema(schema: Schema, opts: SchemaOptions = {}): Compiled
     },
 
     hook() {
-      return (ctx: ServiceContext): void => {
+      return function validateSchema(ctx: ServiceContext): void {
         if (!ctx.data) throw new BadRequest('Request body is required')
+
+        // A bulk write sends an array. parse() validates one object and
+        // rejects an array outright with "Expected an object", so every bulk
+        // create 400'd before the service ever saw it — element-wise is the
+        // only reading that makes sense here.
+        //
+        // PARTITIONED, not mapped: throwing on the first bad row would make
+        // partial success unreachable. Rejected rows are parked on ctx.locals
+        // for the service to pair with their errors in the envelope.
+        if (Array.isArray(ctx.data)) {
+          ctx.data = partitionBulk(ctx, ctx.data, row => compiled.parse(row) as Record<string, unknown>)
+          return
+        }
+
         ctx.data = compiled.parse(ctx.data)
       }
     },
@@ -343,7 +391,7 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
         break
       }
       if (def.schema) {
-        const nested = buildCompiledSchema(def.schema).validate(v)
+        const nested = compileNested(def.schema).validate(v)
         if (!nested.valid) {
           errors.push(...nested.errors.map(e => ({ field: `${field}.${e.field}`, message: e.message })))
         } else {

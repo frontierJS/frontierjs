@@ -2,6 +2,7 @@
  * tests/prefetch-theme.test.js — prefetch and theme tests
  */
 
+import { flushSync } from '@frontierjs/mesa/runtime.js'
 import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest'
 import { mkdir, writeFile, rm, readFile } from 'fs/promises'
 import { join } from 'path'
@@ -130,10 +131,10 @@ describe('theme signal', () => {
   test('theme signal is subscribable', () => {
     const values = []
     const unsub = theme.subscribe(v => values.push(v))
-    setTheme('dark')
-    setTheme('light')
+    setTheme('dark');  flushSync()
+    setTheme('light'); flushSync()
     unsub()
-    setTheme('dark')  // after unsub — should not be captured
+    setTheme('dark'); flushSync()  // after unsub — should not be captured
     expect(values).toContain('dark')
     expect(values).toContain('light')
     // After unsub, no more updates

@@ -4,11 +4,15 @@
 // Plugin system: Option C hybrid — simple fn or full lifecycle object.
 
 import { HttpTransport }            from '../transport/http.ts'
-import { bridge, type ServiceContext, type ServiceMethod } from '../transport/bridge.ts'
+import { bridge } from '../transport/bridge.ts'
+import { freezeUser, runWithMeta, type ServiceContext, type ServiceMethod, type CallOptions, type RequestMeta } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
+import { unwrapResult } from './envelope.ts'
+import { withLitestoneDb } from './litestone.ts'
 import { createEventBus }           from '../events/index.ts'
 import { createMemoryCache }        from '../cache/index.ts'
-import { createScheduler }          from '../plugins/scheduler/index.ts'
+import { createScheduler }          from '../scheduler/index.ts'
+import { createDatabase, type DatabaseClient } from '../storage/database/index.ts'
 import { autoloadServices }         from './loader.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { toFrameworkError, NotFound }   from './errors.ts'
@@ -22,7 +26,7 @@ import type { IMail }               from '../mail/index.ts'
 import type { IFileStorage }        from '../storage/filestorage/index.ts'
 import type { ICache }              from '../cache/index.ts'
 import type { IEventBus }           from '../events/index.ts'
-import type { AIRegistry }          from '../plugins/ai/index.ts'
+import type { AIRegistry }          from '../ai/index.ts'
 import type { RouteHandler, MiddlewareFn, WsHandlerSet } from '../transport/types.ts'
 
 // ─── Plugin interface ─────────────────────────────────────────────────────
@@ -45,7 +49,15 @@ export interface App {
   // Config
   config:    AppConfig
 
-  // Database — bun:sqlite, WAL mode, foreign keys
+  /**
+   * The application's database client.
+   *
+   * Whatever was passed as `createApp({ db })`, or a raw bun:sqlite handle when
+   * only `config.database.url` was set. Typed loosely because both a Litestone
+   * client and a plain table-shaped object are valid — `createBaseService`
+   * adapts the latter.
+   */
+  db?:       unknown
 
   // Subsystems — accessed directly
   logger:    ILogger
@@ -73,6 +85,18 @@ export interface App {
   presence?:        (channelId: string) => import('../transport/channels.ts').PresenceMember[]
   presenceOf?:      (userId: string | number) => import('../transport/channels.ts').PresenceMember[]
   addOpenApiPaths?: (paths: Record<string, unknown>) => void
+
+  // Webhooks manager — available after app.configure(webhooks(...)).
+  // Typed here so plugins attach via plain assignment, not type-erasing
+  // casts (the standard plugin-attachment pattern).
+  webhooks?: import('../plugins/webhooks/index.ts').WebhookManager
+
+  // ── Internal plugin/subsystem attachment points (typed, not casts) ──
+  /** OpenAPI extra paths registered via addOpenApiPaths(). */
+  _openapiExtraPaths?: Record<string, unknown>
+  /** Per-app service cache — created lazily by cache-declaring services,
+   *  destroyed by stop(). See resolveCache in core/service.ts. */
+  _serviceCache?: ICache
 
   // File storage factory
   filestorage: (name: string) => Promise<IFileStorage>
@@ -116,7 +140,7 @@ export interface App {
   // token was present and valid, null for anonymous connections.
   //
   //   app.ws('/chat/{roomId}', {
-  //     open(ctx)           { ctx.send({ type: 'welcome', room: ctx.params.roomId }) },
+  //     open(ctx)           { ctx.send({ type: 'welcome', room: ctx.route.roomId }) },
   //     message(ctx, msg)   { ... },
   //     close(ctx, code)    { ... },
   //   })
@@ -146,9 +170,35 @@ export interface AppOptions {
   logger?:      ILogger             // custom logger — defaults to createLogger()
   logLevel?:    import('./logger.ts').LogLevel   // override log level
   auth?:        IAuth
+  /**
+   * The application's database client, exposed as `app.db`.
+   *
+   * Accepts a Litestone client or any plain table-shaped object —
+   * `createBaseService` adapts the latter. When the client exposes `$setAuth`,
+   * per-request scoping is installed automatically as an app-level around hook,
+   * so `ctx.locals.db` is always the caller-scoped client and row policies see
+   * who is asking.
+   *
+   * That used to be a manual step:
+   *
+   *   app.hooks({ around: { all: [withLitestoneDb(db)] } })
+   *
+   * which is an option with exactly one correct answer — omitting it left
+   * services running against an unscoped client. Passing `db` here does it.
+   *
+   * Takes precedence over `config.database.url`, which creates a raw bun:sqlite
+   * handle and is the older, lower-level path.
+   */
+  db?:          unknown
   mail?:        IMail
   ai?:          AIRegistry
-  autoload?:    string    // path to services/ dir — enables auto-discovery
+  /**
+   * Service auto-discovery. ON by default: the `services/` directory next
+   * to your entry file (Bun.main) is scanned for *.service.ts files.
+   * Pass a string to point somewhere else (resolved relative to CWD), or
+   * `false` to disable auto-discovery entirely.
+   */
+  autoload?:    string | false
   filestorage?: string   // path to storage root dir
 }
 
@@ -163,36 +213,47 @@ export interface AppOptions {
 // Mirrors Feathers’ app.service(name).method(id, params) API.
 // call() is consistent with client.service(name).call() on the browser client.
 
-// ─── Params shape for internal service calls ─────────────────────────────
-export type ServiceParams = Partial<Omit<ServiceContext['params'], 'query'>>
+// ─── Internal service call options ───────────────────────────────────────
+// CallOptions is defined in bridge.ts (single source). Re-exported here
+// for the public surface. ServiceParams is GONE — there is no params bag.
+export type { CallOptions } from './context.ts'
 
 export interface ServiceCaller {
-  find(query?: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  get(id: string | number, params?: ServiceParams): Promise<unknown>
-  get(query: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  create(data: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  patch(id: string | number, data: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  patch(query: Record<string, unknown>, data: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  remove(id: string | number, params?: ServiceParams): Promise<unknown>
-  remove(query: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  restore(id: string | number, params?: ServiceParams): Promise<unknown>
-  restore(query: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  call(name: string, id?: string | number | null, data?: Record<string, unknown> | null, params?: ServiceParams): Promise<unknown>
+  /**
+   * Returns the LIST ENVELOPE — `{ kind:'list', object, data, errors, total?, limit?, offset? }`
+   * — not a bare array. The rows are `result.data`.
+   *
+   * Pass directives to paginate:
+   *   app.service('posts').find({ status: 'open' }, { directives: { limit: 10 } })
+   */
+  find(query?: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  get(id: string | number, opts?: CallOptions): Promise<unknown>
+  get(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  create(data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  patch(id: string | number, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  patch(query: Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  update(id: string | number, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  update(query: Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  remove(id: string | number, opts?: CallOptions): Promise<unknown>
+  remove(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  restore(id: string | number, opts?: CallOptions): Promise<unknown>
+  restore(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  call(name: string, id?: string | number | null, data?: Record<string, unknown> | null, opts?: CallOptions): Promise<unknown>
 
   // ── Hook-bypass methods ────────────────────────────────────────────────────
   // Skip the hook pipeline — call the raw method directly.
   // Use when you explicitly don’t want side-effects (publish, audit, cache-bust).
   // For everything else, use the unprefixed methods.
-  _find(query?: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  _get(id: string | number, params?: ServiceParams): Promise<unknown>
-  _get(query: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  _create(data: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  _patch(id: string | number, data: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  _patch(query: Record<string, unknown>, data: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  _remove(id: string | number, params?: ServiceParams): Promise<unknown>
-  _remove(query: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
-  _restore(id: string | number, params?: ServiceParams): Promise<unknown>
-  _restore(query: Record<string, unknown>, params?: ServiceParams): Promise<unknown>
+  _find(query?: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  _get(id: string | number, opts?: CallOptions): Promise<unknown>
+  _get(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  _create(data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  _patch(id: string | number, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  _patch(query: Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  _remove(id: string | number, opts?: CallOptions): Promise<unknown>
+  _remove(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
+  _restore(id: string | number, opts?: CallOptions): Promise<unknown>
+  _restore(query: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
 }
 
 export function createApp(opts: AppOptions = {}): App {
@@ -208,6 +269,14 @@ export function createApp(opts: AppOptions = {}): App {
   // ── Subsystems ───────────────────────────────────────────────────────
   const logger    = opts.logger ?? createLogger({ level: opts.logLevel })
   const services  = new ServiceRegistry()
+  // app.service(name) caller memo — see service() below.
+  const _serviceCallers = new Map<string, ServiceCaller>()
+  // Signal handler installed by start(), removed by stop() — kept here so
+  // repeated start() calls never register duplicates.
+  let _signalHandler: (() => void) | null = null
+  // Async plugin register() rejections, captured by configure() and
+  // rethrown by start() — a half-registered plugin must not boot.
+  const _registerFailures: Array<{ plugin: string; err: unknown }> = []
   const events    = createEventBus()
   const telemetry = createEventBus()
   const cache     = createMemoryCache({
@@ -215,6 +284,22 @@ export function createApp(opts: AppOptions = {}): App {
     maxSize:    config.cache.maxSize,
   })
   const scheduler = createScheduler()
+
+  // ── Database (optional) ──────────────────────────────────────────────
+  // Two ways in, in priority order:
+  //
+  //   1. opts.db            — a client you built (Litestone, or anything
+  //                           table-shaped that createBaseService can adapt)
+  //   2. config.database.url — creates a raw bun:sqlite handle
+  //
+  // Either way it lands on app.db, so services and hooks have one place to
+  // look. If the client supports $setAuth, per-request scoping is installed
+  // further down — see "Litestone scoping".
+  let db: unknown = opts.db
+  if (!db && config.database?.url) {
+    db = createDatabase({ path: config.database.url, log: config.database.log })
+  }
+
   const http      = new HttpTransport({
     port:        config.port,
     hostname:    config.hostname,
@@ -252,6 +337,7 @@ export function createApp(opts: AppOptions = {}): App {
   // ── Build the app object ─────────────────────────────────────────────
   const app: App = {
     config,
+    db,
     logger,
     services,
     events,
@@ -267,28 +353,45 @@ export function createApp(opts: AppOptions = {}): App {
 
     // ── Service caller ────────────────────────────────────────────────
     service(name: string): ServiceCaller {
+      // Callers are pure over (name, app) — memoize so hot paths that call
+      // app.service('x') per request/hook don't rebuild the ~20-method
+      // caller object and its closures every time. Service lookup stays
+      // lazy (inside call()/bypasses), so a caller obtained before the
+      // service registers still works afterwards.
+      const memoized = _serviceCallers.get(name)
+      if (memoized) return memoized
+
+      // Builds an internal-call ServiceContext. auth propagated as a frozen
+      // shared reference (see freezeUser), locals fresh {} (never inherits
+      // caller's — kills the shared-mutation footgun). Request-wide metadata
+      // is NOT passed here; it rides AsyncLocalStorage (requestMeta()).
       function makeCtx(
         method: ServiceMethod,
         id:     string | number | null,
         data:   Record<string, unknown> | null,
         query:  Record<string, unknown> = {},
-        params: ServiceParams = {}
+        opts:   CallOptions = {}
       ): ServiceContext {
         return {
           service:   name,
           method,
           type:      'before',
-          transport: 'internal',
+          transport: opts.transport ?? 'internal',
           model:     name,
           id:        id ?? null,
           query,
+          // Internal callers paginate through CallOptions:
+          //   app.service('posts').find({}, { directives: { limit: 10 } })
+          directives: opts.directives ?? {},
           data,
-          params: {
-            headers: {},
-            ip:      '127.0.0.1',
-            user:    null,
-            ...params,
+          auth: {
+            user: opts.auth?.user ? freezeUser(opts.auth.user) : null,
           },
+          client: {
+            headers: {},
+          },
+          route:  {},
+          locals: opts.locals ? { ...opts.locals } : {},
           app:       app,
           result:    null,
           error:     null,
@@ -302,42 +405,56 @@ export function createApp(opts: AppOptions = {}): App {
         const svc = services.get(name)
         if (!svc) throw new NotFound(`Service '${name}' not found`)
         await callService(svc, ctx, app._appHooks, app.events, app.telemetry)
-        return ctx.result
+        // Same rule as the HTTP boundary: a list keeps its envelope, a single
+        // unwraps to the record.
+        //
+        // This used to flat-unwrap to `.data` for every method, so
+        // `app.service('posts').find()` returned a bare array and total/limit/
+        // offset were unreachable from anywhere except curl. Identical call,
+        // two different answers depending on who was asking.
+        return unwrapResult(ctx.result)
       }
 
-      return {
-        find(query?: Record<string, unknown>, params?: ServiceParams) {
-          return call(makeCtx('find', null, null, query ?? {}, params))
+      const caller: ServiceCaller = {
+        find(query?: Record<string, unknown>, opts?: CallOptions) {
+          return call(makeCtx('find', null, null, query ?? {}, opts))
         },
-        get(idOrQuery: string | number | Record<string, unknown>, params?: ServiceParams) {
+        get(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('get', null, null, idOrQuery, params))
+            return call(makeCtx('get', null, null, idOrQuery, opts))
           }
-          return call(makeCtx('get', idOrQuery, null, {}, params))
+          return call(makeCtx('get', idOrQuery, null, {}, opts))
         },
-        create(data: Record<string, unknown>, params?: ServiceParams) {
-          return call(makeCtx('create', null, data, {}, params))
+        create(data: Record<string, unknown>, opts?: CallOptions) {
+          return call(makeCtx('create', null, data, {}, opts))
         },
-        patch(idOrQuery: string | number | Record<string, unknown>, data: Record<string, unknown>, params?: ServiceParams) {
+        patch(idOrQuery: string | number | Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions) {
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('patch', null, data, idOrQuery, params))
+            return call(makeCtx('patch', null, data, idOrQuery, opts))
           }
-          return call(makeCtx('patch', idOrQuery, data, {}, params))
+          return call(makeCtx('patch', idOrQuery, data, {}, opts))
         },
-        remove(idOrQuery: string | number | Record<string, unknown>, params?: ServiceParams) {
+        update(idOrQuery: string | number | Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions) {
+          // update is patch's full-replace sibling; same routing.
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('remove', null, null, idOrQuery, params))
+            return call(makeCtx('update' as ServiceMethod, null, data, idOrQuery, opts))
           }
-          return call(makeCtx('remove', idOrQuery, null, {}, params))
+          return call(makeCtx('update' as ServiceMethod, idOrQuery, data, {}, opts))
         },
-        restore(idOrQuery: string | number | Record<string, unknown>, params?: ServiceParams) {
+        remove(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('restore', null, null, idOrQuery, params))
+            return call(makeCtx('remove', null, null, idOrQuery, opts))
           }
-          return call(makeCtx('restore', idOrQuery, null, {}, params))
+          return call(makeCtx('remove', idOrQuery, null, {}, opts))
         },
-        call(methodName: string, id?: string | number | null, data?: Record<string, unknown> | null, params?: ServiceParams) {
-          const ctx = makeCtx(methodName as import('../transport/bridge.ts').ServiceMethod, id ?? null, data ?? null, {}, params)
+        restore(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
+          if (typeof idOrQuery === 'object') {
+            return call(makeCtx('restore', null, null, idOrQuery, opts))
+          }
+          return call(makeCtx('restore', idOrQuery, null, {}, opts))
+        },
+        call(methodName: string, id?: string | number | null, data?: Record<string, unknown> | null, opts?: CallOptions) {
+          const ctx = makeCtx(methodName as import('../transport/bridge.ts').ServiceMethod, id ?? null, data ?? null, {}, opts)
           ctx.method = methodName
           return call(ctx)
         },
@@ -347,64 +464,71 @@ export function createApp(opts: AppOptions = {}): App {
         // Intentional escape hatch: reading inside a hook without re-triggering
         // hooks, job handlers that don’t want side-effects, migration scripts.
 
-        async _find(query?: Record<string, unknown>, params?: ServiceParams) {
+        async _find(query?: Record<string, unknown>, opts?: CallOptions) {
           const svc = services.get(name)
           if (!svc) throw new NotFound(`Service '${name}' not found`)
-          const ctx = makeCtx('find', null, null, query ?? {}, params)
+          const ctx = makeCtx('find', null, null, query ?? {}, opts)
           return svc._find(ctx)
         },
-        async _get(idOrQuery: string | number | Record<string, unknown>, params?: ServiceParams) {
+        async _get(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           const svc = services.get(name)
           if (!svc) throw new NotFound(`Service '${name}' not found`)
           if (typeof idOrQuery === 'object') {
-            const ctx = makeCtx('get', null, null, idOrQuery, params)
+            const ctx = makeCtx('get', null, null, idOrQuery, opts)
             return svc._get(ctx)
           }
-          const ctx = makeCtx('get', idOrQuery, null, {}, params)
+          const ctx = makeCtx('get', idOrQuery, null, {}, opts)
           return svc._get(ctx)
         },
-        async _create(data: Record<string, unknown>, params?: ServiceParams) {
+        async _create(data: Record<string, unknown>, opts?: CallOptions) {
           const svc = services.get(name)
           if (!svc) throw new NotFound(`Service '${name}' not found`)
-          const ctx = makeCtx('create', null, data, {}, params)
+          const ctx = makeCtx('create', null, data, {}, opts)
           return svc._create(ctx)
         },
-        async _patch(idOrQuery: string | number | Record<string, unknown>, data: Record<string, unknown>, params?: ServiceParams) {
+        async _patch(idOrQuery: string | number | Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions) {
           const svc = services.get(name)
           if (!svc) throw new NotFound(`Service '${name}' not found`)
           if (typeof idOrQuery === 'object') {
-            const ctx = makeCtx('patch', null, data, idOrQuery, params)
+            const ctx = makeCtx('patch', null, data, idOrQuery, opts)
             return svc._patch(ctx)
           }
-          const ctx = makeCtx('patch', idOrQuery, data, {}, params)
+          const ctx = makeCtx('patch', idOrQuery, data, {}, opts)
           return svc._patch(ctx)
         },
-        async _remove(idOrQuery: string | number | Record<string, unknown>, params?: ServiceParams) {
+        async _remove(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           const svc = services.get(name)
           if (!svc) throw new NotFound(`Service '${name}' not found`)
           if (typeof idOrQuery === 'object') {
-            const ctx = makeCtx('remove', null, null, idOrQuery, params)
+            const ctx = makeCtx('remove', null, null, idOrQuery, opts)
             return svc._remove(ctx)
           }
-          const ctx = makeCtx('remove', idOrQuery, null, {}, params)
+          const ctx = makeCtx('remove', idOrQuery, null, {}, opts)
           return svc._remove(ctx)
         },
-        async _restore(idOrQuery: string | number | Record<string, unknown>, params?: ServiceParams) {
+        async _restore(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           const svc = services.get(name)
           if (!svc) throw new NotFound(`Service '${name}' not found`)
           if (typeof idOrQuery === 'object') {
-            const ctx = makeCtx('restore', null, null, idOrQuery, params)
+            const ctx = makeCtx('restore', null, null, idOrQuery, opts)
             return svc._restore(ctx)
           }
-          const ctx = makeCtx('restore', idOrQuery, null, {}, params)
+          const ctx = makeCtx('restore', idOrQuery, null, {}, opts)
           return svc._restore(ctx)
         },
       }
+
+      _serviceCallers.set(name, caller)
+      return caller
     },
 
     hooks(map: HookMap): void {
       appHooks = mergeHookMaps(appHooks, map)
       app._appHooks = appHooks
+      // If start() has already compiled per-service pipelines, recompile them
+      // with the new app-level hooks — otherwise the stale compiled pipelines
+      // win in callService() and hooks added after start() silently never run.
+      if (services.hasAppHooks) services.setAppHooks(appHooks)
     },
 
     _appHooks: appHooks,
@@ -413,9 +537,9 @@ export function createApp(opts: AppOptions = {}): App {
     _metricsProviders: new Map<string, () => unknown>(),
 
     setAuth(auth: import('../auth/types.ts').IAuth): void {
-      // Patch auth into the HTTP transport — must be called before start()
-      ;(http as Record<string, unknown>)._opts =
-        Object.assign((http as Record<string, unknown>)._opts as object, { auth })
+      // Patch auth into the HTTP transport via its public API — must be
+      // called before start()
+      http.setAuth(auth)
       // Mirror onto app.auth so plugins reading app.auth at register/boot
       // see the patched implementation (channels, custom plugins, etc.)
       app.auth = auth
@@ -426,20 +550,42 @@ export function createApp(opts: AppOptions = {}): App {
         ? { name: plugin.name || 'anonymous', register: plugin }
         : plugin
 
-      if (started) {
-        // App is already running — run register() immediately so plugins
-        // that add routes or hooks still work. Log a warning because boot()
-        // and ready() will NOT run — those lifecycle phases are already past.
-        console.warn(
-          `[Junction] configure('${p.name}') called after app.start() — ` +
-          `register() will run now, but boot() and ready() will NOT. ` +
-          `Move configure() calls before start() to avoid this.`
-        )
-        if (p.register) {
-          Promise.resolve(p.register(app)).catch(err =>
-            console.error(`[Junction] Plugin '${p.name}' register() failed:`, err)
+      // Run register() synchronously now. boot()/ready()/shutdown() are
+      // queued and run during start() / _startForTest() / stop().
+      // Run register sync so plugins that add routes / configure middleware
+      // are visible immediately. This matches the documented contract:
+      // "configure() runs register() synchronously".
+      if (p.register) {
+        try {
+          const result = p.register(app)
+          // If register returned a promise, the user opted into async setup —
+          // we don't await it (synchronous contract), but its rejection is
+          // RECORDED and rethrown by start(): a plugin that failed to
+          // register must not let the app boot half-configured.
+          if (result && typeof (result as Promise<unknown>).then === 'function') {
+            (result as Promise<unknown>).catch(err => {
+              console.error(`[Junction] Plugin '${p.name}' register() rejected:`, err)
+              _registerFailures.push({ plugin: p.name, err })
+            })
+          }
+        } catch (err) {
+          // Sync failure — fail LOUDLY at the configure() call site.
+          // (Previously console.error'd and continued half-configured.)
+          throw new Error(
+            `Plugin "${p.name}" register() failed: ${err instanceof Error ? err.message : err}`,
+            { cause: err }
           )
         }
+      }
+
+      if (started) {
+        // App is already running — register() ran above. boot()/ready() can't,
+        // their lifecycle is past. Warn so it's not silent.
+        console.warn(
+          `[Junction] configure('${p.name}') called after app.start() — ` +
+          `register() ran, but boot() and ready() will NOT. ` +
+          `Move configure() calls before start() to avoid this.`
+        )
         return app
       }
 
@@ -470,9 +616,15 @@ export function createApp(opts: AppOptions = {}): App {
         helmet()(app)
       }
 
-      // Phase 1: register all plugins (adds middleware, healthPlugin routes, etc.)
+      // Phase 1: plugin register() already ran synchronously in configure().
+      // Async register() rejections were captured — refuse to boot on them.
+      if (_registerFailures.length) {
+        const f = _registerFailures[0]
+        throw new Error(`Plugin "${f.plugin}" register() rejected: ${f.err instanceof Error ? f.err.message : f.err}`, { cause: f.err })
+      }
+      // boot() runs here so plugins can do async setup that needs the full app.
       for (const plugin of plugins) {
-        await plugin.register?.(app)
+        await plugin.boot?.(app)
       }
 
       // Phase 4.5: register service routes AFTER plugins so middleware wraps them
@@ -509,8 +661,12 @@ export function createApp(opts: AppOptions = {}): App {
         for (const key of Object.keys(merged)) {
           (config as Record<string, unknown>)[key] = merged[key]
         }
-      } catch {
-        // No junction.config.js found — use defaults, no error
+      } catch (err) {
+        // loadConfig/tryImport already treat "file not found" as a normal
+        // miss (defaults apply). Reaching this catch means a config file
+        // EXISTS but is broken — that must abort startup, not silently
+        // boot the app on defaults.
+        throw new Error(`[Junction] Failed to load configuration: ${err instanceof Error ? err.message : err}`)
       }
 
       // Phase 0b: apply security headers — opt-out via config.http.helmet = false
@@ -518,28 +674,38 @@ export function createApp(opts: AppOptions = {}): App {
         helmet()(app)
       }
 
-      // Phase 1: register all plugins
-      for (const plugin of plugins) {
-        try {
-          await plugin.register?.(app)
-        } catch (err) {
-          throw new Error(`Plugin "${plugin.name}" register failed: ${(err as Error).message}`)
-        }
+      // Phase 1: plugin register() already ran synchronously in configure().
+      // Async register() rejections were captured — refuse to boot on them.
+      if (_registerFailures.length) {
+        const f = _registerFailures[0]
+        throw new Error(`Plugin "${f.plugin}" register() rejected: ${f.err instanceof Error ? f.err.message : f.err}`, { cause: f.err })
       }
+      // boot() / ready() run later — see phases below.
 
-      // Phase 3: auto-load services
-      // opts.autoload → explicit path wins
-      // _junction.services.dir → from junction.config.js
-      // Neither → skip
-      const rawServicesDir = opts.autoload
-        ?? (config as Record<string, unknown>)._junction?.services?.dir as string | undefined
+      // Phase 3: auto-load services — ON BY DEFAULT.
+      // Resolution order:
+      //   autoload: false            → disabled entirely
+      //   opts.autoload (string)     → explicit path (relative to CWD)
+      //   _junction.services.dir     → from junction.config.js (relative to CWD)
+      //   default                    → './services' next to the ENTRY FILE
+      //                                (Bun.main), so `services/` beside your
+      //                                app.ts just works with zero config.
+      // A missing directory is a silent no-op (the loader returns []), so
+      // the default costs nothing for apps without a services/ folder.
+      const { resolve: resolvePath, dirname: dirnamePath } = await import('node:path')
 
-      // Resolve relative to CWD — import() inside loader.ts would resolve
-      // relative to the junction package otherwise
-      const { resolve: resolvePath } = await import('node:path')
-      const servicesDir = rawServicesDir
-        ? resolvePath(process.cwd(), rawServicesDir)
-        : undefined
+      const explicitDir = opts.autoload === false
+        ? undefined
+        : (opts.autoload
+            ?? (config as Record<string, unknown>)._junction?.services?.dir as string | undefined)
+
+      const servicesDir = opts.autoload === false
+        ? undefined
+        : explicitDir
+          ? resolvePath(process.cwd(), explicitDir)        // explicit → CWD-relative
+          : typeof Bun !== 'undefined' && Bun.main
+            ? resolvePath(dirnamePath(Bun.main), 'services') // default → beside the entry file
+            : undefined
 
       if (servicesDir) {
         await autoloadServices({
@@ -586,9 +752,20 @@ export function createApp(opts: AppOptions = {}): App {
 
       started = true
 
-      // Phase 7: register shutdown handler
-      process.on('SIGTERM', () => app.stop())
-      process.on('SIGINT',  () => app.stop())
+      // Phase 7: register shutdown handlers — exactly once per app, and
+      // removable on stop(). Process exit belongs HERE (a signal means
+      // "terminate"), not inside stop() itself: stop() must be callable
+      // by tests and embedders without killing their process. Repeated
+      // start() calls no longer stack additional listeners.
+      if (!_signalHandler) {
+        _signalHandler = () => {
+          app.stop()
+            .then(() => process.exit(0))
+            .catch(() => process.exit(1))
+        }
+        process.on('SIGTERM', _signalHandler)
+        process.on('SIGINT',  _signalHandler)
+      }
 
       events.emit('app:ready', { port: config.port })
 
@@ -637,9 +814,48 @@ export function createApp(opts: AppOptions = {}): App {
       scheduler.destroy()
       cache.destroy()
 
+      // Destroy the per-app service cache (entries + GC timer). Created
+      // lazily by cache-declaring services — see resolveCache in service.ts.
+      const svcCache = (app as unknown as { _serviceCache?: { destroy(): void } })._serviceCache
+      if (svcCache) {
+        try { svcCache.destroy() } catch {}
+        ;(app as unknown as { _serviceCache?: unknown })._serviceCache = undefined
+      }
+
+      // Detach signal handlers so a stopped app can be garbage-collected
+      // and repeated app lifecycles in one process don't accumulate
+      // listeners (MaxListeners warnings, stale apps kept alive).
+      if (_signalHandler) {
+        process.removeListener('SIGTERM', _signalHandler)
+        process.removeListener('SIGINT',  _signalHandler)
+        _signalHandler = null
+      }
+
+      started = false
+
       logger.info('[App] Shutdown complete.')
-      process.exit(0)
+      // NOTE: stop() no longer calls process.exit(). Standalone apps exit
+      // via the signal handler installed in start(); tests and embedders
+      // get a clean, non-fatal shutdown.
     }
+  }
+
+  // ── Litestone scoping ──────────────────────────────────────────────────
+  // A client exposing $setAuth is a Litestone client, and every request must
+  // run against a caller-scoped copy of it — that is what makes @@gate and
+  // @@allow see who is asking. Installing it is not a decision: without it
+  // services run against the root client, policies compare against a null
+  // auth() and match nothing, so the app looks broken rather than insecure.
+  //
+  // Installed here, after app.hooks() exists, so it composes with anything the
+  // application adds later. ctx.auth.user is populated by the transport bridge
+  // before callService(), so it is always available by the time this runs.
+  //
+  // withLitestoneDb does the $setAuth itself, so this covers services built
+  // for every service. Scoping used to live in one of two service factories,
+  // so which one you chose silently decided whether your row policies worked.
+  if (db && typeof (db as { $setAuth?: unknown }).$setAuth === 'function') {
+    app.hooks({ around: { all: [withLitestoneDb(db as never)] } })
   }
 
   return app
@@ -665,12 +881,34 @@ export function registerServiceRoutes(app: App, prefix: string): void {
       return ctx.json({ name: 'NotFound', message: `Service '${serviceName}' not found`, code: 404 }, 404)
 
     const model  = (service as unknown as { model?: string }).model ?? serviceName
-    const wrap   = (ctx.query as Record<string, unknown>)?.['$wrap'] === 'true'
+    // $wrap is a three-state request, not a boolean:
+    //   absent      → the default rule (list keeps its envelope, single unwraps)
+    //   'true'      → envelope the single too
+    //   'false'     → unwrap the list to a bare array (Feathers' paginate:false)
+    // It used to be read as `=== 'true'`, so $wrap=false on a list was silently
+    // ignored — the only way to get a bare array out of find() was not to ask.
+    const rawWrapParam = (ctx.query as Record<string, unknown>)?.['$wrap']
+    const wrap: boolean | undefined =
+      rawWrapParam === undefined ? undefined : rawWrapParam !== 'false'
     const svcCtx = bridge.toContext(ctx, serviceName, model, 'http', app)
 
+    // Build request-wide metadata once and wrap the whole pipeline run
+    // in the ALS store so requestMeta() works at any depth, including
+    // across internal app.service() calls — without threading it.
+    const meta: RequestMeta = {
+      correlationId:  ctx.headers['x-request-id']
+        ?? (ctx as unknown as { requestId?: string }).requestId
+        ?? crypto.randomUUID(),
+      idempotencyKey: ctx.headers['idempotency-key'],
+      locale:         ctx.headers['accept-language']?.split(',')[0]?.trim(),
+      origin:         'http',
+    }
+
     try {
-      await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)
-      return bridge.toResponse(svcCtx, wrap)
+      return await runWithMeta(meta, async () => {
+        await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)
+        return bridge.toResponse(svcCtx, wrap)
+      })
     } catch (err) {
       const fe = toFrameworkError(err)
       return ctx.json(fe.toJSON(), fe.code)

@@ -250,9 +250,14 @@ export function matchPathDirect(
     } else {
       // param — empty segment never satisfies a param
       if (pos === segEnd) return null
-      // Only call decodeURIComponent when a percent is present
+      // Only decode when a percent is present; malformed sequences ('%zz')
+      // degrade to the raw text instead of throwing an uncaught 500.
       const raw = path.slice(pos, segEnd)
-      params[seg.name] = raw.indexOf('%') !== -1 ? decodeURIComponent(raw) : raw
+      if (raw.indexOf('%') !== -1) {
+        try { params[seg.name] = decodeURIComponent(raw) } catch { params[seg.name] = raw }
+      } else {
+        params[seg.name] = raw
+      }
     }
 
     // Advance past the segment and its separating slash
@@ -270,30 +275,14 @@ export function matchPathDirect(
 }
 
 // Array-based match — used for WS upgrade (exported) and tests.
+// Delegates to matchPathDirect — previously this was a second, independent
+// matcher with DIVERGENT wildcard semantics (it only honoured a wildcard in
+// the last segment, while matchPathDirect matches at the first wildcard),
+// so the same pattern could match differently depending on entry point.
+// One matcher, one behaviour.
 function matchRoute(
   segments: RouteSegment[],
   actual:   string[]
 ): Record<string, string> | null {
-
-  const params: Record<string, string> = {}
-  const hasWildcard = segments[segments.length - 1]?.type === 'wildcard'
-
-  if (!hasWildcard && segments.length !== actual.length)
-    return null
-
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i]
-    if (seg.type === 'wildcard') break
-    if (seg.type === 'static') {
-      if (seg.value !== actual[i]) return null
-      continue
-    }
-    if (seg.type === 'param') {
-      if (actual[i] === undefined) return null
-      params[seg.name] = decodeURIComponent(actual[i])
-      continue
-    }
-  }
-
-  return params
+  return matchPathDirect(segments, '/' + actual.join('/'))
 }

@@ -45,11 +45,24 @@ export function createLitestoneAuth(
     return {
       userId:    user.id,
       userType:  user.role ?? 'user',
+      // The User model's role was written to userType and then dropped, so
+      // SessionContext.role — the field consumers actually read, including
+      // anything grading a caller for @@gate — was always undefined.
+      role:      user.role ?? undefined,
       email:     user.email,
       name:      user.name ?? undefined,
       // accountId stored as Integer in DB — stringify for SessionContext compatibility.
       // Services convert back with Number(user.accountId) when needed.
       accountId: user.accountId != null ? String(user.accountId) : undefined,
+
+      // Verification standing, in the vocabulary sessionGateLevel() grades on.
+      // The User model carries a boolean, not a timestamp, so this is
+      // deliberately null-or-absent rather than a fabricated date:
+      //   emailVerified false → null      → VISITOR (1)
+      //   emailVerified true  → undefined → no objection; grades USER (4)
+      // Absence means "nothing holding this user back", never "not yet".
+      ...(user.emailVerified === false ? { verifiedAt: null } : {}),
+
       authMethod,
     }
   }
@@ -81,7 +94,7 @@ export function createLitestoneAuth(
     // set at login is final. Intentional: avoids a write on every request.
 
     async verifySession(token: string): Promise<SessionContext | null> {
-      const session = await sys.sessions.findFirst({
+      const session = await sys.session.findFirst({
         where: {
           token,
           expiresAt: { gt: new Date() },
@@ -89,7 +102,7 @@ export function createLitestoneAuth(
       })
       if (!session) return null
 
-      const user = await sys.users.get(session.userId)
+      const user = await sys.user.findUnique({ where: { id: session.userId } })
       if (!user) return null
 
       return toContext(user, 'session')
@@ -98,10 +111,10 @@ export function createLitestoneAuth(
     // ── login ────────────────────────────────────────────────────────────
 
     async login(email: string, password: string): Promise<{ token: string; user: SessionContext }> {
-      const user = await sys.users.findFirst({ where: { email } })
+      const user = await sys.user.findFirst({ where: { email } })
       if (!user) throw new Error('Invalid credentials')
 
-      const cred = await sys.credentials.findFirst({
+      const cred = await sys.credential.findFirst({
         where: { userId: user.id, type: 'password' }
       })
       if (!cred) throw new Error('Invalid credentials')
@@ -111,7 +124,7 @@ export function createLitestoneAuth(
 
       const token = generateSessionToken()
 
-      await sys.sessions.create({
+      await sys.session.create({
         data: {
           userId:    user.id,
           token,
@@ -125,7 +138,7 @@ export function createLitestoneAuth(
     // ── logout ───────────────────────────────────────────────────────────
 
     async logout(token: string): Promise<void> {
-      await sys.sessions.deleteMany({ where: { token } })
+      await sys.session.deleteMany({ where: { token } })
     },
 
     // ── createUser ───────────────────────────────────────────────────────
@@ -135,10 +148,10 @@ export function createLitestoneAuth(
     // not that a session exists.
 
     async createUser(data: CreateUserInput): Promise<SessionContext> {
-      const existing = await sys.users.findFirst({ where: { email: data.email } })
+      const existing = await sys.user.findFirst({ where: { email: data.email } })
       if (existing) throw new Error('Email already registered')
 
-      const user = await sys.users.create({
+      const user = await sys.user.create({
         data: {
           email: data.email,
           name:  data.name  ?? null,
@@ -147,7 +160,7 @@ export function createLitestoneAuth(
       })
 
       if (data.password) {
-        await sys.credentials.create({
+        await sys.credential.create({
           data: {
             userId: user.id,
             type:   'password',
@@ -163,35 +176,35 @@ export function createLitestoneAuth(
 
     async deleteUser(userId: string): Promise<void> {
       // Fetch the user first so we can clean up email-scoped verification tokens
-      const user = await sys.users.get(userId)
+      const user = await sys.user.findUnique({ where: { id: userId } })
 
-      await sys.credentials.deleteMany({ where: { userId } })
-      await sys.sessions.deleteMany({ where: { userId } })
+      await sys.credential.deleteMany({ where: { userId } })
+      await sys.session.deleteMany({ where: { userId } })
 
       // Clean up any pending password-reset / email-verify tokens for this email
       if (user?.email) {
-        await sys.verifications.deleteMany({
+        await sys.verification.deleteMany({
           where: { identifier: { endsWith: `:${user.email}` } }
         })
       }
 
-      await sys.users.delete({ where: { id: userId } })
+      await sys.user.delete({ where: { id: userId } })
     },
 
     // ── requestPasswordReset ─────────────────────────────────────────────
     // Always resolves — never reveals whether the email is registered.
 
     async requestPasswordReset(email: string): Promise<void> {
-      const user = await sys.users.findFirst({ where: { email } })
+      const user = await sys.user.findFirst({ where: { email } })
       if (!user) return   // silent — don't reveal email existence
 
-      await sys.verifications.deleteMany({
+      await sys.verification.deleteMany({
         where: { identifier: `reset:${email}` }
       })
 
       const token = generateToken()
 
-      await sys.verifications.create({
+      await sys.verification.create({
         data: {
           identifier: `reset:${email}`,
           value:      token,
@@ -206,7 +219,7 @@ export function createLitestoneAuth(
     // ── confirmPasswordReset ─────────────────────────────────────────────
 
     async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
-      const verification = await sys.verifications.findFirst({
+      const verification = await sys.verification.findFirst({
         where: {
           value:     token,
           expiresAt: { gt: new Date() },
@@ -215,37 +228,37 @@ export function createLitestoneAuth(
       if (!verification) throw new Error('Invalid or expired reset token')
 
       const email = verification.identifier.replace(/^reset:/, '')
-      const user  = await sys.users.findFirst({ where: { email } })
+      const user  = await sys.user.findFirst({ where: { email } })
       if (!user) throw new Error('User not found')
 
       const hash = await hashPassword(newPassword)
 
-      await sys.credentials.updateMany({
+      await sys.credential.updateMany({
         where: { userId: user.id, type: 'password' },
         data:  { value: hash },
       })
 
       // Token consumed — delete it
-      await sys.verifications.delete({ where: { id: verification.id } })
+      await sys.verification.delete({ where: { id: verification.id } })
 
       // Revoke all sessions — force re-login after password change
-      await sys.sessions.deleteMany({ where: { userId: user.id } })
+      await sys.session.deleteMany({ where: { userId: user.id } })
     },
 
     // ── requestEmailVerification ─────────────────────────────────────────
 
     async requestEmailVerification(userId: string): Promise<void> {
-      const user = await sys.users.get(userId)
+      const user = await sys.user.findUnique({ where: { id: userId } })
       if (!user) throw new Error('User not found')
       if (user.emailVerified) return   // already verified — no-op
 
-      await sys.verifications.deleteMany({
+      await sys.verification.deleteMany({
         where: { identifier: `verify:${user.email}` }
       })
 
       const token = generateToken()
 
-      await sys.verifications.create({
+      await sys.verification.create({
         data: {
           identifier: `verify:${user.email}`,
           value:      token,
@@ -260,7 +273,7 @@ export function createLitestoneAuth(
     // ── verifyEmail ──────────────────────────────────────────────────────
 
     async verifyEmail(token: string): Promise<SessionContext> {
-      const verification = await sys.verifications.findFirst({
+      const verification = await sys.verification.findFirst({
         where: {
           value:     token,
           expiresAt: { gt: new Date() },
@@ -269,15 +282,15 @@ export function createLitestoneAuth(
       if (!verification) throw new Error('Invalid or expired verification token')
 
       const email = verification.identifier.replace(/^verify:/, '')
-      const user  = await sys.users.findFirst({ where: { email } })
+      const user  = await sys.user.findFirst({ where: { email } })
       if (!user) throw new Error('User not found')
 
-      await sys.users.update({
+      await sys.user.update({
         where: { id: user.id },
         data:  { emailVerified: true },
       })
 
-      await sys.verifications.delete({ where: { id: verification.id } })
+      await sys.verification.delete({ where: { id: verification.id } })
 
       return toContext({ ...user, emailVerified: true }, 'verified')
     },
@@ -291,7 +304,7 @@ export function createLitestoneAuth(
       const rawKey = generateApiKey()
       const hash   = hashApiKey(rawKey, secret)
 
-      const cred = await sys.credentials.create({
+      const cred = await sys.credential.create({
         data: {
           userId,
           type:           'apiKey',
@@ -308,7 +321,7 @@ export function createLitestoneAuth(
     // ── revokeApiKey ─────────────────────────────────────────────────────
 
     async revokeApiKey(keyId: string): Promise<void> {
-      await sys.credentials.delete({ where: { id: Number(keyId) } })
+      await sys.credential.delete({ where: { id: Number(keyId) } })
     },
 
     // ── verifyApiKey ─────────────────────────────────────────────────────
@@ -317,7 +330,7 @@ export function createLitestoneAuth(
       const secret = requireEncryptionKey('verifyApiKey')
       const hash   = hashApiKey(rawKey, secret)
 
-      const cred = await sys.credentials.findFirst({
+      const cred = await sys.credential.findFirst({
         where: { type: 'apiKey', value: hash }
       })
       if (!cred) return null
@@ -325,7 +338,7 @@ export function createLitestoneAuth(
       // Check credential-level expiry if set
       if (cred.tokenExpiresAt && new Date(cred.tokenExpiresAt) < new Date()) return null
 
-      const user = await sys.users.get(cred.userId)
+      const user = await sys.user.findUnique({ where: { id: cred.userId } })
       if (!user) return null
 
       return toContext(user, 'apiKey')

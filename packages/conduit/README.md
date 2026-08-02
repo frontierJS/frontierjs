@@ -42,13 +42,15 @@ app.configure(conduit({
       kind:          'provider',
       protocol:      'http',
       address:       'https://api.hetzner.cloud/v1',
-      auth:          { type: 'bearer', token: process.env.HETZNER_TOKEN! },
+      auth:          { type: 'bearer', ref: 'HETZNER_TOKEN' },
       registered_at: Date.now(),
       last_seen_at:  null,
     }
   ],
 }))
 ```
+
+Targets carry a credential *reference*, not the credential. `ref: 'HETZNER_TOKEN'` is resolved at send time — by default from `process.env`. See [Credentials](#credentials).
 
 After `app.configure()`, `app.conduit` is available everywhere:
 
@@ -94,10 +96,47 @@ Auth is declared on the target and applied automatically on every request. Calle
 
 | type      | behaviour |
 |-----------|-----------|
-| `bearer`  | Adds `Authorization: Bearer <token>` |
-| `api_key` | Adds a custom header: `{ header: 'X-Api-Key', key: '...' }` |
+| `bearer`  | Adds `Authorization: Bearer <secret>` |
+| `api_key` | Adds a custom header: `{ header: 'X-Api-Key', ref: 'STRIPE_KEY' }` |
 | `hmac`    | Signs the request body with HMAC-SHA256. Sets `X-Hub-Signature: sha256=<hex>`. Only applied to requests with a body — GET requests are not signed. |
 | `none`    | No auth headers added |
+
+> **Not yet implemented on every protocol.** Auth is applied by the HTTP transport only. The WebSocket and Unix transports currently send unauthenticated traffic regardless of what the target declares. Do not rely on a target's `auth` for anything reached over `websocket` or `unix`.
+
+### Credentials
+
+A `TargetDescriptor` holds a credential **reference**, never the secret:
+
+```ts
+auth: { type: 'bearer', ref: 'HETZNER_TOKEN' }
+```
+
+The reference is resolved at send time by a `CredentialResolver`, so secret material never enters the registry, `resolve()`, `list()`, the hooks, or the management routes.
+
+```ts
+interface CredentialResolver {
+  get(ref: string): Promise<string | null>
+}
+```
+
+Four are built in:
+
+```ts
+import {
+  createEnvResolver,     // reads process.env[ref] — the default
+  createStaticResolver,  // fixed { ref: secret } map, for the composition root and tests
+  createNullResolver,    // resolves nothing; every ref fails closed
+  withCache,             // TTL cache around any resolver
+} from '@frontierjs/conduit'
+
+app.configure(conduit({
+  credentials: withCache(createVaultResolver(), { ttl_ms: 300_000 }),
+}))
+```
+
+**Unresolvable refs fail closed.** If `get()` returns `null` or an empty string, the request is not sent — `send()` returns `error.kind === 'auth_failed'` with `retryable: false`. The error names the target and the ref, never the value.
+
+Transports resolve once per attempt, so a retried request calls the resolver up to `retry_limit + 1` times. Wrap anything networked in `withCache`.
 
 ### Protocols
 
@@ -127,7 +166,19 @@ if (result.error) {
 }
 ```
 
-`stream()` throws a `ConduitStreamError` if the stream cannot be established (e.g. target not found). Once streaming, chunks arrive as `AsyncIterable<ConduitChunk>`.
+This holds for bad input too: a body that will not serialise (a cyclic object, a `BigInt`) returns `invalid_request` rather than throwing out of `send()`.
+
+| `error.kind` | retryable | meaning |
+|---|---|---|
+| `target_not_found` | no | no target registered under that ID |
+| `auth_failed` | no | 401/403 from the target, or a credential ref that would not resolve |
+| `invalid_request` | no | body would not serialise, or the response exceeded `max_response_bytes` |
+| `timeout` | yes | exceeded `timeout_ms`, including during the response body read |
+| `connection_failed` | yes | could not reach the target, or the conduit has been destroyed |
+| `server_error` | 5xx and 429 yes, 4xx no | the target responded with an error status |
+| `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`) |
+
+`stream()` throws a `ConduitStreamError` if the stream cannot be established — target not found, or the connection failed before the first chunk. Once streaming, chunks arrive as `AsyncIterable<ConduitChunk>`.
 
 ---
 
@@ -142,11 +193,16 @@ const result = await app.conduit.send<ServerResponse>({
   target:     'provider:hetzner',   // required — registered target ID
   method:     'POST',               // HTTP verb or protocol-specific method
   path:       '/servers',           // path on the remote
+  query:      { page: 2, tag: ['a', 'b'] },  // ?page=2&tag=a&tag=b
   body:       { name: 'web-01' },   // JSON-serialisable
-  headers:    { 'X-Custom': '1' },  // merged with auth headers
+  headers:    { 'X-Custom': '1' },  // merged with auth headers — auth wins
   timeout_ms: 5_000,                // overrides global default
 })
 ```
+
+**Auth headers take precedence over `headers`.** A caller cannot override or strip the target's credential, so a code path where user data reaches `req.headers` cannot become credential substitution.
+
+`query` merges with any query string already on `path`, and array values produce repeated keys. For GET requests a plain `body` is still flattened into the query string as a shorthand; `query` is applied after and wins on conflict.
 
 ### `app.conduit.stream(req)`
 
@@ -175,11 +231,13 @@ await app.conduit.register({
   kind:          'agent',
   protocol:      'http',
   address:       data.agent_url,
-  auth:          { type: 'hmac', secret: agentSecret },
+  auth:          { type: 'hmac', ref: `agent-secret:${serverId}` },
   registered_at: Date.now(),
   last_seen_at:  Date.now(),
 })
 ```
+
+The agent's secret itself goes wherever your `CredentialResolver` reads from — not into the descriptor.
 
 For heartbeat-only updates (just refreshing `last_seen_at`), use the store's `touch()` directly rather than re-registering the full descriptor.
 
@@ -195,6 +253,12 @@ Look up a target by ID. Returns `TargetDescriptor | null`.
 
 Returns all registered targets, ordered by `registered_at`.
 
+### `app.conduit.destroy()`
+
+Closes all pooled transport connections. Wired to the plugin's `shutdown()`, so it runs on `app.stop()`.
+
+**Terminal.** A conduit is not reusable afterwards: a late in-flight `send()` returns `connection_failed` and `stream()` throws, rather than quietly opening a fresh connection after shutdown.
+
 ---
 
 ## Plugin options
@@ -205,17 +269,28 @@ conduit({
   // Pass createSQLiteStore(db) for persistence.
   store?: ConduitStore
 
+  // Resolves a target's auth.ref to secret material at send time.
+  // Defaults to createEnvResolver() — refs are read from process.env.
+  credentials?: CredentialResolver
+
   // Targets to register immediately on boot.
   // Use for provider integrations known at startup time.
   targets?: TargetDescriptor[]
 
   // Request timeout in ms. Default: 10_000.
+  // Covers the whole exchange including the response body read, so a
+  // server that sends headers and then stalls still times out.
   // Can be overridden per-request via req.timeout_ms.
   timeout_ms?: number
 
   // HTTP retry limit on retryable errors (5xx, timeout, connection failure).
   // Default: 3. Set to 0 to disable retries.
   retry_limit?: number
+
+  // Hard cap on a response body, in bytes. Default: 10 MiB.
+  // Reading stops at the cap and the request fails with `invalid_request`
+  // rather than buffering an unbounded response.
+  max_response_bytes?: number
 
   // Lifecycle hooks for observability and debugging.
   hooks?: ConduitHooks
@@ -254,6 +329,25 @@ conduit({ store: createSQLiteStore(new Database('hub.db')) })
 ```
 
 Creates a `conduit_targets` table automatically on first boot.
+
+### Custom
+
+Every `ConduitStore` method is async, so a networked registry — Redis, Postgres, an HTTP service — is implementable. This is what lets more than one replica share a set of dynamically registered agents.
+
+```ts
+interface ConduitStore {
+  init():   Promise<void>
+  get(id: string): Promise<TargetDescriptor | null>
+  set(descriptor: TargetDescriptor): Promise<void>
+  delete(id: string): Promise<void>
+  list(): Promise<TargetDescriptor[]>
+  touch(id: string): Promise<void>
+}
+```
+
+Two requirements: `set()` must preserve the existing `registered_at` on upsert, and `get()`/`list()` must return copies rather than live references.
+
+`stats()` never reads the store — it reports counters maintained in the conduit — so a slow backend does not slow down `/metrics`. The trade-off is that writes made directly to a shared store behind the conduit's back are not reflected in `stats()` until the next `init()`.
 
 ---
 

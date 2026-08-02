@@ -11,7 +11,7 @@ import { tmpdir } from 'os'
 import { existsSync, mkdirSync, mkdtempSync, statSync } from 'fs'
 import { parse, parseFile } from './parser.js'
 import { isSoftDelete, isSoftDeleteCascade, modelToTableName, modelToAccessor } from './ddl.js'
-import { detectM2MPairs } from './ddl.js'
+import { detectM2MPairs, buildEdgeMap } from './ddl.js'
 import {
   buildWhere, buildOrderBy, buildRelationOrderBy,
   buildWindowCols,
@@ -25,6 +25,7 @@ import {
 } from './query.js'
 import { validate, applyTransforms, buildValidationMap, ValidationError } from './validate.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
+import { GatePlugin, FrontierGateGetLevel } from '../plugins/gate.js'
 import { buildPolicyMap, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, evalJs } from './policy.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { runSqliteRetention } from '../tools/retention.js'
@@ -509,8 +510,9 @@ function buildSecretMap(schema) {
 function buildJsonMap(schema) {  const map = {}
   for (const model of schema.models) {
     map[model.name] = new Set(
-      // Include Json fields AND array fields — both stored as JSON text
-      model.fields.filter(f => f.type.name === 'Json' || f.type.array).map(f => f.name)
+      // Include Json fields AND array fields — both stored as JSON text.
+      // Exclude @edge fields — they live on a join/side table, not the host row.
+      model.fields.filter(f => (f.type.name === 'Json' || f.type.array) && !f.attributes.find(a => a.kind === 'edge')).map(f => f.name)
     )
   }
   return map
@@ -561,11 +563,18 @@ function buildFromMap(schema, pluralize = false) {
         return f.type.name === model.name
       })
 
-      // FK column name on the target table
+      // FK column on the target table + the column it references on THIS model.
+      // The referenced column is usually the @id, but relations can reference a
+      // non-PK @unique column (e.g. Translation.verseId references Verse.verseId).
+      // Correlating on the actual referenced column — not the assumed PK — is
+      // what makes @from work for those reverse relations.
+      const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
       let fkCol = null
+      let refCol = idField
       if (fkField) {
         const rel = fkField.attributes.find(a => a.kind === 'relation')
-        fkCol = Array.isArray(rel.fields) ? rel.fields[0] : rel.fields
+        fkCol  = Array.isArray(rel.fields)     ? rel.fields[0]     : rel.fields
+        refCol = (Array.isArray(rel.references) ? rel.references[0] : rel.references) ?? idField
       } else {
         // Fallback: look for a field named <modelName>Id
         const fallback = targetModel.fields.find(f => f.name === `${model.name}Id`)
@@ -574,8 +583,7 @@ function buildFromMap(schema, pluralize = false) {
 
       if (!fkCol) continue  // can't infer FK — skip (validation catches this)
 
-      const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-      const whereParts = [`"${fkCol}" = "${selfTable}"."${idField}"`]
+      const whereParts = [`"${fkCol}" = "${selfTable}"."${refCol}"`]
       if (where) whereParts.push(`(${where})`)
       const whereClause = whereParts.join(' AND ')
 
@@ -762,8 +770,14 @@ function buildRelationMap(schema) {
       // in include/orderBy/select. Under PascalCase singular models, the field
       // name will differ from model.name (e.g. books Book[] on Author).
       const parentModel = schema.models.find(m => m.name === target)
+      // Match the back-ref array by relation LABEL (Prisma parity): an FK
+      // labeled "sentByUser" pairs with the parent array labeled "sentByUser";
+      // unlabeled FKs pair with unlabeled arrays. This lets two hasMany
+      // relations coexist between the same pair of models.
+      const relLabel = rel.name ?? null
       const backrefField = parentModel?.fields.find(f =>
-        f.type.name === model.name && f.type.array && f.type.kind === 'relation'
+        f.type.name === model.name && f.type.array && f.type.kind === 'relation' &&
+        ((f.attributes.find(a => a.kind === 'relation')?.name ?? null) === relLabel)
       )
       const backrefName = backrefField?.name ?? model.name  // fallback to old behavior if no field declared
       if (!map[target][backrefName]) {
@@ -780,25 +794,31 @@ function buildRelationMap(schema) {
     }
   }
 
-  // Implicit m2m — add manyToMany entries for both sides of each pair
+  // Implicit m2m — one manyToMany entry per relation END, keyed by field name.
+  // detectM2MPairs is label-aware: several m2m relations may exist between the
+  // same two models (each with its own join table), including self-relations.
   const m2mPairs = detectM2MPairs(schema)
   for (const pair of m2mPairs) {
     if (!map[pair.modelA]) map[pair.modelA] = {}
     if (!map[pair.modelB]) map[pair.modelB] = {}
 
-    // Field name is the camelCase of the target model (lowercased first char) + 's'
-    // But we need to find the actual field name declared in the schema
-    // Look it up from the schema directly
-    const modelA = schema.models.find(m => m.name === pair.modelA)
-    const modelB = schema.models.find(m => m.name === pair.modelB)
+    if (pair.self) {
+      // Self m2m: both ends live on the same model with distinct fields.
+      // selfFields maps each field to its (selfKey, targetKey) direction.
+      for (const [fieldName, dir] of Object.entries(pair.selfFields ?? {})) {
+        map[pair.modelA][fieldName] = {
+          kind:        'manyToMany',
+          targetModel: pair.modelA,
+          joinTable:   pair.joinTable,
+          selfKey:     dir.selfKey,
+          targetKey:   dir.targetKey,
+        }
+      }
+      continue
+    }
 
-    // A's field that points to B
-    const fieldAtoB = modelA?.fields.find(f => f.type.kind === 'implicitM2M' && f.type.name === pair.modelB)
-    // B's field that points to A
-    const fieldBtoA = modelB?.fields.find(f => f.type.kind === 'implicitM2M' && f.type.name === pair.modelA)
-
-    if (fieldAtoB) {
-      map[pair.modelA][fieldAtoB.name] = {
+    if (pair.fieldA) {
+      map[pair.modelA][pair.fieldA] = {
         kind:        'manyToMany',
         targetModel: pair.modelB,
         joinTable:   pair.joinTable,
@@ -806,8 +826,8 @@ function buildRelationMap(schema) {
         targetKey:   pair.colB,    // join table column for TARGET model
       }
     }
-    if (fieldBtoA) {
-      map[pair.modelB][fieldBtoA.name] = {
+    if (pair.fieldB) {
+      map[pair.modelB][pair.fieldB] = {
         kind:        'manyToMany',
         targetModel: pair.modelA,
         joinTable:   pair.joinTable,
@@ -847,6 +867,90 @@ function suggestKey(unknown, allowed) {
   if (bestDist > threshold) return null
   if (bestDist >= lower.length) return null
   return best
+}
+
+// ─── Query-arg validation ─────────────────────────────────────────────────────
+// Reads WARN on unknown where-fields (once per model+field per process) and
+// keep executing; writes REJECT — a typo'd filter on a write is a mis-scoped
+// destructive operation (`updateMany({ where: { nam: 'x' } })` with the key
+// dropped would match every row). take/skip are rejected everywhere with a
+// pointer to limit/offset. AND/OR/NOT are descended into; relation
+// sub-filters are not (their keys belong to the related model).
+const _whereWarnOnce = new Set()
+
+function checkWhereKeys(where, allowed, modelName, method, isWrite) {
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return
+  for (const [k, v] of Object.entries(where)) {
+    if (k === 'AND' || k === 'OR' || k === 'NOT') {
+      for (const w of Array.isArray(v) ? v : [v]) checkWhereKeys(w, allowed, modelName, method, isWrite)
+      continue
+    }
+    if (k === '$raw' || allowed.has(k)) continue
+    const hint = suggestKey(k, allowed)
+    const msg = `Unknown field '${k}' in where for ${modelName}.${method}.` +
+      (hint ? ` Did you mean: ${hint}?` : ` Valid fields: ${[...allowed].sort().join(', ')}`)
+    if (isWrite) throw new ValidationError([{ path: ['where', k], message: msg }])
+    const once = `${modelName}.${k}`
+    if (!_whereWarnOnce.has(once)) {
+      _whereWarnOnce.add(once)
+      console.warn(`[litestone] ${msg}`)
+    }
+  }
+}
+
+const ARG_READ_METHODS = [
+  'findMany', 'findFirst', 'findFirstOrThrow', 'findUnique', 'findUniqueOrThrow',
+  'count', 'exists', 'findManyAndCount', 'aggregate', 'groupBy', 'findManyCursor',
+]
+const ARG_WRITE_METHODS = [
+  'update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'upsert',
+]
+
+// Non-mutating wrapper: returns a shallow copy so shared/cached table objects
+// (jsonl cache, per-scope rebuilds) never accumulate nested wrappers.
+function withArgValidation(table, model, ctx) {
+  if (!table || !model) return table
+  const allowed = new Set(model.fields.map(f => f.name))
+  for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) allowed.add(d.as)
+  const modelName = model.name
+
+  const checkTakeSkip = (args, method) => {
+    if (!args || typeof args !== 'object') return
+    for (const bad of ['take', 'skip']) {
+      if (bad in args) throw new ValidationError([{
+        path:    [bad],
+        message: `'${bad}' is not a Litestone option on ${modelName}.${method} — use ` +
+                 (bad === 'take' ? `'limit' (max rows to return)` : `'offset' (rows to skip)`),
+      }])
+    }
+  }
+
+  // async wrappers so a validation failure is a REJECTION, matching how the
+  // underlying methods fail — a sync throw from a promise-returning API is a
+  // third failure mode nobody handles.
+  const out = { ...table }
+  const wrap = (method, isWrite) => {
+    const fn = table[method]
+    if (typeof fn !== 'function') return
+    out[method] = async (args = {}) => {
+      checkTakeSkip(args, method)
+      checkWhereKeys(args?.where, allowed, modelName, method, isWrite)
+      return fn.call(table, args)
+    }
+  }
+  for (const m of ARG_READ_METHODS)  wrap(m, false)
+  for (const m of ARG_WRITE_METHODS) wrap(m, true)
+
+  // search(query, opts) — the where filter rides in opts
+  if (typeof table.search === 'function') {
+    const fn = table.search
+    out.search = async (q, opts = {}) => {
+      checkTakeSkip(opts, 'search')
+      checkWhereKeys(opts?.where, allowed, modelName, 'search', false)
+      return fn.call(table, q, opts)
+    }
+  }
+  return out
 }
 
 function editDistance(a, b) {
@@ -1084,10 +1188,19 @@ function injectHasTemplatesFilter(where, mode, field = 'isTemplate') {
 // One query per relation level, batched with IN — never N queries per row.
 // Uses readDb for all include fetches.
 
+// Coerce a raw edge column value (from a join/side table) to its JS type.
+function coerceEdgeValue(raw, desc) {
+  if (raw == null) return raw
+  const tn = desc.type?.name
+  if (tn === 'Boolean') return !!raw
+  if (tn === 'Json')    { try { return JSON.parse(raw) } catch { return raw } }
+  return raw
+}
+
 function resolveIncludes(readDb, rows, include, modelName, ctx) {
   if (!include || !rows.length) return rows
 
-  const { relationMap, jsonMap, computedSets, softDeleteMap, computedFns } = ctx
+  const { relationMap, jsonMap, edgeMap, computedSets, softDeleteMap, computedFns } = ctx
   const tableRelations = relationMap[modelName] ?? {}
 
   // Resolve a PascalCase model name to its SQL table name. Relations in relationMap
@@ -1172,6 +1285,15 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       ? relInclude.include ?? null : null
     const nestedSelect  = typeof relInclude === 'object' && relInclude !== true
       ? relInclude.select  ?? null : null
+    // Optional per-include filter: include: { posts: { where: { published: true } } }
+    const relWhere = typeof relInclude === 'object' && relInclude !== true
+      ? relInclude.where ?? null : null
+    const relWhereSql = (extraAlias) => {
+      if (!relWhere) return { clause: '', params: [] }
+      const p = []
+      const ws = buildWhere(relWhere, p, null, extraAlias ?? null, null)
+      return { clause: ws ? ` AND (${ws})` : '', params: p }
+    }
     // Soft delete mode for related table
     const nestedMode    = typeof relInclude === 'object' && relInclude !== true
       ? relInclude.withDeleted ? 'withDeleted' : relInclude.onlyDeleted ? 'onlyDeleted' : 'live'
@@ -1227,10 +1349,12 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       }
       // Append @@hasTemplates filter — composes onto whatever sdWhere produced.
       if (htClause) sdWhere = `${sdWhere} AND ${htClause}`
+      // Per-include where filter (belongsTo: filters the parent → nulls if excluded)
+      const rw = relWhereSql(null)
 
       const related = readDb
-        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}`)
-        .all(...sdParams)
+        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rw.clause}`)
+        .all(...sdParams, ...rw.params)
         .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx))
 
       const mergedInclude = { ...(nestedInclude ?? {}), ...(parsedNested?.relationSelects ?? {}) }
@@ -1253,19 +1377,48 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (!pkValues.length) { rows.forEach(r => r[relName] = []); continue }
 
       const ph      = pkValues.map(() => '?').join(', ')
+      const rwM = relWhereSql('t')   // target aliased `t` in the m2m join query
+
+      // @edge fields on the target that decorate THIS join → surface under their
+      // namespace, pulled from the join row (the traversal binds the dimension).
+      const edgeDescs = Object.values(edgeMap?.[rel.targetModel] ?? {})
+        .filter(d => d.storage === 'decorate' && d.table === rel.joinTable)
+      const edgeSelect = edgeDescs.map(d => `, j."${d.col}" AS "__edge_${d.col}"`).join('')
+
       const rawRows = readDb
         .query(
-          `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey FROM "${modelToTable(rel.targetModel)}" t ` +
+          `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey${edgeSelect} FROM "${modelToTable(rel.targetModel)}" t ` +
           `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t."id" ` +
-          `WHERE j."${rel.selfKey}" IN (${ph})`
+          `WHERE j."${rel.selfKey}" IN (${ph})${rwM.clause}`
         )
-        .all(...pkValues)
+        .all(...pkValues, ...rwM.params)
 
       // Strip __jSelfKey before processing so it doesn't leak into the output row
       const selfKeys = rawRows.map(r => { const k = r.__jSelfKey; delete r.__jSelfKey; return k })
 
+      // Pull edge values off each raw row (and strip the temp cols) before shaping.
+      const edgeBags = rawRows.map(r => {
+        if (!edgeDescs.length) return null
+        const bag = {}
+        for (const d of edgeDescs) {
+          const alias = `__edge_${d.col}`
+          const raw = r[alias]
+          delete r[alias]
+          ;(bag[d.as] ??= {})[d.field] = coerceEdgeValue(raw, d)
+        }
+        return bag
+      })
+
       const related = rawRows
         .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx))
+
+      // Attach namespaced edge values onto each shaped target row.
+      if (edgeDescs.length) {
+        for (let i = 0; i < related.length; i++) {
+          const bag = edgeBags[i]
+          if (bag) for (const ns in bag) related[i][ns] = { ...(related[i][ns] ?? {}), ...bag[ns] }
+        }
+      }
 
       const mergedInclude = nestedInclude ?? {}
       if (Object.keys(mergedInclude).length)
@@ -1305,10 +1458,11 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         sdWhere = `"${rel.foreignKey}" IN (${ph})`
       }
       if (htClause) sdWhere = `${sdWhere} AND ${htClause}`
+      const rwH = relWhereSql(null)
 
       const related = readDb
-        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}`)
-        .all(...pkValues)
+        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}`)
+        .all(...pkValues, ...rwH.params)
         .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx))
 
       const mergedInclude = { ...(nestedInclude ?? {}), ...(parsedNested?.relationSelects ?? {}) }
@@ -1531,6 +1685,178 @@ function makeTable(
     }
   }
   const _modelRels = ctx.relationMap?.[modelName] ?? {}
+
+  // ── @edge / @scoped write helpers ─────────────────────────────────────────────
+  const _edges = ctx.edgeMap?.[modelName] ?? {}
+  const _edgeNamespaces = new Set(Object.values(_edges).map(d => d.as))
+
+  // Peel edge namespaces out of a write's data. `data.projectEdge = { isImportant }`
+  // → edgeWrites [{ desc, value }], and the namespace key removed from the row data.
+  function extractEdgeWrites(data) {
+    if (!data || !_edgeNamespaces.size) return { data, edgeWrites: [] }
+    const edgeWrites = []
+    let cleaned = null
+    for (const ns of _edgeNamespaces) {
+      const bag = data[ns]
+      if (bag == null || typeof bag !== 'object' || Array.isArray(bag)) continue
+      if (!cleaned) cleaned = { ...data }
+      for (const [fname, value] of Object.entries(bag)) {
+        const desc = _edges[fname]
+        if (desc && desc.as === ns) edgeWrites.push({ desc, value })
+      }
+      delete cleaned[ns]
+    }
+    return { data: cleaned ?? data, edgeWrites }
+  }
+
+  function serializeEdgeValue(value, desc) {
+    if (value == null) return null
+    const tn = desc.type?.name
+    if (tn === 'Boolean') return value ? 1 : 0
+    if (tn === 'Json')    return JSON.stringify(value)
+    return value
+  }
+
+  // Resolve the dimension id an edge write targets: auth().id for @scoped,
+  // otherwise the bound value from a per-query scopedBy arg or ctx.scopedBy.
+  function resolveEdgeDim(desc, scopedBy) {
+    if (desc.auth) return ctx.auth?.id ?? null
+    return scopedBy?.[desc.key] ?? ctx.scopedBy?.[desc.key] ?? null
+  }
+
+  // Upsert edge values onto the join/side row for the bound dimension.
+  //   own      → INSERT … ON CONFLICT upsert (materialize the row, D4)
+  //   decorate → UPDATE only; 0 rows means no membership → EDGE_NO_MEMBERSHIP (D12)
+  function applyEdgeWrites(edgeWrites, hostId, scopedBy) {
+    if (!edgeWrites?.length) return
+    const groups = new Map()   // table|dimId → { desc0, dimId, cols }
+    for (const { desc, value } of edgeWrites) {
+      const dimId = resolveEdgeDim(desc, scopedBy)
+      if (dimId == null) {
+        if (desc.onMissing === 'skip') continue
+        throw new Error(`@edge '${modelName}.${desc.field}': cannot resolve dimension '${desc.key}' — bind it with scopedBy({ ${desc.key} }) or $setAuth`)
+      }
+      const gkey = `${desc.table}|${dimId}`
+      let g = groups.get(gkey)
+      if (!g) { g = { desc0: desc, dimId, cols: {} }; groups.set(gkey, g) }
+      g.cols[desc.col] = serializeEdgeValue(value, desc)
+    }
+    for (const g of groups.values()) {
+      const { table, hostCol, dimCol, storage, field } = g.desc0
+      const colNames = Object.keys(g.cols)
+      const colVals  = colNames.map(c => g.cols[c])
+      if (storage === 'own') {
+        const allCols = [hostCol, dimCol, ...colNames]
+        const sql = `INSERT INTO "${table}" (${allCols.map(c => `"${c}"`).join(', ')}) VALUES (${allCols.map(() => '?').join(', ')}) ` +
+          `ON CONFLICT("${hostCol}", "${dimCol}") DO UPDATE SET ${colNames.map(c => `"${c}"=excluded."${c}"`).join(', ')}`
+        writeDb.run(sql, hostId, g.dimId, ...colVals)
+      } else {
+        const sql = `UPDATE "${table}" SET ${colNames.map(c => `"${c}"=?`).join(', ')} WHERE "${hostCol}"=? AND "${dimCol}"=?`
+        const res = writeDb.run(sql, ...colVals, hostId, g.dimId)
+        if (!res.changes) {
+          const err = new Error(`@edge '${modelName}.${field}': no membership for ${hostCol}=${hostId} / ${dimCol}=${g.dimId} — link the relationship first`)
+          err.code = 'EDGE_NO_MEMBERSHIP'
+          throw err
+        }
+      }
+    }
+  }
+
+  function edgeDefault(desc) {
+    const d = desc.default
+    if (d == null) return null
+    if (typeof d === 'object' && 'value' in d) return d.value
+    return d
+  }
+
+  // Flat read: resolve each edge namespace for the bound dimension and attach it
+  // onto every top-level row. Bound = auth().id for @scoped, or scopedBy[key].
+  // @scoped with no viewer (asSystem/no auth) → the field's @default (D3);
+  // an unbound non-auth edge is simply left absent (its error surfaces on filter).
+  function attachFlatEdges(rows, scopedBy) {
+    if (!rows?.length || !_edgeNamespaces.size) return
+    const byTable = new Map()   // one storage table = one dimension shape
+    for (const desc of Object.values(_edges)) {
+      let g = byTable.get(desc.table)
+      if (!g) { g = { d0: desc, cols: [] }; byTable.set(desc.table, g) }
+      g.cols.push(desc)
+    }
+    for (const g of byTable.values()) {
+      const d0 = g.d0
+      const dimId = d0.auth ? (ctx.auth?.id ?? null)
+                            : (scopedBy?.[d0.key] ?? ctx.scopedBy?.[d0.key] ?? null)
+      if (dimId == null) {
+        if (d0.auth) for (const row of rows) for (const desc of g.cols) (row[desc.as] ??= {})[desc.field] = edgeDefault(desc)
+        continue
+      }
+      const hostIds = [...new Set(rows.map(r => r[_pkField]).filter(v => v != null))]
+      if (!hostIds.length) continue
+      const ph      = hostIds.map(() => '?').join(', ')
+      const colList = g.cols.map(c => `"${c.col}"`).join(', ')
+      const found   = readDb
+        .query(`SELECT "${d0.hostCol}" AS __h, ${colList} FROM "${d0.table}" WHERE "${d0.hostCol}" IN (${ph}) AND "${d0.dimCol}" = ?`)
+        .all(...hostIds, dimId)
+      const byHost = new Map()
+      for (const fr of found) byHost.set(fr.__h, fr)
+      for (const row of rows) {
+        const fr = byHost.get(row[_pkField])
+        for (const desc of g.cols) (row[desc.as] ??= {})[desc.field] = fr ? coerceEdgeValue(fr[desc.col], desc) : edgeDefault(desc)
+      }
+    }
+  }
+
+  // Bound dimensions for the WHERE currently being compiled (set by read methods
+  // just before buildSQL; read synchronously by edgeFilterSql — no await between).
+  let _scopedByForBuild = null
+
+  function _ecp(v) { return typeof v === 'boolean' ? (v ? 1 : 0) : v }
+
+  // Compile where:{ <namespace>: { field: pred } } → EXISTS against the edge's
+  // join/side table, scoped to the bound dimension. Unbound non-auth → error (D3);
+  // @scoped with no viewer → matches nothing.
+  function edgeFilterSql(namespace, predicate, params, tableAlias) {
+    const cols = Object.values(_edges).filter(d => d.as === namespace)
+    if (!cols.length) return undefined
+    const d0 = cols[0]
+    const dimId = d0.auth ? (ctx.auth?.id ?? null)
+                          : (_scopedByForBuild?.[d0.key] ?? ctx.scopedBy?.[d0.key] ?? null)
+    if (dimId == null) {
+      if (!d0.auth) throw new Error(`@edge filter '${modelName}.${namespace}': dimension '${d0.key}' not bound — add scopedBy({ ${d0.key} })`)
+      return '(1 = 0)'
+    }
+    const host  = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"id"`
+    const alias = '_je'
+    const inner = [], innerParams = []
+    for (const [field, val] of Object.entries(predicate ?? {})) {
+      const desc = cols.find(c => c.field === field)
+      if (!desc) continue
+      const col = `${alias}."${desc.col}"`
+      if (val === null) { inner.push(`${col} IS NULL`); continue }
+      if (typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+        for (const [op, v] of Object.entries(val)) {
+          if      (op === 'not') { if (v === null) inner.push(`${col} IS NOT NULL`); else { inner.push(`${col} != ?`); innerParams.push(_ecp(v)) } }
+          else if (op === 'gt')  { inner.push(`${col} > ?`);  innerParams.push(_ecp(v)) }
+          else if (op === 'gte') { inner.push(`${col} >= ?`); innerParams.push(_ecp(v)) }
+          else if (op === 'lt')  { inner.push(`${col} < ?`);  innerParams.push(_ecp(v)) }
+          else if (op === 'lte') { inner.push(`${col} <= ?`); innerParams.push(_ecp(v)) }
+          else if (op === 'in')  { inner.push(`${col} IN (${v.map(() => '?').join(', ')})`); v.forEach(x => innerParams.push(_ecp(x))) }
+          else if (op === 'contains') { inner.push(`${col} LIKE ?`); innerParams.push(`%${v}%`) }
+        }
+      } else {
+        inner.push(`${col} = ?`); innerParams.push(_ecp(val))
+      }
+    }
+    const innerSql = inner.length ? ' AND ' + inner.join(' AND ') : ''
+    params.push(dimId, ...innerParams)
+    return `EXISTS (SELECT 1 FROM "${d0.table}" ${alias} WHERE ${alias}."${d0.hostCol}" = ${host} AND ${alias}."${d0.dimCol}" = ?${innerSql})`
+  }
+
+  // Dispatcher passed to buildWhere as its relFilter: edge namespace → edgeFilterSql,
+  // otherwise fall through to the relation filter (some/every/none).
+  function edgeOrRelFilter(key, val, params, tableAlias) {
+    if (_edgeNamespaces.has(key)) return edgeFilterSql(key, val, params, tableAlias)
+    return relationFilterSql(key, val, params, tableAlias)
+  }
   for (const relName of Object.keys(_modelRels)) {
     const rel = _modelRels[relName]
     _allowedWriteKeys.add(relName)
@@ -1913,23 +2239,45 @@ function makeTable(
   }
 
   // ── Write helper ──────────────────────────────────────────────────────────
-  function writeData(data) {
+  // requireAll: create-shaped writes (create/createMany/upsert-insert) enforce
+  // required fields up front; update-shaped writes stay partial.
+  function writeData(data, { requireAll = false } = {}) {
     const model = ctx.models[modelName]
 
-    // Reject unknown keys before SQL — surface typos with a path, model, and
-    // a "did you mean" hint instead of SQLite's cryptic "no column named X".
-    // Skipped when no model is registered (rare path: free-form clients).
+    // Unknown keys in the data payload are silently stripped — mass-assignment
+    // protection, so a form/request body can be passed straight in without
+    // whitelisting. (Deliberate policy choice 2026-08-01; typos in required
+    // fields still surface via the required-field check below, and typo'd
+    // *filters* are handled separately in where validation.)
     if (model && data && typeof data === 'object' && !Array.isArray(data)) {
-      const errs = []
+      let cleaned = null
       for (const k of Object.keys(data)) {
-        if (_allowedWriteKeys.has(k)) continue
-        const hint = suggestKey(k, _allowedWriteKeys)
-        const msg  = hint
-          ? `Unknown field '${k}' on model '${modelName}'. Did you mean: ${hint}?`
-          : `Unknown field '${k}' on model '${modelName}'. Valid fields: ${[..._allowedWriteKeys].sort().join(', ')}`
-        errs.push({ path: [k], message: msg })
+        if (_allowedWriteKeys.has(k) || _edgeNamespaces.has(k)) continue
+        if (!cleaned) cleaned = { ...data }
+        delete cleaned[k]
       }
-      if (errs.length) throw new ValidationError(errs)
+      if (cleaned) data = cleaned
+    }
+
+    // Required-field pre-flight. The schema knows requiredness; without this
+    // a missing NOT NULL field surfaced as SQLite's raw "NOT NULL constraint
+    // failed" instead of a ValidationError shaped like every other field rule.
+    if (model && requireAll) {
+      const missing = []
+      for (const f of model.fields) {
+        // Arrays always carry a DDL-level DEFAULT '[]' (empty array is the
+        // null state — see ddl.js), so they are never required.
+        if (f.type.optional || f.type.array || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
+        const attrs = f.attributes ?? []
+        if (attrs.some(a =>
+          a.kind === 'default'  || a.kind === 'updatedAt' || a.kind === 'sequence' ||
+          a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' ||
+          a.kind === 'from'     || a.kind === 'edge')) continue
+        // Int @id with no default is SQLite's autoincrementing rowid alias
+        if (attrs.some(a => a.kind === 'id') && f.type.name === 'Int') continue
+        if (data?.[f.name] == null) missing.push({ path: [f.name], message: `${f.name} is required` })
+      }
+      if (missing.length) throw new ValidationError(missing)
     }
 
     const transformed = model ? applyTransforms(data, model) : { ...data }
@@ -2018,8 +2366,62 @@ function makeTable(
   // _fromExprMap is defined later (after _fromEntries) and passed into buildWhere.
   // tableAlias is optional — passed only when the outer FROM uses an alias
   // (e.g. relation orderBy adds JOINs, so columns need `t.` qualification).
+  // ── Relation filter resolver ───────────────────────────────────────────────
+  // Compiles { relation: { some|every|none: WHERE } } (and is/isNot for a
+  // to-one relation) into a correlated EXISTS subquery. Returns undefined when
+  // `relName` isn't a relation on THIS model, so buildWhere falls through to
+  // normal column handling.
+  function relationFilterSql(relName, cond, params, tableAlias) {
+    const rel = ctx.relationMap?.[modelName]?.[relName]
+    if (!rel) return undefined   // not a relation → normal column
+
+    const parentRefKey = rel.referencedKey ?? 'id'
+    const parentCol = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"${rel.kind === 'belongsTo' ? rel.foreignKey : parentRefKey}"`
+    const targetTable = _modelToTable(rel.targetModel)
+    const targetSoft  = ctx.softDeleteMap?.[rel.targetModel] ? ` AND t."deletedAt" IS NULL` : ''
+
+    // Build the inner WHERE against the target table (aliased `t`).
+    const innerOf = (w) => {
+      if (!w || (typeof w === 'object' && !Object.keys(w).length)) return ''
+      const p = []
+      const sql = buildWhere(w, p, null, 't', null, relationFilterSql)
+      return { sql, p }
+    }
+
+    // Correlated FROM+WHERE that ties the target back to this parent row.
+    let corr
+    if (rel.kind === 'hasMany') {
+      corr = `FROM "${targetTable}" t WHERE t."${rel.foreignKey}" = ${parentCol}${targetSoft}`
+    } else if (rel.kind === 'manyToMany') {
+      corr = `FROM "${rel.joinTable}" j INNER JOIN "${targetTable}" t ON t."id" = j."${rel.targetKey}" WHERE j."${rel.selfKey}" = ${parentCol}${targetSoft}`
+    } else { // belongsTo
+      corr = `FROM "${targetTable}" t WHERE t."${parentRefKey}" = ${parentCol}${targetSoft}`
+    }
+
+    const clauses = []
+    for (const [mode, w] of Object.entries(cond)) {
+      const inner = innerOf(w)
+      const andInner = inner && inner.sql ? ` AND (${inner.sql})` : ''
+      if (mode === 'some' || mode === 'is') {
+        clauses.push(`EXISTS (SELECT 1 ${corr}${andInner})`)
+        if (inner) params.push(...inner.p)
+      } else if (mode === 'none' || mode === 'isNot') {
+        clauses.push(`NOT EXISTS (SELECT 1 ${corr}${andInner})`)
+        if (inner) params.push(...inner.p)
+      } else if (mode === 'every') {
+        // No child violates the condition: NOT EXISTS(child WHERE NOT(cond))
+        const notInner = inner && inner.sql ? ` AND NOT (${inner.sql})` : ' AND 0'
+        clauses.push(`NOT EXISTS (SELECT 1 ${corr}${notInner})`)
+        if (inner) params.push(...inner.p)
+      } else {
+        throw new Error(`Relation filter on "${relName}": unknown operator "${mode}" (use some/every/none${rel.kind === 'belongsTo' ? '/is/isNot' : ''})`)
+      }
+    }
+    return clauses.join(' AND ')
+  }
+
   function buildWhereWithEncryption(where, params, tableAlias = null) {
-    if (!where) return buildWhere(where, params, _fromExprMap, tableAlias, _typedJsonMap)
+    if (!where) return buildWhere(where, params, _fromExprMap, tableAlias, _typedJsonMap, edgeOrRelFilter)
     let rewritten = where
     if (ctx.encKey) {
       rewritten = rewriteEncryptedWhere(where)
@@ -2028,7 +2430,7 @@ function makeTable(
         return `${prefix}"id" IS NULL AND ${prefix}"id" IS NOT NULL`
       }
     }
-    return buildWhere(rewritten, params, _fromExprMap, tableAlias, _typedJsonMap)
+    return buildWhere(rewritten, params, _fromExprMap, tableAlias, _typedJsonMap, edgeOrRelFilter)
   }
 
   function rewriteEncryptedWhere(where) {
@@ -2646,7 +3048,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'findMany', args, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('findMany')) hookRunner.runBefore(hctx, ctx)
-      const { where, include, orderBy, limit, offset, select, distinct } = hctx ? hctx.args : args
+      const { where, include, orderBy, limit, offset, select, distinct, scopedBy } = hctx ? hctx.args : args
+      _scopedByForBuild = scopedBy ?? null
       const windowSpec      = args.window ?? null
       const mode            = sdMode(hctx ? hctx.args : args)
       const htm             = htMode(hctx ? hctx.args : args)
@@ -2658,6 +3061,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (_nt) fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _fmT0 : 0, rowCount: rows.length })
       withIncludes(rows, ps, include)
       rows = finalise(rows, ps)
+      attachFlatEdges(rows, scopedBy)
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
       if (hctx && hookRunner.hasAfter('findMany')) { hctx.result = rows; hookRunner.runAfter(hctx, ctx); rows = hctx.result }
       if (tableHasAnyLog && rows.length > 0) emitLogs('read', rows)
@@ -2669,7 +3073,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'findFirst', args, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('findFirst')) hookRunner.runBefore(hctx, ctx)
-      const { where, include, orderBy, select } = hctx ? hctx.args : args
+      const { where, include, orderBy, select, scopedBy } = hctx ? hctx.args : args
+      _scopedByForBuild = scopedBy ?? null
       const mode            = sdMode(hctx ? hctx.args : args)
       const htm             = htMode(hctx ? hctx.args : args)
       const ps              = parseArgs(select, include)
@@ -2678,7 +3083,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
       const _ffT0 = _nt ? performance.now() : 0
       let row               = read(readDb.query(sql).get(...params), { mode: 'list', selectedFields: ps?.requestedFields })
       if (_nt) fireQuery({ operation: 'findFirst', args, sql, params, duration: _nt ? performance.now() - _ffT0 : 0, rowCount: row ? 1 : 0 })
-      if (row) { withIncludes([row], ps, include); row = finaliseOne(row, ps) }
+      if (row) { withIncludes([row], ps, include); row = finaliseOne(row, ps); attachFlatEdges([row], scopedBy) }
       else row = null
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
       if (hctx && hookRunner.hasAfter('findFirst')) { hctx.result = row; hookRunner.runAfter(hctx, ctx); row = hctx.result }
@@ -2692,7 +3097,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
       // ── Ultra-fast path: findUnique({ where: { <pk>: value } }) ──
       // Skip buildSQL, parseArgs, soft-delete filter assembly entirely.
       // Bypass conditions are pre-checked at table-build time (_canFastFindUnique).
-      if (_fastFindUniqueStmt) {
+      if (_fastFindUniqueStmt && !_edgeNamespaces.size) {
         const w = args.where
         if (w && !args.include && !args.select && !args.withDeleted && !args.onlyDeleted) {
           // Single-key object pointing at the PK with a scalar value
@@ -2712,7 +3117,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       }
 
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
-      const { where, include, select } = args
+      const { where, include, select, scopedBy } = args
+      _scopedByForBuild = scopedBy ?? null
       const mode            = sdMode(args)
       const htm             = htMode(args)
       const ps              = parseArgs(select, include)
@@ -2723,7 +3129,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (_nt) fireQuery({ operation: 'findUnique', args, sql, params, duration: _nt ? performance.now() - _fuT0 : 0, rowCount: rows.length })
       if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
       const row = rows[0] ?? null
-      if (row) { withIncludes([row], ps, include); return finaliseOne(row, ps) }
+      if (row) { withIncludes([row], ps, include); const _r = finaliseOne(row, ps); attachFlatEdges([_r], scopedBy); return _r }
       return null
     },
 
@@ -2755,7 +3161,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'count', args, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('count')) hookRunner.runBefore(hctx, ctx)
-      const { where } = hctx ? hctx.args : args
+      const { where, scopedBy } = hctx ? hctx.args : args
+      _scopedByForBuild = scopedBy ?? null
       const mode      = sdMode(hctx ? hctx.args : args)
       const htm       = htMode(hctx ? hctx.args : args)
       const params    = []
@@ -3325,7 +3732,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     },
 
     // ── create ──────────────────────────────────────────────────────────────
-    async create({ data, include, select } = {}) {
+    async create({ data, include, select, scopedBy } = {}) {
       if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select }, ctx)
       // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
@@ -3360,18 +3767,19 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       data = applySequences(data, modelName, ctx.sequenceMap, writeDb)
       // Split nested write ops from scalar fields
       const { scalar, nested } = extractNestedWrites(data)
+      const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
       // belongsTo ops first — injects FK values before insert
       const extraFKs = await processBelongsToNested(nested)
-      data = { ...scalar, ...extraFKs }
+      data = { ..._scalarNoEdge, ...extraFKs }
 
       const hctx = hookRunner ? { model: modelName, operation: 'create', args: { data, include, select }, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('create')) { hookRunner.runBefore(hctx, ctx); data = hctx.args.data }
-      const row   = writeData(data)
+      const row   = writeData(data, { requireAll: true })
       const cols  = Object.keys(row)
       // cols can be empty when all fields are optional and none were supplied,
       // or when all fields were stripped by @allow write policies.
       // SQLite requires DEFAULT VALUES syntax when no columns are specified.
-      const _noReturn = select === false && !nested.length
+      const _noReturn = select === false && !nested.length && !edgeWrites.length
       const _crSql = cols.length
         ? `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})${_noReturn ? '' : ' RETURNING *'}`
         : `INSERT INTO "${tableName}" DEFAULT VALUES${_noReturn ? '' : ' RETURNING *'}`
@@ -3398,6 +3806,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
       const pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
       await processHasManyNested(nested, created[pkField], created)
+      applyEdgeWrites(edgeWrites, created[pkField], scopedBy)
       const ps = parseArgs(select, include)
       if (ps || include) withIncludes([created], ps, include)
       created = finaliseOne(created, ps)
@@ -3445,7 +3854,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           }
           // Apply @sequence per row — each row gets its own counter increment
           d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
-          return writeData(d)
+          return writeData(d, { requireAll: true })
         })
 
         // Derive column list from the first processed row (post-transforms)
@@ -3469,7 +3878,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   • A post-update policy rollback was triggered
     // Callers that need to distinguish can check count() before/after,
     // or enable policyDebug to see which policy blocked.
-    async update({ where, data, include, select } = {}) {
+    async update({ where, data, include, select, scopedBy } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select }, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'update', args: { where, data, include, select }, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('update')) { hookRunner.runBefore(hctx, ctx); where = hctx.args.where; data = hctx.args.data }
@@ -3484,8 +3893,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
       }
       const { scalar, nested } = extractNestedWrites(data)
+      const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
       const extraFKs = await processBelongsToNested(nested)
-      data = { ...scalar, ...extraFKs }
+      data = { ..._scalarNoEdge, ...extraFKs }
 
       const row       = writeData(data)
       const setParams = []
@@ -3527,6 +3937,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           && !tableHasAnyLog
           && !(ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
           && !nested.length
+          && !edgeWrites.length
         if (_canSkipReturn) {
           const _upSql = `UPDATE "${tableName}" SET ${setCols} WHERE ${_txWhereSql}`
           const _upParams = [...setParams, ..._txWhereParams]
@@ -3586,6 +3997,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       const pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
       await processHasManyNested(nested, updated[pkField], updated)
+      applyEdgeWrites(edgeWrites, updated[pkField], scopedBy)
       const ps = parseArgs(select === false ? null : select, include)
       if (ps || include) withIncludes([updated], ps, include)
       const finalRow = select === false ? null : finaliseOne(updated, ps)
@@ -3673,7 +4085,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         }
 
         // writeData runs transforms + validation on both branches' data
-        const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal })
+        const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true })
         const updRow = writeData(updateData)
         const insCols = Object.keys(insRow)
         const updCols = Object.keys(updRow).filter(c => c !== wKey)
@@ -3760,7 +4172,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           if (autoId && (d == null || d[autoId.field] == null))
             d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
           d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
-          return writeData(d)
+          return writeData(d, { requireAll: true })
         })
 
         const cols    = Object.keys(rows[0])
@@ -5026,6 +5438,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const fromMap       = buildFromMap(schema, pluralizeTableNames)
   const computedSets  = buildComputedSet(schema)
   const relationMap   = buildRelationMap(schema)
+  const edgeMap       = buildEdgeMap(schema, pluralizeTableNames)
   const coFkMap       = buildCoFkMap(schema, relationMap)
   const softDeleteMap        = buildSoftDeleteMap(schema)
   const softDeleteCascadeMap = buildSoftDeleteCascadeMap(schema)
@@ -5139,12 +5552,25 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Normalise global filters: { tableName: whereObject | (ctx) => whereObject }
   const globalFilters = filters ?? {}
 
+  // ── Default gate enforcement ──────────────────────────────────────────────
+  // A model that declares @@gate gets enforcement even when the app installs
+  // no GatePlugin — the declaration is the contract, and a declared gate that
+  // silently does nothing is a fail-open security default. The shipped
+  // FrontierGateGetLevel resolver is the default; installing your own
+  // GatePlugin({ getLevel }) replaces it entirely. Models without @@gate are
+  // untouched: no gate declared, no gate enforced.
+  let effectivePlugins = plugins ?? []
+  const _anyGates = schema.models.some(m => m.attributes?.some(a => a.kind === 'gate'))
+  if (_anyGates && !effectivePlugins.some(p => p instanceof GatePlugin)) {
+    effectivePlugins = [...effectivePlugins, new GatePlugin({ getLevel: FrontierGateGetLevel })]
+  }
+
   // Plugin runner — orchestrates all installed plugins
-  const pluginRunner = new PluginRunner(plugins ?? [])
+  const pluginRunner = new PluginRunner(effectivePlugins)
 
   // Shared context threaded through include resolution + table ops
   const ctx = {
-    relationMap, jsonMap, computedSets,
+    relationMap, jsonMap, edgeMap, computedSets,
     softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // Default: parent values silently overwrite any child-supplied co-FK
@@ -5217,9 +5643,9 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     const sqlTable  = modelToTableName(model, pluralizeTableNames)
 
     if (conn.driver === 'jsonl' || conn.driver === 'logger') {
-      return jsonlTableCache[model.name]
+      return withArgValidation(jsonlTableCache[model.name], model, ctx)
     }
-    return makeTable(
+    return withArgValidation(makeTable(
       conn.readDb,
       conn.writeDb,
       sqlTable,
@@ -5235,7 +5661,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       fieldPolicyMap[model.name]       ?? {},
       fromMap[model.name]              ?? {},
       ctx,
-    )
+    ), model, ctx)
   }
 
   function makeAllTables(ctx) {
@@ -5423,6 +5849,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       for (const [k, v] of Object.entries(a)) {
         if (k === 'where') {
           if (v != null) wheres.push(v)
+        } else if (k === 'data') {
+          // `data` is a write-only default (see scopeDataDefault) — never a read arg
         } else {
           out[k] = v   // last write wins
         }
@@ -5453,6 +5881,39 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       return out
     })
   }
+
+  // ── scope write helpers ────────────────────────────────────────────────────
+  // Create-time data default for a scope stack: an explicit `data` object on the
+  // scope, or — for a flat-equality where like { type: 'lead' } — the equalities
+  // themselves. Operators, AND/OR/NOT, and nested/complex wheres contribute
+  // nothing. An explicit `data` (even `{}`) on a scope suppresses inference for it,
+  // so you can filter without stamping.
+  function scopeDataDefault(resolvedScopeArgs) {
+    const data = {}
+    for (const sa of resolvedScopeArgs) {
+      if ('data' in sa) {
+        if (sa.data && typeof sa.data === 'object' && !Array.isArray(sa.data)) Object.assign(data, sa.data)
+        continue
+      }
+      const w = sa.where
+      if (w && typeof w === 'object' && !Array.isArray(w)) {
+        for (const [k, v] of Object.entries(w)) {
+          if (v === null || typeof v === 'object') continue
+          if (k === 'AND' || k === 'OR' || k === 'NOT') continue
+          data[k] = v
+        }
+      }
+    }
+    return data
+  }
+
+  function scopeWhereClause(resolvedScopeArgs) {
+    const wheres = resolvedScopeArgs.map(sa => sa.where).filter(w => w != null)
+    if (!wheres.length) return null
+    return wheres.length === 1 ? wheres[0] : { AND: wheres }
+  }
+
+  const andWhere = (a, b) => (!a ? b : !b ? a : { AND: [a, b] })
 
   // ── buildScopedAccessor ───────────────────────────────────────────────────
   // Given a real table accessor and a stack of scope defs, build a callable
@@ -5509,10 +5970,53 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       }
     }
 
-    // Writes (create/update/remove/etc.) under a scope are intentionally NOT
-    // exposed. A scope is a read-time filter, not a write target. If users
-    // want to write through a scope's filter they can call
-    // db.<model>.updateMany({ where: ... }) directly.
+    // ── Writes under a scope ──────────────────────────────────────────────────
+    // create/createMany stamp the scope's data default (caller data wins);
+    // update/delete/etc. AND-merge the scope where so a write can only touch rows
+    // inside the subset (you can't update a client through db.contact.leads).
+    const SCOPED_CREATE_METHODS = ['create', 'createMany']
+    const SCOPED_WHERE_METHODS  = ['update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany', 'restore']
+
+    const stampData = (methodName, callerArgs, dataDefault) => {
+      if (!dataDefault || !Object.keys(dataDefault).length) return callerArgs
+      const a = { ...callerArgs }
+      if (methodName === 'createMany') a.data = (a.data ?? []).map(r => ({ ...dataDefault, ...r }))
+      else                            a.data = { ...dataDefault, ...(a.data ?? {}) }
+      return a
+    }
+
+    for (const m of SCOPED_CREATE_METHODS) {
+      if (typeof tableAccessor[m] !== 'function') continue
+      callable[m] = (callerArgs = {}) => {
+        const resolved = resolveScopeStack(scopeStack, ctxResolver())
+        return tableAccessor[m](stampData(m, callerArgs, scopeDataDefault(resolved)))
+      }
+    }
+
+    for (const m of SCOPED_WHERE_METHODS) {
+      if (typeof tableAccessor[m] !== 'function') continue
+      callable[m] = (callerArgs = {}) => {
+        const resolved = resolveScopeStack(scopeStack, ctxResolver())
+        return tableAccessor[m]({ ...callerArgs, where: andWhere(scopeWhereClause(resolved), callerArgs?.where) })
+      }
+    }
+
+    // upsert / upsertMany: stamp the create default (the conflict-target where is
+    // left untouched — merging the scope filter into it would break conflict detection).
+    if (typeof tableAccessor.upsert === 'function') {
+      callable.upsert = (callerArgs = {}) => {
+        const resolved = resolveScopeStack(scopeStack, ctxResolver())
+        const dd = scopeDataDefault(resolved)
+        return tableAccessor.upsert(Object.keys(dd).length ? { ...callerArgs, create: { ...dd, ...(callerArgs.create ?? {}) } } : callerArgs)
+      }
+    }
+    if (typeof tableAccessor.upsertMany === 'function') {
+      callable.upsertMany = (callerArgs = {}) => {
+        const resolved = resolveScopeStack(scopeStack, ctxResolver())
+        const dd = scopeDataDefault(resolved)
+        return tableAccessor.upsertMany(Object.keys(dd).length ? { ...callerArgs, data: (callerArgs.data ?? []).map(r => ({ ...dd, ...r })) } : callerArgs)
+      }
+    }
 
     // Attach scope-name properties for chaining. Each one returns a NEW scoped
     // accessor with the scope appended to the stack. We define these lazily as
@@ -6031,7 +6535,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -6062,6 +6566,41 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
     if (user != null && typeof user === 'object') _authClients.set(user, authProxy)
     return authProxy
+  }
+
+  // ── $scopedBy — bind edge dimensions for subsequent ops (D13) ──────────────────
+  // db.$scopedBy({ projectId: 123 }).task.findMany() — chainable with $setAuth.
+  // The runtime reads ctx.scopedBy in edge resolve/read/filter, so binding is just
+  // building tables from a ctx that carries the dimension bag.
+  function _makeScopedProxy(overrides) {
+    const sCtx = { ...ctx, ...overrides }
+    const rawTables = makeLazyTables(sCtx)
+    sCtx.tables = rawTables
+    const tables = installScopesLazy(rawTables, () => sCtx)
+    const target = {
+      $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
+      $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
+      asSystem, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb,
+    }
+    return new Proxy(target, {
+      get(t, prop) {
+        if (typeof prop === 'symbol') return undefined
+        if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
+        if (prop in t)          return Reflect.get(t, prop)
+        if (prop in tables)     return tables[prop]
+        if (prop === '$close')  return () => _closeAll()
+        if (prop === '$schema') return schema
+        if (prop === '$scope')  return overrides.scopedBy ?? {}
+        if (prop === '$auth')   return overrides.auth ?? null
+        if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
+        throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(tables).join(', ')}`)
+      },
+      ownKeys(t)   { return [...Reflect.ownKeys(t), ...Object.keys(tables)] },
+      has(t, prop) { return prop in t || prop in tables },
+    })
+  }
+  function $scopedBy(bindings) {
+    return _makeScopedProxy({ scopedBy: { ...(ctx.scopedBy ?? {}), ...(bindings ?? {}) }, auth: ctx.auth })
   }
 
   // Close all database connections in the registry + jsonl index dbs
@@ -6105,6 +6644,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop in target)             return Reflect.get(target, prop)
       if (prop === 'asSystem')        return asSystem
       if (prop === '$setAuth')        return $setAuth
+      if (prop === '$scopedBy')       return $scopedBy
       if (prop in scopedTables)       return scopedTables[prop]
       if (prop === '$close')          return () => _closeAll()
       if (prop === '$attached')       return $attachedDatabases()
@@ -6134,7 +6674,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         ...Reflect.ownKeys(target),
         ...Object.keys(scopedTables),
         ...viewNames,
-        '$close', '$attached', '$schema', '$relations', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$enums', '$setAuth', '$lock', '$locks', '$db',
+        '$close', '$attached', '$schema', '$relations', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$enums', '$setAuth', '$scopedBy', '$lock', '$locks', '$db',
       ]
     },
     has(target, prop) {

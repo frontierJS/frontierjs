@@ -9,6 +9,14 @@ export { conduit }             from './plugin.ts'
 export { createMemoryStore }   from './stores/memory.ts'
 export { createSQLiteStore }   from './stores/sqlite.ts'
 
+// Credential resolvers — targets carry refs, these resolve them at send time
+export {
+  createEnvResolver,
+  createStaticResolver,
+  createNullResolver,
+  withCache,
+} from './credentials.ts'
+
 // Test double — import via '@frontierjs/conduit/testing' in tests
 export { StubTransport }       from './transports/stub.ts'
 export { createTestConduit }   from './testing.ts'
@@ -34,6 +42,9 @@ export type {
   // Store
   ConduitStore,
 
+  // Credentials
+  CredentialResolver,
+
   // Targets
   TargetDescriptor,
   TargetKind,
@@ -47,5 +58,5 @@ export type {
   Protocol,
 } from './types.ts'
 
-// Exported as a value (class, not just type)
-export { ConduitStreamError } from './types.ts'
+// Exported as values (classes, not just types)
+export { ConduitStreamError, CredentialError } from './types.ts'

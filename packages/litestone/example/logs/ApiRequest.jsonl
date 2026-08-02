@@ -1,0 +1,7 @@
+{"method":"GET","path":"/api/users","status":200,"duration":4,"userId":1,"accountId":1,"ip":"10.0.0.1","userAgent":null,"error":null,"createdAt":"2026-08-01T07:46:49.822Z"}
+{"method":"POST","path":"/api/leads","status":201,"duration":12,"userId":1,"accountId":1,"ip":"10.0.0.1","userAgent":null,"error":null,"createdAt":"2026-08-01T07:46:49.822Z"}
+{"method":"GET","path":"/api/messages","status":200,"duration":8,"userId":2,"accountId":1,"ip":"10.0.0.2","userAgent":null,"error":null,"createdAt":"2026-08-01T07:46:49.822Z"}
+{"method":"GET","path":"/api/products","status":200,"duration":3,"userId":4,"accountId":2,"ip":"10.0.0.3","userAgent":null,"error":null,"createdAt":"2026-08-01T07:46:49.822Z"}
+{"method":"POST","path":"/api/users","status":422,"duration":6,"userId":4,"accountId":2,"ip":"10.0.0.3","userAgent":null,"error":"Validation failed: email already taken","createdAt":"2026-08-01T07:46:49.822Z"}
+{"method":"GET","path":"/api/leads","status":200,"duration":5,"userId":6,"accountId":3,"ip":"10.0.0.4","userAgent":null,"error":null,"createdAt":"2026-08-01T07:46:49.822Z"}
+{"method":"DELETE","path":"/api/users/7","status":200,"duration":9,"userId":6,"accountId":3,"ip":"10.0.0.4","userAgent":null,"error":null,"createdAt":"2026-08-01T07:46:49.822Z"}

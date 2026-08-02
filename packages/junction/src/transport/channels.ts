@@ -22,8 +22,8 @@
 //   service.hooks({
 //     after: {
 //       create: [publish((result, ctx) =>
-//         ctx.params.user?.workspaceId
-//           ? app.channel(`workspace:${ctx.params.user.workspaceId}`)
+//         ctx.auth.user?.workspaceId
+//           ? app.channel(`workspace:${ctx.auth.user.workspaceId}`)
 //           : null
 //       )],
 //     }
@@ -32,6 +32,9 @@
 //   // 3. Client receives:
 //   //   { type: 'event', event: 'deployments created', data: { id: '...', ... } }
 
+import { createPresenceTracker } from './presence.ts'
+import { AUTO_EVENT_MAP }       from '../core/service.ts'
+import { unwrapResult }         from '../core/envelope.ts'
 import type { ServiceContext } from './bridge.ts'
 import type { IAuth }          from '../auth/types.ts'
 import type { App, Plugin }    from '../core/app.ts'
@@ -78,6 +81,16 @@ export interface PresenceMember {
   meta:         Record<string, unknown>  // always an object, never null/undefined
 }
 
+// ─── Wire format ─────────────────────────────────────────────────────────
+// The single event-frame encoder for every broadcast path (Channel.send,
+// broadcastToChannel, sendToConn, publish). One implementation → one wire
+// format that can't drift, and JSON.stringify correctly omits undefined
+// data instead of emitting invalid JSON.
+
+export function encodeEventFrame(event: string, data: unknown): string {
+  return JSON.stringify({ type: 'event', event, data })
+}
+
 // ─── Channel ──────────────────────────────────────────────────────────────
 
 export class Channel {
@@ -113,10 +126,16 @@ export class Channel {
   get length(): number { return this.connections.size }
 
   // Send an event to all live connections in this channel.
-  // Using a template string instead of JSON.stringify({ type, event, data })
-  // avoids allocating an intermediate wrapper object on every broadcast.
+  // Serialization goes through encodeEventFrame — ONE wire format for all
+  // broadcast paths. (The old template-string variant here produced invalid
+  // JSON when data was undefined: `"data":undefined`.)
   send(event: string, data: unknown): void {
-    const msg = `{"type":"event","event":${JSON.stringify(event)},"data":${JSON.stringify(data)}}`
+    this.sendRaw(encodeEventFrame(event, data))
+  }
+
+  // Send an already-serialized frame — lets multi-channel publishes
+  // serialize the payload once instead of once per channel.
+  sendRaw(msg: string): void {
     for (const conn of this.connections) {
       if (conn.socket.readyState === 1) {
         try { conn.socket.send(msg) } catch {}
@@ -138,25 +157,11 @@ export function createChannelManager() {
   const channels    = new Map<string, Channel>()
   const connections = new Map<string, Connection>()
 
-  // ── Presence — per-channel member map ─────────────────────────────────
-  // Outer key: channelId. Inner key: connectionId.
-  // Only authenticated connections are tracked (conn.user != null).
-  const presence = new Map<string, Map<string, PresenceMember>>()
-
-  function presenceFor(channelId: string): Map<string, PresenceMember> {
-    let map = presence.get(channelId)
-    if (!map) { map = new Map(); presence.set(channelId, map) }
-    return map
-  }
-
-  function presenceMembers(channelId: string): PresenceMember[] {
-    return Array.from(presenceFor(channelId).values())
-  }
-
+  // ── Send primitives ─────────────────────────────────────────────────
   function broadcastToChannel(channelId: string, excludeConnId: string | null, event: string, data: unknown): void {
     const ch = channels.get(channelId)
     if (!ch) return
-    const msg = JSON.stringify({ type: 'event', event, data })
+    const msg = encodeEventFrame(event, data)
     for (const conn of ch.connections) {
       if (conn.id === excludeConnId) continue
       if (conn.socket.readyState === 1) {
@@ -167,52 +172,35 @@ export function createChannelManager() {
 
   function sendToConn(conn: Connection, event: string, data: unknown): void {
     if (conn.socket.readyState === 1) {
-      try { conn.socket.send(JSON.stringify({ type: 'event', event, data })) } catch {}
+      try { conn.socket.send(encodeEventFrame(event, data)) } catch {}
     }
   }
 
-  function presenceJoin(conn: Connection, channelId: string): void {
-    const session = conn.user
-    if (!session?.userId) return   // anonymous — not tracked
-
-    const meta = (conn as Record<string, unknown>).__joinMeta as Record<string, unknown> ?? {}
-    const member: PresenceMember = {
-      connectionId: conn.id,
-      userId:       session.userId,
-      channelId,
-      joinedAt:     new Date(),
-      meta,
-    }
-
-    presenceFor(channelId).set(conn.id, member)
-
-    // Send presence:sync to the new member — full list including themselves
-    sendToConn(conn, 'presence:sync', {
-      channelId,
-      members: presenceMembers(channelId),
-    })
-
-    // Broadcast presence:join to all other members
-    broadcastToChannel(channelId, conn.id, 'presence:join', { channelId, member })
-  }
-
-  function presenceLeave(conn: Connection, channelId: string): void {
-    const map    = presence.get(channelId)
-    const member = map?.get(conn.id)
-    if (!member) return
-
-    map!.delete(conn.id)
-    if (map!.size === 0) presence.delete(channelId)
-
-    // Broadcast presence:leave to remaining members
-    broadcastToChannel(channelId, null, 'presence:leave', { channelId, member })
-  }
+  // ── Presence tracking — extracted to presence.ts ────────────────────
+  // The tracker owns the presence maps and the join/sync/leave broadcast
+  // protocol; the manager supplies the send primitives.
+  const _presence = createPresenceTracker({
+    broadcast:  broadcastToChannel,
+    sendToConn,
+  })
+  const presenceFor     = _presence.presenceFor
+  const presenceMembers = _presence.members
+  const presenceJoin    = _presence.join
+  const presenceLeave   = _presence.leave
 
   const onConnectHandlers:    Array<(session: unknown, conn: Connection) => void | Promise<void>> = []
   const onDisconnectHandlers: Array<(conn: Connection) => void | Promise<void>> = []
 
   const gcTimer = setInterval(() => {
-    for (const channel of channels.values()) channel.gc()
+    for (const channel of channels.values()) {
+      channel.gc()
+      // Drop channels with no live connections — the map otherwise grows
+      // by one entry per channel name ever used, forever. NOTE: callers
+      // should re-fetch channels via manager.channel(name) rather than
+      // holding long-lived Channel references; a pruned instance is
+      // replaced by a fresh one on next access.
+      if (channel.length === 0) channels.delete(channel.name)
+    }
   }, 30_000)
   if (gcTimer.unref) gcTimer.unref()
 
@@ -281,14 +269,29 @@ export function createChannelManager() {
       return conn
     },
 
-    // Called by _wsClose
+    // Called by _wsClose AND by heartbeat eviction
     async handleDisconnect(connId: string): Promise<void> {
       const conn = connections.get(connId)
       if (!conn) return
 
       connections.delete(connId)
+
+      // Close the socket if it's still open. On a normal close event this
+      // is a no-op; on HEARTBEAT EVICTION it's essential — previously the
+      // server dropped all its state but left the client connected as a
+      // zombie whose subsequent calls ran with conn = null (silently losing
+      // the authenticated user).
+      try {
+        if (conn.socket.readyState === 1) conn.socket.close(1001, 'connection evicted')
+      } catch {}
+
       // channel.leave is wrapped — triggers presenceLeave per channel automatically
-      for (const channel of channels.values()) channel.leave(conn)
+      for (const channel of channels.values()) {
+        channel.leave(conn)
+        // Prune empty channels — high-cardinality names (workspace:{id},
+        // user:{id}) otherwise accumulate Channel objects forever.
+        if (channel.length === 0) channels.delete(channel.name)
+      }
       for (const handler of onDisconnectHandlers) {
         try { await handler(conn) } catch {}
       }
@@ -313,32 +316,53 @@ export function createChannelManager() {
       const result = fn(data, ctx)
       if (!result) return
       const targets = Array.isArray(result) ? result : [result]
-      // Mirror HTTP bridge: unwrap single-record envelopes, keep list envelopes whole
-      const raw = data as Record<string, unknown> | null
-      const payload = raw?.object === 'list' ? raw : (raw?.data ?? raw)
-      for (const ch of targets) ch.send(event, payload)
+      // Same rule as every other boundary — and now literally the same
+      // function. The comment here used to say "mirror HTTP bridge" above a
+      // hand-copy of the bridge's logic, which is exactly how two copies drift.
+      const payload = unwrapResult(data)
+
+      // Serialize ONCE for all target channels — multi-channel publishes
+      // previously re-stringified the payload per channel, and telemetry
+      // stringified it a second time just to measure its size.
+      const frame = encodeEventFrame(event, payload)
+      for (const ch of targets) ch.sendRaw(frame)
 
       // ── Telemetry ──────────────────────────────────────────────
       const telemetry = (ctx.app as Record<string, unknown>)?.telemetry as
-        { emit: (e: string, d: unknown) => void } | undefined
-      if (telemetry) {
+        { emit: (e: string, d: unknown) => void; hasListeners?: (e?: string) => boolean } | undefined
+      if (telemetry && (typeof telemetry.hasListeners !== 'function' || telemetry.hasListeners())) {
         const recipientCount = targets.reduce((n, ch) => n + ch.length, 0)
-        const payloadStr = JSON.stringify(payload) ?? ''
         telemetry.emit('junction.channel.publish', {
           channel:        targets.map(ch => (ch as Record<string, unknown>).name ?? '?').join(','),
           event,
           recipientCount,
-          payloadSize:    payloadStr.length,
+          payloadSize:    frame.length,   // frame ≈ payload size; no re-serialization
         })
       }
     },
 
+    // Returns an unsubscribe function so observers (e.g. devtools) can
+    // detach on shutdown instead of leaking handlers into the manager.
     on(
       event:   'connection' | 'disconnect',
       handler: (ctx: unknown, conn: Connection) => void | Promise<void>
-    ): void {
-      if (event === 'connection')  onConnectHandlers.push(handler)
-      if (event === 'disconnect') onDisconnectHandlers.push(handler as (conn: Connection) => void)
+    ): () => void {
+      if (event === 'connection') {
+        onConnectHandlers.push(handler)
+        return () => {
+          const i = onConnectHandlers.indexOf(handler)
+          if (i !== -1) onConnectHandlers.splice(i, 1)
+        }
+      }
+      if (event === 'disconnect') {
+        const h = handler as (conn: Connection) => void
+        onDisconnectHandlers.push(h)
+        return () => {
+          const i = onDisconnectHandlers.indexOf(h)
+          if (i !== -1) onDisconnectHandlers.splice(i, 1)
+        }
+      }
+      return () => {}
     },
 
     // ── Presence queries — server-side ──────────────────────────────────
@@ -390,7 +414,7 @@ export function createChannelManager() {
 //   1. Mounts a /ws WebSocket endpoint that handles auth, connection
 //      lifecycle, and routing through the channel manager.
 //
-//   2. Stamps ctx.params.__channels on every service call so the
+//   2. Stamps ctx.locals.__channels on every service call so the
 //      publish() hook can find the manager without a global variable.
 //
 //   3. Calls the optional setup function so the app can declare which
@@ -520,7 +544,22 @@ export function channels(setup?: ChannelSetupFn): Plugin {
           // ctx.transport = 'websocket' so hooks can distinguish if needed.
           // Auto-events fire after successful mutations exactly as with HTTP.
           if (parsed.type === 'service_call') {
-            const { id: callId, service: serviceName, method, data, params: extraParams } = parsed
+            const { id: callId, service: serviceName, method, data } = parsed
+            // WS frame carries caller extras (id, query, …) under `meta` —
+            // that is what WSMessage declares.
+            //
+            // `params` is accepted as an alias because the browser client sent
+            // extras under that name while the server only ever read `meta`.
+            // Nothing matched, so svcCtx.id stayed null and every id-bearing
+            // call looked like a bulk operation:
+            //
+            //   Bulk patch is disabled on this service (set allowBulk: true)
+            //
+            // It stayed hidden while the channels() plugin was unregistered,
+            // because the client silently fell back to HTTP, where the id
+            // travels in the URL.
+            const parsedAny   = parsed as Record<string, unknown>
+            const extraParams = ((parsedAny.meta ?? parsedAny.params) ?? {}) as Record<string, unknown>
 
             app.telemetry?.emit('junction.ws.message', {
               connectionId: connId,
@@ -553,15 +592,16 @@ export function channels(setup?: ChannelSetupFn): Plugin {
                 method as 'create',
                 (data as Record<string, unknown> | null) ?? null,
                 {
-                  query:   wsQuery,
-                  user:    (conn?.user ?? null) as import('../auth/types.ts').SessionContext | null,
-                  headers: ctx.headers,
-                  ip:      ctx.ip,
-                  ...restExtra,
-                  __channels: manager,
+                  query: wsQuery,
+                  auth:  { user: (conn?.user ?? null) as import('../auth/types.ts').SessionContext | null },
+                  transport: 'websocket',
+                  locals: { __channels: manager, ...restExtra } as Record<string, unknown>,
                 },
                 app
               )
+              // WS-origin client facts (headers/ip) belong on ctx.client
+              svcCtx.client.headers = ctx.headers
+              svcCtx.client.ip      = ctx.ip
               svcCtx.method    = method as string
               svcCtx.transport = 'websocket'
 
@@ -570,11 +610,8 @@ export function channels(setup?: ChannelSetupFn): Plugin {
 
               try {
                 await _call(svc, svcCtx, app._appHooks, app.events, app.telemetry)
-                // Mirror the HTTP bridge: lists stay as the full envelope,
-                // single records are unwrapped to just the data value.
-                const raw = svcCtx.result as Record<string, unknown> | null
-                const wsResult = raw?.object === 'list' ? raw : (raw?.data ?? raw)
-                ctx.send({ type: 'service_result', id: callId, result: wsResult })
+                // The second hand-copy of the bridge's rule. Both now call it.
+                ctx.send({ type: 'service_result', id: callId, result: unwrapResult(svcCtx.result) })
               } catch (err: unknown) {
                 const fe = _toErr(err)
                 ctx.send({ type: 'service_error', id: callId, error: fe.toJSON() })
@@ -647,7 +684,7 @@ export function channels(setup?: ChannelSetupFn): Plugin {
       app.hooks({
         around: {
           all: [async (ctx, next) => {
-            ctx.params.__channels = manager
+            ctx.locals.__channels = manager
             await next()
           }]
         }
@@ -690,7 +727,7 @@ export function channels(setup?: ChannelSetupFn): Plugin {
 //   service.hooks({
 //     after: {
 //       create: [publish((result, ctx) =>
-//         app.channel(`workspace:${ctx.params.workspace_id}`)
+//         app.channel(`workspace:${ctx.auth.user?.workspace_id}`)
 //       )],
 //     }
 //   })
@@ -714,9 +751,11 @@ export function publish<T = unknown>(
   event?: string
 ): import('../core/hooks.ts').Hook {
 
-  return async (ctx: ServiceContext): Promise<void> => {
+  // Named so the dev-mode "anonymous hook" warning stays about USER hooks, and
+  // so the telemetry waterfall reads 'publish' rather than 'anonymous'.
+  return async function publish(ctx: ServiceContext): Promise<void> {
 
-    const manager = ctx.params.__channels as
+    const manager = ctx.locals.__channels as
       ReturnType<typeof createChannelManager> | undefined
 
     // Channels plugin not loaded — silent no-op
@@ -725,7 +764,20 @@ export function publish<T = unknown>(
     // ctx.dispatch === false → caller explicitly suppressed broadcast
     if (ctx.dispatch === false) return
 
-    const eventName = event ?? `${ctx.service} ${ctx.method}`
+    // Past tense, matching app.events and the browser client.
+    //
+    // This used to be `${ctx.service} ${ctx.method}` — present tense — so a
+    // create put 'posts create' on the wire while every documented example,
+    // every test, and the client's own handlers said 'posts created'. The
+    // client's created/patched/removed listeners therefore never fired; its
+    // '*' fallback caught the traffic and upserted it, which made create and
+    // patch look correct and turned every REMOVE into an upsert. A deleted
+    // record was re-added to the store and stayed on screen until reload.
+    //
+    // Custom actions have no past tense and fall through unchanged
+    // ('posts archive'), which is what the client's '*' handler expects.
+    const eventName = event
+      ?? `${ctx.service} ${AUTO_EVENT_MAP[ctx.method as string] ?? ctx.method}`
 
     // Use ctx.dispatch if explicitly set, otherwise fall back to ctx.result
     const payload = ctx.dispatch !== undefined

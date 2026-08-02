@@ -1,15 +1,23 @@
 /*
- * utilities/pills.css
- * .pill shortcut lives in uno.config.ts.
- * Tones come from tones.css.
+ * pills.css
+ * Chip layout comes from chip.css. Tones come from tones.css.
  *
  * Default (no tone class) renders muted via the var fallback.
  * Use for counts and very short data ("12", "99+", "v2").
  */
 
 .pill {
-  background:     var(--bg-mix, var(--color-muted));
-  color:          var(--on-bg-mix, white);
+  /* Box — was the `pill` Uno shortcut. Chip layout comes from chip.css. */
+  padding:       0.125rem 0.5rem;
+  border-radius: var(--pill-radius);
+  font-size:     0.75rem;
+  line-height:   1rem;
+
+  /* Skin. --fill is the effective background; chip.css derives readable
+     text from it. See the auto-contrast note there. */
+  --tone-fill:    var(--bg-mix, var(--color-muted));
+  background:     var(--fill, var(--tone-fill));
+  color:          var(--on-fill, white);
   border:         1px solid transparent;
   font-family:    var(--font-primary);
   font-weight:    var(--pill-font-weight);

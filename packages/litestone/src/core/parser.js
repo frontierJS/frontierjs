@@ -684,6 +684,8 @@ class Parser {
       case 'relation': return { kind: 'relation',  ...this.parseRelation() }
       case 'generated':return { kind: 'generated', ...this.parseGenerated() }
       case 'from': return { kind: 'from', ...this.parseFrom() }
+      case 'edge':   return { kind: 'edge',   ...this.parseEdge() }
+      case 'scoped': return { kind: 'scoped', ...this.parseScoped() }
 
       case 'computed':   return { kind: 'computed' }
       case 'hardDelete': return { kind: 'hardDelete' }
@@ -965,6 +967,12 @@ class Parser {
     this.eat(TK.LPAREN)
     const rel = {}
 
+    // Prisma-style positional relation name: @relation("members", fields: ...)
+    if (this.check(TK.STRING)) {
+      rel.name = this.eat(TK.STRING).value
+      this.maybeEat(TK.COMMA)
+    }
+
     while (!this.check(TK.RPAREN)) {
       const key = this.eat(TK.IDENT).value
       this.eat(TK.COLON)
@@ -986,6 +994,46 @@ class Parser {
 
     this.eat(TK.RPAREN)
     return rel
+  }
+
+  // ── @edge / @scoped parsers ───────────────────────────────────────────────────
+  // @edge(ref: Model [, key: name] [, as: namespace] [, onMissing: error|skip])
+  //   → a field whose value lives on a relationship (join/side table), not the row.
+  // @scoped [ (as: namespace, onMissing: ...) ]
+  //   → shorthand for @edge bound to the @@auth model (per-viewer). Resolved in
+  //     expandEdgeAttributes once the @@auth model is known.
+  parseEdge() {
+    this.eat(TK.LPAREN)
+    const e = {}
+    while (!this.check(TK.RPAREN)) {
+      const key = this.eat(TK.IDENT).value
+      this.eat(TK.COLON)
+      if      (key === 'ref')       e.ref       = this.eat(TK.IDENT).value
+      else if (key === 'key')       e.key       = this.eat(TK.IDENT).value
+      else if (key === 'as')        e.as        = this.eat(TK.IDENT).value
+      else if (key === 'onMissing') e.onMissing = this.eat(TK.IDENT).value
+      else throw new ParseError(`Unknown @edge argument '${key}'`, this.peek())
+      this.maybeEat(TK.COMMA)
+    }
+    this.eat(TK.RPAREN)
+    return e
+  }
+
+  parseScoped() {
+    const s = {}
+    if (this.check(TK.LPAREN)) {
+      this.eat(TK.LPAREN)
+      while (!this.check(TK.RPAREN)) {
+        const key = this.eat(TK.IDENT).value
+        this.eat(TK.COLON)
+        if      (key === 'as')        s.as        = this.eat(TK.IDENT).value
+        else if (key === 'onMissing') s.onMissing = this.eat(TK.IDENT).value
+        else throw new ParseError(`Unknown @scoped argument '${key}'`, this.peek())
+        this.maybeEat(TK.COMMA)
+      }
+      this.eat(TK.RPAREN)
+    }
+    return s
   }
 
   parseGenerated() {
@@ -1913,6 +1961,90 @@ function expandHasTemplatesAttributes(schema) {
   }
 }
 
+// ── @edge / @scoped normalization ──────────────────────────────────────────────
+// Resolve every @edge / @scoped attribute into a single canonical descriptor:
+//   { kind:'edge', ref, key, as, onMissing, auth }
+// with defaults filled — key = <ref>Id, as = <ref>Edge (or 'mine' for @scoped),
+// onMissing = 'error'. @scoped resolves ref to the @@auth model. The resolved
+// descriptor replaces the raw attribute in place and is also stashed as field.edge
+// for downstream (DDL / client) lookups. Returns an array of error strings.
+function expandEdgeAttributes(schema) {
+  const errors = []
+  const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1)
+  const authModel  = schema.models.find(m => m.attributes.some(a => a.kind === 'auth'))
+  const modelNames = new Set(schema.models.map(m => m.name))
+
+  for (const model of schema.models) {
+    // ── normalize every @edge / @scoped on this model ──
+    const resolvedEdges = []
+    for (const field of model.fields) {
+      const raw = field.attributes.find(a => a.kind === 'edge' || a.kind === 'scoped')
+      if (!raw) continue
+      const isScoped = raw.kind === 'scoped'
+
+      let ref = raw.ref
+      if (isScoped) {
+        if (!authModel) {
+          errors.push(`Model '${model.name}', field '${field.name}': @scoped requires a model marked @@auth`)
+          continue
+        }
+        ref = authModel.name
+      }
+      if (!ref || !modelNames.has(ref)) {
+        errors.push(`Model '${model.name}', field '${field.name}': @edge(ref: …) references unknown model '${ref ?? ''}'`)
+        continue
+      }
+
+      const key       = raw.key ?? `${lowerFirst(ref)}Id`
+      const as        = raw.as  ?? (isScoped ? 'mine' : `${lowerFirst(ref)}Edge`)
+      const onMissing = raw.onMissing ?? 'error'
+      if (onMissing !== 'error' && onMissing !== 'skip')
+        errors.push(`Model '${model.name}', field '${field.name}': @edge onMissing must be 'error' or 'skip', got '${onMissing}'`)
+
+      const resolved = { kind: 'edge', ref, key, as, onMissing, auth: isScoped }
+      field.attributes[field.attributes.indexOf(raw)] = resolved
+      field.edge = resolved
+      resolvedEdges.push({ field, ...resolved })
+    }
+    if (!resolvedEdges.length) continue
+
+    // ── guardrails (D2 / D6 / D7 / D10 / D11) ──
+    // Physical columns of the host (for key collisions).
+    const colNames = new Set(model.fields.filter(f =>
+      f.type.kind !== 'relation' && f.type.kind !== 'implicitM2M' &&
+      !f.attributes.some(a => a.kind === 'edge' || a.kind === 'computed' || a.kind === 'from')
+    ).map(f => f.name))
+    // Ref models the host has a belongsTo (FK-owning @relation) to.
+    const belongsToTargets = model.fields
+      .filter(f => f.attributes.some(a => a.kind === 'relation' && a.fields))
+      .map(f => f.type.name)
+    const fieldNames = new Set(model.fields.map(f => f.name))
+    const asToDim = new Map()   // as → "ref|key"
+    const dimToAs = new Map()   // "ref|key" → as
+
+    for (const e of resolvedEdges) {
+      // D2 — a non-auth @edge pointed at a belongsTo ref is degenerate (single ref → just a column).
+      if (!e.auth && belongsToTargets.includes(e.ref))
+        errors.push(`Model '${model.name}', field '${e.field.name}': @edge(ref: ${e.ref}) points at a belongsTo relation — this row has a single ${e.ref}, so use a plain column, not an edge.`)
+      // D6 — a non-auth derived/explicit key must not shadow an existing column.
+      if (!e.auth && colNames.has(e.key))
+        errors.push(`Model '${model.name}', field '${e.field.name}': @edge key '${e.key}' collides with an existing column — set an explicit key: on the edge.`)
+      // D7 — the namespace must not collide with a field or relation name.
+      if (fieldNames.has(e.as))
+        errors.push(`Model '${model.name}', field '${e.field.name}': @edge namespace '${e.as}' collides with a field or relation — set an explicit as: on the edge.`)
+      // D10 / D11 — namespace ⟺ (ref, key) must be a bijection among a model's edges.
+      const dim = `${e.ref}|${e.key}`
+      if (asToDim.has(e.as) && asToDim.get(e.as) !== dim)
+        errors.push(`Model '${model.name}': edge namespace '${e.as}' maps to two dimensions — fields sharing an 'as' must share the same ref and key (D11).`)
+      if (dimToAs.has(dim) && dimToAs.get(dim) !== e.as)
+        errors.push(`Model '${model.name}': two edges to '${e.ref}' via key '${e.key}' use different namespaces — give the second a distinct key, or share one 'as' (D10).`)
+      asToDim.set(e.as, dim)
+      dimToAs.set(dim, e.as)
+    }
+  }
+  return errors
+}
+
 function validate(schema) {
   const errors   = []
   const warnings = []
@@ -1950,7 +2082,11 @@ function validate(schema) {
 
       // Validate type references — scalars/enums for regular fields, model name for relation fields
       const isRelationField  = field.attributes.some(a => a.kind === 'relation')
-      const isImplicitM2M    = field.type.array && modelNames.has(field.type.name) && !isRelationField
+      // A name-only @relation("label") on an ARRAY field is still an implicit
+      // m2m candidate — the label pairs it with its mirror. Only fields: [...]
+      // makes it a belongsTo FK side.
+      const _relHasFields    = field.attributes.some(a => a.kind === 'relation' && a.fields)
+      const isImplicitM2M    = field.type.array && modelNames.has(field.type.name) && !_relHasFields
       const isFromField      = field.attributes.some(a => a.kind === 'from')
       const validType = allTypes.has(field.type.name)
         || (isRelationField && modelNames.has(field.type.name))
@@ -1959,7 +2095,7 @@ function validate(schema) {
       if (!validType)
         errors.push(`Model '${model.name}', field '${field.name}': unknown type '${field.type.name}'`)
       if (isRelationField) field.type.kind = 'relation'
-      if (isImplicitM2M)   field.type.kind = 'implicitM2M'
+      if (isImplicitM2M)   field.type.kind = 'implicitM2M'   // wins over name-only @relation
 
       // Fix up scalar vs enum kind now that we know all enum names
       if (enumNames.has(field.type.name)) field.type.kind = 'enum'
@@ -1983,7 +2119,8 @@ function validate(schema) {
       // Array type validation — only Text, Integer, and File support []
       if (field.type.array) {
         const arrayAllowed = new Set(['String', 'Int', 'File'])
-        const isImplicitM2M = modelNames.has(field.type.name) && field.type.kind !== 'relation'
+        const isImplicitM2M = modelNames.has(field.type.name)
+          && (field.type.kind !== 'relation' || !field.attributes.some(a => a.kind === 'relation' && a.fields))
         if (!arrayAllowed.has(field.type.name) && field.type.kind !== 'relation' && !isImplicitM2M) {
           errors.push(`Model '${model.name}', field '${field.name}': array [] is only supported for Text, Integer, File, or a model name for many-to-many (got ${field.type.name})`)
         }
@@ -2439,6 +2576,12 @@ function validate(schema) {
   // Validate implicit m2m: both sides must declare the relation.
   // Also reclassify Model[] fields as hasMany back-references when the target
   // model has an explicit @relation FK pointing back to this model.
+  //
+  // Relations pair by LABEL first (Prisma parity): an array labeled
+  // @relation("user") only matches an FK labeled "user"; an array labeled
+  // "members" pairs with the "members" array on the other side (m2m).
+  // Unlabeled arrays only pair with unlabeled FKs / unlabeled arrays.
+  const _fieldRelLabel = (f) => f.attributes.find(a => a.kind === 'relation')?.name ?? null
   for (const model of schema.models) {
     for (const field of model.fields) {
       if (field.type.kind !== 'implicitM2M') continue
@@ -2447,25 +2590,43 @@ function validate(schema) {
         errors.push(`Model '${model.name}', field '${field.name}': unknown model '${field.type.name}'`)
         continue
       }
-      // Check if the target model has a @relation field pointing back (hasMany back-ref)
+      const label  = _fieldRelLabel(field)
+      const isSelf = targetModel.name === model.name
+
+      // hasMany back-ref: target has an FK @relation to me with a MATCHING label
       const hasFKBack = targetModel.fields.some(f => {
-        if (!f.attributes.some(a => a.kind === 'relation' && a.fields)) return false
-        return f.type.name === model.name
+        const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
+        if (!rel || f.type.name !== model.name) return false
+        return (rel.name ?? null) === label
       })
       if (hasFKBack) {
-        // Reclassify as a hasMany back-reference — not a join-table M2M
         field.type.kind = 'relation'
         continue
       }
-      const mirror = targetModel.fields.find(f =>
-        f.type.kind === 'implicitM2M' && f.type.name === model.name
+
+      // m2m mirror: array field with the same label pointing back
+      // (for self-relations, a DIFFERENT array field on this same model)
+      const mirror = (isSelf ? model : targetModel).fields.find(f =>
+        f !== field && f.type.kind === 'implicitM2M' && f.type.name === model.name && _fieldRelLabel(f) === label
       )
       if (!mirror) {
-        errors.push(
-          `Implicit many-to-many: '${model.name}.${field.name}' references '${field.type.name}' ` +
-          `but '${field.type.name}' has no corresponding '${model.name}[]' field. ` +
-          `Both sides must declare the relation.`
-        )
+        const hint = label
+          ? `'${field.type.name}' has no '${model.name}[]' field labeled @relation("${label}").`
+          : `'${field.type.name}' has no corresponding unlabeled '${model.name}[]' field. ` +
+            `If this pairs with a labeled relation, add the matching @relation("name") label.`
+        errors.push(`Implicit many-to-many: '${model.name}.${field.name}' — ${hint} Both sides must declare the relation.`)
+      }
+      // A label may join exactly two array ends
+      const ends = []
+      for (const m of schema.models) for (const f of m.fields) {
+        if (f.type.kind !== 'implicitM2M') continue
+        if (_fieldRelLabel(f) !== label) continue
+        if (isSelf ? (m.name === model.name && f.type.name === model.name)
+                   : ((m.name === model.name && f.type.name === targetModel.name) ||
+                      (m.name === targetModel.name && f.type.name === model.name))) ends.push(`${m.name}.${f.name}`)
+      }
+      if (ends.length > 2) {
+        errors.push(`Many-to-many relation ${label ? `"${label}"` : '(unlabeled)'} between '${model.name}' and '${targetModel.name}' has ${ends.length} array fields (${ends.join(', ')}) — exactly two are allowed. Use distinct @relation("name") labels.`)
       }
     }
   }
@@ -2631,6 +2792,7 @@ export function parseFile(filePath) {
   // Run the full validator on the merged schema
   expandSecretAttributes(schema)
   expandHasTemplatesAttributes(schema)
+  allErrors.push(...expandEdgeAttributes(schema))
   const { valid, errors, warnings } = validate(schema)
   allErrors.push(...errors)
   allWarnings.push(...warnings)
@@ -2666,6 +2828,8 @@ export function parse(src) {
   }
   expandSecretAttributes(schema)
   expandHasTemplatesAttributes(schema)
+  const edgeErrors = expandEdgeAttributes(schema)
   const { valid, errors, warnings } = validate(schema)
-  return { schema, valid, errors, warnings }
+  const merged = [...edgeErrors, ...errors]
+  return { schema, valid: merged.length === 0, errors: merged, warnings }
 }

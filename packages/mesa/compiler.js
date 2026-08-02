@@ -1797,10 +1797,66 @@ export function analyzeScript(raw, ast) {
           const e = stmt.expression
           if (e.type !== 'SequenceExpression') return false
           const lastE = e.expressions[e.expressions.length - 1]
-          return ['ArrowFunctionExpression', 'FunctionExpression', 'Identifier'].includes(lastE.type)
+          // Inside a block the handler must be an INLINE function. The bare form
+          // (`$: dep, syncFn`) still accepts a function reference, but in a block
+          // that shorthand is indistinguishable from a plain multi-value read:
+          // `{ a, syncFn }` and `{ a, b }` have identical ASTs. Requiring `() =>`
+          // here removes the ambiguity and costs one arrow per line in a form
+          // whose whole purpose is ordering several handlers.
+          return ['ArrowFunctionExpression', 'FunctionExpression'].includes(lastE.type)
         })
 
-        if (body.body.length > 0 && allAreWatchPairs) {
+        // A block runs code. If its body provably does nothing — every statement
+        // is a bare read — the author reached for braces to express a watch and
+        // got silence instead: effects don't drive renders in Mesa, so an effect
+        // with no side effect is unobservable.
+        //
+        // This is a compile error rather than a warning because it is decidable,
+        // and because the previous behaviour was worse than either: `$: { (a, b) }`
+        // compiled to orderedGroup([{ deps: [a], handler: <value of b> }]) and
+        // threw `fn is not a function` the first time `a` changed.
+        // `[].every()` is true, so an empty block reads as "all watch pairs" —
+        // check length explicitly.
+        const looksLikeGroup = body.body.length > 0 && allAreWatchPairs
+        if (!looksLikeGroup && _isInertBlock(body)) {
+          const inner = raw.slice(body.start + 1, body.end - 1).trim()
+
+          // Distinguish "you probably meant a handler" from "you probably meant
+          // a watch". An unparenthesised sequence with an identifier tail is the
+          // shape of an attempted `dep, handlerRef`, which blocks no longer take.
+          const looksLikeHandlerRef = body.body.some((stmt) => {
+            if (stmt.type !== 'ExpressionStatement') return false
+            const e = stmt.expression
+            if (e.type !== 'SequenceExpression') return false
+            if (raw[e.start - 1] === '(') return false
+            return e.expressions[e.expressions.length - 1].type === 'Identifier'
+          })
+
+          if (body.body.length === 0) {
+            errors.push(
+              `'$: { }' is empty. A '$: { }' block runs code; to watch values without a body, use '$: deps' instead.`
+            )
+          } else if (looksLikeHandlerRef) {
+            const tail = inner.split(',').pop().trim()
+            const head = inner.slice(0, inner.lastIndexOf(',')).trim()
+            errors.push(
+              `'$: { ${inner} }' does nothing. A handler inside a '$: { }' block must be an inline ` +
+              `function — the reference shorthand is only available on the unbraced form, because ` +
+              `'{ a, handler }' and '{ a, b }' are indistinguishable. ` +
+              `If '${tail}' is a handler, write '${head}, () => ${tail}()'. ` +
+              `If you meant to watch both values, drop the braces: '$: (${inner})'.`
+            )
+          } else {
+            errors.push(
+              `'$: { ${inner} }' does nothing — a '$: { }' block runs code, and this body only reads values. ` +
+              `To watch these and re-render, drop the braces: '$: ${inner}'. ` +
+              `To run something when they change, add a handler: '$: ${inner}, () => { ... }'.`
+            )
+          }
+          continue
+        }
+
+        if (looksLikeGroup) {
           // Ordered watch group — all entries are dep, handler pairs.
           const entries = []
           for (const stmt of body.body) {
@@ -4386,6 +4442,282 @@ function _domUsesClass(body) {
   return false
 }
 
+
+// ─── External reactivity diagnostic ──────────────────────────────────────────
+// A template read of an imported signal is only reactive if the name appears in
+// the `externalSignals` map the consuming build passes. That map is
+// hand-maintained and lives in a different package from the signals it
+// describes, and a miss fails silently: the expression reads nothing reactive,
+// so it is hoisted out of the render block and the signal object — always
+// truthy — is rendered once and never updated.
+//
+// See EXTERNAL_REACTIVITY.md for the full failure matrix.
+//
+// This pass reports the high-confidence cases only: an identifier imported from
+// a module that HAS an externalSignals entry, but which the entry doesn't cover.
+// If the module isn't described at all we say nothing, because we genuinely
+// can't tell a signal from a constant.
+
+/** Pull expression source strings out of the template AST. */
+function _collectTemplateExpressions(body, out = []) {
+  if (!body || typeof body !== 'object') return out
+  const nodes = Array.isArray(body) ? body : [body]
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) continue
+
+    if (node.type === 'text' && typeof node.value === 'string') {
+      for (const m of node.value.matchAll(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g)) {
+        const inner = m[1].trim()
+        if (inner && !/^[#/:@]/.test(inner)) out.push(inner)
+      }
+    }
+
+    for (const attr of Array.isArray(node.attributes) ? node.attributes : []) {
+      if (!attr || attr.type !== 'exp' || typeof attr.value !== 'string') continue
+
+      // Skip attributes whose value is expected to BE a function rather than a
+      // value to render: event handlers and directives. `on:click={toggleTheme}`
+      // reads an imported function as a value, which is correct and common —
+      // warning on it would make the diagnostic noisy enough to turn off.
+      const an = attr.name ?? ''
+      if (/^on[:A-Za-z]/.test(an) || /^(use|attach|transition|in|out|animate|bind):/.test(an)) continue
+
+      const inner = attr.value.replace(/^\{|\}$/g, '').trim()
+      if (inner) out.push(inner)
+    }
+
+    // Block headers: "#if expr", "#each expr as x", "#key expr", ":else if expr".
+    // `parts` is not always an array — some node types carry an object here, so
+    // this must be guarded rather than spread.
+    for (const part of Array.isArray(node.parts) ? node.parts : []) {
+      if (!part || typeof part !== 'object') continue
+      if (typeof part.value === 'string') {
+        const m = part.value.match(/^[#:/](?:if|else if|key|await)\s+([\s\S]+)$/)
+        if (m) out.push(m[1].trim())
+      }
+      _collectTemplateExpressions(part.body, out)
+    }
+    if (typeof node.value === 'string' && (node.type === 'each' || node.type === 'key' || node.type === 'await')) {
+      const m = node.value.match(/^[#:/](?:each|key|await)\s+([\s\S]+?)(?:\s+as\s+[\s\S]+)?$/)
+      if (m) out.push(m[1].trim())
+    }
+
+    _collectTemplateExpressions(node.body,      out)
+    _collectTemplateExpressions(node.mainBlock, out)
+    _collectTemplateExpressions(node.elsePart,  out)
+    _collectTemplateExpressions(node.elseBlock, out)
+  }
+  return out
+}
+
+/**
+ * Free identifiers read as VALUES in an expression.
+ * Skips callee position (`fn(x)` — being called, not read), member property
+ * names, and object keys.
+ *
+ * Returns Map<rootName, { member, paths }> where `member` is the first property
+ * accessed (or null for a bare read) and `paths` is the set of full dotted
+ * paths read off that root — `page.params.id` yields 'page.params.id'.
+ * Computed access (`a[b]`) stops the path, since the key isn't static.
+ */
+function _valueReads(exprSrc) {
+  let ast
+  try { ast = acorn.parseExpressionAt(exprSrc, 0, { ecmaVersion: 'latest' }) }
+  catch { return new Map() }
+
+  const reads = new Map()
+
+  // Walk up from an identifier through non-computed member access to build the
+  // full static path: `page.params.id` → 'page.params.id'.
+  const pathFrom = (idNode, chain) => {
+    let path = idNode.name
+    let depth = -1
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const { parent, key } = chain[i]
+      if (!parent || parent.type !== 'MemberExpression' || key !== 'object') break
+      if (parent.computed || parent.property?.type !== 'Identifier') break
+      path += '.' + parent.property.name
+      depth = i
+    }
+
+    // If the member expression we ended on is itself being called —
+    // `{cfg.fmt('x')}` — this is a method invocation, not a value read.
+    if (depth >= 0) {
+      const outer = chain[depth - 1]
+      if (outer?.parent?.type === 'CallExpression' && outer.key === 'callee') return null
+    }
+    return path
+  }
+
+  const walk = (n, parent, key, chain) => {
+    if (!n || typeof n !== 'object') return
+    if (Array.isArray(n)) { n.forEach(c => walk(c, parent, key, chain)); return }
+    if (typeof n.type !== 'string') return
+
+    if (n.type === 'Identifier') {
+      const isCallee   = parent?.type === 'CallExpression' && key === 'callee'
+      const isProperty = parent?.type === 'MemberExpression' && key === 'property' && !parent.computed
+      const isKey      = parent?.type === 'Property' && key === 'key' && !parent.computed
+      if (!isCallee && !isProperty && !isKey) {
+        const member = parent?.type === 'MemberExpression' && key === 'object' && !parent.computed
+          ? parent.property?.name ?? null
+          : null
+        const entry = reads.get(n.name) ?? { member: null, paths: new Set() }
+        if (entry.member === null && member) entry.member = member
+        const path = pathFrom(n, [...chain, { parent, key }])
+        if (path !== null) entry.paths.add(path)
+        reads.set(n.name, entry)
+      }
+      return
+    }
+    for (const k of Object.keys(n)) {
+      if (k === 'start' || k === 'end' || k === 'loc' || k === 'raw') continue
+      walk(n[k], n, k, [...chain, { parent, key }])
+    }
+  }
+  walk(ast, null, null, [])
+  return reads
+}
+
+/**
+ * Warn about template reads of imported names that externalSignals doesn't
+ * cover, for modules it otherwise describes.
+ */
+function _checkExternalReactivity(ctx, imports) {
+  if (!ctx.DOM) return
+  // externalSignals drives the signal tier; the path-watch tier works without it.
+  const declared = ctx.config?.externalSignals ?? null
+
+  // localName → { source, importedName, isNamespace }
+  const bindings = new Map()
+  for (const imp of imports) {
+    const source = imp.source?.value
+    if (!source) continue
+    for (const spec of imp.specifiers ?? []) {
+      bindings.set(spec.local.name, {
+        source,
+        importedName: spec.imported?.name ?? spec.local.name,
+        isNamespace:  spec.type === 'ImportNamespaceSpecifier',
+      })
+    }
+  }
+  if (!bindings.size) return
+
+  // Paths declared with `$:` in this file. A watch on a prefix counts as
+  // covering everything under it: `$: page` covers `page.params.id`, and
+  // `$: page.params` covers it too. Deliberately lenient — a deeper read under
+  // a watched prefix is a surgical-granularity question, not a wiring bug.
+  const watched = (ctx.analysis.watchPaths ?? []).map(w => w.path)
+  const isWatched = (path) =>
+    watched.some(w => path === w || path.startsWith(w + '.') || w.startsWith(path + '.'))
+
+  const strict = ctx.config?.externalReactivityHints === 'strict'
+
+  const seen = new Set()
+  for (const expr of _collectTemplateExpressions(ctx.DOM.body)) {
+    for (const [name, read] of _valueReads(expr)) {
+      const member = read.member
+      const b = bindings.get(name)
+      if (!b) continue
+
+      // ── Path-watch tier ───────────────────────────────────────────────────
+      // Imported object read via member access in a template. Reactive only if
+      // a `$:` declaration covers the path (§4.1). Two confidence levels:
+      //
+      //   default — this file already watches SOMETHING on this import, so the
+      //             intent is clearly reactive and an uncovered path is an
+      //             oversight.
+      //   strict  — any uncovered member read. Noisy against plain imported
+      //             config objects, so opt-in via
+      //             `externalReactivityHints: 'strict'`. Useful while migrating
+      //             external state from signals to plain objects.
+      if (member) {
+        // Skip names externalSignals already covers — those are signals, and
+        // the accessor rewrite makes them reactive without any `$:`. Without
+        // this the path tier double-reports every `{page.path}` in an app that
+        // still uses the signal architecture.
+        const isDeclaredSignal = declared?.[b.source]?.includes(b.importedName)
+        const anyWatchOnThisRoot = watched.some(w => w === name || w.startsWith(name + '.'))
+        if (!isDeclaredSignal && (anyWatchOnThisRoot || strict)) {
+          for (const path of read.paths) {
+            if (path === name) continue           // bare read, handled below
+            if (isWatched(path)) continue
+            if (seen.has(`p:${path}`)) continue
+            seen.add(`p:${path}`)
+            ctx.analysis.warnings.push(
+              `'${path}' is read in the template but no '$: ${path}' watch covers it. ` +
+              `Imported objects are inert — the read compiles to a static value and will ` +
+              `not update when '${name}' mutates. Add '$: ${path}' to the script block.`
+            )
+          }
+        }
+      }
+
+      const list = declared?.[b.source]
+      if (!list) continue          // module not described — can't tell
+
+      if (b.isNamespace) {
+        // `import * as j` → `{j.connected}` is never rewritten, even when
+        // `connected` is declared.
+        if (member && list.includes(member) && !seen.has(`ns:${name}.${member}`)) {
+          seen.add(`ns:${name}.${member}`)
+          ctx.analysis.warnings.push(
+            `'${name}.${member}' will not be reactive: namespace imports are not rewritten. ` +
+            `Import it directly — import { ${member} } from '${b.source}'.`
+          )
+        }
+        continue
+      }
+
+      if (!list.includes(b.importedName) && !seen.has(name)) {
+        seen.add(name)
+        ctx.analysis.warnings.push(
+          `'${name}' is read in the template but is not declared in externalSignals ` +
+          `for '${b.source}'. If it is a signal it will not be reactive — the expression ` +
+          `is hoisted as static and the signal object renders as permanently truthy. ` +
+          `Add '${b.importedName}' to the externalSignals entry, or ignore this if it is ` +
+          `a plain value.`
+        )
+      }
+    }
+  }
+}
+
+/**
+ * Is every top-level statement in this block a bare read?
+ *
+ * Bare reads are identifiers, member access, literals, and sequences of those.
+ * Anything that can have an effect — a call, assignment, update, throw, await,
+ * declaration, control flow — makes the block meaningful.
+ */
+function _isInertBlock(blockNode) {
+  if (blockNode.body.length === 0) return true
+
+  const isPureRead = (e) => {
+    if (!e) return false
+    switch (e.type) {
+      case 'Identifier':
+      case 'Literal':
+      case 'ThisExpression':
+        return true
+      case 'MemberExpression':
+        return isPureRead(e.object) && (e.computed ? isPureRead(e.property) : true)
+      case 'ChainExpression':
+        return isPureRead(e.expression)
+      case 'SequenceExpression':
+        return e.expressions.every(isPureRead)
+      case 'ParenthesizedExpression':
+        return isPureRead(e.expression)
+      default:
+        return false
+    }
+  }
+
+  return blockNode.body.every(
+    (stmt) => stmt.type === 'ExpressionStatement' && isPureRead(stmt.expression)
+  )
+}
+
 export function emitScript(ctx) {
   const { vars, watchPaths, watchHandlers, watchGroups, postCallHooks, effects, imports } = ctx.analysis
   const { module: mod, script } = ctx
@@ -4459,6 +4791,8 @@ export function emitScript(ctx) {
     }
   }
 
+  _checkExternalReactivity(ctx, imports)
+
   // ── 2. Watch proxies ──────────────────────────────────────────────────────
   // Two cases:
   //   a) Imported store  — root is an import, proxy is static, one-time setup
@@ -4472,8 +4806,25 @@ export function emitScript(ctx) {
     imp.specifiers.map((s) => s.local.name)
   ))
 
+  // Paths that need a proxy + watchPath signal. Both `$: obj.path` (a bare
+  // watch) and `$: obj.path, handler` (a watch with a body) depend on the same
+  // registration — without it the dep compiles to a plain read of an inert
+  // object and the handler never fires. Only the bare form was collected here,
+  // so `$: cart.total, () => sync()` silently did nothing even though §4.3
+  // documents it.
+  //
+  // Only DOTTED deps are added from handlers. A bare identifier dep (`$: a,
+  // () => f()`) is already served by reading its signal, and registering a
+  // proxy for it would change its accessor from `$runtime.get($$sig_a)` to
+  // `$$proxy_a` — which is the deep-watch opt-in that only the bare `$: a` form
+  // should trigger.
+  const watchedPaths = [
+    ...watchPaths.map((p) => p.path),
+    ...watchHandlers.flatMap((wh) => wh.deps.filter((d) => d.includes('.'))),
+  ]
+
   const proxyRoots = new Set(
-    watchPaths.map((p) => p.path.replace(/\?\.|\./g, '.').split('.')[0])
+    watchedPaths.map((path) => path.replace(/\?\.|\./g, '.').split('.')[0])
   )
 
   // Split into local-let roots and import roots
@@ -4528,7 +4879,8 @@ export function emitScript(ctx) {
   const watchSigVars = []
   const seenPaths = new Set()
 
-  watchPaths.forEach((p) => {
+  watchedPaths.forEach((rawPath) => {
+    const p = { path: rawPath }
     const normalised = p.path.replace(/\?\./g, '.')
     const dotIdx = normalised.indexOf('.')
     const root = dotIdx >= 0 ? normalised.slice(0, dotIdx) : normalised
@@ -4570,7 +4922,8 @@ export function emitScript(ctx) {
   // For local let roots: register path metadata so step 5 can emit re-proxy logic
   // after the signal is created.
   const localProxyPaths = {}   // root → [{ dotPath, sigVar }]
-  watchPaths.forEach((p) => {
+  watchedPaths.forEach((rawPath) => {
+    const p = { path: rawPath }
     const normalised = p.path.replace(/\?\./g, '.')
     const dotIdx = normalised.indexOf('.')
     const root = dotIdx >= 0 ? normalised.slice(0, dotIdx) : normalised
@@ -4589,7 +4942,8 @@ export function emitScript(ctx) {
   // For local const/var roots: collect paths so we can emit proxy setup
   // in mod.code after the variable declaration (avoids TDZ crash).
   const localVarProxyPaths = {}  // root → [{ dotPath, sigVar, fireVar }]
-  watchPaths.forEach((p) => {
+  watchedPaths.forEach((rawPath) => {
+    const p = { path: rawPath }
     const normalised = p.path.replace(/\?\./g, '.')
     const dotIdx = normalised.indexOf('.')
     const root = dotIdx >= 0 ? normalised.slice(0, dotIdx) : normalised
@@ -4721,7 +5075,7 @@ export function emitScript(ctx) {
     } else if (v.kind === 'const' && v.isContextConsume) {
       // const name = $context.key — read-only derived from context.
       mod.code.push(xNode.raw(
-        `const ${v.name} = $runtime.track(() => { const $g = $ctxRead('${v.contextKey}'); return $g ? $g() : undefined; }, void 0, void 0, __block);`
+        `const ${v.name} = $runtime.trackDerived(() => { const $g = $ctxRead('${v.contextKey}'); return $g ? $g() : undefined; }, void 0, void 0, __block);`
       ))
       if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${v.name}, '${v.name}', 'derived-context');`))
       ctx.accessors[v.name] = `$runtime.get(${v.name})`
@@ -4782,7 +5136,7 @@ export function emitScript(ctx) {
     } else if (v.kind === 'const' && v.isDerived) {
       // Derived const — createMemo so it recomputes lazily when any dep changes.
       const rewrittenInit = rewriteExpr(init, ctx.accessors)
-      mod.code.push(xNode.raw(`const ${v.name} = $runtime.track(() => (${rewrittenInit}), void 0, void 0, __block);`))
+      mod.code.push(xNode.raw(`const ${v.name} = $runtime.trackDerived(() => (${rewrittenInit}), void 0, void 0, __block);`))
       if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${v.name}, '${v.name}', 'derived');`))
       ctx.accessors[v.name] = `$runtime.get(${v.name})`
     } else if (v.kind === 'const') {
@@ -4817,7 +5171,7 @@ export function emitScript(ctx) {
         // let name = $context.key — writable derived seeded from context.
         // Re-derives when the provider's signal changes, but can be locally overridden.
         mod.code.push(xNode.raw(
-          `const ${sigR} = $runtime.track(() => { const $g = $ctxRead('${v.contextKey}'); return $g ? $g() : undefined; }, void 0, void 0, __block);\nconst ${sigW} = (v) => $runtime.set(${sigR}, v);`
+          `const ${sigR} = $runtime.trackDerived(() => { const $g = $ctxRead('${v.contextKey}'); return $g ? $g() : undefined; }, void 0, void 0, __block);\nconst ${sigW} = (v) => $runtime.set(${sigR}, v);`
         ))
         if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${sigR}, '${v.name}', 'let-context');`))
       } else if (v.isWritableDerived) {
@@ -4929,34 +5283,40 @@ export function emitScript(ctx) {
   ctx.analysis.effects.forEach((ef) => {
     const rewritten = rewriteExpr(ef.raw, ctx.accessors)
     if (ef.type === 'expression') {
-      mod.code.push(xNode.raw(`$runtime.createEffect(() => { ${rewritten}; });`))
+      mod.code.push(xNode.raw(`$runtime.createEffect(() => { ${rewritten}; }, { user: true });`))
     } else {
       // block — raw already includes the { }
-      mod.code.push(xNode.raw(`$runtime.createEffect(() => ${rewritten});`))
+      mod.code.push(xNode.raw(`$runtime.createEffect(() => ${rewritten}, { user: true });`))
     }
   })
 
   // ── 7. $: watch + handler ─────────────────────────────────────────────────
   // Pattern: read each dep to subscribe, then run the handler untracked so
   // the handler body itself doesn't accidentally add extra subscriptions.
-  watchHandlers.forEach((wh) => {
-    const depReads = wh.deps
+  watchHandlers.forEach((wh, whIdx) => {
+    // Each dep needs two expressions:
+    //   subscribe — what to read so the effect is notified
+    //   value     — what the handler should receive
+    // For a local signal these are the same. For a path on a proxied import
+    // they are NOT: the watch signal is a bare change notification carrying
+    // `undefined`, so the value has to be read off the proxy separately.
+    const depInfo = wh.deps
       .map((dep) => {
         const root = dep.split('?.')[0].split('.')[0]
         const acc = ctx.accessors[root]
         if (acc === `$$proxy_${root}`) {
-          // Path on a proxied import — need the watchPath signal read.
           const dotPath = dep.slice(root.length + 1).replace(/\?\./g, '.')
           const sigVar = dotPath
             ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}`
             : `$$watch_${root}`
-          return `${sigVar}()`
+          return { subscribe: `${sigVar}()`, value: rewriteExpr(dep, ctx.accessors) }
         }
-        if (acc) return acc  // any accessor — get(sig), sig(), proxy ref, etc.
-        return dep // fallback (static / var)
+        if (acc) return { subscribe: acc, value: acc }
+        return { subscribe: null, value: dep }
       })
       .filter(Boolean)
-      .join('; ')
+
+    const depReads = depInfo.map((d) => d.subscribe).filter(Boolean).join('; ')
 
     // rewriteExpr with ctx.setters handles signal assignments (count++, x = v).
     // Additionally pre-process proxy fire self-assignments (`connectedArr = connectedArr`)
@@ -4974,16 +5334,39 @@ export function emitScript(ctx) {
     const rewrittenHandler = rewriteExpr(handlerSrc, ctx.accessors, ctx.setters)
     const depPart = depReads ? `${depReads}; ` : ''
 
-    // Async and sync handlers both use untrack so the handler body doesn't
-    // accidentally add reactive subscriptions (deps are captured explicitly).
-    // The handler's return value is propagated out of untrack so the effect
-    // node can register it as a cleanup (return-based cleanup pattern).
-    // For cancel-in-flight, use a sync handler that starts async work with .then()
-    // and returns the abort cleanup synchronously.
+    // Single dep → the handler receives (value, prev).
+    // Multiple deps → arrays: ([a, b], [prevA, prevB]), as Solid's on() does.
+    const valueExpr = depInfo.length === 1
+      ? depInfo[0].value
+      : `[${depInfo.map((d) => d.value).join(', ')}]`
+
+    const prevVar  = `$$prev_wh${whIdx}`
+    const firstVar = `$$first_wh${whIdx}`
+
+    // Deferred: the handler does NOT run on mount, only on change.
+    //
+    // "when X changes, do Y" reads as change-triggered, and firing on mount is
+    // both surprising and usually wrong — `$: userId, () => { count = 0 }`
+    // resetting on first render is a no-op at best. The eager case is already
+    // owned by $onMount, and the "initialise then keep in sync" shape is
+    // usually a `const` memo wearing an effect's clothes.
+    //
+    // Deferring is only possible because the deps are explicit: the effect
+    // still reads them on the first run to subscribe, and withholds only the
+    // handler. An auto-tracked `$: { }` block cannot do this — it discovers its
+    // dependencies BY running, so skipping the body would subscribe to nothing.
+    //
+    // It also makes `prev` well defined: the first invocation is the first
+    // change, so there is always a real previous value rather than undefined.
     const debugComment = wh.debugName ? `/* $_${wh.debugName} */ ` : ''
+    mod.code.push(xNode.raw(`let ${prevVar}; let ${firstVar} = true;`))
     mod.code.push(
       xNode.raw(
-        `${debugComment}$runtime.createEffect(() => { ${depPart}return $runtime.untrack(${rewrittenHandler}); });`
+        `${debugComment}$runtime.createEffect(() => { ${depPart}` +
+        `const $$v = ${valueExpr}; ` +
+        `if (${firstVar}) { ${firstVar} = false; ${prevVar} = $$v; return; } ` +
+        `const $$p = ${prevVar}; ${prevVar} = $$v; ` +
+        `return $runtime.untrack(() => (${rewrittenHandler})($$v, $$p)); }, { user: true });`
       )
     )
   })
@@ -5152,16 +5535,64 @@ export function emitScript(ctx) {
     }
 
     const rewritten = rewriteExpr(rewriteAssignments(nodeSrc, node, ctx), ctx.accessors)
-    // If the expression contains a top-level await (e.g. `x = await fetch(...)`)
+    // If the statement contains a *top-level* await (e.g. `x = await fetch(...)`)
     // wrap in an async IIFE so the component function stays synchronous.
     // VariableDeclaration `const x = await y` is already handled separately above.
-    const containsAwait = /\bawait\b/.test(rewritten)
+    //
+    // This used to be `/\bawait\b/.test(rewritten)`, which could not tell a
+    // top-level await from one nested inside a function body. That meant
+    //
+    //   async function handleLogin() { await save(); }
+    //
+    // was wrapped as `(async () => { async function handleLogin() {…} })()`,
+    // scoping the declaration inside the IIFE so the template's
+    // `onclick={handleLogin}` resolved to nothing —
+    // "ReferenceError: handleLogin is not defined" at runtime, with no
+    // compile-time warning. Declarations are never top-level awaits, and an
+    // await inside a nested function is that function's own business.
+    const containsAwait = _hasTopLevelAwait(node)
     if (containsAwait) {
       mod.code.push(xNode.raw(`(async () => { ${rewritten} })()`))
     } else {
       mod.code.push(xNode.raw(rewritten))
     }
   }
+}
+
+/**
+ * Does this statement contain an await that belongs to the *enclosing* scope?
+ *
+ * Walks the AST and stops at any boundary that introduces a new `async`
+ * context — function declarations, function expressions, arrow functions,
+ * class bodies. An await inside one of those is executed by that function, not
+ * by the component body, so it never requires the statement to be wrapped.
+ *
+ * Returns false for FunctionDeclaration / ClassDeclaration outright: a
+ * declaration is a binding, and wrapping it in an IIFE would hide the binding
+ * from the rest of the component.
+ */
+function _hasTopLevelAwait(node) {
+  if (!node || typeof node !== 'object') return false
+  if (node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') return false
+
+  const BOUNDARY = new Set([
+    'FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'ClassBody',
+  ])
+
+  let found = false
+  ;(function walk(n) {
+    if (found || !n || typeof n !== 'object') return
+    if (Array.isArray(n)) { for (const c of n) walk(c); return }
+    if (typeof n.type !== 'string') return
+    if (n.type === 'AwaitExpression') { found = true; return }
+    if (n !== node && BOUNDARY.has(n.type)) return   // new async context — not ours
+    for (const key of Object.keys(n)) {
+      if (key === 'type' || key === 'start' || key === 'end' || key === 'loc') continue
+      walk(n[key])
+    }
+  })(node)
+
+  return found
 }
 
 /**
@@ -5860,6 +6291,12 @@ export async function compile(source, config = {}) {
       } else {
         w.write(true, '$runtime.push_component();')
       }
+      // NOTE: the body is deliberately NOT wrapped in try/finally to balance
+      // push/pop_component. A block would make the component's `function`
+      // declarations block-scoped in strict mode, which is the class of bug
+      // async-decl-scope.test.js exists to prevent. Exception safety is handled
+      // in the runtime instead — see _unwindComponents, which restores the
+      // stacks from the flush loop and from mount().
       // $option compat shim: props still passed as __props
       w.write(true, 'const $option = { props: __props };')
       // $slots — reactive object indicating which named slots have content.

@@ -1,7 +1,17 @@
 // mail/index.ts
-// Mail system — IMail interface + Resend adapter.
-// Only mail/providers/resend.ts imports from the Resend SDK.
-// Rest of framework uses IMail interface only.
+// Junction's INTERNAL mail system — always available, intended for
+// notification / system email that the app itself sends (password resets,
+// alerts, receipts). Owns the IMail interface, the MailBuilder, and the
+// SMTP client (./smtp.ts — the transport you can always rely on), plus a
+// minimal Resend adapter for when system mail should go through Resend.
+//
+// Division of responsibility:
+//   src/mail          → internal/system mail (this module). Base layer.
+//   src/plugins/email → 3rd-party provider integrations and higher-level
+//                       system/campaign email features. Builds ON TOP of
+//                       this module's SMTP transport (imports ./smtp.ts).
+//
+// Rest of framework uses the IMail interface only.
 
 // ─── IMail interface ──────────────────────────────────────────────────────
 
@@ -221,7 +231,7 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
 
   return {
     async send(message: MailMessage): Promise<SendResult> {
-      const { sendMail } = await import('../plugins/email/system/smtp.ts')
+      const { sendMail } = await import('./smtp.ts')
       await sendMail(
         { host, port, user, pass, tls },
         {
@@ -237,7 +247,24 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
     },
 
     async batch(messages: MailMessage[]): Promise<SendResult[]> {
-      return Promise.all(messages.map(m => this.send(m)))
+      // One SMTP session for the whole batch — previously this fired N
+      // parallel send() calls, each paying a full TCP/TLS/EHLO/AUTH
+      // handshake (and looking like a connection flood to the server).
+      const { sendMailBatch } = await import('./smtp.ts')
+      const results = await sendMailBatch(
+        { host, port, user, pass, tls },
+        messages.map(m => ({
+          from:    m.from    ?? defaultFrom,
+          to:      m.to,
+          subject: m.subject,
+          html:    m.html,
+          text:    m.text,
+          replyTo: m.replyTo ?? defaultReplyTo,
+        }))
+      )
+      return results.map(r => r.ok
+        ? { id: crypto.randomUUID(), message: 'sent' }
+        : { id: '', message: `failed: ${r.error}` })
     }
   }
 }
@@ -260,7 +287,7 @@ export function mailerPlugin(mailer: IMail): import('../core/app.ts').Plugin {
   return {
     name: 'mailer',
     register(app: import('../core/app.ts').App): void {
-      (app as Record<string, unknown>).mail = mailer
+      app.mail = mailer   // typed App field — no cast
     }
   }
 }

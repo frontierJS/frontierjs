@@ -299,6 +299,46 @@ When scope args and caller args combine:
 
 `where` is always AND'd — you cannot override a scope's where by passing your own.
 
+### Writes
+
+Scopes apply to writes too, so a scope behaves like a filtered *view* you can also write through — ideal for a `type`-column model (`Contact` with `lead`/`client`/`vendor`).
+
+**create / createMany** stamp the scope as a data default. For a flat-equality `where` like `{ type: 'lead' }`, the equalities become the create default, so `db.contact.leads.create({ data: { name } })` inserts `type: 'lead'` for free. Caller data always wins.
+
+```js
+const ContactScopes = {
+  leads:   { where: { type: 'lead' } },
+  clients: { where: { type: 'client' } },
+}
+
+await db.contact.leads.create({ data: { name: 'Acme' } })               // → type: 'lead'
+await db.contact.leads.create({ data: { name: 'X', type: 'vendor' } })  // caller wins → 'vendor'
+await db.contact.clients.createMany({ data: [{ name: 'A' }, { name: 'B' }] })  // both 'client'
+```
+
+Only flat equalities are inferred — operators (`gte`, `in`, …), `AND`/`OR`/`NOT`, and complex wheres stamp nothing. To filter *without* stamping, give the scope an explicit empty `data: {}`; to stamp more (or differently) than the filter, give it an explicit `data`.
+
+```js
+const recent    = { where: { createdAt: { gte: cutoff } } }              // filters, stamps nothing (operator)
+const draftOnly = { where: { status: 'draft' }, data: {} }               // filters, stamps nothing (explicit)
+const owned     = { where: { ownerId: 5 }, data: { ownerId: 5, shared: false } }  // stamp more than the filter
+```
+
+Dynamic wheres stamp too, which pairs naturally with auth — "create a record owned by me":
+
+```js
+const mine = { where: (ctx) => ({ ownerId: ctx.auth?.id }) }
+await db.$setAuth(user).contact.mine.create({ data: { name: 'Acme' } })  // ownerId = user.id
+```
+
+**update / updateMany / delete / deleteMany / remove / restore** AND-merge the scope `where`, so a write can only touch rows *inside* the subset — updating a client through the leads scope is a no-op:
+
+```js
+await db.contact.leads.update({ where: { id: aClientId }, data: { … } })  // matches nothing → null
+```
+
+**upsert / upsertMany** stamp the create branch's data default (the conflict-target `where` is left untouched so conflict detection still works). The base accessor `db.contact.*` is always unscoped — scoped writes only happen through a scope name.
+
 ### Dynamic where + auth scoping
 
 If `where` is a function, it's called with the current `ctx` at query time. Combined with `$setAuth()`, this gives you per-request scoping for free:

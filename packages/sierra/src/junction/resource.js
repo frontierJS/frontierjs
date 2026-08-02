@@ -29,7 +29,8 @@
  *     method:  'find' | 'get' | 'create' | 'patch' | 'remove' | 'restore',
  *     id:      string | null,
  *     data:    object | null,
- *     query:   object,      // what travels over the wire — passed to find/get
+ *     query:   object,      // filters — what travels over the wire
+ *     findParams: object,   // Junction FindParams — { limit, offset, orderBy, select }
  *     params:  object,      // client-side only — never sent to the server
  *     result:  any,         // populated after a successful call
  *     error:   Error | null // populated in error phase
@@ -39,6 +40,45 @@
  *   ctx.params is a free-form bucket for UI hooks to communicate within a
  *   single pipeline — loading state, local flags, component refs.
  *   It never leaves the browser. ctx.query is what goes over the wire.
+ *
+ *   ctx.findParams is the separate, structured half of the wire request — the
+ *   FindParams object Junction's client serializes into $limit/$offset/
+ *   $orderBy/$select for both HTTP and WebSocket. Hooks set pagination here:
+ *
+ *     before: { find: [ctx => { ctx.findParams.limit = 50 }] }
+ *
+ * Return shapes — READ THIS BEFORE .map()
+ *
+ *   The service methods are a PASS-THROUGH of Junction's browser client. What
+ *   the API returns is what you get here; Sierra does not reshape it. The rule
+ *   is Junction's, stated once and applied everywhere: a list keeps its
+ *   envelope (it carries total/limit/offset, which have nowhere else to live),
+ *   a single record unwraps to the record.
+ *
+ *     service.find(query, params)  → ListResult — { kind:'list', object, data, total, limit, offset }
+ *     service.getOptions(...)      → ListResult — same, it is a find
+ *     service.get(id)              → the record
+ *     service.create(data)         → the record
+ *     service.patch(id, data)      → the record
+ *     service.remove(id)           → the removed record
+ *     service.restore(id)          → the record
+ *     service.upsert(data)         → the record
+ *
+ *   So the rows live at `.data`:
+ *
+ *     const res  = await leads.service.find({}, { limit: 20 })
+ *     res.data                     // the rows
+ *     res.total                    // total matching, for a pager
+ *
+ *   The stores hand you rows directly, because a view wants something it can
+ *   map over and pagination metadata has no place in a record list:
+ *
+ *     load(query, params)          → the rows (and sets store to the rows)
+ *     store.get()                  → the rows
+ *     createStore(svc).find(...)   → returns the raw result; store.get() is rows
+ *
+ *   Reach for `load()`/`store` when you are rendering a list, and for
+ *   `service.find()` when you need the count alongside it.
  *
  * Hook registration:
  *   At createResource time:   createResource('leads', schema, { hooks: { ... } })
@@ -64,6 +104,7 @@
  */
 
 import { getClient } from '@frontierjs/sierra/junction'
+import { schemaFor, hasSchemas, allSchemas } from './schema-registry.js'
 
 // ── Hook runners ──────────────────────────────────────────────────────────────
 
@@ -247,7 +288,13 @@ function mergeHooks(target, incoming) {
  *   createResource({ model, service, optionsQuery, hooks })   — object form
  *
  * Returns { service, store, make, load, context, hooks }
- *   where hooks() is a method to add hooks after creation.
+ *   service — pass-through of the Junction client: find() gives the list
+ *             envelope, single-record methods give the record. See "Return
+ *             shapes" in the module header.
+ *   store   — holds ROWS, never an envelope. Subscribe for renders.
+ *   load    — populates store and resolves to the rows.
+ *   make    — schema-seeded factory for a blank record.
+ *   hooks() — add hooks after creation.
  */
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   let serviceName, model, optionsQuery, initialHooks, schema, idField
@@ -281,6 +328,29 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     idField      = nameOrSpec.idField      ?? 'id'
   }
 
+  // No schema passed — take it from the registry, which Sierra's build fills
+  // from db/schema.lite. This is why a resource file names a model and nothing
+  // else: hand-writing the field shape here duplicated the .lite file and was
+  // the only remaining place the two halves of an app could drift.
+  //
+  // Tried in order: the explicit model name, the service name, and the
+  // conventional singular of the service name — so createResource('leads') and
+  // createResource('leads', { model: 'Lead' }) both resolve.
+  if (!schema) {
+    const singular = serviceName.endsWith('ies')
+      ? serviceName.slice(0, -3) + 'y'
+      : serviceName.endsWith('s') ? serviceName.slice(0, -1) : serviceName
+    schema = schemaFor(model, serviceName, singular) ?? undefined
+
+    if (!schema && hasSchemas()) {
+      console.warn(
+        `[resource:${serviceName}] no schema found for model '${model}'. ` +
+        `make() will return a bare object. Known models: ` +
+        `${Object.keys(allSchemas()).join(', ')}`
+      )
+    }
+  }
+
   const client = getClient()
   if (!client) {
     console.warn(`[resource:${serviceName}] Junction client not ready — returning empty resource`)
@@ -311,7 +381,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // ── _call — full 4-phase pipeline ──────────────────────────────────────────
 
-  async function _call(method, id, data, query = {}) {
+  async function _call(method, id, data, query = {}, findParams = {}) {
     const ctx = {
       service: serviceName,
       model,
@@ -319,6 +389,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       id:      id   ?? null,
       data:    data ?? null,
       query:   query,        // travels over the wire
+      findParams,            // limit / offset / orderBy / select — also the wire
       params:  {},           // client-side only — never sent to server
       result:  null,
       error:   null,
@@ -337,8 +408,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // network call
       const proxy = client.service(serviceName)
       switch (method) {
-        case 'find':    ctx.result = await proxy.find(ctx.query);           break
-        case 'get':     ctx.result = await proxy.get(ctx.id ?? ctx.query);  break
+        case 'find':    ctx.result = await proxy.find(ctx.query, ctx.findParams);          break
+        case 'get':     ctx.result = await proxy.get(ctx.id ?? ctx.query, ctx.findParams); break
         case 'create':  ctx.result = await proxy.create(ctx.data);          break
         case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data);   break
         case 'remove':  ctx.result = await proxy.remove(ctx.id);            break
@@ -374,9 +445,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // ── service proxy ──────────────────────────────────────────────────────────
 
+  // params is Junction's FindParams — { limit, offset, orderBy, select }. It is
+  // threaded to the client proxy, which serializes it for whichever transport
+  // is live. It used to be accepted here and dropped on the floor, so paging an
+  // ordered list through a resource silently returned the server's default page.
   const service = {
-    find:    (query, params) => _call('find',    null,          null,  query ?? {}),
-    get:     (id)            => _call('get',     id,            null,  {}),
+    find:    (query, params) => _call('find',    null,          null,  query ?? {}, params ?? {}),
+    get:     (id, params)    => _call('get',     id,            null,  {},          params ?? {}),
     create:  (data)          => _call('create',  null,          data,  {}),
     patch:   (id, data)      => _call('patch',   id,            data,  {}),
     remove:  (id)            => _call('remove',  id,            null,  {}),
@@ -387,8 +462,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       ? _call('patch',   data[idField], data, {})
       : _call('create',  null,          data, {}),
 
-    /** fetch options list — uses optionsQuery by default */
-    getOptions: (query) => _call('find', null, null, query ?? optionsQuery?.query ?? {}),
+    /**
+     * fetch options list — uses optionsQuery by default.
+     * optionsQuery is `{ query, params }`; params carries the FindParams a
+     * select list usually wants (orderBy: 'name', a limit above the default page).
+     */
+    getOptions: (query, params) => _call(
+      'find', null, null,
+      query  ?? optionsQuery?.query  ?? {},
+      params ?? optionsQuery?.params ?? {},
+    ),
 
     /** real-time push event subscription */
     on:   (event, fn) => client.service(serviceName).on(event, fn),

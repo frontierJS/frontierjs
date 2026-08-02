@@ -78,12 +78,23 @@ export function createStore(opts = {}) {
       }
     },
 
-    /** Clear and replace from a service.find result. */
+    /**
+     * Clear and replace from a service.find result, and resolve to the ROWS.
+     *
+     * find() may hand back a bare array (a custom service) or Junction's list
+     * envelope `{ kind, object, data, total, limit, offset }` — both are
+     * legitimate, so both are accepted.
+     *
+     * Returns the rows, not the raw result, matching Sierra's `load()`. It used
+     * to return the raw result while setting the store to the rows, so
+     * `await load(...)` and `store.get()` gave different shapes from one call.
+     * Pagination metadata stays reachable via `service.find()` directly.
+     */
     async populate(service, query, params) {
       const result = await service.find(query, params)
       const list = Array.isArray(result) ? result : (result?.data ?? [])
       store.set(list)
-      return result
+      return list
     },
   }
 

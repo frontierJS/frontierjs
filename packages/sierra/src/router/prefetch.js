@@ -21,19 +21,97 @@
  */
 
 import { matchRoute, normalizePath } from './match.js'
+import { loadLayoutChain } from './internals.js'
 
-// Set of route IDs already prefetched this session
+// URLs already prefetched this session.
+//
+// Keyed by the full cache key (route id + pathname + search), NOT by route id.
+// Keying by id meant a dynamic route like /blog/:slug/ prefetched exactly once
+// per session — the first slug hovered blocked every other one — while the
+// cache it populated was keyed per-URL. The gate and the thing it gated
+// disagreed.
 const _prefetched = new Set()
 
-// Cache of prefetched load() results — keyed by routeId:pathname+search
-// The router checks this cache before running load() on navigation.
+// Route ids whose component chunk has already been imported. Separate from
+// _prefetched because the two have different natural keys: every /blog/:slug/
+// shares one JS chunk, but each slug has its own load() payload. The old
+// route-id gate conflated them — it deduped the chunk correctly by accident
+// while wrongly blocking data prefetch for every slug after the first.
+//
+// dynamic import() is itself idempotent, so this saves a redundant call rather
+// than a network round-trip; the point is that the two concerns stay separable.
+const _prefetchedChunks = new Set()
+
+// Cache of prefetched load() results, keyed by `${routeId}:${pathname}${search}`.
+// The router checks this before running load() on navigation.
+//
+// Bounded and time-limited. Entries were previously removed only when consumed
+// by a navigation, so anything prefetched but never visited held its full
+// load() payload for the lifetime of the session — and a route prefetched at
+// t=0 would serve ten-minute-old data if visited at t=10min.
 export const _prefetchCache = new Map()
+
+/** Max cached payloads. Oldest is evicted first (insertion order). */
+const PREFETCH_CACHE_MAX = 32
+
+/** How long a prefetched payload stays usable, in ms. */
+const PREFETCH_CACHE_TTL = 30_000
+
+function _cacheSet(key, value) {
+  // Re-inserting moves the key to the end of Map iteration order, so eviction
+  // below stays true FIFO on last-write.
+  _prefetchCache.delete(key)
+  while (_prefetchCache.size >= PREFETCH_CACHE_MAX) {
+    const oldest = _prefetchCache.keys().next().value
+    if (oldest === undefined) break
+    _prefetchCache.delete(oldest)
+  }
+  _prefetchCache.set(key, { value, at: Date.now() })
+}
+
+/**
+ * Read a prefetched payload and consume it. Returns `undefined` for a miss or
+ * an expired entry — callers must distinguish that from a cached `undefined`
+ * using _prefetchCacheHas() first, or just treat undefined as a miss.
+ *
+ * Exported for the router's navigation path.
+ */
+export function _prefetchCacheTake(key) {
+  const entry = _prefetchCache.get(key)
+  if (!entry) return undefined
+  _prefetchCache.delete(key)
+  if (Date.now() - entry.at > PREFETCH_CACHE_TTL) {
+    _prefetched.delete(key)   // allow a fresh prefetch of this URL later
+    return undefined
+  }
+  return entry.value
+}
+
+/** Is there a live (unexpired) cached payload for this key? */
+export function _prefetchCacheHas(key) {
+  const entry = _prefetchCache.get(key)
+  if (!entry) return false
+  if (Date.now() - entry.at > PREFETCH_CACHE_TTL) {
+    _prefetchCache.delete(key)
+    _prefetched.delete(key)
+    return false
+  }
+  return true
+}
+
+/** Test seam — drop all prefetch state. */
+export function _resetPrefetch() {
+  _prefetched.clear()
+  _prefetchedChunks.clear()
+  _prefetchCache.clear()
+}
 
 // Shared references set by initPrefetch
 let _tree = null
 let _components = {}
 let _loaders = {}
 let _options = {}
+let _layouts = {}
 
 /**
  * Boot the prefetch system.
@@ -44,64 +122,102 @@ let _options = {}
  * @param {object} loaders
  * @param {object} options
  */
-export function initPrefetch(tree, components, loaders, options) {
+export function initPrefetch(tree, components, loaders, options, layouts = {}) {
   _tree = tree
   _components = components
   _loaders = loaders
   _options = options
+  _layouts = layouts
 
-  // Observe DOM for prefetch attributes (handles SPA-rendered links too)
   if (typeof window === 'undefined') return
 
-  // MutationObserver watches for newly added prefetch links
-  const observer = new MutationObserver(mutations => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType !== 1) continue  // elements only
-        processPrefetchNode(node)
-        // Also check descendants
-        if (node.querySelectorAll) {
-          node.querySelectorAll('a[prefetch]').forEach(processPrefetchNode)
-        }
-      }
+  // ── Event delegation ──────────────────────────────────────────────────────
+  //
+  // This used to be a MutationObserver on document.body with subtree: true,
+  // which ran `node.querySelectorAll('a[prefetch]')` for every element inserted
+  // anywhere in the app, then attached listeners and wrote a data attribute per
+  // link. Rendering a 1 000-row list meant 1 000 subtree queries, 1 000 DOM
+  // writes and up to 2 000 addEventListener calls.
+  //
+  // Hover and mousedown modes need no per-element setup at all — three
+  // delegated listeners on the document cover every link that will ever exist,
+  // including ones added later. Only `visible` mode still needs per-element
+  // registration, because IntersectionObserver has to observe specific nodes.
+
+  const modeOf = (a) => a.getAttribute('prefetch') || 'immediate'
+
+  const onIntent = (e) => {
+    const a = e.target?.closest?.('a[prefetch]')
+    if (!a || !a.href) return
+    const mode = modeOf(a)
+    if (mode === 'hover' || mode === 'mousedown' || mode === 'immediate') {
+      prefetchHref(a.href)
     }
-  })
+  }
 
-  observer.observe(document.body, { childList: true, subtree: true })
+  // capture: true so we still see the event when something downstream stops
+  // propagation. passive: true because we never preventDefault here.
+  document.addEventListener('mouseover',  onIntent, { capture: true, passive: true })
+  document.addEventListener('focusin',    onIntent, { capture: true, passive: true })
+  document.addEventListener('touchstart', onIntent, { capture: true, passive: true })
+  document.addEventListener('mousedown',  onIntent, { capture: true, passive: true })
 
-  // Process any prefetch links already in the DOM
-  document.querySelectorAll('a[prefetch]').forEach(processPrefetchNode)
+  // ── visible + immediate ───────────────────────────────────────────────────
+  // Both need to find links without user intent. Sweep once now, and again
+  // after each navigation commits, rather than watching every DOM mutation.
+  scanPrefetchLinks()
 }
 
 /**
- * Wire up prefetch behaviour for a single <a> element.
+ * Find links needing eager treatment — `visible` (IntersectionObserver) and
+ * `immediate` (idle-time fetch). Safe to call repeatedly; each element is
+ * wired at most once.
+ *
+ * Called on boot and after each navigation. Exported so the router can drive it.
  */
-function processPrefetchNode(el) {
-  if (el.tagName !== 'A') return
-  if (el.dataset.prefetchWired) return  // already wired
+export function scanPrefetchLinks() {
+  if (typeof document === 'undefined') return
+  for (const el of document.querySelectorAll('a[prefetch]')) {
+    const mode = el.getAttribute('prefetch') || 'immediate'
+    if (mode === 'hover' || mode === 'mousedown') continue   // handled by delegation
+    if (el.dataset.prefetchWired) continue
+    el.dataset.prefetchWired = '1'
 
-  const mode = el.getAttribute('prefetch') || 'immediate'
-
-  el.dataset.prefetchWired = '1'
-
-  if (mode === 'hover') {
-    el.addEventListener('mouseenter', () => prefetchHref(el.href), { once: true, passive: true })
-    el.addEventListener('touchstart',  () => prefetchHref(el.href), { once: true, passive: true })
-  } else if (mode === 'mousedown') {
-    el.addEventListener('mousedown', () => prefetchHref(el.href), { once: true, passive: true })
-    el.addEventListener('touchstart', () => prefetchHref(el.href), { once: true, passive: true })
-  } else if (mode === 'visible') {
-    observeVisible(el)
-  } else {
-    // 'immediate' or bare `prefetch` attribute — fire ASAP
-    // Use requestIdleCallback so it doesn't block the main thread
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(() => prefetchHref(el.href), { timeout: 2000 })
+    if (mode === 'visible') {
+      observeVisible(el)
     } else {
-      setTimeout(() => prefetchHref(el.href), 100)
+      // 'immediate' or a bare `prefetch` attribute. Queue through a shared
+      // worklist so a page with 100 such links doesn't fire 100 idle callbacks
+      // that all time out together and stampede the network.
+      _immediateQueue.push(el)
+      _drainImmediate()
     }
   }
 }
+
+// ── immediate-mode worklist ─────────────────────────────────────────────────
+const _immediateQueue = []
+const IMMEDIATE_CONCURRENCY = 3
+let _immediateActive = 0
+
+function _drainImmediate() {
+  while (_immediateActive < IMMEDIATE_CONCURRENCY && _immediateQueue.length) {
+    const el = _immediateQueue.shift()
+    _immediateActive++
+    const run = () => {
+      Promise.resolve(prefetchHref(el.href))
+        .catch(() => {})
+        .finally(() => { _immediateActive--; _drainImmediate() })
+    }
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 2000 })
+    else setTimeout(run, 100)
+  }
+}
+
+// processPrefetchNode() was removed. It attached per-element listeners and set
+// a data-prefetch-wired attribute on every matching link; hover and mousedown
+// are now handled by the delegated listeners in initPrefetch(), and the eager
+// modes by scanPrefetchLinks().
 
 // Shared IntersectionObserver for visible-mode links
 let _visibleObserver = null
@@ -143,22 +259,32 @@ export async function prefetchHref(href) {
   if (!match) return
 
   const { node } = match
+  const cacheKey = `${node.id}:${pathname}${url.search}`
 
-  // Skip if already prefetched or currently active
-  if (_prefetched.has(node.id)) return
-  _prefetched.add(node.id)
+  // Skip if this URL was already prefetched. Keyed per-URL so every slug of a
+  // dynamic route gets its own chance — see the note on _prefetched above.
+  if (_prefetched.has(cacheKey)) return
+  _prefetched.add(cacheKey)
 
-  // 1. Preload the component chunk
+  // 1. Preload the component chunk. Deduped on the route id, not the URL:
+  // every /blog/:slug/ shares one chunk, so importing it once is correct.
   const componentFactory = _components[node.id]
-  if (componentFactory && !node._componentLoaded) {
+  if (componentFactory && !node._componentLoaded && !_prefetchedChunks.has(node.id)) {
+    _prefetchedChunks.add(node.id)
     try {
       await componentFactory()
     } catch {
-      // Prefetch failures are silent
+      // Silent, but release the gate so a later attempt can retry.
+      _prefetchedChunks.delete(node.id)
     }
   }
 
-  // 2. Preload the data (run load() silently)
+  // 2. Warm the layout chain. Layouts are loaded per-route now, so a prefetch
+  // that skipped them would leave the navigation blocking on a layout chunk —
+  // exactly the latency prefetch exists to remove.
+  await loadLayoutChain(node, _layouts).catch(() => {})
+
+  // 3. Preload the data (run load() silently)
   const loaderFactory = _loaders[node.id]
   if (loaderFactory) {
     try {
@@ -189,13 +315,15 @@ export async function prefetchHref(href) {
           // at module init time without a circular dependency on initJunction.
           fetch: window.fetch?.bind(window) ?? (() => Promise.resolve(new Response('{}'))),
         })
-        // Cache the result so the router can use it on navigation
-        // instead of re-running load() and making a second round-trip.
-        const cacheKey = `${node.id}:${pathname}${url.search}`
-        _prefetchCache.set(cacheKey, result)
+        // Cache the result so the router can use it on navigation instead of
+        // re-running load() and making a second round-trip.
+        _cacheSet(cacheKey, result)
       }
     } catch {
-      // Prefetch failures are silent
+      // Prefetch failures are silent — but release the gate so a later hover or
+      // an explicit prefetch() call can retry rather than being blocked by a
+      // one-off network error.
+      _prefetched.delete(cacheKey)
     }
   }
 }

@@ -1,5 +1,5 @@
 /*
- * utilities/dialogs.css
+ * dialogs.css
  * Dialog = surface + native <dialog> sizing + backdrop.
  *
  * Built on the native <dialog> element — focus trap, escape-to-close,
@@ -38,17 +38,29 @@
 }
 
 /*
- * Toned dialogs tint the header. The surface tone recipe is applied
- * to the dialog itself; this rule routes that tinting to just the
- * header instead of the whole modal body.
+ * Toned dialogs tint the header, not the whole modal body.
+ *
+ * Resetting the three tint variables to `initial` re-fires the untoned
+ * fallbacks in surface.css, so the body stays neutral — and because this
+ * touches the tint vars rather than --surface-bg directly, .outlined and
+ * .ghost still work on a dialog.
+ *
+ * The header can't read --bg-mix itself: tones are element-scoped (see
+ * the @property registration in tones.css), so the dialog derives the
+ * header's three colors here and passes them down as inheriting
+ * properties. No tone names appear, so all seven tones work.
  */
-.dialog:is(.info, .success, .warning, .danger) {
-  --surface-bg:     var(--surface);
-  --surface-color:  var(--ink);
-  --surface-border: var(--rule);
+.dialog {
+  --surface-tint-bg:     initial;
+  --surface-tint-border: initial;
+  --surface-tint-color:  initial;
+
+  --dialog-header-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
+  --dialog-header-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
+  --dialog-header-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
 }
-.dialog:is(.info, .success, .warning, .danger) > .surface-header {
-  background:          color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
-  color:               color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
-  border-bottom-color: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
+.dialog > .surface-header {
+  background:          var(--dialog-header-bg,     transparent);
+  color:               var(--dialog-header-color,  var(--surface-color));
+  border-bottom-color: var(--dialog-header-border, var(--surface-border));
 }

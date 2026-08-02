@@ -1,6 +1,6 @@
 # Mesa
 ## Reactive UI Language — Vision & Specification
-### v1.8
+### v1.9
 
 ---
 
@@ -234,69 +234,193 @@ Mesa repurposes the JavaScript labeled statement syntax (`$:`) as its reactivity
 layer. Every `$:` form is valid JavaScript AST. The compiler interprets the shape of the
 labeled statement to determine its behavior.
 
-### 4.1 Path Mutation Watching — External Objects
+### 4.0 What `$:` is for
 
-When you import a plain JavaScript object from a `.js` file, the compiler has no knowledge
-of its reactive status. `$:` path declarations tell the compiler to watch a specific property
-path for mutations and re-render when it changes.
+`let` / `const` / `var` (§2) cover reactive *values*. `$:` covers everything that isn't a
+value declaration, and it is exactly three things:
+
+| | | |
+|---|---|---|
+| **Watches** | make inert state observable | §4.1 |
+| **Effects** | run code when something changes | §4.2, §4.3, §4.4 |
+| **Writable derived** | a value `const` can't express | §4.5 |
+
+Two facts explain nearly every question about which form to use.
+
+> **RULE 43** — **Replacement is reactive. Mutation is not.**
+> `o = { … }` notifies. `o.n = 2` does not, unless a `$:` path watch covers it.
+> This holds identically for local `let` objects and imported ones.
+
+> **RULE 44** — The compiler tracks what it compiled. It knows every `let` and `const`
+> in the component, so those need no annotation to be read reactively. It knows nothing
+> about an imported binding, so anything imported is inert until a `$:` says otherwise.
+
+Everything below follows from those two.
+
+---
+
+### 4.1 Watches — making inert state observable
+
+A watch has no body. Its only effect is that the component re-renders when the watched
+path changes. It exists because imported objects are opaque to the compiler, and because
+mutation is not reactive by default.
 
 ```js
 import { user, cart } from './store.js'
 
-$: user              // watch entire user object — any mutation re-renders
-$: user.name         // surgical — re-render only when user.name changes
-$: cart.total        // ignores cart.items changes, only watches total
-$: (cart.items, cart.total)   // multi-path — both trigger re-renders
+$: user              // whole object — any mutation re-renders
+$: user.name         // surgical — only when user.name changes
+$: cart.total        // ignores cart.items entirely
+$: (cart.items, cart.total)   // multi-path — either one re-renders
 ```
 
-The imported object is untouched. Mesa wraps it in a Proxy at the component level.
-The original `.js` file stays plain JavaScript — no Mesa awareness required.
+The imported object is untouched. Mesa wraps it in a Proxy at the component level; the
+`.js` file stays plain JavaScript with no Mesa awareness. See §5.
 
-> **RULE 6** — `$:` path watching uses optional chaining semantics.
+The same syntax opts a **local** `let` object into deep watching, because RULE 43 applies
+there too:
+
+```js
+let filters = { q: '', page: 1 }
+
+$: filters.q         // now `filters.q = 'x'` re-renders, not just `filters = {…}`
+```
+
+> **RULE 6** — Path watching uses optional chaining semantics.
 > `$: cart.items.length` is a hard watch — `cart` and `items` must exist.
 > `$: cart.items?.length` is a soft watch — handles `items` being undefined.
 
-### 4.2 Auto-Tracked Side Effects
+> **RULE 45** — A watch only fires for writes that go **through** the proxy Mesa
+> created. A write on the raw object from outside is invisible. Within a component this
+> is automatic. A `.js` module that owns state and wants its own writes to notify must
+> take a handle with `watchProxy(state)` and write through that — see §5.
 
-The expression and block forms auto-detect dependencies from the reactive variables referenced
-inside them. No explicit dependency declaration is needed.
+> **RULE 46** — A watch declared at a path covers that path **and everything beneath
+> it**. `$: page` opts the whole object into deep reactivity; `$: page.user.preferences`
+> opts in that subtree at any depth; a sibling subtree stays silent. A read subscribes to
+> the nearest declared watch covering it, so granularity follows the watch you declared,
+> not the depth of the property you read.
+>
+> A property key is a single segment whatever it contains: `obj['a.b'] = 1` is a write to
+> the key `a.b`, and does not notify a watch on `obj.a`.
+
+> **RULE 48** — `delete obj.key` notifies the watches covering that key, exactly as
+> `obj.key = undefined` does. Deleting a key that was not present notifies nothing.
+
+> **RULE 49** — Values with internal slots — `Date`, `Map`, `Set`, `RegExp`, `Promise`,
+> typed arrays, `Error` — are handed through the proxy untouched. Their methods work
+> normally, and their **contents are not reactive**: mutating a `Map` or advancing a
+> `Date` fires nothing. Reassigning the property that holds one is reactive as usual.
+> Wrapping them could never have made them reactive — their state lives in slots no
+> proxy trap observes — and doing so broke every method call with an
+> "incompatible receiver" `TypeError`. Class instances using **private fields** have the
+> same limitation and are not detected; keep them out of watched state.
+
+> **RULE 47** — Watches are a property of the **object**, not of the component that
+> declares them. The registry is keyed by the object and shared process-wide, so if any
+> component declares `$: page`, every other component's reads of `page.*` become covered
+> by that watch and will re-render on any write to `page` — even components that declared
+> nothing. Likewise, a finer watch declared elsewhere (`$: page.user`) becomes the nearest
+> cover for other components' reads under it.
+>
+> This is always fail-safe — it can cause an extra render, never a missed one — but it
+> means a component's update granularity is not always determined by its own source.
+> It is a known and accepted limitation: `$: page` reads as "this object is now deeply
+> reactive", which is inherently global. If you need a component's reactivity to be
+> locally explainable, declare the specific paths it reads rather than relying on a
+> coarse watch declared elsewhere.
+
+---
+
+### 4.2 Effects with explicit dependencies — `$: deps, handler`
+
+The dependency list is declared; the handler runs untracked, so reads inside it never
+add subscriptions. This is the form to reach for by default.
 
 ```js
-$: console.log(count)              // reruns when count changes
-$: document.title = `${count}`     // reruns when count changes
-
-$: {
-    console.log(cart.total)        // reruns when cart.total changes
-    document.title = `${count}`    // reruns when count changes
-}
-```
-
-### 4.3 Watch + Handler
-
-Explicitly separates what to watch from what to run when it changes. The handler is always
-the last item after a top-level comma, always outside any parentheses.
-
-```js
-$: cart.total, () => syncToServer()                // sync, single dep
-$: cart.total, syncToServer                        // fn reference shorthand
-$: (cart.total, selectedId), () => sync()          // sync, multi dep
-
-$: selectedId, async () => {                       // async with cleanup
-    const controller = new AbortController()
-    $onCleanup(() => controller.abort())           // before first await
-    const data = await fetch(`/api/${selectedId}`, {
-        signal: controller.signal
-    })
-    result = await data.json()
-}
+$: cart.total, () => syncToServer()
+$: cart.total, syncToServer                    // function reference shorthand
+                                               // (unbraced form only — see RULE 52)
+$: (cart.total, selectedId), () => sync()      // multi dep
 ```
 
 > **RULE 7** — Watch+handler: the handler is always last, always outside parentheses.
 > Parentheses group multiple dependencies only.
 
-### 4.4 Ordered Watch Groups
+**Deferred.** The handler does not run on mount. It runs on the first change and every
+change after.
 
-When multiple watch+handlers must fire in a guaranteed order, wrap them in a `$: { }` block:
+```js
+$: userId, () => { localCount = 0 }   // does NOT reset on first render
+```
+
+"When X changes, do Y" reads as change-triggered, and firing on mount is usually wrong.
+The eager case is `$onMount`. The "initialise, then keep in sync" case is almost always a
+`const` memo in disguise — if you find yourself writing an effect whose whole body assigns
+a value derived from its own dependency, you wanted `const`.
+
+**Previous value.** The handler receives the current and previous values:
+
+```js
+$: userId, (id, prevId) => load(id, prevId)
+$: (a, b), ([a, b], [prevA, prevB]) => …       // multi dep gives arrays
+```
+
+Deferring is what makes `prev` meaningful — the first invocation *is* the first change,
+so there is always a real previous value rather than `undefined`.
+
+> **RULE 46** — `prev` holds a reference. A **replaced** object gives a genuine previous
+> value; an object **mutated in place** gives the same reference for both. Producing a
+> distinct previous would mean deep-cloning every read, so Mesa doesn't.
+
+**Cleanup and async.** The handler's return value is registered as a cleanup, run before
+the next invocation and on destroy:
+
+```js
+$: selectedId, () => {
+    const c = new AbortController()
+    fetch(`/api/${selectedId}`, { signal: c.signal }).then(…)
+    return () => c.abort()                     // cancels the in-flight request
+}
+
+$: selectedId, async () => {
+    const c = new AbortController()
+    $onCleanup(() => c.abort())                // before the first await
+    result = await (await fetch(`/api/${selectedId}`, { signal: c.signal })).json()
+}
+```
+
+---
+
+### 4.3 Effects with automatic dependencies — `$: expr` and `$: { block }`
+
+The dependencies are whatever the body reads.
+
+```js
+$: console.log(count)
+$: document.title = `${count}`
+
+$: {
+    console.log(cart.total)
+    document.title = `${count}`
+}
+```
+
+> **RULE 47** — Auto-tracked effects run on mount and cannot be deferred. They discover
+> their dependencies **by running**; withholding the first run would subscribe to nothing.
+> Only the explicit-dependency form of §4.2 can defer, and that is a mechanical
+> consequence, not a style choice.
+
+Auto-tracking sees reactive values the compiler knows about. It does **not** register path
+watches on imported objects — `$: { cart.total }` reads an inert property. Use the
+unbraced form (§4.1) for those.
+
+---
+
+### 4.4 Ordered watch groups
+
+When several handlers share a dependency and must fire in a defined order, wrap them in a
+block. Each line is a `dep, handler` pair:
 
 ```js
 $: {
@@ -306,70 +430,64 @@ $: {
 }
 ```
 
-Each handler fires in declaration order, once per reactive flush.
+Handlers fire in declaration order, once per reactive flush.
 
-#### Block vs sequence — the parenthesised form is different
-
-`$: (a, b)` and `$: { (a, b) }` look almost identical but compile to different
-things. The parens are a JavaScript sequence expression; the braces are a block
-statement. Mesa interprets them differently:
+> **RULE 52** — Inside a `$: { }` block the handler must be an **inline function**. The
+> reference shorthand (`$: dep, syncFn`) is available only on the unbraced form, because
+> `{ a, syncFn }` and `{ a, b }` have identical ASTs — there is no way to tell an intended
+> handler from a pair of values being read.
 
 ```js
-$: (cart.items, cart.total)        // multi-path watch — proxy watch signals on
-                                   // `cart.items` and `cart.total`. Re-renders
-                                   // the component when either path mutates.
-
-$: {                                // block — auto-tracked side effect.
-    (cart.items, cart.total)        // The body's reactive reads are tracked.
-}                                   // Equivalent to `$: cart.items, cart.total`
-                                    // but with a block scope.
+$: { userId, () => load() }     // ✅
+$: { userId, load }             // ❌ compile error — write `() => load()`
+$: userId, load                 // ✅ unbraced — shorthand is fine here
 ```
 
-The sequence form (Section 4.1) sets up explicit path watchers on imported
-objects. The block form (Section 4.2) is a side effect that auto-detects what
-it reads. Use sequence-form when you want explicit path watching and no body;
-use block form when you want to run code that reacts to its own reads.
+#### Block versus sequence
 
-> **RULE 14b** — `$: (a, b)` is a multi-path watch (proxy watch signals).
-> `$: { ... }` is an auto-tracked block effect. Wrapping a sequence expression
-> inside a block produces a block effect, not multi-path watches.
+`$: (a, b)` and `$: { (a, b) }` have **identical ASTs** — both are a sequence expression
+of two identifiers. The parentheses are the only thing that distinguishes them, and the
+compiler reads them from source position.
+
+```js
+$: (cart.items, cart.total)      // multi-path watch — §4.1
+$: { (cart.items, cart.total) }  // compile error — see §4.8
+```
+
+> **RULE 14b** — `$: (a, b)` is a multi-path watch. `$: { … }` is a block: it runs code.
+> A block whose body only reads values is an error, not a watch.
+
+---
 
 ### 4.5 Writable Derived — `$: name = expr`
 
 An assignment-shaped `$:` creates a writable derived signal — it re-derives when its
-dependencies change, but can be overridden by `bind:value` or direct assignment at any time.
+dependencies change, but can be overridden by `bind:value` or direct assignment at any
+time.
 
 ```js
-$: selectedCity = cities[0]    // re-derives when cities changes
+$: selectedCity = cities[0]    // re-derives when cities changes,
                                // but bind:value on a <select> can still override it
-$: doubled = count * 2         // re-derives when count changes
+$: doubled = count * 2
 ```
 
-**Override semantics — dep change always wins back.** Any override (from `bind:value`,
-direct assignment, or an event handler) is a temporary local value. The next time the
-expression's dependencies change, the derivation re-runs unconditionally and the override
-is discarded. There is no way to permanently detach a writable derived from its expression.
+This is the one value form `const` cannot express: `const` is derived *and authoritative*,
+so it would clobber a user's selection on every recompute.
+
+> **RULE 14a** — A writable derived signal re-derives unconditionally whenever its
+> dependencies change. Overrides are temporary. For permanent detachment, use `let` with
+> a `$:` watch+handler:
 
 ```js
-const cities = await getCities(selectedState)
-$: selectedCity = cities[0]
-
-// User picks 'Denver' via bind:value — selectedCity is now 'Denver'
-// selectedState changes → new cities fetch → selectedCity resets to cities[0]
+let selectedCity = cities[0]                     // plain let — snapshot at init
+$: cities, () => { selectedCity = cities[0] }    // only resets when you say so
+// a user override via bind:value now persists across cities changes
 ```
 
-If you need a permanent detachment — where a user override sticks even when dependencies
-change — use `let` with a watch+handler instead:
+Note that under RULE 47 the watch+handler no longer fires on mount, so the initial value
+comes from the `let` initialiser rather than from the handler.
 
-```js
-let selectedCity = cities[0]                        // plain let — snapshot at init
-$: cities, () => { selectedCity = cities[0] }       // only resets when you say so
-// now a user override via bind:value persists across cities changes
-```
-
-> **RULE 14a** — A writable derived signal (`$: name = expr`) re-derives unconditionally
-> whenever its dependencies change. Overrides are temporary. For permanent detachment,
-> use `let` with a `$:` watch+handler.
+---
 
 ### 4.6 Debug Labels — `$_name:`
 
@@ -381,20 +499,84 @@ $_fetchData: selectedId, async () => { ... }
 $_computeTotal: total = items.reduce(...)
 ```
 
-### 4.7 Complete `$:` Pattern Reference
+---
 
-| Form | Purpose |
-|---|---|
-| `$: path` | External object watch — single path |
-| `$: (p1, p2)` | External object watch — multi-path (sequence expression) |
-| `$: expression` | Auto-tracked side effect |
-| `$: { block }` | Auto-tracked block effect (tracks reads inside the block) |
-| `$: { (a, b) }` | Auto-tracked block effect — *not* multi-path watch (see §4.4) |
-| `$: dep, fn` | Watch + handler — explicit dep, sync or async |
-| `$: (d1, d2), fn` | Watch + handler — multi dep |
-| `$: { dep, fn\n dep, fn }` | Ordered watch group |
-| `$: name = expr` | Writable derived signal |
-| `$_label: ...` | Debug label on any `$:` form |
+### 4.7 Timing and phase
+
+Signal writes coalesce. Multiple writes anywhere in the same tick — event handlers,
+timers, promise callbacks — accumulate into a single flush on the next microtask.
+
+> **RULE 48** — Within a flush, everything that builds the DOM runs before user effects.
+> A `$:` effect therefore observes the DOM **as it is after** the change it is reacting
+> to, matching Solid's `createEffect` and Svelte's `$effect`.
+
+```js
+$: items, () => { count = el.childNodes.length }   // sees the new children
+```
+
+Two consequences worth knowing:
+
+**The DOM has not updated yet inside your own handler.** Writes are deferred to the
+microtask, so synchronous code after a state change still reads the *previous* DOM. That
+is the "before update" window, and it is the whole remainder of the handler:
+
+```js
+function addMessage(m) {
+    messages = [...messages, m]
+    const wasAtBottom = atBottom(el)             // still the OLD DOM
+    $tick(() => { if (wasAtBottom) scrollToBottom(el) })
+}
+```
+
+**`$tick()` resolves after the DOM has updated.** Use it to read the result of a change
+you just made.
+
+> **RULE 49** — The *initial* run of an auto-tracked effect happens during component
+> setup, before the template exists. Only updates are ordered after the DOM. Explicit-
+> dependency effects are unaffected, having no initial run at all (RULE 47).
+
+---
+
+### 4.8 Compile errors
+
+> **RULE 50** — A `$: { }` block runs code. If every top-level statement in it is a bare
+> read, it is a compile error.
+
+```js
+$: { }               // error — empty
+$: { count }         // error — reads, does nothing
+$: { (a, b) }        // error — reads, does nothing
+$: { cart.total }    // error — reads, does nothing; and registers no path watch
+```
+
+Effects do not drive renders in Mesa — a template's `{a}` tracks its own reads — so an
+effect with no side effect is unobservable. Every form above is someone reaching for
+braces to express a watch. The error names the form they wanted.
+
+`$: if (…) { }`, `$: for (…) { }` and other statement forms are also errors; wrap the
+body in a block instead.
+
+> **RULE 53** — Compiler diagnostics are reported as build warnings, not fatal errors.
+> The build still produces output. "Error" describes the intent — the code is wrong and
+> will not do what it says — not the exit code.
+
+---
+
+### 4.9 Complete `$:` Pattern Reference
+
+| Form | Purpose | Runs on mount |
+|---|---|---|
+| `$: path` | Watch a path — external or local object | — |
+| `$: (p1, p2)` | Watch several paths | — |
+| `$: dep, fn` | Effect, explicit deps, `fn(value, prev)` | no |
+| `$: (d1, d2), fn` | Effect, multi dep, `fn([…], […])` | no |
+| `$: expression` | Effect, auto-tracked | yes |
+| `$: { block }` | Effect, auto-tracked, multi-statement | yes |
+| `$: { dep, fn`<br>`   dep, fn }` | Ordered watch group | no |
+| `$: name = expr` | Writable derived signal | — |
+| `$_label: …` | Debug label on any form | — |
+| `$: { (a, b) }` | **Compile error** — §4.8 | — |
+| `$: { dep, fnRef }` | **Compile error** — handler must be inline (RULE 52) | — |
 
 ---
 
@@ -424,6 +606,40 @@ $: cart.total        // this component re-renders when cart.total changes
 
 > **RULE 8** — Shared state is plain JavaScript. Any exported object from a `.js` file
 > can be made reactive in a Mesa component with a `$:` path declaration.
+
+#### Writing to shared state
+
+A component's `$:` watch only sees writes that go **through** the proxy Mesa created
+(RULE 45). Reads and writes from inside components are automatic. A module that owns
+state and mutates it itself must take its own handle:
+
+```js
+// store.js
+import { watchProxy } from '@frontierjs/mesa/runtime'
+
+export const cart = { items: [], total: 0 }
+const _cart = watchProxy(cart)               // same instance every component gets
+
+export function add(item) {
+    _cart.items = [..._cart.items, item]     // notifies $: cart.items
+    _cart.total = _cart.items.length         // notifies $: cart.total
+}
+```
+
+`watchProxy` is cached per object and idempotent, so every component and the module share
+one proxy — a write through any of them fires exactly the paths that are watched, and
+nothing else.
+
+> **RULE 51** — Reactive *logic* does not belong in `.js` modules. A store holds state and
+> the functions that write it; deriving and reacting happen in components. Anything shared
+> and derived is computed at the write site, not the read site.
+
+That rule is a discipline, not an enforcement — `createSignal` and `createEffect` are
+ordinary functions and work anywhere. Mesa deliberately provides no scope primitive
+(`createRoot`, `effectScope`) because naming the pattern is what blesses it. When you
+genuinely need an effect outside a component, `createEffect` returns a disposer and owns
+any effects created inside it; `onCleanup` with no owner warns rather than silently
+dropping the callback.
 
 > **RULE 9** — Store files cannot import from component files — compiler enforced.
 
@@ -1279,8 +1495,21 @@ $: (cart.items, cart.total)   // both in one statement
 ```
 
 Object getters on reactive objects are invisible to the compiler — their internal
-dependencies cannot be statically detected. Mesa emits a compiler warning and recommends
-converting to a top-level derived `const`.
+dependencies cannot be statically detected. At runtime a getter is invoked with the
+watch proxy as `this`, so the properties it reads subscribe normally; watch **what the
+getter reads**, not the getter itself:
+
+```js
+let user = { first: 'Ada', last: 'L', get full() { return this.first + ' ' + this.last } }
+
+$: user.first        // ✅ {user.full} updates when first changes
+$: user              // ✅ whole-object watch covers it too
+$: user.full         // ❌ never fires — nothing ever writes that path
+```
+
+Watching the getter's own path is inert, because a derived value is never assigned to.
+Mesa warns at runtime when a watch is declared on a get-only accessor. A top-level
+derived `const` remains the clearer choice where it fits.
 
 ---
 
@@ -1552,6 +1781,15 @@ at module load time.
 
 > **RULE 19** — During `renderToHTML`: signals are synchronous, no reactive graph is built.
 > `$onMount` is a no-op. `$context` is instance-scoped to that render call.
+> `watchProxy` / `watchPath` return the raw object and inert stubs, so `{page.path}` still
+> reads the right value — it is simply not reactive, which is all a one-shot render needs.
+>
+> This is gated on a *client* flag, not on DOM availability. `initRenderer()` must make a
+> DOM reachable, because compiled components call `htmlToFragment()` at module load — but
+> a DOM is not a client. `setRenderEnvironment(hasDOM, isClient)` carries both;
+> `initRenderer()` passes `(true, false)`. Conflating them made every guard above dead
+> code on the server: `$onMount` ran once per render against a `window` that outlived the
+> request, and path watches built signals nothing disposed.
 
 > **RULE 20** — Full per-request SSR (hydration, async data serialization) is deferred to a
 > future version.

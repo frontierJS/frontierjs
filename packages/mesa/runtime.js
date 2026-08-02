@@ -7,13 +7,30 @@ const _resolved = Promise.resolve()
  *  Can be set to true by renderToHTML when a virtual DOM (happy-dom) is active. */
 let _isBrowser = typeof document !== 'undefined'
 
+/** True only in a real client runtime.
+ *
+ *  Distinct from _isBrowser, which means no more than "a DOM is reachable".
+ *  renderToHTML installs happy-dom and must set _isBrowser so compiled
+ *  components can call htmlToFragment() and document.createElement() — but a
+ *  server render is emphatically not a client, and RULE 19 says so: no reactive
+ *  graph, $onMount a no-op, path watches inert.
+ *
+ *  One flag could not express both, so turning the DOM on turned client
+ *  behaviour on with it and every RULE 19 guard became dead code. $onMount then
+ *  ran once per render on the server — with a happy-dom `window` available, so
+ *  addEventListener and friends silently succeeded against a global that
+ *  outlived the request — and watchProxy built real proxies and signals that
+ *  nothing ever disposed. */
+let _isClient = typeof document !== 'undefined'
+
 /**
  * Override the browser environment flag.
  * Called by @frontierjs/mesa-render before mounting components in a happy-dom Window.
  * This unlocks htmlToFragment and other DOM-dependent functions in Node.js.
  */
-export function setRenderEnvironment(isBrowser) {
+export function setRenderEnvironment(isBrowser, isClient = isBrowser) {
   _isBrowser = isBrowser
+  _isClient = isClient
 }
 function _safeCall(fn) {
   try {
@@ -47,15 +64,120 @@ function _scheduleFlush() {
   queueMicrotask(_flush)
 }
 
-// Drain all pending effect nodes. Run in a loop so that effects triggered by
-// other effects in this batch are also flushed before control returns.
+// Drain all pending nodes. Run in a loop so that effects triggered by other
+// effects in this batch are also flushed before control returns.
+//
+// Within each pass, everything that builds the DOM runs BEFORE user effects.
+// Renders, control flow and user effects are all the same kind of node, so
+// without this split the order fell out of creation order — and because the
+// compiler emits the <script> before the template, a `$:` effect ran before the
+// DOM it was reacting to had been updated:
+//
+//   $: items, () => { count = el.childNodes.length }   // always one update stale
+//
+// Both Solid and Svelte run user effects after the DOM updates (Solid's
+// createEffect explicitly, with createRenderEffect as the during-render tier;
+// Svelte's $effect, with $effect.pre as the opt-out). This makes Mesa agree with
+// them, so an effect observes the DOM as it is after the change it is reacting
+// to, not before.
+//
+// Effects that queue further work are picked up by the next pass, which applies
+// the same ordering — so a render triggered by an effect still lands before any
+// effects it in turn triggers.
+//
+// Ahead of both tiers, the derived layer is settled to a fixpoint. Memos
+// propagate from their recompute rather than from their invalidation (see
+// createMemo), so a memo whose value actually moved can dirty another memo.
+// Draining that to quiescence first means renders and user effects in this
+// generation read derivations that have stopped moving, and a chain of memos
+// resolves within one generation instead of one link per generation.
 function _flush() {
   _microtaskPending = false
+  let passes = 0
   while (_queue.size > 0) {
+    if (++passes > _MAX_FLUSH_PASSES) return _reportCycle()
+
+    // Collected in a single scan that allocates nothing in the common case
+    // where no derivation is pending — this runs on every flush, including the
+    // 10k-row ones.
+    for (;;) {
+      let derived = null
+      for (const node of _queue) if (node._isDerived) (derived ??= []).push(node)
+      if (!derived) break
+      if (++passes > _MAX_FLUSH_PASSES) return _reportCycle()
+      for (const node of derived) _queue.delete(node)
+      for (const node of derived) _runNode(node)
+    }
+
     const pending = [..._queue]
     _queue.clear()
-    for (const node of pending) node._run()
+    for (const node of pending) if (!node._isUserEffect) _runNode(node)
+    for (const node of pending) if (node._isUserEffect)  _runNode(node)
   }
+}
+
+// Run one node, containing any error it throws.
+//
+// _flush drains _queue into a snapshot before running anything, so an exception
+// that escapes here does not merely skip the effect that threw — every node
+// after it in the snapshot is dropped, and because those nodes were already
+// removed from _queue they are never re-notified for this write. They stay
+// stale until some unrelated later change happens to wake them. Containing the
+// error per node keeps one broken effect from silently desynchronising the rest
+// of the page, which is the same choice Solid, Svelte and Vue make.
+function _runNode(node) {
+  const comps = _compStack.length
+  const ctxs = _contextStack.length
+  try {
+    node._run()
+  } catch (e) {
+    // Component setup runs inside effects — a child render, an {#if} branch, an
+    // {#each} row. The compiler emits push_component()/…/pop_component() as
+    // straight-line code, so a throw in between skips the pop and strands the
+    // component's frame and context map forever: every component mounted
+    // afterwards then inherits the dead one's context provides. Unwind to the
+    // depth we entered at. (_owner and _listener need no repair — _run restores
+    // those in its own finally.)
+    _unwindComponents(comps, ctxs)
+    console.error(e)
+  }
+}
+
+// Truncate the component and context stacks back to a known-good depth after a
+// throw, restoring the module-globals that pop_component would have restored.
+function _unwindComponents(compDepth, ctxDepth) {
+  if (_compStack.length > compDepth) {
+    // The outermost frame being discarded holds the values that were live
+    // before any of the abandoned components pushed.
+    const frame = _compStack[compDepth]
+    _compStack.length = compDepth
+    _mountList    = frame.mounts
+    _propRegistry = frame.props
+    _devCompId    = frame.devCompId
+  }
+  if (_contextStack.length > ctxDepth) _contextStack.length = ctxDepth
+}
+
+// A reactive graph that never settles would otherwise spin inside _flush
+// forever, freezing the tab with no output at all — the worst possible failure
+// mode, since there is nothing to search for. Bail out loudly instead. The cap
+// is far above any legitimate graph: settling normally takes a handful of
+// passes, and the memo fixpoint collapses derivation chains into one.
+const _MAX_FLUSH_PASSES = 1000
+
+function _reportCycle() {
+  const pending = [..._queue]
+  _queue.clear()
+  const sample = pending
+    .slice(0, 3)
+    .map((n) => n._fn?.name || (n._isDerived ? '<derivation>' : '<anonymous effect>'))
+    .join(', ')
+  console.error(
+    `[Mesa] Update cycle detected — the reactive graph did not settle after ${_MAX_FLUSH_PASSES} ` +
+    `passes, so ${pending.length} pending node(s) were dropped to keep the page responsive. ` +
+    `This almost always means two reactive statements write each other's signals, ` +
+    `e.g. \`$: a = b + 1\` alongside \`$: b = a + 1\`. Still pending: ${sample}`
+  )
 }
 
 /**
@@ -93,9 +215,31 @@ export function createSignal(value, opts) {
   return [read, write]
 }
 
-export function createEffect(fn) {
+export function createEffect(fn, opts) {
   const node = _makeNode(fn)
-  node._run()
+  // User effects — the bodies of `$:` forms — are tagged so the flush can drain
+  // them AFTER everything that builds the DOM. Untagged is the default because
+  // control flow (ifBlock, keyBlock, awaitBlock…) and render blocks are all
+  // DOM-building work and must keep their existing relative order: an ifBlock's
+  // condition has to run before the renders inside its branch, or those renders
+  // fire against a branch that is about to be disposed. See _flush.
+  if (opts && opts.user) node._isUserEffect = true
+  // Effects that exist only to move a value through the derivation layer opt
+  // into the derived tier, so they settle in the same fixpoint as memos rather
+  // than racing the renders and user effects that read what they write.
+  if (opts && opts.derived) node._isDerived = true
+  // The first run happens here rather than through the flush, and it is where
+  // component setup usually lands — a child render, an {#if} branch factory. The
+  // error still propagates (a failure during setup is the caller's to see), but
+  // the component stacks must not be left stranded on the way out.
+  const comps = _compStack.length
+  const ctxs = _contextStack.length
+  try {
+    node._run()
+  } catch (e) {
+    _unwindComponents(comps, ctxs)
+    throw e
+  }
   return () => _disposeNode(node, true)
 }
 
@@ -201,26 +345,103 @@ function _disposeNode(node, removeFromOwner) {
  */
 export function createWritableSignal(fn, opts) {
   const memo = createMemo(fn, opts)
-  const [read, write] = createSignal(memo())
+  // opts reaches both halves. Passing it only to the memo meant the two paths
+  // into the same binding compared values differently: a recompute producing an
+  // `equals`-equal value stayed silent, while a manual write of that same value
+  // notified, because the signal half had fallen back to Object.is.
+  const [read, write] = createSignal(memo(), opts)
   // When memo recomputes (deps changed), push derived value into signal.
   // Manual writes hold until the next dep change — then derivation takes over.
-  createEffect(() => write(memo()))
+  //
+  // This bridge runs in the derived tier. As an ordinary effect it was ordered
+  // against the renders and user effects that read this very signal, so a
+  // consumer reading both the source and the derived `let` could run before the
+  // bridge had pushed the new value and observe a torn pair — `src` already 2
+  // while the value derived from it was still 10. Settling it with the memos
+  // means everything downstream sees the derivation layer whole.
+  createEffect(() => write(memo()), { derived: true })
   return [read, write]
 }
 
 export function createMemo(fn, opts) {
   const eq = opts?.equals ?? Object.is
-  let value,
-    dirty = true
+  let value
+  let dirty = true
+  let computed = false // has fn() ever run?
+  let moved = false    // value changed since we last told ownSubs about it
   const ownSubs = new Set()
+
+  // Recompute now; report whether the value actually moved.
+  //
+  // `dirty` is cleared BEFORE fn() runs, not after. A write to one of our own
+  // dependencies from inside fn() has to be able to mark us dirty again —
+  // clearing afterwards erased that invalidation, and since _notify early-returns
+  // while dirty is set, nothing had been propagated either. The memo then served
+  // a value computed from pre-write state forever, while direct subscribers of
+  // the same signal saw the new one.
+  const _recompute = () => {
+    for (const sig of memoNode._deps) sig._subs.delete(memoNode)
+    memoNode._deps.clear()
+    const prevL = _listener
+    _listener = memoNode
+    dirty = false
+    try {
+      const next = fn()
+      const first = !computed
+      computed = true
+      // First computation: nobody has seen a previous value, so there is
+      // nothing to have moved away from. Note that on later runs a truthy `eq`
+      // keeps the existing value rather than the new one — for a custom
+      // comparator that is the point, the old identity is the stable one.
+      if (first) {
+        value = next
+        return false
+      }
+      if (eq(value, next)) return false
+      value = next
+      return true
+    } catch (e) {
+      dirty = true
+      throw e
+    } finally {
+      _listener = prevL
+    }
+  }
+
   const memoNode = {
     _deps: new Set(),
     _cleanups: [],
     _children: [],
     _owner: _owner,
+    _isDerived: true,
+    _disposed: false,
+    // A dependency moved. Queue ourselves, but do NOT touch ownSubs yet.
+    // Whether consumers need to re-run is not knowable until fn() has run and
+    // the result has been compared — and suppressing that re-run when the
+    // derivation lands on the same value is the entire purpose of a memo.
+    // Notifying from here instead made every `const` derivation a pass-through:
+    // it cached the value but could never cut off propagation, so a memo like
+    // `count > 0` re-rendered every consumer on each increment.
     _notify() {
-      if (dirty) return
+      if (dirty || this._disposed) return
       dirty = true
+      _queue.add(this)
+      _scheduleFlush()
+    },
+    _run() {
+      if (this._disposed) return
+      // Nobody is listening. Stay lazy: leave `dirty` set so the next read
+      // recomputes on demand, and drop any pending `moved` since there is no
+      // one it could be owed to. Without this, a memo whose only consumer was
+      // torn down — or one only ever read outside a reactive scope — would
+      // recompute on every dependency change for the life of the page.
+      if (ownSubs.size === 0) {
+        moved = false
+        return
+      }
+      if (dirty && _recompute()) moved = true
+      if (!moved) return
+      moved = false
       for (const sub of [...ownSubs]) sub._notify()
     }
   }
@@ -231,19 +452,10 @@ export function createMemo(fn, opts) {
       ownSubs.add(_listener)
       _listener._deps.add(memoSignal)
     }
-    if (dirty) {
-      for (const sig of memoNode._deps) sig._subs.delete(memoNode)
-      memoNode._deps.clear()
-      const prevL = _listener
-      _listener = memoNode
-      try {
-        const next = fn()
-        if (!eq(value, next)) value = next
-        dirty = false
-      } finally {
-        _listener = prevL
-      }
-    }
+    // Still a pull: a read that arrives before the flush reaches us recomputes
+    // on demand. Remember that the value moved so _run() still propagates to
+    // everyone who did not read us directly.
+    if (dirty && _recompute()) moved = true
     return value
   }
   return read
@@ -279,12 +491,29 @@ export function untrack(fn) {
 }
 
 export function onCleanup(fn) {
-  if (_owner) _owner._cleanups.push(fn)
+  if (_owner) { _owner._cleanups.push(fn); return }
+
+  // No owner — the callback is dropped. This happens when onCleanup (or
+  // $onDestroy, which forwards here) is called outside component setup and
+  // outside any effect: at module scope, after an `await`, or inside a
+  // callback that ran later. Silently discarding teardown is how subscriptions
+  // and timers leak for the lifetime of the page, so say so.
+  //
+  // Reactive code outside a component is supported but deliberately
+  // unadvertised — createEffect works there and returns a disposer, and nested
+  // effects are owned by it. If you need cleanup at module scope, that effect
+  // is the owner you're missing.
+  if (typeof console !== 'undefined' && console.warn) {
+    console.warn(
+      '[Mesa] onCleanup() called with no owning scope — the callback will never run. ' +
+      'Call it during component setup, or inside a createEffect() whose disposer you keep.'
+    )
+  }
 }
 let _mountList = null // $onMount callbacks collected during component init
 let _propRegistry = null // prop signal map collected during component init
 export function $onMount(fn) {
-  if (!_isBrowser) return // Rule 19: $onMount is a no-op on server
+  if (!_isClient) return // Rule 19: $onMount is a no-op on server
   if (_mountList) _mountList.push(fn)
   else _resolved.then(fn)
 }
@@ -1323,20 +1552,23 @@ export function makeComponent(init) {
     _mountList = []
     _propRegistry = new Map() // filled by makeExternalProperty calls inside init
 
-    let $dom
+    // Capture before restoring so $push/$apply close over this instance's map.
+    // Both captures and both restores live in the try/finally: an init() that
+    // threw used to skip the restores below it, leaving _mountList and
+    // _propRegistry pointing at the dead instance for every component that
+    // mounted afterwards.
+    let $dom, registry, mountList
     try {
       $dom = init($option)
+      registry = _propRegistry
+      mountList = _mountList
     } finally {
       _owner = prevOwner
       _listener = prevListener
+      _mountList = prevMount
+      _propRegistry = prevProps
       _contextStack.pop()
     }
-
-    // Capture before restoring so $push/$apply close over this instance's map.
-    const registry = _propRegistry
-    _propRegistry = prevProps
-    const mountList = _mountList
-    _mountList = prevMount
 
     const component = {
       $dom,
@@ -1431,7 +1663,17 @@ export function mount(label, component, option) {
 
   const anchor = document.createComment('')
   label.parentNode.insertBefore(anchor, label.nextSibling)
-  component(anchor, option?.props ?? {}, null)
+  // A root mount runs outside any effect, so the flush loop's unwind cannot see
+  // it. The error still propagates to the caller — it is theirs to handle — but
+  // the stacks must not be left corrupted for the next mount.
+  const comps = _compStack.length
+  const ctxs = _contextStack.length
+  try {
+    component(anchor, option?.props ?? {}, null)
+  } catch (e) {
+    _unwindComponents(comps, ctxs)
+    throw e
+  }
   return {
     $dom: anchor,
     find(sel) { return anchor.parentNode?.querySelector(sel) },
@@ -1738,12 +1980,34 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
   let elseNode      = null
   let elseNodeFirst = null   // first DOM node of the else block (for removal)
   let elseNodeLast  = null   // last DOM node of the else block
+  let elseOwner     = null   // owner node for the else block's effects
 
   const _showElse = () => {
     if (!elseBlock || elseNode) return
     const parent = getParent()
     if (!parent) return  // anchor detached (e.g. inside a swapped-out {#if} branch)
-    elseNode = elseBlock()
+    // Scope the else block's effects to their own owner, the same way
+    // _makeBlock does for rows.
+    //
+    // This used to run with whatever _owner was ambient — the eachBlock effect —
+    // and teardown relied on `elseNode?.dispose?.()`, which is dead code: the
+    // compiler passes a plain makeBlock factory that returns DOM and has no
+    // dispose method. Since an effect never disposes its own children on re-run,
+    // every empty→non-empty toggle stranded another live copy of the else
+    // block's effects, growing without bound for the life of the page.
+    const owner = {
+      _fn: null, _deps: new Set(), _cleanups: [], _children: [],
+      _owner: outerOwner, _disposed: false, _notify() {}, _run() {}
+    }
+    if (outerOwner) outerOwner._children.push(owner)
+    elseOwner = owner
+    const prevOwner = _owner
+    _owner = owner
+    try {
+      elseNode = elseBlock()
+    } finally {
+      _owner = prevOwner
+    }
     const $d = elseNode.$dom ?? elseNode
     if ($d.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
       elseNodeFirst = $d.firstChild
@@ -1757,6 +2021,10 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     if (!elseNode) return
     removeElements(elseNodeFirst, elseNodeLast)
     elseNode?.dispose?.()
+    if (elseOwner) {
+      _disposeNode(elseOwner, true)
+      elseOwner = null
+    }
     elseNode = elseNodeFirst = elseNodeLast = null
   }
 
@@ -1844,6 +2112,10 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     // ── Fast path: clear ────────────────────────────────────────────────────
     if (newLen === 0) {
       if (blocks.size > 0) {
+        // Snapshot each block's DOM range before disposing anything, so the
+        // removal below knows exactly which nodes belong to this {#each}.
+        const ranges = []
+        for (const [, b] of blocks) if (b.$domFirst) ranges.push([b.$domFirst, b.$domLast])
         // Dispose reactive owners FIRST so their effects unsubscribe before
         // any other signals in this batch fire (e.g. selected = 0 after clear).
         // Without this, class:danger effects on all 10k rows re-run unnecessarily.
@@ -1856,11 +2128,13 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
           // parent can be null if the {#each} anchor was inside an {#if} branch
           // that got swapped out before this effect ran (async + branch switch).
           if (parent) {
-            // Remove all nodes that appear before the anchor — these are the {#each} items.
-            // Sibling nodes after the anchor (other blocks' anchors) are left untouched.
-            while (anchor.previousSibling) {
-              parent.removeChild(anchor.previousSibling)
-            }
+            // Remove exactly the ranges this {#each} owns. Walking backwards
+            // from the anchor with `while (anchor.previousSibling)` instead
+            // assumed the block was the only thing before it in the parent, so
+            // emptying the array also destroyed any static markup or other
+            // blocks' content that happened to precede it — a `<h2>` and a
+            // toolbar `<div>` above an {#each} both vanished on clear.
+            for (const [first, last] of ranges) removeElements(first, last)
           }
         } else {
           anchor.textContent = ''
@@ -2100,15 +2374,36 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
     return
   }
   let current = -1,
-    currentFirst = null,
-    currentLast = null,
+    // A comment inserted immediately before the branch content, marking where
+    // this branch starts. The branch used to be tracked by holding its first and
+    // last DOM nodes, but an inner block that swaps its own content — {#await}
+    // replacing the pending node when the promise resolves — removes exactly
+    // those nodes. Removal then walked from a detached node whose nextSibling is
+    // null, removed nothing, and the branch stayed on screen forever.
+    //
+    // The marker is created and owned by ifBlock, so nothing inside the branch
+    // can remove it, and removal walks live siblings from it to the anchor —
+    // whatever the branch did to its own contents in between.
+    startMarker = null,
     currentBranchNode = null   // owner node for the active branch's effects
 
+  // Remove live siblings from `from` up to but not including `stop`.
+  // nextSibling is read before removal so the walk survives detaching.
+  const _removeRange = (from, stop) => {
+    let n = from
+    while (n && n !== stop) {
+      const next = n.nextSibling
+      n.remove()
+      n = next
+    }
+  }
+
   const _removeBlock = () => {
-    if (currentFirst == null) return
+    if (startMarker == null) return
     // Before disposing, capture the parent and sibling for potential re-insertion.
     const parent = noAnchor ? anchor : anchor.parentNode
-    const afterNode = noAnchor ? null : currentLast?.nextSibling ?? anchor
+    const afterNode = noAnchor ? null : anchor
+    const stop = noAnchor ? null : anchor
 
     // Dispose the branch owner — kills all effects ($$eachBlock, bindText, etc.)
     // created inside this branch before removing its DOM.
@@ -2130,17 +2425,16 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
           collectExiting(child)
         }
       }
-      let node = currentFirst
-      const stop = currentLast ? currentLast.nextSibling : anchor
+      let node = startMarker.nextSibling
       while (node && node !== stop) {
         collectExiting(node)
         node = node.nextSibling
       }
     }
 
-    // Remove the branch DOM
-    removeElements(currentFirst, noAnchor ? null : currentLast)
-    currentFirst = currentLast = null
+    // Remove the branch DOM — marker included.
+    _removeRange(startMarker, stop)
+    startMarker = null
 
     // Re-insert exiting elements and schedule their removal after animation
     for (const { el, promise } of exitingEls) {
@@ -2187,14 +2481,15 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
     }
 
     const node = $dom.$dom ?? $dom
-    if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-      currentFirst = node.firstChild
-      currentLast = node.lastChild
+    const marker = document.createComment('')
+    if (noAnchor) {
+      parent.appendChild(marker)
+      parent.appendChild(node)
     } else {
-      currentFirst = currentLast = node
+      parent.insertBefore(marker, anchor)
+      parent.insertBefore(node, anchor)
     }
-    if (noAnchor) parent.appendChild(node)
-    else parent.insertBefore(node, anchor)
+    startMarker = marker
   })
 }
 
@@ -2331,23 +2626,58 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
   }
   let currentFirst = null
   let currentLast  = null
+  let contentNode  = null   // owner for the effects inside the mounted branch
+
+  const _disposeContent = () => {
+    if (!contentNode) return
+    _disposeNode(contentNode, true)
+    contentNode = null
+  }
+
+  // Build a branch under its own owner, tearing down the previous branch's
+  // owner first.
+  //
+  // {:then} and {:catch} content is created inside promise callbacks, where the
+  // module-global _owner is whatever happens to be running at microtask time —
+  // normally null, occasionally an unrelated component mid-setup. Effects
+  // created there were parented to nothing, so no disposal path could ever
+  // reach them: they survived the component that created them and kept
+  // responding to signal writes for the life of the page.
+  const _mount = (outerOwner, factory, ...args) => {
+    _disposeContent()
+    if (!factory) { _swap(null); return }
+    const node = {
+      _fn: null, _deps: new Set(), _cleanups: [], _children: [],
+      _owner: outerOwner, _disposed: false, _notify() {}, _run() {}
+    }
+    if (outerOwner) outerOwner._children.push(node)
+    contentNode = node
+    const prev = _owner
+    _owner = node
+    try { _swap(_resolve(factory, ...args)) } finally { _owner = prev }
+  }
+
   createEffect(() => {
+    // The enclosing effect node — branch owners hang off it, and are removed
+    // from its children on swap so re-runs cannot accumulate them.
+    const outerOwner = _owner
     const promise = getPromise()
     if (!promise?.then) {
-      _swap(_resolve(thenBlock, promise))
+      _mount(outerOwner, thenBlock, promise)
       return
     }
-    _swap(_resolve(pendingBlock))
+    _mount(outerOwner, pendingBlock)
     let active = true
     onCleanup(() => {
       active = false
+      _disposeContent()
     })
     promise.then(
       (value) => {
-        if (active) _swap(_resolve(thenBlock, value))
+        if (active) _mount(outerOwner, thenBlock, value)
       },
       (err) => {
-        if (active) _swap(_resolve(catchBlock, err))
+        if (active) _mount(outerOwner, catchBlock, err)
       }
     )
   })
@@ -2644,14 +2974,105 @@ export function orderedGroup(entries) {
   initialRun = false
 }
 
-const _ROOT_PATH = '__root__'
+// ─── Watch trie ───────────────────────────────────────────────────────────────
+//
+// A watch declared at path P covers P and everything beneath it:
+//
+//   $: page                     → the whole object opts into deep reactivity
+//   $: page.user.preferences    → that subtree only
+//   $: page.user.name           → unaffected by writes under .preferences
+//
+// The declared paths are stored as a trie of key segments rather than as
+// dot-joined strings. Strings looked simpler but could not express the rule
+// correctly:
+//
+//   * A key containing a dot was indistinguishable from a path. Writing
+//     `obj['a.real'] = 1` produced the path "a.real", whose textual parent is
+//     "a" — so it woke a watcher on `obj.a`, an unrelated property. i18n
+//     catalogs, API payloads and CSS-ish maps all hit this.
+//   * Resolving a read to its covering watch meant slicing the string once per
+//     level, inside a get trap that already runs once per level — quadratic in
+//     nesting depth.
+//
+// Segments fix both by construction: a key is one segment whatever it contains,
+// ancestry is a parent pointer, and `cover` is precomputed so a read resolves in
+// constant time.
+//
+// Each node holds:
+//   sig      the watch declared exactly here, or null
+//   cover    the nearest watch at or above here — what a read subscribes to
+//   children Map<segment, node>
+//   parent   for the ancestor walk on write
+function _watchNode(parent) {
+  return { sig: null, cover: parent ? parent.cover : null, children: new Map(), parent }
+}
+
+function _watchChild(node, key) {
+  return node ? node.children.get(key) ?? null : null
+}
+
+// Descending into a property nobody declared a watch for still has to remember
+// where it is: a write down there must notify the ancestors that cover it. The
+// trie is not grown to record it — every read would allocate a node — so the
+// position is an off-trie marker that carries the ancestor's cover and points
+// back at it. All unwatched siblings resolve identically, so one marker per
+// parent is enough, and descending further reuses it rather than chaining.
+const _NO_CHILDREN = new Map()
+function _watchDescend(node, key) {
+  const child = _watchChild(node, key)
+  if (child) return child
+  if (!node || node.children === _NO_CHILDREN) return node
+  return node._off ??
+    (node._off = { sig: null, cover: node.cover, children: _NO_CHILDREN, parent: node })
+}
+
+function _watchEnsure(root, segments) {
+  let n = root
+  for (const seg of segments) {
+    let c = n.children.get(seg)
+    if (!c) { c = _watchNode(n); n.children.set(seg, c) }
+    n = c
+  }
+  return n
+}
+
+// Declaring a watch changes what everything beneath it resolves to, so `cover`
+// is recomputed for the affected subtree. Only nodes without their own `sig`
+// inherit — a finer watch already covering itself keeps winning. Registration
+// happens during component init; reads happen on every render, which is why the
+// cost lives here rather than in the get trap.
+function _watchRefreshCover(node) {
+  node.cover = node.sig ?? (node.parent ? node.parent.cover : null)
+  if (node._off) node._off.cover = node.cover
+  for (const child of node.children.values()) _watchRefreshCover(child)
+}
+
+// A read of node[key] subscribes to the nearest watch covering it: the child's
+// own cover when that segment is declared, otherwise the container's.
+function _watchSubscribe(node, key) {
+  const child = _watchChild(node, key)
+  const sig = child ? child.cover : node && node.cover
+  if (sig) sig.read()
+}
+
+// A write at node[key] notifies every watch that covers it — the exact segment
+// if declared, then each ancestor up to the root. Firing only the immediate
+// parent, as the string version did, meant `$: a` saw `a.e` but not `a.b.c`: a
+// subtree watch that worked at depth one and silently stopped at depth two.
+function _watchFire(node, key) {
+  let n = _watchChild(node, key) || node
+  while (n) {
+    if (n.sig) n.sig.fire()
+    n = n.parent
+  }
+}
 
 // Two-level registry: WeakMap<rootObj, Map<path, Proxy>>
 // Keyed by (rootObj, path) to prevent cross-component contamination.
-const _nestedProxyCache = new WeakMap() // rootObj → Map<childPath, Proxy>
+const _nestedProxyCache = new WeakMap() // rootObj → Map<childPath, { target, node, proxy }>
 const _rootProxyCache   = new WeakMap() // rootObj → rootProxy
 const _proxyToRoot      = new WeakMap() // proxy → rootObj (reverse, for unproxy)
-const _signalRegistry   = new WeakMap() // rootObj → Map<path, [read, write]>
+const _signalRegistry   = new WeakMap() // rootObj → root watch node
 
 const _ARRAY_MUTATORS = new Set([
   'push',
@@ -2665,94 +3086,233 @@ const _ARRAY_MUTATORS = new Set([
   'copyWithin'
 ])
 
-function _getNestedProxy(rootObj, path, target) {
+function _getNestedProxy(rootObj, path, target, node) {
   if (!_nestedProxyCache.has(rootObj)) _nestedProxyCache.set(rootObj, new Map())
   const cache = _nestedProxyCache.get(rootObj)
-  if (cache.has(path)) return cache.get(path)
-  const proxy = _buildProxy(target, rootObj, path)
-  cache.set(path, proxy)
+
+  // Keyed by path AND the object that path currently holds. Caching on path
+  // alone meant that replacing an object-valued property left the old child
+  // proxy in place forever:
+  //
+  //   cart.items = ['c']
+  //   cart.items        // → ['c']        (raw object, correct)
+  //   proxy.items       // → ['a','b']    (stale child proxy)
+  //
+  // so a template reading `{cart.items}` rendered the previous value after any
+  // reassignment. Primitives were unaffected, which made it look intermittent.
+  // Comparing the cached target self-heals however the value changed, including
+  // writes that bypassed the proxy, and covers descendants too — their targets
+  // differ as soon as the parent is replaced.
+  // `node` is part of the identity too: the same object reachable at two paths
+  // needs a proxy per path, because each carries a different watch node.
+  const hit = cache.get(path)
+  if (hit && hit.target === target && hit.node === node) return hit.proxy
+
+  const proxy = _buildProxy(target, rootObj, node, path)
+  cache.set(path, { target, node, proxy })
   return proxy
 }
 
-function _buildProxy(obj, rootObj, pathPrefix) {
+// proxy → the raw object it wraps. Used to strip proxies back out on write; the
+// existing _proxyToRoot only covers root proxies, not nested ones.
+const _proxyTarget = new WeakMap()
+
+// Objects that carry internal slots break when their methods are invoked with
+// `this` bound to a Proxy — `p.when.getTime()` threw "this is not a Date
+// object", `p.tags.add(x)` threw "incompatible receiver". Wrapping them bought
+// nothing anyway: their contents live in slots the get/set traps never observe,
+// so they could never have been reactive. Hand them through untouched, where
+// they work normally and are simply inert state.
+//
+// A class instance with private fields has the same problem and is NOT excluded
+// here — excluding it would silently drop reactivity for ordinary classes, which
+// do work. Private-field classes remain unsupported inside watched state.
+function _isOpaque(v) {
+  const c = v.constructor
+  if (c === Object || c === Array || c === undefined) return false // fast path
+  return (
+    v instanceof Date || v instanceof Map || v instanceof Set ||
+    v instanceof RegExp || v instanceof Promise ||
+    v instanceof WeakMap || v instanceof WeakSet || v instanceof Error ||
+    v instanceof ArrayBuffer || ArrayBuffer.isView(v)
+  )
+}
+
+// True for a plain object or array — something that cannot have private fields,
+// so its accessors are safe to invoke with the proxy as `this`. Computed once
+// per proxy rather than per read.
+function _isPlainContainer(o) {
+  if (Array.isArray(o)) return true
+  const p = Object.getPrototypeOf(o)
+  return p === Object.prototype || p === null
+}
+
+// Strip watch proxies out of a value on its way into raw state.
+//
+// Reading an object-valued property hands back a proxy, so the ordinary
+// patterns write proxies into the user's plain object:
+//
+//   state.selected = state.items[0]        // stores a Proxy
+//   state.items    = state.items.filter(…) // stores an array OF proxies
+//
+// after which `items.indexOf(selected)` is -1, structuredClone throws, and the
+// store the producing module is supposed to own is no longer plain JavaScript.
+// Fresh containers built by user code are cleaned too, since filter/map/spread
+// carry proxies out element-wise. Nothing is allocated unless something
+// actually needs replacing.
+function _unwrapValue(v, seen) {
+  if (v === null || typeof v !== 'object') return v
+  const raw = _proxyTarget.get(v)
+  if (raw !== undefined) return raw // a proxy's target is already clean
+  if (_isOpaque(v)) return v
+  if (seen) { if (seen.has(v)) return v } else seen = new Set()
+  seen.add(v)
+  if (Array.isArray(v)) {
+    let out = null
+    for (let i = 0; i < v.length; i++) {
+      const c = _unwrapValue(v[i], seen)
+      if (c !== v[i]) { if (!out) out = v.slice(); out[i] = c }
+    }
+    return out ?? v
+  }
+  if (!_isPlainContainer(v)) return v
+  let out = null
+  for (const k of Object.keys(v)) {
+    const c = _unwrapValue(v[k], seen)
+    if (c !== v[k]) { if (!out) out = { ...v }; out[k] = c }
+  }
+  return out ?? v
+}
+
+function _buildProxy(obj, rootObj, node, pathPrefix) {
   if (typeof obj !== 'object' || obj === null) return obj
 
-  return new Proxy(obj, {
-    get(target, key) {
-      const value = target[key]
+  // Accessors must run with the proxy as `this` so their own reads subscribe —
+  // `get full() { return this.first + ' ' + this.last }` was invoked against the
+  // raw object, so nothing inside it was ever tracked and the value froze.
+  // Restricted to plain containers: a class instance reached through Reflect
+  // with a proxy receiver cannot touch its private fields.
+  const viaReceiver = _isPlainContainer(obj)
+
+  const proxy = new Proxy(obj, {
+    get(target, key, receiver) {
+      // Symbols are protocol lookups (Symbol.iterator, Symbol.toPrimitive…),
+      // never watchable state — they must not create subscriptions or paths.
+      if (typeof key === 'symbol') return target[key]
+      const value = viaReceiver ? Reflect.get(target, key, receiver) : target[key]
       if (Array.isArray(target) && _ARRAY_MUTATORS.has(key) && typeof value === 'function') {
         return (...args) => {
-          const result = value.apply(target, args)
-          _fireSignal(rootObj, pathPrefix || _ROOT_PATH)
+          const result = target[key].apply(target, args)
+          // A mutator changes the container itself, so fire from this node up.
+          let n = node
+          while (n) { if (n.sig) n.sig.fire(); n = n.parent }
           return result
         }
       }
-      // Subscribe the current reactive effect to this property's watch signal.
-      // This wires template bindings (e.g. bindText(() => $$proxy_store.count))
-      // to re-run when the proxied property is mutated.
-      if (_listener) {
-        const accessPath = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
-        const sigs = _signalRegistry.get(rootObj)
-        if (sigs) {
-          // Subscribe to the exact property path if registered ($: obj.prop)
-          const s = sigs.get(accessPath)
-          if (s) {
-            s[0]()
-          } else {
-            // Fall back to the root sentinel signal ($: obj — whole-object watch).
-            // Without this fallback, reading obj.prop inside a template effect would
-            // not subscribe to the root signal, so whole-object mutations would never
-            // trigger re-renders even though $: obj is declared.
-            const root = sigs.get(_ROOT_PATH)
-            if (root) root[0]()
-          }
-        }
-      }
-      if (typeof value === 'object' && value !== null) {
-        const childPath = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
-        return _getNestedProxy(rootObj, childPath, value)
+      // Subscribe the current reactive effect to the watch covering this
+      // property. This wires template bindings (bindText(() => proxy.count))
+      // to re-run when a covering watch fires.
+      if (_listener) _watchSubscribe(node, key)
+      if (typeof value === 'object' && value !== null && !_isOpaque(value)) {
+        const childPath = pathPrefix ? `${pathPrefix}.${key}` : key
+        return _getNestedProxy(rootObj, childPath, value, _watchDescend(node, key))
       }
       return value
     },
     set(target, key, value) {
-      target[key] = value
-      const path = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
-      _fireSignal(rootObj, path)
-      // Also fire the parent path so $: user.prefs watchers see user.prefs.theme changes.
-      if (pathPrefix) _fireSignal(rootObj, pathPrefix)
-      // Fire root sentinel so $: user (whole-object watch) always triggers.
-      _fireSignal(rootObj, _ROOT_PATH)
+      target[key] = _unwrapValue(value)
+      if (typeof key !== 'symbol') _watchFire(node, key)
+      return true
+    },
+    // Without this trap `delete obj.k` reached the raw object directly and fired
+    // nothing, so a whole-object watch — which is supposed to catch any change —
+    // kept rendering the deleted value.
+    deleteProperty(target, key) {
+      const had = Object.prototype.hasOwnProperty.call(target, key)
+      delete target[key]
+      if (had && typeof key !== 'symbol') _watchFire(node, key)
       return true
     }
   })
-}
-
-function _fireSignal(rootObj, path) {
-  const signals = _signalRegistry.get(rootObj)
-  if (!signals) return
-  const sig = signals.get(path)
-  if (sig) sig[1]((v) => v) // trigger always-notify signal
+  _proxyTarget.set(proxy, obj)
+  return proxy
 }
 
 export function watchProxy(obj) {
-  if (!_isBrowser) return obj // Rule 19: path watches are no-ops on server
+  if (!_isClient) return obj // Rule 19: path watches are no-ops on server
   if (typeof obj !== 'object' || obj === null) return obj
+
+  // Already a watch proxy — hand it straight back.
+  //
+  // Wrapping a proxy again used to build a second layer, and the result failed
+  // silently: watchPath would key its signal by the OUTER proxy while the inner
+  // set trap fires signals keyed by the raw object, so a write never reached a
+  // watcher and nothing re-rendered. That happens whenever a module exports
+  // `watchProxy(state)` rather than the plain object — an easy and reasonable
+  // thing to write. Idempotent is the only safe behaviour here.
+  if (_proxyToRoot.has(obj)) return obj
+
   if (_rootProxyCache.has(obj)) return _rootProxyCache.get(obj)
-  if (!_signalRegistry.has(obj)) _signalRegistry.set(obj, new Map())
-  const proxy = _buildProxy(obj, obj, '')
+  if (!_signalRegistry.has(obj)) _signalRegistry.set(obj, _watchNode(null))
+  const proxy = _buildProxy(obj, obj, _signalRegistry.get(obj), '')
   _rootProxyCache.set(obj, proxy)
   _proxyToRoot.set(proxy, obj)   // reverse map for unproxy
   return proxy
 }
 
+// A watch whose final segment is a getter can never fire: no write ever targets
+// that path, because the value is derived. Since getters now run against the
+// proxy, watching what the getter *reads* works — so the fix is always to hand.
+// Silently inert reactivity is the failure mode this whole design is trying to
+// avoid, so say so rather than let it look like a runtime bug.
+const _warnedAccessors = new WeakSet()
+function _warnAccessorWatch(target, path) {
+  if (!path || typeof console === 'undefined' || !console.warn) return
+  const segs = path.split('.')
+  let o = target
+  for (let i = 0; i < segs.length - 1; i++) {
+    o = o?.[segs[i]]
+    if (o === null || typeof o !== 'object') return
+  }
+  if (o === null || typeof o !== 'object') return
+  const last = segs[segs.length - 1]
+  for (let proto = o; proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
+    const d = Object.getOwnPropertyDescriptor(proto, last)
+    if (!d) continue
+    // A setter means the path really is written, so the watch is meaningful.
+    if (d.get && !d.set && !_warnedAccessors.has(d.get)) {
+      _warnedAccessors.add(d.get)
+      console.warn(
+        `[Mesa] $: ${path} watches a getter, so it will never fire — nothing ever ` +
+        `writes that path. Watch what the getter reads instead (e.g. the properties ` +
+        `it derives from), or watch the whole object.`
+      )
+    }
+    return
+  }
+}
+
 export function watchPath(obj, path) {
-  if (!_isBrowser) return [() => undefined, () => {}] // Rule 19: no-op on server
-  // Normalize whole-object watch to the root sentinel.
-  const key = path || _ROOT_PATH
-  if (!_signalRegistry.has(obj)) _signalRegistry.set(obj, new Map())
-  const signals = _signalRegistry.get(obj)
-  if (!signals.has(key)) signals.set(key, createSignal(undefined, { equals: () => false }))
-  return signals.get(key)
+  if (!_isClient) return [() => undefined, () => {}] // Rule 19: no-op on server
+
+  // Normalize a proxy to its root. The signal registry is keyed by the raw
+  // object because that is what the proxy's set trap fires against — registering
+  // against a proxy instead would create a signal nothing ever notifies.
+  const target = _proxyToRoot.get(obj) ?? obj
+
+  _warnAccessorWatch(target, path)
+  if (!_signalRegistry.has(target)) _signalRegistry.set(target, _watchNode(null))
+  // An empty path is the whole-object watch, which is simply the root node —
+  // no sentinel key needed once paths are segments.
+  const node = _watchEnsure(_signalRegistry.get(target), path ? path.split('.') : [])
+  if (!node.sig) {
+    // equals:()=>false makes every write notify, so the value carried is
+    // irrelevant — these signals are pure edge triggers.
+    const [read, write] = createSignal(undefined, { equals: () => false })
+    node.sig = { read, fire: () => write(undefined), tuple: [read, write] }
+    _watchRefreshCover(node)
+  }
+  return node.sig.tuple
 }
 
 /**
@@ -2849,72 +3409,81 @@ function _defaultInspect(label, values, prev) {
 }
 
 export function localWatchProxy(obj, signalMap) {
-  if (!_isBrowser) return obj
+  if (!_isClient) return obj // Rule 19: path watches are no-ops on server
   if (typeof obj !== 'object' || obj === null) return obj
-  return _buildLocalProxy(obj, signalMap, '')
+  return _buildLocalProxy(obj, signalMap, _localTrie(signalMap))
 }
 
-function _buildLocalProxy(obj, signalMap, pathPrefix) {
+// The compiler hands local watches over as a flat { dotPath: [read, fire] } map
+// with '' for the whole object. Compiling it into the same trie the imported
+// path watches use means one set of subtree rules for both, instead of two
+// engines with the same intent and different edge cases. The old prefix-match
+// version had the depth bug in its own shape: _fireLocalSignals returned as soon
+// as it found an exact match, so declaring `$: a.b.c` alongside `$: a` stopped
+// the write at a.b.c from ever reaching `a`.
+const _localTrieCache = new WeakMap() // signalMap → root watch node
+
+function _callLocalRead(r) {
+  // Either a raw getter (old style) or a track() wrapper (new style).
+  if (typeof r === 'function') r()
+  else if (r?._read) r._read()
+  else if (r?._isMemo) r._memo()
+}
+
+function _localTrie(signalMap) {
+  let root = _localTrieCache.get(signalMap)
+  if (root) return root
+  root = _watchNode(null)
+  for (const [path, fns] of Object.entries(signalMap)) {
+    const node = _watchEnsure(root, path ? path.split('.') : [])
+    node.sig = { read: () => _callLocalRead(fns[0]), fire: fns[1] }
+  }
+  _watchRefreshCover(root)
+  _localTrieCache.set(signalMap, root)
+  return root
+}
+
+function _buildLocalProxy(obj, signalMap, node) {
   if (typeof obj !== 'object' || obj === null) return obj
 
-  return new Proxy(obj, {
-    get(target, key) {
-      if (typeof key === 'symbol') return target[key]
-      const value = target[key]
+  // Same reasoning as _buildProxy — see the comments there.
+  const viaReceiver = _isPlainContainer(obj)
 
-      // Array mutator interception
+  const proxy = new Proxy(obj, {
+    get(target, key, receiver) {
+      if (typeof key === 'symbol') return target[key]
+      const value = viaReceiver ? Reflect.get(target, key, receiver) : target[key]
+
       if (Array.isArray(target) && _ARRAY_MUTATORS.has(key) && typeof value === 'function') {
         return (...args) => {
-          const result = value.apply(target, args)
-          _fireLocalSignals(signalMap, pathPrefix || '')
+          const result = target[key].apply(target, args)
+          let n = node
+          while (n) { if (n.sig) n.sig.fire(); n = n.parent }
           return result
         }
       }
 
-      // Subscribe current reactive effect to this path's signal
-      if (_listener) {
-        const accessPath = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
-        const callRead = (fns) => {
-          const r = fns[0]
-          // Support both raw function (old style) and track() object (new style)
-          if (typeof r === 'function') r()
-          else if (r?._read) r._read()
-          else if (r?._isMemo) r._memo()
-        }
-        // Subscribe to exact match
-        if (signalMap[accessPath]) callRead(signalMap[accessPath])
-        // Subscribe to any registered ancestor path
-        for (const [watchPath, fns] of Object.entries(signalMap)) {
-          if (watchPath !== '' && accessPath.startsWith(watchPath + '.')) callRead(fns)
-        }
-        // Subscribe to whole-object watch
-        if (signalMap['']) callRead(signalMap[''])
-      }
+      if (_listener) _watchSubscribe(node, key)
 
-      if (typeof value === 'object' && value !== null) {
-        const childPath = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
-        return _buildLocalProxy(value, signalMap, childPath)
+      if (typeof value === 'object' && value !== null && !_isOpaque(value)) {
+        return _buildLocalProxy(value, signalMap, _watchDescend(node, key))
       }
       return value
     },
     set(target, key, value) {
-      target[key] = value
-      const path = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)
-      _fireLocalSignals(signalMap, path)
-      if (pathPrefix) _fireLocalSignals(signalMap, pathPrefix)
-      _fireLocalSignals(signalMap, '') // always fire root
+      target[key] = _unwrapValue(value)
+      if (typeof key !== 'symbol') _watchFire(node, key)
+      return true
+    },
+    deleteProperty(target, key) {
+      const had = Object.prototype.hasOwnProperty.call(target, key)
+      delete target[key]
+      if (had && typeof key !== 'symbol') _watchFire(node, key)
       return true
     }
   })
-}
-
-function _fireLocalSignals(signalMap, path) {
-  // Fire exact match
-  if (signalMap[path]) { signalMap[path][1](); return }
-  // Fire any watch that is a prefix of the mutated path
-  for (const [watchPath, fns] of Object.entries(signalMap)) {
-    if (watchPath !== '' && path.startsWith(watchPath + '.')) fns[1]()
-  }
+  _proxyTarget.set(proxy, obj)
+  return proxy
 }
 
 // ─── ASYNC STATE ──────────────────────────────────────────────────────────────
@@ -3259,20 +3828,25 @@ export function pushProps(anchor, newProps) {
 // Remove the old mountComponent helper — no longer needed
 
 
+/**
+ * Store a value in a signal. The value is stored as-is — including functions.
+ *
+ * This used to decide value-vs-derivation at runtime from `value.length === 0`,
+ * on the reasoning that the compiler always emits derivations as `() => expr`
+ * while snippets are `(__anchor, …) => {}`. But a zero-argument function is
+ * exactly what a user writes for a callback:
+ *
+ *   <Child ondone={() => n++} />        // arrow, length 0
+ *   <Child handler={bump} />            // named fn, length 0
+ *
+ * and the child's `export let ondone` compiles to track($option.props.ondone).
+ * Both were therefore memoised and *invoked during setup*, so `on:click={ondone}`
+ * bound the callback's return value instead of the callback. `let f = () => …`
+ * had the same problem. Arity cannot distinguish a derivation the compiler
+ * generated from a callback the user passed — both are `() => …` — so the
+ * compiler now says which it means by calling trackDerived() instead.
+ */
 export function track(value, _getInterceptor, _setInterceptor, _block, _alwaysNotify) {
-  // Only treat the value as a reactive derivation if it is a zero-argument function.
-  // The Mesa compiler always emits derivations as `() => expr` (length === 0).
-  // Snippet functions are always `(__anchor, ...args) => {}` (length >= 1).
-  // Callback / plain function values passed as props must be stored as signal values,
-  // not memoized — calling them without their required arguments would throw.
-  if (typeof value === 'function' && value.length === 0) {
-    const memo = createMemo(value)
-    return {
-      _isMemo: true,
-      _memo: memo,
-      get __v() { return untrack(memo) },
-    }
-  }
   const [read, write] = createSignal(value, _alwaysNotify ? { equals: () => false } : undefined)
   // _directWrite is now identical to write since createSignal no longer has an
   // updater-function check. Kept for API compatibility with pushProps.
@@ -3283,6 +3857,20 @@ export function track(value, _getInterceptor, _setInterceptor, _block, _alwaysNo
     _write: write,
     _directWrite,
     get __v() { return untrack(read) },
+  }
+}
+
+/**
+ * Store a derivation — a compiler-generated `() => expr` — as a memo.
+ * The counterpart to track(): the caller states the intent rather than the
+ * runtime guessing it from the shape of the value.
+ */
+export function trackDerived(fn, _getInterceptor, _setInterceptor, _block) {
+  const memo = createMemo(fn)
+  return {
+    _isMemo: true,
+    _memo: memo,
+    get __v() { return untrack(memo) },
   }
 }
 

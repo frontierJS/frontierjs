@@ -5,25 +5,42 @@
 // ============================================================
 
 import { BaseTransport } from './base.ts'
+import { CredentialError } from '../types.ts'
 import type {
   ConduitRequest,
   ConduitResult,
   ConduitChunk,
+  CredentialResolver,
   TargetDescriptor
 } from '../types.ts'
 
-const DEFAULT_TIMEOUT_MS  = 10_000
-const DEFAULT_RETRY_LIMIT = 3
-const RETRY_BACKOFF_MS    = [0, 500, 1500]   // per attempt
+const DEFAULT_TIMEOUT_MS   = 10_000
+const DEFAULT_RETRY_LIMIT  = 3
+const RETRY_BACKOFF_MS     = [0, 500, 1500]   // per attempt
+const DEFAULT_MAX_BYTES    = 10 * 1024 * 1024 // 10 MiB
+
+// Thrown by readBody() when a response exceeds the cap. Local to this
+// module — it is translated to an invalid_request result before returning.
+class ResponseTooLargeError extends Error {
+  constructor(limit: number) {
+    super(`Response exceeded ${limit} bytes and was discarded`)
+    this.name = 'ResponseTooLargeError'
+  }
+}
 
 export class HttpTransport extends BaseTransport {
   readonly protocol = 'http' as const
 
   constructor(
-    descriptor: TargetDescriptor,
-    private opts: { timeout_ms?: number; retry_limit?: number } = {}
+    descriptor:  TargetDescriptor,
+    credentials: CredentialResolver,
+    private opts: {
+      timeout_ms?:         number
+      retry_limit?:        number
+      max_response_bytes?: number
+    } = {}
   ) {
-    super(descriptor)
+    super(descriptor, credentials)
   }
 
   async send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
@@ -56,41 +73,52 @@ export class HttpTransport extends BaseTransport {
 
   private async attempt<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
     const elapsed  = this.timer()
-    const url      = this.buildUrl(req)
     const timeout  = req.timeout_ms ?? this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS
-
-    // Serialise body once so the same bytes go to both the HMAC
-    // signer and the fetch body — they must match exactly.
-    // GET requests carry no body (params go in the URL), so rawBody
-    // is undefined for GETs — buildAuthHeaders will skip HMAC signing.
-    const isGet   = this.resolveMethod(req.method) === 'GET'
-    const rawBody = (!isGet && req.body !== undefined)
-      ? JSON.stringify(req.body)
-      : undefined
+    const maxBytes = this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES
 
     const controller = new AbortController()
     const timer      = setTimeout(() => controller.abort(), timeout)
 
     try {
+      const url = this.buildUrl(req)
+
+      // Serialise body once so the same bytes go to both the HMAC
+      // signer and the fetch body — they must match exactly.
+      // GET requests carry no body (params go in the URL), so rawBody
+      // is undefined for GETs — buildAuthHeaders will skip HMAC signing.
+      //
+      // Inside the try: JSON.stringify throws on cyclic structures and on
+      // BigInt, and send() must never throw at the caller (§2.4).
+      const isGet   = this.resolveMethod(req.method) === 'GET'
+      const rawBody = (!isGet && req.body !== undefined)
+        ? serialise(req.body)
+        : undefined
+
       const res = await fetch(url, {
         method:  this.resolveMethod(req.method),
         headers: {
           'Content-Type': 'application/json',
           'Accept':       'application/json',
+          // Caller headers first, auth headers last: auth always wins.
+          // Reversing this lets any path where user data reaches
+          // req.headers substitute or strip the target's credential.
+          ...req.headers,
           ...await this.buildAuthHeaders(rawBody),
-          ...req.headers
         },
         body:   rawBody,
         signal: controller.signal
       })
 
-      clearTimeout(timer)
+      // The timeout deliberately stays armed through the body read below.
+      // Clearing it here — as this did previously — leaves the body read
+      // entirely untimed, so a server that sends headers and then dribbles
+      // a body forever hangs the request indefinitely (§1.5).
 
       const duration = elapsed()
 
       if (res.status === 401 || res.status === 403) {
         return this.fail('auth_failed', `Auth failed: ${res.status}`, {
-          raw: await res.text(),
+          raw: await readBody(res, maxBytes),
           retryable: false
         })
       }
@@ -105,22 +133,35 @@ export class HttpTransport extends BaseTransport {
       if (res.status >= 500) {
         return this.fail('server_error', `Server error: ${res.status}`, {
           retryable: true,
-          raw: await res.text()
+          raw: await readBody(res, maxBytes)
         })
       }
 
       if (!res.ok) {
         return this.fail('server_error', `HTTP ${res.status}`, {
           retryable: false,
-          raw: await res.text()
+          raw: await readBody(res, maxBytes)
         })
       }
 
-      const data = await res.json() as T
+      const text = await readBody(res, maxBytes)
+      const data = (text === '' ? null : JSON.parse(text)) as T
       return this.ok<T>(data, res.status, duration)
 
     } catch (err) {
-      clearTimeout(timer)
+      // A target whose credential ref does not resolve fails closed and
+      // permanently — retrying will not conjure the secret.
+      if (err instanceof CredentialError) {
+        return this.fail('auth_failed', err.message, { retryable: false })
+      }
+
+      // Caller's fault, not the target's — retrying sends the same bad
+      // request, or re-buffers the same oversized response.
+      if (err instanceof SerialiseError || err instanceof ResponseTooLargeError) {
+        return this.fail('invalid_request', (err as Error).message, {
+          retryable: false
+        })
+      }
 
       if ((err as Error).name === 'AbortError') {
         return this.fail('timeout', `Request timed out after ${timeout}ms`, {
@@ -132,6 +173,9 @@ export class HttpTransport extends BaseTransport {
         retryable: true,
         raw: err
       })
+
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -139,19 +183,32 @@ export class HttpTransport extends BaseTransport {
     const base = this.descriptor.address.replace(/\/$/, '')
     const path = req.path ? `/${req.path.replace(/^\//, '')}` : ''
 
-    if (req.method.toUpperCase() === 'GET' && req.body) {
-      // Flatten body into query params. Nested objects are JSON-encoded
-      // rather than silently producing [object Object].
-      const params = new URLSearchParams()
+    // Parsed rather than concatenated: `path` may already carry a query
+    // string, and appending a second `?` silently mangles it (§3.2).
+    const url = new URL(`${base}${path}`)
+
+    // GET parameters may be supplied as `body` — kept for the documented
+    // shorthand. `query` is the explicit form and is applied after, so it
+    // wins on conflict.
+    if (this.resolveMethod(req.method) === 'GET' && req.body) {
       for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
-        if (v !== undefined && v !== null) {
-          params.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
-        }
+        if (v === undefined || v === null) continue
+        // Nested objects are JSON-encoded rather than silently
+        // producing [object Object].
+        url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
       }
-      return `${base}${path}?${params}`
     }
 
-    return `${base}${path}`
+    for (const [k, v] of Object.entries(req.query ?? {})) {
+      if (v === undefined || v === null) continue
+      url.searchParams.delete(k)
+      // append, not set — an array produces repeated keys (?tag=a&tag=b)
+      for (const item of Array.isArray(v) ? v : [v]) {
+        url.searchParams.append(k, String(item))
+      }
+    }
+
+    return url.toString()
   }
 
   // Maps a ConduitRequest method to a valid HTTP verb.
@@ -167,4 +224,62 @@ export class HttpTransport extends BaseTransport {
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// ─── Body handling ────────────────────────────────────────────
+
+class SerialiseError extends Error {
+  constructor(cause: Error) {
+    super(`Request body could not be serialised: ${cause.message}`)
+    this.name = 'SerialiseError'
+  }
+}
+
+function serialise(body: unknown): string {
+  try {
+    return JSON.stringify(body)
+  } catch (err) {
+    throw new SerialiseError(err as Error)
+  }
+}
+
+// Reads a response body with a hard byte cap, streaming rather than
+// buffering blind. res.json()/res.text() have no size limit at all, so a
+// single oversized response from any provider can exhaust memory.
+//
+// The response's abort signal stays live here, so a stalled body read is
+// cut off by the request timeout instead of hanging forever.
+async function readBody(res: Response, limit: number): Promise<string> {
+  if (!res.body) return ''
+
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      size += value.byteLength
+      if (size > limit) {
+        await reader.cancel()
+        throw new ResponseTooLargeError(limit)
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (chunks.length === 0) return ''
+
+  const joined = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    joined.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+
+  return new TextDecoder().decode(joined)
 }

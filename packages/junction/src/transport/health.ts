@@ -124,6 +124,34 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
   ): Promise<Record<string, CheckResult>> {
     const results: Record<string, CheckResult> = {}
 
+    // Built-in: database check — only for a raw bun:sqlite handle (db.db.query).
+    // Other clients don't expose that shape; probing them here reported a
+    // healthy app as degraded. They skip the built-in and declare their own
+    // check via opts.checks instead. The shape probe itself must sit inside
+    // the try — a Litestone proxy throws on unknown property access rather
+    // than returning undefined.
+    const dbCheck = (() => {
+      try {
+        const rawDb = app.db as { db?: { query?: (s: string) => { get: () => unknown } } } | undefined
+        const query = rawDb?.db?.query
+        return typeof query === 'function' ? { query: query.bind(rawDb!.db) } : null
+      } catch { return null }
+    })()
+    if (dbCheck) {
+      const t = Date.now()
+      try {
+        // Cheapest possible round-trip — confirms the connection is live.
+        dbCheck.query('SELECT 1').get()
+        results.database = { status: 'ok', latencyMs: Date.now() - t }
+      } catch (err) {
+        results.database = {
+          status: 'fail',
+          latencyMs: Date.now() - t,
+          error: (err as Error).message,
+        }
+      }
+    }
+
     // User-supplied checks
     for (const [name, fn] of Object.entries(opts.checks ?? {})) {
       const t = Date.now()

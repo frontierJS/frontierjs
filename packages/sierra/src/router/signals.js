@@ -1,23 +1,43 @@
 /**
- * router/signals.js — minimal reactive signal store for the router
+ * router/signals.js — reactive signals for the router
  *
- * The router needs reactive signals for params, activeRoute, pendingRoute etc.
- * BUT the router module itself cannot import from @frontierjs/mesa/runtime — that would
- * create a circular dependency (Mesa compiles components that import the router).
+ * These are Mesa signals. Sierra does not implement its own reactivity.
  *
- * Instead, Sierra uses a simple pub/sub signal implementation here.
- * When used inside a Mesa component, the component's reactive system
- * will subscribe to these via the normal import mechanism.
+ * HISTORY — worth reading before changing this file.
  *
- * Mesa signals imported from sierra/router are plain JS objects with
- * a .value property and .subscribe() method — Mesa's compiler handles
- * the reactivity wiring when it sees them used in templates.
+ * This module used to contain a parallel pub/sub signal implementation,
+ * justified by a comment claiming the router could not import
+ * @frontierjs/mesa/runtime because "Mesa compiles components that import the
+ * router" and that would be circular.
  *
- * NOTE: This is the router's own signal implementation.
- * Mesa's @frontierjs/mesa/runtime signals are separate.
- * The bridge between the two happens in the Mesa Vite plugin which
- * wraps these as Mesa-compatible signals at compile time.
+ * It isn't. runtime.js has zero imports — it is a standalone module, and
+ * compiler.js is a separate entry point that only the Vite plugin loads. The
+ * compiler transforms .mesa files at build time; the runtime is what the output
+ * imports at execution time. router → runtime and component → runtime is a
+ * diamond, not a cycle.
+ *
+ * The cost of that mistaken belief was a second signal system plus a runtime
+ * bridge generated into virtual:sierra, which monkey-patched `.get` on each
+ * exported signal to point at a Mesa read function. That bridge left `.value`
+ * pointing at the old closure, so `sig.value` was a silently untracked read —
+ * an effect reading it never re-ran — while `sig.get()` tracked correctly. In
+ * templates it was worse: the compiler's accessor rewrite turned
+ * `{params.value}` into `params.get().value`, a property lookup on the params
+ * object.
+ *
+ * Using Mesa signals directly removes the bridge, the ordering hazard around
+ * when the patch had to be applied, and the `.value` trap. Reads are tracked by
+ * Mesa's own `_listener`, and writes coalesce through its microtask scheduler,
+ * so the eight signal commits at the end of a navigation produce one render
+ * rather than eight. (Measured at one both before and after this change — the
+ * bridge was not defeating the scheduler, it was just redundant.)
+ *
+ * The object shape — { get, set } — is kept because the Mesa compiler's
+ * `externalSignals` config rewrites bare identifiers to `name.get()` inside
+ * template expressions. See build/mesa-plugin.js.
  */
+
+import { createSignal, createEffect } from '@frontierjs/mesa/runtime.js'
 
 /**
  * Create a reactive signal.
@@ -27,52 +47,31 @@
  * @returns {{ get(): T, set(v: T): void, subscribe(fn: (v: T) => void): () => void }}
  */
 export function signal(initial) {
-  let value = initial
-  const subscribers = new Set()
+  const [read, write] = createSignal(initial)
 
   return {
-    get() {
-      return value
-    },
-    set(newValue) {
-      if (newValue === value) return
-      value = newValue
-      for (const fn of subscribers) {
-        fn(value)
-      }
-    },
+    /** Tracked read — registers with Mesa's reactive graph inside an effect. */
+    get: read,
+
+    /** Write. Notifies on the next microtask flush, coalesced with other writes. */
+    set: write,
+
+    /**
+     * Subscribe to changes. Calls fn immediately with the current value and
+     * returns an unsubscribe function.
+     *
+     * Retained for API compatibility; nothing inside Sierra uses it now that the
+     * virtual:sierra bridge is gone. Prefer reading the signal inside a Mesa
+     * component and letting the compiler wire the dependency.
+     */
     subscribe(fn) {
-      subscribers.add(fn)
-      fn(value)  // immediate call with current value
-      return () => subscribers.delete(fn)
-    },
-    // Allow direct read via .value for convenience
-    get value() {
-      return value
+      return createEffect(() => fn(read()))
     },
   }
 }
 
-/**
- * Create a derived signal — recomputes whenever any source signal changes.
- *
- * @template T
- * @param {Array<ReturnType<typeof signal>>} sources
- * @param {(...values: any[]) => T} compute
- */
-export function derived(sources, compute) {
-  const getValues = () => sources.map(s => s.get())
-  const result = signal(compute(...getValues()))
-
-  for (const source of sources) {
-    source.subscribe(() => {
-      result.set(compute(...getValues()))
-    })
-  }
-
-  return {
-    get: result.get.bind(result),
-    subscribe: result.subscribe.bind(result),
-    get value() { return result.get() },
-  }
-}
+// NOTE: `derived()` was removed. It was exported, imported once by
+// router/index.js, and never called. Its implementation also had two defects
+// worth not resurrecting: it recomputed k+1 times at creation for k sources
+// (each `subscribe` fires immediately), and it had no unsubscribe path.
+// Use Mesa's `createMemo` instead — lazy, cached, and owner-scoped.

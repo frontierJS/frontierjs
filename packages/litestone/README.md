@@ -185,6 +185,8 @@ The comparison is organized around what you can **declare** in the schema and wh
 bun add @frontierjs/litestone
 ```
 
+The CLI also compiles to a dependency-free executable for machines without Bun — see [Standalone binary](#standalone-binary).
+
 ---
 
 ## Quick start
@@ -210,21 +212,21 @@ function slug(text: String): String {
   @@expr("lower(trim(replace({text}, ' ', '-')))")
 }
 
-model accounts {
+model Account {
   id        Int  @id
   name      String
-  slug      String     @slug(name)         // schema function → STORED generated column
+  slug      String   @slug(name)         // schema function → STORED generated column
   plan      Plan     @default(starter)
   meta      Json?
   createdAt DateTime @default(now())
 
   @@index([slug])
-  @@gate("2.5.5.6")                      // access control: R=VISITOR, C/U=ADMIN, D=OWNER
+  @@gate(read: READER, write: ADMINISTRATOR, delete: OWNER)
 }
 
-model users {
+model User {
   id          Int   @id
-  account     accounts  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId   Int
   email       String      @unique @email @lower
   name        String?     @trim
@@ -308,7 +310,8 @@ model users {
 @@fts([field1, field2])          FTS5 full-text search virtual table
 @@index([col1, col2])            composite index
 @@unique([col1, col2])           composite unique constraint
-@@gate("R.C.U.D")                level-based access control (see GatePlugin)
+@@gate(read: L, create: L, update: L, delete: L)   level-based access control — `write` = shorthand
+@@gate("R.C.U.D")                compact digit form of the same gate
 @@allow('read'|'create'|'update'|'delete'|'all', expr)  row-level policy
 @@allow('read'|..., expr, "custom error message")
 @@deny('read'|..., expr)         row-level deny (always wins over allow)
@@ -333,7 +336,7 @@ database analytics { path env("ANALYTICS_DB", "./analytics.db") }
 database logs      { path "./logs/"; driver jsonl; retention 30d }
 database audit     { path "./audit/"; driver logger; retention 90d }
 
-model pageViews {
+model PageView {
   id        Int  @id
   path      String
   duration  Int
@@ -341,7 +344,7 @@ model pageViews {
   @@db(analytics)
 }
 
-model apiRequests {
+model ApiRequest {
   method  String
   path    String
   status  Int
@@ -353,9 +356,9 @@ model apiRequests {
 // Single createClient — routes automatically
 const db = await createClient({ path: './schema.lite' })
 
-await db.pageViews.create({ data: { path: '/home', duration: 142 } })  // → analytics.db
-await db.apiRequests.create({ data: { method: 'GET', path: '/', status: 200 } })  // → logs/
-await db.auditLogs.findMany({ where: { model: 'users' } })  // → audit/ (auto-created by logger driver)
+await db.pageView.create({ data: { path: '/home', duration: 142 } })  // → analytics.db
+await db.apiRequest.create({ data: { method: 'GET', path: '/', status: 200 } })  // → logs/
+await db.auditLogs.findMany({ where: { model: 'User' } })  // → audit/ (auto-created by logger driver)
 ```
 
 **Drivers:**
@@ -1481,6 +1484,75 @@ Global flags:
   --migrations=<dir>    migrations directory
   --port=<n>            studio port (default 5001)
 ```
+
+---
+
+## Standalone binary
+
+The CLI compiles to a single executable with `bun build --compile`. The Bun runtime is embedded and SQLite is built into it, so the result has no external dependencies — no Bun, no `node_modules`, no Litestone source on the target machine. Useful for CI images, ops boxes, and handing a migration tool to someone who doesn't run Bun.
+
+```bash
+bun run build:binary                          # host platform → dist/litestone
+bun run build:binary:all                      # every target, clean first
+bun scripts/build-binary.js --target=bun-darwin-arm64
+bun scripts/build-binary.js --no-bytecode     # smaller, slower to start
+```
+
+Targets: `bun-linux-x64`, `bun-linux-arm64`, `bun-darwin-x64`, `bun-darwin-arm64`, `bun-windows-x64`.
+
+```bash
+./dist/litestone db push --yes
+./dist/litestone migrate apply
+./dist/litestone studio            # full UI, HTML embedded in the binary
+```
+
+Roughly 100 MB on Linux x64, ~63 MB for darwin-arm64 — almost entirely the Bun runtime. Bytecode compilation is on by default: 4.5 MB larger (95.3 → 99.8 MB), and startup drops from ~54 ms to ~34 ms (10-run average, Bun 1.3.11, Linux x64).
+
+**What still reads from disk.** Your `litestone.config.js`, `schema.lite`, migration files, and user seeds in `./seeds/` are loaded from the working directory as usual — a JS seed gets the full ORM client exactly as it does from source. Only files that ship *inside* the package (Studio's HTML, built-in seeds) are embedded.
+
+**One command is unavailable.** `litestone repl` drives a separate `bun repl` process and hands it a file that imports Litestone by path, so it needs the package on disk. The binary detects this and tells you to use `bunx @frontierjs/litestone repl` instead.
+
+**If you're modifying the CLI**, two rules keep it compilable — both fail loudly at build time rather than silently at runtime:
+
+- Import sibling modules with literal relative specifiers (`import('../core/client.js')`), never computed ones (`import(import.meta.dir + '/../core/client.js')`). Computed specifiers are invisible to the bundler; the binary builds fine and then dies with `Cannot find module '/$bunfs/root/...'`.
+- Load bundled assets with `import X from './file' with { type: 'text' }`, not `readFileSync(import.meta.dir + ...)`. There is no such directory inside a binary.
+
+Note that `--bytecode` rewrites `import.meta.dir` to the *build machine's* source path rather than `/$bunfs/root`, so never detect "am I compiled?" by inspecting it — the CLI uses a `--define`-stamped `LITESTONE_COMPILED` flag instead.
+
+---
+
+## Single-file library build
+
+Separately from the CLI binary, the *library* bundles to one file. Because the package has no third-party dependencies, the only externals are runtime built-ins (`bun:sqlite`, `fs`, `path`, `os`, `crypto`, `child_process`), so a single file is genuinely self-contained.
+
+```bash
+bun run build:lib             # dist/lib/litestone.js + .d.ts + .js.map
+bun run build:lib:testing     # also emits testing.js (makeTestClient, Factory)
+```
+
+| Output | Size |
+| --- | --- |
+| `litestone.js` (minified) | 311 KB |
+| gzipped | 94 KB |
+| `litestone.d.ts` | 33 KB |
+
+`src/index.d.ts` has no relative imports, so it's copied as-is — one `.js` plus one `.d.ts` is a complete typed drop-in with no build step for the consumer.
+
+```js
+import { createClient, parse } from './vendor/litestone.js'
+```
+
+**Why this exists: vendoring.** Dropping the bundle into another package pins it to *this* workspace build, instead of whatever `"@frontierjs/litestone": "latest"` resolves to from npm. The two are not interchangeable — 1.0.6 uses `Int`/`String`/`Float` and hard-rejects the older `Integer`/`Text`/`Real` scalars, so a package silently loading the npm copy fails on schemas that are valid here. Every bundle carries a banner naming its version and git SHA:
+
+```js
+// @frontierjs/litestone 1.0.6 (git 3560dba) — bundled single-file build
+```
+
+Sourcemaps are emitted by default (`--no-sourcemap` to skip) — without them, stack traces point into minified output. `--no-minify` gives readable source at 549 KB.
+
+**`--with-testing` uses code splitting** rather than emitting two standalone files, because `src/testing.js` pulls in the whole core: two independent bundles cost ~547 KB against ~340 KB split across a shared chunk. Test helpers stay out of the default build.
+
+Like the binary, this is Bun-only — it imports `bun:sqlite`, so it is a single *file*, not a portable one.
 
 ---
 

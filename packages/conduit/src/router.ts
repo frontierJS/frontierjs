@@ -9,22 +9,28 @@ import { WebSocketTransport }      from './transports/websocket.ts'
 import { UnixTransport }           from './transports/unix.ts'
 import { NotImplementedTransport } from './transports/not_implemented.ts'
 import { BaseTransport }           from './transports/base.ts'
-import type { ConduitStore }       from './types.ts'
+import type { ConduitStore, CredentialResolver } from './types.ts'
 import type { TargetDescriptor, ConduitHooks } from './types.ts'
 
 export class Router {
   private pool = new Map<string, BaseTransport>()
 
   constructor(
-    private store:     ConduitStore,
-    private opts:      { timeout_ms?: number; retry_limit?: number } = {},
-    private hooks:     ConduitHooks = {},
+    private store:       ConduitStore,
+    private credentials: CredentialResolver,
+    private opts:        {
+      timeout_ms?:         number
+      retry_limit?:        number
+      max_response_bytes?: number
+    } = {},
+    private hooks:       ConduitHooks = {},
     // Internal only — not part of ConduitOptions.
     // Use createTestConduit() to inject stubs; do not pass this directly.
-    private overrides: Map<string, BaseTransport> = new Map()
+    private overrides:   Map<string, BaseTransport> = new Map()
   ) {}
 
-  resolve(targetId: string): BaseTransport | null {
+  // Async since the store may be networked.
+  async resolve(targetId: string): Promise<BaseTransport | null> {
     // Overrides take priority — stubs bypass pool and store entirely
     const override = this.overrides.get(targetId)
     if (override) return override
@@ -32,8 +38,14 @@ export class Router {
     const pooled = this.pool.get(targetId)
     if (pooled) return pooled
 
-    const descriptor = this.store.get(targetId)
+    const descriptor = await this.store.get(targetId)
     if (!descriptor) return null
+
+    // Another resolve() for the same target may have raced ahead while the
+    // store read was in flight — keep whichever transport landed first so
+    // the pool stays the single owner of a target's connection.
+    const raced = this.pool.get(targetId)
+    if (raced) return raced
 
     const transport = this.createTransport(descriptor)
     this.pool.set(targetId, transport)
@@ -55,24 +67,38 @@ export class Router {
   private createTransport(descriptor: TargetDescriptor): BaseTransport {
     switch (descriptor.protocol) {
       case 'http':
-        return new HttpTransport(descriptor, {
-          timeout_ms:  this.opts.timeout_ms,
-          retry_limit: this.opts.retry_limit
+        return new HttpTransport(descriptor, this.credentials, {
+          timeout_ms:         this.opts.timeout_ms,
+          retry_limit:        this.opts.retry_limit,
+          max_response_bytes: this.opts.max_response_bytes
         })
 
       case 'websocket': {
-        const ws = new WebSocketTransport(descriptor)
-        ws.onReconnect = (target) => this.hooks.onReconnect?.(target)
+        const ws = new WebSocketTransport(descriptor, this.credentials)
+        // Guarded: this fires from a reconnect timer with no caller to
+        // catch it, so a throwing hook would surface as an unhandled
+        // rejection rather than a failed request.
+        ws.onReconnect = (target) => {
+          try {
+            this.hooks.onReconnect?.(target)
+          } catch (err) {
+            console.error(`[conduit] hook 'onReconnect' threw:`, err)
+          }
+        }
         return ws
       }
 
       case 'unix':
-        return new UnixTransport(descriptor, { timeout_ms: this.opts.timeout_ms })
+        return new UnixTransport(descriptor, this.credentials, {
+          timeout_ms: this.opts.timeout_ms
+        })
 
       case 'ssh':
       case 'nats':
       default:
-        return new NotImplementedTransport(descriptor, descriptor.protocol)
+        return new NotImplementedTransport(
+          descriptor, this.credentials, descriptor.protocol
+        )
     }
   }
 }

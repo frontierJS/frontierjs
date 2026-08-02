@@ -1,5 +1,5 @@
 /*
- * utilities/cards.css
+ * cards.css
  * Card = surface + default padding. Visual treatment lives in surface.css.
  *
  * Sub-regions bleed to card edges via negative margins to escape card's

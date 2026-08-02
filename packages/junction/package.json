@@ -17,12 +17,12 @@
     "./litestone": "./src/core/litestone.ts",
     "./events": "./src/events/index.ts",
     "./cache": "./src/cache/index.ts",
-    "./scheduler": "./src/plugins/scheduler/index.ts",
+    "./scheduler": "./src/scheduler/index.ts",
     "./workers": "./src/workers/index.ts",
     "./filestorage": "./src/storage/filestorage/index.ts",
     "./database": "./src/storage/database/index.ts",
     "./mail": "./src/mail/index.ts",
-    "./ai": "./src/plugins/ai/index.ts",
+    "./ai": "./src/ai/index.ts",
     "./testing": "./src/testing/index.ts",
     "./openapi": "./src/plugins/openapi/index.ts",
     "./webhooks": "./src/plugins/webhooks/index.ts",
@@ -35,18 +35,21 @@
     "./health": "./src/transport/health.ts",
     "./auth": "./src/auth/types.ts"
   },
+  "bin": {
+    "junction": "./tools/cli.ts"
+  },
   "scripts": {
     "init": "bun run tools/init.ts",
     "dev": "bun run --watch example/app.ts",
     "start": "NODE_ENV=production bun run example/app.ts",
-    "test": "bun test tests/index.test.ts",
+    "test": "bun test tests/",
+    "typecheck": "tsc --noEmit",
     "test:example": "bun test example/test.ts",
-    "test:all": "bun test tests/index.test.ts example/test.ts",
+    "test:all": "bun test tests/ example/test.ts",
     "repl": "bun run tools/repl.ts",
+    "build:app": "bun run tools/build-app.ts",
     "setup": "bun run tools/setup.ts",
-    "setup:audit": "bun run tools/setup.ts audit",
-    "litestone": "bun run tools/litestone.ts",
-    "litestone:audit": "bun run tools/litestone.ts audit"
+    "setup:audit": "bun run tools/setup.ts audit"
   },
   "peerDependencies": {
     "@frontierjs/litestone": ">=0.1.0"
@@ -71,5 +74,5 @@
     "feathers"
   ],
   "license": "MIT",
-  "_built": "2026-04-26"
+  "_built": "2026-05-27"
 }

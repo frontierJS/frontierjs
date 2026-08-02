@@ -19,13 +19,13 @@
 //   expect(ctx.result.name).toBe('Alice')
 //
 //   // HTTP-style assertion (no real server)
-//   const res = await request(app).post('/api/users').send({ name: 'Alice' })
+//   const res = await request(app).post('/users').send({ name: 'Alice' })
 //   expect(res.status).toBe(201)
 //   expect(res.body.name).toBe('Alice')
 
 import { createApp, type App, type AppOptions } from '../core/app.ts'
 import { createInMemoryDatabase }               from '../storage/database/index.ts'
-import { bridge, type ServiceContext }           from '../transport/bridge.ts'
+import { bridge, runWithMeta, type ServiceContext }           from '../transport/bridge.ts'
 import { defaultConfig }                         from '../config/index.ts'
 import type { IAuth, SessionContext }            from '../auth/types.ts'
 import type { Service }                          from '../core/service.ts'
@@ -149,6 +149,7 @@ export interface TestAppOptions {
 
 export interface TestApp extends App {
   auth:    ReturnType<typeof createStubAuth>
+  db:      Awaited<ReturnType<typeof createInMemoryDatabase>>
   // Convenience: the token for a pre-seeded user
   tokenFor: (userId: string) => string
 }
@@ -170,9 +171,11 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
 
   const app = createApp({ config, auth, autoload: opts.autoload }) as TestApp
 
-  // app.db is already set by createApp (database.url = ':memory:')
-  // We use it directly — no second database opened.
-  const db = app.db!
+  // app.db isn't set by createApp — Junction core doesn't know about Litestone.
+  // For test ergonomics, wire an in-memory database here so tests that read
+  // app.db (e.g. for seeding, direct queries) have something to use.
+  const db = await createInMemoryDatabase()
+  ;(app as TestApp).db = db
 
   // ── Seed data ──────────────────────────────────────────────────────
   if (opts.seed) {
@@ -209,7 +212,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
 //
 // Usage:
 //   const res = await request(app)
-//     .post('/api/notes')
+//     .post('/notes')
 //     .auth('test-token-u1')
 //     .workspace('ws-1')
 //     .send({ title: 'Hello', body: 'World' })
@@ -347,7 +350,7 @@ export function request(app: App): Pick<TestRequest, 'get' | 'post' | 'patch' | 
 
 // ─── testCtx ──────────────────────────────────────────────────────────────
 // Build a ServiceContext for direct service testing, without HTTP.
-// Shorthand for bridge.internal() with pre-populated user params.
+// Shorthand for bridge.internal() with pre-populated auth + locals.
 
 export function testCtx(
   service: string,
@@ -358,24 +361,44 @@ export function testCtx(
     workspaceId?: string
     query?:        Record<string, string>
     id?:           string | null
+    locals?:       Record<string, unknown>
   }
 ): ServiceContext {
 
-  const ctx = bridge.internal(service, method as 'create', data ?? null)
+  const ctx = bridge.internal(service, method as 'create', data ?? null, {
+    auth: opts?.user
+      ? {
+          user: {
+            userId:     opts.user.userId ?? 'test-user',
+            userType:   opts.user.userType ?? 'user',
+            authMethod: opts.user.authMethod ?? 'session',
+            role:        opts.user.role ?? 'admin',
+            ...opts.user,
+          } as SessionContext,
+        }
+      : undefined,
+    locals: {
+      ...(opts?.workspaceId ? { workspaceId: opts.workspaceId } : {}),
+      ...(opts?.locals ?? {}),
+    },
+  })
 
-  if (opts?.user) {
-    ctx.params.user = {
-      userId:     opts.user.userId ?? 'test-user',
-      userType:   opts.user.userType ?? 'user',
-      authMethod: opts.user.authMethod ?? 'session',
-      role:        opts.user.role ?? 'admin',
-      ...opts.user,
-    }
-  }
-
-  if (opts?.workspaceId) ctx.params.workspaceId = opts.workspaceId
-  if (opts?.query)        ctx.query = opts.query as Record<string, unknown>
-  if (opts?.id != null)   ctx.id = opts.id
+  if (opts?.query)      ctx.query = opts.query as Record<string, unknown>
+  if (opts?.id != null) ctx.id = opts.id
 
   return ctx
+}
+
+// Run fn inside a request-meta ALS scope, for tests asserting on
+// requestMeta(). Mirrors what the bridge does per real request.
+export function withTestMeta<T>(
+  meta: Partial<import('../transport/bridge.ts').RequestMeta>,
+  fn: () => T
+): T {
+  return runWithMeta({
+    correlationId: meta.correlationId ?? 'test-correlation',
+    idempotencyKey: meta.idempotencyKey,
+    locale:        meta.locale,
+    origin:        meta.origin ?? 'internal',
+  }, fn)
 }

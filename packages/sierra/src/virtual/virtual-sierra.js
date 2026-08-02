@@ -16,7 +16,7 @@
 import { generateOverlayScript } from '../build/dev-overlay.js'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 
 // Absolute path to this sierra package's root — used to resolve sierra/* imports
 // from the virtual:sierra module (which has no file path context for Node resolution).
@@ -27,6 +27,122 @@ const VIRTUAL_ID = 'virtual:sierra'
 const RESOLVED_ID = '\0virtual:sierra'
 const VIRTUAL_CONFIG_ID = 'virtual:sierra-config'
 const RESOLVED_CONFIG_ID = '\0virtual:sierra-config'
+
+/**
+ * Resolve an `@frontierjs/<pkg>[/<subpath>]` specifier imported from inside the
+ * Sierra package.
+ *
+ * Sierra's own source lives outside the consuming app, so when Vite follows the
+ * link/symlink it transforms Sierra's *real* path — which has no node_modules of
+ * its own. Node's resolution can't help from there, so this walks the sibling
+ * packages instead.
+ *
+ * It reads the target package's `exports` map rather than guessing file paths.
+ * The previous version tried `<pkg>/client.ts`, `<pkg>/client.js`,
+ * `<pkg>/client/index.ts`, `<pkg>/client/index.js` — none of which match
+ * Junction, whose real file is `<pkg>/src/client/index.ts` declared as
+ * `"./client": "./src/client/index.ts"`. That failure was invisible whenever the
+ * app happened to have its own node_modules entry for the package, and surfaced
+ * as `Failed to resolve import "@frontierjs/junction/client"` when it didn't —
+ * e.g. under `bun link`, or in a `packages/*` monorepo.
+ *
+ * @param {string} id  e.g. '@frontierjs/junction/client'
+ * @returns {string|null} absolute file path, or null
+ */
+function _resolveFrontierSubpath(id, searchRoots) {
+  const rest     = id.slice('@frontierjs/'.length)
+  const slashIdx = rest.indexOf('/')
+  const pkgName  = slashIdx === -1 ? rest : rest.slice(0, slashIdx)
+  const subPath  = slashIdx === -1 ? '.' : './' + rest.slice(slashIdx + 1)
+
+  // Where sibling packages might live. _monoRoot is the directory containing
+  // the sierra package, which covers both `frontier/{mesa,sierra,…}` and
+  // `repo/packages/{mesa,sierra,…}` layouts.
+  const roots = (searchRoots ?? [
+    _monoRoot,
+    resolve(_monoRoot, 'node_modules', '@frontierjs'),
+    resolve(_sierraRoot, 'node_modules', '@frontierjs'),
+  ]).map(base => resolve(base, pkgName))
+
+  for (const pkgRoot of roots) {
+    const manifestPath = resolve(pkgRoot, 'package.json')
+    if (!existsSync(manifestPath)) continue
+
+    let manifest
+    try {
+      manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    } catch {
+      continue
+    }
+
+    // 1. The package's own exports map — authoritative.
+    const target = _pickExport(manifest.exports, subPath)
+    if (target) {
+      const abs = resolve(pkgRoot, target)
+      if (existsSync(abs)) return abs
+    }
+
+    // 2. `main` for a bare package specifier without exports.
+    if (subPath === '.' && manifest.main) {
+      const abs = resolve(pkgRoot, manifest.main)
+      if (existsSync(abs)) return abs
+    }
+
+    // 3. Path guesses, for packages that declare neither.
+    const bare = subPath === '.' ? null : subPath.slice(2)
+    const guesses = bare
+      ? [`${bare}.ts`, `${bare}.js`, `${bare}/index.ts`, `${bare}/index.js`,
+         `src/${bare}.ts`, `src/${bare}.js`, `src/${bare}/index.ts`, `src/${bare}/index.js`]
+      : ['index.ts', 'index.js', 'src/index.ts', 'src/index.js']
+    for (const g of guesses) {
+      const abs = resolve(pkgRoot, g)
+      if (existsSync(abs)) return abs
+    }
+  }
+
+  return null
+}
+
+/**
+ * Pick a file from an `exports` map for a given subpath.
+ *
+ * Handles the shapes these packages actually use: a bare string, a conditions
+ * object, and wildcard subpaths. Conditions are tried browser → import →
+ * module → default, since everything resolved here is destined for the client
+ * bundle.
+ */
+function _pickExport(exports, subPath) {
+  if (!exports) return null
+
+  // Shorthand: `"exports": "./index.js"` means the root subpath only.
+  if (typeof exports === 'string') return subPath === '.' ? exports : null
+
+  const unwrap = (entry) => {
+    if (!entry) return null
+    if (typeof entry === 'string') return entry
+    for (const cond of ['browser', 'import', 'module', 'default']) {
+      if (entry[cond]) {
+        const v = unwrap(entry[cond])
+        if (v) return v
+      }
+    }
+    return null
+  }
+
+  if (exports[subPath]) return unwrap(exports[subPath])
+
+  // Wildcards, e.g. "./*": "./src/*.js"
+  for (const [pattern, entry] of Object.entries(exports)) {
+    if (!pattern.includes('*')) continue
+    const [head, tail = ''] = pattern.split('*')
+    if (!subPath.startsWith(head) || !subPath.endsWith(tail)) continue
+    const star = subPath.slice(head.length, subPath.length - tail.length || undefined)
+    const target = unwrap(entry)
+    if (target) return target.replace('*', star)
+  }
+
+  return null
+}
 
 /**
  * @param {import('./index.js').SierraConfig} config
@@ -67,27 +183,8 @@ export function virtualSierraPlugin(config, sierraContext) {
         importer.includes('frontierjs+sierra')
       )
       if (id.startsWith('@frontierjs/') && isSierraFile) {
-        const rest     = id.slice('@frontierjs/'.length)   // e.g. "junction/client"
-        const slashIdx = rest.indexOf('/')
-        const pkgName  = slashIdx === -1 ? rest : rest.slice(0, slashIdx)
-        const sub      = slashIdx === -1 ? null : rest.slice(slashIdx + 1)
-        const pkgRoot  = resolve(_monoRoot, pkgName)
-        const candidates = sub
-          ? [
-              resolve(pkgRoot, sub + '.ts'),
-              resolve(pkgRoot, sub + '.js'),
-              resolve(pkgRoot, sub, 'index.ts'),
-              resolve(pkgRoot, sub, 'index.js'),
-            ]
-          : [
-              resolve(pkgRoot, 'index.ts'),
-              resolve(pkgRoot, 'index.js'),
-              resolve(pkgRoot, 'src', 'index.ts'),
-              resolve(pkgRoot, 'src', 'index.js'),
-            ]
-        for (const c of candidates) {
-          if (existsSync(c)) return c
-        }
+        const hit = _resolveFrontierSubpath(id)
+        if (hit) return hit
       }
 
       // Resolve 'sierra/*' imports that originate from the virtual:sierra module.
@@ -136,7 +233,7 @@ export function virtualSierraPlugin(config, sierraContext) {
     },
 
     load(id) {
-      if (id === RESOLVED_ID) return generateVirtualSierra(config, manifestOutput, sierraConfigPath)
+      if (id === RESOLVED_ID) return generateVirtualSierra(config, manifestOutput, sierraConfigPath, sierraContext)
       if (id === RESOLVED_CONFIG_ID) {
         // Re-export the real sierra.config.js — resolved at build time
         return `export { default } from '${sierraConfigPath}'`
@@ -153,7 +250,7 @@ export function virtualSierraPlugin(config, sierraContext) {
  * @param {string} manifestOutput
  * @param {string} sierraConfigPath — absolute path to sierra.config.js
  */
-function generateVirtualSierra(config, manifestOutput, sierraConfigPath) {
+function generateVirtualSierra(config, manifestOutput, sierraConfigPath, sierraContext) {
   const lines = []
 
   // Import the manifest and the live sierra.config.js.
@@ -163,65 +260,17 @@ function generateVirtualSierra(config, manifestOutput, sierraConfigPath) {
   lines.push(`import sierraConfig from '${sierraConfigPath}'`)
   lines.push(``)
 
-  // Mesa signal bridge — must come first, before router init.
-  // Sierra signals (router/signals.js) use a plain pub/sub .get()/.set()/.subscribe()
-  // interface. Mesa's reactivity system tracks signal reads via a module-level
-  // _listener variable that is set during createEffect / render() / createMemo
-  // execution. Sierra's .get() doesn't touch _listener — so Mesa components
-  // would never re-render when Sierra signals change.
+  // NO SIGNAL BRIDGE.
   //
-  // The bridge: for each Sierra signal, create a Mesa createSignal pair.
-  // Patch the Sierra signal's .get() with the Mesa read function (so reads
-  // inside Mesa effects register correctly), and wire Sierra's .subscribe()
-  // to drive the Mesa write function (so Sierra-side mutations notify Mesa).
+  // This is where a ~45-line $$bridge block used to be generated. It created a
+  // Mesa createSignal pair for each router signal, subscribed Sierra's pub/sub
+  // to drive the Mesa writer, and monkey-patched `.get` on the exported signal
+  // object so reads inside Mesa effects registered as dependencies.
   //
-  // This runs once, synchronously, at module evaluation time — before any
-  // component mounts — so the patched .get() is in place when Mesa's
-  // first render pass runs.
-  lines.push(`// ── Mesa–Sierra signal bridge ───────────────────────────────────`)
-  lines.push(`import { createSignal as $$cs } from '@frontierjs/mesa/runtime'`)
-  lines.push(`import {`)
-  lines.push(`  activeRoute  as $$sig_activeRoute,`)
-  lines.push(`  params       as $$sig_params,`)
-  lines.push(`  pendingRoute as $$sig_pendingRoute,`)
-  lines.push(`  meta         as $$sig_meta,`)
-  lines.push(`  data         as $$sig_data,`)
-  lines.push(`  loadError    as $$sig_loadError,`)
-  lines.push(`  pageSlots    as $$sig_pageSlots,`)
-  lines.push(`  page         as $$sig_page,`)
-  lines.push(`} from '@frontierjs/sierra/router'`)
-  if (config.theme) {
-    lines.push(`import { theme as $$sig_theme } from '@frontierjs/sierra/theme'`)
-  }
-  lines.push(``)
-  // $$bridge is a module-level function so it's reachable for the theme call.
-  // It's prefixed $$ to avoid clashing with any user variable.
-  lines.push(`function $$bridge(sierraSignal) {`)
-  lines.push(`  if (!sierraSignal || typeof sierraSignal.get !== 'function') return`)
-  lines.push(`  const [mesaRead, mesaWrite] = $$cs(sierraSignal.get())`)
-  lines.push(`  // Sierra → Mesa: when Sierra sets the signal, push the new value`)
-  lines.push(`  // into the Mesa signal so Mesa effects re-run.`)
-  lines.push(`  // subscribe() calls fn(currentValue) immediately — that's fine,`)
-  lines.push(`  // it just re-confirms the initial Mesa signal value synchronously.`)
-  lines.push(`  sierraSignal.subscribe((v) => mesaWrite(v))`)
-  lines.push(`  // Patch .get() so calls inside Mesa effects / render() register`)
-  lines.push(`  // as reactive dependencies — the critical half of the bridge.`)
-  lines.push(`  sierraSignal.get = mesaRead`)
-  lines.push(`}`)
-  lines.push(``)
-  lines.push(`$$bridge($$sig_activeRoute)`)
-  lines.push(`$$bridge($$sig_params)`)
-  lines.push(`$$bridge($$sig_pendingRoute)`)
-  lines.push(`$$bridge($$sig_meta)`)
-  lines.push(`$$bridge($$sig_data)`)
-  lines.push(`$$bridge($$sig_loadError)`)
-  lines.push(`$$bridge($$sig_pageSlots)`)
-  lines.push(`$$bridge($$sig_page)`)
-  lines.push(`// node is the same object reference as activeRoute — already bridged.`)
-  if (config.theme) {
-    lines.push(`$$bridge($$sig_theme)`)
-  }
-  lines.push(``)
+  // router/signals.js now returns Mesa signals directly, so `.get` is already a
+  // tracked Mesa read and there is nothing to patch. Removing the bridge also
+  // removed the `.value` desync it caused (see signals.js) and the ordering
+  // requirement that the patch land before any component's first render.
 
   // Router init
   lines.push(`// ── Router ─────────────────────────────────────────────────────`)
@@ -241,7 +290,21 @@ function generateVirtualSierra(config, manifestOutput, sierraConfigPath) {
     lines.push(`// ── Junction ───────────────────────────────────────────────────`)
     lines.push(`import { initJunction } from '@frontierjs/sierra/junction'`)
     lines.push(``)
-    lines.push(`await initJunction(sierraConfig.junction)`)
+    // Not awaited. initJunction is synchronous now and exposes `whenReady`
+    // for callers that specifically need the WebSocket transport; awaiting it
+    // here blocked the entire entry module — and therefore first paint — on a
+    // server round-trip for every returning visitor.
+    lines.push(`initJunction(sierraConfig.junction)`)
+    lines.push(``)
+  }
+
+  // Model schemas, generated from db/schema.lite by build/schema-plugin.js.
+  // Emitted before any route module is evaluated, so createResource() can read
+  // a model's field shape without each resource file restating it.
+  if (sierraContext?.schemaDefs && Object.keys(sierraContext.schemaDefs).length > 0) {
+    lines.push(`// ── Model schemas (generated from ${sierraContext.schemaPath ?? 'schema.lite'}) ──`)
+    lines.push(`import { registerSchemas } from '@frontierjs/sierra/junction'`)
+    lines.push(`registerSchemas(${JSON.stringify(sierraContext.schemaDefs)})`)
     lines.push(``)
   }
 
@@ -300,4 +363,9 @@ function generateVirtualSierra(config, manifestOutput, sierraConfigPath) {
 // Named export for unit testing
 export function _generateVirtualSierra(config, manifestOutput) {
   return generateVirtualSierra(config, manifestOutput, '/config/sierra.config.js')
+}
+
+// Named export for unit testing — see tests/frontier-resolution.test.js
+export function _resolveFrontierSubpathForTest(id, searchRoots) {
+  return _resolveFrontierSubpath(id, searchRoots)
 }

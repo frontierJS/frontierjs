@@ -71,8 +71,12 @@ export function initRenderer(options = {}) {
   global.parent = _win
   global.top    = _win
 
-  // Tell the Mesa runtime the DOM is now available
-  setRenderEnvironment(true)
+  // Tell the Mesa runtime the DOM is now available — but that this is NOT a
+  // client runtime. RULE 19 hangs off the second flag: no reactive graph is
+  // built, $onMount is a no-op, path watches stay inert. Passing a single
+  // `true` here used to enable client behaviour too, so every server render ran
+  // $onMount callbacks and built proxies and signals that nothing disposed.
+  setRenderEnvironment(true, false)
 }
 
 /**

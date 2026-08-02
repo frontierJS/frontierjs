@@ -1,7 +1,6 @@
 /*
- * utilities/tables.css
- * .table shortcut lives in uno.config.ts.
- * Tones come from tones.css applied to <tr>.
+ * tables.css
+ * .table owns its own structure. Tones come from tones.css applied to <tr>.
  */
 
 .table {
@@ -55,14 +54,48 @@
 }
 
 /*
- * ── Row tones — recipe applies when <tr> has a tone class ──────
- * .info / .success / .warning / .danger from tones.css set --bg-mix on the row.
+ * ── Row tones — any tone class on a <tr> tints its cells ───────
+ *
+ * The tint is derived on the <tr>, where the tone class lives, and
+ * inherited down to the cells. The <td> can't read --bg-mix itself
+ * (tones are element-scoped — see tones.css), and the background has to
+ * land on the cells rather than the row so it paints above the table's
+ * own background.
+ *
+ * No tone names here: on an untoned row --bg-mix is guaranteed-invalid,
+ * so --row-tint is too and the cells fall back to transparent. All seven
+ * tones work, not the four that used to be listed.
  */
-.table tbody tr.info td,
-.table tbody tr.success td,
-.table tbody tr.warning td,
-.table tbody tr.danger td {
-  background: color-mix(in srgb, var(--bg-mix) 8%, var(--table-bg));
+.table tbody tr {
+  --row-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--table-bg));
+}
+.table tbody td {
+  background: var(--row-tint, transparent);
+}
+
+/*
+ * ── Scroll wrapper ────────────────────────────────────────────
+ * A table cannot scroll itself — `overflow` on a <table> does nothing,
+ * and forcing display:block to make it work destroys the table layout
+ * algorithm. So the scroll lives on a wrapper, which is why this is an
+ * Anatomy class and not a modifier on .table.
+ *
+ *   <div class="table-wrap">
+ *     <table class="table"> … </table>
+ *   </div>
+ *
+ * Without it, a wide table overflows the page on narrow viewports and
+ * takes the whole layout with it.
+ */
+.table-wrap {
+  overflow-x:            auto;
+  -webkit-overflow-scrolling: touch;
+  /* Let the scroll container be a scroll target for keyboard users. */
+  scrollbar-gutter:      stable;
+}
+.table-wrap > .table {
+  /* Stop the table collapsing below its natural width inside the wrapper. */
+  min-width: max-content;
 }
 
 /* ── Actions column helper ────────────────────────────────────── */

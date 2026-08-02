@@ -59,6 +59,12 @@ export interface AppConfig {
     dir:        string
   }
 
+  // Database
+  database?: {
+    url:        string         // bun:sqlite path or ':memory:'
+    log?:       boolean        // log SQL statements to console
+  }
+
   // AI
   ai?: {
     openai?:    string   // API key
@@ -234,8 +240,20 @@ async function tryImport(path: string): Promise<Partial<AppConfig> | null> {
   try {
     const mod = await import(path)
     return mod.default ?? mod
-  } catch {
-    return null
+  } catch (err) {
+    // "File doesn't exist" is the expected miss for optional config files —
+    // return null and fall through to defaults. Anything else means the
+    // file EXISTS but is broken (syntax error, throwing top-level code,
+    // bad import inside it) — swallowing that silently booted apps on
+    // default config with no hint. Fail loudly instead.
+    const e = err as { code?: string; message?: string }
+    const notFound =
+      e?.code === 'ERR_MODULE_NOT_FOUND' ||
+      e?.code === 'MODULE_NOT_FOUND' ||
+      /cannot find (module|package)/i.test(e?.message ?? '') ||
+      /module not found/i.test(e?.message ?? '')
+    if (notFound) return null
+    throw new Error(`Config file '${path}' exists but failed to load: ${e?.message ?? err}`)
   }
 }
 

@@ -1,6 +1,18 @@
 // schema.ts
 // Auth schema fragments — injected into schema.lite by fli auth:install.
 // Exported as a function so the db name is parameterized.
+//
+// Model names are PascalCase singular, per Litestone's convention, so the
+// accessors auth.ts uses are db.user / db.credential / db.session /
+// db.verification. These previously read `model users` etc., which produced
+// accessors that matched auth.ts's old plural calls but violated the
+// convention — and broke the moment an app wrote its schema the documented way
+// ("users" is not a table in this schema).
+//
+// Types are String / Int / Float. `Text` and `Integer` are listed in
+// Litestone's RENAMED_TYPES and rejected outright — "a hard cut", no aliases —
+// so the fragments emitted here have to use the current names or the schema
+// won't parse at all.
 
 export function authSchemaFragments(db = 'main'): string {
   return `
@@ -10,32 +22,32 @@ export function authSchemaFragments(db = 'main'): string {
 // Sessions:      are you currently logged in
 // Verifications: ephemeral tokens — password reset, email verify
 
-model users {
-  id            Text      @id @default(uuid())
-  email         Text      @email @unique @lower
-  name          Text?     @trim
-  emailVerified Boolean   @default(false)
-  role          Text      @default("user")
-  accountId     Integer?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now()) @updatedAt
+model User {
+  id             String    @id @default(uuid())
+  email          String    @email @unique @lower
+  name           String?   @trim
+  emailVerified  Boolean   @default(false)
+  role           String    @default("user")
+  accountId      Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
 
   @@db(${db})
   @@gate("8")
   @@log(audit)
 }
 
-model credentials {
-  id             Integer   @id
-  userId         Text
-  type           Text
-  value          Text      @guarded(all)
-  label          Text?
-  accessToken    Text?     @secret
-  refreshToken   Text?     @secret
-  tokenExpiresAt DateTime?
-  scope          Text?
-  createdAt      DateTime  @default(now())
+model Credential {
+  id              Int        @id
+  userId          String
+  type            String
+  value           String     @guarded(all)
+  label           String?
+  accessToken     String?    @secret
+  refreshToken    String?    @secret
+  tokenExpiresAt  DateTime?
+  scope           String?
+  createdAt       DateTime   @default(now())
 
   @@db(${db})
   @@gate("8")
@@ -43,14 +55,14 @@ model credentials {
   @@index([type, value])
 }
 
-model sessions {
-  id        Text     @id @default(uuid())
-  userId    Text
-  token     Text     @unique @guarded(all)
-  expiresAt DateTime
-  ipAddress Text?
-  userAgent Text?
-  createdAt DateTime @default(now())
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  token      String    @unique @guarded(all)
+  expiresAt  DateTime
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
 
   @@db(${db})
   @@gate("8")
@@ -59,12 +71,12 @@ model sessions {
   @@index([expiresAt])
 }
 
-model verifications {
-  id         Integer  @id
-  identifier Text
-  value      Text     @guarded(all)
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
+model Verification {
+  id          Int       @id
+  identifier  String
+  value       String    @guarded(all)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
 
   @@db(${db})
   @@gate("8")

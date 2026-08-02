@@ -13,7 +13,7 @@
  *
  * Usage (in .meta.js):
  *   export async function load({ params, url, fetch }) {
- *     const data = await fetch(`/api/leads/${params.leadId}`)
+ *     const data = await fetch(`/leads/${params.leadId}`)
  *     return data.json()
  *   }
  */

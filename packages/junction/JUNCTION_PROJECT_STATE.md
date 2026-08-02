@@ -141,13 +141,95 @@ optional — the in-tree types and tests treat it as required.
 ### Key invariants
 - `ctx.result === null` in before hooks; populated in after hooks
 - `ctx.query` is top-level (not nested in ctx.params)
-- `ctx.params` is client-side only, never crosses the wire
+- **`ctx.params` is DELETED (v6 restructure).** Replaced by four typed
+  fields — see "ServiceContext shape (v6)" below
 - `context.type` must be preserved through the pipeline
 - `_method()` bypasses Junction hooks only (not gates)
 - `db.asSystem()` grants Litestone level 8 — bypasses `@@gate`, all
   `@@allow`/`@@deny` row policies, all field-level `@allow`, and reveals
   `@guarded` / `@encrypted` / `@secret` fields. Use for seeding,
   migrations, and any code path where there's no user context.
+
+### ServiceContext shape (v6 — canonical)
+
+`ctx.params` (the open `{ user, headers, ip, [key]: unknown }` bag) was
+**deleted** and split into four typed fields with explicit propagation
+semantics. This kills the FeathersJS shared-mutation footgun
+(diagnosed in their issue #562, never fixable there due to ecosystem
+lock-in). Junction is pre-alpha — done in one breaking pass.
+
+```typescript
+interface ServiceContext {
+  // routing / inputs — unchanged
+  service; method; type; transport; model; id; query; data
+
+  auth:   { user: SessionContext | null }   // identity ONLY. frozen.
+                                              // PROPAGATES (deep-cloned)
+  client: { ip?; userAgent?; headers; … }    // caller env. read-only.
+                                              // propagates. {} internal
+  route:  Record<string, string>             // path captures (:id/:room)
+                                              // router-only; {} internal
+  locals: ServiceContextLocals               // per-call scratch. FRESH {}
+                                              // every call. does NOT
+                                              // propagate (kills the bug)
+  // app / lifecycle / internals — unchanged
+  app; result; error; statusCode?; dispatch?; $raw; telemetryId?; _cleanups?
+}
+interface ServiceContextLocals {
+  paginate?: { limit; offset; … }
+  [key: string]: unknown   // plugins augment via `declare module`
+}
+```
+
+Migration map (every old `ctx.params.X`):
+`.user`→`ctx.auth.user`; `.headers`→`ctx.client.headers`;
+`.ip`→`ctx.client.ip`; `.db`→`ctx.locals.db` (litestone augments the
+type); `.paginate`→`ctx.locals.paginate`; path params→`ctx.route.X`;
+`__channels`→`ctx.locals`; any ad-hoc hook stash→`ctx.locals.X`.
+
+**`TransportContext.params` is UNCHANGED** — that's the router's
+path-param `Record<string,string>`, always a separate thing from the
+killed bag. Route handlers (`app.get('/x/:id', ctx => ctx.params.id)`)
+keep working exactly as before.
+
+### Request-wide metadata (AsyncLocalStorage)
+
+Correlation id / idempotency key / locale belong to the **whole
+request**, not any single call. They ride an `AsyncLocalStorage` store
+the bridge wraps the pipeline run in — NOT hand-threaded through
+`CallOptions` (that would be the Feathers footgun reborn: one
+forgotten call site silently breaks the trace). Bun-native.
+
+```typescript
+import { requestMeta } from '@frontierjs/junction'
+const meta = requestMeta()   // { correlationId, idempotencyKey?, locale?, origin }
+                             // — readable at ANY call depth, never passed
+```
+
+The HTTP crud handler builds `RequestMeta` from headers
+(`x-request-id`→correlationId, `idempotency-key`,
+`accept-language`→locale) and wraps the pipeline in `runWithMeta(...)`.
+Test helper: `withTestMeta(partial, fn)` in `@frontierjs/junction/testing`.
+
+### Internal-call signature (CallOptions, replaces ServiceParams)
+
+`app.service('x').<method>(...)` second arg is now a closed, typed
+`CallOptions` — only what you VARY per call. No open index signature →
+nothing mutable leaks unnamed.
+
+```typescript
+interface CallOptions {
+  auth?:      { user: SessionContext | null }   // default: system (null)
+  transport?: 'http' | 'websocket' | 'internal' // default: 'internal'
+  locals?:    Partial<ServiceContextLocals>     // rare; e.g. shared tx
+}
+// 7 signatures: find/get/create/patch/update/remove/restore + call().
+// patch/update/remove reject null id+query. query rides arg 1, never opts.
+
+await app.service('orders').get(id, { auth: ctx.auth })  // propagate identity
+await app.service('audit').create(data, { auth: ctx.auth })  // correlationId
+                                                              // rides ALS
+```
 - `apiPrefix` defaults to `''`
 - Result envelope: lists → `{ object: 'list', data: [], errors, total, limit,
   offset }`, singles → `{ object: model, data: record, errors: [] }`. HTTP
@@ -209,7 +291,7 @@ V5: `protect()` correctly strips inside `.data` on single-record envelopes.
 ## @frontierjs/litestone — usage cheatsheet
 
 External package, schema-first SQLite ORM for Bun. Junction integrates via
-`createLitestoneService` and `withLitestoneDb`. Auth, Caravan, and Conduit
+`createService({ model })` and `withLitestoneDb`. Auth, Caravan, and Conduit
 all sit on top of it.
 
 ### `createClient` shape (single options object)
@@ -239,7 +321,7 @@ const sysDb  = db.asSystem()           // grants level 8 — bypasses everything
 
 `$setAuth` returns a *new client* sharing the connection. Don't reassign
 `db`. Per-request scoped clients are the pattern; `withLitestoneDb` does
-this automatically and stashes the scoped client on `ctx.params.db`.
+this automatically and stashes the scoped client on `ctx.locals.db`.
 
 ### Method surface (most-used)
 

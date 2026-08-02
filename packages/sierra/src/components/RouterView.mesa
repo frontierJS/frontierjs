@@ -1,7 +1,7 @@
 <script module>
   // RouterView — Sierra's router outlet.
   //
-  // Previously used {#key activeRoute} to remount ChainRenderer on every navigation.
+  // Previously used {#key page.route} to remount ChainRenderer on every navigation.
   // That caused ALL layouts — even shared ones — to be torn down and recreated on
   // every route change, re-running their instance scripts (console.logs, effects, etc).
   //
@@ -11,20 +11,23 @@
 </script>
 
 <script>
-  import { activeRoute, pendingRoute } from '@frontierjs/sierra/router'
+  import { page } from '@frontierjs/sierra/router'
   import { resolveChain } from '@frontierjs/sierra/router/internals'
+
+  // `page` is a plain object — these watches are what drive the outlet.
+  $: (page.route, page.pending)
   import ChainRenderer from './ChainRenderer.mesa'
 
   export let loading = null
 </script>
 
-{#if pendingRoute && loading}
+{#if page.pending && loading}
   {@render loading()}
 {/if}
 
-{#if activeRoute}
+{#if page.route}
   <ChainRenderer
-    chain={resolveChain(activeRoute)}
+    chain={resolveChain(page.route)}
     depth={0}
   />
 {/if}

@@ -39,13 +39,13 @@ export function createAuthCleanupJobs(db: LitestoneClient): AuthCleanupHandle {
 
     start() {
       sessionJob = scheduler.every('1 hour', async () => {
-        await sys.sessions.deleteMany({
+        await sys.session.deleteMany({
           where: { expiresAt: { lt: new Date() } }
         })
       })
 
       verificationJob = scheduler.every('1 hour', async () => {
-        await sys.verifications.deleteMany({
+        await sys.verification.deleteMany({
           where: { expiresAt: { lt: new Date() } }
         })
       })

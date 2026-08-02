@@ -205,9 +205,17 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     js = js.replace(match, prefix + childTmp + suffix)
   }
 
-  // Write temp file
-  await writeFile(tmpPath, js)
-  tempFiles.push(tmpPath)
+  // Write temp file.
+  //
+  // The render targets import these paths, so the files have to exist. The `js`
+  // target only wants the in-memory `modules` map — it never imports anything —
+  // so it opts out rather than writing a file per module and deleting it again.
+  // `modules` is captured above before import rewriting, so what it holds is the
+  // original source either way.
+  if (!opts.noEmit) {
+    await writeFile(tmpPath, js)
+    tempFiles.push(tmpPath)
+  }
 
   return { tmpPath, css, tempFiles, modules }
 }
@@ -407,10 +415,20 @@ export async function renderComponent(source, options = {}) {
       : filePath + '.mesa'
 
     let modules, css
-    // Pass source directly — no temp .mesa file needed at entry point
-    const result = await compileTree(srcPath, new Map(), [], { compileOptions }, source)
-    modules = result.modules
-    css     = result.css
+    // Pass source directly — no temp .mesa file needed at entry point.
+    // tempFiles is tracked and cleaned even though noEmit should leave it empty:
+    // this call used to pass a throwaway [] and drop it, so every js-target
+    // compile stranded one .mjs per module in the package directory.
+    const tempFiles = []
+    try {
+      const result = await compileTree(
+        srcPath, new Map(), tempFiles, { compileOptions, noEmit: true }, source
+      )
+      modules = result.modules
+      css     = result.css
+    } finally {
+      await cleanTempFiles(tempFiles)
+    }
 
     const cleanModules = new Map()
     const entryKey     = path.basename(srcPath)

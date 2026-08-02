@@ -11,7 +11,23 @@ import { dirname, resolve } from 'path'
 import { scan } from '../src/scanner/index.js'
 import { renderManifest } from '../src/scanner/generate-manifest.js'
 import { sierraFetch, configureFetch } from '../src/fetch/index.js'
-import { data, loadError } from '../src/router/index.js'
+import {
+  page,
+  _resetPage,
+} from '../src/router/index.js'
+import {
+  watchProxy, watchPath, createEffect, flushSync, setRenderEnvironment,
+} from '@frontierjs/mesa/runtime'
+
+// Path watching is a no-op outside a browser (RULE 19) — watchProxy returns the
+// object unchanged and watchPath returns dead stubs. These tests exercise the
+// reactive path, so tell the runtime it is in a browser.
+setRenderEnvironment(true)
+
+// The router writes through its own watchProxy handle, so tests that seed state
+// must do the same — a raw `page.x = v` updates the object but notifies nobody.
+// watchProxy is cached per object, so this is that same proxy instance.
+const _p = watchProxy(page)
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = resolve(__dirname, 'fixtures/basic-spa')
@@ -267,20 +283,27 @@ describe('layout companion meta inheritance', () => {
 
 describe('data and loadError signals', () => {
   test('data signal starts null', () => {
-    expect(data.get()).toBeNull()
+    expect(page.data).toBeNull()
   })
 
   test('loadError signal starts null', () => {
-    expect(loadError.get()).toBeNull()
+    expect(page.error).toBeNull()
   })
 
-  test('data signal can be subscribed to', () => {
-    const values = []
-    const unsub = data.subscribe(v => values.push(v))
-    data.set({ lead: { id: '1' } })
-    data.set(null)
-    unsub()
-    expect(values).toEqual([null, { lead: { id: '1' } }, null])
+  test('page.data can be watched by path', () => {
+    // No .subscribe() on a plain object — a path watch is the equivalent.
+    const [watch] = watchPath(page, 'data')
+    const seen = []
+    const dispose = createEffect(() => { watch(); seen.push(watchProxy(page).data) })
+    flushSync()
+
+    _p.data = { lead: { id: '1' } }
+    flushSync()
+    _p.data = null
+    flushSync()
+
+    expect(seen).toEqual([null, { lead: { id: '1' } }, null])
+    dispose()
   })
 })
 

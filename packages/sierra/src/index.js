@@ -16,14 +16,9 @@ export {
   goto,
   back,
   forward,
-  params,
-  activeRoute,
-  pendingRoute,
-  meta,
-  node,
+  page,            // replaces params / activeRoute / pendingRoute / meta /
+  PAGE_RESERVED,   // node / data / loadError / pageSlots — see router/index.js
   nodes,
-  data,
-  loadError,
   router,
   isActive,
   getDirection,
@@ -34,7 +29,6 @@ export {
   afterNavigate,
   initRouter,
   prefetch,
-  pageSlots,
   provideSlot,
 } from './router/index.js'
 

@@ -25,8 +25,9 @@
 //   stubs['agent:srv_abc'].reset()
 // ============================================================
 
-import { createConduit }     from './conduit.ts'
-import { StubTransport }     from './transports/stub.ts'
+import { createConduit }       from './conduit.ts'
+import { StubTransport }       from './transports/stub.ts'
+import { createNullResolver }  from './credentials.ts'
 import type { IConduit, TargetDescriptor, ConduitOptions } from './types.ts'
 import type { BaseTransport }              from './transports/base.ts'
 
@@ -68,12 +69,18 @@ export function createTestConduit<T extends StubMocks>(
     ;(stubs as any)[targetId] = stub
   }
 
-  const conduit = createConduit({ hooks: opts.hooks }, overrides)
+  const conduit = createConduit({
+    hooks: opts.hooks,
+    // Never the env resolver here — a test must not be able to pick up a
+    // real credential from the developer's environment.
+    credentials: createNullResolver(),
+  }, overrides)
 
-  // init() is sync for in-memory store — void is intentional here.
   // createTestConduit() is synchronous by design so test setup doesn't
-  // require await. If a custom async store is ever passed, use
-  // createTestConduitAsync() instead (not yet built).
+  // require await. Stubs bypass the store, so there is nothing for init()
+  // to load and nothing to wait on — the in-memory store's init() and
+  // list() both resolve without I/O. A custom async store would need
+  // createTestConduitAsync() (not yet built).
   void conduit.init()
 
   return { conduit, stubs }

@@ -19,8 +19,8 @@ Or test manually with curl:
 
 ```bash
 curl http://localhost:3000/health
-curl http://localhost:3000/api/users
-curl -X POST http://localhost:3000/api/users \
+curl http://localhost:3000/users
+curl -X POST http://localhost:3000/users \
   -H "Content-Type: application/json" \
   -d '{"name":"Alice","email":"alice@example.com"}'
 ```
@@ -115,11 +115,11 @@ bun run tools/repl.ts --host staging.myapp.com --https
   type help for all commands  ·  ctrl+c to exit
 
 ○ › health
-○ › get /api/users
-○ › post /api/users {"name":"Alice","email":"a@b.com"}
+○ › get /users
+○ › post /users {"name":"Alice","email":"a@b.com"}
 ● › auth my-token
 ● › set id = $_.id
-● › get /api/users/$id
+● › get /users/$id
 ● › watch /health 2000
 ```
 
@@ -129,10 +129,10 @@ bun run tools/repl.ts --host staging.myapp.com --https
 
 ```
 set payload {"name":"Alice","role":"admin"}
-post /api/users $payload
+post /users $payload
 
 set id = $_.id               ← capture a field from the last response
-get /api/users/$id            ← expand in a path
+get /users/$id            ← expand in a path
 
 last .data[0].email           ← dot-path extraction without a variable
 inspect $_                    ← pretty-print last response
@@ -233,7 +233,7 @@ service.hooks({ after: { all: [protect('meta.internal', 'auth.refreshToken')] } 
 import { rateLimit } from '@frontierjs/junction'
 
 // Per-service: limit create to 10/minute per user
-app.services.register(createLitestoneService({
+app.services.register(createService({
   name: 'posts',
   hooks: {
     before: {
@@ -280,9 +280,9 @@ Custom methods are defined directly on the service alongside CRUD — no separat
 createService({
   name: 'servers',
 
-  async reboot(ctx)    { /* ... */ },  // POST /api/servers/:id/reboot
-  async heartbeat(ctx) { /* ... */ },  // POST /api/servers/:id/heartbeat
-  async events(ctx)    { /* ... */ },  // GET  /api/servers/:id/events
+  async reboot(ctx)    { /* ... */ },  // POST /servers/:id/reboot
+  async heartbeat(ctx) { /* ... */ },  // POST /servers/:id/heartbeat
+  async events(ctx)    { /* ... */ },  // GET  /servers/:id/events
 
   hooks: {
     before: { reboot: [requireRole('developer')] },
@@ -292,10 +292,10 @@ createService({
 
 Custom methods run through the full hook pipeline — identical to CRUD methods. Hook targets use the method name as the key.
 
-Works the same with `createLitestoneService`:
+Works the same when the service is model-backed — the generated CRUD and your custom methods sit side by side:
 
 ```typescript
-createLitestoneService({
+createService({
   name:   'servers',
   model:  'servers',
   schema: jsonSchema,
@@ -364,7 +364,7 @@ ctx.stream(readable, type, status?)
 
 // Pagination envelope with next/prev links built from the request URL
 ctx.paginate(rows, total, { limit, skip })
-// → { data, total, limit, offset, next: '/api/posts?$offset=20&$limit=20', prev: null }
+// → { data, total, limit, offset, next: '/posts?$offset=20&$limit=20', prev: null }
 
 // Server-Sent Events
 const { response, send, close, onDisconnect } = ctx.sse()
@@ -530,7 +530,13 @@ const app = createApp({
 // /health and /metrics are unaffected
 ```
 
-Default is `/api`. Handles missing/extra slashes automatically.
+Default is `''` — services mount at `/{service}`. Handles missing/extra slashes automatically, so `api`, `/api` and `/api/` all mean the same thing.
+
+The browser client takes the same option and must be given the same value:
+
+```typescript
+createJunctionClient({ url, apiPrefix: '/api/v1' })
+```
 
 ---
 
@@ -543,8 +549,8 @@ createService({
   name:      'logs',
   allowBulk: true,    // opt in explicitly
 })
-// DELETE /api/logs?status=archived  ← now allowed
-// DELETE /api/logs                  ← still rejected (no filter conditions)
+// DELETE /logs?status=archived  ← now allowed
+// DELETE /logs                  ← still rejected (no filter conditions)
 ```
 
 ---
@@ -555,7 +561,7 @@ createService({
 |---|---|---|---|
 | `port` | `number` | `3000` | HTTP port |
 | `hostname` | `string` | `'0.0.0.0'` | Bind address |
-| `apiPrefix` | `string` | `'/api'` | Prefix for auto-routed service URLs |
+| `apiPrefix` | `string` | `''` | Prefix for auto-routed service URLs — `''` mounts them at `/{service}` |
 | `http.drainTimeout` | `number` | `5000` | ms to drain requests on shutdown |
 | `http.compress` | `boolean` | `true` | gzip responses |
 | `http.maxBodySize` | `number` | `262144` | max request body bytes |
@@ -686,7 +692,7 @@ createService({
 })
 ```
 
-Cache keys include the authenticated user's ID when present — `GET /api/orders` for user A never serves user B's cached result. Public routes share a single cache entry per query.
+Cache keys include the authenticated user's ID when present — `GET /orders` for user A never serves user B's cached result. Public routes share a single cache entry per query.
 
 The underlying store is shared across all services. Override it at the app level with a SQLite-backed cache for persistence across restarts:
 
@@ -713,10 +719,10 @@ For tests: `createInMemoryDatabase()` gives the same interface with `:memory:`.
 
 ## Litestone ORM
 
-[Litestone](https://github.com/frontierjs/litestone) is Junction's first-party SQLite ORM. When installed, `createLitestoneService` replaces manual CRUD — all five methods are generated from the schema, validation is auto-generated from the JSON Schema output, and `@file` fields wire up to object storage transparently.
+[Litestone](https://github.com/frontierjs/litestone) is Junction's first-party SQLite ORM. When installed, `createService` replaces manual CRUD — all five methods are generated from the schema, validation is auto-generated from the JSON Schema output, and `@file` fields wire up to object storage transparently.
 
 ```typescript
-import { createLitestoneService, withLitestoneDb } from '@frontierjs/junction'
+import { createService, withLitestoneDb } from '@frontierjs/junction'
 import { createClient, generateJsonSchema, GatePlugin, LEVELS } from '@frontierjs/litestone'
 
 const SCHEMA = `
@@ -744,9 +750,9 @@ const jsonSchema = generateJsonSchema(db.$schema)
 // Wire per-request auth scoping — runs as an around hook before every service call
 app.hooks({ around: { all: [withLitestoneDb(db)] } })
 
-// createLitestoneService generates find/get/create/patch/remove automatically.
+// createService generates find/get/create/patch/remove automatically.
 // schema: jsonSchema auto-generates create + patch validators from the Litestone schema.
-app.services.register(createLitestoneService({
+app.services.register(createService({
   name:       'posts',
   model:      'posts',      // defaults to deriveModelName(name) if omitted
   schema:     jsonSchema,   // optional — enables auto-validation
@@ -844,7 +850,7 @@ Junction handles multipart file uploads transparently. The bridge merges uploade
 **Receiving a file upload** — clients `POST` or `PATCH` with `multipart/form-data`:
 
 ```bash
-curl -X PATCH https://api.example.com/api/users/1 \
+curl -X PATCH https://api.example.com/users/1 \
   -H "Authorization: Bearer $TOKEN" \
   -F "name=Alice" \
   -F "avatar=@photo.jpg"
@@ -855,7 +861,7 @@ curl -X PATCH https://api.example.com/api/users/1 \
 **Accessing files in custom routes** — use `ctx.files` (already parsed, no manual `formData()` call):
 
 ```typescript
-app.patch('/api/users/:id/avatar', async ctx => {
+app.patch('/users/:id/avatar', async ctx => {
   const upload = ctx.files.find(f => f.name === 'avatar')
   if (!upload) return ctx.json({ message: 'avatar file required' }, 400)
 
@@ -869,7 +875,7 @@ app.patch('/api/users/:id/avatar', async ctx => {
 ```typescript
 import { fileUrl } from '@frontierjs/litestone'
 
-app.services.register(createLitestoneService({
+app.services.register(createService({
   name: 'users',
   hooks: {
     after: {
@@ -888,11 +894,11 @@ app.services.register(createLitestoneService({
 **Presigned uploads** — for large files, skip the server entirely. Generate a presigned URL, let the client upload directly to R2, then `PATCH` the ref:
 
 ```typescript
-app.post('/api/users/:id/avatar/presign', async ctx => {
+app.post('/users/:id/avatar/presign', async ctx => {
   const key       = `users/${ctx.params.id}/avatar/${crypto.randomUUID()}.jpg`
   const uploadUrl = await storage.sign(key, { expiresIn: 600 })
   return ctx.json({ uploadUrl, key })
-  // Client: PUT uploadUrl with file bytes, then PATCH /api/users/:id { avatar: JSON.stringify({ key, ... }) }
+  // Client: PUT uploadUrl with file bytes, then PATCH /users/:id { avatar: JSON.stringify({ key, ... }) }
 })
 ```
 
@@ -916,7 +922,7 @@ expect(ctx.result.title).toBe('Hello')
 // HTTP-style assertion — no real port
 // Supports: .get() .post() .patch() .put() .delete() .options()
 const res = await request(app)
-  .post('/api/notes')
+  .post('/notes')
   .auth(app.tokenFor('u1'))
   .send({ title: 'Hello', body: 'World' })
 expect(res.status).toBe(201)   // create returns 201 by default
@@ -929,7 +935,7 @@ const app = await createTestApp({ services: [...] })
 app.configure(cors({ origins: ['https://myapp.com'] }))  // queued
 app.configure(csrf({ origins: ['https://myapp.com'] }))  // queued
 // First request call triggers _startForTest() → plugins run → routes registered
-const res = await request(app).options('/api/notes')
+const res = await request(app).options('/notes')
 expect(res.status).toBe(204)
 ```
 ```
@@ -942,11 +948,11 @@ expect(res.status).toBe(204)
 app.configure(openapi({
   title:   'My API',
   version: '1.0.0',
-  ui:      '/api/docs',
+  ui:      '/docs',
   schemas: { notes: { create: { body: CreateNoteSchema } } },
 }))
-// GET /api/openapi.json  — machine-readable spec
-// GET /api/docs          — Swagger UI (CDN, no extra deps)
+// GET /openapi.json  — machine-readable spec
+// GET /docs          — Swagger UI (CDN, no extra deps)
 ```
 
 The generator respects `config.apiPrefix` — if your routes live at `/api/v2`, the spec paths will too. The default endpoint also moves: `/api/v2/openapi.json`.
@@ -1043,12 +1049,12 @@ const log  = await app.webhooks.deliveries(hookId)     // delivery history
 
 | Route | Description |
 |---|---|
-| `GET /api/webhooks` | list registrations |
-| `POST /api/webhooks` | register `{ url, events }` |
-| `DELETE /api/webhooks/:id` | unregister |
-| `POST /api/webhooks/:id/test` | fire a test ping |
-| `GET /api/webhook-deliveries` | delivery history |
-| `POST /api/webhook-deliveries/:id/retry` | manually retry |
+| `GET {apiPrefix}/webhooks` | list registrations |
+| `POST {apiPrefix}/webhooks` | register `{ url, events }` |
+| `DELETE {apiPrefix}/webhooks/:id` | unregister |
+| `POST {apiPrefix}/webhooks/:id/test` | fire a test ping |
+| `GET {apiPrefix}/webhook-deliveries` | delivery history |
+| `POST {apiPrefix}/webhook-deliveries/:id/retry` | manually retry |
 
 **REPL commands:**
 
@@ -1411,7 +1417,7 @@ app.configure(conduit({
       auth:     { type: 'bearer', token: process.env.HETZNER_TOKEN },
     },
   ],
-  management: true,   // exposes GET/DELETE /api/conduit/targets
+  management: true,   // exposes GET/DELETE {apiPrefix}/conduit/targets
 }))
 
 // Send from anywhere — hooks, services, routes
@@ -1486,6 +1492,56 @@ The blast radius of swapping a provider is exactly one file.
 | `bun run repl` | Open the interactive REPL |
 | `bun run tools/repl.ts --port 4000` | REPL on a custom port |
 | `bun run tools/repl.ts --host x.com --https` | REPL against a remote host |
+| `bun run build:app ./app.ts` | Bundle an app for deployment |
+
+---
+
+## Deploying
+
+`bun run build:app <entry>` (also `junction build <entry>`) turns an app into a deployable artifact.
+
+```bash
+bun run build:app ./app.ts                        # → dist/app/app.js   ~348 KB
+bun run build:app ./app.ts --mode=binary          # → dist/app/app       ~95 MB
+bun run build:app ./app.ts --mode=docker          # + a matching Dockerfile
+bun run build:app ./app.ts --mode=docker --artifact=binary --target=bun-linux-x64-musl
+```
+
+| Mode | Output | Needs on the host |
+|---|---|---|
+| `js` *(default)* | one bundled `.js`, app + framework inlined | bun |
+| `binary` | `--compile` executable, Bun runtime embedded | nothing |
+| `docker` | either artifact plus a `Dockerfile` and `.dockerignore` | docker |
+
+`js` is the default because it is ~270× smaller and most hosts already have a bun image. Both artifacts read `PORT` from the environment.
+
+Generated Dockerfiles pick a base image from what the artifact actually links against — `oven/bun:1-slim` for js, `debian:bookworm-slim` for glibc binaries, and `alpine:3.20` plus `apk add libstdc++` for `-musl` targets. Neither binary is statically linked, so `scratch` will not work. The base image architecture must match `--target`.
+
+Other options: `--outdir`, `--port` (Dockerfile `ENV`/`EXPOSE`, default 80), `--no-minify`, `--sourcemap`, `--allow-autoload`.
+
+### Autoload does not survive bundling
+
+This is the one thing that will bite you. A bundled app **must register its services statically** and set `autoload: false`:
+
+```ts
+import { createMessagesService } from './messages.service.ts'
+
+const app = createApp({ autoload: false, config: { /* … */ } })
+app.services.register(createMessagesService())
+```
+
+Directory autoload fails in a bundled build for two independent reasons:
+
+1. The scan root resolves against `Bun.main` — the **output** file, not your source tree. Bundling `./app.ts` to `./dist/app.js` makes junction look for `./dist/services`; inside a compiled binary it looks in `/$bunfs/root`.
+2. `findServiceFiles()` globs `**/*.service.ts` — TypeScript source only. Bundled `.js` services are invisible to it, so shipping them alongside does not help.
+
+A missing services directory is a deliberate no-op, so nothing throws. You get a clean boot logging `"services":0` and a 404 on every autoloaded route.
+
+`build:app` guards against this: it **errors** when it finds a services directory that would be skipped, and **warns** when it cannot rule the case out (no `autoload: false` in the entry, or a `junction.config.js` that may set `services.dir`). The one exception it allows silently is an in-place `js` build — `--outdir` equal to the entry's directory — where the output sits beside the original `.ts` services and autoload genuinely still works.
+
+### Not Cloudflare Workers
+
+`bun build --target` accepts only `browser`, `bun`, and `node`. Junction is built on `Bun.serve`, `bun:sqlite`, `Bun.file`, and `Bun.main`, none of which exist on workerd. Running on Workers would mean replacing the transport with a `fetch` handler and the database layer with D1 — an architecture port, not a build flag. Container-based hosts (CapRover, Fly, Railway, Cloudflare's container product) work like any other Docker target.
 
 ---
 

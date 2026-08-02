@@ -12,6 +12,7 @@
 
 import type { MiddlewareFn, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
+import { Forbidden }                            from '../core/errors.ts'
 
 // ─── Shared origin type ───────────────────────────────────────────────────
 // cors() and csrf() both accept the same origin specification.
@@ -90,6 +91,7 @@ export function cors(opts: CorsOptions) {
   function isAllowed(origin: string): boolean {
     if (origins === '*') return true
     if (Array.isArray(origins)) return origins.includes('*') || origins.includes(origin)
+    if (typeof origins === 'string') return origins === origin
     return origins(origin)
   }
 
@@ -256,8 +258,18 @@ export function rateLimit(opts: RateLimitOptions) {
     await next()
   }
 
-  return function rateLimitPlugin(app: App): void {
-    patchRouterWithMiddleware(app, middleware)
+  // Returned as a full Plugin (not a bare PluginFn) so shutdown() can clear
+  // the GC timer — previously the interval had no teardown path and kept
+  // running against the counters map after app.stop().
+  return {
+    name: 'rateLimit',
+    register(app: App): void {
+      patchRouterWithMiddleware(app, middleware)
+    },
+    shutdown(): void {
+      clearInterval(gc)
+      counters.clear()
+    },
   }
 }
 
@@ -403,7 +415,6 @@ export function correlationId(opts: CorrelationIdOptions = {}) {
 //     app.configure(cors({ origins: ['https://myapp.com'] }))
 //     app.configure(csrf({ origins: ['https://myapp.com'] }))
 
-import { Forbidden } from '../core/errors.ts'
 
 export interface CsrfOptions {
   // Which origins are allowed to make mutating requests.

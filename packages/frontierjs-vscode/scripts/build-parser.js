@@ -26,13 +26,11 @@ const WATCH   = process.argv.includes('--watch')
 function resolveParser() {
   const candidates = [
     // 1. Explicit env var
-    process.env.LITESTONE_SRC
-      ? path.join(process.env.LITESTONE_SRC, 'parser.js')
-      : null,
+    process.env.LITESTONE_SRC ? path.join(process.env.LITESTONE_SRC, 'parser.js') : null,
     // 2. Sibling directory (monorepo layout)
     path.resolve(ROOT, '..', 'litestone', 'src', 'parser.js'),
     // 3. npm package
-    path.resolve(ROOT, 'node_modules', '@frontierjs', 'litestone', 'src', 'parser.js'),
+    path.resolve(ROOT, 'node_modules', '@frontierjs', 'litestone', 'src', 'parser.js')
   ].filter(Boolean)
 
   for (const p of candidates) {

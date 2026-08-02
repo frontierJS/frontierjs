@@ -8,42 +8,38 @@
 //              -H "Content-Type: application/json" \
 //              -d '{"name":"Acme"}'
 
-import { createClient, GatePlugin, LEVELS, AccessDeniedError } from '../src/index.js'
-import { parse }            from '../src/core/parser.js'
-import { generateDDL }      from '../src/core/ddl.js'
-import { splitStatements }  from '../src/core/migrate.js'
-import { Database }         from 'bun:sqlite'
+import { createClient, autoMigrate, GatePlugin, LEVELS } from '../src/index.js'
 import { dirname, resolve } from 'path'
 import { fileURLToPath }    from 'url'
-import { existsSync }       from 'fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DB_PATH   = resolve(__dirname, 'server-demo.db')
 const PORT      = 3000
 
 // ─── 1. Schema ────────────────────────────────────────────────────────────────
-// Define your data models as a .lite string (or point parse() at a file).
-// This schema is inlined here so the file is fully self-contained —
-// in a real project you'd use:  const parseResult = parseFile('./schema.lite')
+// Model names are PascalCase and singular — always. The client accessor is the
+// camelCase of the model name: model Account → db.account.
+// Gates use the named form; the digit form ("0.4.4.5") is the compact
+// equivalent — see docs/access-control.md.
 
 const SCHEMA = `
   enum Plan { starter pro enterprise }
   enum Role { admin member viewer }
 
-  model accounts {
-    id        Int @id
+  model Account {
+    id        Int      @id
     name      String
-    plan      Plan    @default(starter)
+    plan      Plan     @default(starter)
     createdAt DateTime @default(now())
 
     @@gate(read: VISITOR, write: ADMINISTRATOR, delete: OWNER)
   }
 
-  model users {
-    id        Int  @id
-    account   accounts @relation(fields: [accountId], references: [id])
+  model User {
+    id        Int      @id
+    account   Account  @relation(fields: [accountId], references: [id])
     accountId Int
-    email     String     @unique @email @lower
+    email     String   @unique @email @lower
     role      Role     @default(member)
     createdAt DateTime @default(now())
     deletedAt DateTime?
@@ -51,9 +47,9 @@ const SCHEMA = `
     @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
   }
 
-  model posts {
-    id        Int  @id
-    account   accounts @relation(fields: [accountId], references: [id])
+  model Post {
+    id        Int      @id
+    account   Account  @relation(fields: [accountId], references: [id])
     accountId Int
     title     String
     body      String?
@@ -61,55 +57,28 @@ const SCHEMA = `
     createdAt DateTime @default(now())
     deletedAt DateTime?
 
-    @@gate(read: VISITOR, write: USER, delete: ADMINISTRATOR)
+    @@gate(read: STRANGER, write: USER, delete: ADMINISTRATOR)
   }
 `
 
-// ─── 2. Boot the database ─────────────────────────────────────────────────────
-// Parse the schema, generate DDL, and apply it to the SQLite file.
-// IF NOT EXISTS means this is safe to call every time — it's idempotent.
-// On first run it creates the tables; on subsequent runs it's a no-op.
-
-const parseResult = parse(SCHEMA)
-if (!parseResult.valid) {
-  console.error('Schema errors:\n' + parseResult.errors.join('\n'))
-  process.exit(1)
-}
-
-if (!existsSync(DB_PATH)) {
-  // First run — create the DB and seed some data
-  console.log('Creating database...')
-  const seed = new Database(DB_PATH)
-  for (const stmt of splitStatements(generateDDL(parseResult.schema)))
-    if (!stmt.startsWith('PRAGMA')) seed.run(stmt)
-  seed.run(`INSERT INTO accounts VALUES (1, 'Acme Corp',  'pro',        datetime('now'))`)
-  seed.run(`INSERT INTO accounts VALUES (2, 'Beta Corp',  'starter',    datetime('now'))`)
-  seed.run(`INSERT INTO users VALUES    (1, 1, 'alice@acme.com',  'admin',  datetime('now'), NULL)`)
-  seed.run(`INSERT INTO users VALUES    (2, 1, 'bob@acme.com',    'member', datetime('now'), NULL)`)
-  seed.run(`INSERT INTO posts VALUES    (1, 1, 'Hello World', 'Our first post', 1, datetime('now'), NULL)`)
-  seed.run(`INSERT INTO posts VALUES    (2, 1, 'Draft post',  NULL,            0, datetime('now'), NULL)`)
-  seed.close()
-  console.log('Database seeded.')
-}
-
-// ─── 3. Create the Litestone client ───────────────────────────────────────────
-// One client instance shared across ALL requests — createClient is called once
-// at startup, not per-request. It opens two SQLite connections (read + write)
-// and caches prepared statements.
+// ─── 2. Boot ──────────────────────────────────────────────────────────────────
+// createClient opens the connections; autoMigrate() syncs the SQLite file to
+// the schema (idempotent — a DDL-hash fast path makes it free on every start).
+// No hand-written DDL, no existsSync dance.
 //
-// The GatePlugin enforces @@gate policies on every operation.
-// The getLevel() function is called once per model per request and cached —
-// in a real app this would look up the user's role from the session/JWT.
+// Because the schema declares @@gate, enforcement is on by default (using the
+// standard FrontierGateGetLevel resolver). This demo installs its OWN
+// GatePlugin instead — the header-role auth below doesn't carry the
+// verifiedAt/activatedAt fields the default resolver reads.
 
 const db = await createClient({
   db:     DB_PATH,
-  parsed: parseResult,
+  schema: SCHEMA,
   plugins: [
     new GatePlugin({
       getLevel(user, _model) {
         // In a real app: decode JWT, look up role, return level.
-        // Here we just read from the user object set by $setAuth().
-        if (!user)              return LEVELS.STRANGER
+        if (!user)                  return LEVELS.STRANGER
         if (user.role === 'admin')  return LEVELS.ADMINISTRATOR
         if (user.role === 'member') return LEVELS.USER
         return LEVELS.READER
@@ -118,7 +87,27 @@ const db = await createClient({
   ]
 })
 
-// ─── 4. Auth helper ───────────────────────────────────────────────────────────
+autoMigrate(db)
+
+// Seed once — plain ORM calls, no raw SQL.
+if (await db.asSystem().account.count() === 0) {
+  const sys = db.asSystem()
+  await sys.account.createMany({ data: [
+    { id: 1, name: 'Acme Corp', plan: 'pro' },
+    { id: 2, name: 'Beta Corp', plan: 'starter' },
+  ]})
+  await sys.user.createMany({ data: [
+    { id: 1, accountId: 1, email: 'alice@acme.com', role: 'admin'  },
+    { id: 2, accountId: 1, email: 'bob@acme.com',   role: 'member' },
+  ]})
+  await sys.post.createMany({ data: [
+    { id: 1, accountId: 1, title: 'Hello World', body: 'Our first post', published: true },
+    { id: 2, accountId: 1, title: 'Draft post',  published: false },
+  ]})
+  console.log('Database seeded.')
+}
+
+// ─── 3. Auth helper ───────────────────────────────────────────────────────────
 // In a real app you'd verify a JWT, check a session cookie, etc.
 // Here we just read an X-User-Role header for demonstration.
 // $setAuth() returns a new scoped client — same DB, same connections,
@@ -130,81 +119,67 @@ function getAuthClient(req) {
   return db.$setAuth(user)
 }
 
-// ─── 5. Router ────────────────────────────────────────────────────────────────
+// ─── 4. Router ────────────────────────────────────────────────────────────────
 // Bun.serve() handles all HTTP. We do our own minimal routing —
-// match method + pathname prefix, parse params, call Litestone, return JSON.
+// match method + pathname, map the plural REST segment to the singular
+// accessor, call Litestone, return JSON.
+
+const RESOURCES = {
+  accounts: 'account',
+  users:    'user',
+  posts:    'post',
+}
 
 async function handleRequest(req) {
   const url      = new URL(req.url)
   const segments = url.pathname.split('/').filter(Boolean)
   const [resource, id] = segments          // e.g. ['accounts', '1']
   const client   = getAuthClient(req)
+  const accessor = RESOURCES[resource]
 
   try {
 
+    if (!accessor) return notFound(`Unknown resource: ${resource ?? '/'}`)
+    const table = client[accessor]
+
     // ── GET /accounts ─────────────────────────────────────────────────────────
-    // List all records. Supports ?limit=N and ?search=q query params.
-    // The GatePlugin silently blocks the whole request if the user's level
-    // is below the model's @@gate read requirement.
+    // List all records. Supports ?limit=N. The gate silently blocks the whole
+    // request if the user's level is below the model's read requirement.
 
-    if (req.method === 'GET' && resource && !id) {
-      const table  = client[resource]
-      if (!table) return notFound(`Unknown resource: ${resource}`)
-
-      const limit  = parseInt(url.searchParams.get('limit') ?? '50')
-      const rows   = await table.findMany({ limit })
-      return json(rows)
+    if (req.method === 'GET' && !id) {
+      const limit = parseInt(url.searchParams.get('limit') ?? '50')
+      return json(await table.findMany({ limit }))
     }
 
     // ── GET /accounts/1 ───────────────────────────────────────────────────────
-    // Fetch a single record by ID. Throws NOT_FOUND if missing.
 
-    if (req.method === 'GET' && resource && id) {
-      const table = client[resource]
-      if (!table) return notFound(`Unknown resource: ${resource}`)
-
-      const row = await table.findUniqueOrThrow({ where: { id: parseInt(id) } })
-      return json(row)
+    if (req.method === 'GET' && id) {
+      return json(await table.findUniqueOrThrow({ where: { id: parseInt(id) } }))
     }
 
     // ── POST /accounts ────────────────────────────────────────────────────────
-    // Create a new record. Body is JSON. Litestone validates types, runs
-    // @email / @lower / @default transforms, and checks @@gate create level.
-    // Auto-increments @id if not provided.
+    // Create. Litestone validates types, runs @email / @lower / @default
+    // transforms, checks the gate's create level, and silently strips any
+    // unknown keys in the body (mass-assignment protection).
 
-    if (req.method === 'POST' && resource && !id) {
-      const table = client[resource]
-      if (!table) return notFound(`Unknown resource: ${resource}`)
-
-      const data    = await req.json()
-      const created = await table.create({ data })
+    if (req.method === 'POST' && !id) {
+      const created = await table.create({ data: await req.json() })
       return json(created, 201)
     }
 
     // ── PATCH /accounts/1 ────────────────────────────────────────────────────
-    // Partial update — only the fields in the body are changed.
-    // @@gate update level is checked before any SQL runs.
 
-    if (req.method === 'PATCH' && resource && id) {
-      const table = client[resource]
-      if (!table) return notFound(`Unknown resource: ${resource}`)
-
-      const data    = await req.json()
-      const updated = await table.update({
+    if (req.method === 'PATCH' && id) {
+      return json(await table.update({
         where: { id: parseInt(id) },
-        data,
-      })
-      return json(updated)
+        data:  await req.json(),
+      }))
     }
 
     // ── DELETE /accounts/1 ───────────────────────────────────────────────────
     // Hard delete (or soft delete if the model has deletedAt).
-    // @@gate delete level — this is the most restrictive position.
 
-    if (req.method === 'DELETE' && resource && id) {
-      const table = client[resource]
-      if (!table) return notFound(`Unknown resource: ${resource}`)
-
+    if (req.method === 'DELETE' && id) {
       await table.delete({ where: { id: parseInt(id) } })
       return json({ deleted: true })
     }
@@ -214,9 +189,9 @@ async function handleRequest(req) {
   } catch (e) {
 
     // ── Error handling ────────────────────────────────────────────────────────
-    // AccessDeniedError — thrown by the GatePlugin when @@gate rejects the op.
+    // AccessDeniedError — thrown when the gate rejects the op.
     // NOT_FOUND        — thrown by findUniqueOrThrow when no row matches.
-    // ValidationError  — thrown when @email / @gte / @maxLength etc. fail.
+    // ValidationError  — thrown when @email / @gte / required fields fail.
     // Everything else  — 500.
 
     if (e.code === 'ACCESS_DENIED')
@@ -233,7 +208,7 @@ async function handleRequest(req) {
   }
 }
 
-// ─── 6. Response helpers ──────────────────────────────────────────────────────
+// ─── 5. Response helpers ──────────────────────────────────────────────────────
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
@@ -246,10 +221,9 @@ function notFound(msg) {
   return json({ error: msg }, 404)
 }
 
-// ─── 7. Start the server ──────────────────────────────────────────────────────
-// Bun.serve() is non-blocking. The process stays alive serving requests.
-// Every request gets a fresh $setAuth() client — auth context is per-request,
-// not shared. The underlying DB connections are shared and connection-pooled.
+// ─── 6. Start the server ──────────────────────────────────────────────────────
+// Bun.serve() is non-blocking. Every request gets a fresh $setAuth() client —
+// auth context is per-request; the underlying connections are shared.
 
 Bun.serve({
   port: PORT,

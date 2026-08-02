@@ -46,7 +46,17 @@ export function toFrameworkError(err: unknown): FrameworkError {
   if (err instanceof FrameworkError) return err
 
   if (err instanceof Error) {
-    const fe  = new GeneralError(err.message)
+    // Litestone errors cross a package boundary, so instanceof can't see
+    // them — match by name. A gate/policy denial is a 403 (the anonymous
+    // case is already a 401 from the gateAuth pre-check before the query);
+    // a schema-rule rejection is a 400. Without this both surfaced as 500s.
+    const fe: FrameworkError =
+      err.name === 'AccessDeniedError' ? new Forbidden(err.message)   :
+      err.name === 'ValidationError'   ? new BadRequest(err.message)  :
+      new GeneralError(err.message)
+    if (fe instanceof BadRequest && 'errors' in err) {
+      fe.data = (err as Error & { errors: unknown }).errors
+    }
     fe.cause  = err
     fe.stack  = err.stack
     return fe

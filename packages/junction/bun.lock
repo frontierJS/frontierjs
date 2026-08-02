@@ -1,0 +1,21 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@frontierjs/junction",
+      "devDependencies": {
+        "@frontierjs/litestone": "latest",
+      },
+      "peerDependencies": {
+        "@frontierjs/litestone": ">=0.1.0",
+      },
+      "optionalPeers": [
+        "@frontierjs/litestone",
+      ],
+    },
+  },
+  "packages": {
+    "@frontierjs/litestone": ["@frontierjs/litestone@1.0.3", "", { "bin": { "litestone": "src/tools/cli.js" } }, "sha512-DiR5UKuC6CzF1DH4qYOfnDbCgJ0I+vrormtThHI631AD5JwqnYUZ6SoyKbbk4XBRWUU53EDpIonB38UCbBCErA=="],
+  }
+}

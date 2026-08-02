@@ -18,6 +18,14 @@
 //
 // ─────────────────────────────────────────────────────────────────────────
 
+// The only import in this file, and deliberately so: the envelope is shared
+// with the server rather than re-described here. core/envelope.ts is pure and
+// dependency-free, so it bundles into the browser build without pulling
+// anything else in — and it means the client cannot drift from the shape the
+// server actually sends, which is precisely what happened before.
+import { isListResult, list, type ListResult, type ServiceResult } from '../core/envelope.ts'
+export type { ListResult, ServiceResult }
+
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export interface JunctionClientOptions {
@@ -27,6 +35,14 @@ export interface JunctionClientOptions {
   timeout?: number // request timeout ms, default 30_000
   reconnectDelay?: number // initial WS reconnect delay ms, default 1_000
   reconnectMax?: number // max reconnect delay ms, default 30_000
+  // URL prefix for service routes. MUST match the server's `apiPrefix` config.
+  // Default '' — the server default, which registers services at /{service}.
+  // Set to '/api' or '/api/v1' only when the app sets apiPrefix to the same.
+  apiPrefix?: string
+  // URL prefix for the auth plugin's routes, default '/auth'. Independent of
+  // apiPrefix: @frontierjs/auth mounts its routes with app.post() directly, so
+  // they are not moved by apiPrefix. Match the plugin's own `prefix` option.
+  authPrefix?: string
 }
 
 export interface FindParams {
@@ -37,12 +53,15 @@ export interface FindParams {
   select?: string | string[]
 }
 
-export interface PaginatedResult<T = unknown> {
-  total: number
-  limit: number
-  offset: number
-  data: T[]
-}
+/**
+ * @deprecated Use `ListResult<T>` — the actual shape find() returns.
+ *
+ * This described the server's list envelope but omitted `kind`, `object` and
+ * `errors`, and no method ever returned it: find() unwrapped to `T[]` and threw
+ * the metadata away. It was a type describing a value that did not exist.
+ */
+export type PaginatedResult<T = unknown> = ListResult<T>
+
 
 export type ServiceEvent = 'created' | 'patched' | 'removed' | 'find' | 'get' | string
 
@@ -109,31 +128,81 @@ export class ServiceProxy<
     this._client = client
   }
 
+  /**
+   * Collection path for this service.
+   *
+   * Every route below used to hardcode an `/api` prefix, which matches the
+   * server only when the app sets `apiPrefix: '/api'`. Junction's default is ''
+   * (see registerServiceRoutes in core/app.ts) — so against a default app every
+   * one of these requests 404'd. The prefix is now the client's, supplied once
+   * at construction and normalised the same way the server normalises its own.
+   */
+  private get _base(): string {
+    return `${this._client._apiPrefix}/${this.name}`
+  }
+
   // ── CRUD ────────────────────────────────────────────────────────────
   // Prefer WS when connected. Files always use HTTP.
 
-  // find(query?, params?) → T[]
-  async find(query?: Record<string, unknown>, params?: FindParams): Promise<T[]> {
+  /**
+   * find(query?, params?) → the LIST ENVELOPE, not a bare array.
+   *
+   *   const res = await client.service('posts').find()
+   *   res.data      // the rows
+   *   res.total     // ← was unreachable: this used to return res.data and
+   *                 //   throw away total/limit/offset, so no browser caller
+   *                 //   could build a paginated table. PaginatedResult was
+   *                 //   declared in this file and used by nothing.
+   *
+   * Matches HTTP and app.service() exactly: a list keeps its envelope, a
+   * single unwraps to the record.
+   */
+  async find(query?: Record<string, unknown>, params?: FindParams): Promise<ListResult<T>> {
     const merged: FindParams = {
       ...params,
       query: { ...(params?.query ?? {}), ...(query ?? {}) }
     }
-    if (this._client._wsReady) {
-      const res = (await this._client._wsCall(this.name, 'find', null, query ?? null)) as
-        | { data: T[] }
-        | T[]
-        | null
-      if (!res) return []
-      return (res as { data: T[] }).data ?? (res as T[])
+    // Normalise whatever the server sent into one shape, so callers see one
+    // shape. Three inputs are legitimate:
+    //   • a proper list envelope             (current server)
+    //   • a bare array                       ($wrap=false, or a custom find)
+    //   • { total, limit, offset|skip, data } (older server, or a service
+    //                                          returning a paginated shape)
+    // The third case is why this is not a two-liner: dropping it would turn a
+    // perfectly good paginated response into an empty list, silently.
+    const asEnvelope = (res: unknown): ListResult<T> => {
+      if (isListResult<T>(res)) return res
+      if (Array.isArray(res))   return list(this.name, res as T[])
+
+      const r = res as { data?: unknown; total?: number; limit?: number; offset?: number; skip?: number } | null
+      if (r && typeof r === 'object' && Array.isArray(r.data)) {
+        return list(this.name, r.data as T[], {
+          total:  r.total,
+          limit:  r.limit,
+          offset: r.offset ?? r.skip,
+        })
+      }
+      return list(this.name, [])
     }
+
+    if (this._client._wsReady) {
+      // Send the FULL merged query (filters + $limit/$offset/$orderBy/$select)
+      // as params.query so the server puts it on ctx.query — the same shape
+      // the HTTP query string produces. Previously only the raw filter object
+      // was sent (as the DATA field, not the query), so pagination/ordering/
+      // select were silently dropped over WebSocket.
+      return asEnvelope(await this._client._wsCall(
+        this.name, 'find', null, null, buildWsQuery(merged)
+      ))
+    }
+
     const qs = buildQueryString(merged)
-    const res = (await this._client._request('GET', `/api/${this.name}${qs}`)) as
-      | { data: T[] }
-      | T[]
-      | null
-    if (!res) return []
-    // Server returns list envelope { object:'list', data:[], ... } — unwrap data
-    return (res as { data: T[] }).data ?? (res as T[])
+    return asEnvelope(await this._client._request('GET', `${this._base}${qs}`))
+  }
+
+  /** find() but just the rows — for callers that don't need total/limit/offset. */
+  async findData(query?: Record<string, unknown>, params?: FindParams): Promise<T[]> {
+    return (await this.find(query, params)).data
   }
 
   // get(id, params?) → T   /   get(query, params?) → T (findFirst via $first)
@@ -144,12 +213,12 @@ export class ServiceProxy<
     if (typeof idOrQuery === 'object') {
       // findFirst — pass $first=true
       const qs = buildQueryString({ ...params, query: { ...idOrQuery, $first: 'true' } })
-      return this._client._request('GET', `/api/${this.name}${qs}`) as Promise<T>
+      return this._client._request('GET', `${this._base}${qs}`) as Promise<T>
     }
     if (this._client._wsReady) {
       return this._client._wsCall(this.name, 'get', idOrQuery, null) as Promise<T>
     }
-    return this._client._request('GET', `/api/${this.name}/${idOrQuery}`) as Promise<T>
+    return this._client._request('GET', `${this._base}/${idOrQuery}`) as Promise<T>
   }
 
   // create(data, params?) → T
@@ -157,7 +226,7 @@ export class ServiceProxy<
     if (this._client._wsReady && !_hasFiles(data)) {
       return this._client._wsCall(this.name, 'create', null, data) as Promise<T>
     }
-    return this._client._request('POST', `/api/${this.name}`, data) as Promise<T>
+    return this._client._request('POST', this._base, data) as Promise<T>
   }
 
   // patch(id, data, params?) → T
@@ -179,14 +248,14 @@ export class ServiceProxy<
   ): Promise<T | T[]> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString({ ...params, query: idOrQuery })
-      return this._client._request('PATCH', `/api/${this.name}${qs}`, data) as Promise<T[]>
+      return this._client._request('PATCH', `${this._base}${qs}`, data) as Promise<T[]>
     }
     if (this._client._wsReady && !_hasFiles(data)) {
       return this._client._wsCall(this.name, 'patch', idOrQuery, data) as Promise<T>
     }
     return this._client._request(
       'PATCH',
-      `/api/${this.name}/${idOrQuery}`,
+      `${this._base}/${idOrQuery}`,
       data
     ) as Promise<T>
   }
@@ -201,12 +270,12 @@ export class ServiceProxy<
   ): Promise<T | string[]> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString({ ...params, query: idOrQuery })
-      return this._client._request('DELETE', `/api/${this.name}${qs}`) as Promise<string[]>
+      return this._client._request('DELETE', `${this._base}${qs}`) as Promise<string[]>
     }
     if (this._client._wsReady) {
       return this._client._wsCall(this.name, 'remove', idOrQuery, null) as Promise<T>
     }
-    return this._client._request('DELETE', `/api/${this.name}/${idOrQuery}`) as Promise<T>
+    return this._client._request('DELETE', `${this._base}/${idOrQuery}`) as Promise<T>
   }
 
   // restore(id, params?) → T
@@ -219,11 +288,11 @@ export class ServiceProxy<
   ): Promise<T | T[]> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString({ ...params, query: idOrQuery })
-      return this._client._request('PUT', `/api/${this.name}${qs}`, undefined, {
+      return this._client._request('PUT', `${this._base}${qs}`, undefined, {
         header: { 'x-service-method': 'restore' }
       }) as Promise<T[]>
     }
-    return this._client._request('PUT', `/api/${this.name}/${idOrQuery}`, undefined, {
+    return this._client._request('PUT', `${this._base}/${idOrQuery}`, undefined, {
       header: { 'x-service-method': 'restore' }
     }) as Promise<T>
   }
@@ -247,9 +316,9 @@ export class ServiceProxy<
   ): Promise<unknown> {
     return this._client._request(
       'POST',
-      `/api/${this.name}/${id}`,
+      `${this._base}/${id}`,
       data ?? {},
-      { 'X-Service-Method': name }
+      { header: { 'X-Service-Method': name } }
     )
   }
 
@@ -282,6 +351,9 @@ export class JunctionClient extends EventEmitter {
   private _timeout: number
   private _reconnectDelay: number
   private _reconnectMax: number
+  // Read by ServiceProxy._base. Normalised at construction, never re-derived.
+  _apiPrefix: string
+  private _authPrefix: string
 
   private _services: Map<string, ServiceProxy<Record<string, unknown>>> = new Map()
   private _ws: WebSocket | null = null
@@ -304,6 +376,8 @@ export class JunctionClient extends EventEmitter {
     this._timeout = opts.timeout ?? 30_000
     this._reconnectDelay = opts.reconnectDelay ?? 1_000
     this._reconnectMax = opts.reconnectMax ?? 30_000
+    this._apiPrefix = _normalizePrefix(opts.apiPrefix, '')
+    this._authPrefix = _normalizePrefix(opts.authPrefix, '/auth')
     this.token = opts.token ?? null
     this.workspaceId = opts.workspaceId ?? null
   }
@@ -314,7 +388,10 @@ export class JunctionClient extends EventEmitter {
     email: string
     password: string
   }): Promise<{ token: string; user: unknown; workspaceId: string | null }> {
-    const result = await this._request('POST', '/api/auth/login', credentials, {
+    // The auth plugin's own prefix, not apiPrefix — @frontierjs/auth registers
+    // these with app.post() directly, so apiPrefix does not move them. This
+    // used to point at '/api/auth/login', which the plugin has never served.
+    const result = await this._request('POST', `${this._authPrefix}/login`, credentials, {
       skipAuth: true
     })
     const r = result as { token: string; user: unknown; workspaceId: string | null }
@@ -377,34 +454,50 @@ export class JunctionClient extends EventEmitter {
     const svc = this.service<T>(name)
     const store = new Store<T>()
 
-    // Wire WS push events → store mutations
-    // Push events carry ctx.result — the ServiceResult envelope { object, data, ... }.
-    // Unwrap to get the actual record before passing to the store.
-    const unwrap = (raw: unknown): T => {
-      if (raw && typeof raw === 'object' && 'data' in (raw as object)) {
-        return (raw as { data: T }).data
-      }
-      return raw as T
-    }
+    // Open the socket. Everything below wires push events into the store, and
+    // none of it fires unless the socket exists — resource() promised "the
+    // store wires up to real-time WS events automatically" while leaving
+    // connect() to the caller, and the usage example above never calls it. The
+    // result was a store that populated once via load() and then went stale
+    // in silence, with no error to notice.
+    //
+    // connect() is idempotent (returns early if the socket is open or opening),
+    // so calling resource() for several services opens exactly one socket.
+    this.connect()
 
-    svc.on('create',  (raw: unknown) => store.upsert(unwrap(raw), idField))
-    svc.on('patch',   (raw: unknown) => store.upsert(unwrap(raw), idField))
-    svc.on('remove',  (raw: unknown) => store.remove(unwrap(raw)[idField], idField))
+    // Wire WS push events → store mutations.
+    // A push carries the record (events are about one row), but normalise
+    // anyway so a server that sends an envelope still works. The old version
+    // took `.data` off ANY object that had it — including a record with a
+    // column named `data`, which it would silently replace with that column.
+    const unwrap = (raw: unknown): T =>
+      (isListResult(raw) || (raw as ServiceResult)?.kind === 'single')
+        ? (raw as ServiceResult<T>).data
+        : raw as T
 
-    // Custom action events (e.g. 'move', 'archive') — treat as upserts.
+    // Server auto-events use past-tense names: created / patched / removed
+    // (see AUTO_EVENT_MAP server-side). Match those exactly.
+    svc.on('created',  (raw: unknown) => store.upsert(unwrap(raw), idField))
+    svc.on('patched',  (raw: unknown) => store.upsert(unwrap(raw), idField))
+    svc.on('removed',  (raw: unknown) => store.remove(unwrap(raw)[idField], idField))
+
+    // Custom action events (e.g. 'moved', 'archived') — treat as upserts.
     // The server publishes them with the updated record, same as patch.
     svc.on('*', (method: unknown, raw: unknown) => {
-      if (method === 'create' || method === 'patch' || method === 'remove') return
+      if (method === 'created' || method === 'patched' || method === 'removed') return
       store.upsert(unwrap(raw), idField)
     })
 
+    // load() keeps returning rows — the store holds records, not envelopes,
+    // and a view subscribing to it wants something it can map over.
+    // Pagination metadata is reachable via service.find() when a caller needs it.
     const load = async (
       query: Record<string, unknown> = {},
       params: FindParams = {}
     ): Promise<T[]> => {
-      const result = await svc.find(query, params)
-      store.set(result)
-      return result
+      const rows = (await svc.find(query, params)).data
+      store.set(rows)
+      return rows
     }
 
     return { service: svc, store, load }
@@ -642,11 +735,12 @@ export class JunctionClient extends EventEmitter {
     service: string,
     method: string,
     id: string | number | null,
-    data: Record<string, unknown> | null
+    data: Record<string, unknown> | null,
+    query?: Record<string, unknown> | null
   ): Promise<unknown> {
     // Fall back to HTTP if WS is not ready
     if (!this._wsReady || !this._ws) {
-      return this._httpFallback(service, method, id, data)
+      return this._httpFallback(service, method, id, data, query ?? null)
     }
 
     return new Promise((resolve, reject) => {
@@ -670,13 +764,21 @@ export class JunctionClient extends EventEmitter {
         }
       })
 
+      // Extras ride `meta` — that is the field WSMessage declares and the only
+      // one the server reads. This used to send `params`, which the server
+      // never looked at, so ctx.id was always null and every patch/remove was
+      // treated as a bulk operation.
+      const meta: Record<string, unknown> = {}
+      if (id != null)                                meta.id    = id
+      if (query && Object.keys(query).length > 0)    meta.query = query
+
       this._ws!.send(
         JSON.stringify({
           type: 'service_call',
           id: callId,
           service,
           method,
-          ...(id != null ? { params: { id } } : {}),
+          ...(Object.keys(meta).length > 0 ? { meta } : {}),
           ...(data != null ? { data } : {})
         })
       )
@@ -687,12 +789,15 @@ export class JunctionClient extends EventEmitter {
     service: string,
     method: string,
     id: string | number | null,
-    data: Record<string, unknown> | null
+    data: Record<string, unknown> | null,
+    query: Record<string, unknown> | null = null
   ): Promise<unknown> {
     const svc = this.service(service)
     switch (method) {
       case 'find':
-        return svc.find()
+        // Thread the caller's query through — previously the fallback
+        // fetched the entire unfiltered collection.
+        return svc.find(query ?? undefined)
       case 'get':
         return svc.get(id!)
       case 'create':
@@ -721,7 +826,7 @@ export class JunctionClient extends EventEmitter {
 
   async needsSetup(): Promise<boolean> {
     try {
-      const r = (await this._request('GET', '/api/setup/probe', undefined, {
+      const r = (await this._request('GET', `${this._apiPrefix}/setup/probe`, undefined, {
         skipAuth: true
       })) as { needs_setup: boolean }
       return r.needs_setup
@@ -738,6 +843,36 @@ export function createJunctionClient(opts: JunctionClientOptions = {}): Junction
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
+
+// Normalise a URL prefix to '' or '/segment[/segment…]'.
+//
+// This is deliberately the same transform registerServiceRoutes() applies to
+// `apiPrefix` server-side (core/app.ts): strip any surrounding slashes, re-add
+// a single leading one. So 'api', '/api', '/api/' and 'api/' all reach the same
+// place the server put the route, and '' stays '' — Junction's default, which
+// registers services at /{service}.
+function _normalizePrefix(value: string | undefined, fallback: string): string {
+  const raw = value ?? fallback
+  const stripped = raw.replace(/^\/|\/$/g, '')
+  return stripped ? `/${stripped}` : ''
+}
+
+// Flatten FindParams into the wire query shape the server expects on
+// ctx.query — same keys the HTTP query string uses ($limit, $offset,
+// $orderBy, $select + raw filters). Used for the WebSocket path.
+function buildWsQuery(params: FindParams): Record<string, unknown> {
+  const q: Record<string, unknown> = { ...(params.query ?? {}) }
+  if (params.limit  != null) q['$limit']  = params.limit
+  if (params.offset != null) q['$offset'] = params.offset
+  if (params.orderBy != null) {
+    q['$orderBy'] =
+      typeof params.orderBy === 'string' ? params.orderBy : JSON.stringify(params.orderBy)
+  }
+  if (params.select != null) {
+    q['$select'] = Array.isArray(params.select) ? params.select.join(',') : params.select
+  }
+  return q
+}
 
 function buildQueryString(params: FindParams): string {
   const p: Record<string, string> = {}
@@ -765,7 +900,12 @@ function buildQueryString(params: FindParams): string {
     }
   }
 
-  const qs = new URLSearchParams(p).toString()
+  // URLSearchParams encodes '$' as '%24'. Junction uses $-prefixed params
+  // ($limit, $offset, $first, $select, …) as a documented convention, and '$'
+  // is a valid query character (RFC 3986 sub-delim). Decode it back for
+  // readability — servers decode %24 to $ anyway, so this is purely cosmetic
+  // but keeps URLs clean and matches the documented query syntax.
+  const qs = new URLSearchParams(p).toString().replace(/%24/g, '$')
   return qs ? `?${qs}` : ''
 }
 

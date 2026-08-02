@@ -24,11 +24,32 @@
 export function matchRoute(pathname, tree, options = {}) {
   const { trailingSlash = 'always' } = options
 
-  // Normalize the incoming pathname
+  // Normalize once, split once. Previously every node visited re-split the same
+  // pathname inside matchPattern, so a 24-node tree meant 24 identical splits
+  // and 24 throwaway arrays per match — and matchRoute is on the hot path for
+  // both navigation and every prefetch.
   const normalized = normalizePath(pathname, trailingSlash)
+  const pathParts = splitPath(normalized)
 
-  // Walk the tree depth-first
-  return matchNode(normalized, tree, {})
+  return matchNode(normalized, pathParts, tree, {})
+}
+
+// ─── Pattern segment cache ───────────────────────────────────────────────────
+// Route patterns are static for the life of the tree, so their split form and
+// the lowercase of each static segment can be computed once. Keyed by node so
+// nothing is written onto the tree itself (the manifest is serialised, and
+// tests build trees by hand).
+const _segCache = new WeakMap()
+
+function segmentsFor(node) {
+  let segs = _segCache.get(node)
+  if (segs) return segs
+  segs = splitPath(node.path).map((part) => {
+    if (part.startsWith(':')) return { dynamic: true, name: part.slice(1) }
+    return { dynamic: false, lower: part.toLowerCase() }
+  })
+  _segCache.set(node, segs)
+  return segs
 }
 
 /**
@@ -39,13 +60,13 @@ export function matchRoute(pathname, tree, options = {}) {
  * @param {object} node
  * @param {Record<string, string>} inheritedParams
  */
-function matchNode(pathname, node, inheritedParams) {
+function matchNode(pathname, pathParts, node, inheritedParams) {
   // Root node — check for root index or try children
   if (node.id === 'root') {
     if (pathname === '/' && node.file) {
       return { node, params: inheritedParams }
     }
-    return matchChildren(pathname, node, inheritedParams)
+    return matchChildren(pathname, pathParts, node, inheritedParams)
   }
 
   // Catch-all — matches everything
@@ -57,7 +78,7 @@ function matchNode(pathname, node, inheritedParams) {
   }
 
   // Check if this node's pattern is a prefix of (or exact match for) the pathname
-  const result = matchPattern(node.path, pathname, inheritedParams)
+  const result = matchPattern(node, pathParts, inheritedParams)
   if (!result) return null
 
   if (result.exact) {
@@ -68,7 +89,7 @@ function matchNode(pathname, node, inheritedParams) {
   if (result.prefix && node.children.length > 0) {
     // Prefix match — try children with the FULL pathname
     // Children have absolute patterns so we pass the full path
-    return matchChildren(pathname, node, result.params)
+    return matchChildren(pathname, pathParts, node, result.params)
   }
 
   return null
@@ -78,63 +99,59 @@ function matchNode(pathname, node, inheritedParams) {
  * Try children of a node in priority order (already sorted by scanner).
  * Passes the FULL pathname — child patterns are absolute.
  */
-function matchChildren(pathname, parent, inheritedParams) {
+function matchChildren(pathname, pathParts, parent, inheritedParams) {
   for (const child of parent.children) {
-    const result = matchNode(pathname, child, inheritedParams)
+    const result = matchNode(pathname, pathParts, child, inheritedParams)
     if (result) return result
   }
   return null
 }
 
 /**
- * Match a route pattern against a full pathname.
+ * Match a node's pattern against an already-split pathname.
  *
- * Pattern: '/leads/:leadId/'
- * Pathname: '/leads/abc123/'
+ * Pattern:  '/leads/:leadId/'   (segments cached per node)
+ * Pathname: ['leads', 'abc123'] (split once per matchRoute call)
  *
  * Returns:
- *   null                          — no match at all
- *   { exact: true, params }       — exact match
- *   { prefix: true, params }      — pattern is a prefix of pathname (parent match)
+ *   null                      — no match
+ *   { exact: true, params }   — pattern consumed the whole pathname
+ *   { prefix: true, params }  — pattern is a proper prefix (parent match)
  *
- * @param {string} pattern
- * @param {string} pathname
+ * Params are only allocated once the pattern is known to match, so a failed
+ * comparison against a deep static route costs no object churn — the previous
+ * version spread inheritedParams into a fresh object before the first
+ * comparison, on every node visited.
+ *
+ * @param {object} node
+ * @param {string[]} pathParts
  * @param {Record<string, string>} inheritedParams
  */
-function matchPattern(pattern, pathname, inheritedParams) {
-  const patternParts = splitPath(pattern)
-  const pathParts = splitPath(pathname)
+function matchPattern(node, pathParts, inheritedParams) {
+  const patternParts = segmentsFor(node)
+  const plen = patternParts.length
+  const ulen = pathParts.length
 
-  const params = { ...inheritedParams }
+  if (ulen < plen) return null   // pathname shorter than pattern — no match
 
-  for (let i = 0; i < patternParts.length; i++) {
-    const pPart = patternParts[i]
+  let params = null
+
+  for (let i = 0; i < plen; i++) {
+    const seg = patternParts[i]
     const uPart = pathParts[i]
 
-    if (uPart === undefined) {
-      // Pathname is shorter than pattern — no match
-      return null
-    }
-
-    if (pPart.startsWith(':')) {
-      // Dynamic segment — capture value
-      params[pPart.slice(1)] = decodeURIComponent(uPart)
-    } else {
-      // Static segment — must match exactly (case-insensitive)
-      if (pPart.toLowerCase() !== uPart.toLowerCase()) return null
+    if (seg.dynamic) {
+      if (params === null) params = { ...inheritedParams }
+      params[seg.name] = decodeURIComponent(uPart)
+    } else if (seg.lower !== uPart.toLowerCase()) {
+      return null   // static segment mismatch
     }
   }
 
-  if (patternParts.length === pathParts.length) {
-    return { exact: true, params }
-  }
+  if (params === null) params = inheritedParams
 
-  if (pathParts.length > patternParts.length) {
-    // Pathname is longer — this is a parent/prefix match
-    return { prefix: true, params }
-  }
-
-  return null
+  if (plen === ulen) return { exact: true, params }
+  return { prefix: true, params }
 }
 
 /**
@@ -150,8 +167,22 @@ function splitPath(path) {
  * Normalize a pathname according to the trailingSlash setting.
  */
 export function normalizePath(pathname, trailingSlash = 'always') {
+  // Fast path: already-normalized paths are the common case (both callers in
+  // the router pre-normalize, and matchRoute normalizes again for safety), and
+  // the two splits below allocate three strings and two arrays each time.
+  if (
+    trailingSlash === 'always' &&
+    pathname.length > 1 &&
+    pathname.charCodeAt(pathname.length - 1) === 47 /* '/' */ &&
+    pathname.indexOf('?') === -1 &&
+    pathname.indexOf('#') === -1
+  ) return pathname
+
   // Always strip query string and hash
-  const clean = pathname.split('?')[0].split('#')[0]
+  const qi = pathname.indexOf('?')
+  const hi = pathname.indexOf('#')
+  const cut = qi === -1 ? hi : (hi === -1 ? qi : Math.min(qi, hi))
+  const clean = cut === -1 ? pathname : pathname.slice(0, cut)
 
   if (clean === '/') return '/'
 

@@ -27,8 +27,9 @@
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
-    "vitest": "^4.1.2",
-    "vite": "^8.0.3"
+    "happy-dom": "^20.11.1",
+    "vite": "^8.0.3",
+    "vitest": "^4.1.2"
   },
   "_built": "2026-04-13"
 }

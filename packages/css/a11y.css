@@ -1,0 +1,105 @@
+/*
+ * a11y.css
+ * Accessibility primitives. Small, and the system had none of them.
+ *
+ * ── Why this is the last layer ──────────────────────────────────────
+ *
+ * .visually-hidden has one job: take an element out of the visual
+ * rendering while leaving it in the accessibility tree. It only works if
+ * nothing else wins on position/size/clip, and it is famously fragile —
+ * most libraries reach for !important to protect it.
+ *
+ * index.css puts this file in an `a11y` layer declared after every other
+ * layer, so it beats the whole package without a single !important. A
+ * consumer's own unlayered CSS still overrides it, which is correct: if
+ * you deliberately restyle it, you should win.
+ */
+
+/*
+ * ── Visually hidden ─────────────────────────────────────────────────
+ * For text that a screen reader must read and a sighted user must not
+ * see: the real label on an icon-only control, a table caption, a
+ * status region, the word "current" in a breadcrumb.
+ *
+ *   <button class="btn icon">
+ *     <svg aria-hidden="true">…</svg>
+ *     <span class="visually-hidden">Delete invoice</span>
+ *   </button>
+ *
+ * `clip-path: inset(50%)` rather than the old `clip: rect(…)`, which is
+ * deprecated. The 1px box plus negative margin keeps the element from
+ * contributing layout, and `white-space: nowrap` stops a long string
+ * from being read as one character per line by some screen readers.
+ *
+ * Note this is NOT display:none or visibility:hidden — both of those
+ * remove the element from the accessibility tree too, which defeats the
+ * entire purpose.
+ */
+.visually-hidden {
+  position:      absolute;
+  width:         1px;
+  height:        1px;
+  padding:       0;
+  margin:        -1px;
+  border:        0;
+  overflow:      hidden;
+  clip-path:     inset(50%);
+  white-space:   nowrap;
+}
+
+/*
+ * Opt-in: reveal on focus. For content that should stay hidden until a
+ * keyboard user reaches it. `:focus-within` covers the case where the
+ * hidden wrapper contains the focusable element rather than being it.
+ */
+.visually-hidden.focusable:focus,
+.visually-hidden.focusable:focus-within {
+  position:    static;
+  width:       auto;
+  height:      auto;
+  margin:      0;
+  overflow:    visible;
+  clip-path:   none;
+  white-space: normal;
+}
+
+/*
+ * ── Skip link ───────────────────────────────────────────────────────
+ * The first focusable thing in the document, so a keyboard user can jump
+ * past the Topbar and Sidebar instead of tabbing through them on every
+ * page. Off-screen until focused.
+ *
+ *   <body>
+ *     <a class="skip-link" href="#main">Skip to content</a>
+ *     …
+ *     <main id="main" tabindex="-1"> … </main>
+ *
+ * The tabindex="-1" on the target matters: without it, some browsers
+ * move the visual viewport but not the focus, so the next Tab press
+ * resumes from the skip link instead of the content.
+ */
+.skip-link {
+  position:       fixed;
+  top:            0.5rem;
+  left:           0.5rem;
+  z-index:        1000;
+  padding:        0.5rem 1rem;
+  background:     var(--surface);
+  color:          var(--ink);
+  border:         1px solid var(--rule-strong);
+  border-radius:  var(--btn-radius);
+  box-shadow:     var(--shadow-lg);
+  font-family:    var(--font-primary);
+  font-size:      0.875rem;
+  font-weight:    600;
+  text-decoration: none;
+
+  /* Out of sight, but still focusable — not display:none. */
+  transform:  translateY(calc(-100% - 1rem));
+  transition: transform 120ms ease-out;
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline:      2px solid var(--ring);
+  outline-offset: 2px;
+}

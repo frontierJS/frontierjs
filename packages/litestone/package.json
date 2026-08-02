@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/litestone",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "description": "SQLite ORM for Bun \u2014 schema-first, type-safe, zero dependencies",
   "type": "module",
   "license": "MIT",
@@ -43,6 +43,9 @@
     "./parser": {
       "import": "./src/core/parser.js"
     },
+    "./jsonschema": {
+      "import": "./src/jsonschema.js"
+    },
     "./ddl": {
       "import": "./src/core/ddl.js"
     },
@@ -76,7 +79,11 @@
     "dev": "bun src/tools/cli.js",
     "test": "bun test test/",
     "test:watch": "bun test --watch test/",
-    "test:smoke": "bun test test/cli-smoke.test.ts"
+    "test:smoke": "bun test test/cli-smoke.test.ts",
+    "build:binary": "bun scripts/build-binary.js",
+    "build:binary:all": "bun scripts/build-binary.js --all --clean",
+    "build:lib": "bun scripts/build-lib.js",
+    "build:lib:testing": "bun scripts/build-lib.js --with-testing"
   },
   "types": "./src/index.d.ts"
 }

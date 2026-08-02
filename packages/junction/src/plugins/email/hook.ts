@@ -23,7 +23,7 @@ import { createLogger }      from '../../core/logger.ts'
 import type { EmailMessage } from './types.ts'
 
 // Builder receives the full service context so the caller has access to
-// ctx.result, ctx.data, ctx.params.user, and anything set by prior hooks.
+// ctx.result, ctx.data, ctx.auth.user, and anything set by prior hooks.
 type EmailBuilder = (ctx: ServiceContext) => EmailMessage | Promise<EmailMessage>
 
 // ─── Options ──────────────────────────────────────────────────────────────────

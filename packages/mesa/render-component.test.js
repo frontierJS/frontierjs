@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { writeFile, unlink, mkdir } from 'fs/promises'
+import { writeFile, unlink, mkdir, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 import { renderComponent, renderFile } from './render-component.js'
@@ -222,6 +222,45 @@ describe('renderComponent — target: fragment', () => {
 
 // ── JS target ─────────────────────────────────────────────────────────────────
 
+describe('renderComponent — RULE 19 server semantics', () => {
+  it('does not run $onMount on the server', async () => {
+    globalThis.__ssrMount = 0
+    for (let i = 0; i < 3; i++) {
+      await renderComponent(
+        `<script>$onMount(() => { globalThis.__ssrMount++ })</script><p>x</p>`,
+        { filename: `Mount${i}.mesa`, cwd: '/tmp/mesa', target: 'html' }
+      )
+    }
+    await new Promise((r) => setTimeout(r, 20))
+    expect(globalThis.__ssrMount).toBe(0)
+  })
+
+  it('builds no reactive graph for path watches on the server', async () => {
+    // initRenderer() has to enable the DOM so components can call
+    // htmlToFragment(); it must not thereby turn on client behaviour.
+    await renderComponent(`<p>x</p>`, { filename: 'Warm.mesa', cwd: '/tmp/mesa', target: 'html' })
+    const { watchProxy, watchPath, createEffect, flushSync } = await import('./runtime.js')
+    const store = { n: 0 }
+    expect(watchProxy(store)).toBe(store)
+    const [read] = watchPath(store, 'n')
+    let fired = 0
+    createEffect(() => { read(); fired++ })
+    flushSync()
+    const before = fired
+    store.n = 1
+    flushSync()
+    expect(fired - before).toBe(0)
+  })
+
+  it('still renders signals and derived values correctly', async () => {
+    const out = await renderComponent(
+      `<script>let n = 2; const d = n * 3</script><p>{n} {d}</p>`,
+      { filename: 'Vals.mesa', cwd: '/tmp/mesa', target: 'html' }
+    )
+    expect(out.html).toContain('2 6')
+  })
+})
+
 describe('renderComponent — target: js', () => {
   it('returns a module map with compiled JS', async () => {
     const result = await renderComponent(
@@ -252,6 +291,20 @@ describe('renderComponent — target: js', () => {
       { filename: 'Styled.mesa', cwd: '/tmp/mesa', target: 'js' }
     )
     expect(result.css).toContain('margin')
+  })
+
+  it('leaves no temp modules behind', async () => {
+    // This call used to hand compileTree a throwaway tempFiles array, so every
+    // js-target compile stranded one .mjs per module next to the source.
+    await fixture('LeakChild.mesa', `<span>child</span>`)
+    await renderComponent(
+      `<script>import C from './LeakChild.mesa'</script><div><C /></div>`,
+      { filename: 'LeakProbe.mesa', cwd: '/tmp/mesa', target: 'js' }
+    )
+    // Scoped to this test's own filenames so a parallel suite cannot skew it.
+    const stray = (await readdir(process.cwd()))
+      .filter((f) => /^__mesa_render_(LeakProbe|LeakChild)\.mesa_/.test(f))
+    expect(stray).toEqual([])
   })
 })
 

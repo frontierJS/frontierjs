@@ -601,9 +601,11 @@ describe('compile() output shape', () => {
   })
 
   describe('derived const', () => {
-    it('emits track(fn) for derived const', async () => {
+    it('emits trackDerived(fn) for derived const', async () => {
       const out = await cx(`<script>let count = 0; const double = count * 2;</script><p>{double}</p>`)
-      expect(out).toContain('$runtime.track(() => ($runtime.get($$sig_count) * 2)')
+      // trackDerived, not track: the compiler states that this is a derivation
+      // rather than leaving the runtime to infer it from the value's arity.
+      expect(out).toContain('$runtime.trackDerived(() => ($runtime.get($$sig_count) * 2)')
       expect(out).not.toContain('createMemo')
     })
     it('template reads derived const via get()', async () => {

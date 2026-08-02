@@ -133,6 +133,21 @@ describe('createSierraViteConfig', () => {
 import { _generateVirtualSierra } from '../src/virtual/virtual-sierra.js'
 
 describe('virtual:sierra generation', () => {
+  // The Mesa–Sierra signal bridge was removed. router/signals.js returns Mesa
+  // signals directly, so `.get` is already a tracked Mesa read and there is
+  // nothing to patch. These guard against it being reintroduced.
+  test('does not emit a signal bridge', () => {
+    const out = _generateVirtualSierra({ trailingSlash: 'always', theme: {} }, 'config/routes.js')
+    expect(out).not.toContain('$$bridge')
+    expect(out).not.toContain('sierraSignal.get = mesaRead')
+    expect(out).not.toContain('$$sig_activeRoute')
+  })
+
+  test('does not import createSignal into the generated module', () => {
+    const out = _generateVirtualSierra({ trailingSlash: 'always' }, 'config/routes.js')
+    expect(out).not.toContain('createSignal')
+  })
+
   test('always imports from manifest', () => {
     const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
     expect(src).toContain("from '/config/routes.js'")
@@ -207,52 +222,12 @@ describe('virtual:sierra generation', () => {
 
   // ── Mesa–Sierra signal bridge ─────────────────────────────────────────────
 
-  test('emits $$bridge function at module level', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    expect(src).toContain('function $$bridge(sierraSignal)')
-  })
 
-  test('imports createSignal from mesa runtime for bridge', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    expect(src).toContain("import { createSignal as $$cs } from '@frontierjs/mesa/runtime'")
-  })
 
-  test('imports all core router signals for bridging', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    expect(src).toContain('$$sig_activeRoute')
-    expect(src).toContain('$$sig_params')
-    expect(src).toContain('$$sig_pendingRoute')
-    expect(src).toContain('$$sig_meta')
-    expect(src).toContain('$$sig_data')
-    expect(src).toContain('$$sig_loadError')
-    expect(src).toContain('$$sig_pageSlots')
-  })
 
-  test('calls $$bridge for each router signal', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    expect(src).toContain('$$bridge($$sig_activeRoute)')
-    expect(src).toContain('$$bridge($$sig_params)')
-    expect(src).toContain('$$bridge($$sig_pendingRoute)')
-    expect(src).toContain('$$bridge($$sig_meta)')
-    expect(src).toContain('$$bridge($$sig_data)')
-    expect(src).toContain('$$bridge($$sig_loadError)')
-    expect(src).toContain('$$bridge($$sig_pageSlots)')
-  })
 
-  test('bridge patches .get() with Mesa read function', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    expect(src).toContain('sierraSignal.get = mesaRead')
-  })
 
-  test('bridge wires subscribe() to Mesa write', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    expect(src).toContain('sierraSignal.subscribe((v) => mesaWrite(v))')
-  })
 
-  test('bridge uses createSignal initialized with current signal value', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    expect(src).toContain('$$cs(sierraSignal.get())')
-  })
 
   test('bridge does NOT import theme signal when theme is not configured', () => {
     const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
@@ -260,29 +235,8 @@ describe('virtual:sierra generation', () => {
     expect(src).not.toContain("from '@frontierjs/sierra/theme'")
   })
 
-  test('bridge imports and bridges theme signal when theme is configured', () => {
-    const src = _generateVirtualSierra(
-      { target: 'spa', theme: { default: 'system' } },
-      'config/routes.js'
-    )
-    expect(src).toContain('$$sig_theme')
-    expect(src).toContain('$$bridge($$sig_theme)')
-    expect(src).toContain("from '@frontierjs/sierra/theme'")
-  })
 
-  test('bridge comes before initRouter call in generated source', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    const bridgePos  = src.indexOf('$$bridge($$sig_activeRoute)')
-    const routerPos  = src.indexOf('initRouter(')
-    expect(bridgePos).toBeGreaterThan(0)
-    expect(bridgePos).toBeLessThan(routerPos)
-  })
 
-  test('$$bridge is at module scope (not inside another function)', () => {
-    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
-    // The function declaration should appear at indentation level 0
-    expect(src).toContain('\nfunction $$bridge(')
-  })
 })
 
 // ─── deepMerge ───────────────────────────────────────────────────────────────

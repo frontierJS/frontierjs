@@ -11,6 +11,7 @@ import type {
   ConduitRequest,
   ConduitResult,
   ConduitChunk,
+  CredentialResolver,
   Protocol,
   TargetDescriptor
 } from '../types.ts'
@@ -18,8 +19,12 @@ import type {
 export class NotImplementedTransport extends BaseTransport {
   readonly protocol: Protocol
 
-  constructor(descriptor: TargetDescriptor, protocol: Protocol) {
-    super(descriptor)
+  constructor(
+    descriptor:  TargetDescriptor,
+    credentials: CredentialResolver,
+    protocol:    Protocol
+  ) {
+    super(descriptor, credentials)
     this.protocol = protocol
   }
 
