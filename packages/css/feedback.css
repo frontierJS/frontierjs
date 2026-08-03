@@ -1,0 +1,168 @@
+/*
+ * feedback.css
+ * The states a screen is in when it is not showing data: loading, working,
+ * and empty. The system had none of these, which is a conspicuous gap for
+ * internal tooling — most admin screens spend real time in all three.
+ *
+ *   .spinner   indeterminate "working"
+ *   .progress  determinate, on native <progress>
+ *   .skeleton  content-shaped placeholder
+ *   .empty     the nothing-here state, with a way out
+ *
+ * Every one of these needs markup to be accessible; the classes only draw.
+ * The required ARIA is documented per component below.
+ */
+
+/*
+ * ── Spinner ─────────────────────────────────────────────────────────
+ * Sized in em, so it scales with whatever font-size it sits in — put it in
+ * a .btn and it matches the label; set font-size: 2rem for a page spinner.
+ * Drawn with currentColor, so it inherits tone from its context.
+ *
+ *   <span class="spinner" aria-hidden="true"></span>
+ *   <span class="visually-hidden" role="status">Loading invoices</span>
+ *
+ * The spinner itself is decorative — the live region is what announces.
+ */
+.spinner {
+  display:       inline-block;
+  inline-size:   1em;
+  block-size:    1em;
+  border:        2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-block-start-color: currentColor;
+  border-radius: 50%;
+  animation:     fjs-spin 600ms linear infinite;
+  /* Keep it on the text baseline rather than hanging below it. */
+  vertical-align: -0.125em;
+}
+
+@keyframes fjs-spin {
+  to { transform: rotate(360deg); }
+}
+
+/*
+ * ── Progress ────────────────────────────────────────────────────────
+ * Built on native <progress> (Principle 4), so role="progressbar", the
+ * value, and the max are announced without any ARIA of our own. Omit the
+ * value attribute and the browser renders its own indeterminate state.
+ *
+ *   <progress class="progress" value="70" max="100">70%</progress>
+ *   <progress class="progress success" value="100" max="100">Done</progress>
+ *
+ * Reads --bg-mix, so any tone class colors the fill.
+ */
+.progress {
+  appearance:    none;
+  inline-size:   100%;
+  block-size:    0.5rem;
+  border:        none;
+  border-radius: 999px;
+  overflow:      hidden;
+  /* Firefox paints the track here; WebKit needs the pseudo below. */
+  background:    var(--surface-sunken);
+  color:         var(--bg-mix, var(--color-primary));
+}
+.progress::-webkit-progress-bar {
+  background:    var(--surface-sunken);
+  border-radius: 999px;
+}
+.progress::-webkit-progress-value {
+  background:    var(--bg-mix, var(--color-primary));
+  border-radius: 999px;
+  transition:    inline-size 200ms ease;
+}
+.progress::-moz-progress-bar {
+  background:    var(--bg-mix, var(--color-primary));
+  border-radius: 999px;
+}
+
+/*
+ * ── Skeleton ────────────────────────────────────────────────────────
+ * A placeholder shaped like the content that is coming. Put it on the real
+ * element and it inherits that element's box, so the layout does not jump
+ * when the data lands.
+ *
+ *   <div class="skeleton" style="block-size: 1rem; inline-size: 60%"></div>
+ *   <div class="skeleton text"></div>      <!-- one line of body text -->
+ *   <div class="skeleton circle"></div>    <!-- avatar-shaped -->
+ *
+ * Wrap the region in aria-busy="true" so assistive tech is not told to read
+ * a screenful of empty boxes.
+ */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-sunken) 25%,
+    color-mix(in srgb, var(--ink) 8%, var(--surface-sunken)) 37%,
+    var(--surface-sunken) 63%
+  );
+  background-size: 400% 100%;
+  animation:       fjs-shimmer 1.4s ease infinite;
+  border-radius:   var(--btn-radius);
+  /* Any text inside is a sizing hint, not content to read. */
+  color:           transparent;
+  user-select:     none;
+}
+.skeleton.text {
+  block-size:       0.75em;
+  border-radius:    999px;
+  margin-block:     0.3em;
+}
+.skeleton.circle {
+  border-radius: 50%;
+  aspect-ratio:  1;
+}
+
+@keyframes fjs-shimmer {
+  from { background-position: 100% 50%; }
+  to   { background-position: 0 50%; }
+}
+
+/*
+ * ── Empty state ─────────────────────────────────────────────────────
+ * The nothing-here screen. An empty state without an action is a dead end,
+ * so .empty-actions is part of the anatomy rather than an afterthought.
+ *
+ *   <div class="empty">
+ *     <div class="empty-icon" aria-hidden="true">…</div>
+ *     <h3 class="empty-title">No invoices yet</h3>
+ *     <p class="empty-text">Create your first one to get started.</p>
+ *     <div class="empty-actions">
+ *       <button class="btn primary">New invoice</button>
+ *     </div>
+ *   </div>
+ */
+.empty {
+  display:        grid;
+  justify-items:  center;
+  align-content:  center;
+  text-align:     center;
+  gap:            0.5rem;
+  padding:        3rem 1.5rem;
+  color:          var(--ink-soft);
+}
+.empty-icon {
+  font-size:   2rem;
+  line-height: 1;
+  color:       var(--ink-mute);
+}
+/* Icon sizing: icon.css. .empty-icon sets --icon-size: 1em there — and
+   gets the `[class*=" i-heroicons"]` branch this rule was missing. */
+.empty-title {
+  margin:      0;
+  font-size:   1.0625rem;
+  font-weight: 600;
+  color:       var(--ink);
+}
+.empty-text {
+  margin:      0;
+  /* Hold the copy to a readable measure however wide the container is. */
+  max-inline-size: 42ch;
+  line-height: 1.55;
+}
+.empty-actions {
+  display:     flex;
+  flex-wrap:   wrap;
+  gap:         0.5rem;
+  margin-block-start: 0.5rem;
+}

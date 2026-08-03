@@ -42,15 +42,15 @@ export const db = await createClient({
 
 ```prisma
 model User {
-  id     Integer @id
-  email  Text    @unique
+  id     Int @id
+  email  String    @unique
   avatar File?                                  // single optional file
 }
 
 model Document {
-  id          Integer  @id
-  name        Text
-  ownerId     Integer
+  id          Int  @id
+  name        String
+  ownerId     Int
   attachments File[]   @accept("application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document")
   images      File[]   @accept("image/*")       // wildcard — any image type
   banner      File?    @keepVersions            // old file kept on update

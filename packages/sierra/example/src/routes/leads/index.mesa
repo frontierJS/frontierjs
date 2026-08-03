@@ -1,0 +1,77 @@
+---
+title: Leads
+---
+<script>
+  import { leads } from '../../resources/leads.js'
+  import { session } from '../../session.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  const { get: rows, unsubscribe } = useStore(leads.store)
+  $onDestroy(unsubscribe)
+
+  $: session.level
+
+  let error = null
+
+  leads.load().catch(e => { error = e.message })
+
+  // The schema says delete needs level 5. Asking before rendering is the only
+  // reason this button can be disabled rather than 403-ing on click — and it is
+  // still the server that actually refuses.
+  $: canDelete = leads.can('delete', session.level)
+
+  async function remove(id) {
+    error = null
+    try { await leads.service.remove(id) } catch (e) { error = e.message }
+  }
+</script>
+
+<h1>Leads</h1>
+
+{#if error}<p class="err">{error}</p>{/if}
+
+<table>
+  <thead>
+    <tr><th>Name</th><th>Email</th><th>Stage</th><th>Value</th><th>Slug</th><th></th></tr>
+  </thead>
+  <tbody>
+    {#each rows() as lead}
+      <tr>
+        <td>{lead.name}</td>
+        <td>{lead.email}</td>
+        <td><span class="pill">{lead.stage}</span></td>
+        <td>{lead.value}</td>
+        <td class="muted">{lead.slug === null ? 'null' : lead.slug}</td>
+        <td>
+          <button on:click={() => remove(lead.id)} disabled={!canDelete}>
+            Delete
+          </button>
+        </td>
+      </tr>
+    {/each}
+  </tbody>
+</table>
+
+{#if !canDelete}
+  <p class="muted">
+    Delete is hidden because <code>@@gate</code> wants level
+    {leads.gate.delete} and this session is {session.level}. Sign in as admin.
+  </p>
+{/if}
+
+<p class="muted">
+  The <code>Slug</code> column shows <code>null</code>, not an empty string —
+  <code>blankToNull: true</code> on the resource. That is what keeps
+  <code>slug String? @unique</code> from rejecting the second lead saved with an
+  empty slug.
+</p>
+
+<style>
+  table { border-collapse: collapse; width: 100% }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 14px }
+  th { color: #6b7280; font-weight: 500 }
+  .pill { background: #f3f4f6; border-radius: 999px; padding: 1px 8px; font-size: 12px }
+  .muted { color: #6b7280; font-size: 13px }
+  .err { color: #b91c1c }
+</style>

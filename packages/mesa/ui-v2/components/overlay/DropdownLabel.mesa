@@ -1,0 +1,19 @@
+<!--
+  DropdownLabel — non-interactive section heading inside a DropdownMenu.
+  Use to group related items.
+
+  Usage:
+    <DropdownLabel>Account</DropdownLabel>
+    <DropdownItem onclick={profile}>Profile</DropdownItem>
+    <DropdownItem onclick={settings}>Settings</DropdownItem>
+    <DropdownSeparator />
+    <DropdownLabel>Danger zone</DropdownLabel>
+    <DropdownItem variant="destructive" onclick={signOut}>Sign out</DropdownItem>
+-->
+<div
+  role="presentation"
+  class="px-3 pt-2 pb-1 text-[0.65rem] font-semibold uppercase tracking-wider
+         text-gray-400 select-none {class}"
+>
+  <slot />
+</div>

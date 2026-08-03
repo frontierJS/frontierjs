@@ -8,20 +8,36 @@
  * Mesa compiled components call htmlToFragment() at module-load time (top-level),
  * so the DOM environment must be installed before dynamic import().
  *
+ * This is the low-level entry point: it takes an already-compiled component
+ * factory. To go from `.mesa` source or a file path, use `render-component.js`
+ * (`renderComponent` / `renderFile`), which compiles, resolves imports and
+ * collects CSS, then renders through this module.
+ *
  * Usage:
- *   import { initRenderer, renderToHTML } from '@frontierjs/mesa-render'
- *   await initRenderer()                          // install DOM globals once
+ *   import { initRenderer, renderToHTML } from '@frontierjs/mesa/render'
+ *   initRenderer()                                // install DOM globals FIRST
  *   const { default: MyComp } = await import('./MyComp.mesa.js')
  *   const html = await renderToHTML(MyComp, { title: 'Hello' })
  *
- * SSR notes (v2):
- *   - $onMount is a no-op during server render
- *   - Each renderToHTML call uses the same global window (build-time is single-threaded)
- *   - For concurrent SSR, call initRenderer() per-request with its own window
+ * Ordering is not a style preference: compiled components call
+ * htmlToFragment() at module-load time, so `initRenderer()` must run before the
+ * `import()`, not merely before the render.
+ *
+ * SSR semantics:
+ *   - $onMount, watchProxy and path watches are inert (RULE 19). Effects, memos
+ *     and block directives run, then are disposed when the render returns.
+ *   - {#await} renders its {:pending} branch — nothing settles mid-render.
+ *   - {#virtual each} renders nothing (client-only, by design).
+ *   - Comment anchors are stripped unless `{ keepAnchors: true }`.
+ *   - Renders are serial by construction; see renderToHTML and renderAll.
+ *   - The window is process-global. For true concurrency, run one worker per
+ *     window rather than sharing this module across requests.
+ *
+ * See STATIC_RENDERING.md for the full model and the Sierra integration status.
  */
 
 import { Window } from 'happy-dom'
-import { setRenderEnvironment } from './runtime.js'
+import { setRenderEnvironment, createRoot, flushSync } from './runtime.js'
 
 // ─── Global render window ─────────────────────────────────────────────────────
 
@@ -92,6 +108,26 @@ export function resetRenderer() {
 
 // ─── Serialization ────────────────────────────────────────────────────────────
 
+// Mesa's compiled output is full of comment nodes: a root anchor, plus one
+// placeholder or anchor per block directive. They carry no meaning in a static
+// page — hydration does not exist yet (v1.1) — so they are stripped. When
+// hydration lands it will need them, and this is the single place that decides.
+//
+// The patterns are deliberately narrow. `<!--[if mso]>` and friends survive:
+// they have no space after `<!--`, and email templates emit them through
+// `{@html}` on purpose.
+const _ANCHOR_PATTERNS = [
+  /<!--mesa-root-->/g,   // the root anchor this renderer inserts
+  /<!---->/g,            // empty block anchors and markers
+  /<!-- [^>]* -->/g,     // named anchors, e.g. <!-- mesa:hmr:App -->
+]
+
+function _stripAnchors(html) {
+  let out = html
+  for (const re of _ANCHOR_PATTERNS) out = out.replace(re, '')
+  return out.trim()
+}
+
 export function escapeHTML(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -104,12 +140,40 @@ export function escapeHTML(str) {
 
 /**
  * Render a compiled Mesa component to an HTML string.
- * initRenderer() must have been called before the component was imported.
+ *
+ * `initRenderer()` must have been called before the component module was
+ * imported — compiled components call `htmlToFragment()` at module load, so the
+ * DOM has to exist by then, not merely by render time.
+ *
+ * The component is called the way the compiler emits it — `Comp(anchor, props,
+ * block)`, appending its DOM before `anchor` and returning nothing. It runs
+ * inside a `createRoot` scope that is disposed the moment the HTML is
+ * serialized, so a render is a lifetime with an end: nothing it created stays
+ * subscribed to module-scope state after this function returns. That matters at
+ * SSG scale, where one process renders many pages against the same imported
+ * modules.
+ *
+ * What does NOT happen during a server render (RULE 19, via
+ * `setRenderEnvironment(true, false)` in `initRenderer`): `$onMount` callbacks,
+ * `watchProxy`/`watchPath` proxies, and path watches. Effects, memos and block
+ * directives DO run — that is how the markup gets built — they are simply
+ * disposed before this returns. `{#await}` renders its `{:pending}` branch: a
+ * promise cannot settle inside a synchronous render. `{#virtual each}` produces
+ * nothing by design (client-only).
+ *
+ * The body is synchronous end to end despite the `async` signature. That is
+ * load-bearing: the reactive core (`_owner`, `_listener`) and the happy-dom
+ * window are process-global, so two interleaved renders would corrupt each
+ * other. Because there is no `await` between the first line and the last, a
+ * render runs to completion before any other can start — which is what makes
+ * `renderAll()` safe. Do not introduce an `await` into this function.
  *
  * @param {Function} ComponentFactory — default export of a compiled .mesa file
  * @param {object}   [props={}]
  * @param {object}   [options={}]
  * @param {boolean}  [options.full]  — wrap in a full <!DOCTYPE html> page
+ * @param {boolean}  [options.keepAnchors] — keep Mesa's comment anchors in the
+ *                                           output (needed once hydration lands)
  * @returns {Promise<string>}
  */
 export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
@@ -119,31 +183,45 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
       'See render.js usage docs.'
     )
   }
+  if (typeof ComponentFactory !== 'function') {
+    throw new Error(
+      '[Mesa renderToHTML] Expected the default export of a compiled .mesa file, got ' +
+      (ComponentFactory === null ? 'null' : typeof ComponentFactory) + '. ' +
+      'Pass the component function itself, not a module namespace.'
+    )
+  }
 
-  let instance
+  // Use global.document (= _win.document installed by initRenderer) so the
+  // container shares a document with the component's nodes — happy-dom throws
+  // on cross-document adoption. The container is attached to the body because
+  // block directives read `anchor.parentNode` and bail when it is null.
+  const doc       = global.document
+  const container = doc.createElement('div')
+  const anchor    = doc.createComment('mesa-root')
+  container.appendChild(anchor)
+  doc.body.appendChild(container)
+
+  let html = ''
   try {
-    instance = ComponentFactory({ props: props ?? {}, slots: {} })
-  } catch (e) {
-    throw new Error(`[Mesa renderToHTML] Component threw during render: ${e.message}`)
+    createRoot((dispose) => {
+      try {
+        ComponentFactory(anchor, props ?? {}, null)
+      } catch (e) {
+        dispose()
+        throw new Error(`[Mesa renderToHTML] Component threw during render: ${e.message}`)
+      }
+      // Settle the graph before serializing. Derivations and render effects run
+      // eagerly on creation, but anything a block queued during setup is still
+      // pending, and an unflushed queue would also outlive the dispose below.
+      flushSync()
+      html = container.innerHTML
+      dispose()
+    })
+  } finally {
+    try { doc.body.removeChild(container) } catch (_) {}
   }
 
-  if (!instance?.$dom) return options.full ? wrapPage('', options) : ''
-
-  // Use global.document (= _win.document installed by initRenderer) for the
-  // container — this ensures the container is in the same document as the
-  // component's DOM nodes, preventing cross-document adoption errors.
-  const container = global.document.createElement('div')
-  const $dom = instance.$dom
-
-  if ($dom.nodeType === global.Node.DOCUMENT_FRAGMENT_NODE) {
-    container.appendChild($dom.cloneNode(true))
-  } else {
-    container.appendChild($dom)
-  }
-
-  const html = container.innerHTML
-  try { instance.destroy?.() } catch (_) {}
-
+  if (!options.keepAnchors) html = _stripAnchors(html)
   return options.full ? wrapPage(html, options) : html
 }
 
@@ -188,8 +266,16 @@ ${bodyClosing ? bodyClosing + '\n' : ''}</body>
 // ─── Batch rendering ──────────────────────────────────────────────────────────
 
 /**
- * Render multiple components in parallel.
- * Each render uses the same global window — safe for single-threaded build tools.
+ * Render many pages, in order, and resolve with all their HTML.
+ *
+ * "In parallel" would be a lie and a bug: the happy-dom window and the reactive
+ * core are process-global, so overlapping renders would share `_owner` and
+ * `document`. This is safe only because `renderToHTML` is synchronous inside —
+ * each render completes before the next begins, and `Promise.all` merely
+ * collects results that are already settled. Should `renderToHTML` ever gain an
+ * `await`, this function becomes a race and must be rewritten as a sequential
+ * loop (and, for real concurrency, one window per worker rather than one
+ * process).
  *
  * @param {Array<{ component, props, options }>} pages
  * @returns {Promise<string[]>}

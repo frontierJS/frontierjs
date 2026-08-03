@@ -243,6 +243,50 @@ export function createEffect(fn, opts) {
   return () => _disposeNode(node, true)
 }
 
+/**
+ * createRoot(fn) — run `fn` inside an owner scope that ends when you say so.
+ *
+ * `fn` receives a `dispose` function; whatever it returns is returned. Every
+ * effect, memo and block created inside becomes a child of the root, so one
+ * `dispose()` tears the whole tree down.
+ *
+ *   const html = createRoot((dispose) => { … ; dispose(); return out })
+ *
+ * This is what the top of a lifetime looks like when there is no enclosing
+ * effect to own it. Without it a component rendered at the top level parents
+ * its effects to nothing: they subscribe to whatever they read and no disposal
+ * path can ever reach them. That is unnoticeable in a browser that mounts one
+ * app and keeps it, and unbounded in a build tool that renders a thousand pages
+ * against the same imported store modules — each page leaves its render effects
+ * subscribed, and every later write re-runs all of them against detached DOM.
+ *
+ * Reads inside the root do NOT subscribe the caller's effect: `_listener` is
+ * cleared for the duration. A root is ownership, not tracking.
+ */
+export function createRoot(fn) {
+  const node = {
+    _fn: null,
+    _deps: new Set(),
+    _cleanups: [],
+    _children: [],
+    _owner: _owner,
+    _disposed: false,
+    _notify() {},
+    _run() {}
+  }
+  if (_owner) _owner._children.push(node)
+  const prevOwner = _owner,
+    prevListener = _listener
+  _owner = node
+  _listener = null
+  try {
+    return fn(() => _disposeNode(node, true))
+  } finally {
+    _owner = prevOwner
+    _listener = prevListener
+  }
+}
+
 function _makeNode(fn) {
   const node = {
     _fn: fn,
@@ -643,6 +687,61 @@ export const iterNodes = (first, last, fn) => {
   }
 }
 export const removeElements = (first, last) => iterNodes(first, last, (n) => n.remove())
+
+/**
+ * Remove live siblings from `from` (inclusive) up to but not including `stop`
+ * (null = to the end of the parent). `nextSibling` is read before each removal
+ * so the walk survives detaching.
+ *
+ * This is how every block that owns a DOM *range* must remove it. Holding the
+ * range's first and last nodes does not survive an inner block editing its own
+ * content: inner blocks insert before their anchor, so when that anchor is the
+ * outer range's first node, everything the inner block renders lands *outside*
+ * the recorded range and is left on screen forever. Walking from a marker the
+ * outer block owns to a stop node it also owns has no such hole.
+ */
+const _removeRange = (from, stop) => {
+  let n = from
+  while (n && n !== stop) {
+    const next = n.nextSibling
+    n.remove()
+    n = next
+  }
+}
+
+/**
+ * Bound a block's DOM so its recorded [first, last] range cannot be escaped.
+ * Returns [dom, first, last].
+ *
+ * {#each} rows and the {:else} block are removed by node range rather than by
+ * the marker walk above, because rows interleave with one another and each one
+ * needs its own bounds. The one way content escapes such a range is an inner
+ * block whose anchor is the range's *first* node — inner blocks insert before
+ * their anchor, so their content lands ahead of `first` and survives removal.
+ * Anchors are always comments, so prepending a marker when the first node is a
+ * comment closes that hole, and costs nothing for ordinary rows, whose first
+ * node is an element or a text node.
+ */
+const _guardRange = (dom) => {
+  if (!dom) return [dom, null, null]
+  const isFrag = dom.nodeType === Node.DOCUMENT_FRAGMENT_NODE
+  // Capture first/last BEFORE any insertion — fragments empty once inserted.
+  let first  = isFrag ? dom.firstChild : dom
+  const last = isFrag ? dom.lastChild  : dom
+  if (first && first.nodeType === 8 /* COMMENT_NODE */) {
+    const marker = document.createComment('')
+    if (isFrag) {
+      dom.insertBefore(marker, first)
+    } else {
+      const frag = document.createDocumentFragment()
+      frag.appendChild(marker)
+      frag.appendChild(dom)
+      dom = frag
+    }
+    first = marker
+  }
+  return [dom, first, last]
+}
 // ── Style injection ───────────────────────────────────────────────────────────
 // By default styles go into document.head. Shadow DOM mounts register their
 // shadow root via _registerStyleRoot() so styles land in the right place.
@@ -2008,13 +2107,9 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     } finally {
       _owner = prevOwner
     }
-    const $d = elseNode.$dom ?? elseNode
-    if ($d.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-      elseNodeFirst = $d.firstChild
-      elseNodeLast  = $d.lastChild
-    } else {
-      elseNodeFirst = elseNodeLast = $d
-    }
+    const [$d, first, last] = _guardRange(elseNode.$dom ?? elseNode)
+    elseNodeFirst = first
+    elseNodeLast  = last
     insertBefore ? parent.insertBefore($d, insertBefore) : parent.appendChild($d)
   }
   const _hideElse = () => {
@@ -2043,11 +2138,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     let result
     try { result = makeItem(getItem, getIndex) }
     finally { _owner = prevOwner }
-    const $dom  = result?.$dom ?? result
-    const isFrag = $dom?.nodeType === Node.DOCUMENT_FRAGMENT_NODE
-    // Capture first/last BEFORE any insertion — fragments empty once inserted
-    const $domFirst = isFrag ? $dom.firstChild : $dom
-    const $domLast  = isFrag ? $dom.lastChild  : $dom
+    const [$dom, $domFirst, $domLast] = _guardRange(result?.$dom ?? result)
     return {
       $dom, $domFirst, $domLast,
       _item: item,
@@ -2387,17 +2478,6 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
     startMarker = null,
     currentBranchNode = null   // owner node for the active branch's effects
 
-  // Remove live siblings from `from` up to but not including `stop`.
-  // nextSibling is read before removal so the walk survives detaching.
-  const _removeRange = (from, stop) => {
-    let n = from
-    while (n && n !== stop) {
-      const next = n.nextSibling
-      n.remove()
-      n = next
-    }
-  }
-
   const _removeBlock = () => {
     if (startMarker == null) return
     // Before disposing, capture the parent and sibling for potential re-insertion.
@@ -2513,9 +2593,14 @@ export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
     throw new Error('@frontierjs/mesa-runtime: keyBlock() called in a non-browser environment.')
   if (!anchor) return
 
-  let currentFirst = null
-  let currentLast  = null
-  let blockNode    = null
+  // A comment inserted immediately before the keyed content, owned by keyBlock.
+  // Removal walks live siblings from it to the anchor, so an inner block that
+  // rewrites its own content between mount and teardown — an {#await} swapping
+  // its pending node for the resolved one — cannot strand anything. Holding the
+  // content's first/last nodes left the resolved content on screen and appended
+  // the new key's copy beside it.
+  let startMarker = null
+  let blockNode   = null
   // Track the last key value so we only remount when it actually changes.
   // Without this, if the key expression is a memo that re-runs due to an upstream
   // signal change (e.g. chain prop updating) but returns the same value (e.g. same
@@ -2525,10 +2610,11 @@ export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
   let prevKey = _UNSET
 
   const _remove = () => {
-    if (!currentFirst) return
+    // Dispose effects before removing DOM — cleanups may touch the nodes.
     if (blockNode) { _disposeNode(blockNode, true); blockNode = null }
-    removeElements(currentFirst, noAnchor ? null : currentLast)
-    currentFirst = currentLast = null
+    if (startMarker == null) return
+    _removeRange(startMarker, noAnchor ? null : anchor)
+    startMarker = null
   }
 
   createEffect(() => {
@@ -2556,14 +2642,15 @@ export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
 
     const node = $dom?.$dom ?? $dom
     if (!node) return
-    if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-      currentFirst = node.firstChild
-      currentLast  = node.lastChild
+    const marker = document.createComment('')
+    if (noAnchor) {
+      parent.appendChild(marker)
+      parent.appendChild(node)
     } else {
-      currentFirst = currentLast = node
+      parent.insertBefore(marker, anchor)
+      parent.insertBefore(node, anchor)
     }
-    if (noAnchor) parent.appendChild(node)
-    else parent.insertBefore(node, anchor)
+    startMarker = marker
   })
 }
 
@@ -2575,7 +2662,6 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
       '@frontierjs/mesa-runtime: awaitBlock() called in a non-browser environment. ' +
         'Use the Mesa SSR compiler target.'
     )
-  let currentDom = null
 
   // Resolve a block result to actual DOM.
   // Block factories may be:
@@ -2605,28 +2691,26 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
     return frag.hasChildNodes() ? frag : null
   }
 
+  // The branch is delimited by a marker comment awaitBlock owns, not by the
+  // branch's own first/last nodes — a nested block whose anchor is the first
+  // node of this branch renders *before* that anchor, i.e. outside a
+  // first/last range, and the old branch stayed on screen beside the new one.
   const _swap = ($dom) => {
     const parent = anchor.parentNode
     if (!parent) return
-    if (currentDom) {
-      removeElements(currentFirst, currentLast)
+    if (startMarker) {
+      _removeRange(startMarker, anchor)
+      startMarker = null
     }
-    currentDom = $dom ?? null
-    currentFirst = null
-    currentLast  = null
-    if (currentDom) {
-      if (currentDom.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-        currentFirst = currentDom.firstChild
-        currentLast  = currentDom.lastChild
-      } else {
-        currentFirst = currentLast = currentDom
-      }
-      parent.insertBefore(currentDom, anchor)
+    if ($dom) {
+      const marker = document.createComment('')
+      parent.insertBefore(marker, anchor)
+      parent.insertBefore($dom, anchor)
+      startMarker = marker
     }
   }
-  let currentFirst = null
-  let currentLast  = null
-  let contentNode  = null   // owner for the effects inside the mounted branch
+  let startMarker = null
+  let contentNode = null   // owner for the effects inside the mounted branch
 
   const _disposeContent = () => {
     if (!contentNode) return
@@ -2775,8 +2859,9 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
   if (!_isBrowser)
     throw new Error('@frontierjs/mesa-runtime: boundaryBlock() called in a non-browser environment.')
 
-  let currentDom = null
   let contentMounted = false
+  let startMarker  = null   // comment delimiting the mounted branch, owned here
+  let branchNode   = null   // owner node for the mounted branch's effects
 
   // pendingBlock and failedBlock may be compiler-emitted snippet wrappers
   // (__anchor) => $$snippet_pending(__anchor) — or factory blocks returning DOM.
@@ -2802,41 +2887,66 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
   const _swap = ($dom) => {
     const parent = anchor.parentNode
     if (!parent) return
-    if (currentDom) removeElements(currentFirst, currentLast)
-    currentDom = $dom ? $dom.$dom ?? $dom : null
-    currentFirst = null
-    currentLast  = null
-    if (currentDom) {
-      if (currentDom.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-        currentFirst = currentDom.firstChild
-        currentLast  = currentDom.lastChild
-      } else {
-        currentFirst = currentLast = currentDom
-      }
-      parent.insertBefore(currentDom, anchor)
+    if (startMarker) {
+      _removeRange(startMarker, anchor)
+      startMarker = null
+    }
+    const node = $dom ? $dom.$dom ?? $dom : null
+    if (node) {
+      const marker = document.createComment('')
+      parent.insertBefore(marker, anchor)
+      parent.insertBefore(node, anchor)
+      startMarker = marker
     }
   }
-  let currentFirst = null
-  let currentLast  = null
+
+  // Build a branch under its own owner, disposing the previous branch's owner
+  // first.
+  //
+  // Branch content used to be built with whatever _owner was ambient — the
+  // boundary's own effect node — and an effect never disposes its own children
+  // on re-run. So every swap (pending → content, content → failed, …) left the
+  // outgoing branch's effects alive: they kept re-running on every write to
+  // anything they read, rendering into DOM that had already been detached, for
+  // the life of the page, one more set per swap.
+  const _mountBranch = (outerOwner, factory, ...args) => {
+    if (branchNode) {
+      _disposeNode(branchNode, true)
+      branchNode = null
+    }
+    if (!factory) { _swap(null); return }
+    const node = {
+      _fn: null, _deps: new Set(), _cleanups: [], _children: [],
+      _owner: outerOwner, _disposed: false, _notify() {}, _run() {}
+    }
+    if (outerOwner) outerOwner._children.push(node)
+    branchNode = node
+    const prev = _owner
+    _owner = node
+    try { _swap(_callSnippetBlock(factory, ...args)) } finally { _owner = prev }
+  }
 
   createEffect(() => {
+    // The enclosing effect node — branch owners hang off it, and are removed
+    // from its children on swap so re-runs cannot accumulate them.
+    const outerOwner = _owner
     const states = getStates()
     // Error wins — show failed if any state has an error
     const errState = states.find(s => s.error !== null)
     if (errState) {
       contentMounted = false
-      _swap(failedBlock ? _callSnippetBlock(failedBlock, errState.error) : null)
+      _mountBranch(outerOwner, failedBlock, errState.error)
       return
     }
     // First-load gate — show pending while any state is still loading
     if (states.some(s => s.loading)) {
-      _swap(pendingBlock ? _callSnippetBlock(pendingBlock) : null)
+      _mountBranch(outerOwner, pendingBlock)
       return
     }
     // All resolved — mount content once and leave it
     if (!contentMounted) {
       contentMounted = true
-      _swap(contentBlock ? contentBlock() : null)
+      _mountBranch(outerOwner, contentBlock)
     }
   })
 }
@@ -3805,6 +3915,35 @@ export function registerComponentAnchor(anchor) {
   }
 }
 
+/**
+ * bindProp — the child→parent half of `<Child bind:value={x} />`.
+ *
+ * `pushProps` already carries parent→child. This subscribes to the child's own
+ * prop signal and writes changes back out, which is what makes the binding
+ * two-way. No loop: the write lands on the parent's signal, whose equality check
+ * stops it when the value is the one that came from the child.
+ *
+ * Emitted by the compiler immediately after `registerComponentAnchor`, so the
+ * child's registry exists by the time this runs.
+ *
+ * @param {Comment}  anchor    — the child's anchor node
+ * @param {string}   name      — prop name, without the `bind:` prefix
+ * @param {Function} setParent — the parent's setter for the bound variable
+ */
+export function bindProp(anchor, name, setParent) {
+  const registry = _componentRegistry.get(anchor)
+  if (!registry) return
+  const prop = registry.get(name)
+  if (!prop) {
+    console.warn(
+      `[Mesa] bind:${name} — the child component does not declare \`export let ${name}\`. ` +
+      `Two-way binding needs a writable prop on both sides (RULE 22).`
+    )
+    return
+  }
+  createEffect(() => { setParent(prop.get()) })
+}
+
 export function pushProps(anchor, newProps) {
   if (!newProps) return
   const registry = _componentRegistry.get(anchor)
@@ -3826,6 +3965,141 @@ export function pushProps(anchor, newProps) {
 }
 
 // Remove the old mountComponent helper — no longer needed
+
+// ── Islands — server-render markers for client:* components ───────────────────
+//
+// A prerendered page is inert HTML. A client loader that wants to make one
+// island interactive has to find it, and the markup alone does not say which
+// nodes came from which component — `<article><p>x</p><button>0</button></article>`
+// carries nothing to distinguish the island from the static text beside it.
+// These markers are that missing identity.
+//
+// Why comments and not a `<mesa-island>` element. An element wrapper is easier
+// to query, and it is what SSR_SPEC W3 originally sketched, but it is wrong in
+// two ways that fail silently:
+//
+//   - HTML parsing. An element between `<table>` and `<td>` is foster-parented
+//     out of the table by the real parser, so an island rendering rows would
+//     have its wrapper — and the association it carries — relocated before any
+//     loader ran. Comments are legal wherever content is.
+//   - Layout and selectors. A wrapper element takes part in `>` selectors and
+//     in flex/grid layout, so a page would style differently prerendered than
+//     it does client-rendered. `display: contents` fixes the layout half and
+//     nothing fixes the selector half.
+//
+// Comments cost the loader a TreeWalker instead of querySelectorAll, and buy
+// output that is byte-for-byte the same shape the client runtime produces.
+// They also fit Mesa's own convention: every block directive already delimits
+// itself with comment anchors, and `renderToHTML({ keepAnchors: true })` exists
+// to preserve them.
+//
+// Shape:
+//   <!--mesa-island {"component":"Counter","directive":"load","props":{…}}-->
+//   …prerendered markup…
+//   <!--/mesa-island-->
+//
+// Mounting one on the client needs no new protocol, because the markers are
+// ordinary comment nodes: remove everything between them, then
+//
+//   mount(openComment, Comp, { props })
+//
+// `mount` inserts its anchor immediately after the node it is given and the
+// component renders before that, so the component lands exactly in the range
+// the prerendered markup vacated. It must be `mount` and not a bare
+// `Comp(anchor, props, null)`: a direct call produces the right markup and
+// registers no delegation root, so the island comes back inert. Pinned by a
+// click in render-ssr.test.js.
+
+const ISLAND_OPEN  = 'mesa-island '
+const ISLAND_CLOSE = '/mesa-island'
+
+function islandPayload(props, meta) {
+  const payload = {
+    component: meta?.component ?? null,
+    directive: meta?.directive ?? 'load',
+  }
+  if (meta?.media) payload.media = meta.media
+  if (props && typeof props === 'object' && Object.keys(props).length) payload.props = props
+
+  const dropped = []
+  let json
+  try {
+    json = JSON.stringify(payload, (key, value) => {
+      if (typeof value === 'function' || typeof value === 'symbol') { dropped.push(key); return undefined }
+      return value
+    })
+  } catch (e) {
+    // Circular reference, BigInt, or a throwing toJSON. The island is still
+    // worth marking — a loader can mount it with its own defaults — so degrade
+    // to identity only rather than losing the marker altogether.
+    console.warn(
+      `[Mesa island] <${payload.component}> props could not be serialized (${e.message}). ` +
+      `The marker is emitted without props; a client loader will mount this island with none.`
+    )
+    delete payload.props
+    json = JSON.stringify(payload)
+  }
+  if (dropped.length) {
+    console.warn(
+      `[Mesa island] <${payload.component}> — ${dropped.join(', ')} dropped from the island marker. ` +
+      `Functions and symbols do not survive JSON, so a client loader remounts this island without them. ` +
+      `Pass serializable props to an island, or mount it from the client instead.`
+    )
+  }
+  // Escape every `-` and `>` out of the payload.
+  //
+  // Only `-->` (and `--!>`) actually terminates a comment per the HTML spec, so
+  // escaping `--` would be enough for a conforming parser. It is not enough in
+  // practice: happy-dom 14.12.3 — the parser this package's own SSR tests use —
+  // ends a comment at the FIRST `>`, so a prop value containing one truncated
+  // the marker into two, and `JSON.parse` then threw on a fragment. Leaving no
+  // `>` in the payload at all makes it read identically under both rules, which
+  // is worth six bytes per occurrence.
+  //
+  // Both substitutions are inside JSON strings by construction — a number
+  // cannot contain `-` except a leading minus or an exponent, neither of which
+  // can produce `--`, and `>` occurs nowhere else in JSON — so `-` and
+  // `>` parse back to exactly the original characters.
+  return json.replace(/--/g, '\\u002d\\u002d').replace(/>/g, '\\u003e')
+}
+
+/**
+ * Mount a component that carries a `client:*` directive.
+ *
+ * Emitted by the compiler in place of a direct component call, and only when
+ * compiling with `{ islands: true }` (VISION RULE 26). Behaviour splits on the
+ * environment, not on the flag:
+ *
+ *   - Real client: identical to the direct call the compiler used to emit. The
+ *     component is already live there, and a marker would put comment nodes
+ *     into a DOM no loader ever reads.
+ *   - Server render: the output is wrapped in island markers.
+ *
+ * @param {Comment}  anchor — the call site's anchor node
+ * @param {Function} Comp   — the component factory
+ * @param {object}   props
+ * @param {object|null} block — slots object, as passed to a normal component call
+ * @param {{component: string, directive: string, media?: string}} meta
+ */
+export function island(anchor, Comp, props, block, meta) {
+  if (_isClient || !_isBrowser) return Comp(anchor, props, block)
+
+  const parent = anchor?.parentNode
+  // Block directives already bail when an anchor is detached; matching that
+  // means a marker can never be the thing that breaks a render.
+  if (!parent) return Comp(anchor, props, block)
+
+  const open  = document.createComment(ISLAND_OPEN + islandPayload(props, meta))
+  const close = document.createComment(ISLAND_CLOSE)
+  parent.insertBefore(open, anchor)
+  parent.insertBefore(close, anchor)
+
+  // Render against the closing marker. Components append before their anchor,
+  // and any block content queued during setup appends at anchors that are
+  // themselves already inside this range, so the whole subtree lands between
+  // the two markers — including content that only materializes at flushSync.
+  return Comp(close, props, block)
+}
 
 
 /**

@@ -1,0 +1,66 @@
+<script>
+  // Tabs.mesa
+  // Context provider. Manages the active tab state and provides registration
+  // for keyboard navigation (ArrowLeft/ArrowRight cycling).
+  //
+  // Architecture:
+  //   Tabs          — context provider, manages activeId
+  //   TabList       — renders the tab button strip (role="tablist")
+  //   Tab           — individual tab button inside TabList
+  //   TabPanel      — content panel, shown when its id matches activeId
+  //
+  // Usage:
+  //   <Tabs bind:activeId>
+  //     <TabList>
+  //       <Tab id="general">General</Tab>
+  //       <Tab id="security">Security</Tab>
+  //     </TabList>
+  //     <TabPanel id="general"><GeneralSettings /></TabPanel>
+  //     <TabPanel id="security"><SecuritySettings /></TabPanel>
+  //   </Tabs>
+
+  export let activeId  = ''     // bindable — set by parent or defaulted on mount
+  export let onchange  = undefined  // called with new activeId whenever tab changes
+  // Tab registration list for keyboard nav — not reactive, used imperatively only.
+  // var: non-reactive sampler — reads/writes invisible to reactive graph.
+  var _registry = []
+
+  // Initialize activeId from first registered tab if not set by parent.
+  // Deferred to $onMount so tabs have time to register.
+  $onMount(() => {
+    if (!activeId && _registry.length) {
+      activeId = _registry[0]
+      onchange?.(activeId)
+    }
+  })
+
+  // Provide reactive activeId and imperative controls to all descendants.
+  // const consumers (Tab, TabPanel) always track this value (Rule 25a).
+  // NOTE: context reactivity on reassigned export let → $context requires runtime verification.
+  $context.activeId = activeId
+
+  $context.setActive = (id) => {
+    activeId = id
+    onchange?.(id)
+  }
+
+  // Registration — called by Tab on mount, for keyboard arrow navigation
+  $context.registerTab = (id) => {
+    if (!_registry.includes(id)) _registry.push(id)
+  }
+
+  $context.unregisterTab = (id) => {
+    _registry = _registry.filter(t => t !== id)
+  }
+
+  // Returns the id of the next/prev tab, wrapping around
+  $context.adjacent = (id, delta) => {
+    const i = _registry.indexOf(id)
+    if (i === -1) return null
+    return _registry[((i + delta) + _registry.length) % _registry.length]
+  }
+</script>
+
+<div class="flex flex-col" {class}>
+  <slot />
+</div>

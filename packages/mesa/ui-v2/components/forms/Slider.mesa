@@ -1,0 +1,306 @@
+<script>
+  // Slider.mesa
+  // Single or dual-handle range slider. Touch + mouse. Keyboard accessible.
+  // Replaces use:draggable Svelte action with {@attach} and native event listeners.
+  //
+  // SINGLE MODE (default):
+  //   <Slider bind:value={price} min={0} max={1000} step={10} />
+  //
+  // RANGE MODE:
+  //   <Slider range bind:start={low} bind:end={high} min={0} max={100} />
+  //
+  // WITH FIELD WRAPPER:
+  //   <Slider label="Price range" name="price" range bind:start bind:end />
+  //
+  // FORMAT FUNCTION:
+  //   <Slider bind:value format={(v) => `$${v.toLocaleString()}`} />
+
+  import Field from './Field.mesa'
+
+  // ── Props ───────────────────────────────────────────────────────────────────
+
+  export let value    = 0            // single mode — bindable
+  export let start    = undefined    // range mode — bindable low handle
+  export let end      = undefined    // range mode — bindable high handle
+  export let min      = 0
+  export let max      = 100
+  export let step     = 1
+  export let range    = false        // dual handle mode
+  export let disabled = false
+  export let format   = undefined    // (value: number) => string — pip label formatter
+  export let showPips = true         // show value labels under handles
+  export let color    = 'blue'       // 'blue' | 'green' | 'red' | 'purple' | 'gray'
+
+  // Field integration
+  export let name     = ''
+  export let label    = ''
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let onchange = undefined    // ({ value? } | { start, end }) => void
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  function getPrecision(n) {
+    if (!isFinite(n) || Number.isInteger(n)) return 0
+    return String(n).split('.')[1]?.length ?? 0
+  }
+
+  const precision = getPrecision(step)
+
+  function snap(raw) {
+    const clamped  = Math.max(min, Math.min(max, raw))
+    const snapped  = Math.round((clamped - min) / step) * step + min
+    return parseFloat(snapped.toFixed(precision))
+  }
+
+  function pct(v) {
+    return ((v - min) / (max - min)) * 100
+  }
+
+  function fmt(v) {
+    return format ? format(v) : String(v)
+  }
+
+  // ── State ────────────────────────────────────────────────────────────────────
+
+  // Initialise range handles with sensible defaults
+  if (range && start == null) start = min
+  if (range && end   == null) end   = max
+  if (!range && value == null) value = min
+
+  let sliderEl    // bind:this — track element ref
+  var dragging    = null   // null | 'single' | 'start' | 'end'
+
+  // ── Derived percentages ───────────────────────────────────────────────────────
+
+  const singlePct = pct(value)
+  const startPct  = range ? pct(start) : 0
+  const endPct    = range ? pct(end)   : 0
+
+  // ── Track color ───────────────────────────────────────────────────────────────
+
+  const trackColorMap = {
+    blue:   'bg-blue-500',
+    green:  'bg-green-500',
+    red:    'bg-red-500',
+    purple: 'bg-purple-500',
+    gray:   'bg-gray-500',
+  }
+  const trackFill = trackColorMap[color] ?? trackColorMap.blue
+
+  // ── Drag logic ─────────────────────────────────────────────────────────────
+
+  function posToValue(clientX) {
+    if (!sliderEl) return 0
+    const { left, width } = sliderEl.getBoundingClientRect()
+    const pctRaw = Math.max(0, Math.min(1, (clientX - left) / width))
+    return snap(pctRaw * (max - min) + min)
+  }
+
+  function startDrag(which) {
+    return (e) => {
+      if (disabled) return
+      e.preventDefault()
+      dragging = which
+      const moveEvt = e.type === 'touchstart' ? 'touchmove' : 'mousemove'
+      const upEvt   = e.type === 'touchstart' ? 'touchend'  : 'mouseup'
+
+      function onMove(ev) {
+        const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX
+        const v = posToValue(clientX)
+        if (which === 'single') {
+          value = v
+        } else if (which === 'start') {
+          start = Math.min(v, end)
+        } else {
+          end = Math.max(v, start)
+        }
+        emit()
+      }
+
+      function onUp() {
+        dragging = null
+        window.removeEventListener(moveEvt, onMove)
+        window.removeEventListener(upEvt, onUp)
+      }
+
+      window.addEventListener(moveEvt, onMove, { passive: false })
+      window.addEventListener(upEvt, onUp)
+    }
+  }
+
+  // Click on track — jump nearest handle
+  function handleTrackClick(e) {
+    if (disabled || e.target.classList.contains('slider-handle')) return
+    const v = posToValue(e.clientX)
+    if (!range) {
+      value = v
+    } else {
+      // Move nearest handle
+      if (Math.abs(v - start) <= Math.abs(v - end)) {
+        start = Math.min(v, end)
+      } else {
+        end = Math.max(v, start)
+      }
+    }
+    emit()
+  }
+
+  function handleKeydown(which) {
+    return (e) => {
+      if (disabled) return
+      const delta = (e.shiftKey ? step * 10 : step) * (e.key === 'ArrowLeft' ? -1 : 1)
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      e.preventDefault()
+      if (which === 'single') {
+        value = snap(value + delta)
+      } else if (which === 'start') {
+        start = snap(Math.min(start + delta, end))
+      } else {
+        end = snap(Math.max(end + delta, start))
+      }
+      emit()
+    }
+  }
+
+  function emit() {
+    if (range) {
+      onchange?.({ start, end })
+    } else {
+      onchange?.({ value })
+    }
+  }
+</script>
+
+{#snippet track()}
+  <div class="flex flex-col gap-3">
+    <!-- Track + handles -->
+    <div
+      bind:this={sliderEl}
+      class="relative h-1.5 w-full rounded-full bg-gray-200
+             {disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}"
+      on:click={handleTrackClick}
+    >
+      <!-- Fill bar -->
+      {#if range}
+        <div
+          class="absolute top-0 h-full rounded-full {trackFill}"
+          style:left="{startPct}%"
+          style:width="{endPct - startPct}%"
+        ></div>
+      {:else}
+        <div
+          class="absolute top-0 left-0 h-full rounded-full {trackFill}"
+          style:width="{singlePct}%"
+        ></div>
+      {/if}
+
+      <!-- Single handle -->
+      {#if !range}
+        <div
+          class="slider-handle absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2
+                 rounded-full border-2 border-white bg-blue-600 shadow-md
+                 transition-transform hover:scale-110 active:scale-95
+                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
+                 {disabled ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}"
+          style:left="{singlePct}%"
+          role="slider"
+          tabindex={disabled ? -1 : 0}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          aria-valuenow={value}
+          aria-label={label || name || 'Value'}
+          on:mousedown={startDrag('single')}
+          on:touchstart={startDrag('single')}
+          on:keydown={handleKeydown('single')}
+        ></div>
+
+        {#if showPips}
+          <div
+            class="absolute top-5 -translate-x-1/2 text-xs text-gray-500 whitespace-nowrap pointer-events-none"
+            style:left="{singlePct}%"
+          >
+            {fmt(value)}
+          </div>
+        {/if}
+
+      {:else}
+        <!-- Start handle -->
+        <div
+          class="slider-handle absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2
+                 rounded-full border-2 border-white bg-blue-600 shadow-md z-10
+                 transition-transform hover:scale-110 active:scale-95
+                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
+                 {disabled ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}"
+          style:left="{startPct}%"
+          role="slider"
+          tabindex={disabled ? -1 : 0}
+          aria-valuemin={min}
+          aria-valuemax={end}
+          aria-valuenow={start}
+          aria-label="Minimum"
+          on:mousedown={startDrag('start')}
+          on:touchstart={startDrag('start')}
+          on:keydown={handleKeydown('start')}
+        ></div>
+
+        <!-- End handle -->
+        <div
+          class="slider-handle absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2
+                 rounded-full border-2 border-white bg-blue-600 shadow-md z-10
+                 transition-transform hover:scale-110 active:scale-95
+                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
+                 {disabled ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}"
+          style:left="{endPct}%"
+          role="slider"
+          tabindex={disabled ? -1 : 0}
+          aria-valuemin={start}
+          aria-valuemax={max}
+          aria-valuenow={end}
+          aria-label="Maximum"
+          on:mousedown={startDrag('end')}
+          on:touchstart={startDrag('end')}
+          on:keydown={handleKeydown('end')}
+        ></div>
+
+        {#if showPips}
+          <!-- Start pip -->
+          <div
+            class="absolute top-5 -translate-x-1/2 text-xs text-gray-500 whitespace-nowrap pointer-events-none"
+            style:left="{startPct}%"
+          >{fmt(start)}</div>
+
+          <!-- End pip -->
+          <div
+            class="absolute top-5 -translate-x-1/2 text-xs text-gray-500 whitespace-nowrap pointer-events-none"
+            style:left="{endPct}%"
+          >{fmt(end)}</div>
+        {/if}
+      {/if}
+    </div>
+
+    <!-- Min/max labels -->
+    <div class="flex justify-between text-xs text-gray-400 {showPips ? 'mt-3' : ''}">
+      <span>{fmt(min)}</span>
+      <span>{fmt(max)}</span>
+    </div>
+  </div>
+{/snippet}
+
+{#if label || name}
+  <Field
+    name={name}
+    label={label || name}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
+    {@render track()}
+  </Field>
+{:else}
+  <div class="pt-2 pb-1 {class}">
+    {@render track()}
+  </div>
+{/if}

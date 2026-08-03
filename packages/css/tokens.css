@@ -49,7 +49,23 @@
   --surface-sunken: #f5f5f5;
   --ink:            #1c1b18;
   --ink-soft:       #5a564e;
-  --ink-mute:       #8b867b;
+  /*
+   * --ink-mute is the lightest step of the ink ramp, and it is still body
+   * text: placeholders, table headers, field hints, nav labels, .page-gap,
+   * .empty — all at 11–13px, so AA's 4.5:1 applies, not the 3:1 large-text
+   * threshold.
+   *
+   * It was #8b867b, which is 3.62:1 on --surface and 3.32:1 on
+   * --surface-sunken. Every light theme inherited that, so every
+   * placeholder and every table header in the package failed AA.
+   *
+   * The replacement is the same color scaled uniformly in linear RGB —
+   * the same operation chip.css uses to cap a fill — so chromaticity is
+   * exact and this is still the identical warm grey, only dark enough to
+   * read: 4.92:1 on --surface, 4.51:1 on --surface-sunken, and still well
+   * clear of --ink-soft so the three-step ramp survives.
+   */
+  --ink-mute:       #757067;
   --rule:           #e7e3d8;
   --rule-strong:    #d4cfc0;
 
@@ -106,8 +122,35 @@
   --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06);
 
   /* ── Focus ring ───────────────────────────────────────────── */
-  --ring:       var(--color-primary);
-  --ring-width: 3px;
+  /*
+   * The whole recipe, and the only knobs it has. One rule reads these —
+   * focus.css — and every focusable surface in the package goes through
+   * it. See that file for why the ring is an outline, and for how a
+   * component varies the color without restating the shape.
+   *
+   * --ring-width was 3px while it only reached the three box-shadow
+   * halos. Those were translucent, so they needed the extra spread to
+   * read at all. A solid ring does not, and 2px is what every ring added
+   * later in v0.6 had already hardcoded.
+   */
+  --ring-width:  2px;
+  --ring-offset: 2px;
+
+  /*
+   * --ring is deliberately NOT declared here, for the same reason
+   * --badge-radius is not. It follows --color-primary, and the working
+   * form of that is a use-site fallback: `var(--ring, var(--color-primary))`
+   * wherever a ring color is read.
+   *
+   * `--ring: var(--color-primary)` at :root looks equivalent and silently
+   * is not. The var() resolves once, against :root's own --color-primary,
+   * and the resulting computed color inherits straight past any .theme-*
+   * override. That is what shipped through v0.6: every theme changes
+   * --color-primary, no theme sets --ring, and so every focus ring in
+   * every theme was the default blue. Elite's lime brand focused in blue.
+   *
+   * Set --ring in a theme only to diverge from --color-primary.
+   */
 
   /* ── Fonts ────────────────────────────────────────────────── */
   --font-primary: system-ui, sans-serif;
@@ -123,5 +166,25 @@
     animation-iteration-count: 1 !important;
     transition-duration:      0.01ms !important;
     scroll-behavior:          auto !important;
+  }
+
+  /*
+   * Spinners are the exception: the animation *is* the message. Frozen, a
+   * spinner reads as a broken page rather than a working one. So slow it
+   * to a rate that still says "in progress" without the fast rotation
+   * that triggers vestibular symptoms, and keep it looping.
+   *
+   * This has to live here, in the same layer as the guard above, because
+   * layer order is REVERSED for !important declarations — an !important
+   * in the first layer beats one in the last. Put this exception in a
+   * later file and the guard would silently win.
+   *
+   * Among !important declarations specificity still applies normally, so
+   * .spinner (0,1,0) beats * (0,0,0).
+   */
+  .spinner,
+  .btn.loading::after {
+    animation-duration:        1.6s !important;
+    animation-iteration-count: infinite !important;
   }
 }

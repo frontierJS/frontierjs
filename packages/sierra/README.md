@@ -1,0 +1,891 @@
+# @frontierjs/sierra
+
+The UI realm of FrontierJS. Sierra turns a directory of Mesa components into a routed
+application: it scans `src/routes/`, emits a route manifest, produces the whole Vite
+config, and binds the running app to a Junction API.
+
+```
+db/schema.lite  ──►  Junction (API)  ──►  Sierra (UI)
+      │                    │                  │
+ generateJsonSchema    services/WS      routes + resources
+      └──────────────────────────────────────►┘
+                  registerSchemas()
+```
+
+Sierra sits at the end of the dependency chain — `Litestone ← Junction ← Sierra` — and
+never the reverse. Mesa is the component substrate underneath it.
+
+**Status:** v0.1.0, pre-1.0. 672 tests across 32 files pass (`bun run test`), typecheck
+clean. The SPA target is solid and verified end-to-end; `static` prerendering works with
+the caveats in [Build targets](#build-targets); `widget` is a config shape with no build
+loop behind it.
+
+There is a runnable app in [`example/`](example/) — a real Junction API over real SQLite,
+with a form generated entirely from `db/schema.lite`. The whole app is driven in headless
+Chrome — navigation, sign-in, form submit, delete — with the console watched for errors;
+see its [README](example/README.md) for what was found that way.
+
+```bash
+cd example && bun run api    # :3500
+cd example && bun run dev    # :5273
+```
+
+---
+
+## Installation
+
+```bash
+bun add @frontierjs/sierra @frontierjs/mesa
+bun add -d vite
+```
+
+Sierra imports `@frontierjs/mesa`, `@frontierjs/junction` and `@frontierjs/litestone`
+but **declares none of them** as dependencies — it resolves them itself through a
+hand-rolled exports-map resolver (`src/virtual/virtual-sierra.js`). Install what you use:
+
+| Package | Needed for |
+| --- | --- |
+| `@frontierjs/mesa` | always — the compiler and runtime |
+| `@frontierjs/junction` | `sierra/junction`, `sierra/presence` |
+| `@frontierjs/litestone` | schema seeding from `db/schema.lite` (optional; absence is not an error) |
+
+---
+
+## Quick start
+
+```
+my-app/
+├── vite.config.js          ← must sit at the Vite root; see the note below
+├── index.html
+├── config/
+│   ├── sierra.config.js
+│   └── routes.js           ← generated, do not edit
+└── src/
+    ├── main.js
+    ├── App.mesa
+    └── routes/
+        ├── _module.mesa
+        ├── index.mesa
+        └── blog/
+            ├── [slug].mesa
+            └── [slug].meta.js
+```
+
+**`vite.config.js`**
+
+```js
+import { defineConfig } from 'vite'
+import { createSierraViteConfig } from '@frontierjs/sierra/build'
+import sierraConfig from './config/sierra.config.js'
+
+export default defineConfig(createSierraViteConfig(sierraConfig))
+```
+
+**`config/sierra.config.js`**
+
+```js
+export default {
+  target:        'spa',
+  routesDir:     'src/routes',
+  trailingSlash: 'always',
+
+  junction: {
+    url:       `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`,
+    apiPrefix: '/api',       // must match the API's config.apiPrefix
+    tokenKey:  'myapp_token',
+  },
+}
+```
+
+**`src/main.js`**
+
+```js
+import 'virtual:sierra'                       // boots router, junction, theme, analytics
+import { mount } from '@frontierjs/mesa/runtime'
+import App from './App.mesa'
+
+// mount()'s first argument is an anchor NODE, not an element id — Mesa inserts
+// the component immediately after it, so it must already be in the DOM.
+// Passing a string fails with "anchor node has no parentNode".
+const root   = document.getElementById('app')
+const anchor = document.createTextNode('')
+root.appendChild(anchor)
+
+mount(anchor, App, { root })
+```
+
+**`src/App.mesa`**
+
+```html
+<script>
+  import { RouterView } from '@frontierjs/sierra/router'
+</script>
+
+<RouterView />
+```
+
+Then `vite` for dev and `vite build` for production.
+
+> **`vite.config.js` must live at the Vite root.** Sierra derives the path to
+> `sierra.config.js` by rewriting the resolved Vite config path, so a
+> `config/vite.config.js` resolves to `config/config/sierra.config.js` and the build
+> fails with `Could not resolve …/config/config/sierra.config.js`. If the config must
+> live in a subdirectory, set the escape hatch in `sierra.config.js`:
+>
+> ```js
+> _configPath: new URL('./sierra.config.js', import.meta.url).pathname,
+> ```
+
+---
+
+## Routing
+
+The route table is derived from the file tree. Nothing is registered by hand.
+
+### File roles
+
+| Pattern | Role | Result |
+| --- | --- | --- |
+| `index.mesa` | route | the folder's index — contributes no URL segment |
+| `about.mesa` (lowercase) | route | `/about/` |
+| `_module.mesa` | layout | wraps every descendant route |
+| `Sidebar.mesa` (PascalCase) | component | co-located, never routed |
+| `_helper.mesa` (`_` prefix) | component | co-located, never routed |
+| `about.meta.js` | companion | `meta` / `load` / `getStaticPaths` for `about.mesa` |
+| anything else | ignored | — |
+
+`.md` files route exactly like `.mesa` — the Mesa compiler handles both, and fenced code
+blocks are escaped before compilation.
+
+### Path syntax
+
+| File | URL | Notes |
+| --- | --- | --- |
+| `leads/index.mesa` | `/leads/` | |
+| `leads/[leadId].mesa` | `/leads/:leadId/` | `page.params.leadId` |
+| `[...404].mesa` | `/*` | catch-all |
+| `(auth)/login.mesa` | `/login/` | `(group)` folders are organizational — zero URL impact |
+| `account/settings/index.mesa` | `/account/settings/` | |
+
+Trailing slashes are appended by default (`trailingSlash: 'always' | 'never' | 'preserve'`).
+A file and a folder with the same name (`leads.mesa` + `leads/`) is a build error.
+
+### Layouts
+
+`_module.mesa` wraps every route beneath it, and layouts nest. A layout renders its child
+through `<slot />`:
+
+```html
+---
+siteName: My App
+---
+<script>
+  import { page, isActive } from '@frontierjs/sierra/router'
+  $: (page.siteName, page.route)
+</script>
+
+<header>{page.siteName}</header>
+<main><slot /></main>
+```
+
+Layouts are loaded lazily — only the chain a route actually needs is fetched, and the
+chain is complete before the route commits. `reset: true` in a route's frontmatter opts
+it out of all layouts.
+
+### Frontmatter
+
+Frontmatter is YAML at the top of a `.mesa`/`.md` file. It is merged in this order, with
+the rightmost winning:
+
+```
+layout _module.mesa frontmatter → layout _module.meta.js → route .meta.js → route frontmatter → system flags
+```
+
+Keys Sierra acts on:
+
+| Key | Effect |
+| --- | --- |
+| `reset: true` | render this route with no layout |
+| `render: static` | prerender to its own `index.html` under `target: 'static'` |
+| `redirect: /path/` | navigating here redirects; also emitted to `_redirects` |
+| `status: draft` | excluded from `published` and `indexed` |
+| `robots: noindex` | excluded from `indexed` and the sitemap |
+
+Everything else is yours, and is spread onto `page` — `siteName: My App` becomes
+`{page.siteName}`. System flags (`dynamic`, `spread`, `isIndex`) are added by the scanner.
+
+---
+
+## The `page` object
+
+One import, one object, everything about the current route. It is **not** a signal — it is
+a plain object, and components make the fields they use reactive with a `$:` path watch
+(Mesa RULE 43):
+
+```html
+<script>
+  import { page } from '@frontierjs/sierra/router'
+  $: (page.params, page.data)
+</script>
+
+<h1>{page.title}</h1>
+<p>{page.params.slug}</p>
+{#if page.error}<p class="error">{page.error.message}</p>{/if}
+```
+
+Router-owned fields — these are reserved, and the scanner warns if frontmatter shadows one:
+
+| Field | Value |
+| --- | --- |
+| `path` | current pathname + search |
+| `params` | path params + parsed query params |
+| `meta` | the raw frontmatter object, un-spread |
+| `route` | the matched route node |
+| `pending` | the in-flight route during navigation, else `null` |
+| `data` | whatever the route's `load()` returned |
+| `error` | the error `load()` threw, else `null` |
+| `slots` | named slots registered via `provideSlot()` |
+
+`page` replaced eight separate signals (`params`, `activeRoute`, `meta`, `data`, …). The
+old names are gone.
+
+---
+
+## Navigation API
+
+```js
+import {
+  goto, back, forward, url, isActive, getDirection,
+  setParams, updateParams,
+  beforeNavigate, afterNavigate,
+  prefetch, provideSlot,
+} from '@frontierjs/sierra/router'
+```
+
+| Call | Behaviour |
+| --- | --- |
+| `goto(path, query?, { scroll, replace })` | navigate |
+| `back()` / `forward()` | history |
+| `url(path, query?)` | build a URL with the configured trailing-slash policy |
+| `isActive(path, { exact })` | prefix match by default; reactive if the caller watches `page.route` |
+| `setParams(obj)` | replace all query params (`replace: true`, no scroll) |
+| `updateParams(fn)` | merge query params through a function |
+| `getDirection()` | `'next' \| 'prev' \| 'first'` from history indices |
+| `prefetch(path)` | preload a route's chunk and data programmatically |
+
+### Guards and hooks
+
+```js
+beforeNavigate(async ({ from, to }) => {
+  if (to.path.startsWith('/admin/') && !isAdmin()) return '/login/'  // redirect
+  if (unsavedChanges) return false                                    // cancel
+  return true
+})
+
+afterNavigate(({ from, to }) => trackPageview(to.path))
+```
+
+Both return an unsubscribe function. Guards run on the boot navigation too — the initial
+`_navigate` is deferred by one microtask precisely so guards registered during app mount
+are in place before it runs. A guard therefore protects a direct page load and a refresh,
+not just client-side navigation.
+
+### Prefetching
+
+Add the attribute to a link:
+
+```html
+<a href="/blog/" prefetch>immediate</a>
+<a href="/blog/" prefetch="hover">on mouseenter / touchstart</a>
+<a href="/blog/" prefetch="visible">on IntersectionObserver entry</a>
+```
+
+Prefetch loads both the route chunk and its `load()` payload. Payloads are cached per URL,
+capped at 32 entries, and expire after 30s.
+
+> **Auth limitation, by design and documented in source:** prefetch calls `window.fetch`
+> directly, not `sierraFetch`, so the auth token is **not** attached during a prefetched
+> `load()`. A `load()` that hits a protected endpoint will 401 during prefetch; navigation
+> itself is unaffected because the router uses `sierraFetch`.
+
+### Named slots
+
+A page pushes content up into its layout. Both sides are compile-time rewrites — you
+write markup, not snippet plumbing:
+
+```html
+<!-- route: src/routes/blog/[slug].mesa -->
+<mesa:slot name="sidebar">
+  <nav>…</nav>
+</mesa:slot>
+
+<h1>{page.title}</h1>
+```
+
+```html
+<!-- layout: src/routes/blog/_module.mesa -->
+<aside><slot name="sidebar">No sidebar for this page.</slot></aside>
+<main><slot /></main>
+
+{#if $slots.sidebar}<p>this page has a sidebar</p>{/if}
+```
+
+`<slot />` is the default slot (the route itself), `<slot name="X">` a named one with
+optional fallback content, and `$slots` a derived record of which named slots the current
+page provided. The underlying `provideSlot(name, snippetFn)` is exported from
+`sierra/router` if you need to register a slot imperatively.
+
+A named layout slot currently emits a benign Mesa compiler warning —
+`'__slot_sidebar' is already declared` — because the rewrite emits both a watch and an
+assignment for the same local. The build succeeds and the slot works.
+
+---
+
+## Data loading
+
+A route gets data from a co-located `.meta.js` companion:
+
+```js
+// src/routes/blog/[slug].meta.js
+
+export const meta = { section: 'blog' }        // merged into frontmatter
+
+export async function load({ params, url, meta, fetch }) {
+  const res = await fetch(`/posts/${params.slug}`)
+  if (!res.ok) throw new Error('Post not found')
+  return res.json()                             // → page.data
+}
+
+export async function getStaticPaths() {        // static builds only
+  return [{ slug: 'hello' }, { slug: 'world' }]
+}
+```
+
+- `fetch` is `sierraFetch` — it attaches the Junction auth token automatically, so the
+  page never needs to know whether Junction is wired.
+- Returning a string starting with `/` performs a redirect.
+- A thrown error lands in `page.error` and the router **stays on the route** so the page
+  can render its own error state. Data failures are not routing failures — there is no
+  redirect to the catch-all.
+- `load()` runs after the component chunk and the layout chain resolve, and the prefetch
+  cache is checked first.
+
+---
+
+## Junction binding
+
+```js
+import {
+  status, login, logout, getClient, whenReady,
+  createResource, createStore, useStore,
+} from '@frontierjs/sierra/junction'
+```
+
+`initJunction()` is called for you by `virtual:sierra` whenever `junction.url` is set. It
+is synchronous — boot is never blocked on a WebSocket handshake. `whenReady` is there for
+the rare caller that specifically needs the socket; service calls made before it resolves
+simply take the HTTP path.
+
+### Connection state
+
+```html
+<script>
+  import { status } from '@frontierjs/sierra/junction'
+  $: status.connected
+</script>
+
+<span class:online={status.connected}></span>
+```
+
+`status` is a plain object (`{ connected, reconnecting }`) — same contract as `page`.
+
+### Resources
+
+`createResource` wraps a Junction service with a four-phase hook pipeline that mirrors the
+API realm:
+
+```js
+import { createResource } from '@frontierjs/sierra/junction'
+
+export const leads = createResource('leads', {
+  hooks: {
+    around: { all:    [async (ctx, next) => { loading.set(true); await next(); loading.set(false) }] },
+    before: { create: [validateLead] },
+    after:  { all:    [formatDates] },
+    error:  { all:    [handleApiErrors] },
+  },
+})
+```
+
+```
+around:enter → before → [network call] → after → around:exit
+                             ↓ on throw
+                           error
+```
+
+Returns `{ service, store, make, load, fields, relations, gate, can, validate, normalize, coerce, context, hooks }`.
+
+**Return shapes — read this before `.map()`.** The service methods are a pass-through of
+Junction's browser client, and Junction's envelope rule applies unchanged: a list keeps
+its envelope, a single record unwraps.
+
+```js
+const res = await leads.service.find({}, { limit: 20 })
+res.data     // the rows
+res.total    // total matching — for a pager
+
+await leads.load()        // → the rows, and populates leads.store
+leads.store.get()         // → the rows
+```
+
+Reach for `load()`/`store` when rendering a list, and `service.find()` when you need the
+count alongside it. `ctx.query` is filters (goes over the wire), `ctx.findParams` is
+`{ limit, offset, orderBy, select }` (also the wire), `ctx.params` is a client-only bucket
+that never leaves the browser.
+
+### Schema seeding
+
+If `db/schema.lite` is present, Sierra runs Litestone's `generateJsonSchema` at build
+time and `virtual:sierra` calls `registerSchemas()` before any route module evaluates.
+That is why a resource file names a model and nothing else — `make()` gets its field
+shape from the schema instead of restating it:
+
+```js
+const blank = leads.make({ status: 'new' })   // defaults from db/schema.lite
+```
+
+Lookup order is `db/schema.lite`, `../db/schema.lite` (a `web/` folder next to a
+root-level `db/`), then `schema.lite`. Override with `schema: 'path/to/x.lite'`, or
+disable with `schema: false`.
+
+Only models become resources. Enums, `type T { … }` declarations and `FileRef` are
+registered too, but as **definitions** — they are what `$ref` points at, not things you
+can `createResource()`.
+
+### Naming: service ⇄ model
+
+A resource is addressed by its **service** name and seeded from a **model**. The registry
+bridges the two with English's regular plural rules, so these need no help:
+
+| `createResource(…)` | model | rule |
+| --- | --- | --- |
+| `'leads'` | `Lead` | `-s` |
+| `'companies'` | `Company` | consonant + `y` → `-ies` |
+| `'statuses'`, `'boxes'`, `'churches'` | `Status`, `Box`, `Church` | sibilant → `-es` |
+| `'lead'`, `'Lead'` | `Lead` | accessor / declared name |
+
+Irregular plurals are not guessable, and Sierra does not guess. Name the model:
+
+```js
+createResource('people',   { model: 'Person' })
+createResource('children', { model: 'Child'  })
+```
+
+`model` is the override for any mismatch, not just plurals — use it whenever a service
+is deliberately named something other than its model (`createResource('roster', { model:
+'Person' })`). It works in all three signatures, and the service name is still what gets
+called on the wire.
+
+When nothing resolves, the warning names the fix and lists what is registered:
+
+```
+[resource:children] no schema found for 'children'. make() returns a bare object,
+fields is empty, and validate() reports nothing.
+  Name the model explicitly: createResource('children', { model: 'Child' })   ← 'Child' looks like the one
+  Known models: Lead, Company, Status, Person, Child
+```
+
+Once resolved, `ctx.model` and `resource.context.model` report the **model** name as
+declared in the `.lite` file — `Status`, not `statuses` — whether you named it or the
+plural rules found it.
+
+### Field rules
+
+`resource.fields` is the model's schema flattened into per-field rules, with `$ref`
+followed — the same information Junction compiles its server-side validator from:
+
+```js
+leads.fields.plan
+// { type: 'string', required: true, nullable: false,
+//   enum: ['starter', 'pro', 'enterprise'] }
+
+leads.fields.email    // { type:'string', required:true, format:'email' }
+leads.fields.name     // { type:'string', required:true, minLength:1, maxLength:200 }
+```
+
+That is enough to render a `<select>`, mark a required label, or set an input's
+`maxlength` without restating anything from `db/schema.lite`.
+
+`resource.validate(data, mode)` checks a record against those rules and returns
+`[{ field, message }]` — empty when the record is acceptable. `mode` is `'create'`
+(default) or `'patch'`, which skips absent fields:
+
+```js
+const draft = leads.make({ name: 'Ada' })
+const problems = leads.validate(draft)
+// [{ field: 'email', message: 'email is required' },
+//  { field: 'plan',  message: 'plan is required'  }]
+```
+
+`validate: true` on the resource *also* runs that check automatically before every
+`create` and `patch`, throwing `ResourceValidationError` instead of making the request:
+
+```js
+export const leads = createResource('leads', { validate: true })
+
+await leads.service.create({ name: 'Ada' })
+// throws ResourceValidationError; err.errors is the same array as validate()
+```
+
+**Default off.** The server validates either way — Junction derives its rules from the
+same `.lite` file — so this is about failing in the browser before a round trip, not
+about being the thing that says no. Turning it on changes *where* an invalid payload
+surfaces, which is why existing resources are not opted in for you.
+
+Enforcement runs **after** the `before` hooks, so a hook that completes the record
+(stamping a tenant id, coercing a field) is reflected in what gets checked. The throw
+travels the normal `error` phase, so an `error` hook can present it — or clear
+`ctx.error` to recover.
+
+Both halves are kept honest by a shared rule: `required` means *absent or null*, so an
+empty string satisfies a required `String` on the client exactly as it does on the
+server. Sierra's checker covers what Litestone's generator actually emits and is not a
+general JSON Schema validator.
+
+A bulk create is validated element-wise, and each error carries the row `index`.
+
+### Relations
+
+Relations have no wire representation, so they are absent from `properties` —
+`x-relations` is the only place they exist on the client. `resource.relations`
+reads it:
+
+```js
+leads.relations.account
+// { field:'account', type:'belongsTo', model:'Account',
+//   foreignKeys:['accountId'], references:['id'], optional:false, onDelete:'Cascade' }
+
+leads.relations.tags
+// { field:'tags', type:'m2m', model:'Tag' }
+```
+
+`model` is normalised to the name as declared in the `.lite` file, so it can be
+handed straight to `schemaFor()` — or used to build the related resource, which
+is how a picker finds its options without naming the service:
+
+```js
+const related = createResource('accounts', { model: leads.relations.account.model })
+```
+
+Foreign keys are also marked on the field rules, because `accountId` is a plain
+integer on the wire and a generated form would otherwise render a number input
+for a reference:
+
+```js
+leads.fields.accountId.references
+// { model: 'Account', field: 'id', relation: 'account' }
+```
+
+### Gate
+
+`resource.gate` is the model's `@@gate` levels, and `can()` compares a level
+against them:
+
+```js
+leads.gate                       // { read: 0, create: 4, update: 4, delete: 5 }
+leads.can('delete', userLevel)   // false at 4, true at 5
+leads.can('patch',  userLevel)   // service method names work too
+```
+
+**This is a UI affordance, not a security boundary.** The gate is enforced at the
+data layer by Litestone and turned into a status code by Junction; `can()` only
+lets you avoid offering a button that is going to 403. Never guard anything on
+it that the server does not also guard.
+
+Unknown answers are permissive — no gate declared, no level supplied, an
+operation the gate does not mention. Hiding a control the user could have used is
+a worse and much quieter failure than showing one that errors.
+
+Levels are Litestone's 0–9 scale (`STRANGER` 0 … `USER` 4 … `OWNER` 6, `SYSTEM`
+8). Pass a number: mapping names to numbers here would be a copy of Litestone's
+`LEVELS` and exactly the kind of duplicate that drifts.
+
+### Coercion
+
+`el.value` is a string for **every** DOM control — `<input type="number">` and
+`<select>` included — and Mesa's `bindInput` passes it through unchanged, correctly,
+because it has no idea what the field is. So a form bound to `make()` sends `"42"` for a
+`Float` and `"1"` for an `Int`, and both the server and `validate()` reject them.
+
+Only the schema knows what they were meant to be:
+
+```js
+export const leads = createResource('leads', { coerce: true })
+
+await leads.service.create({ value: '42', accountId: '1' })
+// sent as { value: 42, accountId: 1 }
+```
+
+Conservative on purpose:
+
+- **`''` is never coerced.** `Number('')` is `0`, and silently inventing a zero for an
+  empty box is worse than a validation error. Blank handling belongs to `blankToNull`,
+  which runs after this.
+- A string that isn't a clean number is **left alone**, so `validate()` can say so rather
+  than NaN reaching the server. `'7.5'` in an `integer` field stays `'7.5'`.
+- Only strings are touched; anything already of the right type is left alone.
+
+**Default off**, like the others — but a form bound to DOM inputs almost certainly wants
+it, and `validate: true` without it will reject every numeric field.
+`resource.coerce(data)` does the same on demand.
+
+The three compose in this order: **coerce → blankToNull → validate**, so validation
+judges exactly what will be sent.
+
+### Blank → null
+
+A text input cannot produce "no value" — an untouched box submits `''`. So a form bound
+to `make()` writes `''` into a column the schema declared nullable, and SQLite does not
+treat those as the same value:
+
+```
+two NULLs   : ok | ok
+two ''      : ok | REJECTED: UNIQUE constraint failed
+```
+
+`String? @unique` accepts any number of NULLs but rejects a second `''` — a create that
+works once and then fails, from a default nobody wrote. And `WHERE col IS NULL` never
+matches `''`, so "records with no X" silently excludes everything the app created.
+
+`blankToNull: true` replaces `''` with `null` on nullable fields before every create and
+patch:
+
+```js
+export const leads = createResource('leads', { blankToNull: true })
+
+await leads.service.create({ name: 'Ada', slug: '', notes: '' })
+// sent as { name: 'Ada', slug: null, notes: null }
+```
+
+The form keeps binding to a string — no `?? ''` at every input, no `null.trim()` — and
+the wire carries the distinction the schema actually made. `resource.normalize(data)`
+does the same thing on demand, without the flag.
+
+Only **nullable** fields are touched (`''` on a required `String` is a real empty string,
+and nulling it would turn a valid record invalid), only fields **present** in the record
+(a patch is never widened), and only the exact value `''` — whitespace is content, and
+trimming is a separate decision this does not make.
+
+**Default off**, because it changes what is stored. It composes with `validate`:
+normalization runs first, so validation judges what will actually be sent.
+
+### Auth
+
+```js
+login(token)    // persist + authenticate the client
+logout()        // clear the token and close the socket
+```
+
+A `401` from any service call fires the client's `unauthorized` event, which clears the
+token and redirects to `auth.redirectTo`. Route protection is declarative:
+
+```js
+junction: {
+  url: '…',
+  auth: { publicRoutes: ['/login/', '/blog/*'], redirectTo: '/login/', returnPath: true },
+}
+```
+
+The guard checks token *presence*, not validity — validity is the server's job.
+
+### Presence
+
+```html
+<script>
+  import { presence } from '@frontierjs/sierra/presence'
+  const members = presence('workspace:42', { meta: { name: user.name } })
+</script>
+
+<p>{members.count} here</p>
+{#each members.others as m}<span>{m.meta.name}</span>{/each}
+```
+
+---
+
+## Configuration
+
+Everything in `sierra.config.js`:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `target` | `'spa'` | `'spa'` \| `'static'` \| `'widget'` |
+| `routesDir` | `'src/routes'` | scanned directory |
+| `outDir` | `'dist/client'` | build output |
+| `base` | `'/'` | public base path |
+| `trailingSlash` | `'always'` | `'always'` \| `'never'` \| `'preserve'` |
+| `manifest.output` | `'config/routes.js'` | where the generated manifest is written |
+| `schema` | auto-detect | path to the `.lite` file, or `false` |
+| `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, auth, services, debug, onConnect, … }` |
+| `theme` | — | `{ default, persist, attribute, key }` |
+| `analytics` | — | `{ provider }` — `'plausible'`, `'gtm'`, or a custom `{ init, pageview, track }` |
+| `devtools` | — | `{ port, position, n1Threshold }` |
+| `autoImport.components` | `[]` | directories whose PascalCase components need no import |
+| `siteUrl` | `''` | absolute origin for the sitemap |
+| `llms` | `true` | emit `llms.txt` |
+| `markdownPages` | `false` | `true` \| `'auto'` — emit `index.md` beside each page |
+| `speculationRules` | `true` | inject Speculation Rules for static routes |
+| `build.deferJS` | `false` | defer script tags in `index.html` |
+| `plugins` | `[]` | extra Vite plugins; those with `closeBundle` also run in the post-build pipeline |
+| `vite` | `{}` | raw Vite overrides — deep-merged last, arrays concatenated |
+
+`junction.debug: true` logs every service call with payloads; `'verbose'` adds every
+client event. Both are off by default — the console retains logged objects, which on a
+WebSocket-heavy app keeps every response payload alive for the tab's lifetime.
+
+---
+
+## Build targets
+
+**`spa`** — the supported path. Vite's default chunking, client-side routing, one
+`index.html`. Verified end-to-end.
+
+**`static`** — same bundle, plus a prerender pass in `closeBundle`. Every route declaring
+`render: static` in its frontmatter is rendered to its own `index.html` via Mesa's
+`renderComponent`, with layouts composed around it. A dynamic route with `render: static`
+**must** have a companion exporting `getStaticPaths()` — production builds fail loudly
+otherwise. A static build that produces no pages says so rather than silently emitting an
+SPA.
+
+> Two caveats found while verifying. Prerendering runs the route through Mesa's
+> `renderComponent`, which writes a temporary module inside the Mesa package directory —
+> so under a **linked** workspace (`bun link`, symlinked `node_modules`), a page or layout
+> that imports `@frontierjs/sierra/*` fails to resolve during prerender and that page is
+> skipped. Normal installs resolve fine. Also, `load()` cannot use relative URLs at build
+> time: there is no origin, so `sierraFetch` throws and directs you to `getStaticPaths()`.
+> When a render does fail, the summary still reports "no route declares `render: static`",
+> which is misleading — read the `prerender:` warning above it.
+
+**`widget`** — `createSierraViteConfig` accepts it and returns a library-ish Vite config
+with optional shadow-DOM CSS inlining, but there is **no widget build loop, entry
+discovery, or component scanning** anywhere in the package. Treat it as unimplemented.
+
+---
+
+## Post-build pipeline
+
+Runs automatically after `vite build`:
+
+| Step | Condition |
+| --- | --- |
+| `404/index.html` → `404.html` | always |
+| `public/robots.txt` → `dist/robots.txt` | always |
+| `_redirects` from routes with `redirect:` | always |
+| `sitemap.xml` from `indexed` routes | always |
+| `llms.txt` | `llms !== false` |
+| per-page `index.md` | `markdownPages` |
+| Speculation Rules | `speculationRules !== false` and static routes exist |
+| `defer` on script tags | `build.deferJS` |
+| theme flash-prevention inline script | `theme` configured |
+| user plugin `closeBundle` hooks | `plugins` |
+
+---
+
+## Dev experience
+
+- **HMR.** Editing a route file swaps the component in place. Sierra injects a Mesa HMR
+  boundary and suppresses its own `sierra:hmr` event for files that received one, so an
+  update is applied once rather than twice. The route manifest is written byte-stable so
+  a no-op rewrite doesn't escalate to a full reload.
+- **Error overlay.** Runtime errors are forwarded to an in-page overlay and the terminal.
+  `load()` failures are excluded — they are data errors, and the page renders `page.error`.
+- **Devtools toolbar.** Injected in dev only. It connects over WebSocket to Junction's
+  devtools plugin (`app.configure(devtools({ port: 4000 }))`) and shows requests, events,
+  logs, connections and an N+1 waterfall. Zero production bundle cost.
+- **Build warnings.** Unexported snippets, frontmatter shadowing a reserved `page` field,
+  and duplicate snippet/layout-prop names.
+- **Auto-import.** With `autoImport: { components: ['src/components/UI'] }`, PascalCase
+  components in those directories need no import statement; names are injected only where
+  the template actually uses them. Two directories exporting the same name is a build error.
+
+---
+
+## Theme
+
+```js
+import { theme, setTheme, toggleTheme } from '@frontierjs/sierra'
+```
+
+`theme` is a Mesa signal that resolves to `'light'` or `'dark'` — never `'system'`. With
+`theme` configured, the post-build pipeline injects an inline `<head>` script that applies
+the persisted preference before first paint, so there is no flash.
+
+---
+
+## `virtual:sierra`
+
+Importing it boots the app. Sierra generates the module from your config, so it contains
+only what you configured — router init always, then Junction, schemas, analytics and theme
+if present, plus the dev-only overlay and HMR bridge. It also re-exports the manifest:
+
+```js
+import { tree, components, loaders, layouts, published, indexed, redirects } from 'virtual:sierra'
+```
+
+| Export | Contents |
+| --- | --- |
+| `tree` | the route node tree (metadata only) |
+| `components` / `loaders` / `layouts` | lazy factory maps |
+| `all` / `published` / `indexed` | route paths — raw, minus drafts, minus noindex + dynamic |
+| `redirects` | `[[from, to], …]` |
+
+---
+
+## Package exports
+
+| Subpath | Contents |
+| --- | --- |
+| `@frontierjs/sierra` | `VERSION`, re-exported router + theme API, `createSierraViteConfig` |
+| `.../build` | `createSierraViteConfig` |
+| `.../router` | navigation, `page`, guards, `RouterView`, `ChainRenderer` |
+| `.../router/internals` | chain resolution — used by `RouterView`, not public |
+| `.../scanner` | `scan`, `scanAndWrite`, `buildTree`, `classify`, frontmatter parsing |
+| `.../junction` | client wiring, `status`, auth, `createResource`, `createStore`, `useStore`, `buildFieldRules`, `buildRelations`, `buildGate`, `canAtLevel`, `validateAgainstFields`, `normalizeBlanks`, `coerceToSchema`, `resolveRef` |
+| `.../fetch` | `sierraFetch`, `configureFetch` |
+| `.../theme` | `theme`, `setTheme`, `toggleTheme`, `initTheme` |
+| `.../presence` | `presence(channelId, opts)` |
+| `.../analytics` | `initAnalytics`, `track` |
+| `.../devtools` | `initToolbar` |
+| `.../postbuild` | `runPostBuild` |
+| `.../components/RouterView` | the router outlet component |
+
+---
+
+## Testing
+
+```bash
+bun run test        # vitest — 558 tests, 28 files
+bun run typecheck   # scripts/typecheck.mjs — baseline 0
+```
+
+Use `bun run test`, not `bun test`: this package's tests are vitest-authored, and the bun
+runner reports failures that are runner artifacts rather than bugs.
+
+---
+
+## Known rough edges
+
+- `vite.config.js` must sit at the Vite root unless `_configPath` is set — see the
+  [Quick start](#quick-start) note. The path is derived by string-rewriting the resolved
+  Vite config path.
+- Mesa, Junction and Litestone are imported but not declared as dependencies. Resolution
+  is hand-rolled against each package's `exports` map.
+- `target: 'widget'` is advertised but not implemented.
+- Prefetch does not attach the auth token.
+- Every named layout slot emits a duplicate-declaration warning from the Mesa compiler.
+  Cosmetic — the build and the slot both work.
+- `src/resources/` in `@frontierjs/jetty` is a hand-copy of Sierra's and has already
+  diverged. Fix one, audit the other.
+- The Mesa HMR algorithm is hand-copied from `mesa-vite/` into two files here.
+
+See [`CHANGES.md`](CHANGES.md) for the detailed history of what was fixed and why, and the
+repo's `DECISIONS.md` before relitigating any semantics.

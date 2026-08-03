@@ -1,0 +1,70 @@
+/// db/schema.lite — the seed.
+///
+/// This file is the only place any of the following is written down. Everything
+/// the example does with it is derived, at build time or at runtime:
+///
+///   the tables               ← autoMigrate(db)
+///   CRUD + pagination        ← createBaseService({}) reads the model
+///   401 / 403                ← @@gate, via junction's derived gateAuth hook
+///   400 on bad input         ← the field rules, via junction's autoValidate hook
+///   make() defaults          ← generateJsonSchema → registerSchemas → the browser
+///   fields / enum options    ← the same document, $ref resolved client-side
+///   client-side validation   ← the same rules again, checked before the request
+///   relation pickers         ← x-relations
+///   which buttons to render  ← x-gate
+///
+/// Model names are PascalCase and singular — ALWAYS.
+
+model Account {
+  id    Int    @id
+  name  String @length(1, 60)
+  leads Lead[]
+
+  /// read is public, writes need a user
+  @@gate("0.4.4.5")
+}
+
+/// A required enum with NO @default. make() leaves it null on purpose: no blank
+/// value is a member of the enum, and picking the first would invent a choice
+/// the user never made. The form has to ask — and it can, because $ref is
+/// resolved client-side and `fields.stage.enum` carries these five values.
+enum Stage { new contacted qualified won lost }
+
+model Lead {
+  id     Int    @id
+  name   String @length(1, 80)
+  email  String @email
+  stage  Stage
+  value  Float  @default(0) @gte(0)
+
+  /// Nullable AND unique — the case that makes blankToNull matter. An empty
+  /// text box submits '', SQLite accepts any number of NULLs but rejects a
+  /// second '', so without normalisation the second lead saved with an empty
+  /// slug fails a constraint nobody wrote.
+  slug   String? @unique
+
+  /// Nullable — `WHERE notes IS NULL` should find leads with no notes, which it
+  /// does not if the UI stores '' instead.
+  notes  String?
+
+  /// belongsTo. `accountId` is emitted as a plain integer, so the browser only
+  /// knows it is a reference because x-relations says so — that is what turns
+  /// it into a picker instead of a number spinner.
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  /// Implicit many-to-many. Relations have no wire representation, so this must
+  /// NOT appear in the model's properties or its required[] — creating a lead
+  /// does not mean supplying a tag array.
+  tags Tag[]
+
+  createdAt DateTime @default(now())
+
+  @@gate("0.4.4.5")
+}
+
+model Tag {
+  id    Int    @id
+  name  String @unique
+  leads Lead[]
+}

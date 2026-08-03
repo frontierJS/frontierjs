@@ -146,3 +146,104 @@ describe('rewriteLayoutSlots', () => {
     expect(out).not.toContain('<slot />')
   })
 })
+
+// ── default slot must declare the prop it renders ────────────────────────────
+//
+// `<slot />` expands to {@render children?.()}. Nothing declared `children`, so
+// the Mesa compiler emitted a reference to $$snippet_children and the layout
+// threw "ReferenceError: $$snippet_children is not defined" at mount — a blank
+// page, with the build reporting success.
+//
+// The test above this block passed the whole time: it asserted the rewritten
+// STRING contained {@render children?.()}, which was true. Nothing ever ran it.
+
+describe('rewriteLayoutSlots — default slot prop declaration', () => {
+
+  it('declares children when <slot /> is used with an existing script', () => {
+    const out = rewriteLayoutSlots(`
+<script>
+  import { page } from '@frontierjs/sierra/router'
+</script>
+<div><slot /></div>`)
+
+    expect(out).toContain('export let children = null')
+    expect(out).toContain('{@render children?.()}')
+  })
+
+  it('declares children for <slot>fallback</slot> too', () => {
+    const out = rewriteLayoutSlots(`
+<script>
+  let x = 1
+</script>
+<div><slot>nothing here</slot></div>`)
+
+    expect(out).toContain('export let children = null')
+  })
+
+  it('creates a script block for a layout that has none', () => {
+    const out = rewriteLayoutSlots(`<main><slot /></main>`)
+
+    expect(out).toContain('<script>')
+    expect(out).toContain('export let children = null')
+    expect(out).toContain('{@render children?.()}')
+  })
+
+  it('does not double-declare when the author already did', () => {
+    const out = rewriteLayoutSlots(`
+<script>
+  export let children = null
+</script>
+<div><slot /></div>`)
+
+    expect(out.match(/export\s+let\s+children/g)).toHaveLength(1)
+  })
+
+  it('declares children alongside named slot locals when both are used', () => {
+    const out = rewriteLayoutSlots(`
+<script>
+  import { page } from '@frontierjs/sierra/router'
+</script>
+<div><slot name="sidebar" /><slot /></div>`)
+
+    expect(out).toContain('export let children = null')
+    expect(out).toContain('__slot_sidebar')
+  })
+
+  it('does not declare children when only named slots are used', () => {
+    // A phantom `children` prop on a layout that never renders it would be
+    // dead surface area, and would change what the component accepts.
+    const out = rewriteLayoutSlots(`
+<script>
+  import { page } from '@frontierjs/sierra/router'
+</script>
+<div><slot name="sidebar" /></div>`)
+
+    expect(out).not.toContain('export let children')
+    expect(out).toContain('__slot_sidebar')
+  })
+
+  it('never injects into <script module>', () => {
+    // An export there is a module export, not a prop declaration.
+    const out = rewriteLayoutSlots(`
+<script module>
+  export const prerender = true
+</script>
+<script>
+  let x = 1
+</script>
+<div><slot /></div>`)
+
+    const moduleBlock = out.slice(out.indexOf('<script module>'), out.indexOf('</script>'))
+    expect(moduleBlock).not.toContain('export let children')
+    expect(out).toContain('export let children = null')
+  })
+
+  it('leaves a layout with no slots completely untouched', () => {
+    const src = `
+<script>
+  let x = 1
+</script>
+<div>no slots here</div>`
+    expect(rewriteLayoutSlots(src)).toBe(src)
+  })
+})

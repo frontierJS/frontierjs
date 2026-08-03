@@ -38,13 +38,39 @@
 
 .table tbody tr + tr td { border-top: 1px solid var(--table-border); }
 
-/* ── Variants ─────────────────────────────────────────────────── */
-.table.striped tbody tr:nth-child(odd) td {
-  background: var(--surface-sunken);
+/*
+ * ── Row background — one declaration, three inputs ──────────────
+ *
+ * Stripe, hover and tone all want a say in what a row looks like, and
+ * only one of them can own `background`. Before v0.7 each wrote it
+ * directly and the winner was decided by specificity:
+ *
+ *   .table.striped tbody tr:nth-child(odd) td   (0,3,3)
+ *   .table tbody td                             (0,1,2)   ← the tone
+ *
+ * Same layer, so the stripe won, and a striped table lost its row tones
+ * on every odd row — the failed row of a striped list rendered exactly
+ * like a successful one. A tone is a Treatment class; nothing else in the
+ * system gets to silently cancel it.
+ *
+ * So they are layered instead of ranked. --row-base is what the row would
+ * be with no tone (plain, striped, or hovered) and --row-tint mixes the
+ * tone into that. The cell paints the result. Stripe and hover now
+ * compose with a tone rather than competing with it, and the specificity
+ * ordering between them becomes the right question rather than an
+ * accident: hover is declared after stripe so it wins the base at equal
+ * specificity, which is what a hover is supposed to do.
+ */
+.table tbody tr {
+  --row-base: var(--table-bg);
 }
 
-.table.hover tbody tr:hover td {
-  background: color-mix(in srgb, var(--ring) 5%, var(--table-bg));
+.table.striped tbody tr:nth-child(odd) {
+  --row-base: var(--surface-sunken);
+}
+
+.table.hover tbody tr:hover {
+  --row-base: color-mix(in srgb, var(--ring, var(--color-primary)) 5%, var(--table-bg));
 }
 
 .table.compact th,
@@ -63,14 +89,18 @@
  * own background.
  *
  * No tone names here: on an untoned row --bg-mix is guaranteed-invalid,
- * so --row-tint is too and the cells fall back to transparent. All seven
- * tones work, not the four that used to be listed.
+ * so --row-tint is too and the cells fall back to the row's base. All
+ * seven tones work, not the four that used to be listed.
+ *
+ * The tint mixes into --row-base rather than --table-bg, which is what
+ * lets a stripe show through beneath a tone instead of being replaced by
+ * it. See the row-background note above.
  */
 .table tbody tr {
-  --row-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--table-bg));
+  --row-tint: color-mix(in srgb, var(--bg-mix) 8%, var(--row-base));
 }
 .table tbody td {
-  background: var(--row-tint, transparent);
+  background: var(--row-tint, var(--row-base));
 }
 
 /*

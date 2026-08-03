@@ -141,13 +141,36 @@ export interface CaravanStats {
 // ─── Duck-typed Junction app interface ───────────────────────────────────────
 // Caravan doesn't import @frontierjs/junction — it shape-matches what it needs.
 
+/** The slice of Junction's event bus that Caravan emits through. */
+export interface CaravanTelemetry {
+  emit(event: string, data?: unknown): unknown
+}
+
+/**
+ * Deliberately NO `[key: string]: unknown` index signature.
+ *
+ * An index signature here made `CaravanApp` unassignable *from* Junction's
+ * `App` (which has none), and because `register(app: CaravanApp)` puts the app
+ * in a contravariant position, that made the whole plugin unassignable to
+ * Junction's `PluginInput` — so `app.configure(createCaravan())` failed to
+ * typecheck for every TypeScript consumer. List the fields Caravan actually
+ * touches instead; anything else goes through an explicit cast at the use site.
+ */
 export interface CaravanApp {
   /** Junction's metrics provider registry — if present, Caravan adds job stats */
   _metricsProviders?: Map<string, () => unknown>
   /** Junction's telemetry bus — if present, Caravan emits job lifecycle events */
-  telemetry?: { emit(event: string, data: unknown): void }
-  /** Arbitrary property bag — Caravan sets app.jobs here */
-  [key: string]: unknown
+  telemetry?: CaravanTelemetry
+  /** Where Caravan attaches itself — Junction's augmentable `App.jobs` slot */
+  jobs?: unknown
+  /**
+   * Junction's guarded namespace claim. Used when present so a second plugin
+   * claiming `app.jobs` fails loudly instead of silently winning; falls back to
+   * plain assignment against an older Junction.
+   */
+  provide?: (name: string, value: unknown) => void
+  /** Junction's resolved config — read for an optional `caravan` section */
+  config?: unknown
 }
 
 // ─── Public Caravan instance ──────────────────────────────────────────────────

@@ -6,11 +6,21 @@
 //   4. ctx.app.service() for internal calls from hooks
 //   5. Client: find() returns T[], get(query) routing, restore()
 
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterAll } from 'bun:test'
 import { createService, callService }        from '../src/core/service.ts'
 import { createTestApp, request }            from '../src/testing/index.ts'
 import { bridge }                            from '../src/transport/bridge.ts'
 import { createJunctionClient }              from '../src/client/index.ts'
+
+// This file stubs `global.fetch` in a dozen client tests and never used to put
+// it back. Bun runs every test file in ONE process, so the last stub installed
+// here stayed installed for every file that ran afterwards — any later test
+// doing a real fetch() silently got a canned Response instead of talking to its
+// own server. That is invisible in this file (its tests pass either way) and
+// shows up as a nonsense failure somewhere else, which is the worst shape a
+// test bug can have. Snapshot the real fetch and restore it when the file ends.
+const REAL_FETCH = globalThis.fetch
+afterAll(() => { globalThis.fetch = REAL_FETCH })
 
 // ─── 1. Custom methods — no actions key ──────────────────────────────────────
 

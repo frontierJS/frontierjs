@@ -16,7 +16,7 @@ import { createDatabase, type DatabaseClient } from '../storage/database/index.t
 import { autoloadServices }         from './loader.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { toFrameworkError, NotFound }   from './errors.ts'
-import { helmet }                       from '../transport/middleware.ts'
+import { helmet, cors }                 from '../transport/middleware.ts'
 import { defaultConfig, deepMerge, loadConfig } from '../config/index.ts'
 import { createLogger, noopLogger }             from './logger.ts'
 import type { ILogger, LoggerOptions }          from './logger.ts'
@@ -31,19 +31,102 @@ import type { RouteHandler, MiddlewareFn, WsHandlerSet } from '../transport/type
 
 // ─── Plugin interface ─────────────────────────────────────────────────────
 
-export type PluginFn = (app: App) => void | Promise<void>
+/**
+ * The simplest plugin: a function. `app.configure(app => { ... })`.
+ *
+ * Returns `void`, not `void | Promise<void>` — see Plugin.register below for why.
+ */
+export type PluginFn = (app: App) => void
 
 export interface Plugin {
   name:       string
-  register?:  (app: App) => void | Promise<void>
+
+  /**
+   * Synchronous setup, run immediately by configure().
+   *
+   * Declared `=> void` deliberately. configure() does NOT await this — the
+   * documented contract is "configure() runs register() synchronously", so
+   * routes and middleware are visible the moment configure() returns. The
+   * signature used to say `void | Promise<void>`, advertising exactly the
+   * opposite of what happens: an async register()'s side effects might not
+   * have landed before the next configure() ran or before start() read state.
+   *
+   * TypeScript's void-return rule still *permits* passing an async function
+   * here, so this is a statement of contract rather than a hard barrier —
+   * configure() therefore also warns at runtime if register() returns a
+   * thenable, and still records its rejection so start() can fail loudly.
+   *
+   * Anything async belongs in boot().
+   */
+  register?:  (app: App) => void
+
   boot?:      (app: App) => void | Promise<void>
   ready?:     (app: App) => void | Promise<void>
   shutdown?:  (app: App) => void | Promise<void>
+
+  /**
+   * Names of plugins that must already be configured when this one boots.
+   *
+   * Checked once at startup against app._plugins, before any boot() runs, and
+   * throws naming both the dependent and what is missing. Ordering used to be
+   * nothing but the sequence of configure() calls, so a requirement like
+   * "mailerPlugin must be configured before notificationsPlugin" could only
+   * live in prose — and was discovered at first send, not at startup.
+   *
+   * @example requires: ['mailer']
+   */
+  requires?:  string[]
 }
 
 export type PluginInput = PluginFn | Plugin
 
 // ─── App interface ────────────────────────────────────────────────────────
+
+/**
+ * The shape of `app.conduit`.
+ *
+ * Empty here on purpose: Junction must not depend on @frontierjs/conduit.
+ * That package augments this interface with its full `IConduit`, so a project
+ * that installs conduit gets real types on `app.conduit` everywhere, and a
+ * project that doesn't sees an empty object rather than a lie.
+ *
+ * Augment it, don't redeclare `App.conduit` — see the note on the field.
+ */
+export interface AppConduit {}
+
+/**
+ * The shape of `app.jobs`.
+ *
+ * Same contract as AppConduit above: empty here so Junction keeps no dependency
+ * on @frontierjs/caravan, and that package augments this interface with its
+ * full `CaravanInstance`. Augment it, don't redeclare `App.jobs`.
+ */
+export interface AppJobs {}
+
+/**
+ * The shape of `app.notify`.
+ *
+ * Same contract as AppConduit / AppJobs: empty here so Junction keeps no
+ * dependency on @frontierjs/notifications, and that package augments this
+ * interface with its real call signature. Augment it, don't redeclare
+ * `App.notify`.
+ *
+ * It is an interface rather than a function type because only an interface can
+ * be augmented across packages — the augmenting package adds a call signature:
+ *
+ *   declare module '@frontierjs/junction' {
+ *     interface AppNotify {
+ *       (user: User, notification: Notification): Promise<void>
+ *     }
+ *   }
+ *
+ * Until something augments it, calling `app.notify(...)` is a type error
+ * (TS2349, "this expression is not callable") — verified, not assumed. That is
+ * the honest result: an app that has not installed the notifications package
+ * has no notify to call, and the empty interface says so rather than widening
+ * to `any` and letting a wrong call through.
+ */
+export interface AppNotify {}
 
 export interface App {
   // Config
@@ -73,11 +156,32 @@ export interface App {
   mail?:     IMail
   ai?:       AIRegistry
   email?:    import('../plugins/email/types.ts').IEmail
-  // Conduit is provided by @frontierjs/conduit. Declared here as
-  // unknown? so in-tree code (email/campaign) can read app.conduit
-  // without requiring the conduit package as a hard dep. Conduit
-  // augments this with the real type at the package boundary.
-  conduit?:  unknown
+  // Conduit is provided by @frontierjs/conduit. Typed as the augmentable
+  // AppConduit below rather than `unknown`, so in-tree code (email/campaign)
+  // can read app.conduit without a hard dep AND the conduit package can
+  // contribute the real type.
+  //
+  // This must stay an interface reference, not a redeclared property:
+  // declaration merging requires every declaration of a property to have
+  // an identical type, so `conduit?: unknown` here plus `conduit?: IConduit`
+  // in the augmenting package is an error (TS2717) and the augmentation
+  // silently loses — which is exactly what used to happen.
+  conduit?:  AppConduit
+
+  // Job queue is provided by @frontierjs/caravan. Same augmentable-interface
+  // rule as `conduit` above — never redeclare this property in the plugin.
+  jobs?:     AppJobs
+
+  // Notifications are provided by @frontierjs/notifications, which attaches
+  // app.notify in its register(). Same augmentable-interface rule: the plugin
+  // adds the call signature to AppNotify, it does not redeclare this property.
+  //
+  // Without this field the plugin had no typed seam at all, so it declared its
+  // OWN `App` shape instead — which is how its `MailMessage` came to disagree
+  // with junction's `IMail` (authoring shape `{subject, lines}` vs wire shape
+  // `{subject, html, text}`) with no compiler anywhere to notice. Every
+  // notification email went out with an empty body.
+  notify?:   AppNotify
 
   // Real-time channels — available after app.configure(channels(...))
   channels?:    ReturnType<typeof import('../transport/channels.ts').createChannelManager>
@@ -126,6 +230,22 @@ export interface App {
   // Plugin registration — can be called anytime before start()
   configure: (plugin: PluginInput) => App
   setAuth:   (auth: import('../auth/types.ts').IAuth) => void
+
+  /**
+   * Claim a namespace on the app, failing loudly if it is already taken.
+   *
+   * Plugins attach their surface by plain assignment — `app.conduit = instance`,
+   * `app.jobs = caravan`, `app.notify = fn`. Two plugins claiming one name is a
+   * silent last-write-wins, and the loser simply stops working with no error
+   * anywhere. This is the runtime complement to the augmentable-interface
+   * pattern (AppConduit / AppJobs / AppNotify) that already handles the types.
+   *
+   * It assigns the REAL property, so augmented types keep resolving:
+   * `app.provide('conduit', c)` still leaves `app.conduit` typed as AppConduit.
+   *
+   *   app.provide('conduit', instance)   // throws if anything already claimed it
+   */
+  provide:   (name: string, value: unknown) => void
 
   // Route shortcuts (delegate to http.router)
   get:     (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
@@ -536,6 +656,19 @@ export function createApp(opts: AppOptions = {}): App {
 
     _metricsProviders: new Map<string, () => unknown>(),
 
+    provide(name: string, value: unknown): void {
+      const existing = (app as unknown as Record<string, unknown>)[name]
+      if (existing !== undefined) {
+        throw new Error(
+          `[Junction] app.provide('${name}') — that name is already claimed. ` +
+          `Two plugins cannot both own app.${name}; the second used to win ` +
+          `silently and the first would stop working. Rename one, or have the ` +
+          `owning plugin expose the other's surface deliberately.`
+        )
+      }
+      ;(app as unknown as Record<string, unknown>)[name] = value
+    },
+
     setAuth(auth: import('../auth/types.ts').IAuth): void {
       // Patch auth into the HTTP transport via its public API — must be
       // called before start()
@@ -557,13 +690,20 @@ export function createApp(opts: AppOptions = {}): App {
       // "configure() runs register() synchronously".
       if (p.register) {
         try {
-          const result = p.register(app)
-          // If register returned a promise, the user opted into async setup —
-          // we don't await it (synchronous contract), but its rejection is
-          // RECORDED and rethrown by start(): a plugin that failed to
-          // register must not let the app boot half-configured.
+          const result = p.register(app) as unknown
+          // register() is typed `=> void`, but TypeScript's void-return rule
+          // still lets an async function through. Say so out loud rather than
+          // silently not awaiting it: its side effects may not have landed
+          // before the next configure() or before start() reads state.
+          //
+          // The rejection is still RECORDED and rethrown by start(): a plugin
+          // that failed to register must not let the app boot half-configured.
           if (result && typeof (result as Promise<unknown>).then === 'function') {
-            (result as Promise<unknown>).catch(err => {
+            console.warn(
+              `[Junction] Plugin '${p.name}' register() returned a Promise. ` +
+              `configure() does not await register() — move async setup into boot().`
+            )
+            ;(result as Promise<unknown>).catch(err => {
               console.error(`[Junction] Plugin '${p.name}' register() rejected:`, err)
               _registerFailures.push({ plugin: p.name, err })
             })
@@ -604,185 +744,25 @@ export function createApp(opts: AppOptions = {}): App {
     // ── WebSocket shortcut ────────────────────────────────────────
     ws(path, handlers)        { http.ws(path, handlers);               return app },
 
-    // ── _startForTest — test-only lifecycle without port binding ────
-    // Mirrors phases 1, 4.5, 4.6 of start() so tests can call
-    // app.configure() freely and then have routes + pipelines ready.
-    // Never call this in production — use start() instead.
+    // ── Startup ──────────────────────────────────────────────────
+    // Both entry points run ONE ordered, named phase list (see startPhases
+    // below). There used to be two hand-maintained sequences — start() and
+    // _startForTest(), the latter documented as mirroring "phases 1, 4.5, 4.6"
+    // — so the test path reimplemented a subset of production ordering and
+    // drifted from it silently. Phases were also numbered 0, 0a, 0b, 0c, 1, 3,
+    // 4, 4.5, 4.6, 5, 6, 7: decimals and gaps are what a sequence looks like
+    // after it has been patched rather than redesigned. They are named now.
+
+    /** Test-only lifecycle: every phase except the ones needing a port,
+     *  a config file on disk, or process signal handlers.
+     *  Never call this in production — use start() instead. */
     async _startForTest(): Promise<void> {
-      if (started) return  // idempotent — safe to call multiple times
-
-      // Phase 0: security headers
-      if ((config.http as Record<string, unknown>)?.helmet !== false) {
-        helmet()(app)
-      }
-
-      // Phase 1: plugin register() already ran synchronously in configure().
-      // Async register() rejections were captured — refuse to boot on them.
-      if (_registerFailures.length) {
-        const f = _registerFailures[0]
-        throw new Error(`Plugin "${f.plugin}" register() rejected: ${f.err instanceof Error ? f.err.message : f.err}`, { cause: f.err })
-      }
-      // boot() runs here so plugins can do async setup that needs the full app.
-      for (const plugin of plugins) {
-        await plugin.boot?.(app)
-      }
-
-      // Phase 4.5: register service routes AFTER plugins so middleware wraps them
-      registerServiceRoutes(app, config.apiPrefix ?? '')
-
-      // Phase 4.6: compile hook pipelines
-      services.setAppHooks(app._appHooks)
-
-      started = true
+      if (started) return          // idempotent — safe to call multiple times
+      await runStartPhases(false)
     },
 
-    // ── Start ────────────────────────────────────────────────────
     async start(): Promise<void> {
-
-      // Phase 0a: load junction.config.js and deep-merge into live config.
-      // Final priority: defaultConfig < junction.config.js < opts.config.
-      //
-      // loadConfig() already returns defaultConfig deep-merged with the file
-      // config. We then deep-merge opts.config on top so call-site overrides
-      // win at the leaf level — opts.config = { http: { compress: false } }
-      // no longer clobbers the entire http block from junction.config.js.
-      //
-      // The previous implementation shallow-assigned only top-level keys
-      // missing from opts.config — which silently broke nested overrides.
-      try {
-        const junctionCfg = await loadConfig(_configPath)
-        const merged = deepMerge(
-          junctionCfg as Partial<AppConfig>,
-          (opts.config ?? {}) as Partial<AppConfig>,
-        ) as AppConfig & Record<string, unknown>
-
-        // Mutate `config` in place — preserve the object identity that other
-        // subsystems already captured at createApp time.
-        for (const key of Object.keys(merged)) {
-          (config as Record<string, unknown>)[key] = merged[key]
-        }
-      } catch (err) {
-        // loadConfig/tryImport already treat "file not found" as a normal
-        // miss (defaults apply). Reaching this catch means a config file
-        // EXISTS but is broken — that must abort startup, not silently
-        // boot the app on defaults.
-        throw new Error(`[Junction] Failed to load configuration: ${err instanceof Error ? err.message : err}`)
-      }
-
-      // Phase 0b: apply security headers — opt-out via config.http.helmet = false
-      if ((config.http as Record<string, unknown>)?.helmet !== false) {
-        helmet()(app)
-      }
-
-      // Phase 1: plugin register() already ran synchronously in configure().
-      // Async register() rejections were captured — refuse to boot on them.
-      if (_registerFailures.length) {
-        const f = _registerFailures[0]
-        throw new Error(`Plugin "${f.plugin}" register() rejected: ${f.err instanceof Error ? f.err.message : f.err}`, { cause: f.err })
-      }
-      // boot() / ready() run later — see phases below.
-
-      // Phase 3: auto-load services — ON BY DEFAULT.
-      // Resolution order:
-      //   autoload: false            → disabled entirely
-      //   opts.autoload (string)     → explicit path (relative to CWD)
-      //   _junction.services.dir     → from junction.config.js (relative to CWD)
-      //   default                    → './services' next to the ENTRY FILE
-      //                                (Bun.main), so `services/` beside your
-      //                                app.ts just works with zero config.
-      // A missing directory is a silent no-op (the loader returns []), so
-      // the default costs nothing for apps without a services/ folder.
-      const { resolve: resolvePath, dirname: dirnamePath } = await import('node:path')
-
-      const explicitDir = opts.autoload === false
-        ? undefined
-        : (opts.autoload
-            ?? (config as Record<string, unknown>)._junction?.services?.dir as string | undefined)
-
-      const servicesDir = opts.autoload === false
-        ? undefined
-        : explicitDir
-          ? resolvePath(process.cwd(), explicitDir)        // explicit → CWD-relative
-          : typeof Bun !== 'undefined' && Bun.main
-            ? resolvePath(dirnamePath(Bun.main), 'services') // default → beside the entry file
-            : undefined
-
-      if (servicesDir) {
-        await autoloadServices({
-          dir:      servicesDir,
-          app,
-          registry: services,
-        })
-      }
-
-      // Phase 4: boot plugins
-      for (const plugin of plugins) {
-        try {
-          await plugin.boot?.(app)
-        } catch (err) {
-          throw new Error(`Plugin "${plugin.name}" boot failed: ${(err as Error).message}`)
-        }
-      }
-
-      // Phase 4.5: register built-in service routes NOW — after plugins have
-      // called configure() and patchRouterWithMiddleware() during Phase 1.
-      // Registering earlier (at createApp() time) means these routes are added
-      // before CORS/helmet/rateLimit middleware patches the router, so they'd
-      // never receive those headers.
-      registerServiceRoutes(app, config.apiPrefix ?? '')
-
-      // Phase 4.6: tell the registry about app-level hooks so it can compile
-      // merged pipelines for every service now, and for any service registered
-      // later (e.g. inside a plugin's ready() or by user code after start()).
-      // This replaces the old manual loop and also covers the staleness bug
-      // where services registered after start() never got compiled pipelines.
-      services.setAppHooks(app._appHooks)
-
-      // Phase 5: start HTTP server (builds route cache)
-      const server = http.start()
-
-      // Phase 6: ready hooks
-      for (const plugin of plugins) {
-        try {
-          await plugin.ready?.(app)
-        } catch (err) {
-          console.error(`Plugin "${plugin.name}" ready error:`, err)
-        }
-      }
-
-      started = true
-
-      // Phase 7: register shutdown handlers — exactly once per app, and
-      // removable on stop(). Process exit belongs HERE (a signal means
-      // "terminate"), not inside stop() itself: stop() must be callable
-      // by tests and embedders without killing their process. Repeated
-      // start() calls no longer stack additional listeners.
-      if (!_signalHandler) {
-        _signalHandler = () => {
-          app.stop()
-            .then(() => process.exit(0))
-            .catch(() => process.exit(1))
-        }
-        process.on('SIGTERM', _signalHandler)
-        process.on('SIGINT',  _signalHandler)
-      }
-
-      events.emit('app:ready', { port: config.port })
-
-      const _base   = `http://${config.hostname}:${config.port}`
-      const _prefix = config.apiPrefix ?? ''
-      const _hasHealth = http.router.hasRoute?.('GET', '/health') ?? http.router.hasRoute?.('GET', `${_prefix}/health`)
-      const _hasDocs   = http.router.hasRoute?.('GET', '/docs')   ?? http.router.hasRoute?.('GET', `${_prefix}/docs`)
-
-      logger.info(`🚀 ${config.name} v${config.version}`, {
-        url:      _base,
-        routes:   http.router.routeCount,
-        services: services.list().length,
-        prefix:   _prefix || undefined,
-        health:   _hasHealth ? `${_base}/health` : undefined,
-        docs:     _hasDocs   ? `${_base}/docs`   : undefined,
-        mode:     config.debug ? 'debug' : 'production',
-      })
+      await runStartPhases(true)
     },
 
     // ── Stop ─────────────────────────────────────────────────────
@@ -858,10 +838,269 @@ export function createApp(opts: AppOptions = {}): App {
     app.hooks({ around: { all: [withLitestoneDb(db as never)] } })
   }
 
+
+  // ─── Startup phases ──────────────────────────────────────────────────────
+  //
+  // ONE ordered list, shared by start() and _startForTest(). Phases marked
+  // `needsHost` are skipped by the test lifecycle: they bind a port, read a
+  // config file from disk, install process signal handlers, or announce.
+  // Everything else runs identically in both, which is the point — the test
+  // path can no longer drift from production ordering, because there is only
+  // one ordering.
+
+  interface StartPhase {
+    name:       string
+    /** Skipped by _startForTest(): needs a port, the filesystem, or signals. */
+    needsHost?: boolean
+    run:        () => void | Promise<void>
+  }
+
+  /**
+   * Fails startup when a plugin's `requires` is unmet — before ANY boot() runs,
+   * so nothing is half-initialised when it throws.
+   *
+   * Checks order, not just presence: register() side effects land in configure()
+   * order, so a dependency configured *after* its dependent is as broken as one
+   * that is missing. That is exactly the notifications-after-mailer case, which
+   * previously surfaced as a failed send long after startup.
+   */
+  function assertPluginRequirements(): void {
+    const positionOf = new Map(plugins.map((p, i) => [p.name, i]))
+
+    plugins.forEach((p, i) => {
+      for (const need of p.requires ?? []) {
+        const at = positionOf.get(need)
+        if (at === undefined) {
+          throw new Error(
+            `[Junction] Plugin "${p.name}" requires "${need}", which is not configured. ` +
+            `Add it with app.configure(...) before "${p.name}". ` +
+            `Configured plugins: ${plugins.map(x => x.name).join(', ') || '(none)'}`
+          )
+        }
+        if (at > i) {
+          throw new Error(
+            `[Junction] Plugin "${p.name}" requires "${need}", but "${need}" is ` +
+            `configured AFTER it. Move app.configure() for "${need}" above "${p.name}".`
+          )
+        }
+      }
+    })
+  }
+
+  async function runStartPhases(bindHost: boolean): Promise<void> {
+
+    const startPhases: StartPhase[] = [
+
+      // Load junction.config.js and deep-merge into the live config.
+      // Final priority: defaultConfig < junction.config.js < opts.config.
+      { name: 'load-config', needsHost: true, run: async () => {
+        try {
+          const junctionCfg = await loadConfig(_configPath)
+          const merged = deepMerge(
+            junctionCfg as Partial<AppConfig>,
+            (opts.config ?? {}) as Partial<AppConfig>,
+          ) as AppConfig & Record<string, unknown>
+
+          // Mutate `config` in place — preserve the object identity other
+          // subsystems already captured at createApp time.
+          for (const key of Object.keys(merged)) {
+            (config as Record<string, unknown>)[key] = merged[key]
+          }
+        } catch (err) {
+          // loadConfig treats "file not found" as a normal miss. Reaching this
+          // catch means a config file EXISTS but is broken — abort startup
+          // rather than silently booting on defaults.
+          throw new Error(`[Junction] Failed to load configuration: ${err instanceof Error ? err.message : err}`)
+        }
+      }},
+
+      // Security headers — opt out via config.http.helmet = false.
+      { name: 'security-headers', run: () => {
+        if ((config.http as Record<string, unknown>)?.helmet !== false) helmet()(app)
+      }},
+
+      // CORS declared in config. Must run after load-config, which is where
+      // middleware.cors is merged in, and before service routes are registered.
+      //
+      // Ordering note: cors() must precede csrf() so preflights short-circuit
+      // before the origin check. An app calling app.configure(csrf(...)) itself
+      // registers it during configure(), so an app using BOTH should keep
+      // configuring cors() by hand, ahead of csrf(), rather than via config.
+      { name: 'cors', run: () => applyConfiguredCors(app, config) },
+
+      // register() already ran synchronously in configure(); async rejections
+      // were captured there. Refuse to boot on one rather than run half-configured.
+      { name: 'check-register-failures', run: () => {
+        if (_registerFailures.length) {
+          const f = _registerFailures[0]
+          throw new Error(
+            `Plugin "${f.plugin}" register() rejected: ${f.err instanceof Error ? f.err.message : f.err}`,
+            { cause: f.err }
+          )
+        }
+      }},
+
+      { name: 'check-plugin-requires', run: assertPluginRequirements },
+
+      // Auto-load services — ON BY DEFAULT. Resolution order:
+      //   autoload: false        → disabled
+      //   opts.autoload (string) → explicit path, CWD-relative
+      //   _junction.services.dir → from junction.config.js, CWD-relative
+      //   default                → './services' beside the ENTRY FILE (Bun.main)
+      // A missing directory is a silent no-op, so the default costs nothing.
+      { name: 'autoload-services', needsHost: true, run: async () => {
+        const { resolve: resolvePath, dirname: dirnamePath } = await import('node:path')
+
+        const explicitDir = opts.autoload === false
+          ? undefined
+          : (opts.autoload
+              ?? (config as Record<string, unknown>)._junction?.services?.dir as string | undefined)
+
+        const servicesDir = opts.autoload === false
+          ? undefined
+          : explicitDir
+            ? resolvePath(process.cwd(), explicitDir)
+            : typeof Bun !== 'undefined' && Bun.main
+              ? resolvePath(dirnamePath(Bun.main), 'services')
+              : undefined
+
+        if (servicesDir) {
+          await autoloadServices({ dir: servicesDir, app, registry: services })
+        }
+      }},
+
+      // Plugins do their async setup here — the full app exists by now.
+      { name: 'boot-plugins', run: async () => {
+        for (const plugin of plugins) {
+          try {
+            await plugin.boot?.(app)
+          } catch (err) {
+            throw new Error(`Plugin "${plugin.name}" boot failed: ${(err as Error).message}`)
+          }
+        }
+      }},
+
+      // Service routes are registered AFTER plugins so plugin middleware wraps
+      // them. Registering at createApp() time would add them before
+      // CORS/helmet/rateLimit patched the router, so they'd never get those headers.
+      { name: 'service-routes', run: () => registerServiceRoutes(app, config.apiPrefix ?? '') },
+
+      // Compile merged hook pipelines for every service now, and for any service
+      // registered later (e.g. in a plugin's ready(), or by user code after start()).
+      { name: 'compile-hook-pipelines', run: () => services.setAppHooks(app._appHooks) },
+
+      { name: 'listen', needsHost: true, run: () => { http.start() } },
+
+      { name: 'ready-hooks', needsHost: true, run: async () => {
+        for (const plugin of plugins) {
+          try {
+            await plugin.ready?.(app)
+          } catch (err) {
+            console.error(`Plugin "${plugin.name}" ready error:`, err)
+          }
+        }
+      }},
+
+      { name: 'mark-started', run: () => { started = true } },
+
+      // Process exit belongs HERE, not in stop(): a signal means "terminate",
+      // but stop() must be callable by tests and embedders without killing the
+      // process. Registered once per app and removed on stop(), so repeated
+      // start() calls don't stack listeners.
+      { name: 'signal-handlers', needsHost: true, run: () => {
+        if (_signalHandler) return
+        _signalHandler = () => {
+          app.stop().then(() => process.exit(0)).catch(() => process.exit(1))
+        }
+        process.on('SIGTERM', _signalHandler)
+        process.on('SIGINT',  _signalHandler)
+      }},
+
+      { name: 'announce', needsHost: true, run: () => {
+        events.emit('app:ready', { port: config.port })
+
+        const _base   = `http://${config.hostname}:${config.port}`
+        const _prefix = config.apiPrefix ?? ''
+
+        // hasExactRoute, not hasRoute: hasRoute asks "would this path match
+        // something", and `GET /{service}` matches everything — so every app
+        // used to advertise /health and /docs whether or not they were mounted,
+        // and the URLs it printed 404'd.
+        //
+        // `||`, not `??`: hasRoute returns a boolean, so `false ?? x` is false
+        // and the prefixed fallback never ran. An app with an apiPrefix checked
+        // only the unprefixed path and never advertised either endpoint.
+        // Find where the endpoint is actually mounted, rather than guessing a
+        // location and testing it. healthPlugin({ path: '/internal' }) puts it
+        // at /internal/health, and probing only '/health' left the banner
+        // silent about a working endpoint. Returning the real path also means
+        // the advertised URL is the one that answers — it used to print the
+        // unprefixed URL regardless of where the route lived.
+        //
+        // Templated paths are excluded: a dynamic route like `/{service}/health`
+        // ends with the suffix but is not a URL anyone can visit.
+        const _mountedAt = (suffix: string): string | null =>
+          (http.router.routePaths?.('GET') ?? [])
+            .filter(p => !p.includes('{'))
+            .find(p => p === suffix || p.endsWith(suffix))
+          ?? null
+
+        const _healthPath = _mountedAt('/health')
+        const _docsPath   = _mountedAt('/docs')
+
+        logger.info(`🚀 ${config.name} v${config.version}`, {
+          url:      _base,
+          routes:   http.router.routeCount,
+          services: services.list().length,
+          prefix:   _prefix || undefined,
+          health:   _healthPath ? `${_base}${_healthPath}` : undefined,
+          docs:     _docsPath   ? `${_base}${_docsPath}`   : undefined,
+          mode:     config.debug ? 'debug' : 'production',
+        })
+      }},
+    ]
+
+    for (const phase of startPhases) {
+      if (phase.needsHost && !bindHost) continue
+      await phase.run()
+    }
+  }
+
   return app
 }
 
 // ─── Auto service routing ─────────────────────────────────────────────────
+/**
+ * Install the CORS middleware declared in config, if any.
+ *
+ * `config.http.cors` has always existed — it is typed in config/index.ts, has a
+ * documented default (`origins: []`, "must be set explicitly — '*' never
+ * applied by default"), and loadConfig even merges `junction.config.js`'s
+ * `middleware.cors` into it. Nothing ever read it back out, so setting it did
+ * exactly nothing: preflights 404'd and no Access-Control header was ever sent.
+ * Every app had to know to call `app.configure(cors({...}))` by hand, and the
+ * failure mode in a browser is an opaque "TypeError: Failed to fetch".
+ *
+ * The secure default is preserved: an empty (or absent) origins list installs
+ * nothing at all, exactly as before.
+ */
+function applyConfiguredCors(app: App, config: AppConfig): void {
+  const c = (config.http as Record<string, unknown>)?.cors as
+    Partial<import('../transport/middleware.ts').CorsOptions> | undefined
+
+  const origins = c?.origins
+  const isEmpty = !origins || (Array.isArray(origins) && origins.length === 0)
+  if (isEmpty) return
+
+  app.configure(cors({
+    origins,
+    ...(c.methods     ? { methods:     c.methods }     : {}),
+    ...(c.headers     ? { headers:     c.headers }     : {}),
+    ...(c.credentials ? { credentials: c.credentials } : {}),
+    ...(c.maxAge      ? { maxAge:      c.maxAge }      : {}),
+  }))
+}
+
 // Maps {prefix}/users → services.users (CRUD)
 // Maps {prefix}/users/123 → services.users (with id=123)
 // Maps {prefix}/servers/123/reboot → servers.reboot (custom method)

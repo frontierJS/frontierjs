@@ -17,7 +17,7 @@ import type { InAppMessage, MailMessage, User } from '@frontierjs/notifications'
  *       async (ctx) => {
  *         // authMethod: 'created' is set by @frontierjs/auth createUser()
  *         // This hook fires after register — send welcome notification once
- *         if (ctx.params.user?.authMethod === 'created') {
+ *         if (ctx.auth.user?.authMethod === 'created') {
  *           await ctx.app.notify(ctx.result.data, new WelcomeUser())
  *         }
  *       }

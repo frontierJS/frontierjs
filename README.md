@@ -88,12 +88,14 @@ The schema is the starting point. Everything else is derived.
 ```litestone
 // db/schema.lite
 
-model leads {
-  id        Integer    @id
-  name      Text       @length(1, 200) @trim
-  email     Text       @email
+enum LeadStatus { new active closed }
+
+model Lead {              // PascalCase, singular — always. Accessor: db.lead
+  id        Int        @id
+  name      String     @length(1, 200) @trim
+  email     String     @email
   status    LeadStatus @default(new)
-  value     Real       @gte(0)
+  value     Float      @gte(0)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @default(now()) @updatedAt
 
@@ -104,16 +106,20 @@ model leads {
 ```typescript
 // api/server.ts — Data → API connection
 
-const db          = await createClient('./db/app.db', './db/schema.lite', { plugins: [gatePlugin] })
-const jsonSchema  = generateJsonSchema(db.$schema)
+const db         = await createClient({          // one options object, never positional
+  db:      './db/app.db',
+  schema:  './db/schema.lite',
+  plugins: [gatePlugin],
+})
+const jsonSchema = generateJsonSchema(db.$schema)
 
-app.services.register(createLitestoneService({
-  name:   'leads',
-  model:  'leads',
-  schema: jsonSchema,
+app.services.register(createService({
+  name:    'leads',      // the URL: /api/leads
+  model:   'lead',       // the accessor: db.lead
+  schema:  jsonSchema,   // 400s derived from the schema's own rules
+  channel: 'leads',      // declare the broadcast target — no publish hook needed
   hooks: {
     before: { all: [authenticate] },
-    after:  { create: [publish(() => app.channel('leads'))] },
   },
 }))
 ```

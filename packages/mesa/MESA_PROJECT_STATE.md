@@ -1,5 +1,22 @@
 # Mesa Project State
-## Last updated: May 2026 — Phase 3
+## Last updated: 2026-08-02
+
+> **Picking up cold?** Read the repo-root `HANDOFF.md` first — it has the
+> cross-package state and what is uncommitted. This file is Mesa's detail.
+
+Five passes are recorded, newest first. Read the linked doc before touching the
+area it covers.
+
+| Pass | Doc | What it covers |
+|---|---|---|
+| Island markers (2026-08-02) | `CHANGES.md` (top entry) + [`SSR_SPEC.md`](./SSR_SPEC.md) W3 | `ctx.islands` was populated and consumed nowhere; `{ islands: true }` now marks islands in SSR output so a loader can find and mount them |
+| REPL + examples + 3 compiler bugs (2026-08-02) | `CHANGES.md` (top entry) | The REPL was dead two ways; `$: { }` writes, component `bind:`, and multi-line attributes all emitted invalid JS |
+| Static renderer repair (2026-08-01) | [`STATIC_RENDERING.md`](./STATIC_RENDERING.md) | `renderToHTML` threw on every component; one renderer now, `createRoot` for lifetimes, the two children protocols |
+| Block teardown (2026-08-01) | [`BLOCK_TEARDOWN_PASS.md`](./BLOCK_TEARDOWN_PASS.md) | The two failure shapes behind every `{#key}`/`{#await}`/`{#each}`/`<mesa:boundary>` removal bug |
+| Reactivity audit (2026-08-01) | [`REACTIVITY_PASS.md`](./REACTIVITY_PASS.md) | The reactive core, the proxy layer, SSR environment split |
+
+Read `BLOCK_TEARDOWN_PASS.md` and `REACTIVITY_PASS.md` before changing
+`runtime.js`; `STATIC_RENDERING.md` before changing either renderer.
 
 ---
 
@@ -9,15 +26,17 @@
 |---|---|---|
 | `@frontierjs/mesa` | `./mesa/` | Core compiler, runtime, REPL, render pipeline |
 | `@frontierjs/mesa-vite` | `./mesa/mesa-vite/` | Vite plugin — HMR, devtools, dev client |
-| `@frontierjs/mesa-email` | `./mesa-email/` | Email component kit (22 components) |
-| `@frontierjs/mesa-ui` | `./mesa-ui/` | UI component kit (58 components) |
+| `@frontierjs/mesa-email` | — | Email component kit. **NOT IN THIS REPO** (checked 2026-08-01): no `mesa-email/` directory, nothing in `node_modules`. It is what `email-kit.test.js` needs. |
+| `@frontierjs/mesa-ui` | `packages/mesa/ui/` | UI components. The kit described as 58 components is not here either — `ui/` holds **4**: Badge, Button, Card, Input. |
 
-Monorepo layout:
+Monorepo layout — this is the pre-monorepo layout and no longer matches the
+tree. Mesa lives at `packages/mesa/`; the sibling `mesa-email/` and `mesa-ui/`
+packages below do not exist in this workspace:
 ```
 frontierjs/
   mesa/           @frontierjs/mesa  (_built: 2026-05-05)
-  mesa-email/     @frontierjs/mesa-email
-  mesa-ui/        @frontierjs/mesa-ui
+  mesa-email/     @frontierjs/mesa-email     ← absent
+  mesa-ui/        @frontierjs/mesa-ui        ← absent (see packages/mesa/ui/)
   sierra/         @frontierjs/sierra  (separate)
 ```
 
@@ -27,14 +46,40 @@ frontierjs/
 
 | Suite | Tests | File |
 |---|---|---|
-| Compiler | 399 | `compiler_test.js` |
-| Runtime | 236 | `runtime.test.js` |
+| Compiler | 406 | `compiler_test.js` |
+| Runtime | 286 | `runtime.test.js` |
+| Compiler emission | 12 | `emission.test.js` |
 | CSS Inliner | 36 | `css-inliner.test.js` |
-| Render Pipeline | 25 | `render-component.test.js` |
+| Render Pipeline | 29 | `render-component.test.js` |
+| External reactivity | 26 | `external-reactivity.test.js` |
+| Static / SSR renderer | 41 | `render-ssr.test.js` |
+| REPL | 9 | `repl.test.js` |
+| Inert blocks | 23 | `inert-block.test.js` |
+| Watch handler defer | 13 | `watch-handler-defer.test.js` |
+| Watch proxy staleness | 8 | `watch-proxy-staleness.test.js` |
+| Async decl scope | 7 | `async-decl-scope.test.js` |
+| Block teardown (compiled) | 6 | `block-teardown-compiled.test.js` |
+| Effect phase | 5 | `effect-phase.test.js` |
 | Email Kit | 27 | `email-kit.test.js` |
-| **Total** | **723** | |
+| **Total** | **934** | |
 
-Run: `npx vitest run`
+Run: `npx vitest run` → **907 pass / 0 fail / 27 skipped** across 15 files
+(verified 2026-08-02). The island pass took it 891 → 902; the remaining 5 are a
+`bind:` member-expression block added to `emission.test.js` alongside it.
+
+The 27 skipped are `email-kit.test.js`, marked `describe.skip` on 2026-08-01.
+They render 14 `.mesa` files from `@frontierjs/mesa-email` via an absolute
+`/tmp/mesa/email` path; that package is not in this workspace and the path does
+not survive a reboot, so every assertion failed on ENOENT. That is a missing
+fixture, not a rendering bug — the email render target (`render-component.js`,
+`target: 'email'`) and its CSS inlining (`css-inliner.test.js`, 36/36) are both
+covered and green. The file header says how to re-enable it.
+
+`render-component.test.js` needs `/tmp/mesa` to exist (`mkdir -p /tmp/mesa`).
+
+Downstream regression check: `cd ../sierra && npx vitest run` → **672/672**
+(2026-08-02; the doc said 655 before that session's new test files landed).
+Re-run it after any change to `runtime.js`.
 
 ---
 
@@ -49,6 +94,7 @@ Run: `npx vitest run`
 - `$mounted(fn)` builtin — imperative mount gate, one per component
 - `$context` — provide/consume with `const` (tracks) / `let` (init at mount) / `var` (snapshot)
 - `$class` system — `bind:class`, `{class}` shorthand, auto-rename on components
+- `bind:prop` on a component — two-way; `pushProps` carries parent→child, `bindProp` child→parent
 - CSS tokenizer — nested CSS, `@layer`, `@container`, `@keyframes`, `:global()`, `@apply`
 - `<script module>` — shared across instances, real ES module exports
 - Static component detection (`ctx.isStatic`)
@@ -70,6 +116,11 @@ No `makeComponent` wrapper — direct named function export.
 ## Runtime — Key Features
 
 - Fine-grained signals: `createSignal`, `createEffect`, `createMemo`, `batch`, `untrack`
+- `createRoot(fn)` — an owner scope with an end. `fn` receives `dispose`; everything
+  created inside is torn down by it. **Ownership without tracking** — the root
+  subscribes to nothing, which is why `createEffect` cannot substitute (it would
+  re-run the body when the body's own writes fire). VISION **RULE 54**; used by
+  `render.js` per page and by the REPL per preview
 - `mount(label, component, option)` — mounts a component after a label node
   - `option.root` — explicit delegation + style root (required for shadow DOM)
   - `option.props` — initial props
@@ -217,13 +268,31 @@ All 58 compile clean as of 2026-04-13.
 
 ## Known Issues / Backlog
 
-- **HMR id normalization** ⚠️ — `injectHMR` now strips project root from id to produce
-  root-relative registry keys. Fix is logical but **not yet confirmed working in browser**.
-  Next session: test with `App.mesa` in project root and in `src/` subdirectory. Check
-  console for `[Mesa HMR] No registered instances` warning — if gone, fix is confirmed.
+- **`mesa-vite` has no tests at all**, and its HMR id-normalisation fix has never been
+  confirmed in a browser. `injectHMR` strips the project root from the id to produce
+  root-relative registry keys; the reasoning is sound and unverified. To confirm: run a
+  dev server with `App.mesa` at the project root and in a `src/` subdirectory, edit each,
+  and watch the console for `[Mesa HMR] No registered instances`. Highest-value untested
+  surface in the package — it is the dev loop.
+- **Nothing is verified in a real browser.** Every suite here is happy-dom. The REPL in
+  particular was repaired against happy-dom only; codemirror, the importmap and the drawer
+  UI are unchecked. `npm run serve` and a click would settle it.
+- ~~**Sierra's `static` target is not wired to the renderer**~~ — **wired 2026-08-02.**
+  `sierra/src/build/prerender.js` composes each route with its layout chain and renders
+  it through `renderComponent` from `closeBundle`. Remaining gaps there: islands still
+  emit no marker (SSR_SPEC W3) and have no loader, and `renderComponent` resolves bare
+  imports from Mesa's own package root (SSR_SPEC W1). See `SSR_SPEC.md` for both, and
+  `STATIC_RENDERING.md` §Status.
+- **`{@render children?.()}` vs `<slot />`** — the `uiComponents` example renders empty
+  Cards: `ui/Card.mesa` reads the `children` prop while the showcase passes element
+  children, which only `<slot />` receives (see `STATIC_RENDERING.md` §Component children).
+  Switching `Card` to `<slot />` fixes the composition and then surfaces further latent
+  errors in the `ui/` kit, so it is left alone — it is a `ui/` kit task, not a REPL one.
 - **`tick()`** — not yet added. Returns Promise after next reactive flush. One `queueMicrotask` delay.
 - **`{#virtual each}` in SSR** — client-only, produces no output in `renderComponent`. By design. V2 could add `{:static}` fallback.
-- **White Paper §4.2/§4.4** — REVIEW NEEDED: `$: { (a, b) }` (block wrapping sequence expression) is semantically different from `$: (a, b)` (multi-path watch). Block form = auto-tracked effect; sequence form = proxy watch signals. Not called out explicitly in spec or §4.7 table.
+- **White Paper §4.2/§4.4** — REVIEW NEEDED (note: `spec-check.mjs` covers VISION §4 and
+  passes 16/16 as of 2026-08-02; its hardcoded path was fixed so it runs again —
+  `node spec-check.mjs`). The open question: `$: { (a, b) }` (block wrapping sequence expression) is semantically different from `$: (a, b)` (multi-path watch). Block form = auto-tracked effect; sequence form = proxy watch signals. Not called out explicitly in spec or §4.7 table.
 - **Variable-height `{#virtual each}`** — deferred
 - **Full hydration SSR** — deferred to v1.1
 - **TypeScript support** — deferred
@@ -245,16 +314,23 @@ All 58 compile clean as of 2026-04-13.
 | `compiler.js` | Mesa → JS compiler (~6,000 lines) |
 | `compiler-md.js` | Markdown + frontmatter compiler |
 | `runtime.js` | Signals, DOM, blocks, delegation, styles (~3,300 lines) |
-| `render.js` | SSR renderToHTML |
+| `render.js` | Static/SSR renderer — `renderToHTML` / `renderAll` / `wrapPage` |
+| `STATIC_RENDERING.md` | The static-rendering model, server semantics, the two children protocols, Sierra gap |
 | `render-component.js` | renderComponent / renderFile pipeline |
 | `css-inliner.js` | CSS inliner for email/fragment rendering |
 | `index.html` | REPL |
-| `examples.js` | 55 REPL examples |
-| `compiler_test.js` | 399 compiler tests |
-| `runtime.test.js` | 236 runtime tests |
+| `repl.test.js` | 9 REPL tests — module-graph link check, examples compile + emit valid JS, feature-coverage ratchet, preview interactivity |
+| `examples.js` | 66 REPL examples across 22 groups |
+| `compiler_test.js` | 406 compiler tests |
+| `runtime.test.js` | 286 runtime tests |
+| `emission.test.js` | 12 tests — the compiler must emit JS that parses (component `bind:`, multi-line attrs, `bind:` to a member expression) |
 | `css-inliner.test.js` | 36 CSS inliner tests |
-| `render-component.test.js` | 25 render pipeline tests |
-| `email-kit.test.js` | 27 email kit integration tests |
+| `render-component.test.js` | 29 render pipeline tests |
+| `render-ssr.test.js` | 41 static-renderer tests, incl. 11 server↔client agreement cases, 5 pinning the two component-children protocols, and 11 pinning island markers |
+| `block-teardown-compiled.test.js` | 6 compiled-and-mounted block teardown tests |
+| `email-kit.test.js` | 27 email kit integration tests (needs `@frontierjs/mesa-email`) |
+| `REACTIVITY_PASS.md` | 2026-08-01 reactivity audit — changes, open items, false leads |
+| `BLOCK_TEARDOWN_PASS.md` | 2026-08-01 block teardown pass — the two failure shapes, corrections |
 | `Mesa_White_Paper_v1_0.md` | Spec v1.7 |
 | `MESA_PROJECT_STATE.md` | This file |
 | `mesa-vite/index.js` | Vite plugin |

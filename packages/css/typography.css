@@ -39,11 +39,125 @@ h6, .h6 {
   cursor:          pointer;
 }
 .link:hover { text-decoration: underline; }
+/* Ring in focus.css; the small radius here is just the shape it traces
+   around what is otherwise a square run of inline text. */
 .link:focus-visible {
-  outline:        2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius:  2px;
+  border-radius: 2px;
 }
+
+/*
+ * ── Kbd — a key the user is meant to press ────────────────────────
+ *
+ *   Press <kbd>⌘</kbd><kbd>K</kbd> to search
+ *   <kbd class="kbd">Esc</kbd>
+ *
+ * Styled on the element as well as the class, because <kbd> already means
+ * exactly this and the class exists only for markup that cannot use it.
+ *
+ * The heavier bottom border is the whole "keycap" effect — a box-shadow
+ * would be more literal but would not survive a dark theme, where the
+ * shadow disappears and the cap flattens.
+ */
+kbd, .kbd {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+
+  min-inline-size: 1.5em;
+  padding:         0.125em 0.375em;
+
+  font-family: var(--font-mono);
+  /* em, so a kbd inside small print shrinks with it. */
+  font-size:   0.8125em;
+  font-weight: 500;
+  line-height: 1.4;
+  color:       var(--ink);
+
+  background:              var(--surface-sunken);
+  border:                  1px solid var(--rule-strong);
+  border-block-end-width:  2px;
+  border-radius:           4px;
+}
+
+/*
+ * ── Code ──────────────────────────────────────────────────────────
+ *
+ *   an inline <code>identifier</code>
+ *
+ *   <pre class="code"><code>bun run test</code></pre>
+ *
+ * <pre> is what makes a code block preserve whitespace; the class only
+ * dresses it. The nested <code> is not optional decoration either — it is
+ * what says "this is code" rather than "this is preformatted text", and
+ * screen readers and search engines both use the distinction.
+ *
+ * A code block must scroll in its own box. Without `overflow-x`, one long
+ * line pushes its grid track wider than the viewport and takes the whole
+ * page sideways with it — the same failure `.table-wrap` exists to
+ * prevent, and the reason `.screen` sets min-inline-size: 0.
+ */
+code, .code-inline {
+  font-family: var(--font-mono);
+  font-size:   0.875em;
+  padding:     0.125em 0.375em;
+  border-radius: 4px;
+  background:  color-mix(in srgb, var(--ink) 6%, transparent);
+  color:       var(--ink);
+}
+
+.code {
+  display:    block;
+  overflow-x: auto;
+  margin:     0;
+  padding:    0.875rem 1rem;
+
+  background:    var(--surface-sunken);
+  border:        1px solid var(--rule);
+  border-radius: var(--card-radius);
+
+  font-family: var(--font-mono);
+  font-size:   0.8125rem;
+  line-height: 1.6;
+  color:       var(--ink);
+
+  /* Long lines scroll; they do not silently wrap and renumber themselves. */
+  white-space: pre;
+  tab-size:    2;
+}
+
+/* Inside a block the inline treatment would double the background. */
+.code > code,
+.code .code-inline {
+  padding:       0;
+  background:    none;
+  border-radius: 0;
+  font-size:     inherit;
+}
+
+/*
+ * ── Text size utilities ───────────────────────────────────────────
+ *
+ * Principle 3 says heading levels carry structure, not size — outline via
+ * <h1>–<h6>, visual size via utility classes. `.h1`–`.h6` above are half
+ * of that promise; this is the other half, and it was missing until v0.10.
+ *
+ * The demo app wrote `style="font-size: .8125rem"` fourteen times in five
+ * screens before anyone noticed, which is what a missing utility looks
+ * like from the outside.
+ *
+ * The scale is deliberately shallow. `.text-md` is the package's own body
+ * size, so the useful range is two steps down and two up — a caption, a
+ * meta line, body, a lead paragraph, a subhead. Anything louder than
+ * `.text-xl` is a heading and should say so with an <h*>.
+ *
+ * These set size only. Colour is the `.text-*` colour utilities below,
+ * and they chain: `class="text-sm text-muted"`.
+ */
+.text-xs { font-size: 0.75rem;   line-height: 1.45; }
+.text-sm { font-size: 0.8125rem; line-height: 1.5;  }
+.text-md { font-size: 0.875rem;  line-height: 1.55; }
+.text-lg { font-size: 1rem;      line-height: 1.6;  }
+.text-xl { font-size: 1.125rem;  line-height: 1.6;  }
 
 /* ── Text color utilities ─────────────────────────────────────── */
 .text-body    { color: var(--ink); }

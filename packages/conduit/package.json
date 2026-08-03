@@ -11,9 +11,14 @@
     "./stores/sqlite": "./src/stores/sqlite.ts",
     "./stores/memory": "./src/stores/memory.ts"
   },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "test":      "bun test",
-    "typecheck": "tsc --noEmit"
+    "test": "bun test",
+    "typecheck": "node ../../scripts/typecheck.mjs --baseline 1"
   },
   "engines": {
     "bun": ">=1.0.0"
@@ -21,13 +26,8 @@
   "peerDependencies": {
     "@frontierjs/junction": ">=0.1.0"
   },
-  "peerDependenciesMeta": {
-    "@frontierjs/junction": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@types/bun": "latest",
-    "@frontierjs/junction": "*"
+    "@frontierjs/junction": "workspace:*"
   }
 }

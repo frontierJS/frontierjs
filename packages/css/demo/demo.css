@@ -1,0 +1,52 @@
+/*
+ * demo.css — everything the demo needs that the package does not provide.
+ *
+ * This file is a measurement, not a stylesheet. Every rule in it is a gap:
+ * something a real app has to write for itself. When something lands here,
+ * decide whether it belongs in the package instead.
+ *
+ * It started at four items. Three moved into core in v0.10 — icon sizing,
+ * the text-size scale, the field-width token — plus the sidebar toggle's
+ * media query, which frame.css now owns because frame.css created the need.
+ * What is left is one rule, and it is arguably not a gap at all.
+ *
+ * Unlayered on purpose — the documented consumer position, so nothing here
+ * needs !important to win.
+ */
+
+/*
+ * The SVG sprite must take no space.
+ *
+ * `.visually-hidden` is the right tool for *text*: it keeps the element in
+ * the accessibility tree, which is the whole point. A sprite is not text —
+ * it should be genuinely absent from both trees, and it still occupies the
+ * 1px box that .visually-hidden leaves behind.
+ *
+ * `display: none` would be the obvious answer and breaks `<use>` in some
+ * engines, so the sprite is collapsed to nothing instead.
+ *
+ * Deliberately NOT moved into the package: this is specific to the
+ * sprite-and-<use> technique, and the package ships no icons and takes no
+ * position on how you store them. It is documented in the Icons section
+ * instead.
+ */
+body > svg.sprite {
+  position:    absolute;
+  inline-size: 0;
+  block-size:  0;
+  overflow:    hidden;
+}
+
+/*
+ * Nothing else.
+ *
+ * No layout scaffolding, no spacing utilities, no color, no component CSS,
+ * no responsive work. The frame, panes, cards, tiles, table, feed, steps,
+ * facts, forms, overlays, navigation, icons, type scale and all six themes
+ * come out of the package as-is.
+ *
+ * The remaining inline `style=` attributes in index.html are all token
+ * assignments — `--avatar-size`, `--field-inline-size` — which is the
+ * intended API, not a workaround. A real app would set them in its own
+ * component CSS rather than inline.
+ */

@@ -1,0 +1,87 @@
+<script>
+  // AlertProvider.mesa
+  // Global floating alert driven by alertStore.js.
+  // Mount once near the root of your app.
+  //
+  // Usage:
+  //   <!-- App.mesa -->
+  //   <AlertProvider />
+  //
+  //   <!-- Anywhere else -->
+  //   import { alert } from '../stores/alertStore.js'
+  //   alert.success('Changes saved!')
+  //   alert.error('Something went wrong.', 0)  // 0 = persistent
+
+  import { alert } from '../../stores/alertStore.js'
+
+  // Watch alertStore — re-render when visible or type changes
+  $: alert.visible
+  $: alert.type
+
+  const styleMap = {
+    info:    { wrap: 'bg-blue-600',   text: 'text-white' },
+    success: { wrap: 'bg-green-600',  text: 'text-white' },
+    warning: { wrap: 'bg-yellow-400', text: 'text-yellow-900' },
+    error:   { wrap: 'bg-red-600',    text: 'text-white' },
+  }
+
+  // Icon paths per type — same as Alert.mesa
+  const iconMap = {
+    info:    'M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z',
+    success: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    warning: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z',
+    error:   'M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z',
+  }
+
+  // s and path are NOT computed here — alert.type changes after init.
+  // They are computed inside the template via {@const} so they re-evaluate
+  // each time the {#if alert.visible} block re-renders.
+
+  const anim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'translateY(-0.75rem) scale(0.97)' },
+       { opacity: 1, transform: 'translateY(0) scale(1)' }],
+      { duration: 200, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.97)' }],
+      { duration: 150, fill: 'forwards' }
+    ).finished,
+  })
+</script>
+
+{#if alert.visible}
+  <mesa:portal to={document.body}>
+    {@const s    = styleMap[alert.type] ?? styleMap.info}
+    {@const path = iconMap[alert.type]  ?? iconMap.info}
+    <div
+      class="fixed top-6 left-1/2 z-[300] -translate-x-1/2 flex items-center gap-3
+             rounded-xl px-4 py-3 shadow-xl min-w-[18rem] max-w-[36rem]
+             {s.wrap} {s.text}"
+      role="alert"
+      aria-live="assertive"
+      {@attach anim}
+    >
+      <!-- Icon -->
+      <svg class="h-5 w-5 shrink-0 opacity-90" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d={path} />
+      </svg>
+
+      <!-- Message -->
+      <span class="flex-1 text-sm font-medium leading-snug">{alert.message}</span>
+
+      <!-- Close -->
+      <button
+        type="button"
+        class="shrink-0 rounded-md p-1 opacity-70 hover:opacity-100 transition-opacity
+               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+        aria-label="Dismiss"
+        on:click={() => alert.hide()}
+      >
+        <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z" />
+        </svg>
+      </button>
+    </div>
+  </mesa:portal>
+{/if}

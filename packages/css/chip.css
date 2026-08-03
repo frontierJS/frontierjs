@@ -6,9 +6,19 @@
  * Adding a new composite = add its class name to the list.
  *
  *   chip
- *   ├── pill   chip + full radius + xs text
- *   ├── badge  chip + small radius + xs text + uppercase
- *   └── btn    chip + button chrome
+ *   ├── pill    chip + full radius + xs text
+ *   ├── badge   chip + small radius + xs text + uppercase
+ *   ├── btn     chip + button chrome
+ *   ├── page         chip + pagination link
+ *   ├── tooltip      chip + attached bubble
+ *   ├── avatar       chip + fixed square + initials
+ *   └── step-marker  chip + numbered circle
+ *
+ * step-marker is the odd one — it is an Anatomy class, not an Element. It
+ * is here because "solid tone fill with text on it" is exactly the problem
+ * this base solves, and re-deriving contrast in steps.css produced 14 AA
+ * failures on the first try: it is easy to remember to pick the text color
+ * and forget that the *fill* also has to be capped.
  *
  * Layout only. Skin (background, tone, typography) lives in each
  * composite's own file, exactly as surface.css splits from cards.css.
@@ -52,7 +62,7 @@
  * The consumer-side fallbacks keep pre-2024 browsers (no relative color
  * syntax) on the old behaviour rather than unstyled.
  */
-:where(.chip, .btn, .pill, .badge) {
+:where(.chip, .btn, .pill, .badge, .page, .tooltip, .avatar, .step-marker) {
   --fill: color(from var(--tone-fill) xyz-d65
     calc(x * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
     calc(y * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))

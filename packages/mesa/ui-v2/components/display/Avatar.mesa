@@ -1,0 +1,95 @@
+<script>
+  // Avatar.mesa
+  // User avatar. Tries the image src first, falls back to initials derived
+  // from `name`, falls back to a generic person icon.
+  //
+  // Usage:
+  //   <Avatar src={user.avatar} name={user.name} />
+  //   <Avatar name="Alice Zhao" size="lg" />
+  //   <Avatar src={url} status="online" />
+  //   <Avatar name="Team" shape="square" />
+
+  export let src    = ''     // image URL — empty string = use initials
+  export let name   = ''     // used for initials + alt text
+  export let size   = 'md'   // 'xs'|'sm'|'md'|'lg'|'xl'
+  export let shape  = 'circle'  // 'circle' | 'square'
+  export let status = ''     // ''|'online'|'offline'|'away'|'busy'
+
+  let imgError = false
+
+  const sizeMap = {
+    xs: { wrap: 'h-6 w-6',   text: 'text-[10px]', dot: 'h-1.5 w-1.5 bottom-0 right-0' },
+    sm: { wrap: 'h-8 w-8',   text: 'text-xs',     dot: 'h-2   w-2   bottom-0 right-0' },
+    md: { wrap: 'h-9 w-9',   text: 'text-sm',     dot: 'h-2.5 w-2.5 bottom-0 right-0' },
+    lg: { wrap: 'h-11 w-11', text: 'text-base',   dot: 'h-3   w-3   bottom-0 right-0' },
+    xl: { wrap: 'h-14 w-14', text: 'text-lg',     dot: 'h-3.5 w-3.5 bottom-0.5 right-0.5' },
+  }
+
+  const statusColorMap = {
+    online:  'bg-green-500',
+    offline: 'bg-gray-400',
+    away:    'bg-yellow-400',
+    busy:    'bg-red-500',
+  }
+
+  // Derive initials from name — first letter of first two words
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? '')
+    .join('')
+
+  // Deterministic background from name — so the same person always gets same color
+  const bgPalette = [
+    'bg-blue-500', 'bg-violet-500', 'bg-pink-500', 'bg-rose-500',
+    'bg-orange-500', 'bg-amber-500', 'bg-teal-500', 'bg-cyan-500',
+  ]
+  const bgColor = bgPalette[
+    name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % bgPalette.length
+  ]
+
+  const sz         = sizeMap[size]     ?? sizeMap.md
+  const statusCol  = statusColorMap[status] ?? ''
+  const roundClass = shape === 'square' ? 'rounded-lg' : 'rounded-full'
+
+  const showImage = src && !imgError
+
+  function handleImgError() { imgError = true }
+</script>
+
+<span class="relative inline-flex shrink-0 {sz.wrap}" {class}>
+  {#if showImage}
+    <img
+      src={src}
+      alt={name || 'Avatar'}
+      class="h-full w-full object-cover {roundClass}"
+      onerror={handleImgError}
+    />
+  {:else if initials}
+    <span
+      class="flex h-full w-full items-center justify-center font-semibold
+             text-white {roundClass} {bgColor} {sz.text}"
+      aria-label={name}
+    >
+      {initials}
+    </span>
+  {:else}
+    <!-- Generic person icon fallback -->
+    <span
+      class="flex h-full w-full items-center justify-center
+             bg-gray-200 text-gray-500 {roundClass}"
+    >
+      <svg class="h-3/5 w-3/5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M7.5 6.5C7.5 8.981 9.519 11 12 11s4.5-2.019 4.5-4.5S14.481 2 12 2 7.5 4.019 7.5 6.5zM20 21h1v-1c0-3.859-3.141-7-7-7h-4c-3.86 0-7 3.141-7 7v1h17z"/>
+      </svg>
+    </span>
+  {/if}
+
+  {#if status && statusCol}
+    <span
+      class="absolute block rounded-full ring-2 ring-white {sz.dot} {statusCol}"
+      aria-label={status}
+    ></span>
+  {/if}
+</span>

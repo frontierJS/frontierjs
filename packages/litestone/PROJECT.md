@@ -58,7 +58,8 @@ src/
   index.d.ts       — static TypeScript declarations
 
 test/
-  litestone.test.ts  — 929 tests, 122 suites
+  litestone.test.ts  — 1187 tests (plus cli-smoke, elegance-fixes,
+                       migrations-fixes, nullable-optional: 1241 total)
 ```
 
 ---
@@ -97,17 +98,17 @@ Single-DB schemas omit database blocks and pass `db:` to `createClient`.
 
 ### Field types
 ```
-Integer    Real    Text    Boolean    DateTime    Blob    Json
+Int        Float   String  Boolean    DateTime    Bytes   Json
 File       — stores JSON ref in SQLite, bytes in S3/R2/local
 Enum       — inline: role Role  OR standalone: enum Role { admin member }
-Type[]     — arrays stored as JSON: tags Text[]
+Type[]     — arrays stored as JSON: tags String[]
 Model[]    — implicit many-to-many: tags tags[]
 Type?      — optional (nullable)
 ```
 
 ### Field attributes
 ```
-@id                              primary key (auto-increment for Integer)
+@id                              primary key (auto-increment for Int)
 @unique                          UNIQUE constraint
 @default(value)                  literal, now(), uuid(), ulid(), cuid(), nanoid()
 @default(auth().field)           stamp from ctx.auth at write time (runtime-only)
@@ -193,7 +194,7 @@ const db = await createClient({
 const db = await createClient({ parsed: parseResult })
 
 // Inline schema
-const db = await createClient({ schema: `model users { id Integer @id; name Text }`, db: ':memory:' })
+const db = await createClient({ schema: `model users { id Int @id; name String }`, db: ':memory:' })
 ```
 
 All models route automatically to their declared database. `db.pageViews` goes to the analytics connection; `db.users` goes to main.
@@ -332,10 +333,10 @@ Declared on the model, compiled to SQL `WHERE` injections at runtime.
 
 ```
 model posts {
-  id      Integer @id
-  ownerId Integer @default(auth().id)
-  status  Text    @default("draft")
-  title   Text
+  id      Int @id
+  ownerId Int @default(auth().id)
+  status  String    @default("draft")
+  title   String
 
   @@allow('read',   ownerId == auth().id || status == 'published')
   @@allow('create', auth() != null)
@@ -374,8 +375,8 @@ Only fires when the field is absent or null in the data — explicit values alwa
 
 ```
 model posts {
-  ownerId Integer @default(auth().id)
-  teamId  Integer @default(auth().teamId)
+  ownerId Int @default(auth().id)
+  teamId  Int @default(auth().teamId)
 }
 
 // With auth set:
@@ -397,10 +398,10 @@ Conditionally exposes or accepts a field based on the auth context.
 
 ```
 model users {
-  id     Integer @id
-  salary Real?   @allow('read',  auth().role == 'admin')
-  apiKey Text?   @allow('write', auth().role == 'admin')
-  name   Text
+  id     Int @id
+  salary Float?   @allow('read',  auth().role == 'admin')
+  apiKey String?   @allow('write', auth().role == 'admin')
+  name   String
 }
 ```
 
@@ -444,8 +445,8 @@ Operates directly on the raw write connection; autocommit per row.
 ## Implicit Many-to-Many
 
 ```
-model posts { id Integer @id; tags tags[] }
-model tags  { id Integer @id; posts posts[] }
+model posts { id Int @id; tags tags[] }
+model tags  { id Int @id; posts posts[] }
 ```
 
 Join table: `_posts_tags (postsId, tagsId)` — composite PK, CASCADE on both.
@@ -590,10 +591,10 @@ database logs {
 
 model apiRequests {
   // No @id — JSONL uses byte offset as natural key
-  method    Text
-  path      Text
-  status    Integer
-  duration  Integer
+  method    String
+  path      String
+  status    Int
+  duration  Int
   createdAt DateTime @default(now())
 
   @@db(logs)
@@ -632,14 +633,14 @@ Fields with `@log(audit)` (synthesized by `@secret`) and models with `@@log(audi
 write here automatically. Log shape:
 
 ```
-operation   Text         — create | update | delete | read
-model       Text         — model name
-field       Text?        — field name (for field-level @log)
+operation   String       — create | update | delete | read
+model       String       — model name
+field       String?      — field name (for field-level @log)
 records     Json         — array of affected record IDs
 before      Json?        — pre-update snapshot (single-record writes only)
 after       Json?        — post-write snapshot (single-record writes only)
-actorId     Integer?     — from ctx.auth
-actorType   Text?        — from ctx.auth
+actorId     Int?         — from ctx.auth
+actorType   String?      — from ctx.auth
 meta        Json?        — extra context
 createdAt   DateTime
 ```
@@ -706,10 +707,10 @@ Features:
 
 ```
 model quotes {
-  id          Integer  @id
-  accountId   Integer
-  quoteNumber Integer  @sequence(scope: accountId)
-  title       Text
+  id          Int  @id
+  accountId   Int
+  quoteNumber Int  @sequence(scope: accountId)
+  title       String
 }
 ```
 
@@ -858,7 +859,7 @@ Add these manually after reviewing the generated output. The CLI emits a comment
 
 ```bash
 bun test test/litestone.test.ts
-# 929 tests, 122 suites
+# 1241 tests across 5 files, 0 fail
 ```
 
 Suites: parser, DDL, migrations, client (CRUD, soft delete, select/include,

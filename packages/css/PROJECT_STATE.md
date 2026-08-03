@@ -1,4 +1,4 @@
-# FrontierJS CSS — Project State (v0.6)
+# FrontierJS CSS — Project State (v0.10)
 
 > A minimal, composable, semantics-first CSS framework. Plain CSS, no build
 > step, no UnoCSS. Drop this whole doc + the source files into a fresh chat
@@ -75,9 +75,9 @@ named apart:
 
 | Kind | Composes | What it is |
 |---|---|---|
-| **Element** | onto valid markup | Names *what a thing is* — `.btn` `.pill` `.badge` `.card` `.alert` `.field` `.link` `.table` `.dialog` `.drawer` `.popover` `.toast` `.feed` `.rows` `.items` `.bar` `.disclosure` |
+| **Element** | onto valid markup | Names *what a thing is* — `.btn` `.pill` `.badge` `.card` `.alert` `.field` `.link` `.table` `.dialog` `.drawer` `.popover` `.toast` `.feed` `.rows` `.items` `.bar` `.disclosure` `.steps` `.facts` `.avatar` `.avatars` `.kbd` `.code` `.icon` |
 | **Treatment** | onto anything | Orthogonal, element-agnostic — the 7 tones, `.raised` `.outlined` `.ghost`, `.text-*`, `.stack` `.cluster` `.center` `.split` |
-| **Anatomy** | no — names a slot | Names *a position inside* an Element — `.alert-icon` `.alert-content`, `.feed-item` `.feed-dot` `.feed-content`, `.list-row` `.row-actions`, `.disclosure-summary` `.disclosure-body`, `.surface-header` `-body` `-footer`, `.field-group` `.field-hint` `.pill-close` |
+| **Anatomy** | no — names a slot | Names *a position inside* an Element — `.alert-icon` `.alert-content`, `.feed-item` `.feed-dot` `.feed-content`, `.list-row` `.row-actions`, `.disclosure-summary` `.disclosure-body`, `.surface-header` `-body` `-footer`, `.field-group` `.field-hint` `.pill-close`, `.step-marker` `.step-label` `.step-hint` |
 
 Element and Anatomy are two ends of one relationship: several Element classes
 carry an **anatomy contract** — `.alert` expects an icon and a content slot,
@@ -89,7 +89,7 @@ rather than prose. If you're wondering whether something belongs in the
 Vocabulary, the test is whether it carries an anatomy contract.
 
 There is a fourth group worth being honest about: **scoped modifiers** that read
-like Treatment but aren't. `.icon` only works on `.btn`, `.removable` only on
+like Treatment but aren't. `.square` only works on `.btn`, `.removable` only on
 `.pill`, `.striped`/`.compact` only on `.table`, `.divided`/`.hover` only on
 `.rows`, `.menu` only on `.items`. They're legitimate, but they're component
 modifiers living in a utility system, so they need a naming convention of their
@@ -99,7 +99,7 @@ nothing.
 > **Consequence for naming.** Because Treatment classes are *meant* to be
 > applied broadly, generic unprefixed names are a bigger liability here than in
 > a component framework, not a smaller one. `.center`, `.hover`, `.start`,
-> `.end`, `.item` and the seven tone names are all global. `.bar.center` already
+> `.end`, `.item`, `.icon` and the seven tone names are all global. `.bar.center` already
 > depends on layer order to survive the collision with `.center`. See the naming
 > constraint below — this taxonomy is the principle to resolve it against.
 
@@ -115,7 +115,8 @@ nothing.
 3. Tones               .primary / .danger / … — one variable each
    ↓ consumed by
 4. Classes             Element + Treatment + Anatomy (the rendered surfaces)
-5. A11y                Last layer, so .visually-hidden cannot be outranked
+5. A11y                Last layer, so .visually-hidden and the focus ring
+                       cannot be outranked by anything above them
 ```
 
 These map onto the cascade layers declared in `index.css`.
@@ -129,21 +130,44 @@ These map onto the cascade layers declared in `index.css`.
 
 **Inline atoms (chip lineage):**
 ```
-chip                inline-flex layout base
+chip                inline-flex layout base + auto-contrast
 ├── pill            chip + rounded-full + small
 ├── badge           chip + categorical statuses
-└── btn             chip + button chrome
+├── btn             chip + button chrome
+├── page            chip + pagination link           (NEW v0.6)
+├── tooltip         chip + attached bubble           (NEW v0.6)
+├── avatar          chip + fixed square + initials   (NEW v0.8)
+└── step-marker     chip + numbered circle           (NEW v0.8)
 ```
+> `.step-marker` is an Anatomy class, not an Element — the only one in the
+> lineage. It is there because "solid tone fill with text on it" is exactly
+> what the base solves, and steps.css deriving it by hand produced 14 AA
+> failures on the first attempt: picking the text color is only half the job,
+> the fill has to be luminance-capped too.
 
 **Block surfaces (surface lineage):**
 ```
 surface             bg + border + radius + tonal recipe
 ├── card            surface + padding
+├── tile            surface + compact metric layout          (NEW v0.6)
 ├── alert           surface + row layout
 ├── toast           surface + fixed + slide-in
 ├── dialog          surface + native modal sizing
 ├── popover         surface + absolute + slide-in
 └── drawer          surface + off-canvas + slide-from-edge
+```
+
+**App frame (NEW in v0.6 — closes the Frame + Page tiers):**
+```
+app                 <body> surface: reset, sunken bg, base font
+shell               the grid — topbar spans, sidebar + screen beneath
+  + .sidebar-first  sidebar runs full height, topbar beside it
+  + .fixed          shell is one viewport; screen scrolls internally
+topbar              sticky, --topbar-height
+sidebar             --sidebar-width, collapses below md
+screen              the routed body (min-inline-size:0 — see below)
+pane                labelled subdivision, 2rem rhythm
+view                switchable panel, [hidden] restated
 ```
 
 **Block patterns (NEW in v0.5 — layout-only, no surface):**
@@ -158,6 +182,18 @@ feed                chronological stream w/ connecting timeline
   + feed-item / feed-dot / feed-content
 disclosure          native <details> expand/collapse
   + disclosure-summary / disclosure-body
+tabs / tablist / tab  switching between Views          (NEW v0.6)
+  + .pills / .stretch / .vertical (v0.8), selected keyed off aria-selected
+breadcrumb          hierarchy trail, separator via ::before   (NEW v0.6)
+pagination / page   page links, current = solid fill          (NEW v0.6)
+  + page-gap
+navlist / navlink   sidebar links, current = tinted           (NEW v0.6)
+  + navlist-label
+steps / step        multi-stage flow, current = aria-current  (NEW v0.8)
+  + step-marker / step-label / step-hint, + .complete, + .vertical
+facts               <dl> label/value pairs, no Anatomy classes (NEW v0.8)
+  + .divided, stacks below sm
+avatars / avatar    people markers, overlapping group         (NEW v0.8)
 ```
 
 **Cross-cutting tones:**
@@ -171,6 +207,9 @@ tones.css (.primary, .info, .danger, .success, .warning, .muted, .secondary)
 **Standalone (don't fit the surface mold):**
 ```
 field (form input) — own var contract, reads tones for state borders
+  + .switch (native checkbox + role=switch)
+  + .field-row / .field-addon (attached prefixes, suffixes, buttons)
+  + :user-invalid drives the tone with no JavaScript
 table (tabular)    — own structure, tones on <tr> for row tinting
 ```
 
@@ -203,11 +242,21 @@ table (tabular)    — own structure, tones on <tr> for row tinting
 6. **Tones are element-scoped** — `--bg-mix` / `--on-bg-mix` are registered
    `inherits: false`, so a tone applies only to the element carrying the class.
    See the constraint below.
-7. **Contrast is derived, not asserted** — chip.css reads the fill's relative
+7. **One focus ring, in the last layer** (NEW v0.7) — focus.css writes the
+   whole recipe once, for every focusable surface, at `:where()` specificity in
+   the `a11y` layer. Layer order is doing the real work: a component that
+   declares `outline: none` — or, as actually happened, `box-shadow: none` on
+   the property the ring was living in — cannot switch it off. Variation goes
+   through `--ring-color` / `--ring-width` / `--ring-offset`, so there is never
+   a second recipe. Adding a focusable component means adding its class to the
+   one selector list; forgetting shows up in focus.spec.js as "has no focus
+   indicator at all".
+8. **Contrast is derived, not asserted** — chip.css reads the fill's relative
    luminance (the `y` channel of `xyz-d65` is exactly WCAG's L) and branches:
    bright hues keep their color and take dark text, everything else keeps white
    text and is dimmed to the luminance where white reaches 4.5:1. Verified 0 AA
-   failures across all 35 tone × theme combinations, worst 4.58:1 — and it holds
+   failures across all 42 tone × theme combinations on each of btn/pill/badge,
+   and — because it is a derivation, not a table — for invented hues too. It holds
    for hues no theme has defined yet. `--on-bg-mix` is now an override rather
    than a per-tone assertion.
 
@@ -216,7 +265,7 @@ table (tabular)    — own structure, tones on <tr> for row tinting
 ## Half 1 in detail — Structure
 
 The structural half of the system: six principles that decide element choice,
-and a vocabulary of 29 terms that fixes the answer for each concept. Where a
+and a vocabulary of 35 terms that fixes the answer for each concept. Where a
 term needs CSS to hold its shape, that CSS is an Anatomy class.
 
 ### Six principles
@@ -233,15 +282,15 @@ term needs CSS to hold its shape, that CSS is an Anatomy class.
 6. **Components only for behavior.** Visual treatment = class; keyboard/focus/
    ARIA behavior = component. Most "components" are class-only.
 
-### Vocabulary — six tiers, 29 terms
+### Vocabulary — six tiers, 35 terms
 
 | Tier | Terms |
 |---|---|
 | **Frame** | App `<body>`, Topbar `<header>`, Sidebar `<nav>`, Shell |
 | **Page** | Screen `<main>`, Pane `<section aria-labelledby>`, View `<article role=tabpanel>` |
-| **Region** | Section (`<section>` or `<article>` when nested), Group `<div>`, Bar `<div>` |
-| **Block** | Card `<article>`, Tile, Item `<li>`, Row `<li>`/`<tr>`, Feed `<ol>`+`<li><article>`, Alert `<article>` |
-| **Inline** | Button, Link, Pill, Badge, Field, Heading, Text, Icon |
+| **Region** | Section (`<section>` or `<article>` when nested), Group `<div>`, Bar `<div>`, Divider `<hr>` |
+| **Block** | Card `<article>`, Tile, Item `<li>`, Row `<li>`/`<tr>`, Feed `<ol>`+`<li><article>`, Alert `<article>`, Steps `<ol>`+`<li>`, Facts `<dl>`+`<dt>`/`<dd>`, Code `<pre>`+`<code>` |
+| **Inline** | Button, Link, Pill, Badge, Field, Heading, Text, Icon, Avatar `<img>`/`<span>`, Kbd `<kbd>` |
 | **Overlay** | Dialog `<dialog>`, Drawer `<dialog>`, Popover `<article>`, Tooltip `<div>`, Toast `<article>` |
 
 The **article-vs-div line** is now a real diagnostic: a term with `<article>` is
@@ -252,6 +301,17 @@ Principle 2: View, Alert, Toast, Popover (with a documented edge case — a
 menu-only popover can stay `<div role="menu">`). Tooltip stays `<div>` (it's an
 attachment, not a unit). Bar/Group/Item/Row stay non-article (strips, clusters,
 list members).
+
+**Coverage: complete.** As of v0.6 every one of the then-29 terms shipped CSS;
+v0.8 added six more (Steps, Facts, Divider, Avatar, Kbd, Code) and shipped each
+with the term. The
+Frame and Page tiers landed in frame.css (App, Shell, Topbar, Sidebar, Screen,
+Pane, View), Tile in tiles.css, and Tooltip in tooltips.css — thirteen terms
+that had been prose with no styling behind them.
+
+The vocabulary is no longer a promissory note: if a term is in the table, there
+is a class for it, and the two halves of the system finally describe the same
+thing.
 
 ---
 
@@ -281,16 +341,23 @@ All files live **flat** in the package root. The groupings below are logical
 ├── layout.css                     ← stack / cluster / center / split + .container (NEW v0.6)
 │
 │  components ─────────────────────────────────────────────────────
-├── typography.css                 ← h1-h6, .text-* utilities
-├── buttons.css                    ← .btn (+ .icon added v0.4.x)
+├── frame.css                      ← Frame + Page tiers: app shell        (NEW v0.6)
+├── typography.css                 ← h1-h6, .text-* size + color utilities
+├── icon.css                       ← THE icon sizing rule + .icon        (NEW v0.10)
+├── buttons.css                    ← .btn (+ .square, .ghost, .raised)
 ├── pills.css                      ← .pill (+ .removable / .pill-close added v0.4.x)
 ├── badges.css                     ← .badge
 ├── cards.css                      ← .card
+├── tiles.css                      ← .tiles/.tile + label/value/delta     (NEW v0.6)
+├── avatar.css                     ← .avatar (chip lineage) + .avatars     (NEW v0.8)
+├── feedback.css                   ← .spinner .progress .skeleton .empty  (NEW v0.6)
 ├── alerts.css                     ← .alert
 ├── toasts.css                     ← .toast
 ├── popovers.css                   ← .popover
+├── tooltips.css                   ← .tooltip + .tooltip-anchor            (NEW v0.6)
 ├── drawers.css                    ← .drawer
-├── form-core.css                  ← .field, .field-group, .field-hint, .field-check
+├── form-core.css                  ← .field, .field-group, .field-hint, .field-check,
+│                                     .switch, .field-row/.field-addon      (v0.6)
 ├── tables.css                     ← .table + variants + row tones
 ├── dialogs.css                    ← .dialog
 │
@@ -299,20 +366,43 @@ All files live **flat** in the package root. The groupings below are logical
 ├── lists.css                      ← .items/.item, .rows/.list-row/.row-actions (NEW v0.5)
 ├── feed.css                       ← .feed/.feed-item/.feed-dot/.feed-content (NEW v0.5)
 ├── disclosure.css                 ← .disclosure + summary/body              (NEW v0.5)
+├── facts.css                      ← <dl> label/value pairs                  (NEW v0.8)
+├── steps.css                      ← .steps/.step + marker/label/hint        (NEW v0.8)
+│
+├── tabs.css                       ← .tabs/.tablist/.tab                    (NEW v0.6)
+├── nav.css                        ← .breadcrumb .pagination .navlist       (NEW v0.6)
 │
 │  accessibility ───────────────────────────────────────────────────
+├── focus.css                      ← THE focus ring — one recipe, all of it  (NEW v0.7)
 └── a11y.css                       ← .visually-hidden, .skip-link            (NEW v0.6)
+
+   test/                           ← the assertion suite                     (NEW v0.7)
+   ├── run.js                      ← driver: builds a page, runs Chrome, reports
+   ├── harness.js                  ← in-page assertions + the computed-style rulers
+   └── specs/*.spec.js             ← meta · focus · tables · tones · contrast · layers
 ```
 
-> **Not yet in the repo:** `README.md`, and the deliverables listed below
-> (`style-guide.jsx`, `frontier-demo.html`, `TicketDetail.svelte`) live outside
-> this package.
+> **In the repo:** all 36 `*.css` files, `package.json`, `README.md`,
+> `guide/`, and `test/`. **Not in the repo:** `frontier-demo.html` and
+> `TicketDetail.svelte` — both predate v0.6 and describe the pre-Uno-removal
+> system, so treat anything in them as stale until re-checked.
 
 ### Deliverables / artifacts
 
-- **`style-guide.jsx`** (~9,600 lines) — single-file React docs site. Renders
-  every component live with theme switching; nav groups: Start Here / Foundation
-  / Structure / Components / Patterns / Utilities / Reference.
+- **`test/`** (NEW v0.7) — the assertion suite. `bun run test`, or
+  `bun run test focus tone` to filter, or `--keep` to leave the generated page
+  on disk. 202 assertions in headless Chrome against real computed styles;
+  zero dependencies (the page computes its own results and `--dump-dom` carries
+  them back, so there is no puppeteer). `specs/meta.spec.js` tests the harness
+  rather than the CSS — see the note about trusting your own ruler below.
+- **`guide/`** — the docs site. Plain HTML + JS, no framework and no build step:
+  `index.html` (shell), `guide.js` (data, 45 page builders, hash router),
+  `guide.css` (chrome only). Open the file directly, or `bun run demo` and go to
+  `/guide/`. It `<link>`s the real `../index.css`, so what it shows cannot drift.
+  Converted from `style-guide.jsx` (a ~9,600-line single-file React site, retired
+  2026-08-02 — it needed React and a bundler the package itself does not).
+  Renders every component live with theme switching; nav groups: Start Here /
+  Foundation / Structure / Components / Patterns / Utilities / Reference.
   - Start Here: Overview, Principles, Install, Composition, Conventions
   - Foundation: CSS Variables, Tonal, Themes, Colors
   - Structure: Vocabulary (29 terms, 6 groups)
@@ -371,11 +461,11 @@ treatment. They aren't chained, they're nested.
 
 ### Icons
 `<span class="i-heroicons:NAME" aria-hidden="true">`. Icon-only buttons:
-`.btn.icon` + `aria-label` on the button.
+`.btn.square` + `aria-label` on the button.
 
 **Supplying the icons is the consumer's job** as of v0.6 — the package no longer
 depends on UnoCSS, so it doesn't ship the heroicons preset. It only *sizes* what
-it finds: `.btn.icon` sets `1.15em` on a child `<svg>` or any class starting
+it finds: `.btn.square` sets `1.15em` on a child `<svg>` or any class starting
 `i-heroicons`. Use Uno's preset-icons, Iconify, or inline SVG; the
 `i-heroicons:*` naming is what the sizing rule expects.
 
@@ -413,6 +503,30 @@ unlayered CSS still overrides it, which is correct.
 `.skip-link` is the off-screen-until-focused jump link. Give the skip target
 `tabindex="-1"`, or some browsers move the viewport without moving focus.
 
+### Style interactive state from ARIA, not a class
+The selected tab is ``.tab[aria-selected="true"]``, deliberately not
+``.tab.active``. With a class you can render a tab that *looks* selected while
+announcing itself as unselected — the two drift the moment someone updates one
+and forgets the other. Keying the CSS off the ARIA attribute makes that
+divergence unrepresentable: if it looks selected, it is selected as far as
+assistive tech is concerned.
+
+Breadcrumb, pagination and the sidebar nav list all key their current item off
+``[aria-current="page"]`` for the same reason, and there are tests asserting
+that adding ``.active``, ``.current`` or ``.selected`` fails to fake it.
+
+Forms take it further: ``.field:user-invalid { --bg-mix: var(--color-danger) }``
+is the entire validation implementation. The border, the focus ring and any
+``.field-hint`` in scope all derive from ``--bg-mix`` already, so one line turns
+the whole field red at the right moment — and ``:user-invalid`` fires only after
+the user has actually interacted, unlike ``:invalid``, which shouts at an empty
+required input the instant the page loads.
+
+Apply the same rule to anything with a state a screen reader can observe —
+``[aria-expanded]``, ``[aria-current]``, ``[aria-disabled]``, ``[hidden]``.
+The attribute is the source of truth; the class is the styling hook only when
+no attribute exists.
+
 ### Theming (one class on body)
 `class="theme-default"` (or sunset/forest/midnight/dark/elite). Themes nest.
 
@@ -443,7 +557,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   self-nests; Components pages (Alerts/Toasts/Popovers) aligned to match Vocab
 
 ### Block tier (v0.5)
-- ✅ `.btn.icon`, `.pill.removable` + `.pill-close` (session extensions)
+- ✅ `.btn.square`, `.pill.removable` + `.pill-close` (session extensions)
 - ✅ bars.css (.bar + section-header + divider-label)
 - ✅ lists.css (.items/.item, .rows/.list-row/.row-actions — `.row` renamed to
   `.list-row` to dodge Bootstrap)
@@ -494,10 +608,20 @@ The connecting line (`top: 0.95rem; bottom: -1.25rem; left: 0.3125rem`) is tuned
 to the dot geometry. Robust for typical content; worth eyeballing if entry
 heights vary a lot or in the Elite theme (zero radii).
 
-### Three-way artifact sync
-Source CSS, frontier-demo.html (inlined copy), and style-guide.jsx (embedded
-STYLESHEET copy) each carry the CSS. Changes to a pattern must be applied to all
-three. As of v0.5 they're in sync.
+### ~~Three-way artifact sync~~ — resolved in v0.6
+This used to say the source CSS, frontier-demo.html and the style guide each
+carried their own copy, and a change had to be applied to all three. That is how
+the guide ended up two versions behind — its embedded copy still had the
+pre-v0.3 `--card-color` contract and the old 10/30/45%-black tone recipe.
+
+**`guide/index.html` now `<link>`s the real `../index.css`** and keeps only its
+own chrome (`guide/guide.css`), so it cannot drift again. The fix was possible
+because the package stopped needing a build step; the copy existed to work
+around UnoCSS.
+
+frontier-demo.html still carries an inlined copy and is therefore stale. Either
+regenerate it with `bun build ./index.css` or retire it — the guide covers the
+same ground.
 
 ### Markup naming breaking change
 `card-header` → `surface-header` (since v0.3). Old code needs renaming.
@@ -528,6 +652,32 @@ wins on the properties it owns. Previously they were declared *before* the
 all. Each variant keeps the tint on the parts it does render, so a toned
 `.outlined` still gets a tinted border.
 
+### A grid item needs `min-inline-size: 0` or it blows the layout out
+Grid items default to `min-inline-size: auto`, so a wide child — a table, a long
+`<pre>`, an overflowing flex row — pushes its grid track wider than the viewport
+instead of scrolling inside itself. The whole app then scrolls sideways.
+
+`.screen` sets `min-inline-size: 0` for exactly this reason; it is the single
+line that stops a wide table taking the layout with it. Pair it with
+`.table-wrap` so the table scrolls in its own box. Any new grid child that can
+hold wide content needs the same.
+
+### `!important` reverses layer order
+Normal declarations resolve later-layer-wins. **Important declarations resolve
+the other way** — an `!important` in the *first* layer beats one in the last.
+
+This matters exactly once so far, and it is easy to get wrong. tokens.css has a
+global reduced-motion guard that forces `animation-duration: 0.01ms !important`
+on everything. That would freeze a spinner, which reads as a broken page rather
+than a working one, so `.spinner` and `.btn.loading::after` get an exception:
+1.6s and still looping — slow enough not to trigger vestibular symptoms, alive
+enough to mean something.
+
+That exception **has to live in tokens.css**, in the same layer as the guard.
+Put it in feedback.css and the guard silently wins, because feedback.css is in a
+later layer. Within one layer, specificity applies normally among important
+declarations, so `.spinner` (0,1,0) beats `*` (0,0,0).
+
 ### Alias tokens must resolve at the use site
 `--badge-radius: var(--btn-radius)` declared in `:root` looks like an alias and
 silently isn't: the `var()` resolves once, against `:root`'s own `--btn-radius`,
@@ -538,6 +688,19 @@ The working form is a use-site fallback — `border-radius: var(--badge-radius,
 var(--btn-radius))` on `.badge` — which resolves on the element, where the theme
 override is visible. Any future "component X follows component Y's token" pairing
 has to use the fallback form.
+
+**It had already happened a second time.** `--ring: var(--color-primary)` sat in
+`:root` through the whole of v0.6. Every theme overrides `--color-primary`; no
+theme sets `--ring`; so **every focus ring in every theme was the default blue**,
+and Elite's lime brand focused in navy-scheme blue. Nobody spotted it because a
+blue focus ring looks like a focus ring.
+
+`--ring` is now undeclared, exactly like `--badge-radius`, and every read is
+`var(--ring, var(--color-primary))`. `focus.spec.js` walks all six themes.
+
+The general rule, since this is now 2-for-2: **an alias token in `:root` is
+always wrong.** If token A should follow token B, write the fallback at the use
+site. There is no case where the `:root` form does what it looks like it does.
 
 ### `.center` and `.bar.center` mean different things
 `.center` (layout.css) is "centre on both axes, via grid". `.bar.center` (bars.css)
@@ -572,62 +735,159 @@ later.
 
 ## What's worth doing next (ranked)
 
-### High-leverage
-1. **Use it in a real project.** Drop `@frontierjs/css` into Clean Affinity
-   admin or a client buildout. Real usage surfaces gaps docs can't.
-2. **Audit Tabs.svelte against the View vocab.** It still renders
-   `<div role="tabpanel">`; the contract is now `<article role="tabpanel">`.
-   Also a hardcoded `#4f81e5` should be `var(--color-primary)`.
-3. **"Is the system done?" audit** — walk frontier-demo.html with all real CSS,
-   confirm every pattern renders across all six themes, fix or document gaps,
-   then consider a v1.0 cut.
+> Rewritten for v0.6. The old list was a v0.5 artefact — half of it (Tooltip,
+> Tile, the Tabs audit) has since shipped.
 
-### Medium-leverage
-4. **Cards page article sweep** — 19 `div.card` instances; Card accepts both, so
-   not compelled, but consistency has value.
-5. **Tooltip component** — the last Overlay term without CSS/a Components page.
-   Stays `<div role="tooltip">` (attachment, not unit).
-6. **Clickable Vocab → Components cross-links** — notes currently say "documented
-   on the X page" as prose; make them navigable.
-7. **Build the FJL→HTML compiler prompt** — the inverse of the converter, so the
-   image→FJL→HTML loop is complete.
+### The one that actually matters
+1. **Use it in a real project.** Still **zero production consumers**. 202
+   browser assertions prove the CSS does what it says; they cannot prove it is
+   the right thing to say. Clean Affinity admin remains the obvious target.
 
-### Lower-leverage
-8. **Tile / Feed-as-progressive (`role="feed"`) Components pages** — vocab terms
-   without dedicated pages yet.
-9. **Per-theme typography/radius override docs** — Elite already does it; not
-   documented as a reusable pattern.
-10. **Theme builder UI** — slide tokens, export a theme file.
+   **Started, v0.9–v0.10:** `demo/` is the first thing in the repo to import
+   the package — a five-route SaaS admin (`bun run demo`). It is a demo, not a
+   consumer: no build step, no data, no real users. But it found **eight
+   shipped bugs the test suite had never thought to ask about** (all fixed,
+   with regression tests) and **four core gaps** (all filled in v0.10, leaving
+   `demo.css` at a single rule). See `demo/README.md`. Eight bugs and four gaps
+   from one afternoon against a green suite is the whole argument for doing (1)
+   properly.
+
+### Decisions worth making before there are consumers
+2. **The scoped-modifier naming question.** `.square` only works on `.btn`,
+   `.striped` only on `.table`, `.divided` only on `.rows`, `.menu` only on
+   `.items`, `.compact`, `.hover`, `.start`/`.center`/`.end`. They read as
+   Treatments and are not. The class taxonomy gives you the principle; the
+   decision is still open.
+
+   **One of the four named cases is resolved.** v0.10 renamed `.btn.icon` to
+   `.btn.square` — forced, because `.icon` became the Icon term. It is a useful
+   precedent for the rest: the rename cost about twenty markup sites and one
+   test pinning why the two meanings cannot coexist. It also showed the cost of
+   waiting, since the breakage is *quiet* rather than loud.
+
+   Related, from the demo: the drawer's `.from-left` / `.from-right` are
+   physical while the whole rest of the package is logical. Same decision.
+3. **Cut v1.0, or say why not.** The vocabulary is complete, contrast is
+   verified, the package loads. The honest blocker is (1).
+
+### ~~Known defects, small~~ — all fixed in v0.7, with tests
+4. ~~**Focus rings are four recipes.**~~ Unified into `focus.css`. Fixing it
+   turned up a fifth thing nobody had noticed: `.btn.outlined` and `.btn.link`
+   had **no focus indicator at all**, because `box-shadow: none` and the ring's
+   `box-shadow` were the same specificity in the same layer.
+5. ~~**`.table.striped` out-specifies row tones.**~~ Stripe, hover and tone now
+   compose through `--row-base` instead of competing for `background`.
+
+### ~~Gaps~~ — the SaaS list is shipped as of v0.8
+Steps, Avatar (+ group), Facts (the `<dl>`), `kbd` / code block / `<hr>`, and
+vertical tabs all ship with tests. Toast stacking already existed as
+`.toast-stack` and had simply never been written down.
+
+A theme-builder UI is the only thing left on that list, and it is a tool rather
+than CSS — it belongs in the style guide, not the package.
+
+### The style guide is two versions behind
+1b. **The guide has no page for anything added since v0.7.** It
+   `<link>`s the real `index.css`, so what it *does* show cannot drift — but it
+   shows nothing at all for **Avatar, Facts, Code blocks, vertical Tabs, the
+   `.text-*` size scale, or `icon.css`**, and only glancing coverage of Steps
+   and Kbd. Its 45-page nav ends at the v0.7 surface area, it still badges
+   itself **v0.6**, and its Vocabulary page still claims **29 terms** where 35
+   now ship. (Converting it from JSX to plain HTML/JS on 2026-08-02 moved this
+   content verbatim — the gap is unchanged, not widened.)
+
+   That matters more than it sounds: PROJECT_STATE calls the guide "the
+   interactive reference", and a reference that omits a third of the components
+   sends people to read the CSS instead. Six new pages, and the Icons page
+   needs rewriting for `.icon` / `--icon-size` / the `.btn.square` rename.
+
+   `demo/` partly covers for it — it uses every one of those in real markup —
+   but a demo is not a reference.
+
+### Found while building v0.8, not yet decided
+4. **Accent-as-text has no contrast guarantee.** The chip lineage caps a tone
+   used as a *fill* so text on it clears AA. Nothing caps a tone used as
+   *text on a surface* — and `.link`, `.tab[aria-selected]`,
+   `.navlink[aria-current]`, `.tile-delta` and `.field-hint` all do exactly
+   that. `--color-primary` on `--surface` is 3.96:1; a light brand hue is
+   worse. steps.css sidesteps it (the current marker's number is `--ink`, and
+   only the ring is accent), but that is one component avoiding the problem,
+   not the problem being solved.
+
+   It is a real fix — probably a `--on-surface-accent` derived the way `--fill`
+   is — but it changes the look of five shipped components, so it wants a
+   deliberate decision rather than a drive-by.
+5. **`.text-*` utilities enumerate the seven tones.** typography.css lists
+   `.text-primary` … `.text-danger` by hand, so "adding a tone is one line in
+   tones.css" is not quite true. They dodge `tones.spec.js` because the class
+   names are prefixed. Low harm, but it is the same shape as the bug the whole
+   v0.6 tone cycle was about.
+
+### Deliberately not doing
+Combobox, date picker, command palette, data grid. All behaviour-heavy;
+Principle 6 says behaviour belongs in a component, and shipping CSS for them
+invites half-implementations.
 
 ---
 
-## Files to bring to a fresh chat
+## Picking this up cold
 
-1. **`style-guide.jsx`** — docs artifact (`/mnt/user-data/outputs/style-guide.jsx`)
-2. **The full CSS source** — the flat `*.css` files in the package root
-   (there is no `styles/` directory and no `uno.config.ts`; both are gone as of
-   v0.6)
-3. **`frontier-demo.html`** — single-file test/preview build
-4. **`TicketDetail.svelte`** — dogfooded reference screen
-5. **This doc** — `PROJECT_STATE.md`
+**Read first, in this order:**
 
-Reasonable opening prompt:
+1. **This doc** — especially *the two halves* (structure and style are co-equal,
+   not layered), *the three kinds of class* (Element / Treatment / Anatomy, and
+   which compose freely), and the six principles.
+2. **`README.md`** — the consumer-facing view. Shorter, and a good check on
+   whether the mental model survives contact with a reader.
+3. **`index.css`** — the layer order is the architecture in one screen.
 
-> I'm continuing work on FrontierJS CSS (was "ksite-styles"). The two halves,
-> the class taxonomy, and the file layout are in PROJECT_STATE.md. Current
-> version is v0.6 — plain CSS, no build step, no UnoCSS. Interactive docs are
-> style-guide.jsx; single-file test build is frontier-demo.html. I want to
-> [...goal...].
+**The files:** all 40 `*.css` files live flat in the package root. There is no
+`styles/` directory and no `uno.config.ts` — both are gone as of v0.6.
+`guide/` is the interactive reference (45 pages) and `<link>`s the real
+`index.css`, so it can never drift from the source again.
 
-The new Claude should read PROJECT_STATE.md first to absorb context without
-re-deriving it — especially **the two halves** (structure and style are
-co-equal, not layered), **the three kinds of class** (Element / Treatment /
-Anatomy, and which compose freely), and the six principles.
+**Verification is empirical here.** Do not trust a claim in this doc — including
+this one — without running it. The whole v0.6 cycle started because the docs
+described a system that did not exist: the entry point imported directories that
+had never been created, and three headline invariants were false in code.
 
-The most common way to get this system wrong is to treat it as a component
-framework — writing a class that only works on one element and calling it a
-utility, or adding a Treatment that only some components honour. Both have
-happened; see the v0.6 tone work.
+As of v0.7 the harness is **checked in**: `bun run test` in this package runs
+202 assertions in headless Chrome against real computed styles. It is worth
+being precise about what that does and does not buy you.
+
+It is very good at invariants you thought to state. It caught `.btn.outlined`
+having no focus ring at all, every theme's focus ring being the wrong color,
+and an `--ink-mute` AA failure that had shipped since v0.1 — all while fixing
+two unrelated defects.
+
+It is blind to two whole categories:
+
+- **Composition.** Two bugs in v0.8 passed every assertion and were caught only
+  by rendering the page and looking at it: a `counter-increment` that never ran,
+  and a `.divided` rule with a hole in the middle where the grid gap was. The
+  `content` was right; a border did exist. **Screenshot the page.**
+- **Questions nobody asked.** The demo app found eight shipped bugs in an
+  afternoon against a green suite of 165. A suite only ever asks what you
+  already thought to ask; a consumer asks what it actually needs.
+
+It cannot tell you the vocabulary is right. Only a real consumer can.
+
+**Where it is easy to go wrong:**
+
+- **Treating this as a component framework.** Writing a class that only works on
+  one element and calling it a utility; adding a Treatment only some components
+  honour. Both have happened — see the v0.6 tone work.
+- **Forgetting tones are element-scoped.** `--bg-mix` is `inherits: false`, so a
+  child cannot read its parent's tone. Derive it into a normal property and pass
+  that down — `--row-tint`, `--tab-accent`, `--check-accent` all do this.
+- **`!important` reverses layer order.** An important declaration in the *first*
+  layer beats one in the last. The reduced-motion spinner exception has to live
+  in tokens.css for exactly this reason.
+- **Trusting your own test harness.** Roughly a third of the failures in v0.6
+  were bugs in the assertions, not the CSS — `inline-flex` blockifying to
+  `flex`, `margin: auto` reporting a used px value, every `CSSStyleRule` having a
+  truthy empty `.cssRules`, backslashes collapsing inside template literals.
+  When a result contradicts the spec, suspect the ruler first.
 
 ---
 
@@ -641,7 +901,7 @@ happened; see the v0.6 tone work.
   (card-header → surface-header)
 - **v0.4** — Popovers + Drawers (drawer on `<dialog>` for free focus trap); edge
   variants
-- **v0.4.x** — `.btn.icon`; `.pill.removable` + `.pill-close`; Icons page
+- **v0.4.x** — `.btn.square`; `.pill.removable` + `.pill-close`; Icons page
 - **v0.5** — **rename to FrontierJS CSS**; repositioning (SaaS-first); Principles
   page; Vocabulary page (29 terms); article sweep (View/Alert/Toast/Popover →
   `<article>`); Block tier (bars/lists/feed/disclosure + 7 Patterns pages);
@@ -675,6 +935,190 @@ happened; see the v0.6 tone work.
   taxonomy plus the scoped-modifier fourth group, which gives the namespacing
   question a principle instead of case-by-case judgment, and gives "is this
   class right?" a test: does it compose the way its kind is supposed to.
+- **v0.6 tooltips** — the last contract-only term. `.tooltip` +
+  `.tooltip-anchor`, joined to the chip lineage in one edit so the bubble gets
+  auto-contrast. Revealed on `:hover` **and** `:focus-within`, so a keyboard
+  user gets it by tabbing; kept at `opacity: 0` rather than `display: none` so
+  `aria-describedby` still resolves; `[hidden]` restated so it beats hover.
+  **All 29 vocabulary terms now ship CSS.**
+- **v0.6 forms** — `.switch` (a real checkbox with `role="switch"`; the knob is
+  a background gradient rather than a pseudo-element, since pseudo-elements on
+  replaced elements are not guaranteed by spec), `.field-row` + `.field-addon`
+  for attached prefixes/suffixes/buttons, and `:user-invalid` driving the tone
+  with **no JavaScript and no class to toggle**. `.field-check` now derives
+  `--check-accent` so a tone on the label reaches the input — `--bg-mix` is
+  element-scoped and could not cross that boundary on its own.
+- **v0.6 nav** — `.breadcrumb`, `.pagination` / `.page`, and `.navlist` /
+  `.navlink` for the sidebar. All three take their current item from
+  `[aria-current="page"]`. `.page` joined the chip lineage — one edit — so the
+  current page gets the auto-contrast fill machinery for free. The breadcrumb
+  separator uses the `content: "/" / ""` alt-text form so screen readers do
+  not read "slash" between every crumb. `.navlink` is the answer to the
+  `.items.menu` problem flagged in the v0.6 audit: it goes on a real `<a>`,
+  so it is focusable and announced, where `.items.menu .item` styles a
+  non-focusable `<li>` to look clickable. lists.css now says so.
+- **v0.6 tabs** — `.tabs` / `.tablist` / `.tab` (+ `.pills`, `.stretch`),
+  reusing the existing View term as the panel. **Selected state is keyed off
+  `[aria-selected="true"]`, not a class**, so the visual and announced states
+  cannot diverge — verified by a test asserting that a `.active` class fails to
+  fake selection. Tone travels from `.tablist` via an inheriting
+  `--tab-accent`, since `--bg-mix` is element-scoped. Keyboard behavior
+  (roving tabindex, arrows, Home/End) stays the app's job per Principle 6 and
+  is documented in the file header.
+- **v0.6 tiles + feedback** — **Tile** ships (tiles.css), added to the surface
+  `:where()` list as a single edit — the cost that list is supposed to have,
+  and was five edits before v0.6. `.tiles` is an auto-fit grid, so the column
+  count responds without a media query. Added **feedback.css**: `.spinner`,
+  `.progress` (on native `<progress>`, so the value is announced for free),
+  `.skeleton`, `.empty`, plus `.btn.loading`. The reduced-motion guard needed
+  an exception for spinners — see the `!important` note above.
+- **v0.6 frame** — shipped the **Frame and Page tiers** (frame.css), closing
+  eleven of the twenty-nine vocabulary terms: App, Shell, Topbar, Sidebar,
+  Screen, Pane, View. Shell is a two-row grid with `.sidebar-first` and
+  `.fixed` variants; the sidebar collapses below md, where its contents belong
+  in a `<dialog class="drawer">`. Only Tile and Tooltip remain contract-only.
+- **v0.10** — **demo.css reviewed; four gaps promoted into core.** The demo's
+  stylesheet is a measurement — every rule in it is something a consumer has to
+  hand-write — so it got read line by line and each item ruled in or out. It
+  went from four items to **one**.
+
+  **Icon sizing moved in, and deleted code doing it.** The rule was already in
+  the package three times — buttons.css, pills.css, feedback.css — hand-copied
+  with three different sizes (1.15em / 0.85em / 1em), two property spellings
+  (`width` vs `inline-size`), and feedback.css missing the
+  `[class*=" i-heroicons"]` branch, so a multi-class icon silently had no size
+  there. The four-focus-recipes pattern in miniature. Now one rule in
+  `icon.css`, sized by `--icon-size`, covering the components the package owns
+  plus a real `.icon` class for anywhere else. **The Icon vocabulary term
+  shipped no CSS before this**, so "every term ships CSS" had been false.
+
+  **BREAKING: `.btn.icon` → `.btn.square`.** `.icon` now means "this element IS
+  an icon"; one class cannot also mean "a button shaped to hold one", or
+  `<button class="btn icon">` sizes the button itself to 1.15em. Note the
+  breakage is *quiet*: with border-box a width under padding+border clamps, so
+  a stale `.btn.icon` floors at 30x30 and looks approximately right while
+  having lost its aspect-ratio and padding. PROJECT_STATE had listed `.icon` as
+  one of the four "actual problem" scoped modifiers; this resolves one of them.
+
+  **A text size scale**, `.text-xs` … `.text-xl`. Principle 3 has always said
+  "visual size via utility classes" and `.h1`–`.h6` were half of it; the demo
+  hand-wrote `font-size: .8125rem` fourteen times before anyone noticed. Size
+  and color are separate axes and chain.
+
+  **`--field-inline-size`** so a toolbar `<select>` can stop being 100% wide,
+  and **`.sidebar-toggle`** in frame.css — the frame collapses the sidebar
+  below md and hands its contents to a drawer, so the frame owes you the
+  control that opens it. Deliberately one class for one contract, not a general
+  `.md-up`/`.md-down` matrix.
+
+  **One item was withdrawn.** Five `margin-block-start: 1rem` overrides looked
+  like a spacing gap and were not: they were sibling blocks in containers the
+  demo had forgotten to make `.stack`s. Wrapping them removed all five. The
+  measurement is only worth something if you check that what it measured is
+  real.
+- **v0.9** — **the first consumer, and what it cost.** `demo/` is a five-route
+  SaaS admin (`bun run demo`) that imports the real `index.css` — Dashboard,
+  Invoices, Invoice detail, Customers, Settings, plus `demo.js` implementing
+  the behavior contracts the file headers describe (tabs both orientations,
+  dialogs, drawers, toasts, routing) in plain JS with no framework.
+
+  It found **eight shipped bugs in an afternoon**, none of which 165 passing
+  assertions had caught, because a suite only asks what you thought to ask.
+  Five are fixed with regression tests:
+
+  **Every closed `<dialog>` rendered as though open** — the UA's
+  `dialog:not([open]) { display: none }` loses to any *author* `display`, and
+  the surface base sets `display: block` on `.dialog` and `.drawer`. frame.css
+  documents this exact trap for `.view[hidden]`; it was never carried across.
+  **`.btn.ghost` and `.btn.raised` were silent no-ops** — Treatments that only
+  surface.css honoured, so a toolbar of ghost buttons rendered solid blue; the
+  same failure the v0.6 tone work fixed for tones. **The `.switch` was squashed
+  into a checkbox** by `.field-check input` at (0,1,1) beating `.switch` at
+  (0,1,0) — inside the markup form-core.css itself documents. **A tone on a
+  `.field-check` never reached the switch track.** **The skip link painted a
+  `--shadow-lg` smear across the top of every page**, because a transform moves
+  the box off-screen but not what it casts.
+
+  Three are left standing as gaps, written up in `demo/README.md`: **icons have
+  no size outside a `.btn`** (the biggest one — every consumer hits it
+  immediately), **no responsive visibility utilities**, and **`.field` is always
+  `width: 100%`**.
+
+  What did *not* go wrong is the other half of the result: `demo.css` is one
+  media query and two sizing rules. Everything else came out of the package
+  as-is, and the form-validation contract cost **zero lines** —
+  `.field:user-invalid` is the entire implementation.
+
+  One vocabulary gap surfaced: there is **no term for a route**. Pane is a
+  labelled subdivision, View is a tab panel; neither is "the page you navigated
+  to". The demo used bare `<div data-route>` rather than invent one.
+- **v0.8** — **the SaaS gap list, shipped.** Six new vocabulary terms, each
+  with CSS and tests: **Steps** (`.steps`/`.step` + marker/label/hint, current
+  from `aria-current="step"`, `.complete`, `.vertical`), **Avatar**
+  (`.avatar` + the overlapping `.avatars` group), **Facts** (a `<dl>` of
+  label/value pairs, `.divided`, stacking below sm), **Kbd**, **Code**
+  (inline + `<pre class="code">`) and **Divider** (`<hr>`). Plus
+  `.tabs.vertical`. Vocabulary 29 → 35.
+
+  Two things are worth carrying forward. **`.avatar` and `.step-marker` joined
+  the chip lineage** rather than getting their own background rules — the
+  one-line edit that list is designed to cost. steps.css first derived contrast
+  by hand and produced **14 AA failures**, because picking white-or-black text
+  is only half the job and the fill has to be luminance-capped too; the base
+  already knew that. **Facts has no Anatomy classes** — `<dt>` and `<dd>`
+  already name those positions, so adding `.fact-label` would be minimal-DOM
+  violated for nothing.
+
+  **Two bugs got through the test suite and were caught only by rendering the
+  page and looking at it.** A `counter-increment` on `.step-marker::before`
+  never runs when the marker has its own content — `content: none` means no
+  pseudo-element — so one hand-written checkmark renumbered every step after
+  it: ✓, 1, 2. And a border cannot span a grid gap, so `.facts.divided` drew
+  its rule as two segments with a hole between the columns. Every assertion
+  involved passed the whole time: the `content` was right, and a border did
+  exist. It just had a hole in it. Both have regression tests now, but the
+  general lesson is the one to keep — **computed-style tests cannot see
+  composition.** Screenshot the page.
+
+  Two more traps, both silent: `min(max-content, 40%)` is
+  invalid (min() takes `<length-percentage>`, `max-content` is not one), so the
+  whole `grid-template-columns` declaration was dropped and the Facts grid
+  quietly collapsed to one column — `fit-content(40%)` is the track function
+  that means what was intended. And a `<dd>` carries 40px of UA
+  `margin-inline-start`, which inside a grid does not indent but shoves the
+  entire value column sideways.
+- **v0.7** — **the invariants became testable, and three of them were false.**
+  Checked in `test/` — 141 assertions in headless Chrome against real computed
+  styles, no dependencies (the page computes its own results; `--dump-dom`
+  carries them back). `meta.spec.js` tests the harness, because a third of the
+  v0.6 failures were bugs in the assertions.
+
+  The two known defects are fixed. **Focus rings** collapsed from four recipes
+  into one `focus.css`, in the last cascade layer so a component cannot switch
+  the ring off by accident — which is precisely what had been happening:
+  `.btn.outlined` and `.btn.link` had **no focus indicator at all**, because
+  `.btn.outlined { box-shadow: none }` and `.btn:focus-visible { box-shadow:
+  <ring> }` are both (0,2,0) in the same layer and the variant was declared
+  later. Focusing a plain `.btn` also erased its resting `--shadow-sm` for the
+  same reason. **`.table.striped`** no longer out-specifies row tones: stripe,
+  hover and tone compose through `--row-base` instead of fighting over
+  `background`, so a tone survives a stripe and the stripe still shows through
+  beneath it.
+
+  Writing the tests turned up two more. **No theme's focus ring was ever its
+  own color** — `--ring: var(--color-primary)` in `:root` is the alias-token
+  trap already documented for `--badge-radius`, resolving once against `:root`
+  and inheriting past every `.theme-*`. Fixed the same way, and the rule is now
+  general: an alias token in `:root` is always wrong. And **`--ink-mute` failed
+  WCAG AA** — 3.62:1 on `--surface`, 3.32:1 on `--surface-sunken`, in all five
+  light themes, since v0.1. That is placeholder text, table headers, field
+  hints and nav labels at 11–13px. Both `--ink-mute` values were rescaled
+  uniformly in linear RGB — the same operation chip.css uses to cap a fill, so
+  chromaticity is exact and it is the identical grey, only dark enough to read.
+
+  `--ring-width` went 3px → 2px: it only ever reached the three translucent
+  box-shadow halos, which needed the spread; a solid ring does not, and 2px is
+  what every v0.6 ring had already hardcoded.
 - **v0.6 responsive + a11y** — the package previously contained **one media
   query in total** (the reduced-motion guard). Added a documented breakpoint
   scale, `.container` (+ `.narrow` / `.wide`) with gutters that step at 768 and

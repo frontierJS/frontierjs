@@ -304,7 +304,14 @@ function generateVirtualSierra(config, manifestOutput, sierraConfigPath, sierraC
   if (sierraContext?.schemaDefs && Object.keys(sierraContext.schemaDefs).length > 0) {
     lines.push(`// ── Model schemas (generated from ${sierraContext.schemaPath ?? 'schema.lite'}) ──`)
     lines.push(`import { registerSchemas } from '@frontierjs/sierra/junction'`)
-    lines.push(`registerSchemas(${JSON.stringify(sierraContext.schemaDefs)})`)
+    // The whole $defs table goes over, plus which of its entries are models.
+    // The table is what `$ref` points into (enum fields are emitted as
+    // {"$ref":"#/$defs/Plan"}), and the model list is what keeps an enum from
+    // being addressable as a resource.
+    lines.push(
+      `registerSchemas(${JSON.stringify(sierraContext.schemaDefs)}, ` +
+      `${JSON.stringify(sierraContext.schemaModels ?? null)})`
+    )
     lines.push(``)
   }
 

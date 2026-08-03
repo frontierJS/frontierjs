@@ -616,3 +616,65 @@ describe('authPrefix', () => {
     restore()
   })
 })
+
+// ─── config.http.cors installs the middleware ─────────────────────────────────
+// This config key was inert: typed in config/index.ts, given a documented
+// default ("must be set explicitly — '*' never applied by default"), and even
+// merged from junction.config.js's middleware.cors by loadConfig — but never
+// read back out. Setting it produced no header and a 404 preflight, so every
+// browser app had to know to call app.configure(cors({...})) by hand. In a
+// browser the symptom is an opaque "TypeError: Failed to fetch".
+
+describe('config.http.cors', () => {
+
+  async function appWith(cors?: unknown) {
+    const { createTestApp } = await import('../src/testing/index.ts')
+    const { createService } = await import('../src/core/service.ts')
+    return createTestApp({
+      config: cors ? { http: { cors } } : {},
+      services: [() => createService({ name: 'items', find: async () => [] })],
+    } as never)
+  }
+
+  const hdr = async (app: never, method: 'get' | 'options', origin = 'https://app.test') => {
+    const { request } = await import('../src/testing/index.ts')
+    const res = await request(app as never)[method]('/items')
+      .set('Origin', origin)
+      .set('Access-Control-Request-Method', 'GET')
+    return res
+  }
+
+  it('sends Access-Control-Allow-Origin for a configured origin', async () => {
+    const res = await hdr(await appWith({ origins: ['https://app.test'] }) as never, 'get')
+    expect(res.headers['access-control-allow-origin']).toBe('https://app.test')
+  })
+
+  it('answers the preflight instead of 404ing it', async () => {
+    const res = await hdr(await appWith({ origins: ['https://app.test'] }) as never, 'options')
+    expect(res.status).toBe(204)
+    expect(res.headers['access-control-allow-methods']).toContain('GET')
+  })
+
+  it('honours methods/headers overrides from config', async () => {
+    const app = await appWith({ origins: ['https://app.test'], methods: ['GET'], headers: ['X-Custom'] })
+    const res = await hdr(app as never, 'options')
+    expect(res.headers['access-control-allow-methods']).toBe('GET')
+    expect(res.headers['access-control-allow-headers']).toBe('X-Custom')
+  })
+
+  it('installs nothing when cors is absent — the secure default', async () => {
+    const res = await hdr(await appWith() as never, 'get')
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
+  })
+
+  it('installs nothing for an empty origins list', async () => {
+    const app = await appWith({ origins: [] })
+    expect((await hdr(app as never, 'get')).headers['access-control-allow-origin']).toBeUndefined()
+    expect((await hdr(app as never, 'options')).status).toBe(404)
+  })
+
+  it('does not echo an origin that is not allowed', async () => {
+    const res = await hdr(await appWith({ origins: ['https://app.test'] }) as never, 'get', 'https://evil.test')
+    expect(res.headers['access-control-allow-origin']).not.toBe('https://evil.test')
+  })
+})

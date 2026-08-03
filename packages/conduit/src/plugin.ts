@@ -22,29 +22,62 @@ import type { ConduitOptions, IConduit, TargetDescriptor } from './types.ts'
 // ─── App augmentation ────────────────────────────────────────
 // Adds app.conduit to Junction's App type across the entire project.
 
-// Optional: this augmentation applies to every App in a project that has
-// the package installed, including apps that never call configure(conduit()).
-// A non-optional type would claim app.conduit exists where it is undefined.
+// Augments Junction's `AppConduit` — the interface `App.conduit` points at —
+// rather than redeclaring `App.conduit` itself.
+//
+// Redeclaring the property does not work: declaration merging requires every
+// declaration of a property to have an identical type, and Junction already
+// declares `conduit?: AppConduit` so its own email plugin can read the field
+// without depending on this package. Two conflicting declarations mean the
+// augmentation loses and `app.conduit` resolves to `{}` at every call site.
+//
+// `App.conduit` stays optional on Junction's side, so an app that installs
+// this package but never calls configure(conduit()) is still typed honestly.
 declare module '@frontierjs/junction' {
-  interface App {
-    conduit?: IConduit
-  }
+  interface AppConduit extends IConduit {}
 }
 
 // ─── Plugin factory ──────────────────────────────────────────
 
 export function conduit(opts: ConduitOptions = {}): Plugin {
-  // Create the instance at factory time so register() can attach it
-  // synchronously — boot() will call init() when the app starts.
-  const instance = createConduit(opts)
+  // One conduit PER APP, created in register().
+  //
+  // This used to be created here, at factory time, so a single plugin object
+  // configured on two apps gave both the same conduit — and the second
+  // register() overwrote the first's app.conduit. boot() worked around that by
+  // closing over `instance` rather than reading app.conduit, which made
+  // shutdown of one app destroy the other's conduit. The type never said any
+  // of this; only a comment did.
+  //
+  // Creating per app makes reuse actually correct, and lets the lifecycle
+  // hooks read the instance off the app they were handed. register() stays
+  // synchronous, which is what the factory-time instance was protecting.
+  const instances = new WeakMap<App, IConduit>()
+
+  const conduitFor = (app: App, phase: string): IConduit => {
+    const instance = instances.get(app)
+    if (!instance) {
+      throw new Error(
+        `[conduit] ${phase}() ran for an app that never had register() called. ` +
+        `Configure the plugin with app.configure(conduit(...)) before starting.`
+      )
+    }
+    return instance
+  }
 
   return {
     name: 'conduit',
 
     // register() runs at configure() time — synchronous setup only.
-    // Attaches app.conduit, wires metrics, and registers management service.
+    // Creates this app's conduit, attaches it, wires metrics, and registers
+    // the management service.
     register(app: App): void {
-      app.conduit = instance
+      const instance = createConduit(opts)
+      instances.set(app, instance)
+
+      // provide() rather than `app.conduit = instance`: a second plugin
+      // claiming the same name used to win silently and leave this one dead.
+      app.provide('conduit', instance)
 
       // Wire into Junction's /metrics endpoint
       if (app._metricsProviders instanceof Map) {
@@ -58,13 +91,8 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
 
     // boot() runs during app.start() — safe to do async work here.
     // Initialises the store and loads any static targets from opts.targets.
-    //
-    // Uses `instance`, not app.conduit: if this plugin object is reused
-    // across two apps the second register() overwrites the first's app.conduit
-    // reference, and booting through the app would initialise whichever
-    // instance was attached last.
-    async boot(_app: App): Promise<void> {
-      await instance.init()
+    async boot(app: App): Promise<void> {
+      await conduitFor(app, 'boot').init()
     },
 
     // ready() fires after the server is listening.
@@ -73,8 +101,9 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
     ready(_app: App): void {},
 
     // shutdown() runs during app.stop() — close open WS connections cleanly.
-    async shutdown(_app: App): Promise<void> {
-      await instance.destroy()
+    // Destroys THIS app's conduit, so stopping one app cannot tear down another's.
+    async shutdown(app: App): Promise<void> {
+      await conduitFor(app, 'shutdown').destroy()
     },
   }
 }
@@ -90,26 +119,54 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
 //   get    → GET    {apiPrefix}/<path>/:id   — resolve a single target
 //   remove → DELETE {apiPrefix}/<path>/:id   — deregister a target by ID
 //
-// Disabled by default. Enable with: conduit({ management: true })
-// or conduit({ management: { path: 'conduit/targets' } })
+// <path> must be a single path segment — see the check below.
+//
+// Disabled by default. Enabling it requires saying who may reach it:
+//
+//   conduit({ management: { hooks: { before: { all: [authenticate()] } } } })
+//   conduit({ management: { public: true } })          // deliberate, documented
 //
 // Descriptors returned here carry credential *refs* only — the secret
 // material lives behind the CredentialResolver and is never loaded into
-// a descriptor. These routes are still unauthenticated unless the app
-// installs auth, app-wide via app.hooks({ before: { all: [authenticate] } })
-// or per-service. Requiring an explicit hook here is tracked separately.
+// a descriptor. But these routes still enumerate every target in the
+// system and can deregister them, so "forgot to add the hook" must not be
+// a silently reachable state.
 
 function registerManagementService(
   app:        App,
   instance:   IConduit,
   management: NonNullable<ConduitOptions['management']>
 ): void {
-  const name = (typeof management === 'object' && management.path)
-    ? management.path
-    : 'conduit/targets'
+  const name = management.path ?? 'conduit-targets'
+
+  // Structural problems first — a path that can never route is worth
+  // reporting before a policy decision that only matters once it can.
+  //
+  // Junction registers service routes as `{apiPrefix}/{service}`, and
+  // `{service}` matches exactly one path segment. A name containing a slash
+  // registers fine and then never routes — every request 404s with no
+  // indication why. Fail at configure() instead, where the stack points at
+  // the call site.
+  if (name.includes('/')) {
+    throw new Error(
+      `[conduit] management path '${name}' contains a '/'. Junction service ` +
+      `names are a single path segment — use '${name.replace(/\//g, '-')}' instead.`
+    )
+  }
+
+  // Fail closed, loudly, at configure() — rather than serving an open endpoint.
+  if (!management.hooks && !management.public) {
+    throw new Error(
+      `[conduit] management routes need an access decision. Either attach auth:\n` +
+      `  conduit({ management: { hooks: { before: { all: [authenticate()] } } } })\n` +
+      `or opt out explicitly if your app already authenticates every service:\n` +
+      `  conduit({ management: { public: true } })`
+    )
+  }
 
   app.services.register(createService({
     name,
+    ...(management.hooks ? { hooks: management.hooks as never } : {}),
 
     async find(_ctx) {
       return instance.list()

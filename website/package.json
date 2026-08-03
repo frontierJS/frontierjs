@@ -1,0 +1,13 @@
+{
+  "name": "@frontierjs/website",
+  "version": "0.1.0",
+  "private": true,
+  "description": "frontierjs.dev — the public site. One page, no build step for authoring; build only vendors the design system.",
+  "type": "module",
+  "scripts": {
+    "dev": "bun serve.js",
+    "build": "bun build.js",
+    "preview": "bun serve.js --dist",
+    "clean": "rm -rf dist"
+  }
+}

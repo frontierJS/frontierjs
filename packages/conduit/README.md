@@ -98,10 +98,36 @@ Auth is declared on the target and applied automatically on every request. Calle
 |-----------|-----------|
 | `bearer`  | Adds `Authorization: Bearer <secret>` |
 | `api_key` | Adds a custom header: `{ header: 'X-Api-Key', ref: 'STRIPE_KEY' }` |
-| `hmac`    | Signs the request body with HMAC-SHA256. Sets `X-Hub-Signature: sha256=<hex>`. Only applied to requests with a body — GET requests are not signed. |
+| `hmac`    | Signs a canonical string with HMAC-SHA256 — see below |
 | `none`    | No auth headers added |
 
-> **Not yet implemented on every protocol.** Auth is applied by the HTTP transport only. The WebSocket and Unix transports currently send unauthenticated traffic regardless of what the target declares. Do not rely on a target's `auth` for anything reached over `websocket` or `unix`.
+Applied on **every** protocol: HTTP and Unix on each request, WebSocket on the connection upgrade.
+
+#### HMAC signing
+
+The signature covers a canonical string, not just the body:
+
+```
+<METHOD>\n<path>\n<timestamp>\n<nonce>\n<sha256-hex of body>
+```
+
+emitted as three headers (prefix configurable via `header_prefix`, default `X-Hub`):
+
+```
+X-Hub-Signature: sha256=<hex>
+X-Hub-Timestamp: <unix seconds>
+X-Hub-Nonce:     <uuid>
+```
+
+This binds each signature to one method and one path, so a captured signature cannot be replayed against a different endpoint on the same target, and the timestamp and nonce let the receiver reject stale or repeated requests. Requests with no body sign the hash of the empty string, so `POST /reboot` and `DELETE /servers/42` are signed like anything else.
+
+**The receiving agent must do its part:** recompute the same canonical string, compare in constant time, reject signatures outside a freshness window (60s is typical), and remember recent nonces. A signature check that ignores the timestamp gives you no replay protection.
+
+#### WebSocket auth
+
+Credentials go on the **upgrade request**, using Bun's `headers` option on the `WebSocket` constructor. For an `hmac` target the upgrade is signed with method `CONNECT` and the address path.
+
+This authenticates the *connection*. There is no per-frame signature — anything able to write to an established socket can issue any command on it. If you need per-command authentication, terminate the socket per operation or add frame signing on both ends.
 
 ### Credentials
 
@@ -172,13 +198,19 @@ This holds for bad input too: a body that will not serialise (a cyclic object, a
 |---|---|---|
 | `target_not_found` | no | no target registered under that ID |
 | `auth_failed` | no | 401/403 from the target, or a credential ref that would not resolve |
-| `invalid_request` | no | body would not serialise, or the response exceeded `max_response_bytes` |
+| `invalid_request` | no | body would not serialise, response exceeded `max_response_bytes`, or the method is not a valid HTTP verb |
 | `timeout` | yes | exceeded `timeout_ms`, including during the response body read |
 | `connection_failed` | yes | could not reach the target, or the conduit has been destroyed |
 | `server_error` | 5xx and 429 yes, 4xx no | the target responded with an error status |
 | `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`) |
+| `circuit_open` | no | the target's breaker is open — nothing was sent |
+| `overloaded` | no | the target's concurrency cap is full — nothing was sent |
 
-`stream()` throws a `ConduitStreamError` if the stream cannot be established — target not found, or the connection failed before the first chunk. Once streaming, chunks arrive as `AsyncIterable<ConduitChunk>`.
+`stream()` throws a `ConduitStreamError` if the stream cannot be established — target not found, connection failed before the first chunk, unresolvable credential, or a protocol that cannot stream. Once streaming, chunks arrive as `AsyncIterable<ConduitChunk>`.
+
+It also throws if the socket **drops mid-stream**, so a network blip during a log tail terminates the consumer instead of blocking it forever. Chunks already yielded are yours to keep; wrap the `for await` in a `try/catch` to distinguish "the log ended" from "the connection died".
+
+Only `websocket` targets can stream. `http` and `unix` throw `not_implemented` rather than yielding an empty iterator — "this protocol cannot stream" must not look like "there was no output".
 
 ---
 
@@ -203,6 +235,67 @@ const result = await app.conduit.send<ServerResponse>({
 **Auth headers take precedence over `headers`.** A caller cannot override or strip the target's credential, so a code path where user data reaches `req.headers` cannot become credential substitution.
 
 `query` merges with any query string already on `path`, and array values produce repeated keys. For GET requests a plain `body` is still flattened into the query string as a shorthand; `query` is applied after and wins on conflict.
+
+#### Retries
+
+`GET`, `HEAD`, `OPTIONS`, `PUT` and `DELETE` are retried on retryable errors, up to `retry_limit`.
+
+**`POST` and `PATCH` are never retried by default.** A timed-out `POST /servers` may have committed on the target, and re-sending it bills for a second server. The timeout is returned to you and the decision is yours.
+
+Backoff is jittered, so N callers hitting the same degraded provider don't retry in lockstep, and the whole call — every attempt plus every sleep — is capped by `deadline_ms`.
+
+On an HTTP or Unix target, a method that isn't a valid HTTP verb returns `invalid_request` rather than being coerced to `POST`. A typo like `'GTE'` used to become a live write.
+
+#### Load shedding
+
+Retries alone make an outage worse: every call costs `retry_limit + 1` attempts against a dependency that is already struggling, while holding one of your request handlers. A per-target circuit breaker stops that.
+
+```ts
+conduit({
+  resilience: {
+    failure_threshold: 5,       // consecutive failures before opening (0 disables)
+    reset_ms:          30_000,  // how long it stays open
+    max_concurrent:    10,      // per-target in-flight cap (default: unlimited)
+  }
+})
+```
+
+Open → requests fail immediately with `circuit_open` and **nothing leaves the process**. After `reset_ms` exactly one trial request is admitted; success closes the breaker, failure reopens it for another full window.
+
+Only failures that implicate the target count — `connection_failed`, `timeout`, `server_error`. An unresolvable credential, an unserialisable body or a typo'd method is your bug, and tripping a breaker on it would hide the real error behind `circuit_open` forever.
+
+Beyond `max_concurrent`, requests fail fast with `overloaded` rather than queueing — a bounded queue just moves the pile-up somewhere less visible. Breaker state per target shows up in `stats().breakers`, and only for targets that are not healthy-and-idle.
+
+#### Validating responses
+
+`data` is otherwise an unchecked cast: a provider returning `{"error": "quota exceeded"}` under HTTP 200 flows through as a success.
+
+```ts
+const result = await app.conduit.send<Server>({
+  target: 'provider:hetzner',
+  method: 'GET',
+  path:   '/servers/42',
+  validate: {
+    validate: (data) => isServer(data)
+      ? { ok: true,  value: data }
+      : { ok: false, errors: ['expected a Server'] },
+  },
+})
+```
+
+The interface is structural, not tied to a schema library, so Junction's `createSchema`, zod, valibot or a hand-written predicate all fit with a small adapter. A failure returns a non-retryable `server_error` with the raw payload on `error.raw`.
+
+To opt a specific call in, pass an idempotency key — your assertion that the target collapses duplicates. It is forwarded as an `Idempotency-Key` header:
+
+```ts
+await app.conduit.send({
+  target:          'provider:hetzner',
+  method:          'POST',
+  path:            '/servers',
+  body:            { name: 'web-01' },
+  idempotency_key: 'create-web-01',
+})
+```
 
 ### `app.conduit.stream(req)`
 
@@ -239,7 +332,15 @@ await app.conduit.register({
 
 The agent's secret itself goes wherever your `CredentialResolver` reads from — not into the descriptor.
 
-For heartbeat-only updates (just refreshing `last_seen_at`), use the store's `touch()` directly rather than re-registering the full descriptor.
+### `app.conduit.touch(id)`
+
+The heartbeat path. Refreshes `last_seen_at` without rewriting the descriptor and without evicting the pooled connection — an agent saying "still here" should not tear down the socket it said it on.
+
+```ts
+await app.conduit.touch(`agent:${serverId}`)
+```
+
+Static targets from `opts.targets` keep whatever `last_seen_at` the store already holds across a restart, so rebooting does not wipe heartbeat state.
 
 ### `app.conduit.deregister(id)`
 
@@ -283,9 +384,14 @@ conduit({
   // Can be overridden per-request via req.timeout_ms.
   timeout_ms?: number
 
-  // HTTP retry limit on retryable errors (5xx, timeout, connection failure).
+  // Retry limit on retryable errors (5xx, 429, timeout, connection failure).
   // Default: 3. Set to 0 to disable retries.
+  // Only applies to idempotent methods — see Retries below.
   retry_limit?: number
+
+  // Total wall-clock budget for one send(), across every attempt and every
+  // backoff sleep. Default: 45_000.
+  deadline_ms?: number
 
   // Hard cap on a response body, in bytes. Default: 10 MiB.
   // Reading stops at the cap and the request fails with `invalid_request`
@@ -294,6 +400,13 @@ conduit({
 
   // Lifecycle hooks for observability and debugging.
   hooks?: ConduitHooks
+
+  // Per-target circuit breaker and concurrency cap. See Load shedding.
+  resilience?: ResilienceOptions
+
+  // Returns headers to attach to every outbound request.
+  // See createTraceContext() below.
+  trace?: (req: ConduitRequest) => Record<string, string> | null
 
   // Expose a management service for listing and deregistering targets.
   // Disabled by default. Requires auth.
@@ -364,6 +477,16 @@ conduit({
     },
     onError(req, err) {
       // Fires on any error — target_not_found, timeout, auth_failed, etc.
+      // Also fires when a stream fails to establish or drops mid-flight.
+    },
+    onRetry(req, err, attempt) {
+      // Fires once per retried attempt, before the backoff sleep.
+      // `attempt` is 1-based. Retries happen inside the transport, so
+      // this is the only place they are visible.
+    },
+    onStreamStart(req) {},
+    onStreamEnd(req, chunks) {
+      // `chunks` is how many were yielded before the stream ended cleanly
     },
     onReconnect(targetId) {
       // Fires when a WebSocket transport attempts reconnection
@@ -378,32 +501,70 @@ conduit({
 })
 ```
 
+Hooks may be `async`. They are **never awaited** — an exporter that takes 200 ms does not add 200 ms to your request — and a throw or rejection is caught and logged rather than failing the caller.
+
+### Trace context
+
+Nothing otherwise ties a Hub request to the agent call it produced. `createTraceContext()` emits a W3C `traceparent` and a correlation id on every outbound request:
+
+```ts
+import { createTraceContext } from '@frontierjs/conduit'
+
+conduit({
+  trace: createTraceContext({
+    // Join the inbound request's trace instead of starting a new one.
+    // Junction exposes a correlation id via requestMeta().
+    current: () => ({ trace_id: requestMeta()?.correlationId }),
+  }),
+})
+```
+
+A fresh span id is minted per call, so the target's work hangs off yours rather than replacing it. A malformed upstream trace id is discarded and replaced rather than propagated — collectors drop a bad `traceparent`, so passing one through loses the span entirely.
+
+Precedence: trace headers sit under `req.headers`, which sit under auth. A caller can override a traceparent; nobody can displace a credential.
+
 ---
 
 ## Management service
 
-When `management: true` is set, Conduit registers a Junction service at `conduit/targets` that exposes:
+Conduit can register a Junction service named `conduit-targets` that exposes:
 
-- `find` → list all registered targets
-- `get` → look up a single target by ID
-- `remove` → deregister a target
+| method | route | |
+|---|---|---|
+| `find` | `GET {apiPrefix}/conduit-targets` | list all registered targets |
+| `get` | `GET {apiPrefix}/conduit-targets/:id` | look up a single target by ID |
+| `remove` | `DELETE {apiPrefix}/conduit-targets/:id` | deregister a target |
 
-The service goes through Junction's full hook pipeline — attach auth hooks to protect it:
+Junction's `apiPrefix` defaults to `''`, so out of the box these sit at `/conduit-targets`.
+
+Responses carry credential **refs**, never secret material — see [Credentials](#credentials).
+
+**Enabling it requires an access decision.** These routes enumerate every target in the system and can deregister them, so "forgot to add the hook" is not a reachable state — `conduit({ management: {} })` throws at `configure()`.
+
+Attach auth to the service:
 
 ```ts
-conduit({ management: true })
-
-// In your app hooks:
-app.service('conduit/targets').hooks({
-  before: { all: [authenticate()] }
+conduit({
+  management: { hooks: { before: { all: [authenticate()] } } }
 })
 ```
+
+…or opt out explicitly, if your app already authenticates every service:
+
+```ts
+app.hooks({ before: { all: [authenticate()] } })   // covers this service too
+conduit({ management: { public: true } })
+```
+
+`public: true` is exactly as open as it sounds. It exists so that serving these routes unauthenticated is something you typed, not something you forgot.
 
 Use a custom path if needed:
 
 ```ts
-conduit({ management: { path: 'ops/conduit-targets' } })
+conduit({ management: { path: 'ops-conduit-targets', public: true } })
 ```
+
+The path must be a **single path segment** — Junction routes services as `{apiPrefix}/{service}` and `{service}` matches one segment. A path containing `/` throws at `configure()` rather than registering a service that silently 404s on every request.
 
 ---
 
@@ -414,7 +575,7 @@ Use `createTestConduit` for unit and integration tests. It gives you a fully wir
 ```ts
 import { createTestConduit } from '@frontierjs/conduit/testing'
 
-const { conduit, stubs } = createTestConduit({
+const { conduit, stubs } = await createTestConduit({
   'agent:srv-abc': {
     '/pull':         { ok: true },
     '/deploy':       { deployed: true },
@@ -437,12 +598,38 @@ expect(stubs['agent:srv-abc'].calls[1].path).toBe('/deploy')
 stubs['agent:srv-abc'].reset()
 ```
 
+It is `await`ed because the store is async. Stubbed targets are registered in the store as well as intercepted, so `resolve()`, `list()` and `stats()` see them — code that calls `send()` alongside `resolve()` is testable in one place.
+
+### Simulating failure
+
+Stubs are not success-only. This is what makes retry logic, the error taxonomy and timeout handling testable:
+
+```ts
+const stub = stubs['agent:srv-abc']
+
+stub.mockError('POST /deploy', 'timeout', { retryable: true })
+stub.mock('/slow', { ok: true }, { delay_ms: 500 })     // exercise timeouts
+stub.mockStream('/logs', ['line-1', 'line-2'])          // stream chunks
+stub.mockDefaultError('target_not_found')               // fail unexpected calls loudly
+```
+
+Mocks are keyed on **method + path** when you qualify them, so `GET /servers/42` and `DELETE /servers/42` are different mocks. A bare path (`'/health'`) still matches any method, and a method-qualified entry wins over a bare one.
+
+### Mixing stubs with real targets
+
+```ts
+const { conduit } = await createTestConduit(
+  { 'agent:stubbed': { '/ping': { pong: true } } },
+  { targets: [hetznerDescriptor] },   // registered, not stubbed
+)
+```
+
 Hooks work in tests too:
 
 ```ts
 const errors: ConduitError[] = []
 
-const { conduit } = createTestConduit(
+const { conduit } = await createTestConduit(
   { 'agent:srv-abc': {} },
   { hooks: { onError: (_req, err) => errors.push(err) } }
 )
@@ -464,22 +651,29 @@ const { conduit } = createTestConduit(
 
 ```
 @frontierjs/conduit
-├── conduit/
-│   ├── index.ts               public exports
+├── package.json
+├── README.md
+├── LICENSE
+├── src/
+│   ├── index.ts               public exports (no test doubles, no bun:sqlite)
 │   ├── types.ts               all types and interfaces
-│   ├── conduit.ts             createConduit() core factory
+│   ├── conduit.ts             createConduit() core factory + counters
 │   ├── plugin.ts              Junction plugin (app.configure)
 │   ├── router.ts              target ID → transport resolution + pool
+│   ├── credentials.ts         CredentialResolver implementations
+│   ├── resilience.ts          per-target circuit breaker + concurrency gate
+│   ├── trace.ts               W3C traceparent propagation
 │   ├── testing.ts             createTestConduit() test factory
 │   ├── stores/
 │   │   ├── memory.ts          in-memory ConduitStore (default)
 │   │   └── sqlite.ts          SQLite-backed ConduitStore
 │   └── transports/
-│       ├── base.ts            BaseTransport + auth header builder
-│       ├── http.ts            fetch-based HTTP with retry + HMAC
+│       ├── base.ts            BaseTransport + canonical auth signing
+│       ├── http.ts            fetch-based HTTP with retry + deadline
 │       ├── websocket.ts       persistent WS with reconnect + ping
-│       ├── unix.ts            Bun unix socket transport
-│       ├── stub.ts            test double — records calls, returns mocks
+│       ├── unix.ts            HttpTransport over a unix socket
+│       ├── stub.ts            test double — records calls, mocks responses and failures
 │       └── not_implemented.ts fails clearly for ssh/nats (future)
-└── conduit.test.ts            full test suite
+├── conduit.test.ts            unit + transport suite
+└── junction-integration.test.ts   plugin against a real Junction app
 ```

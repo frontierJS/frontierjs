@@ -69,13 +69,23 @@ interface WrappedStatement<R, P extends BindObject> {
   all(params?: P): R[]
 }
 
+// bun-types declares run/get/all as taking only positional bindings, so a
+// named-parameter object is rejected at compile time even though bun:sqlite
+// accepts it at runtime. Narrow the gap in one place rather than at each call.
+interface NamedBindStatement {
+  run(params: BindObject): { changes: number; lastInsertRowid: number | bigint }
+  get(params: BindObject): unknown
+  all(params?: BindObject): unknown[]
+}
+
 function wrap<R, P extends BindObject>(
   stmt: ReturnType<Database['prepare']>
 ): WrappedStatement<R, P> {
+  const s = stmt as unknown as NamedBindStatement
   return {
-    run: (p) => stmt.run(prefixKeys(p)) as { changes: number; lastInsertRowid: number | bigint },
-    get: (p) => (stmt.get(prefixKeys(p)) as R | null) ?? null,
-    all: (p) => (p ? stmt.all(prefixKeys(p)) : stmt.all()) as R[],
+    run: (p) => s.run(prefixKeys(p)),
+    get: (p) => (s.get(prefixKeys(p)) as R | null) ?? null,
+    all: (p) => (p ? s.all(prefixKeys(p)) : s.all()) as R[],
   }
 }
 

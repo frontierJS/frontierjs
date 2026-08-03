@@ -184,13 +184,77 @@ the line is in front of the developer who has to narrow it.
 *Lives in:* `packages/cli/commands/make/model.md`, `make/scaffold.md`;
 rationale in `publishToChannels()`.
 
+## Design system (`@frontierjs/css`)
+
+**2026-08-02 · An alias token declared in `:root` is always wrong.**
+If token A should follow token B, write the fallback at the *use site* —
+`var(--ring, var(--color-primary))` — and do not declare A at all. The
+`:root` form (`--ring: var(--color-primary)`) looks equivalent and silently
+is not: the `var()` resolves once against `:root`'s own value and the result
+inherits straight past every `.theme-*` override. This has now bitten twice:
+`--badge-radius` (Elite's square buttons kept round badges) and `--ring`
+(**every** focus ring in **every** theme was the default blue). There is no
+case where the `:root` form does what it looks like it does.
+*Lives in:* `packages/css/tokens.css`; tested in `test/specs/focus.spec.js`.
+
+**2026-08-02 · One focus ring, in the last cascade layer.**
+`focus.css` writes the whole recipe once, at `:where()` specificity, in the
+`a11y` layer. Variation goes through `--ring-color` / `--ring-width` /
+`--ring-offset`, never a second recipe. It is in the last layer so a component
+cannot switch the ring off by accident — which is exactly what had happened:
+`.btn.outlined { box-shadow: none }` and the ring's `box-shadow` were the same
+specificity in the same layer, so outlined and link buttons had **no focus
+indicator at all**. A consumer's unlayered CSS still overrides deliberately.
+*Lives in:* `packages/css/focus.css`; `test/specs/focus.spec.js`.
+
+**2026-08-02 · A Treatment class works on every element that reads it, or it is a bug.**
+This was already the rule for the seven tones; it applies equally to
+`.raised` / `.outlined` / `.ghost`. Only `.outlined` was implemented on `.btn`,
+so a toolbar of `.btn.ghost` rendered as solid primary blue. The test for a new
+Treatment consumer is not "does it look right" but "does every value of that
+Treatment do something".
+*Lives in:* `packages/css/buttons.css`; `test/specs/components.spec.js`.
+
+**2026-08-02 · Competing background inputs compose through a variable, not specificity.**
+Stripe, hover and tone all want a say in a table row and only one can own
+`background`. They set `--row-base` and the tone mixes into it, so a tone
+survives a stripe instead of being out-specified by it. Any future "several
+things tint the same surface" follows the same shape.
+*Lives in:* `packages/css/tables.css`; `test/specs/tables.spec.js`.
+
+**2026-08-02 · `.icon` means "this element IS an icon". The icon-only button is `.btn.square`.**
+**Breaking rename**, v0.10. One class cannot mean both, or `<button class="btn
+icon">` sizes the button itself to 1.15em. Icon sizing is one rule in
+`icon.css` — it was previously hand-copied into three files with three
+different sizes and a missing selector branch — covering the components the
+package owns, plus `.icon` for anywhere else, varied by `--icon-size`.
+Note the old markup fails *quietly*: with `border-box` a width under
+padding+border clamps, so a stale `.btn.icon` floors at 30x30 and looks
+roughly right while having lost its `aspect-ratio` and padding.
+*Lives in:* `packages/css/icon.css`, `buttons.css`; `test/specs/core-gaps.spec.js`.
+
+**2026-08-02 · Interactive state is styled from ARIA, never from a class.**
+`[aria-selected]`, `[aria-current]`, `:user-invalid`, `[hidden]`, `[open]`.
+A class lets the visual state and the announced state drift the moment someone
+updates one and forgets the other; keying off the attribute makes that
+divergence unrepresentable. Every affected component has a test asserting that
+adding `.active` / `.current` / `.selected` fails to fake it. The one documented
+exception is a completed Step — there is no ARIA token for "done", so the markup
+owes assistive tech a `.visually-hidden` word.
+*Lives in:* `tabs.css`, `nav.css`, `steps.css`, `form-core.css`.
+
 ## Open (discussed, not yet ruled)
 
 - Junction structural refactor priorities (definition/compiled Service split →
-  single event origin → ~~Envelope module~~ *(ruled 2026-08-02)* → export
-  tiering → middleware/hook naming) — proposed and sequenced in
-  `drift-report.md`, awaiting go.
+  ~~single event origin~~ *(ruled 2026-08-02)* → ~~Envelope module~~
+  *(ruled 2026-08-02)* → export tiering → middleware/hook naming) — proposed and
+  sequenced in `drift-report.md`, awaiting go.
 - Partial success for bulk PATCH and REMOVE — creates only, so far.
+- Litestone `onEvent` still has zero Junction subscribers, so a write that
+  bypasses the service layer (`asSystem()` in a job) announces nothing. Fixing
+  it needs a litestone API addition — `onEvent` is fixed at `createClient` and
+  there is no post-construction subscribe, unlike `$tapQuery(fn)`. Mirroring
+  `$tapQuery`'s shape is the obvious move.
 - Coherence-review vocabulary proposals (Hook/Guard/Observer/Delegate split,
   Provider, Job, Target, Component/Binding, Slice axis, Manifest→Release) —
   argued in `drift-report.md` §synthesis, not yet adopted into `ARCHITECT.md`.

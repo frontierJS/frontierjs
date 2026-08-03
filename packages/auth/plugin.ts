@@ -4,6 +4,12 @@
 // The transport layer. Mounts /auth/* routes onto the Junction app.
 // Calls IAuth — never touches the database directly.
 // Email sending is handled by the onX callbacks in createLitestoneAuth opts.
+//
+// No error→status mapping here. auth.ts throws domain errors carrying a
+// numeric `status` (see errors.ts) and Junction's error boundary reads it, so
+// the mapping is global rather than per-route. This file used to wrap all 8
+// handlers to translate them — which only covered these routes, and left an
+// auth error raised from a SERVICE surfacing as a 500.
 
 import type { IAuth, SessionContext }  from '../junction/index.ts'
 import { parseTtl }                    from '../junction/index.ts'
@@ -207,14 +213,26 @@ function respond(
   cookieMaxAge: number,
   status = 200
 ): Response {
-  if (cookieAuth && (data as any)?.token) {
-    ctx.setCookie?.('session', (data as any).token, {
+  const payload = data as { token?: string } | null
+
+  // Cookie mode puts the token in an httpOnly cookie INSTEAD of the body —
+  // that is what AuthPluginOptions.cookieAuth documents, and the whole point
+  // of httpOnly is that page JavaScript cannot read the token. Returning it
+  // in the body as well handed it straight back, defeating the opt-in.
+  //
+  // Only strip it when the cookie was actually set: if a transport has no
+  // setCookie, stripping would leave the caller with no token at all.
+  if (cookieAuth && payload?.token && typeof ctx.setCookie === 'function') {
+    ctx.setCookie('session', payload.token, {
       httpOnly: true,
       sameSite: 'lax',
       secure:   process.env.NODE_ENV === 'production',
       maxAge:   cookieMaxAge,
     })
+    const { token: _token, ...withoutToken } = payload
+    return ctx.json(withoutToken, status)
   }
+
   return ctx.json(data, status)
 }
 

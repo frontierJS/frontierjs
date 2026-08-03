@@ -19,7 +19,7 @@ import { tmpdir } from 'os'
 
 import { resolveSchemaPath, generateSchemas } from '../src/build/schema-plugin.js'
 import {
-  registerSchemas, schemaFor, allSchemas, hasSchemas,
+  registerSchemas, schemaFor, allSchemas, allDefs, hasSchemas, resolveRef,
 } from '../src/junction/schema-registry.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -40,6 +40,29 @@ model Lead {
 model Category {
   id   Int    @id
   name String
+}
+`
+
+// Enums, relations and $ref-bearing fields — the parts of a real schema that
+// used to be mishandled between the generator and make().
+const RICH_SCHEMA = `
+database main { path env("DATABASE_URL", "./app.db") }
+
+enum Plan { starter pro enterprise }
+
+model Lead {
+  id     Int      @id
+  name   String
+  plan   Plan
+  tier   Plan     @default(pro)
+  tags   Tag[]
+  due    DateTime?
+}
+
+model Tag {
+  id    Int    @id
+  name  String
+  leads Lead[]
 }
 `
 
@@ -155,16 +178,76 @@ describe('the registry', () => {
   })
 })
 
+describe('models vs definitions', () => {
+
+  beforeEach(() => registerSchemas({}))
+
+  test('generateSchemas reports models, not every $defs key', async () => {
+    const { dir, path } = fixture(RICH_SCHEMA)
+    const out = await generateSchemas(path, () => {}, dir)
+
+    // $defs carries the enum too — the model list must not.
+    expect(Object.keys(out.defs)).toContain('Plan')
+    expect(out.models.sort()).toEqual(['Lead', 'Tag'])
+  })
+
+  test('an enum is not addressable as a resource', async () => {
+    const { dir, path } = fixture(RICH_SCHEMA)
+    const out = await generateSchemas(path, () => {}, dir)
+    registerSchemas(out.defs, out.models)
+
+    // 'Plan'/'plan'/'plans' used to resolve to the enum definition, and
+    // createResource('plans') then threw inside make().
+    expect(schemaFor('Plan')).toBeNull()
+    expect(schemaFor('plan')).toBeNull()
+    expect(schemaFor('plans')).toBeNull()
+    expect(Object.keys(allSchemas()).sort()).toEqual(['Lead', 'Tag'])
+  })
+
+  test('the enum is still reachable as a $ref target', async () => {
+    const { dir, path } = fixture(RICH_SCHEMA)
+    const out = await generateSchemas(path, () => {}, dir)
+    registerSchemas(out.defs, out.models)
+
+    expect(allDefs().Plan).toBeTruthy()
+    expect(resolveRef('#/$defs/Plan').enum).toEqual(['starter', 'pro', 'enterprise'])
+    expect(resolveRef('#/definitions/Plan')?.enum).toBeTruthy()  // both spellings
+    expect(resolveRef('#/$defs/Nope')).toBeNull()
+    expect(resolveRef(undefined)).toBeNull()
+  })
+
+  test('without an explicit model list, definitions with fields still register', () => {
+    registerSchemas({
+      Lead: { type: 'object', properties: { name: { type: 'string' } } },
+      Plan: { type: 'string', enum: ['a', 'b'] },
+    })
+    expect(schemaFor('leads')).toBeTruthy()
+    expect(schemaFor('plans')).toBeNull()
+  })
+})
+
 describe('end to end', () => {
 
   test('a generated schema resolves by the name a resource would use', async () => {
     const { dir, path } = fixture()
     const out = await generateSchemas(path, () => {}, dir)
-    registerSchemas(out.defs)
+    registerSchemas(out.defs, out.models)
 
     // createResource('leads') → tries model, service name, then singular.
     const def = schemaFor(undefined, 'leads', 'lead')
     expect(def).toBeTruthy()
     expect(Object.keys(def.properties)).toContain('email')
+  })
+
+  test('an implicit m2m relation is not a field of the model', async () => {
+    const { dir, path } = fixture(RICH_SCHEMA)
+    const out = await generateSchemas(path, () => {}, dir)
+    const lead = out.defs.Lead
+
+    // `tags Tag[]` is a relation. It used to be emitted as an array-of-string
+    // property AND listed in required[], so the server demanded it on create.
+    expect(lead.properties.tags).toBeUndefined()
+    expect(lead.required ?? []).not.toContain('tags')
+    expect(lead['x-relations'].some(r => r.field === 'tags')).toBe(true)
   })
 })

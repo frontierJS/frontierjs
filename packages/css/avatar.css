@@ -1,0 +1,118 @@
+/*
+ * avatar.css
+ * Avatar — the person (or org, or bot) marker. Assignee cells, comment
+ * threads, member lists, the account button in a topbar.
+ *
+ * ── Two forms ────────────────────────────────────────────────────────
+ *
+ *   <img class="avatar" src="/u/12.jpg" alt="Dana Ortiz">
+ *
+ *   <span class="avatar primary" aria-hidden="true">DO</span>
+ *
+ * The image form carries its own name in `alt` and needs nothing else.
+ *
+ * The initials form is a *fallback rendering of a name that is already on
+ * screen* nine times out of ten — beside the name in a list row, inside a
+ * cell whose row is labelled. Announcing "D O" there is noise, so the
+ * default is aria-hidden. When the avatar stands alone and IS the only
+ * identification, give it the real name instead:
+ *
+ *   <span class="avatar" role="img" aria-label="Dana Ortiz">DO</span>
+ *
+ * Getting this wrong is the common avatar bug in both directions: a wall
+ * of unlabelled images, or a screen reader spelling out initials after
+ * every name it just read.
+ *
+ * ── Why it is in the chip lineage ────────────────────────────────────
+ *
+ * An initials avatar is a solid tone fill with text on top — the same
+ * problem .btn, .pill and .badge have, and it inherits the same answer by
+ * having its name added to the :where() list in chip.css. That is one
+ * edit, and it means initials are AA on any hue a theme can define,
+ * including the ones where white would fail.
+ */
+
+.avatar {
+  --avatar-size: 2.25rem;
+
+  /* Layout and auto-contrast come from chip.css. */
+  --tone-fill: var(--bg-mix, var(--color-muted));
+
+  inline-size:   var(--avatar-size);
+  block-size:    var(--avatar-size);
+  flex-shrink:   0;
+  border-radius: var(--avatar-radius, 999px);
+  overflow:      hidden;
+
+  background: var(--fill, var(--tone-fill));
+  color:      var(--on-fill, white);
+
+  font-family: var(--font-primary);
+  /* Scales with the avatar, so one token resizes the whole thing. */
+  font-size:   calc(var(--avatar-size) * 0.4);
+  font-weight: 600;
+  line-height: 1;
+
+  /* Initials are a label, not a selection target. */
+  user-select: none;
+}
+
+/*
+ * An <img> ignores color and needs its aspect ratio cropped rather than
+ * squashed. Photos are rarely square and never the same shape twice.
+ */
+img.avatar {
+  object-fit:     cover;
+  object-position: center;
+  background:     var(--surface-sunken);
+}
+
+/*
+ * ── Size ─────────────────────────────────────────────────────────────
+ *
+ * One token, no .sm / .lg classes. Those would be scoped modifiers with
+ * maximally generic names — the exact liability PROJECT_STATE flags as
+ * the open naming question — and they would each need a matching
+ * font-size. The token does both:
+ *
+ *   <span class="avatar" style="--avatar-size: 1.5rem">DO</span>
+ *   .comment-avatar { --avatar-size: 1.5rem; }
+ *
+ * Set --avatar-radius to square it off; a theme can do that globally.
+ */
+
+/*
+ * ── Avatars — the overlapping group ──────────────────────────────────
+ *
+ *   <div class="avatars" role="group" aria-label="Assignees">
+ *     <img class="avatar" src="/u/12.jpg" alt="Dana Ortiz">
+ *     <img class="avatar" src="/u/48.jpg" alt="Sam Ruiz">
+ *     <span class="avatar" role="img" aria-label="3 more">+3</span>
+ *   </div>
+ *
+ * The ring is drawn with an inset box-shadow rather than a border,
+ * because a border would eat into --avatar-size and make a grouped
+ * avatar smaller than a lone one at the same token value.
+ *
+ * It is --surface coloured, so the group reads as separated cards on a
+ * normal background — on a tinted surface, set --avatar-ring to match.
+ */
+.avatars {
+  display:     flex;
+  align-items: center;
+}
+
+.avatars > .avatar {
+  box-shadow: 0 0 0 2px var(--avatar-ring, var(--surface));
+}
+
+.avatars > .avatar + .avatar {
+  margin-inline-start: calc(var(--avatar-overlap, 0.625rem) * -1);
+}
+
+/*
+ * Set --avatar-overlap to 0 for a plain spaced row, or negative for a gap.
+ * There is deliberately no hover fan-out: it shifts layout under the
+ * pointer, and the group is usually inside a row that is itself a link or
+ * a click target.
+ */

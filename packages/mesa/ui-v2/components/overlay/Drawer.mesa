@@ -1,0 +1,129 @@
+<script>
+  // Drawer.mesa
+  // Slide-in panel from any edge. Uses mesa:portal so it escapes overflow/stacking.
+  // The `side` prop is export var — snapshot at mount. The $.entrance animation
+  // is computed once from that snapshot, never re-derived.
+  //
+  // Usage:
+  //   let drawerOpen = false
+  //   <Button onclick={() => drawerOpen = true}>Open</Button>
+  //   <Drawer bind:open={drawerOpen} title="Settings" side="right">
+  //     <p>Drawer content</p>
+  //   </Drawer>
+
+  export let open     = false
+  export let title    = ''
+  export let footer   = null   // optional footer snippet
+  export let onclose  = undefined
+
+  // side is snapshot at mount — drawer side never changes.
+  // All geometry is derived once from this snapshot.
+  export var side = 'right'  // 'left' | 'right' | 'top' | 'bottom'
+
+  // Static geometry maps — all derived from `side` (var), so computed once
+  const posMap = {
+    right:  'inset-y-0 right-0 h-full w-[22rem] max-w-[90vw]',
+    left:   'inset-y-0 left-0  h-full w-[22rem] max-w-[90vw]',
+    top:    'inset-x-0 top-0   w-full max-h-[80vh]',
+    bottom: 'inset-x-0 bottom-0 w-full max-h-[80vh]',
+  }
+  const roundMap = {
+    right:  'rounded-l-2xl',
+    left:   'rounded-r-2xl',
+    top:    'rounded-b-2xl',
+    bottom: 'rounded-t-2xl',
+  }
+  const slideFrom = {
+    right:  'translateX(100%)',
+    left:   'translateX(-100%)',
+    top:    'translateY(-100%)',
+    bottom: 'translateY(100%)',
+  }
+
+  const posClass   = posMap[side]   ?? posMap.right
+  const roundClass = roundMap[side] ?? roundMap.right
+  const slideDir   = slideFrom[side] ?? slideFrom.right
+
+  // Body scroll lock — fires when open changes
+  $: open, () => {
+    document.body.style.overflow = open ? 'hidden' : ''
+    $onCleanup(() => { document.body.style.overflow = '' })
+  }
+
+  // Animations — computed once from static slideDir
+  const backdropAnim = $.entrance({
+    in:  el => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 150, fill: 'forwards' }),
+    out: el => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, fill: 'forwards' }).finished,
+  })
+
+  const drawerAnim = $.entrance({
+    in:  el => el.animate(
+      [{ transform: slideDir }, { transform: 'translate(0)' }],
+      { duration: 280, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ transform: 'translate(0)' }, { transform: slideDir }],
+      { duration: 200, easing: 'ease-in', fill: 'forwards' }
+    ).finished,
+  })
+
+  function close() {
+    open = false
+    onclose?.()
+  }
+
+  function handleBackdrop(e) {
+    if (e.target === e.currentTarget) close()
+  }
+</script>
+
+<mesa:window on:keydown={(e) => { if (e.key === 'Escape') close() }} />
+
+{#if open}
+  <mesa:portal to={document.body}>
+    <!-- Backdrop -->
+    <div
+      class="fixed inset-0 z-50 bg-black/40"
+      {@attach backdropAnim}
+      on:click={handleBackdrop}
+    >
+      <!-- Drawer panel -->
+      <div
+        class="absolute {posClass} {roundClass} bg-white shadow-2xl flex flex-col overflow-hidden"
+        {class}
+        {@attach drawerAnim}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drawer-title"
+      >
+        <!-- Header -->
+        <div class="flex shrink-0 items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 id="drawer-title" class="text-base font-semibold text-gray-900">{title}</h2>
+          <button
+            type="button"
+            class="rounded-md p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100
+                   transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            aria-label="Close"
+            on:click={close}
+          >
+            <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="flex-1 overflow-y-auto px-5 py-4">
+          <slot />
+        </div>
+
+        <!-- Footer (optional) -->
+        {#if footer}
+          <div class="shrink-0 border-t border-gray-100 px-5 py-4">
+            {@render footer?.()}
+          </div>
+        {/if}
+      </div>
+    </div>
+  </mesa:portal>
+{/if}

@@ -30,6 +30,7 @@ import type { Channel, InAppMessage, MailMessage, SmsMessage, User } from './typ
  *       .action('View order', `/orders/${this.payment.orderId}`)
  *       .context('Order', this.payment.orderId)
  *       .data({ amount: this.payment.amount, orderId: this.payment.orderId })
+ *       .build()
  *   }
  *
  *   toEmail(user: User): MailMessage {
@@ -38,6 +39,7 @@ import type { Channel, InAppMessage, MailMessage, SmsMessage, User } from './typ
  *       .greeting(`Hi ${user.firstName}`)
  *       .line(`$${this.payment.amount} received for order #${this.payment.orderId}.`)
  *       .action('View order', `https://app.example.com/orders/${this.payment.orderId}`)
+ *       .build()
  *   }
  * }
  */
@@ -90,8 +92,13 @@ export abstract class Notification {
    */
   getMessageFor(channel: string, user: User): unknown {
     const method = `to${channel.charAt(0).toUpperCase()}${channel.slice(1)}`
-    if (typeof (this as Record<string, unknown>)[method] === 'function') {
-      return (this as Record<string, unknown & ((...args: unknown[]) => unknown)>)[method](user)
+    // One `unknown` hop to reach a dynamically-named method, then a checked
+    // call. The old form asserted `this` straight to a record of functions,
+    // which TypeScript rejected as insufficiently overlapping (TS2352) and
+    // which also dropped `this` binding.
+    const fn = (this as unknown as Record<string, unknown>)[method]
+    if (typeof fn === 'function') {
+      return (fn as (u: User) => unknown).call(this, user)
     }
     return undefined
   }

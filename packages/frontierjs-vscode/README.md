@@ -2,6 +2,18 @@
 
 Language support for FrontierJS projects.
 
+> **`npm run build` fails as checked in** (verified 2026-08-01). `scripts/build-parser.js`
+> looks for the Litestone parser at `litestone/src/parser.js`; it lives at
+> `litestone/src/core/parser.js` since the core/ move. Nothing else is wrong —
+> point it at the real path and both steps pass:
+>
+> ```bash
+> LITESTONE_SRC=../litestone/src/core node scripts/build-parser.js && npx tsc -p tsconfig.json
+> ```
+>
+> Fix the candidate list in `scripts/build-parser.js` to make `npm run build` work
+> unaided. Everything below describes the extension once it is built.
+
 ## Litestone (`.lite`, `.litestone`)
 
 Full language server for Litestone schema files:
@@ -20,14 +32,14 @@ Full language server for Litestone schema files:
 
 enum Plan { starter  pro  enterprise }
 
-function slug(text: Text): Text {
+function slug(text: String): String {
   @@expr("lower(replace({text}, ' ', '-'))")
 }
 
 model accounts {
-  id        Integer  @id
-  name      Text
-  slug      Text     @slug(name)
+  id        Int  @id
+  name      String
+  slug      String     @slug(name)
   plan      Plan     @default(starter)
   createdAt DateTime @default(now())
 }

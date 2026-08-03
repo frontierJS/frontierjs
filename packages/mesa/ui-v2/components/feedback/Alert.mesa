@@ -1,0 +1,117 @@
+<script>
+  // Alert.mesa
+  // Inline alert banner — sits in document flow, not a toast/overlay.
+  // For the global floating alert driven by alertStore, see AlertProvider.mesa.
+  //
+  // Types: 'info' | 'success' | 'warning' | 'error'
+  //
+  // Usage:
+  //   <Alert type="error" title="Save failed">
+  //     Check your connection and try again.
+  //   </Alert>
+  //
+  //   <Alert type="success">Your changes have been saved.</Alert>
+  //
+  //   <!-- Dismissible -->
+  //   {#if showAlert}
+  //     <Alert type="warning" dismissible onclose={() => showAlert = false}>
+  //       Session expires in 5 minutes.
+  //     </Alert>
+  //   {/if}
+
+  export let type        = 'info'   // 'info' | 'success' | 'warning' | 'error'
+  export let title       = ''
+  export let dismissible = false
+  export let onclose     = undefined
+
+  const styleMap = {
+    info: {
+      wrap:  'bg-blue-50 border-blue-200 text-blue-900',
+      icon:  'text-blue-500',
+      title: 'text-blue-900',
+      body:  'text-blue-800',
+      btn:   'text-blue-500 hover:text-blue-700 hover:bg-blue-100',
+    },
+    success: {
+      wrap:  'bg-green-50 border-green-200 text-green-900',
+      icon:  'text-green-500',
+      title: 'text-green-900',
+      body:  'text-green-800',
+      btn:   'text-green-500 hover:text-green-700 hover:bg-green-100',
+    },
+    warning: {
+      wrap:  'bg-yellow-50 border-yellow-200 text-yellow-900',
+      icon:  'text-yellow-500',
+      title: 'text-yellow-900',
+      body:  'text-yellow-800',
+      btn:   'text-yellow-500 hover:text-yellow-700 hover:bg-yellow-100',
+    },
+    error: {
+      wrap:  'bg-red-50 border-red-200 text-red-900',
+      icon:  'text-red-500',
+      title: 'text-red-900',
+      body:  'text-red-800',
+      btn:   'text-red-500 hover:text-red-700 hover:bg-red-100',
+    },
+  }
+
+  // Icon paths keyed by type — static map, no reactivity needed on these
+  const iconMap = {
+    info:    'M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z',
+    success: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    warning: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z',
+    error:   'M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z',
+  }
+
+  const s    = styleMap[type] ?? styleMap.info
+  const path = iconMap[type]  ?? iconMap.info
+
+  function handleDismiss() {
+    onclose?.()
+  }
+</script>
+
+<div
+  role="alert"
+  class="flex gap-3 rounded-xl border p-4 {s.wrap}"
+  {class}
+>
+  <!-- Icon -->
+  <svg
+    class="mt-0.5 h-5 w-5 shrink-0 {s.icon}"
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke-width="1.5"
+    stroke="currentColor"
+    aria-hidden="true"
+  >
+    <path stroke-linecap="round" stroke-linejoin="round" d={path} />
+  </svg>
+
+  <!-- Content -->
+  <div class="flex-1 min-w-0">
+    {#if title}
+      <p class="text-sm font-semibold {s.title} mb-0.5">{title}</p>
+    {/if}
+    <div class="text-sm {s.body} leading-relaxed">
+      <slot />
+    </div>
+  </div>
+
+  <!-- Dismiss button -->
+  {#if dismissible}
+    <button
+      type="button"
+      class="shrink-0 rounded-md p-1 transition-colors self-start
+             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1
+             {s.btn}"
+      aria-label="Dismiss"
+      on:click={handleDismiss}
+    >
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z" />
+      </svg>
+    </button>
+  {/if}
+</div>

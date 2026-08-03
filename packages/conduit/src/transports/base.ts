@@ -68,20 +68,35 @@ export abstract class BaseTransport {
     return () => Math.round(performance.now() - start)
   }
 
-  // Build auth headers for the request.
+  // What an HMAC signature is computed over. Every transport supplies these
+  // so the canonical string is identical regardless of protocol.
+  // `body` is the exact bytes that will be sent, or undefined for a request
+  // with no body (a bodyless POST, a WebSocket upgrade).
+  protected authContext(req: {
+    method?: string
+    path?:   string
+    body?:   string
+  }): Required<{ method: string; path: string }> & { body: string } {
+    return {
+      method: (req.method ?? 'GET').toUpperCase(),
+      path:   req.path && req.path !== '' ? req.path : '/',
+      body:   req.body ?? '',
+    }
+  }
+
+  // Build auth headers for a request.
   //
   // Secret material is fetched from the CredentialResolver here, at send
   // time — the descriptor only carries a ref. A ref that cannot be resolved
   // throws CredentialError rather than returning empty headers, so a
   // misconfigured target fails closed instead of sending unauthenticated.
   //
-  // For HMAC targets, rawBody must be passed — the signature is computed
-  // over the exact bytes that will be sent as the request body.
-  // The receiving agent verifies: HMAC-SHA256(secret, body) === X-Hub-Signature.
-  //
-  // For all other auth types rawBody is unused.
   // Async because Web Crypto API (crypto.subtle) is promise-based.
-  protected async buildAuthHeaders(rawBody?: string): Promise<Record<string, string>> {
+  protected async buildAuthHeaders(ctx: {
+    method?: string
+    path?:   string
+    body?:   string
+  } = {}): Promise<Record<string, string>> {
     const auth = this.descriptor.auth
 
     switch (auth.type) {
@@ -92,15 +107,31 @@ export abstract class BaseTransport {
         return { [auth.header]: await this.secret(auth.ref) }
 
       case 'hmac': {
-        // No body = nothing to sign. Returning empty headers here rather
-        // than signing an empty string prevents a signature mismatch on
-        // the receiving agent (which would verify against the actual body).
-        // In practice HMAC targets only receive POST/PATCH commands.
+        const { method, path, body } = this.authContext(ctx)
+        const prefix    = auth.header_prefix ?? 'X-Hub'
+        const timestamp = Math.floor(Date.now() / 1000).toString()
+        const nonce     = crypto.randomUUID()
+
+        // Bind the signature to the whole request, not just the body:
         //
-        // TODO(§1.3): bodyless POST/DELETE commands still go out unsigned,
-        // and the signature binds only the body — no timestamp, nonce, method
-        // or path. Both are fixed together when the canonical string lands.
-        if (rawBody === undefined) return {}
+        //   • method + path — a captured signature cannot be replayed
+        //     against a different endpoint on the same target
+        //   • timestamp + nonce — the receiver can reject stale and
+        //     repeated signatures, so a capture does not replay forever
+        //   • body hash — a bodyless request signs the hash of the empty
+        //     string, so POST /reboot and DELETE /servers/42 are signed
+        //     like anything else
+        //
+        // Compare GitHub and Stripe webhook signing, which bind a timestamp
+        // for the same reason. The receiving agent must recompute this
+        // exact string and reject signatures outside its freshness window.
+        const canonical = [
+          method,
+          path,
+          timestamp,
+          nonce,
+          await sha256Hex(body),
+        ].join('\n')
 
         const enc = new TextEncoder()
         const key = await crypto.subtle.importKey(
@@ -108,12 +139,13 @@ export abstract class BaseTransport {
           { name: 'HMAC', hash: 'SHA-256' },
           false, ['sign']
         )
-        const sig = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody))
-        const hex = Array.from(new Uint8Array(sig))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('')
+        const sig = await crypto.subtle.sign('HMAC', key, enc.encode(canonical))
 
-        return { 'X-Hub-Signature': `sha256=${hex}` }
+        return {
+          [`${prefix}-Signature`]: `sha256=${toHex(new Uint8Array(sig))}`,
+          [`${prefix}-Timestamp`]: timestamp,
+          [`${prefix}-Nonce`]:     nonce,
+        }
       }
 
       case 'none':
@@ -131,4 +163,15 @@ export abstract class BaseTransport {
     }
     return value
   }
+}
+
+// ─── Internal ────────────────────────────────────────────────
+
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
+  return toHex(new Uint8Array(digest))
 }

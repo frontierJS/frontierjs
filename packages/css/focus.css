@@ -1,0 +1,145 @@
+/*
+ * focus.css
+ * One focus ring, one place.
+ *
+ * ── The problem this replaces ────────────────────────────────────────
+ *
+ * Through v0.6 the package drew focus four different ways:
+ *
+ *   .btn                 box-shadow, --ring at 30%, --ring-width
+ *   .field               box-shadow, tone-aware at 18%, --ring-width
+ *   .disclosure-summary  box-shadow inset, --ring at 25%, --ring-width
+ *   .pill-close          box-shadow, currentColor at 50%, hardcoded 2px
+ *   everything newer     outline, solid --ring, hardcoded 2px
+ *
+ * That is not just untidy. Two of them were load-bearing on a property
+ * another rule already owned, and lost:
+ *
+ *   .btn:focus-visible { box-shadow: <ring> }   (0,2,0)
+ *   .btn.outlined      { box-shadow: none   }   (0,2,0), declared later
+ *
+ * Same specificity, same layer, later wins — so `.btn.outlined` and
+ * `.btn.link` had no focus indicator at all. A WCAG 2.4.7 failure that
+ * read as a styling preference. Focusing a plain `.btn` also erased its
+ * resting `--shadow-sm`, because box-shadow is one property and the ring
+ * was overwriting the elevation.
+ *
+ * ── Why outline ──────────────────────────────────────────────────────
+ *
+ * It follows border-radius, it takes no space in layout, and — the part
+ * that actually matters here — no component uses it for anything else.
+ * box-shadow is contested; outline is not. A ring drawn in an uncontested
+ * property cannot be switched off by a rule that was thinking about
+ * elevation.
+ *
+ * ── Why this layer ───────────────────────────────────────────────────
+ *
+ * `a11y`, the last layer, so a stray `outline: none` in a component file
+ * cannot silently win the way `box-shadow: none` just did. Layer order
+ * beats specificity, and that is the whole point of putting it here: the
+ * ring is not something a component gets to lose by accident.
+ *
+ * Consumers keep their escape hatch either way — unlayered CSS still beats
+ * every layer, so an app can restyle or remove a ring deliberately. And
+ * within the package, a component varies the ring through the tokens
+ * rather than by restating the shape.
+ *
+ * ── How to vary it ───────────────────────────────────────────────────
+ *
+ * Set a token, don't write another recipe:
+ *
+ *   --ring-color   this element's ring color; element-scoped
+ *   --ring-width   thickness (themable, global)
+ *   --ring-offset  distance from the border box; negated for inset rings
+ *   --ring         the ring color for a whole theme
+ *
+ * The color falls through --ring-color → --ring → --color-primary, and
+ * that chain is written at the use site rather than collapsed into a
+ * `--ring: var(--color-primary)` alias in :root. The alias form looks
+ * equivalent and silently is not — it resolves once against :root and
+ * inherits past every .theme-* override, which is why no theme's brand
+ * color reached a focus ring before v0.7. See tokens.css.
+ *
+ * ── Adding a focusable component ─────────────────────────────────────
+ *
+ * Add its class to the selector list below. That is the same explicit cost
+ * the surface :where() group has, and it is deliberate: a focusable thing
+ * that forgets to opt in shows up in focus.spec.js as "has no focus
+ * indicator at all" rather than quietly shipping without one.
+ */
+
+/*
+ * --ring-color is element-scoped for the same reason tones are (see
+ * tones.css): unregistered, a color set for one element's ring would
+ * inherit into every focusable descendant. `syntax: "*"` with no
+ * initial-value leaves it guaranteed-invalid when unset, which is what
+ * makes the var() chain below fall through to the token.
+ */
+@property --ring-color {
+  syntax:   "*";
+  inherits: false;
+}
+
+/*
+ * The shape. Every focusable surface in the package, in one rule.
+ *
+ * `:where()` keeps it at zero specificity so a component can still
+ * override it on purpose; the layer, not the specificity, is what stops
+ * an accident.
+ *
+ * .field and .skip-link use :focus rather than :focus-visible on purpose.
+ * A text field should ring when clicked into, not only when tabbed to, and
+ * a skip link that only revealed itself for a keyboard heuristic would be
+ * a skip link you cannot see.
+ */
+:where(
+  .btn,
+  .link,
+  .page,
+  .view,
+  .switch,
+  .tab,
+  .navlink,
+  .disclosure-summary,
+  .pill-close
+):focus-visible,
+:where(.field, .skip-link):focus {
+  outline:        var(--ring-width) solid var(--ring-color, var(--ring, var(--color-primary)));
+  outline-offset: var(--ring-offset);
+}
+
+/*
+ * Inset rings. These sit inside a scroll container or hard against a
+ * neighbour, where an outward ring is clipped or overlaps something:
+ *
+ *   .tab                 the tablist scrolls horizontally
+ *   .navlink             flush to the sidebar's edge
+ *   .disclosure-summary  fills its bordered box edge to edge
+ *   .pill-close          would spill outside the pill it sits in
+ */
+:where(.tab, .navlink, .disclosure-summary, .pill-close):focus-visible {
+  outline-offset: calc(var(--ring-offset) * -1);
+}
+
+/*
+ * A toned field rings in its own tone. This is what makes :user-invalid a
+ * one-line implementation in form-core.css: the tone drives the border,
+ * the hint and the ring together, so a field that has gone invalid does
+ * not focus back to a neutral blue and contradict itself.
+ *
+ * The fallback is --ring rather than a literal, so a theme that retints
+ * the ring still reaches an untoned field.
+ */
+:where(.field):focus {
+  --ring-color: var(--bg-mix, var(--ring, var(--color-primary)));
+}
+
+/*
+ * The close button sits on top of a filled pill. A blue --ring is
+ * invisible on a blue pill and illegible on a red one, so it rings in the
+ * text color the pill already derived for contrast — which chip.css
+ * guarantees is AA against that fill.
+ */
+:where(.pill-close):focus-visible {
+  --ring-color: currentColor;
+}

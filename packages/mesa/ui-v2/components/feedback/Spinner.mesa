@@ -1,0 +1,60 @@
+<script>
+  // Spinner.mesa
+  // Accessible loading indicator.
+  //
+  // Sizes:  'xs' | 'sm' | 'md' | 'lg' | 'xl'
+  // Colors: 'blue' | 'gray' | 'white' | 'current'
+  //
+  // Usage:
+  //   <Spinner />
+  //   <Spinner size="lg" color="gray" label="Saving…" />
+  //   <Spinner size="sm" color="current" />  ← inherits text color
+
+  export let size  = 'md'      // 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+  export let color = 'blue'    // 'blue' | 'gray' | 'white' | 'current'
+  export let label = 'Loading' // screen reader text
+
+  const sizeMap = {
+    xs: 'h-3 w-3',
+    sm: 'h-4 w-4',
+    md: 'h-6 w-6',
+    lg: 'h-8 w-8',
+    xl: 'h-12 w-12',
+  }
+
+  // Track ring = border of the circle, spin track = visible arc
+  const colorMap = {
+    blue:    { track: 'text-blue-200',   spin: 'text-blue-600'   },
+    gray:    { track: 'text-gray-200',   spin: 'text-gray-500'   },
+    white:   { track: 'text-white/30',   spin: 'text-white'      },
+    current: { track: 'opacity-25',      spin: 'opacity-75'      },
+  }
+
+  const szClass = sizeMap[size]  ?? sizeMap.md
+  const colors  = colorMap[color] ?? colorMap.blue
+</script>
+
+<span role="status" aria-label={label} class="inline-flex" {class}>
+  <svg
+    class="animate-spin {szClass}"
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <!-- Background track ring -->
+    <circle
+      class="{colors.track}"
+      cx="12" cy="12" r="10"
+      stroke="currentColor"
+      stroke-width="4"
+    />
+    <!-- Spinning arc -->
+    <path
+      class="{colors.spin}"
+      fill="currentColor"
+      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+    />
+  </svg>
+  <span class="sr-only">{label}</span>
+</span>

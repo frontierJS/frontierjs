@@ -8,7 +8,7 @@ A pragmatic, batteries-included backend framework for Bun. Built on three ideas:
 
 ```bash
 git clone <this repo>
-cd framework
+cd packages/junction
 bun run dev        # starts example/app.ts with --watch
 
 # In another terminal — fire up the interactive REPL:
@@ -28,7 +28,7 @@ curl -X POST http://localhost:3000/users \
 Run the test suite:
 
 ```bash
-bun test tests/index.test.ts
+bun test            # tests/ — 681 tests across 19 files
 ```
 
 The example app is entirely in-memory — no database, no external services, runs immediately.
@@ -38,61 +38,65 @@ The example app is entirely in-memory — no database, no external services, run
 ## Structure
 
 ```
-framework/
+packages/junction/
 ├── index.ts              ← single public API — one import for everything
 │
-├── core/
+├── src/core/
 │   ├── app.ts            ← createApp() — lifecycle, plugins, service routing
-│   ├── service.ts        ← createService(), ServiceRegistry, callService()
-│   ├── hooks.ts          ← around/before/after/error pipeline + built-in hooks
+│   ├── service.ts        ← createService(), createBaseService(), callService()
+│   ├── context.ts        ← ServiceContext, CallOptions, RequestMeta (ALS)
+│   ├── envelope.ts       ← THE result envelope — wrap/unwrap, one owner
+│   ├── hooks.ts          ← around/before/after/error pipeline
+│   ├── hooks-builtin.ts  ← authenticate, requireRole, paginate, protect, …
+│   ├── hooks-resilience.ts ← circuitBreaker, rateLimit
+│   ├── litestone.ts      ← Litestone adapter, gateAuth, autoValidate
 │   ├── schema.ts         ← createSchema(), v.* — zero-dep validation
 │   ├── loader.ts         ← auto-discovery of *.service.ts files
 │   ├── logger.ts         ← ILogger — pretty dev / JSON prod
-│   └── errors.ts         ← 15 named HTTP error classes
+│   ├── env.ts            ← defineEnv() — typed, validated at startup
+│   └── errors.ts         ← named HTTP error classes
 │
-├── transport/
+├── src/transport/
 │   ├── http.ts           ← Bun.serve wrapper + public fetch() for tests
 │   ├── router.ts         ← two-tier route cache (O(1) fixed + linear dynamic)
 │   ├── bridge.ts         ← THE hard boundary between transport and services
 │   ├── channels.ts       ← WebSocket channels, publish() hook, channels() plugin
+│   ├── presence.ts       ← presence tracking + heartbeat
 │   ├── health.ts         ← /health + /metrics endpoints (healthPlugin)
 │   ├── body.ts           ← JSON / multipart / urlencoded parser
 │   ├── static.ts         ← range requests, etag, gzip, cache headers
 │   ├── types.ts          ← TransportContext, WsContext, WsHandlerSet, SSE types
 │   └── middleware.ts     ← cors, helmet, rateLimit, requestLogger, correlationId
 │
-├── database/
-│   └── index.ts          ← createDatabase(), createInMemoryDatabase()
-│                            WAL mode, foreign keys, migration runner
+├── src/plugins/
+│   ├── manifest/         ← manifestPlugin — schema + migration state at /manifest
+│   ├── openapi/          ← openapi() plugin, generateOpenAPI() — 3.1 from the registry
+│   ├── email/            ← mailer plugin, system + campaign senders
+│   ├── webhooks/         ← at-least-once delivery, IWebhookStore, SQLite adapter
+│   ├── devtools/         ← devtools plugin + admin UI
+│   └── ai/, scheduler/   ← re-export shims for src/ai, src/scheduler
 │
-├── testing/
-│   └── index.ts          ← createTestApp(), request(), testCtx(), createStubAuth()
-│                            no real server, no ports, all in-memory
+├── src/storage/
+│   ├── database/index.ts    ← createDatabase() — WAL, foreign keys, migrations
+│   └── filestorage/index.ts ← chunked disk storage, range, etag, stream
 │
-├── openapi/
-│   └── index.ts          ← openapi() plugin, generateOpenAPI()
-│                            auto-generates 3.1 spec from service registry
+├── src/auth/
+│   ├── types.ts          ← IAuth, SessionContext
+│   └── providers/better-auth.ts
 │
-├── auth/
-│   ├── types.ts          ← IAuth interface
-│   └── providers/
-│       └── better-auth.ts ← Better Auth adapter
+├── src/config/index.ts   ← loadConfig(), layered config files, deepMerge
+├── src/events/index.ts   ← IEventBus (in-process, Redis-swappable interface)
+├── src/cache/index.ts    ← ICache — in-memory
+├── src/scheduler/index.ts ← cron + interval + once, aligned ticks
+├── src/workers/index.ts  ← Bun native thread pool, auto-respawn
+├── src/mail/index.ts     ← IMail + SMTP/Resend adapters
+├── src/ai/index.ts       ← IAIModel interface + OpenAI + Anthropic adapters
+├── src/client/index.ts   ← browser/Sierra client — service(), resource()
+├── src/testing/index.ts  ← createTestApp(), request(), withTestMeta()
 │
-├── config/index.ts       ← loadConfig(), layered TS config files, defaultConfig
-├── events/index.ts       ← IEventBus (in-process, Redis-swappable interface)
-├── cache/index.ts        ← ICache — memory + SQLite backends
-├── scheduler/index.ts    ← cron + interval + once, aligned ticks
-├── workers/index.ts      ← Bun native thread pool, auto-respawn
-├── filestorage/index.ts  ← chunked disk storage, range, etag, stream
-├── mail/index.ts         ← IMail interface + Resend adapter + MailBuilder
-├── ai/index.ts           ← IAIModel interface + OpenAI + Anthropic adapters
-├── webhooks/index.ts     ← at-least-once delivery, IWebhookStore, SQLite adapter
-│
-├── tools/
-│   └── repl.ts           ← interactive HTTP REPL with autocomplete + tutorial
-│
-└── tests/
-    └── index.test.ts     ← full test suite (bun test)
+├── tools/                ← repl.ts, init.ts, setup.ts, build-app.ts, generators
+├── example/              ← runnable apps (elegant.ts is the modern demo)
+└── tests/                ← 19 files, 681 tests
 ```
 
 ---
@@ -186,6 +190,50 @@ bridge.toContext(wsCtx,   'users', 'users', 'websocket', app) // WebSocket
 bridge.internal('users',  'create', { name: 'Alice' })        // internal — zero HTTP
 ```
 
+**The call context.** What every hook and service method sees, on every
+transport. There is no `ctx.params` — it was an open bag whose contents
+propagated into sub-calls, which is the FeathersJS shared-mutation footgun. It
+is four typed fields instead, each with one propagation rule:
+
+```typescript
+ctx.auth.user       // WHO is calling. Frozen. Propagates to internal calls.
+ctx.client.headers  // caller environment — ip, userAgent, headers. Read-only,
+ctx.client.ip       //   propagates. `{}` on internal calls.
+ctx.route.roomId    // path captures ({id}, {room}). Router-only; {} internal.
+ctx.locals.db       // per-call scratch. FRESH {} every call, does NOT propagate
+                    //   — a sub-service cannot reach its caller's locals.
+```
+
+Alongside them, the two halves of what used to be one query object:
+
+```typescript
+ctx.query       // FILTERS ONLY — becomes the WHERE clause. Never sees a `$`.
+ctx.directives  // { limit, offset, orderBy, select, … } — how to SHAPE the
+                //   result. The bridge translates `$limit` on the wire into
+                //   this; nothing past the bridge reads a `$`.
+```
+
+Internal callers pass directives under their own key — a flat `{ limit: 10 }`
+is not a directive and is ignored:
+
+```typescript
+await app.service('posts').find({ status: 'open' }, { directives: { limit: 10 } })
+```
+
+Request-wide values — correlation id, idempotency key, locale — belong to the
+whole request rather than any one call, so they ride an `AsyncLocalStorage`
+store instead of being threaded through arguments:
+
+```typescript
+import { requestMeta } from '@frontierjs/junction'
+const { correlationId } = requestMeta() ?? {}   // readable at any call depth
+```
+
+`TransportContext.params` is a different thing and is unchanged: route and WS
+handlers (`app.get('/x/{id}', ctx => ctx.params.id)`) keep working as before.
+Route patterns use `{id}`, not `:id` — a `:id` segment is matched literally and
+the route silently never fires.
+
 ### 2. The hook pipeline — `core/hooks.ts`
 
 ```
@@ -206,7 +254,7 @@ createService({
       create: [requireRole('developer'), validate],
     },
     after: {
-      all: [publish((_, ctx) => app.channel(`workspace:${ctx.params.workspace_id}`))],
+      all: [publish((_, ctx) => app.channel(`workspace:${ctx.auth.user?.workspaceId}`))],
     },
     error: { all: [logError] },
   },
@@ -249,7 +297,7 @@ hooks: {
     create: [rateLimit({
       max:     100,
       window:  '1 hour',
-      key:     (ctx) => ctx.params.user?.accountId ?? ctx.params.ip,
+      key:     (ctx) => ctx.auth.user?.accountId ?? ctx.client.ip,
       message: 'Organisation limit reached',
     })]
   }
@@ -280,15 +328,28 @@ Custom methods are defined directly on the service alongside CRUD — no separat
 createService({
   name: 'servers',
 
-  async reboot(ctx)    { /* ... */ },  // POST /servers/:id/reboot
-  async heartbeat(ctx) { /* ... */ },  // POST /servers/:id/heartbeat
-  async events(ctx)    { /* ... */ },  // GET  /servers/:id/events
+  async reboot(ctx)    { /* ... */ },
+  async heartbeat(ctx) { /* ... */ },
+  async events(ctx)    { /* ... */ },
 
   hooks: {
     before: { reboot: [requireRole('developer')] },
   },
 })
 ```
+
+**Dispatch is by header, not by path.** A custom method is reached by calling the
+service's own URL with `X-Service-Method`, which keeps the URL space flat and
+stops a method name from colliding with a record id:
+
+```bash
+curl -X POST http://localhost:3000/servers \
+  -H 'x-service-method: reboot' -H 'content-type: application/json' -d '{"id":1}'
+```
+
+There is no `POST /servers/1/reboot` route — that 404s. CRUD names are blocked
+from header override, and the case you write is the case that dispatches
+(`getStats` stays `getStats`).
 
 Custom methods run through the full hook pipeline — identical to CRUD methods. Hook targets use the method name as the key.
 
@@ -301,7 +362,7 @@ createService({
   schema: jsonSchema,
 
   async reboot(ctx) {
-    const db = ctx.params.db
+    const db = ctx.locals.db
     return db.servers.update({ where: { id: ctx.id }, data: { status: 'rebooting' } })
   },
 
@@ -332,14 +393,14 @@ app.ws('/chat/{roomId}', {
 ```typescript
 app.configure(channels(app => {
   app.channels.on('connection', (session, conn) => {
-    if (session?.workspace_id)
-      app.channel(`workspace:${session.workspace_id}`).join(conn)
+    if (session?.workspaceId)
+      app.channel(`workspace:${session.workspaceId}`).join(conn)
   })
 }))
 
 // In a service hook
 after: {
-  create: [publish((_, ctx) => app.channel(`workspace:${ctx.params.workspace_id}`))],
+  create: [publish((_, ctx) => app.channel(`workspace:${ctx.auth.user?.workspaceId}`))],
 }
 ```
 
@@ -579,21 +640,31 @@ const app  = createApp({ config, auth })
 app.configure(createBetterAuthPlugin(betterAuthInstance))  // mounts /auth/* routes
 ```
 
-`authenticate` hook reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()`, stamps `ctx.params.user`.
+`authenticate` hook reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()`, stamps `ctx.auth.user`.
 
-**`SessionContext` shape** — what `ctx.params.user` looks like inside hooks and services:
+**`SessionContext` shape** — what `ctx.auth.user` looks like inside hooks and services:
 
 ```typescript
 interface SessionContext {
   userId:       string                           // always present
   userType:     string                           // 'user' | 'admin' | 'service'
   authMethod:   'session' | 'apiKey' | 'oauth'  // how they authenticated
+                | 'created' | 'verified'
   email?:       string
   name?:        string
   accountId?:   string                           // multi-tenant account scope
   workspaceId?: string                           // multi-tenant workspace scope
   role?:        string
   scopes?:      string[]
+
+  // Standing — read by sessionGateLevel() to grade a caller on Litestone's
+  // 0–7 @@gate scale. `undefined` = the app doesn't model this stage (not an
+  // objection); `null` = it does and this user hasn't reached it.
+  verifiedAt?:     Date | string | null
+  activatedAt?:    Date | string | null
+  isAdmin?:        boolean    // → ADMINISTRATOR (5)
+  isOwner?:        boolean    // → OWNER (6)
+  isSystemAdmin?:  boolean    // → SYSADMIN (7)
 }
 ```
 
@@ -727,10 +798,10 @@ import { createClient, generateJsonSchema, GatePlugin, LEVELS } from '@frontierj
 
 const SCHEMA = `
   model posts {
-    id        Integer  @id
-    title     Text     @length(1, 200) @trim
-    body      Text
-    authorId  Integer
+    id        Int  @id
+    title     String     @length(1, 200) @trim
+    body      String
+    authorId  Int
     createdAt DateTime @default(now())
     updatedAt DateTime @default(now()) @updatedAt
 
@@ -769,7 +840,7 @@ app.services.register(createService({
 }))
 ```
 
-**`withLitestoneDb(db)`** attaches the base Litestone client to `ctx.params.db` as an around hook. Auth scoping (`$setAuth`) happens inside `getTable()` at call time — after the `authenticate` hook has run — so the right user is always applied to every query.
+**`withLitestoneDb(db)`** attaches the base Litestone client to `ctx.locals.db` as an around hook. Auth scoping (`$setAuth`) happens inside `getTable()` at call time — after the `authenticate` hook has run — so the right user is always applied to every query.
 
 **`deriveModelName`** converts a service name to a Litestone model name: `'users'` → `'user'`, `'blogPosts'` → `'blogPost'`. Pass `model` explicitly if your naming doesn't follow this pattern.
 
@@ -793,7 +864,7 @@ createService({
   name: 'accounts',
 
   async provision(ctx) {
-    const db = ctx.params.db
+    const db = ctx.locals.db
 
     return db.$transaction(async (tx) => {
       const user      = await tx.users.create({ data: ctx.data })
@@ -861,7 +932,7 @@ curl -X PATCH https://api.example.com/users/1 \
 **Accessing files in custom routes** — use `ctx.files` (already parsed, no manual `formData()` call):
 
 ```typescript
-app.patch('/users/:id/avatar', async ctx => {
+app.patch('/users/{id}/avatar', async ctx => {
   const upload = ctx.files.find(f => f.name === 'avatar')
   if (!upload) return ctx.json({ message: 'avatar file required' }, 400)
 
@@ -891,16 +962,19 @@ app.services.register(createService({
 }))
 ```
 
-**Presigned uploads** — for large files, skip the server entirely. Generate a presigned URL, let the client upload directly to R2, then `PATCH` the ref:
+**Presigned uploads — not supported yet.** This section used to show a
+`/avatar/presign` route built on `storage.sign(key)`. That code cannot work:
+litestone's `useStorage().sign(value)` signs an **existing stored reference**
+(it runs the value through `parseRef()` and throws `invalid file reference` on
+a bare key), and the URL it returns is a **GET** — `provider.sign()` calls
+`presignUrl('GET', …)`. Nothing in litestone signs a PUT, so there is no upload
+URL to hand a browser.
 
-```typescript
-app.post('/users/:id/avatar/presign', async ctx => {
-  const key       = `users/${ctx.params.id}/avatar/${crypto.randomUUID()}.jpg`
-  const uploadUrl = await storage.sign(key, { expiresIn: 600 })
-  return ctx.json({ uploadUrl, key })
-  // Client: PUT uploadUrl with file bytes, then PATCH /users/:id { avatar: JSON.stringify({ key, ... }) }
-})
-```
+Presigned uploads need a `signUpload(key, { expiresIn, contentType })` on the
+storage provider — litestone's `presignUrl(method, …)` already takes a method,
+so the primitive is there, but the API is not. Until then, upload multipart
+through the API (the pattern above) and let the FileStorage plugin do the
+put.
 
 ---
 
@@ -1114,8 +1188,11 @@ const posts = client.service('posts')
 // TypeScript — typed generic (optional, JS users omit)
 const posts = client.service<Post>('posts')
 
-// find(query?, params?) → T[]
-const list = await posts.find({ status: 'published' }, { limit: 20 })
+// find(query?, params?) → ListResult<T> — the list envelope, same as HTTP
+const res  = await posts.find({ status: 'published' }, { limit: 20 })
+res.data     // the rows
+res.total    // total matching — pagination works in the browser too
+const rows = await posts.findData({ status: 'published' })  // rows only
 
 // get(id) or get(query) → T  (query form uses $first routing)
 const post    = await posts.get(1)
@@ -1417,7 +1494,9 @@ app.configure(conduit({
       auth:     { type: 'bearer', token: process.env.HETZNER_TOKEN },
     },
   ],
-  management: true,   // exposes GET/DELETE {apiPrefix}/conduit/targets
+  management: true,   // registers a service at {apiPrefix}/conduit-targets
+                      // (rename with `management: { path: '…' }` — one path
+                      //  segment, no slashes)
 }))
 
 // Send from anywhere — hooks, services, routes

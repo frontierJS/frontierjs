@@ -1,0 +1,107 @@
+/*
+ * icon.css
+ * The Icon term — the last Inline-tier vocabulary word without CSS behind it.
+ *
+ * ── What this replaces ───────────────────────────────────────────────
+ *
+ * Icon sizing was already in the package three times, hand-copied and
+ * drifted:
+ *
+ *   buttons.css   .btn.icon > svg | [class^=…] | [class*=" …"]   1.15em, width/height
+ *   pills.css     .pill-close > …  (same three selectors)         0.85em, width/height
+ *   feedback.css  .empty-icon > …  (only TWO of the three)        1em,    inline-size
+ *
+ * Three restatements of one rule, three different sizes, two different
+ * property spellings — and feedback.css was missing the
+ * `[class*=" i-heroicons"]` branch, so an icon written
+ * `class="shrink-0 i-heroicons:inbox"` silently had no size there. That is
+ * the four-focus-recipes problem in miniature, and it is why this is one
+ * rule now with the size as a token.
+ *
+ * ── The package ships no icons ───────────────────────────────────────
+ *
+ * It only sizes what it finds. Bring your own — Iconify, Uno's
+ * preset-icons, inline <svg>, an <img>. The recognised shapes are an
+ * <svg>, an <img>, or any element whose class starts `i-heroicons`, which
+ * is the naming Uno's preset produces.
+ *
+ * An unsized <svg> defaults to 300x150, so this is not cosmetic: an icon
+ * the package does not size does not look slightly wrong, it destroys the
+ * layout it is in.
+ *
+ * ── Two ways to get sized ────────────────────────────────────────────
+ *
+ * 1. Sit inside a component the package owns. A bare <svg> in a .btn, a
+ *    .navlink, an .alert-icon and so on is sized automatically, so
+ *    existing markup needs no new class. Adding a component that holds
+ *    icons means adding it to the list below — the same explicit cost the
+ *    surface and chip :where() groups have.
+ *
+ * 2. Carry `.icon`. That works anywhere, including places the package has
+ *    never heard of, and is the Icon vocabulary term proper:
+ *
+ *      <svg class="icon" aria-hidden="true">…</svg>
+ *      <span class="icon i-heroicons:check" aria-hidden="true"></span>
+ *
+ * ── Size ─────────────────────────────────────────────────────────────
+ *
+ * --icon-size is in `em`, so an icon tracks the text it sits beside
+ * rather than needing a size per context. Components that want a
+ * different ratio set the token rather than restating the rule:
+ *
+ *   .pill-close { --icon-size: 0.85em; }
+ *
+ * ── Accessibility ────────────────────────────────────────────────────
+ *
+ * An icon is decoration unless it is the only content. Decorative icons
+ * take `aria-hidden="true"`; an icon-only control puts the name on the
+ * control (`aria-label` on the <button>), not on the icon. There is no CSS
+ * for this — it is markup, and it is the half of the system that does not
+ * ship as a stylesheet.
+ */
+
+/*
+ * The shapes an icon can be, and the components that hold one.
+ *
+ * :where() on both halves keeps the whole thing at zero specificity, so a
+ * component's own `--icon-size` wins, and so does anything a consumer
+ * writes. Nothing here should ever beat the markup it is helping.
+ */
+:where(
+  .btn,
+  .square,
+  .pill-close,
+  .empty-icon,
+  .alert-icon,
+  .navlink,
+  .navlist-label,
+  .field-addon,
+  .page,
+  .tab,
+  .link,
+  .item,
+  .list-row,
+  .row-actions,
+  .step-label,
+  .breadcrumb li,
+  .tile-delta,
+  .badge,
+  .pill,
+  .chip,
+  .topbar,
+  .surface-header,
+  .disclosure-summary
+) > :where(svg, img, [class^="i-heroicons"], [class*=" i-heroicons"]),
+.icon {
+  inline-size: var(--icon-size, 1.15em);
+  block-size:  var(--icon-size, 1.15em);
+  /* An icon must never be the thing that gives way in a flex row. */
+  flex-shrink: 0;
+}
+
+/*
+ * Per-component ratios. These were the three different hardcoded sizes;
+ * now they are one declaration each, and the rule above is untouched.
+ */
+.pill-close { --icon-size: 0.85em; }
+.empty-icon { --icon-size: 1em; }

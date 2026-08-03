@@ -4,6 +4,7 @@
 
 import { createMemoryStore }  from './stores/memory.ts'
 import { createEnvResolver }  from './credentials.ts'
+import { Resilience, countsAsTargetFault } from './resilience.ts'
 import { Router }             from './router.ts'
 import type {
   IConduit,
@@ -33,23 +34,45 @@ export function createConduit(
     {
       timeout_ms:         opts.timeout_ms,
       retry_limit:        opts.retry_limit,
+      deadline_ms:        opts.deadline_ms,
       max_response_bytes: opts.max_response_bytes,
     },
     hooks,
     _overrides
   )
 
+  const resilience = new Resilience(opts.resilience)
+
   // Set by destroy(). The router evicts its pool, but without this flag a
   // late in-flight request simply rebuilds the transport and opens a fresh
   // connection — after app.stop() has already run (§3.6).
   let destroyed = false
 
+  // Trace headers sit under the caller's headers, which sit under auth —
+  // so a caller can override a traceparent, but nobody can displace a
+  // credential.
+  function withTrace(req: ConduitRequest): ConduitRequest {
+    if (!opts.trace) return req
+    const headers = opts.trace(req)
+    if (!headers) return req
+    return { ...req, headers: { ...headers, ...req.headers } }
+  }
+
   // User hooks are arbitrary code. A throwing hook must not take down the
   // caller's request: send() documents that it never throws, and a failed
   // metrics export is not a failed deployment.
+  //
+  // Hooks are never awaited — an async hook exporting a span must not add
+  // its latency to every request — so a rejected promise is caught here
+  // too, or it would surface as an unhandled rejection with no context.
   function safe(name: string, fn: () => void) {
     try {
-      fn()
+      // Declared `=> void` so `(req) => arr.push(req)` stays legal, but an
+      // async hook really does return a promise at runtime.
+      const result: unknown = fn()
+      if (result instanceof Promise) {
+        result.catch(err => console.error(`[conduit] hook '${name}' rejected:`, err))
+      }
     } catch (err) {
       console.error(`[conduit] hook '${name}' threw:`, err)
     }
@@ -121,9 +144,17 @@ export function createConduit(
     counters.targets = 0
     for (const descriptor of await store.list()) countTarget(descriptor, 1)
 
-    // Load static targets provided at construction time
+    // Load static targets provided at construction time.
+    //
+    // last_seen_at is carried over from whatever the store already holds:
+    // a static descriptor is written by hand and almost always says null,
+    // so re-applying it verbatim on every boot wiped the heartbeat state
+    // of any target that had been alive before the restart.
     for (const descriptor of opts.targets ?? []) {
-      await put(descriptor)
+      const existing = await store.get(descriptor.id)
+      await put(existing
+        ? { ...descriptor, last_seen_at: descriptor.last_seen_at ?? existing.last_seen_at }
+        : descriptor)
     }
   }
 
@@ -152,8 +183,22 @@ export function createConduit(
       })
     }
 
+    // Load shedding happens before anything else — the whole point is that
+    // a request against a known-bad target costs nothing.
+    const admission = resilience.admit(req.target)
+    if (!admission.ok) {
+      return reject<T>(req, {
+        kind:      admission.kind,
+        target:    req.target,
+        protocol:  null,
+        message:   admission.message,
+        retryable: false,
+      })
+    }
+
     const started = performance.now()
     counters.requests.in_flight++
+    let outcome: 'success' | 'target_fault' | 'other' = 'other'
 
     try {
       const transport = await router.resolve(req.target)
@@ -168,23 +213,52 @@ export function createConduit(
         })
       }
 
-      const result = await transport.send<T>(req)
+      const result = await transport.send<T>(withTrace(req))
 
       // Measured here rather than read from result.meta: meta.duration_ms is
       // per-attempt inside the transport, so it under-reports anything retried
       // and is 0 on failure. This is the number an operator wants.
-      recordResult(result, Math.round(performance.now() - started))
+      const validated = validate<T>(req, result)
+      recordResult(validated, Math.round(performance.now() - started))
 
-      if (result.error) {
-        safe('onError', () => hooks.onError?.(req, result.error!))
+      outcome = validated.error
+        ? (countsAsTargetFault(validated.error.kind) ? 'target_fault' : 'other')
+        : 'success'
+
+      if (validated.error) {
+        safe('onError', () => hooks.onError?.(req, validated.error!))
       } else {
-        safe('onResponse', () => hooks.onResponse?.(req, result))
+        safe('onResponse', () => hooks.onResponse?.(req, validated))
       }
 
-      return result
+      return validated
 
     } finally {
       counters.requests.in_flight--
+      resilience.release(req.target, outcome)
+    }
+  }
+
+  // A 200 is not proof the payload is what the caller's type says it is.
+  // Without a validator `data` is an unchecked cast, so a provider returning
+  // {"error": …} under HTTP 200 flows through as a success.
+  function validate<T>(req: ConduitRequest, result: ConduitResult<T>): ConduitResult<T> {
+    if (result.error || !req.validate) return result
+
+    const verdict = req.validate.validate(result.data)
+    if (verdict.ok) return { ...result, data: verdict.value as T }
+
+    return {
+      data:  null,
+      error: {
+        kind:      'server_error',
+        target:    req.target,
+        protocol:  result.meta.protocol,
+        message:   `Response failed validation: ${verdict.errors.join('; ')}`,
+        retryable: false,
+        raw:       result.data,
+      },
+      meta: result.meta,
     }
   }
 
@@ -222,7 +296,33 @@ export function createConduit(
     }
 
     counters.streams.opened++
-    yield* transport!.stream(req)
+    safe('onStreamStart', () => hooks.onStreamStart?.(req))
+
+    let chunks = 0
+    try {
+      for await (const chunk of transport!.stream(withTrace(req))) {
+        chunks++
+        yield chunk
+      }
+    } catch (err) {
+      // A stream that drops mid-flight reports through onError, same as a
+      // failed send — previously stream() fired onRequest and nothing else,
+      // so a wedged log tail was invisible to any observability.
+      const conduitErr = err instanceof ConduitStreamError
+        ? err.conduit
+        : {
+            kind:      'stream_error' as const,
+            target:    req.target,
+            protocol:  null,
+            message:   (err as Error).message,
+            retryable: false,
+          }
+      bump(counters.errors, conduitErr.kind, 1)
+      safe('onError', () => hooks.onError?.(req, conduitErr))
+      throw err
+    }
+
+    safe('onStreamEnd', () => hooks.onStreamEnd?.(req, chunks))
   }
 
   async function register(descriptor: TargetDescriptor): Promise<void> {
@@ -236,7 +336,16 @@ export function createConduit(
     await store.delete(target)
     if (previous) countTarget(previous, -1)
     router.evict(target)
+    // Drop breaker state too — a re-registered target (new address, new
+    // agent) must not inherit the old one's trip count.
+    resilience.forget(target)
     safe('onDeregistered', () => hooks.onDeregistered?.(target))
+  }
+
+  // The heartbeat path. Deliberately does not evict the pooled connection —
+  // an agent saying "still here" should not tear down the socket it said it on.
+  async function touch(target: string): Promise<void> {
+    await store.touch(target)
   }
 
   async function resolve(target: string): Promise<TargetDescriptor | null> {
@@ -267,8 +376,9 @@ export function createConduit(
           max:   latency.max,
         },
       },
-      streams: { ...streams },
-      errors:  Object.fromEntries(counters.errors),
+      streams:  { ...streams },
+      errors:   Object.fromEntries(counters.errors),
+      breakers: resilience.snapshot(),
     }
   }
 
@@ -278,7 +388,8 @@ export function createConduit(
   async function destroy(): Promise<void> {
     destroyed = true
     router.evictAll()
+    resilience.clear()
   }
 
-  return { init, send, stream, register, deregister, resolve, list, stats, destroy }
+  return { init, send, stream, register, deregister, touch, resolve, list, stats, destroy }
 }

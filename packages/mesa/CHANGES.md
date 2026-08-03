@@ -1,5 +1,143 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-02 — island markers in SSR output (SSR_SPEC W3)
+
+`ctx.islands` had been populated by the compiler since it was written and read
+by nobody: Sierra collected it into `islandMap` and consumed it nowhere, and SSR
+emitted an island's markup inline with nothing to identify it. A client loader
+had no way to tell `<button>0</button>` from the static text beside it, and
+nothing outside Mesa could add a marker, because the markup is produced inside
+Mesa's own renderer.
+
+Opt in with `{ islands: true }` — on `compile`/`compileSource`, or as
+`renderComponent(src, { islands: true })`, which threads it to every module in
+the tree.
+
+```
+<!--mesa-island {"component":"Counter","directive":"load","props":{"start":3}}-->
+<button>3</button>
+<!--/mesa-island-->
+```
+
+**Comments, not a `<mesa-island>` element.** The element form is what the spec
+sketched and it fails two ways that produce no error. The HTML parser
+foster-parents a non-table element out of `<tbody>`, so an island rendering rows
+loses the association before any loader runs — checked in headless Chrome, where
+the comment marker stays put in `TBODY`. And a wrapper element joins `>`
+selectors and flex/grid layout, so a page would style differently prerendered
+than client-rendered; `display: contents` fixes the layout half and nothing
+fixes the selector half.
+
+**Two guards.** The flag switches emission — omitting it is byte-identical to
+before, so RULE 26 holds by default. The environment then decides whether a
+marker is written: `island()` calls the component directly on a real client, so
+client DOM is unchanged even with the flag on.
+
+**The marker carries props as rendered.** `ctx.islands` is a compile-time view
+and sees only literal attributes — `start={2 + 3}` contributes nothing to it,
+while the marker says `{"start":5}`. Both ship: `renderComponent` now returns
+`.islands`, the flattened build-time list with each entry tagged by the file it
+was written in, which is what maps a component *name* onto a module to import.
+Props that cannot survive JSON are dropped with a named warning; a props object
+that cannot be serialized at all degrades to identity-only rather than losing
+the marker.
+
+**Mounting needs no new protocol**: clear the range, then
+`mount(openComment, Comp, { props })`. It must be `mount` — a bare
+`Comp(anchor, props, null)` renders the right markup and registers no delegation
+root, so the island comes back **inert**, the same trap that made all 59 REPL
+examples render and respond to nothing. A click in `render-ssr.test.js` pins it.
+
+**Two things found by probing, both worth keeping.** happy-dom 14.12.3 filters
+`createTreeWalker(root, NodeFilter.SHOW_COMMENT)` to nothing — the obvious
+loader implementation, correct in Chrome, silently finds zero islands under this
+repo's SSR harness. And happy-dom ends a comment at the **first `>`**, not at
+`-->`, which split a marker in two and made `JSON.parse` throw on the fragment;
+the payload now escapes every `-` and `>`, so `a --> b <!-- c > d` round-trips
+exactly through both parsers.
+
+Still Sierra's, and untouched: the loader itself, per-island bundling, and
+name→module resolution.
+
+11 new cases in `render-ssr.test.js`; 891 → 902 pass, 0 fail.
+
+## 2026-08-02 — two emissions that compiled clean and did not parse
+
+Found by a new `repl.test.js` check that the compiled output of every example is
+valid JavaScript. Compiling without errors and emitting valid code are different
+claims; nothing had been checking the second. Each bug had silently broken a
+shipped REPL example.
+
+### `bind:` on a component prop
+
+`<Input bind:value={name} />` put the raw attribute name in the props object:
+
+```js
+Input(el, {bind:value: $runtime.get($$sig_name)}, null)   // not parseable
+```
+
+VISION §3.4 documents the form as supported and nothing in the repo used it, so
+it appears never to have been implemented. Plain `value={name}` is one-way — the
+child's writes never reach the parent — so there was no working two-way binding
+across a component boundary at all.
+
+Now implemented rather than rejected. The parent→child half already existed
+(`pushProps` over the child's `_propRegistry`); the missing half is
+`bindProp(anchor, name, setParent)`, which subscribes to the child's own prop
+signal and writes changes back out. No feedback loop: the write lands on the
+parent's signal, whose equality check stops it. Binding to anything that is not
+a writable top-level `let` is now a compile error naming the variable.
+
+Broke the `uiComponents` example.
+
+### Multi-line interpolated attributes
+
+```html
+<div style="background:{done ? '#a' : '#b'};
+            width:{pct}%">
+```
+
+emitted a template literal that was truncated at the newline and never closed.
+
+`_renderGroup` — the pass that folds consecutive `bindText`/`bindAttribute` calls
+into one `render()` block — is regex surgery over generated source, and its line
+pattern ended at the first `;` before a newline. A CSS semicolon at end-of-line
+looks exactly like a statement terminator. The attribute's first line was pulled
+into a grouping run, the run was rewritten, and the continuation was orphaned.
+
+The scanner now walks lines and requires a complete statement — balanced
+backticks — before grouping anything. A binding it cannot parse is passed
+through untouched: grouping is an optimisation, and leaving a binding alone is
+always correct where truncating one never is.
+
+Worth knowing for anyone reproducing it: a preceding text binding is required.
+It is what pulls the attribute into the same run, so a single-element fixture
+compiles fine even on the broken compiler.
+
+Broke the `guiTimer` example.
+
+**New:** `emission.test.js` — 7 tests. Both fixtures were checked against the
+pre-fix compiler to confirm they actually reproduce.
+
+## 2026-08-02 — `$: { }` assignments no longer emit invalid code
+
+`$: { count = count + 1 }` compiled to `$runtime.get($$sig_count) = …`, an
+invalid assignment target. The compiler reported nothing; it threw
+"Invalid left-hand side in assignment" the first time the effect ran.
+
+Cause: the `$:` effect emitter called `rewriteExpr` but not
+`rewriteAssignments` — the only user-code emitter that skipped it. Script
+statements and watch handlers had always called both. Member writes
+(`obj.n = …`) went through the proxy and were never affected, which is why it
+survived: the shapes people reach for first still worked.
+
+Fixed by carrying the body's AST node on the effect record and running
+`rewriteAssignments` before `rewriteExpr`, as every other site does. 691
+compiler + runtime tests unchanged.
+
+This is why no REPL example used the `$: { }` block form — it could not be made
+to work. There is one now.
+
 Applied during the 2026-07-25 performance/correctness pass. Baseline was the
 `_built: 2026-05-05` snapshot.
 
@@ -71,7 +209,8 @@ nowhere.
 §5 gained the **writer** side of shared state, which was the missing half: it documented
 how components read a plain-object store but not how the store notifies. Plus RULE 51 —
 reactive logic doesn't belong in `.js` modules, stated as discipline rather than
-enforcement, with the reasoning for why no `createRoot` exists.
+enforcement, with the reasoning for why no `createRoot` exists. *(Superseded
+2026-08-02 for lifetime boundaries — VISION RULE 54.)*
 
 ## `$: deps, handler` is deferred and receives the previous value
 
@@ -133,7 +272,15 @@ lifetime of a page. It now warns.
 Reactive code outside a component stays supported but deliberately unadvertised:
 `createEffect` works there, returns a disposer, and owns nested effects. No
 `createRoot` was added — naming the pattern is what blesses it, and Sierra
-demonstrates it isn't needed. An entire routing framework uses zero reactive
+demonstrates it isn't needed.
+
+*(2026-08-02: reversed for lifetime boundaries only. `createRoot` now exists and
+is exported — see VISION RULE 54. The argument above holds for reactive logic in
+a `.js` store, which RULE 51 still forbids; it does not hold for code that owns a
+span of work and must end it. `createEffect` cannot substitute there: it
+subscribes to what its body reads, so a component that reads then writes a store
+during setup ran **1001 times for one page render** under an effect and once
+under a root.)* An entire routing framework uses zero reactive
 primitives in its `.js` files; every state change is an imperative `.set()` from
 an event handler, socket callback or promise resolution.
 
@@ -347,6 +494,10 @@ Findings from the audit that were **not** acted on:
   (`_listener`, `_owner`, `_contextStack`) is singleton. Concurrent
   `renderToHTML()` calls will interleave. Latent today, but Sierra's
   `render: 'static'` / `getStaticPaths` path will want concurrency.
+  *(2026-08-01: still process-global, but no longer able to interleave —
+  `renderToHTML` is synchronous end to end by contract, with a test asserting
+  it, so `renderAll` is serial rather than racy. Real parallelism still needs
+  one window per worker. See `STATIC_RENDERING.md` §Concurrency.)*
 - **`render-component.js` litters the package directory.** `compileTree()` writes
   temp `__mesa_render_*.mjs` files into the mesa package dir; running the test
   suite leaves ~14 behind. They were removed before archiving.

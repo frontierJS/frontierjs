@@ -4,7 +4,7 @@
 
 import type { Database } from 'bun:sqlite'
 import type { Statements } from './db.ts'
-import type { Job, RegisteredHandler, QueueConfig } from './types.ts'
+import type { Job, RegisteredHandler, QueueConfig, CaravanTelemetry } from './types.ts'
 
 const DEFAULT_RETRY_DELAY = [60_000, 300_000, 1_800_000] // 1m, 5m, 30m
 
@@ -17,7 +17,7 @@ export class QueueWorker {
   private _db:          Database
   private _stmts:       Statements
   private _handlers:    Map<string, RegisteredHandler>
-  _telemetry:   { emit(event: string, data: unknown): void } | null  // set by plugin register()
+  _telemetry:   CaravanTelemetry | null  // set by plugin register()
   private _timer:       ReturnType<typeof setInterval> | null = null
   private _running:     Set<string> = new Set()   // in-flight job IDs
   private _stopping:    boolean = false
@@ -29,7 +29,7 @@ export class QueueWorker {
     stmts:        Statements,
     handlers:     Map<string, RegisteredHandler>,
     pollInterval: number,
-    telemetry:    { emit(event: string, data: unknown): void } | null = null,
+    telemetry:    CaravanTelemetry | null = null,
   ) {
     this.queue        = queue
     this._concurrency = config.concurrency ?? 2

@@ -10,7 +10,9 @@ import { UnixTransport }           from './transports/unix.ts'
 import { NotImplementedTransport } from './transports/not_implemented.ts'
 import { BaseTransport }           from './transports/base.ts'
 import type { ConduitStore, CredentialResolver } from './types.ts'
-import type { TargetDescriptor, ConduitHooks } from './types.ts'
+import type {
+  TargetDescriptor, ConduitHooks, ConduitError, ConduitRequest
+} from './types.ts'
 
 export class Router {
   private pool = new Map<string, BaseTransport>()
@@ -21,6 +23,7 @@ export class Router {
     private opts:        {
       timeout_ms?:         number
       retry_limit?:        number
+      deadline_ms?:        number
       max_response_bytes?: number
     } = {},
     private hooks:       ConduitHooks = {},
@@ -65,13 +68,30 @@ export class Router {
   // ─── Private ─────────────────────────────────────────────
 
   private createTransport(descriptor: TargetDescriptor): BaseTransport {
+    // Retries happen inside the transport, so the hook has to be handed
+    // down — the conduit layer only ever sees the final result.
+    const httpOpts = {
+      timeout_ms:         this.opts.timeout_ms,
+      retry_limit:        this.opts.retry_limit,
+      deadline_ms:        this.opts.deadline_ms,
+      max_response_bytes: this.opts.max_response_bytes,
+      onRetry: (req: ConduitRequest, err: ConduitError, attempt: number) => {
+        try {
+          // Hooks are declared `=> void` so `(req) => arr.push(req)` stays
+          // legal, but an async hook really does return a promise at runtime.
+          const result: unknown = this.hooks.onRetry?.(req, err, attempt)
+          if (result instanceof Promise) {
+            result.catch(e => console.error(`[conduit] hook 'onRetry' rejected:`, e))
+          }
+        } catch (hookErr) {
+          console.error(`[conduit] hook 'onRetry' threw:`, hookErr)
+        }
+      },
+    }
+
     switch (descriptor.protocol) {
       case 'http':
-        return new HttpTransport(descriptor, this.credentials, {
-          timeout_ms:         this.opts.timeout_ms,
-          retry_limit:        this.opts.retry_limit,
-          max_response_bytes: this.opts.max_response_bytes
-        })
+        return new HttpTransport(descriptor, this.credentials, httpOpts)
 
       case 'websocket': {
         const ws = new WebSocketTransport(descriptor, this.credentials)
@@ -89,9 +109,9 @@ export class Router {
       }
 
       case 'unix':
-        return new UnixTransport(descriptor, this.credentials, {
-          timeout_ms: this.opts.timeout_ms
-        })
+        // Same options as HTTP — the unix transport is the HTTP transport
+        // over a socket, so retries, deadline and body caps all apply.
+        return new UnixTransport(descriptor, this.credentials, httpOpts)
 
       case 'ssh':
       case 'nats':

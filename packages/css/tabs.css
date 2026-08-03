@@ -1,0 +1,221 @@
+/*
+ * tabs.css
+ * Tabs — switching between Views inside a Pane. The panel is the existing
+ * View term (frame.css), so this file only adds the strip and the tabs.
+ *
+ * ── Selected state comes from ARIA, not a class ──────────────────────
+ *
+ * The active tab is styled through `[aria-selected="true"]`, deliberately
+ * not through a `.active` class. With a class you can render a tab that
+ * looks selected while announcing itself as unselected — the two states
+ * drift the moment someone updates one and forgets the other. Keying the
+ * CSS off the ARIA attribute makes that divergence unrepresentable: if it
+ * looks selected, it *is* selected as far as assistive tech is concerned.
+ *
+ * ── What this file does not do (Principle 6) ─────────────────────────
+ *
+ * Visual treatment is a class; keyboard and focus behavior is a component.
+ * Tabs need real behavior, and the app owns it:
+ *
+ *   - roving tabindex — selected tab tabindex="0", the rest tabindex="-1"
+ *   - Left/Right (or Up/Down for a vertical strip) move between tabs
+ *   - Home/End jump to first/last
+ *   - activating a tab sets aria-selected and unhides its panel
+ *
+ * Anatomy:
+ *
+ *   <div class="tabs">
+ *     <div class="tablist" role="tablist" aria-label="Invoice sections">
+ *       <button class="tab" role="tab" id="t-1"
+ *               aria-selected="true" aria-controls="v-1">Details</button>
+ *       <button class="tab" role="tab" id="t-2" tabindex="-1"
+ *               aria-selected="false" aria-controls="v-2">History</button>
+ *     </div>
+ *
+ *     <article class="view" role="tabpanel" id="v-1"
+ *              aria-labelledby="t-1" tabindex="0"> … </article>
+ *     <article class="view" role="tabpanel" id="v-2"
+ *              aria-labelledby="t-2" tabindex="0" hidden> … </article>
+ *   </div>
+ *
+ * tabindex="0" on the panel matters: panel content is often not focusable,
+ * and without it a keyboard user tabs off the strip straight past the
+ * content it controls.
+ */
+
+.tabs {
+  display: block;
+}
+
+/*
+ * The tone lives here and is passed down as an inheriting property.
+ * `.tablist.danger` works; putting the tone on an individual .tab does not,
+ * because --bg-mix is element-scoped (see tones.css).
+ */
+.tablist {
+  --tab-accent: var(--bg-mix, var(--color-primary));
+
+  display:          flex;
+  gap:              0.25rem;
+  border-block-end: 1px solid var(--rule);
+
+  /* Many tabs on a narrow screen scroll rather than wrap or squash. */
+  overflow-x: auto;
+}
+
+.tab {
+  flex-shrink:  0;
+  display:      inline-flex;
+  align-items:  center;
+  gap:          0.375rem;
+
+  /* <button> reset */
+  background: none;
+  border:     none;
+  font:       inherit;
+  cursor:     pointer;
+
+  padding:          0.5rem 0.875rem;
+  font-size:        0.875rem;
+  font-weight:      600;
+  color:            var(--ink-soft);
+  white-space:      nowrap;
+  border-block-end: 2px solid transparent;
+  /* Pull the 2px underline down onto the tablist's 1px rule. */
+  margin-block-end: -1px;
+
+  transition: color 120ms, border-color 120ms, background 120ms;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+/*
+ * The ring itself is in focus.css (inset, because the tablist scrolls).
+ * What stays here is the shape it traces: a tab is square while it rests,
+ * so its 2px underline sits flat on the tablist rule, and rounds only for
+ * the ring — outline follows border-radius.
+ */
+.tab:focus-visible {
+  border-radius: var(--btn-radius);
+}
+
+.tab[aria-selected="true"] {
+  color:                  var(--tab-accent);
+  border-block-end-color: var(--tab-accent);
+}
+
+.tab:disabled,
+.tab[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor:  not-allowed;
+}
+
+/* ── Stretch — tabs share the width equally ──────────────────────── */
+.tablist.stretch .tab {
+  flex:            1;
+  justify-content: center;
+}
+
+/* ── Pills — a filled strip with no baseline rule ────────────────── */
+.tablist.pills {
+  border-block-end: none;
+  gap:              0.375rem;
+}
+.tablist.pills .tab {
+  border-block-end: none;
+  margin-block-end: 0;
+  border-radius:    var(--btn-radius);
+  padding:          0.375rem 0.75rem;
+}
+.tablist.pills .tab:hover:not([aria-selected="true"]) {
+  background: var(--surface-sunken);
+}
+.tablist.pills .tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--tab-accent) 12%, var(--surface));
+  color:      var(--tab-accent);
+}
+
+/* Panels sit below the strip with a little air. */
+.tabs > .view {
+  padding-block-start: 1rem;
+}
+
+/*
+ * ── Vertical — the strip runs down the side ──────────────────────────
+ *
+ *   <div class="tabs vertical">
+ *     <div class="tablist" role="tablist" aria-orientation="vertical" …>
+ *
+ * For settings screens and anything with more than about six sections,
+ * where a horizontal strip either wraps or scrolls and the labels are too
+ * long to abbreviate.
+ *
+ * `aria-orientation="vertical"` on the tablist is not decorative: it tells
+ * assistive tech which arrow keys to expect, and it changes what the app
+ * has to implement — **Up/Down move between tabs, not Left/Right**. Left
+ * and Right should do nothing. That is still the app's job (Principle 6);
+ * this file only turns the strip.
+ */
+.tabs.vertical {
+  display:     flex;
+  align-items: flex-start;
+  gap:         1.5rem;
+}
+
+.tabs.vertical .tablist {
+  flex-direction:    column;
+  align-items:       stretch;
+  gap:               0.125rem;
+
+  /* The rule moves from under the strip to beside it. */
+  border-block-end:  none;
+  border-inline-end: 1px solid var(--rule);
+
+  /* A vertical strip grows downward; it does not need to scroll sideways. */
+  overflow-x:      visible;
+  flex-shrink:     0;
+  min-inline-size: 11rem;
+}
+
+.tabs.vertical .tab {
+  /* The 2px indicator moves from the bottom edge to the inline end. */
+  border-block-end:   none;
+  margin-block-end:   0;
+  border-inline-end:  2px solid transparent;
+  margin-inline-end:  -1px;
+
+  justify-content: flex-start;
+  text-align:      start;
+  /* Long section names wrap instead of scrolling out of reach. */
+  white-space:     normal;
+}
+
+.tabs.vertical .tab[aria-selected="true"] {
+  border-inline-end-color: var(--tab-accent);
+}
+
+.tabs.vertical > .view {
+  flex: 1;
+  /*
+   * A flex item defaults to min-inline-size: auto, so a wide table or a
+   * long <pre> inside the panel pushes the track wider than the container
+   * instead of scrolling inside it — and the whole page then scrolls
+   * sideways. Same single line, same reason, as .screen in frame.css.
+   */
+  min-inline-size:     0;
+  padding-block-start: 0;
+}
+
+/*
+ * A vertical pills strip has no side rule to hang the indicator on, so
+ * the selected pill keeps the filled treatment and drops the border.
+ */
+.tabs.vertical .tablist.pills {
+  border-inline-end: none;
+}
+.tabs.vertical .tablist.pills .tab {
+  border-inline-end: none;
+  margin-inline-end: 0;
+}

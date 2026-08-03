@@ -2,20 +2,24 @@
 // Conduit — Test Suite
 // ============================================================
 
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect } from 'bun:test'
 import { createConduit }      from './src/conduit.ts'
 import { conduit as conduitPlugin } from './src/plugin.ts'
 import { createMemoryStore }  from './src/stores/memory.ts'
+import { createSQLiteStore }  from './src/stores/sqlite.ts'
+import { Database }           from 'bun:sqlite'
 import { createTestConduit }  from './src/testing.ts'
 import { StubTransport }      from './src/transports/stub.ts'
 import { HttpTransport }      from './src/transports/http.ts'
 import { WebSocketTransport } from './src/transports/websocket.ts'
+import { UnixTransport }      from './src/transports/unix.ts'
 import {
   createEnvResolver,
   createStaticResolver,
   createNullResolver,
   withCache,
 } from './src/credentials.ts'
+import { createTraceContext } from './src/trace.ts'
 import { ConduitStreamError } from './src/types.ts'
 import type {
   TargetDescriptor,
@@ -241,11 +245,11 @@ describe('credential resolvers', () => {
 
 describe('credential resolution through the HTTP transport', () => {
   it('resolves a bearer ref at send time', async () => {
-    let seen: string | null = null
+    const seen: (string | null)[] = []
     const server = Bun.serve({
       port: 0,
       fetch(req) {
-        seen = req.headers.get('authorization')
+        seen.push(req.headers.get('authorization'))
         return Response.json({ ok: true })
       }
     })
@@ -256,7 +260,7 @@ describe('credential resolution through the HTTP transport', () => {
       const result = await t.send({ target: target.id, method: 'GET', path: '/servers' })
 
       expect(result.error).toBeNull()
-      expect(seen).toBe('Bearer htz-token-abc')
+      expect(seen[0]).toBe('Bearer htz-token-abc')
     } finally {
       server.stop(true)
     }
@@ -296,11 +300,11 @@ describe('credential resolution through the HTTP transport', () => {
   })
 
   it('an api_key ref resolves into the configured header', async () => {
-    let seen: string | null = null
+    const seen: (string | null)[] = []
     const server = Bun.serve({
       port: 0,
       fetch(req) {
-        seen = req.headers.get('x-api-key')
+        seen.push(req.headers.get('x-api-key'))
         return Response.json({ ok: true })
       }
     })
@@ -313,7 +317,7 @@ describe('credential resolution through the HTTP transport', () => {
       const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
       await t.send({ target: target.id, method: 'GET' })
 
-      expect(seen).toBe('htz-token-abc')
+      expect(seen[0]).toBe('htz-token-abc')
     } finally {
       server.stop(true)
     }
@@ -323,7 +327,7 @@ describe('credential resolution through the HTTP transport', () => {
 // ─── HTTP transport — request construction ───────────────────
 
 // Spins up a server that records what it received and replies with `reply`.
-function recorder(reply: (req: Request) => Response) {
+function recorder(reply: (req: Request) => Response | Promise<Response>) {
   const seen: Request[] = []
   const server = Bun.serve({
     port: 0,
@@ -606,7 +610,7 @@ describe('StubTransport', () => {
 
 describe('createTestConduit', () => {
   it('routes send() to the correct stub', async () => {
-    const { conduit } = createTestConduit({
+    const { conduit } = await createTestConduit({
       'agent:srv-abc': { '/deploy': { deployed: true } },
     })
 
@@ -616,7 +620,7 @@ describe('createTestConduit', () => {
   })
 
   it('returns typed stubs keyed by target id', async () => {
-    const { conduit, stubs } = createTestConduit({
+    const { conduit, stubs } = await createTestConduit({
       'agent:srv-abc': { '/deploy': { deployed: true } },
       'provider:hetzner': { '/servers/42': { id: 42, status: 'running' } },
     })
@@ -629,7 +633,7 @@ describe('createTestConduit', () => {
   })
 
   it('records multiple calls in order', async () => {
-    const { conduit, stubs } = createTestConduit({
+    const { conduit, stubs } = await createTestConduit({
       'agent:srv-abc': {
         '/pull':         { ok: true },
         '/deploy':       { deployed: true },
@@ -646,7 +650,7 @@ describe('createTestConduit', () => {
   })
 
   it('reset between test cases clears call history', async () => {
-    const { conduit, stubs } = createTestConduit({
+    const { conduit, stubs } = await createTestConduit({
       'agent:srv-abc': { '/deploy': { deployed: true } },
     })
 
@@ -657,23 +661,249 @@ describe('createTestConduit', () => {
     expect(stubs['agent:srv-abc'].calls).toHaveLength(0)
   })
 
-  it('infers kind from target id prefix', async () => {
-    const { conduit } = createTestConduit({
+  // Stubs used to bypass the store entirely, so resolve()/list()/stats()
+  // returned nothing for a stubbed target — and a test asserted that as
+  // correct, which made it impossible to integration-test any code calling
+  // send() alongside resolve().
+  it('stubbed targets are resolvable, with kind inferred from the id prefix', async () => {
+    const { conduit } = await createTestConduit({
       'provider:stripe': {},
       'agent:srv-1':     {},
       'local:sidecar':   {},
     })
 
-    const provider = await conduit.resolve('provider:stripe')
-    const agent    = await conduit.resolve('agent:srv-1')
-    const local    = await conduit.resolve('local:sidecar')
+    expect((await conduit.resolve('provider:stripe'))!.kind).toBe('provider')
+    expect((await conduit.resolve('agent:srv-1'))!.kind).toBe('agent')
+    expect((await conduit.resolve('local:sidecar'))!.kind).toBe('local')
+  })
 
-    // Stubs bypass the store — resolve falls back to store which is empty
-    // for overridden targets. Kind inference is exercised during stub creation.
-    // We verify no errors are thrown during setup.
-    expect(provider).toBeNull() // store has no entry — overrides bypass it
-    expect(agent).toBeNull()
-    expect(local).toBeNull()
+  it('stubbed targets appear in list() and stats()', async () => {
+    const { conduit } = await createTestConduit({
+      'provider:stripe': {},
+      'agent:srv-1':     {},
+    })
+
+    expect((await conduit.list()).map(t => t.id).sort())
+      .toEqual(['agent:srv-1', 'provider:stripe'])
+    expect(conduit.stats().targets.total).toBe(2)
+    expect(conduit.stats().targets.byKind.provider).toBe(1)
+  })
+
+  it('mixes stubbed targets with plain registered ones', async () => {
+    const { conduit, stubs } = await createTestConduit(
+      { 'agent:stubbed': { '/ping': { pong: true } } },
+      { targets: [providerTarget()] },
+    )
+
+    // The real descriptor resolves...
+    expect((await conduit.resolve('provider:hetzner'))!.address)
+      .toBe('https://api.hetzner.cloud/v1')
+    // ...and the stub still intercepts send()
+    const result = await conduit.send({ target: 'agent:stubbed', method: 'POST', path: '/ping' })
+    expect(result.data).toEqual({ pong: true })
+    expect(stubs['agent:stubbed'].calls).toHaveLength(1)
+  })
+})
+
+// ─── StubTransport can simulate failure ──────────────────────
+
+describe('StubTransport failure simulation', () => {
+  const descriptor = agentTarget()
+
+  it('mockError returns a typed conduit error', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mockError('/deploy', 'timeout', { retryable: true })
+
+    const result = await stub.send({ target: descriptor.id, method: 'POST', path: '/deploy' })
+
+    expect(result.data).toBeNull()
+    expect(result.error!.kind).toBe('timeout')
+    expect(result.error!.retryable).toBe(true)
+  })
+
+  it('mocks are keyed on method + path when qualified', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mock('GET /servers/42', { id: 42 })
+    stub.mockError('DELETE /servers/42', 'auth_failed')
+
+    const read = await stub.send({ target: descriptor.id, method: 'GET', path: '/servers/42' })
+    const del  = await stub.send({ target: descriptor.id, method: 'DELETE', path: '/servers/42' })
+
+    // Previously indistinguishable — both matched the same path key
+    expect(read.data).toEqual({ id: 42 })
+    expect(del.error!.kind).toBe('auth_failed')
+  })
+
+  it('a bare path still matches any method', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mock('/health', { ok: true })
+
+    for (const method of ['GET', 'POST', 'DELETE']) {
+      const r = await stub.send({ target: descriptor.id, method, path: '/health' })
+      expect(r.data).toEqual({ ok: true })
+    }
+  })
+
+  it('a method-qualified mock wins over a bare one', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mock('/servers', { all: true })
+    stub.mock('POST /servers', { created: true })
+
+    expect((await stub.send({ target: descriptor.id, method: 'GET',  path: '/servers' })).data)
+      .toEqual({ all: true })
+    expect((await stub.send({ target: descriptor.id, method: 'POST', path: '/servers' })).data)
+      .toEqual({ created: true })
+  })
+
+  it('delays a response so timeout behaviour is testable', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mock('/slow', { ok: true }, { delay_ms: 120 })
+
+    const started = performance.now()
+    await stub.send({ target: descriptor.id, method: 'GET', path: '/slow' })
+    expect(performance.now() - started).toBeGreaterThanOrEqual(100)
+  })
+
+  it('mockDefaultError makes unexpected calls fail loudly', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mock('/expected', { ok: true })
+    stub.mockDefaultError('target_not_found', { message: 'unexpected call' })
+
+    expect((await stub.send({ target: descriptor.id, method: 'GET', path: '/expected' })).error)
+      .toBeNull()
+    expect((await stub.send({ target: descriptor.id, method: 'GET', path: '/other' })).error!.message)
+      .toBe('unexpected call')
+  })
+
+  it('mockStream yields chunks with sequence numbers', async () => {
+    const stub = new StubTransport(descriptor, 'websocket')
+    stub.mockStream('/logs', ['line-1', 'line-2', 'line-3'])
+
+    const chunks: unknown[] = []
+    for await (const chunk of stub.stream({ target: descriptor.id, method: 'logs', path: '/logs' })) {
+      chunks.push([chunk.sequence, chunk.data])
+    }
+
+    expect(chunks).toEqual([[0, 'line-1'], [1, 'line-2'], [2, 'line-3']])
+  })
+
+  it('a mocked stream error throws ConduitStreamError', async () => {
+    const stub = new StubTransport(descriptor, 'websocket')
+    stub.mockError('/logs', 'stream_error', { message: 'agent vanished' })
+
+    await expect(
+      stub.stream({ target: descriptor.id, method: 'logs', path: '/logs' })[Symbol.asyncIterator]().next()
+    ).rejects.toBeInstanceOf(ConduitStreamError)
+  })
+
+  it('status is reported on the result meta', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mock('/created', { id: 1 }, { status: 201 })
+
+    const result = await stub.send({ target: descriptor.id, method: 'POST', path: '/created' })
+    expect(result.meta.status).toBe(201)
+  })
+
+  it('reset clears mocked errors too', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mockError('/deploy', 'timeout')
+    stub.reset()
+
+    const result = await stub.send({ target: descriptor.id, method: 'POST', path: '/deploy' })
+    expect(result.error).toBeNull()
+    expect(result.data).toEqual({ ok: true })
+  })
+})
+
+// ─── SQLite store ────────────────────────────────────────────
+
+// This backend was never imported by any test — it could have been broken
+// in any way and the suite would have stayed green.
+describe('createSQLiteStore', () => {
+  function store() {
+    const db = new Database(':memory:')
+    return { db, store: createSQLiteStore(db) }
+  }
+
+  it('creates its table on init and returns null for unknown ids', async () => {
+    const { store: s } = store()
+    await s.init()
+    expect(await s.get('unknown')).toBeNull()
+  })
+
+  it('round-trips a descriptor including the auth ref', async () => {
+    const { store: s } = store()
+    await s.init()
+    await s.set(agentTarget())
+
+    const found = (await s.get('agent:srv-test'))!
+    expect(found.address).toBe('http://10.0.0.5:7700')
+    expect(found.auth).toEqual({ type: 'hmac', ref: 'AGENT_SECRET' })
+    expect(found.kind).toBe('agent')
+  })
+
+  it('preserves registered_at on upsert but updates the rest', async () => {
+    const { store: s } = store()
+    await s.init()
+    await s.set(agentTarget({ registered_at: 1000 }))
+    await s.set(agentTarget({ registered_at: 9999, address: 'http://new' }))
+
+    const found = (await s.get('agent:srv-test'))!
+    expect(found.registered_at).toBe(1000)
+    expect(found.address).toBe('http://new')
+  })
+
+  it('lists ordered by registered_at', async () => {
+    const { store: s } = store()
+    await s.init()
+    await s.set(agentTarget({ id: 'agent:b', registered_at: 200 }))
+    await s.set(agentTarget({ id: 'agent:a', registered_at: 100 }))
+
+    expect((await s.list()).map(t => t.id)).toEqual(['agent:a', 'agent:b'])
+  })
+
+  it('deletes', async () => {
+    const { store: s } = store()
+    await s.init()
+    await s.set(agentTarget())
+    await s.delete('agent:srv-test')
+    expect(await s.get('agent:srv-test')).toBeNull()
+  })
+
+  it('touch updates last_seen_at', async () => {
+    const { store: s } = store()
+    await s.init()
+    await s.set(agentTarget({ last_seen_at: null }))
+
+    const before = Date.now()
+    await s.touch('agent:srv-test')
+    expect((await s.get('agent:srv-test'))!.last_seen_at).toBeGreaterThanOrEqual(before)
+  })
+
+  it('init is idempotent across restarts against the same file', async () => {
+    const db = new Database(':memory:')
+    const a  = createSQLiteStore(db)
+    await a.init()
+    await a.set(agentTarget())
+
+    // A second store over the same handle — as happens on a process restart
+    const b = createSQLiteStore(db)
+    await b.init()
+    expect((await b.get('agent:srv-test'))!.id).toBe('agent:srv-test')
+  })
+
+  it('survives a conduit restart with counters seeded', async () => {
+    const db = new Database(':memory:')
+
+    const first = createConduit({ store: createSQLiteStore(db), credentials: secrets() })
+    await first.init()
+    await first.register(providerTarget())
+
+    const second = createConduit({ store: createSQLiteStore(db), credentials: secrets() })
+    await second.init()
+
+    expect(second.stats().targets.total).toBe(1)
+    expect((await second.resolve('provider:hetzner'))!.id).toBe('provider:hetzner')
   })
 })
 
@@ -701,7 +931,7 @@ describe('conduit.send()', () => {
   })
 
   it('routes to stub after register()', async () => {
-    const { conduit, stubs } = createTestConduit({
+    const { conduit, stubs } = await createTestConduit({
       'agent:srv-abc': { '/status': { running: true } },
     })
 
@@ -762,7 +992,7 @@ describe('conduit.stream()', () => {
     const c = createConduit()
     await c.init()
 
-    const gen = c.stream({ target: 'agent:missing', method: 'logs' })
+    const gen = c.stream({ target: 'agent:missing', method: 'logs' })[Symbol.asyncIterator]()
     await expect(gen.next()).rejects.toBeInstanceOf(ConduitStreamError)
   })
 
@@ -771,7 +1001,7 @@ describe('conduit.stream()', () => {
     await c.init()
 
     try {
-      await c.stream({ target: 'agent:missing', method: 'logs' }).next()
+      await c.stream({ target: 'agent:missing', method: 'logs' })[Symbol.asyncIterator]().next()
       expect.unreachable('should have thrown')
     } catch (err) {
       expect(err).toBeInstanceOf(ConduitStreamError)
@@ -787,7 +1017,7 @@ describe('conduit hooks', () => {
   it('onRequest fires before send', async () => {
     const seen: ConduitRequest[] = []
 
-    const { conduit } = createTestConduit(
+    const { conduit } = await createTestConduit(
       { 'agent:srv-abc': { '/ping': { pong: true } } },
       { hooks: { onRequest: (req) => seen.push(req) } }
     )
@@ -945,7 +1175,7 @@ describe('conduit.stats()', () => {
   })
 
   it('counts successful requests and records latency', async () => {
-    const { conduit } = createTestConduit({
+    const { conduit } = await createTestConduit({
       'agent:srv-abc': { '/ping': { pong: true } },
     })
 
@@ -989,7 +1219,7 @@ describe('conduit.stats()', () => {
     await c.init()
 
     await expect(
-      c.stream({ target: 'agent:missing', method: 'logs' }).next()
+      c.stream({ target: 'agent:missing', method: 'logs' })[Symbol.asyncIterator]().next()
     ).rejects.toBeInstanceOf(ConduitStreamError)
 
     const s = c.stats()
@@ -1000,7 +1230,7 @@ describe('conduit.stats()', () => {
   })
 
   it('counts opened streams', async () => {
-    const { conduit } = createTestConduit({ 'agent:srv-abc': {} })
+    const { conduit } = await createTestConduit({ 'agent:srv-abc': {} })
 
     for await (const _ of conduit.stream({ target: 'agent:srv-abc', method: 'logs' })) {
       // stub yields nothing
@@ -1052,7 +1282,7 @@ describe('conduit.destroy()', () => {
     await c.destroy()
 
     await expect(
-      c.stream({ target: 'agent:srv-test', method: 'logs' }).next()
+      c.stream({ target: 'agent:srv-test', method: 'logs' })[Symbol.asyncIterator]().next()
     ).rejects.toBeInstanceOf(ConduitStreamError)
   })
 
@@ -1069,7 +1299,7 @@ describe('WebSocket transport — stream()', () => {
 
     try {
       await expect(
-        t.stream({ target: target.id, method: 'logs' }).next()
+        t.stream({ target: target.id, method: 'logs' })[Symbol.asyncIterator]().next()
       ).rejects.toBeInstanceOf(ConduitStreamError)
     } finally {
       t.destroy()
@@ -1097,7 +1327,7 @@ describe('WebSocket transport — stream()', () => {
       protocol: 'websocket',
       address:  `ws://localhost:${server.port}`,
     })
-    const t = new WebSocketTransport(target, createNullResolver())
+    const t = new WebSocketTransport(target, secrets())
 
     try {
       // A string body would previously be destroyed by `{ ...body, _stream: true }`
@@ -1136,7 +1366,7 @@ describe('WebSocket transport — stream()', () => {
       protocol: 'websocket',
       address:  `ws://localhost:${server.port}`,
     })
-    const t = new WebSocketTransport(target, createNullResolver())
+    const t = new WebSocketTransport(target, secrets())
 
     try {
       for await (const _ of t.stream({
@@ -1151,11 +1381,1046 @@ describe('WebSocket transport — stream()', () => {
   })
 })
 
+// ─── WebSocket authentication (§1.1) ─────────────────────────
+
+// Spins up a WS server that records upgrade headers and ends any stream
+// immediately. `reject` refuses the upgrade, simulating an agent enforcing auth.
+function wsRecorder(opts: { reject?: boolean } = {}) {
+  const upgrades: Record<string, string>[] = []
+  const frames:   Record<string, unknown>[] = []
+
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, server) {
+      upgrades.push(Object.fromEntries(req.headers.entries()))
+      if (opts.reject) return new Response('unauthorized', { status: 401 })
+      return server.upgrade(req) ? undefined : new Response('no', { status: 400 })
+    },
+    websocket: {
+      message(ws, raw) {
+        const msg = JSON.parse(String(raw))
+        frames.push(msg)
+        ws.send(JSON.stringify({ id: msg.id, type: 'response', body: { ok: true } }))
+      }
+    }
+  })
+
+  return { upgrades, frames, url: `ws://localhost:${server.port}`, stop: () => server.stop(true) }
+}
+
+describe('WebSocket transport — auth on the upgrade', () => {
+  it('sends a bearer credential on the upgrade request', async () => {
+    const s = wsRecorder()
+    const target = providerTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets())
+
+    try {
+      const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      expect(result.error).toBeNull()
+      expect(s.upgrades[0].authorization).toBe('Bearer htz-token-abc')
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('signs the upgrade for an hmac target', async () => {
+    const s = wsRecorder()
+    const target = agentTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets())
+
+    try {
+      await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+
+      const up = s.upgrades[0]
+      expect(up['x-hub-signature']).toMatch(/^sha256=[0-9a-f]{64}$/)
+      expect(up['x-hub-timestamp']).toMatch(/^\d+$/)
+      expect(up['x-hub-nonce']).toBeDefined()
+    } finally { t.destroy(); s.stop() }
+  })
+
+  // The headline finding: a target declaring auth used to send fully
+  // unauthenticated traffic over WebSocket, silently.
+  it('never opens a connection when the credential cannot be resolved', async () => {
+    const s = wsRecorder()
+    const target = agentTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, createNullResolver())
+
+    try {
+      const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+
+      expect(result.error!.kind).toBe('auth_failed')
+      expect(result.error!.retryable).toBe(false)
+      expect(s.upgrades).toHaveLength(0)   // no upgrade attempted at all
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('an agent rejecting the upgrade surfaces as connection_failed', async () => {
+    const s = wsRecorder({ reject: true })
+    const target = agentTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets())
+
+    try {
+      const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      expect(result.error!.kind).toBe('connection_failed')
+    } finally { t.destroy(); s.stop() }
+  })
+})
+
+// ─── WebSocket connection lifecycle (§2.1, §2.2) ─────────────
+
+describe('WebSocket transport — connection lifecycle', () => {
+  it('concurrent sends open exactly one socket', async () => {
+    let opened = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch(req, server) {
+        return server.upgrade(req) ? undefined : new Response('no', { status: 400 })
+      },
+      websocket: {
+        open() { opened++ },
+        message(ws, raw) {
+          const msg = JSON.parse(String(raw))
+          ws.send(JSON.stringify({ id: msg.id, type: 'response', body: { ok: true } }))
+        }
+      }
+    })
+
+    const target = agentTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
+    const t = new WebSocketTransport(target, secrets())
+
+    try {
+      // Four sends before the connection exists — previously four sockets,
+      // three of them untracked with orphaned ping intervals.
+      const results = await Promise.all([1, 2, 3, 4].map(() =>
+        t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      ))
+
+      expect(results.every(r => r.error === null)).toBe(true)
+      expect(opened).toBe(1)
+    } finally { t.destroy(); server.stop(true) }
+  })
+
+  it('a socket dropping mid-stream terminates the consumer', async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch(req, server) {
+        return server.upgrade(req) ? undefined : new Response('no', { status: 400 })
+      },
+      websocket: {
+        message(ws, raw) {
+          const msg = JSON.parse(String(raw))
+          // One chunk, then close without stream_end
+          ws.send(JSON.stringify({ id: msg.id, type: 'stream_chunk', body: 'line-1', seq: 0 }))
+          setTimeout(() => ws.close(), 10)
+        }
+      }
+    })
+
+    const target = agentTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
+    const t = new WebSocketTransport(target, secrets())
+    const chunks: unknown[] = []
+
+    try {
+      // Previously this for-await never terminated — the close handler
+      // touched `pending` but never `streamListeners`.
+      await expect((async () => {
+        for await (const chunk of t.stream({ target: target.id, method: 'logs' })) {
+          chunks.push(chunk.data)
+        }
+      })()).rejects.toBeInstanceOf(ConduitStreamError)
+
+      expect(chunks).toEqual(['line-1'])
+    } finally { t.destroy(); server.stop(true) }
+  })
+})
+
+// ─── Retry policy (§2.5, §2.6) ───────────────────────────────
+
+describe('retry policy', () => {
+  it('does not retry a POST without an idempotency key', async () => {
+    let hits = 0
+    const s = recorder(() => { hits++; return new Response('boom', { status: 500 }) })
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 3 })
+
+      const result = await t.send({ target: target.id, method: 'POST', path: '/servers' })
+
+      expect(result.error!.kind).toBe('server_error')
+      expect(hits).toBe(1)          // one attempt, not four servers
+    } finally { s.stop() }
+  })
+
+  it('retries a POST when the caller supplies an idempotency key', async () => {
+    let hits = 0
+    const s = recorder(() => { hits++; return new Response('boom', { status: 500 }) })
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 1 })
+
+      await t.send({
+        target: target.id, method: 'POST', path: '/servers',
+        idempotency_key: 'create-web-01',
+      })
+
+      expect(hits).toBe(2)          // initial + 1 retry
+    } finally { s.stop() }
+  })
+
+  it('forwards the idempotency key as a header', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      await t.send({
+        target: target.id, method: 'POST', path: '/servers',
+        idempotency_key: 'create-web-01',
+      })
+
+      expect(s.seen[0].headers.get('idempotency-key')).toBe('create-web-01')
+    } finally { s.stop() }
+  })
+
+  it('still retries idempotent methods', async () => {
+    let hits = 0
+    const s = recorder(() => { hits++; return new Response('boom', { status: 500 }) })
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 1 })
+
+      await t.send({ target: target.id, method: 'GET', path: '/servers' })
+      expect(hits).toBe(2)
+    } finally { s.stop() }
+  })
+
+  it('a 200 with an HTML body is a non-retryable server_error', async () => {
+    let hits = 0
+    const s = recorder(() => {
+      hits++
+      return new Response('<html>captive portal</html>', {
+        status: 200, headers: { 'content-type': 'text/html' },
+      })
+    })
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 3 })
+
+      const result = await t.send({ target: target.id, method: 'GET', path: '/servers' })
+
+      // Was: connection_failed { retryable: true } and four attempts
+      expect(result.error!.kind).toBe('server_error')
+      expect(result.error!.retryable).toBe(false)
+      expect(result.error!.message).toContain('text/html')
+      expect(hits).toBe(1)
+    } finally { s.stop() }
+  })
+
+  it('malformed JSON under a JSON content-type is not retried either', async () => {
+    let hits = 0
+    const s = recorder(() => {
+      hits++
+      return new Response('{not json', { headers: { 'content-type': 'application/json' } })
+    })
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 3 })
+
+      const result = await t.send({ target: target.id, method: 'GET' })
+      expect(result.error!.kind).toBe('server_error')
+      expect(result.error!.retryable).toBe(false)
+      expect(hits).toBe(1)
+    } finally { s.stop() }
+  })
+
+  it('accepts vendor JSON content types', async () => {
+    const s = recorder(() => new Response(JSON.stringify({ id: 1 }), {
+      headers: { 'content-type': 'application/vnd.api+json' },
+    }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const result = await t.send<{ id: number }>({ target: target.id, method: 'GET' })
+      expect(result.error).toBeNull()
+      expect(result.data!.id).toBe(1)
+    } finally { s.stop() }
+  })
+})
+
+// ─── HMAC canonical signing (§1.3) ───────────────────────────
+
+describe('hmac signing', () => {
+  async function headersFor(req: Partial<ConduitRequest>, address: string) {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = agentTarget({ address: address || s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      await t.send({ target: target.id, method: 'GET', ...req })
+      return s.seen[0].headers
+    } finally { s.stop() }
+  }
+
+  // Every bodyless command used to go out completely unsigned.
+  it('signs a bodyless POST', async () => {
+    const h = await headersFor({ method: 'POST', path: '/reboot' }, '')
+    expect(h.get('x-hub-signature')).toMatch(/^sha256=[0-9a-f]{64}$/)
+  })
+
+  it('signs a DELETE', async () => {
+    const h = await headersFor({ method: 'DELETE', path: '/servers/42' }, '')
+    expect(h.get('x-hub-signature')).toMatch(/^sha256=[0-9a-f]{64}$/)
+  })
+
+  it('signs a GET', async () => {
+    const h = await headersFor({ method: 'GET', path: '/status' }, '')
+    expect(h.get('x-hub-signature')).toMatch(/^sha256=[0-9a-f]{64}$/)
+  })
+
+  it('emits a timestamp and nonce for replay rejection', async () => {
+    const h = await headersFor({ method: 'POST', path: '/deploy', body: { a: 1 } }, '')
+    const ts = Number(h.get('x-hub-timestamp'))
+    expect(ts).toBeGreaterThan(Date.now() / 1000 - 60)
+    expect(h.get('x-hub-nonce')).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
+  it('binds the signature to the path — same body, different path, different sig', async () => {
+    const a = await headersFor({ method: 'POST', path: '/deploy', body: { x: 1 } }, '')
+    const b = await headersFor({ method: 'POST', path: '/destroy', body: { x: 1 } }, '')
+    expect(a.get('x-hub-signature')).not.toBe(b.get('x-hub-signature'))
+  })
+
+  it('binds the signature to the method', async () => {
+    const a = await headersFor({ method: 'POST',   path: '/x' }, '')
+    const b = await headersFor({ method: 'DELETE', path: '/x' }, '')
+    expect(a.get('x-hub-signature')).not.toBe(b.get('x-hub-signature'))
+  })
+
+  it('honours a custom header prefix', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = agentTarget({
+        address: s.url,
+        auth: { type: 'hmac', ref: 'AGENT_SECRET', header_prefix: 'X-Frontier' },
+      })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+
+      expect(s.seen[0].headers.get('x-frontier-signature')).toMatch(/^sha256=/)
+      expect(s.seen[0].headers.get('x-hub-signature')).toBeNull()
+    } finally { s.stop() }
+  })
+})
+
+// ─── Unix transport shares the HTTP contract (§3.1) ──────────
+
+describe('unix transport', () => {
+  const SOCK = `/tmp/conduit-test-${process.pid}.sock`
+
+  it('applies auth, keeps the method, and passes caller headers', async () => {
+    const seen: Request[] = []
+    const server = Bun.serve({
+      unix: SOCK,
+      fetch(req) { seen.push(req.clone()); return Response.json({ ok: true }) }
+    })
+
+    try {
+      const target = agentTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
+      const t = new UnixTransport(target, secrets())
+
+      const result = await t.send({
+        target:  target.id,
+        method:  'DELETE',
+        path:    '/servers/42',
+        headers: { 'X-Custom': '1' },
+      })
+
+      expect(result.error).toBeNull()
+      const req = seen[0]
+      expect(req.method).toBe('DELETE')                          // was forced to POST
+      expect(new URL(req.url).pathname).toBe('/servers/42')      // was `/${path ?? method}`
+      expect(req.headers.get('x-custom')).toBe('1')              // was dropped
+      expect(req.headers.get('x-hub-signature')).toMatch(/^sha256=/) // was absent entirely
+    } finally { server.stop(true) }
+  })
+
+  it('sends the body unwrapped, exactly like HTTP', async () => {
+    const bodies: string[] = []
+    const server = Bun.serve({
+      unix: SOCK,
+      async fetch(req) { bodies.push(await req.text()); return Response.json({ ok: true }) }
+    })
+
+    try {
+      const target = agentTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
+      const t = new UnixTransport(target, secrets())
+
+      await t.send({ target: target.id, method: 'POST', path: '/deploy', body: { image: 'v2' } })
+
+      // Was re-wrapped as {"method":"deploy","body":{...}}
+      expect(JSON.parse(bodies[0])).toEqual({ image: 'v2' })
+    } finally { server.stop(true) }
+  })
+
+  it('fails closed when the credential cannot be resolved', async () => {
+    const target = agentTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
+    const t = new UnixTransport(target, createNullResolver())
+
+    const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+    expect(result.error!.kind).toBe('auth_failed')
+  })
+
+  it('streaming throws rather than yielding nothing', async () => {
+    const target = agentTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
+    const t = new UnixTransport(target, secrets())
+
+    await expect(
+      t.stream({ target: target.id, method: 'logs' })[Symbol.asyncIterator]().next()
+    ).rejects.toBeInstanceOf(ConduitStreamError)
+  })
+})
+
+// ─── Unimplemented protocols ─────────────────────────────────
+
+describe('NotImplementedTransport', () => {
+  it('send() fails immediately and clearly for an ssh target', async () => {
+    const c = createConduit({ credentials: secrets() })
+    await c.init()
+    await c.register(agentTarget({ protocol: 'ssh', address: 'ssh://host' }))
+
+    const result = await c.send({ target: 'agent:srv-test', method: 'POST', path: '/x' })
+
+    expect(result.error!.kind).toBe('not_implemented')
+    expect(result.error!.retryable).toBe(false)
+    expect(result.error!.message).toContain('ssh')
+  })
+
+  it('stream() throws rather than yielding nothing', async () => {
+    const c = createConduit({ credentials: secrets() })
+    await c.init()
+    await c.register(agentTarget({ protocol: 'nats', address: 'nats://host' }))
+
+    await expect(
+      c.stream({ target: 'agent:srv-test', method: 'logs' })[Symbol.asyncIterator]().next()
+    ).rejects.toBeInstanceOf(ConduitStreamError)
+  })
+})
+
+// ─── Heartbeats (touch) ──────────────────────────────────────
+
+describe('conduit.touch()', () => {
+  // touch() existed on the store, was tested, and was called by nothing —
+  // last_seen_at was permanently whatever registration set it to.
+  it('refreshes last_seen_at without re-registering', async () => {
+    const c = createConduit({ credentials: secrets() })
+    await c.init()
+    await c.register(agentTarget({ last_seen_at: null }))
+
+    const before = Date.now()
+    await c.touch('agent:srv-test')
+
+    const found = (await c.resolve('agent:srv-test'))!
+    expect(found.last_seen_at).toBeGreaterThanOrEqual(before)
+  })
+
+  it('does not disturb the rest of the descriptor', async () => {
+    const c = createConduit({ credentials: secrets() })
+    await c.init()
+    await c.register(agentTarget({ registered_at: 1000 }))
+    await c.touch('agent:srv-test')
+
+    const found = (await c.resolve('agent:srv-test'))!
+    expect(found.registered_at).toBe(1000)
+    expect(found.address).toBe('http://10.0.0.5:7700')
+  })
+
+  it('is a no-op for an unknown target', async () => {
+    const c = createConduit()
+    await c.init()
+    await expect(c.touch('agent:never-existed')).resolves.toBeUndefined()
+  })
+
+  it('a restart does not wipe heartbeat state for a static target', async () => {
+    const db     = new Database(':memory:')
+    const target = providerTarget({ last_seen_at: null })
+
+    const first = createConduit({ store: createSQLiteStore(db), targets: [target] })
+    await first.init()
+    await first.touch('provider:hetzner')
+    const seenAt = (await first.resolve('provider:hetzner'))!.last_seen_at
+    expect(seenAt).not.toBeNull()
+
+    // Rebooting re-applies opts.targets, whose last_seen_at is null.
+    // That used to overwrite the live heartbeat with null on every restart.
+    const second = createConduit({ store: createSQLiteStore(db), targets: [target] })
+    await second.init()
+
+    expect((await second.resolve('provider:hetzner'))!.last_seen_at).toBe(seenAt)
+  })
+})
+
+// ─── Retry observability and budget (§2.7) ───────────────────
+
+describe('retry backoff, deadline and onRetry', () => {
+  it('fires onRetry once per retried attempt', async () => {
+    const seen: Array<{ kind: string; attempt: number }> = []
+    const s = recorder(() => new Response('boom', { status: 500 }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 2,
+        hooks: { onRetry: (_req, err, attempt) => seen.push({ kind: err.kind, attempt }) },
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET', path: '/servers' })
+
+      expect(seen).toEqual([
+        { kind: 'server_error', attempt: 1 },
+        { kind: 'server_error', attempt: 2 },
+      ])
+    } finally { s.stop() }
+  })
+
+  it('onRetry receives the original request', async () => {
+    const paths: (string | undefined)[] = []
+    const s = recorder(() => new Response('boom', { status: 500 }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 1,
+        hooks: { onRetry: (req) => paths.push(req.path) },
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET', path: '/servers' })
+      expect(paths).toEqual(['/servers'])
+    } finally { s.stop() }
+  })
+
+  it('a total deadline caps the whole call, retries included', async () => {
+    let hits = 0
+    const s = recorder(() => { hits++; return new Response('boom', { status: 500 }) })
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), {
+        retry_limit: 10,
+        deadline_ms: 600,
+      })
+
+      const started = performance.now()
+      const result  = await t.send({ target: target.id, method: 'GET' })
+      const elapsed = performance.now() - started
+
+      expect(result.error).not.toBeNull()
+      expect(elapsed).toBeLessThan(2000)   // not 10 attempts' worth of backoff
+      expect(hits).toBeLessThan(10)
+    } finally { s.stop() }
+  })
+
+  it('backoff is jittered rather than fixed', async () => {
+    // Same nominal backoff, sampled repeatedly — lockstep retry waves are
+    // what jitter exists to prevent, so identical delays every time is a bug.
+    const delays = new Set<number>()
+    const s = recorder(() => new Response('boom', { status: 500 }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      for (let i = 0; i < 6; i++) {
+        const t = new HttpTransport(target, secrets(), { retry_limit: 1 })
+        const started = performance.now()
+        await t.send({ target: target.id, method: 'GET' })
+        delays.add(Math.round(performance.now() - started))
+      }
+      expect(delays.size).toBeGreaterThan(1)
+    } finally { s.stop() }
+  })
+})
+
+// ─── Unknown methods (§3.3) ──────────────────────────────────
+
+describe('unknown HTTP methods', () => {
+  it('a typo is rejected rather than silently sent as POST', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const result = await t.send({ target: target.id, method: 'GTE', path: '/servers' })
+
+      expect(result.error!.kind).toBe('invalid_request')
+      expect(result.error!.retryable).toBe(false)
+      expect(s.seen).toHaveLength(0)   // was: POST /servers against a control plane
+    } finally { s.stop() }
+  })
+
+  it('protocol-specific methods still work on a websocket target', async () => {
+    // 'logs' is meaningless to HTTP but valid over the WS wire protocol
+    const stub = new StubTransport(agentTarget(), 'websocket')
+    stub.mockStream('/logs', ['line-1'])
+
+    const chunks: unknown[] = []
+    for await (const c of stub.stream({ target: 'agent:srv-test', method: 'logs', path: '/logs' })) {
+      chunks.push(c.data)
+    }
+    expect(chunks).toEqual(['line-1'])
+  })
+})
+
+// ─── Stream lifecycle hooks ──────────────────────────────────
+
+describe('stream lifecycle hooks', () => {
+  it('onStreamStart and onStreamEnd report the chunk count', async () => {
+    const events: string[] = []
+    const { conduit, stubs } = await createTestConduit(
+      { 'agent:srv-abc': {} },
+      {
+        hooks: {
+          onStreamStart: () => events.push('start'),
+          onStreamEnd:   (_req, chunks) => events.push(`end:${chunks}`),
+        }
+      }
+    )
+    stubs['agent:srv-abc'].mockStream('/logs', ['a', 'b', 'c'])
+
+    for await (const _ of conduit.stream({ target: 'agent:srv-abc', method: 'logs', path: '/logs' })) {
+      // drain
+    }
+
+    expect(events).toEqual(['start', 'end:3'])
+  })
+
+  it('a stream that fails mid-flight reports through onError', async () => {
+    const errors: ConduitError[] = []
+    const { conduit, stubs } = await createTestConduit(
+      { 'agent:srv-abc': {} },
+      { hooks: { onError: (_req, err) => errors.push(err) } }
+    )
+    stubs['agent:srv-abc'].mockError('/logs', 'stream_error', { message: 'agent vanished' })
+
+    await expect((async () => {
+      for await (const _ of conduit.stream({ target: 'agent:srv-abc', method: 'logs', path: '/logs' })) {
+        // never reached
+      }
+    })()).rejects.toBeInstanceOf(ConduitStreamError)
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0].kind).toBe('stream_error')
+  })
+})
+
+// ─── Circuit breaker (§2.7) ──────────────────────────────────
+
+describe('circuit breaker', () => {
+  it('opens after the failure threshold and sheds without dispatching', async () => {
+    let hits = 0
+    const s = recorder(() => { hits++; return new Response('boom', { status: 500 }) })
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { failure_threshold: 3, reset_ms: 60_000 },
+      })
+      await c.init()
+
+      for (let i = 0; i < 3; i++) {
+        await c.send({ target: target.id, method: 'GET', path: '/servers' })
+      }
+      expect(hits).toBe(3)
+
+      // Fourth call must not reach the network at all
+      const shed = await c.send({ target: target.id, method: 'GET', path: '/servers' })
+      expect(shed.error!.kind).toBe('circuit_open')
+      expect(hits).toBe(3)
+    } finally { s.stop() }
+  })
+
+  it('a success resets the failure count', async () => {
+    let fail = true
+    const s = recorder(() => fail
+      ? new Response('boom', { status: 500 })
+      : Response.json({ ok: true }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { failure_threshold: 3, reset_ms: 60_000 },
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET' })
+      await c.send({ target: target.id, method: 'GET' })
+      fail = false
+      await c.send({ target: target.id, method: 'GET' })   // resets
+      fail = true
+      await c.send({ target: target.id, method: 'GET' })
+      await c.send({ target: target.id, method: 'GET' })
+
+      // Only 2 consecutive failures since the reset — still closed
+      const next = await c.send({ target: target.id, method: 'GET' })
+      expect(next.error!.kind).toBe('server_error')
+    } finally { s.stop() }
+  })
+
+  it('admits a trial request once the reset window elapses, and closes on success', async () => {
+    let fail = true
+    const s = recorder(() => fail
+      ? new Response('boom', { status: 500 })
+      : Response.json({ ok: true }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { failure_threshold: 2, reset_ms: 80 },
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET' })
+      await c.send({ target: target.id, method: 'GET' })
+      expect((await c.send({ target: target.id, method: 'GET' })).error!.kind).toBe('circuit_open')
+
+      await new Promise(r => setTimeout(r, 120))
+      fail = false
+
+      const trial = await c.send({ target: target.id, method: 'GET' })
+      expect(trial.error).toBeNull()
+
+      // Closed again — subsequent calls flow
+      expect((await c.send({ target: target.id, method: 'GET' })).error).toBeNull()
+    } finally { s.stop() }
+  })
+
+  // A credential that will not resolve is a local bug. Counting it would
+  // open a breaker that no amount of waiting can heal, and bury the real
+  // error behind circuit_open.
+  it('local faults do not trip the breaker', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: createNullResolver(),   // every ref fails
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { failure_threshold: 2, reset_ms: 60_000 },
+      })
+      await c.init()
+
+      for (let i = 0; i < 4; i++) {
+        const r = await c.send({ target: target.id, method: 'GET' })
+        expect(r.error!.kind).toBe('auth_failed')   // never circuit_open
+      }
+      expect(c.stats().breakers['provider:hetzner']).toBeUndefined()
+    } finally { s.stop() }
+  })
+
+  it('deregistering a target clears its breaker state', async () => {
+    const s = recorder(() => new Response('boom', { status: 500 }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { failure_threshold: 2, reset_ms: 60_000 },
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET' })
+      await c.send({ target: target.id, method: 'GET' })
+      expect(c.stats().breakers[target.id].state).toBe('open')
+
+      await c.deregister(target.id)
+      expect(c.stats().breakers[target.id]).toBeUndefined()
+    } finally { s.stop() }
+  })
+
+  it('stats report only unhealthy targets', async () => {
+    const s = recorder(() => new Response('boom', { status: 500 }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { failure_threshold: 2, reset_ms: 60_000 },
+      })
+      await c.init()
+
+      expect(c.stats().breakers).toEqual({})   // healthy and idle → omitted
+
+      await c.send({ target: target.id, method: 'GET' })
+      await c.send({ target: target.id, method: 'GET' })
+
+      const b = c.stats().breakers[target.id]
+      expect(b.state).toBe('open')
+      expect(b.failures).toBe(2)
+      expect(b.opened_at).not.toBeNull()
+    } finally { s.stop() }
+  })
+
+  it('is disabled when failure_threshold is 0', async () => {
+    let hits = 0
+    const s = recorder(() => { hits++; return new Response('boom', { status: 500 }) })
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { failure_threshold: 0 },
+      })
+      await c.init()
+
+      for (let i = 0; i < 6; i++) await c.send({ target: target.id, method: 'GET' })
+      expect(hits).toBe(6)
+    } finally { s.stop() }
+  })
+})
+
+// ─── Concurrency cap ─────────────────────────────────────────
+
+describe('per-target concurrency cap', () => {
+  it('sheds beyond the cap instead of queueing', async () => {
+    let inFlight = 0, peak = 0
+    const s = recorder(async () => {
+      inFlight++; peak = Math.max(peak, inFlight)
+      await new Promise(r => setTimeout(r, 60))
+      inFlight--
+      return Response.json({ ok: true })
+    })
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { max_concurrent: 2 },
+      })
+      await c.init()
+
+      const results = await Promise.all([1, 2, 3, 4, 5].map(() =>
+        c.send({ target: target.id, method: 'GET' })
+      ))
+
+      const shed = results.filter(r => r.error?.kind === 'overloaded')
+      expect(shed.length).toBe(3)
+      expect(peak).toBeLessThanOrEqual(2)
+    } finally { s.stop() }
+  })
+
+  it('frees slots as requests complete', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(),
+        targets:     [target],
+        retry_limit: 0,
+        resilience:  { max_concurrent: 1 },
+      })
+      await c.init()
+
+      // Sequential calls all succeed — the cap is on concurrency, not rate
+      for (let i = 0; i < 4; i++) {
+        expect((await c.send({ target: target.id, method: 'GET' })).error).toBeNull()
+      }
+    } finally { s.stop() }
+  })
+})
+
+// ─── Response validation (§2.8) ──────────────────────────────
+
+describe('response validation', () => {
+  const isServer = {
+    validate(data: unknown) {
+      const d = data as { id?: unknown }
+      return typeof d?.id === 'number'
+        ? { ok: true as const, value: d as { id: number } }
+        : { ok: false as const, errors: ['expected numeric `id`'] }
+    }
+  }
+
+  it('passes a valid payload through', async () => {
+    const s = recorder(() => Response.json({ id: 42 }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({ credentials: secrets(), targets: [target], retry_limit: 0 })
+      await c.init()
+
+      const r = await c.send<{ id: number }>({
+        target: target.id, method: 'GET', validate: isServer,
+      })
+      expect(r.error).toBeNull()
+      expect(r.data!.id).toBe(42)
+    } finally { s.stop() }
+  })
+
+  // A 200 carrying {"error": …} used to type and behave as a success.
+  it('rejects a well-formed 200 that is the wrong shape', async () => {
+    const s = recorder(() => Response.json({ error: 'quota exceeded' }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({ credentials: secrets(), targets: [target], retry_limit: 0 })
+      await c.init()
+
+      const r = await c.send({ target: target.id, method: 'GET', validate: isServer })
+
+      expect(r.data).toBeNull()
+      expect(r.error!.kind).toBe('server_error')
+      expect(r.error!.retryable).toBe(false)
+      expect(r.error!.message).toContain('numeric `id`')
+      expect(r.error!.raw).toEqual({ error: 'quota exceeded' })
+    } finally { s.stop() }
+  })
+
+  it('a validation failure counts as an error in stats', async () => {
+    const s = recorder(() => Response.json({ nope: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({ credentials: secrets(), targets: [target], retry_limit: 0 })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET', validate: isServer })
+      expect(c.stats().requests.error).toBe(1)
+      expect(c.stats().requests.success).toBe(0)
+    } finally { s.stop() }
+  })
+
+  it('is skipped when the request already failed', async () => {
+    let validated = false
+    const s = recorder(() => new Response('nope', { status: 404 }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({ credentials: secrets(), targets: [target], retry_limit: 0 })
+      await c.init()
+
+      const r = await c.send({
+        target: target.id, method: 'GET',
+        validate: { validate() { validated = true; return { ok: false as const, errors: [] } } },
+      })
+      expect(r.error!.kind).toBe('server_error')
+      expect(validated).toBe(false)
+    } finally { s.stop() }
+  })
+})
+
+// ─── Trace context (§4) ──────────────────────────────────────
+
+describe('trace context', () => {
+  it('attaches a W3C traceparent and correlation id', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(), targets: [target], retry_limit: 0,
+        trace: createTraceContext(),
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET' })
+
+      const tp = s.seen[0].headers.get('traceparent')!
+      expect(tp).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/)
+      expect(s.seen[0].headers.get('x-request-id')).toBe(tp.split('-')[1])
+    } finally { s.stop() }
+  })
+
+  it('continues an existing trace rather than starting a new one', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const traceId = 'a'.repeat(32)
+      const c = createConduit({
+        credentials: secrets(), targets: [target], retry_limit: 0,
+        trace: createTraceContext({ current: () => ({ trace_id: traceId }) }),
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET' })
+      expect(s.seen[0].headers.get('traceparent')).toContain(traceId)
+    } finally { s.stop() }
+  })
+
+  it('a malformed upstream trace id is replaced, not propagated', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(), targets: [target], retry_limit: 0,
+        trace: createTraceContext({ current: () => ({ trace_id: 'not-hex' }) }),
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET' })
+      expect(s.seen[0].headers.get('traceparent')).toMatch(/^00-[0-9a-f]{32}-/)
+      expect(s.seen[0].headers.get('traceparent')).not.toContain('not-hex')
+    } finally { s.stop() }
+  })
+
+  it('a new span id is minted per call', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(), targets: [target], retry_limit: 0,
+        trace: createTraceContext({ current: () => ({ trace_id: 'b'.repeat(32) }) }),
+      })
+      await c.init()
+
+      await c.send({ target: target.id, method: 'GET' })
+      await c.send({ target: target.id, method: 'GET' })
+
+      const spanOf = (i: number) => s.seen[i].headers.get('traceparent')!.split('-')[2]
+      expect(spanOf(0)).not.toBe(spanOf(1))
+    } finally { s.stop() }
+  })
+
+  it('caller headers override trace headers, and auth overrides both', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const c = createConduit({
+        credentials: secrets(), targets: [target], retry_limit: 0,
+        trace: createTraceContext(),
+      })
+      await c.init()
+
+      await c.send({
+        target: target.id, method: 'GET',
+        headers: { traceparent: 'caller-supplied', Authorization: 'Bearer ATTACKER' },
+      })
+
+      expect(s.seen[0].headers.get('traceparent')).toBe('caller-supplied')
+      expect(s.seen[0].headers.get('authorization')).toBe('Bearer htz-token-abc')
+    } finally { s.stop() }
+  })
+})
+
 // ─── Hook safety ─────────────────────────────────────────────
 
 describe('a throwing hook does not take down the caller', () => {
   it('onRequest', async () => {
-    const { conduit } = createTestConduit(
+    const { conduit } = await createTestConduit(
       { 'agent:srv-abc': { '/ping': { pong: true } } },
       { hooks: { onRequest() { throw new Error('boom') } } }
     )
@@ -1166,7 +2431,7 @@ describe('a throwing hook does not take down the caller', () => {
   })
 
   it('onResponse', async () => {
-    const { conduit } = createTestConduit(
+    const { conduit } = await createTestConduit(
       { 'agent:srv-abc': { '/ping': { pong: true } } },
       { hooks: { onResponse() { throw new Error('boom') } } }
     )
@@ -1181,6 +2446,37 @@ describe('a throwing hook does not take down the caller', () => {
 
     const result = await c.send({ target: 'agent:missing', method: 'POST' })
     expect(result.error!.kind).toBe('target_not_found')
+  })
+
+  it('an async hook that rejects is caught, not left unhandled', async () => {
+    const { conduit } = await createTestConduit(
+      { 'agent:srv-abc': { '/ping': { pong: true } } },
+      { hooks: { onResponse: async () => { throw new Error('async boom') } } }
+    )
+
+    const result = await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
+    expect(result.error).toBeNull()
+    // Give the rejection a tick to surface if it were unhandled
+    await new Promise(r => setTimeout(r, 10))
+  })
+
+  it('an async hook is not awaited by send()', async () => {
+    let hookDone = false
+    const { conduit } = await createTestConduit(
+      { 'agent:srv-abc': { '/ping': { pong: true } } },
+      {
+        hooks: {
+          onResponse: async () => {
+            await new Promise(r => setTimeout(r, 200))
+            hookDone = true
+          }
+        }
+      }
+    )
+
+    await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
+    // send() returned without waiting for the 200ms hook
+    expect(hookDone).toBe(false)
   })
 
   it('onRegistered and onDeregistered', async () => {
@@ -1199,6 +2495,11 @@ describe('a throwing hook does not take down the caller', () => {
 
 // ─── Junction plugin wiring ──────────────────────────────────
 
+// Everything that requires a real App — lifecycle ordering, the metrics
+// reach-in, service routing, app-level hooks — lives in
+// junction-integration.test.ts. Driving a hand-rolled `{ _metricsProviders:
+// new Map() }` here would assert the fake's behaviour, not Junction's, and
+// would keep passing after a breaking change on either side.
 describe('conduit Junction plugin', () => {
 
   it('has the correct plugin shape', () => {
@@ -1210,40 +2511,43 @@ describe('conduit Junction plugin', () => {
     expect(typeof plugin.ready).toBe('function')
   })
 
-  it('register() wires _metricsProviders when present', async () => {
-    const providers = new Map<string, () => unknown>()
-    const fakeApp: Record<string, unknown> = { _metricsProviders: providers }
-    const plugin = conduitPlugin()
-    plugin.register!(fakeApp as never)
-    expect(providers.has('conduit')).toBe(true)
-    expect(typeof providers.get('conduit')).toBe('function')
+  // A minimal stand-in for Junction's app.provide(): plugins claim their
+  // namespace through it now, so a fake app has to offer one.
+  const fakeApp = (): Record<string, unknown> => {
+    const a: Record<string, unknown> = { _metricsProviders: new Map() }
+    a.provide = (name: string, value: unknown) => {
+      if (a[name] !== undefined) throw new Error(`already claimed: ${name}`)
+      a[name] = value
+    }
+    return a
+  }
+
+  it('each call to the factory produces an independent instance', () => {
+    const a = fakeApp()
+    const b = fakeApp()
+
+    conduitPlugin().register!(a as never)
+    conduitPlugin().register!(b as never)
+
+    expect(a.conduit).toBeDefined()
+    expect(b.conduit).toBeDefined()
+    expect(a.conduit).not.toBe(b.conduit)
   })
 
-  it('metrics provider returns correct stats shape', async () => {
-    const providers = new Map<string, () => unknown>()
-    const fakeApp: Record<string, unknown> = { _metricsProviders: providers }
+  it('ONE plugin object configured on two apps still gives each its own', () => {
+    // The instance used to be created at factory time, so a reused plugin
+    // object handed both apps the same conduit and the second register()
+    // overwrote the first's app.conduit. It is created per register() now.
     const plugin = conduitPlugin()
-    plugin.register!(fakeApp as never)
-    await plugin.boot!(fakeApp as never)
-    const stats = providers.get('conduit')!() as { targets: { total: number } }
-    expect(stats).toHaveProperty('targets')
-    expect(typeof stats.targets.total).toBe('number')
-  })
+    const a = fakeApp()
+    const b = fakeApp()
 
-  it('shutdown() resolves without throwing', async () => {
-    const fakeApp: Record<string, unknown> = { _metricsProviders: new Map() }
-    const plugin = conduitPlugin()
-    plugin.register!(fakeApp as never)
-    await plugin.boot!(fakeApp as never)
-    await expect(plugin.shutdown!(fakeApp as never)).resolves.toBeUndefined()
-  })
+    plugin.register!(a as never)
+    plugin.register!(b as never)
 
-  it('register() sets the conduit instance on app', () => {
-    const fakeApp: Record<string, unknown> = { _metricsProviders: new Map() }
-    const plugin = conduitPlugin()
-    plugin.register!(fakeApp as never)
-    expect(fakeApp.conduit).toBeDefined()
-    expect(typeof (fakeApp.conduit as Record<string, unknown>).send).toBe('function')
+    expect(a.conduit).toBeDefined()
+    expect(b.conduit).toBeDefined()
+    expect(a.conduit).not.toBe(b.conduit)
   })
 
 })

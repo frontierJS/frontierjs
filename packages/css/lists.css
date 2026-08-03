@@ -32,7 +32,18 @@
   gap:         0.5rem;
 }
 
-/* Menu variant — interactive entries with padding + hover */
+/*
+ * Menu variant — interactive-looking entries with padding + hover.
+ *
+ * ⚠ For anything navigable, use `.navlink` (nav.css) instead. This styles
+ * an <li> to look clickable, but an <li> is not focusable and takes no
+ * keyboard input, so the hover state writes a cheque the markup cannot
+ * cash. `.navlink` goes on a real <a>.
+ *
+ * This variant is fine when the <li> *contains* the control — a <button>
+ * or <a> filling the row — or when a component supplies real
+ * role="menu" / role="menuitem" behavior (Principle 6).
+ */
 .items.menu .item {
   padding:       0.375rem 0.625rem;
   border-radius: var(--btn-radius);
@@ -47,7 +58,7 @@
  *     <li class="list-row">
  *       <label class="field-check">…</label>
  *       <div class="row-actions">
- *         <button class="btn icon">…</button>
+ *         <button class="btn square">…</button>
  *       </div>
  *     </li>
  *   </ul>

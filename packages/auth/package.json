@@ -8,11 +8,13 @@
     ".": "./index.ts"
   },
   "peerDependencies": {
-    "@frontierjs/litestone": "*",
+    "@frontierjs/litestone": "^1.1.0",
     "@frontierjs/junction": "*"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "bun-types": "latest",
+    "@frontierjs/junction": "workspace:*",
+    "@frontierjs/litestone": "workspace:*"
   },
   "keywords": [
     "frontierjs",
@@ -23,6 +25,7 @@
   "license": "MIT",
   "_built": "2026-05-07",
   "scripts": {
-    "test": "bun test tests/"
+    "test": "bun test tests/",
+    "typecheck": "node ../../scripts/typecheck.mjs --baseline 4"
   }
 }

@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en" class="theme-default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Showroom — one model, everything it becomes | FrontierJS</title>
+<meta name="description" content="Pick any place a Litestone model is leveraged — migrations, policies, REST, validation, OpenAPI, live events, UI resources — and see the exact code it produces.">
+
+<!-- Local path so this file renders straight from the repo.
+     Deploy rewrites this to ./css/index.css — see README.md. -->
+<link rel="stylesheet" href="../packages/css/index.css">
+
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: var(--surface); color: var(--ink); }
+  .container { max-width: 76rem; margin-inline: auto; padding-inline: 1.25rem; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
+  }
+  .topbar .container { display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.25rem; }
+  .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; text-decoration: none; color: var(--ink); }
+  .brand span { color: var(--color-primary); }
+  .navset { display: flex; gap: .25rem; flex-wrap: wrap; }
+  .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
+  .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .navset a[aria-current] { background: var(--surface-sunken); color: var(--ink); font-weight: 600; }
+
+  .swatches { display: flex; gap: .3rem; }
+  .swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); line-height: 1.08; letter-spacing: -.03em; margin: .35em 0 .3em; }
+  h2 { font-size: 1.05rem; margin: 0 0 .6rem; letter-spacing: -.01em; }
+
+  pre {
+    background: var(--surface-sunken); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 1rem 1.15rem; overflow-x: auto; margin: 0;
+    font-size: .8rem; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre .kw  { color: var(--color-primary); font-weight: 600; }
+  pre .cm  { color: var(--ink-mute); }
+  pre .st  { color: var(--color-success); }
+  pre .at  { color: var(--color-warning); font-weight: 600; }
+
+  /* ── Hero diagram ──────────────────────────────────────────────────── */
+  .dia { text-align: center; padding: 1rem 0 .5rem; }
+  .dia-root {
+    display: inline-block; font-family: ui-monospace, Menlo, monospace;
+    font-size: .95rem; font-weight: 600;
+    border: 1px solid var(--color-primary); border-radius: 8px;
+    padding: .5rem 1.1rem; background: var(--surface-raised);
+    color: var(--color-primary);
+  }
+  .dia-wires { position: relative; height: 3rem; }
+  .dia-wires i { position: absolute; background: var(--rule-strong); display: block; }
+  .dia-wires .stem { left: 50%; top: 0; width: 1px; height: 1.5rem; }
+  .dia-wires .rail { left: 16.66%; right: 16.66%; top: 1.5rem; height: 1px; }
+  .dia-wires .drop { top: 1.5rem; width: 1px; height: 1.5rem; }
+  .dia-wires .d1 { left: 16.66%; }
+  .dia-wires .d2 { left: 50%; }
+  .dia-wires .d3 { left: 83.33%; }
+
+  .dia-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .dia-col h3 {
+    font-size: .82rem; letter-spacing: .06em; text-transform: uppercase;
+    margin: 0 0 .6rem; color: var(--ink);
+  }
+  .dia-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+  .dia-col li { font-size: .84rem; color: var(--ink-soft); }
+  .dia-foot { margin-top: 1.5rem; font-size: .8rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); }
+
+  /* staggered reveal */
+  .anim { opacity: 0; transform: translateY(8px); animation: rise .5s ease forwards; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  .dia-wires i { transform-origin: top left; animation: grow .4s ease forwards; }
+  .dia-wires .rail { transform-origin: center; }
+  @keyframes grow { from { opacity: 0 } to { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) {
+    .anim, .dia-wires i { animation: none; opacity: 1; transform: none; }
+  }
+
+  /* ── Showroom ──────────────────────────────────────────────────────── */
+  .shop { display: grid; gap: 1.75rem; align-items: start; }
+  @media (min-width: 64rem) { .shop { grid-template-columns: 1fr 1.15fr; } }
+  @media (min-width: 64rem) { .shop-right { position: sticky; top: 5rem; } }
+
+  .lite .ln { display: block; padding: 0 .35rem; margin: 0 -.35rem; border-radius: 4px; transition: background .18s ease, opacity .18s ease; }
+  .lite.focused .ln { opacity: .32; }
+  .lite.focused .ln.on { opacity: 1; background: color-mix(in srgb, var(--color-primary) 13%, transparent); }
+
+  /* Chips are selectable controls, so they are .btn — not .pill, which is a
+     solid-fill component for counts. Only geometry is overridden here: .btn
+     derives background and text together (chip.css auto-contrast), and
+     setting one without the other is what makes text vanish on light themes. */
+  .chipset { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .chipset .btn { font-size: .8rem; padding: .3rem .7rem; }
+  .chipset .btn.soon { border-style: dashed; }
+  /* Untoned .btn.outlined paints --color-primary on --surface — 3.96:1 in the
+     default theme, below AA, and worse in others (1.99:1 in elite). Take the
+     neutral ink instead, exactly as .btn.ghost does and for the same reason.
+     Safe to set color alone here: outlined's background is --surface, not the
+     derived --fill, so the auto-contrast pairing is not involved. */
+  .chipset .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+  .realm-label { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); margin: 1rem 0 .45rem; }
+
+  .panel-head { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin-bottom: .1rem; }
+  .from { font-size: .78rem; color: var(--ink-mute); margin: .5rem 0 1rem; }
+  .from code { color: var(--color-primary); }
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 3.5rem; color: var(--ink-mute); font-size: .875rem; margin-top: 4rem; }
+</style>
+</head>
+<body>
+
+<a href="#showroom" class="visually-hidden">Skip to the showroom</a>
+
+<header class="topbar">
+  <div class="container">
+    <a class="brand" href="index.html">Frontier<span>JS</span></a>
+    <nav class="navset">
+      <a href="index.html#idea">Idea</a>
+      <a href="index.html#code">See it</a>
+      <a href="showroom.html" aria-current="page">Showroom</a>
+      <a href="showroom2.html">Walkthrough</a>
+      <a href="showroom3.html">The ripple</a>
+      <a href="showroom4.html">The loop</a>
+      <a href="showroom5.html">The stack</a>
+      <a href="journey.html">The journey</a>
+      <a href="index.html#packages">Packages</a>
+      <a href="index.html#vision">Vision</a>
+      <a href="index.html#start">Start</a>
+    </nav>
+    <div class="swatches" role="group" aria-label="Theme">
+      <button class="swatch" data-theme="default"  title="Default"  style="background:#0d83dd"></button>
+      <button class="swatch" data-theme="sunset"   title="Sunset"   style="background:#e07a3f"></button>
+      <button class="swatch" data-theme="forest"   title="Forest"   style="background:#2f7d4f"></button>
+      <button class="swatch" data-theme="midnight" title="Midnight" style="background:#3b4a6b"></button>
+      <button class="swatch" data-theme="dark"     title="Dark"     style="background:#1c1b18"></button>
+      <button class="swatch" data-theme="elite"    title="Elite"    style="background:#8b6f2e"></button>
+    </div>
+  </div>
+</header>
+
+<!-- ─── Hero diagram ───────────────────────────────────────────────────── -->
+<section class="container" style="padding:3.5rem 1.25rem 1rem; text-align:center">
+  <p class="eyebrow anim" style="animation-delay:.05s">Showroom</p>
+  <h1 class="anim" style="animation-delay:.1s">One model.<br>Everything below it, derived.</h1>
+
+  <div class="dia">
+    <div class="dia-root anim" style="animation-delay:.2s">model Lead</div>
+
+    <div class="dia-wires" aria-hidden="true">
+      <i class="stem" style="animation-delay:.35s"></i>
+      <i class="rail" style="animation-delay:.45s"></i>
+      <i class="drop d1" style="animation-delay:.55s"></i>
+      <i class="drop d2" style="animation-delay:.55s"></i>
+      <i class="drop d3" style="animation-delay:.55s"></i>
+    </div>
+
+    <div class="dia-cols">
+      <div class="dia-col anim" style="animation-delay:.65s">
+        <h3>Database</h3>
+        <ul>
+          <li>Migrations</li><li>SQL &amp; indexes</li><li>Row policies</li>
+          <li>Gates</li><li>Typed client</li>
+        </ul>
+      </div>
+      <div class="dia-col anim" style="animation-delay:.75s">
+        <h3>REST API</h3>
+        <ul>
+          <li>Endpoints</li><li>Validation</li><li>Authorization</li>
+          <li>OpenAPI</li><li>WebSockets</li>
+        </ul>
+      </div>
+      <div class="dia-col anim" style="animation-delay:.85s">
+        <h3>UI Resource</h3>
+        <ul>
+          <li>Hook pipeline</li><li>Blank records</li><li>Live updates</li>
+          <li>TypeScript</li><li>JSON Schema</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="dia-foot anim" style="animation-delay:.95s">Derived automatically</p>
+  </div>
+</section>
+
+<!-- ─── Showroom ───────────────────────────────────────────────────────── -->
+<section id="showroom" class="container" style="padding:2.5rem 1.25rem 1rem">
+  <div class="shop">
+
+    <!-- Left: the seed + the chips -->
+    <div class="stack">
+      <div>
+        <h2>The seed</h2>
+        <pre class="lite" id="lite"></pre>
+      </div>
+
+      <div>
+        <h2 style="margin-top:1.5rem">Where it is leveraged</h2>
+        <p class="text-sm text-muted" style="margin:0 0 .5rem">
+          Pick one. The schema above highlights the lines responsible.
+        </p>
+        <div id="chips" role="tablist" aria-label="Derived artifacts"></div>
+      </div>
+    </div>
+
+    <!-- Right: what that chip produces -->
+    <div class="shop-right">
+      <div class="card" id="panel" role="tabpanel" tabindex="0">
+        <div class="panel-head">
+          <h2 id="p-title" style="margin:0"></h2>
+          <span class="badge" id="p-realm"></span>
+        </div>
+        <p class="text-sm text-muted" id="p-blurb" style="margin:.35rem 0 0"></p>
+        <p class="from" id="p-from"></p>
+        <pre id="p-code"></pre>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  <div class="container split">
+    <span>Every sample here is the real API — see <code>packages/junction/example/</code>.</span>
+    <span><a class="link" href="index.html">← Back to the overview</a></span>
+  </div>
+</footer>
+
+<script>
+// ─── The seed. Line indices below refer to this array. ───────────────────────
+const SCHEMA = [
+  /* 0*/ "model Lead {",
+  /* 1*/ "  id        Int        @id",
+  /* 2*/ "  name      String     @length(1, 200) @trim",
+  /* 3*/ "  email     String     @email @unique @lower",
+  /* 4*/ "  status    LeadStatus @default(new)",
+  /* 5*/ "  value     Float      @gte(0)",
+  /* 6*/ "  ownerId   Int",
+  /* 7*/ "  createdAt DateTime   @default(now())",
+  /* 8*/ "",
+  /* 9*/ "  @@gate(\"0.4.4.5\")",
+  /*10*/ "  @@allow('read', ownerId == auth().id)",
+  /*11*/ "  @@index([status, createdAt])",
+  /*12*/ "  @@log(audit)",
+  /*13*/ "}",
+]
+
+const FIELDS = [1,2,3,4,5,6,7]
+const RULES  = [2,3,5]
+
+// ─── Chips ───────────────────────────────────────────────────────────────────
+const CHIPS = [
+  // ── Data ──────────────────────────────────────────────────────────────────
+  { id:'migration', realm:'Data', label:'Migration SQL', lines:FIELDS,
+    from:'the field list — diffed against the live database',
+    blurb:'The schema is the migration source. fli diffs it against the database and writes the SQL; you never hand-write a CREATE TABLE.',
+    code:
+`$ fli db:migrate
+
+-- migrations/0001_init.sql  (generated)
+CREATE TABLE leads (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL,
+  email      TEXT    NOT NULL UNIQUE,
+  status     TEXT    NOT NULL DEFAULT 'new',
+  value      REAL    NOT NULL DEFAULT 0,
+  ownerId    INTEGER NOT NULL,
+  createdAt  TEXT    NOT NULL DEFAULT (datetime('now'))
+);` },
+
+  { id:'indexes', realm:'Data', label:'Indexes', lines:[3,11],
+    from:'@@index([...]) and @unique',
+    blurb:'Indexes are declared beside the data they index, so they travel with the model instead of living in a migration nobody reads.',
+    code:
+`-- from @@index([status, createdAt])
+CREATE INDEX leads_status_createdAt
+  ON leads (status, createdAt);
+
+-- from @unique on email
+CREATE UNIQUE INDEX leads_email ON leads (email);` },
+
+  { id:'policies', realm:'Data', label:'Row policies', lines:[10],
+    from:"@@allow('read', ownerId == auth().id)",
+    blurb:'Policies compile into the WHERE clause of every query. Not a filter you remember to apply — a filter no caller can skip.',
+    code:
+`const db = client.$setAuth(user)   // user.id = 42
+
+await db.lead.findMany({ where: { status: 'active' } })
+
+-- the SQL actually executed:
+SELECT * FROM leads
+ WHERE status = 'active'
+   AND ownerId = 42            -- appended by the policy
+
+// asSystem() is the one documented bypass:
+await client.asSystem().lead.findMany()   // no policy applied` },
+
+  { id:'gates', realm:'Data', label:'Gates', lines:[9],
+    from:'@@gate("0.4.4.5")',
+    blurb:'One ordinal level per operation, read from the Trust Hierarchy. Read is open, writes need a user, deletes need an admin.',
+    code:
+`@@gate("0.4.4.5")
+//       │ │ │ └── delete : 5  ADMINISTRATOR
+//       │ │ └──── update : 4  USER
+//       │ └────── create : 4  USER
+//       └──────── read   : 0  STRANGER
+
+await db.lead.findMany()          // ✓ anyone
+await db.lead.create({ ... })     // ✗ AccessDeniedError unless level >= 4
+
+// Junction maps its session to the same scale:
+new GatePlugin({ getLevel: user => user ? LEVELS.USER : LEVELS.STRANGER })` },
+
+  { id:'client', realm:'Data', label:'Typed client', lines:FIELDS,
+    from:'the model name and its fields',
+    blurb:'model Lead becomes db.lead — PascalCase singular in, camelCase accessor out. Filters, ordering and pagination are typed from the fields.',
+    code:
+`const hot = await db.lead.findMany({
+  where:   { status: 'active', value: { gte: 5000 } },
+  orderBy: { createdAt: 'desc' },
+  limit:   20,
+})
+
+const one = await db.lead.findUnique({ where: { email: 'a@b.co' } })
+
+await db.lead.update({
+  where: { id: 7 },
+  data:  { status: 'closed' },
+})` },
+
+  { id:'types', realm:'Data', label:'TypeScript types', lines:FIELDS,
+    from:'the field list and their nullability',
+    blurb:'One command turns the schema into declarations. Separate Create and Update shapes, so generated fields are not required on insert.',
+    code:
+`$ litestone types ./types.d.ts --audience=client
+
+export interface Lead {
+  id:        number
+  name:      string
+  email:     string
+  status:    LeadStatus
+  value:     number
+  ownerId:   number
+  createdAt: string
+}
+
+export interface LeadCreate { name: string; email: string; /* … */ }
+export interface LeadUpdate { name?: string; email?: string; /* … */ }
+export type LeadStatus = 'new' | 'active' | 'closed'` },
+
+  // ── API ───────────────────────────────────────────────────────────────────
+  { id:'rest', realm:'API', label:'REST endpoints', lines:[0],
+    from:'model: \'lead\' on the service',
+    blurb:'Naming the model on a service derives the whole CRUD surface. Six lines of registration, five endpoints.',
+    code:
+`app.services.register(createService({
+  name:  'leads',
+  model: 'lead',
+}))
+
+GET    /api/leads          find    → { object, data, total }
+GET    /api/leads/:id      get
+POST   /api/leads          create
+PATCH  /api/leads/:id      patch
+DELETE /api/leads/:id      remove
+
+GET /api/leads?$limit=20&$offset=40&$orderBy=-createdAt` },
+
+  { id:'validation', realm:'API', label:'Validation', lines:RULES,
+    from:'@length, @email, @gte on the fields',
+    blurb:'Field rules become 400s at the API edge. Write the constraint once, on the data, and every entry point enforces it.',
+    code:
+`POST /api/leads
+{ "name": "", "email": "not-an-email", "value": -5 }
+
+→ 400 Bad Request
+{
+  "name": "BadRequest",
+  "code": 400,
+  "data": {
+    "name":  "must be between 1 and 200 characters",
+    "email": "must be a valid email address",
+    "value": "must be >= 0"
+  }
+}` },
+
+  { id:'auth', realm:'API', label:'Authorization', lines:[9,10],
+    from:'@@gate and @@allow — enforced below the service',
+    blurb:'The gate becomes 401s and 403s without a guard in the handler. A Litestone denial is normalized into the framework error shape.',
+    code:
+`POST /api/leads                      → 401  no session
+POST /api/leads   (level 4 user)     → 201
+DELETE /api/leads/7  (level 4 user)  → 403  needs ADMINISTRATOR
+
+// toFrameworkError() maps across the package boundary:
+//   AccessDeniedError → 403 Forbidden
+//   ValidationError   → 400 BadRequest  (+ field errors on .data)
+
+// Every response, success or failure, is one shape.` },
+
+  { id:'jsonschema', realm:'API', label:'JSON Schema', lines:FIELDS,
+    from:'generateJsonSchema(schema)',
+    blurb:'The bridge between realms. Junction validates against it; Sierra ships it to the browser so the UI knows the same rules.',
+    code:
+`import { generateJsonSchema } from '@frontierjs/litestone'
+
+{
+  "Lead": {
+    "type": "object",
+    "required": ["name", "email"],
+    "properties": {
+      "name":   { "type": "string", "minLength": 1, "maxLength": 200 },
+      "email":  { "type": "string", "format": "email" },
+      "status": { "enum": ["new", "active", "closed"], "default": "new" },
+      "value":  { "type": "number", "minimum": 0 }
+    }
+  }
+}` },
+
+  { id:'openapi', realm:'API', label:'OpenAPI', lines:[0].concat(FIELDS),
+    from:'the registered services and their models',
+    blurb:'Mounted automatically. Every registered service contributes its paths, and the models become the component schemas.',
+    code:
+`app.configure(openapi({ title: 'Leads API', version: '1.0.0' }))
+
+GET /openapi.json
+
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/leads":     { "get": { … }, "post": { … } },
+    "/api/leads/{id}": { "get": { … }, "patch": { … }, "delete": { … } }
+  },
+  "components": { "schemas": { "Lead": { … } } }
+}` },
+
+  { id:'events', realm:'API', label:'Live events', lines:[0],
+    from:"channel: 'leads' on the service",
+    blurb:'One announcement point. Every mutation fans out to the event bus and to the declared channel — no second publish path to forget.',
+    code:
+`const live = publish(() => app.channel('leads'))
+
+createService({
+  name: 'leads', model: 'lead',
+  channel: 'leads',
+  hooks: { after: { create: [live], patch: [live], remove: [live] } },
+})
+
+// → WebSocket subscribers receive:
+{ "type": "leads created", "data": { "id": 8, "name": "Acme" } }` },
+
+  // ── UI ────────────────────────────────────────────────────────────────────
+  { id:'resource', realm:'UI', label:'Resource + hooks', lines:[0],
+    from:'the service name — and the same four phases as the API',
+    blurb:'The UI half of the service. Identical hook phases to the API realm, on purpose: learn the pipeline once and it holds on both sides.',
+    code:
+`const leads = createResource('leads', {
+  hooks: {
+    around: { all:    [async (ctx, next) => {
+      busy = true; await next(); busy = false
+    }] },
+    before: { create: [ctx => { ctx.data.source = 'web' }] },
+    after:  { find:   [ctx => ctx.result.data.forEach(fmt)] },
+    error:  { all:    [ctx => toast(ctx.error.message)] },
+  },
+})
+
+await leads.find({ status: 'active' })
+await leads.create({ name: 'Acme', email: 'hi@acme.com' })` },
+
+  { id:'make', realm:'UI', label:'Blank records', lines:[2,3,4,5,7],
+    from:'the JSON Schema defaults',
+    blurb:'make() builds an empty record shaped by the schema, with declared defaults already applied — the starting value for a create form.',
+    code:
+`const draft = leads.make()
+
+{
+  name:   '',
+  email:  '',
+  status: 'new',      // from @default(new)
+  value:  0,          // from @gte(0)
+  // id and createdAt are omitted — the database owns them
+}
+
+// bind it straight to inputs, then:
+await leads.create(draft)` },
+
+  { id:'liveui', realm:'UI', label:'Live updates', lines:[0],
+    from:'the channel the service declared',
+    blurb:'The consuming side of the same publish. The resource is a reactive object, so a pushed row re-renders whatever reads it.',
+    code:
+// NOTE: the sample's closing script tag is written with an escaped slash so it
+// does not terminate this very element. It renders normally in the code panel.
+`<script>
+  const leads = createResource('leads')
+  await leads.find()
+
+  leads.subscribe()   // joins the 'leads' channel
+<\/script>
+
+<!-- no refresh logic: the list is reactive -->
+{#each leads.data as lead}
+  <tr><td>{lead.name}</td><td>{lead.status}</td></tr>
+{/each}` },
+
+  // ── Direction ─────────────────────────────────────────────────────────────
+  { id:'forms', realm:'Soon', label:'Generated forms', lines:RULES, soon:true,
+    from:'not built yet — the JSON Schema is already in the browser',
+    blurb:'Direction, not a feature. The inputs exist — Sierra already ships the JSON Schema to the client — but nothing renders from it yet.',
+    code:
+`// PROPOSED — this does not work today.
+
+<Form model="Lead" />
+
+// would derive, from the schema alone:
+//   email  → <input type="email" required>
+//   name   → maxlength=200
+//   status → <select> of the enum
+//   value  → <input type="number" min="0">
+//   create gate fails → submit disabled, no round trip
+
+// Tracked in IDEAS/framework-shape.md as the #1 gap:
+// derivation currently stops at the API boundary.` },
+
+  { id:'offline', realm:'Soon', label:'Offline-first', lines:FIELDS, soon:true,
+    from:'not built yet — but one engine already runs on both sides',
+    blurb:'Direction. Litestone is SQLite, so the same schema, queries and gates can run in the browser. Sync and conflict policy are the open design.',
+    code:
+`// PROPOSED — this does not work today.
+
+model Lead {
+  // …
+  @@sync(lww)          // conflict policy declared, not hand-rolled
+}
+
+// The gate is evaluated locally before queueing, so the user is told
+// "you can't do that" with no round trip — and the server re-checks
+// on sync. Only possible because authorization lives in the schema.
+
+// Tracked in IDEAS/offline-first-and-release.md.` },
+]
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+
+const TOK = /(\/\/[^\n]*|--[^\n]*|#[^\n]*)|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|(@@?[a-zA-Z]\w*)|\b(const|let|await|async|export|import|from|function|return|interface|type|model|enum|new|class|CREATE|TABLE|INDEX|UNIQUE|NOT|NULL|DEFAULT|PRIMARY|AUTOINCREMENT|SELECT|WHERE|AND|ON|INTEGER|TEXT|REAL)\b/g
+
+const hl = src => esc(src).replace(TOK, (m, cm, st, at, kw) =>
+  cm ? `<span class="cm">${cm}</span>` :
+  st ? `<span class="st">${st}</span>` :
+  at ? `<span class="at">${at}</span>` :
+       `<span class="kw">${kw}</span>`)
+
+// Schema, one span per line so chips can highlight them
+const lite = document.getElementById('lite')
+lite.innerHTML = SCHEMA
+  .map((l, i) => `<span class="ln" data-i="${i}">${hl(l) || '&nbsp;'}</span>`)
+  .join('')
+
+// Chips, grouped by realm
+const chipBox = document.getElementById('chips')
+chipBox.innerHTML = [...new Set(CHIPS.map(c => c.realm))].map(r => `
+  <p class="realm-label">${r === 'Soon' ? 'Direction — not yet built' : r + ' realm'}</p>
+  <div class="chipset">
+    ${CHIPS.filter(c => c.realm === r).map(c => `
+      <button class="btn outlined${c.soon ? ' soon' : ''}" role="tab"
+              id="tab-${c.id}" data-id="${c.id}"
+              aria-selected="false" aria-controls="panel">${c.label}</button>`).join('')}
+  </div>`).join('')
+
+const el = {
+  title: document.getElementById('p-title'),
+  realm: document.getElementById('p-realm'),
+  blurb: document.getElementById('p-blurb'),
+  from:  document.getElementById('p-from'),
+  code:  document.getElementById('p-code'),
+}
+
+function select(id, focus) {
+  const c = CHIPS.find(x => x.id === id)
+  if (!c) return
+
+  // Selected chip drops .outlined, so it takes .btn's filled skin — which
+  // carries its own readable text color. Never set one without the other.
+  for (const b of chipBox.querySelectorAll('.btn')) {
+    const on = b.dataset.id === id
+    b.setAttribute('aria-selected', String(on))
+    b.classList.toggle('outlined', !on)
+  }
+
+  el.title.textContent = c.label
+  el.realm.textContent = c.soon ? 'proposed' : c.realm
+  el.realm.className   = 'badge ' + (c.soon ? 'warning' : c.realm === 'Data' ? 'primary' : c.realm === 'API' ? 'info' : 'success')
+  el.blurb.textContent = c.blurb
+  el.from.innerHTML    = 'Derived from <code>' + esc(c.from) + '</code>'
+  el.code.innerHTML    = hl(c.code)
+
+  lite.classList.add('focused')
+  for (const ln of lite.querySelectorAll('.ln'))
+    ln.classList.toggle('on', c.lines.includes(+ln.dataset.i))
+
+  if (focus) document.getElementById('tab-' + id).focus()
+  history.replaceState(null, '', '#' + id)
+}
+
+chipBox.addEventListener('click', e => {
+  const b = e.target.closest('.btn')
+  if (b) select(b.dataset.id)
+})
+
+// Arrow-key navigation across the whole tablist
+chipBox.addEventListener('keydown', e => {
+  const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }
+  if (!(e.key in keys)) return
+  e.preventDefault()
+  const i = CHIPS.findIndex(c => c.id === document.activeElement.dataset.id)
+  if (i < 0) return
+  select(CHIPS[(i + keys[e.key] + CHIPS.length) % CHIPS.length].id, true)
+})
+
+select(CHIPS.some(c => c.id === location.hash.slice(1)) ? location.hash.slice(1) : 'migration')
+
+// ─── Theme switcher ──────────────────────────────────────────────────────────
+const root = document.documentElement
+const saved = localStorage.getItem('fjs-theme')
+if (saved) root.className = 'theme-' + saved
+for (const b of document.querySelectorAll('.swatch')) {
+  b.addEventListener('click', () => {
+    root.className = 'theme-' + b.dataset.theme
+    localStorage.setItem('fjs-theme', b.dataset.theme)
+  })
+}
+</script>
+
+</body>
+</html>

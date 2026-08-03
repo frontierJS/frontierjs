@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northwind Billing — @frontierjs/css demo</title>
+
+<!--
+  The real stylesheet, one import, no build step. This file is the first
+  thing in the repo to consume the package, so if something here needs a
+  workaround, that workaround is a finding — see demo/README.md.
+-->
+<link rel="stylesheet" href="../index.css">
+<link rel="stylesheet" href="./demo.css">
+</head>
+
+<body class="app theme-default">
+
+<a class="skip-link" href="#screen">Skip to content</a>
+
+<div class="shell fixed">
+
+  <!-- ── Topbar ────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="cluster">
+      <button class="btn ghost square sidebar-toggle" id="menu-btn" aria-label="Open navigation" aria-expanded="false">
+        <svg aria-hidden="true"><use href="#i-menu"></use></svg>
+      </button>
+      <strong>Northwind Billing</strong>
+      <span class="badge muted">Demo</span>
+    </div>
+
+    <div class="cluster">
+      <div class="field-row" style="--field-inline-size: 18rem">
+        <span class="field-addon" aria-hidden="true">
+          <svg><use href="#i-search"></use></svg>
+        </span>
+        <input class="field" type="search" aria-label="Search invoices" placeholder="Search invoices…">
+      </div>
+
+      <div class="field-group">
+        <label class="visually-hidden" for="theme">Theme</label>
+        <select class="field" id="theme">
+          <option value="default">Default</option>
+          <option value="sunset">Sunset</option>
+          <option value="forest">Forest</option>
+          <option value="midnight">Midnight</option>
+          <option value="dark">Dark</option>
+          <option value="elite">Elite</option>
+        </select>
+      </div>
+
+      <span class="tooltip-anchor">
+        <button class="btn ghost square" aria-label="Notifications" aria-describedby="tt-bell">
+          <svg aria-hidden="true"><use href="#i-bell"></use></svg>
+        </button>
+        <span class="tooltip" id="tt-bell" role="tooltip">3 unread</span>
+      </span>
+
+      <span class="avatar primary" role="img" aria-label="Dana Ortiz">DO</span>
+    </div>
+  </header>
+
+  <!-- ── Sidebar ───────────────────────────────────────────────── -->
+  <nav class="sidebar" aria-label="Main">
+    <div class="navlist-label">Billing</div>
+    <ul class="navlist">
+      <li><a class="navlink" href="#dashboard" data-nav="dashboard" aria-current="page">
+        <svg aria-hidden="true"><use href="#i-home"></use></svg> Dashboard</a></li>
+      <li><a class="navlink" href="#invoices" data-nav="invoices">
+        <svg aria-hidden="true"><use href="#i-doc"></use></svg> Invoices
+        <span class="pill danger">4</span></a></li>
+      <li><a class="navlink" href="#customers" data-nav="customers">
+        <svg aria-hidden="true"><use href="#i-users"></use></svg> Customers</a></li>
+    </ul>
+
+    <div class="navlist-label">Workspace</div>
+    <ul class="navlist">
+      <li><a class="navlink" href="#settings" data-nav="settings">
+        <svg aria-hidden="true"><use href="#i-cog"></use></svg> Settings</a></li>
+    </ul>
+  </nav>
+
+  <!-- ── Screen ────────────────────────────────────────────────── -->
+  <main class="screen" id="screen" tabindex="-1">
+
+    <!--
+      Routes are plain <div>s — the Group term, "a visual cluster with no
+      identity". They are switched on a data attribute rather than a class
+      because the vocabulary has no Route term and the demo did not want to
+      invent one. See demo/README.md.
+    -->
+
+    <!-- ══ Dashboard ══════════════════════════════════════════════ -->
+    <div data-route="dashboard">
+
+      <section class="pane" aria-labelledby="h-overview">
+        <div class="section-header">
+          <h2 id="h-overview" class="h4">Overview</h2>
+          <span class="text-sm text-muted">Last 30 days</span>
+        </div>
+
+        <div class="tiles">
+          <article class="tile">
+            <div class="tile-label">Outstanding</div>
+            <div class="tile-value">$48,290</div>
+            <div class="tile-delta success">+12.4%</div>
+          </article>
+          <article class="tile">
+            <div class="tile-label">Paid</div>
+            <div class="tile-value">$121,004</div>
+            <div class="tile-delta success">+3.1%</div>
+          </article>
+          <article class="tile">
+            <div class="tile-label">Overdue</div>
+            <div class="tile-value">$9,120</div>
+            <div class="tile-delta danger">+22.0%</div>
+          </article>
+          <article class="tile">
+            <div class="tile-label">Avg. days to pay</div>
+            <div class="tile-value">18.2</div>
+            <div class="tile-delta muted">no change</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="pane" aria-labelledby="h-setup">
+        <div class="section-header">
+          <h2 id="h-setup" class="h4">Finish setting up</h2>
+        </div>
+        <article class="card">
+          <div class="surface-body">
+            <ol class="steps" aria-label="Setup progress">
+              <li class="step complete">
+                <span class="step-marker"></span>
+                <span class="step-label">Company details<span class="visually-hidden"> — completed</span></span>
+              </li>
+              <li class="step complete">
+                <span class="step-marker"></span>
+                <span class="step-label">Tax settings<span class="visually-hidden"> — completed</span></span>
+              </li>
+              <li class="step" aria-current="step">
+                <span class="step-marker"></span>
+                <span class="step-label">Connect a bank</span>
+                <span class="step-hint">Needed before you can collect</span>
+              </li>
+              <li class="step">
+                <span class="step-marker"></span>
+                <span class="step-label">Invite your team</span>
+              </li>
+            </ol>
+          </div>
+        </article>
+      </section>
+
+      <section class="pane" aria-labelledby="h-activity">
+        <div class="section-header">
+          <h2 id="h-activity" class="h4">Recent activity</h2>
+          <button class="btn ghost" data-route-to="invoices">View all</button>
+        </div>
+
+        <div class="stack">
+        <article class="alert warning">
+          <span class="alert-icon" aria-hidden="true"><svg><use href="#i-alert"></use></svg></span>
+          <div class="alert-content">
+            <strong>4 invoices are overdue.</strong>
+            Reminders were last sent 6 days ago.
+          </div>
+          <button class="btn outlined warning">Send reminders</button>
+        </article>
+
+        <article class="card">
+          <div class="surface-body">
+            <ol class="feed">
+              <li class="feed-item">
+                <span class="feed-dot success" aria-hidden="true"></span>
+                <div class="feed-content">
+                  <strong>INV-1042 paid</strong> — $4,200 from Acme Corporation
+                  <div class="text-sm text-muted">2 hours ago</div>
+                </div>
+              </li>
+              <li class="feed-item">
+                <span class="feed-dot info" aria-hidden="true"></span>
+                <div class="feed-content">
+                  <strong>INV-1048 sent</strong> to Globex Inc.
+                  <div class="text-sm text-muted">Yesterday</div>
+                </div>
+              </li>
+              <li class="feed-item">
+                <span class="feed-dot danger" aria-hidden="true"></span>
+                <div class="feed-content">
+                  <strong>INV-1031 went overdue</strong> — 14 days past due
+                  <div class="text-sm text-muted">3 days ago</div>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </article>
+        </div>
+      </section>
+    </div>
+
+    <!-- ══ Invoices ═══════════════════════════════════════════════ -->
+    <div data-route="invoices" hidden>
+      <section class="pane" aria-labelledby="h-invoices">
+        <div class="section-header">
+          <h2 id="h-invoices" class="h4">Invoices</h2>
+          <div class="cluster">
+            <button class="btn outlined" id="filters-btn">Filters</button>
+            <button class="btn primary">
+              <svg aria-hidden="true"><use href="#i-plus"></use></svg> New invoice
+            </button>
+          </div>
+        </div>
+
+        <div class="bar bordered">
+          <div class="cluster">
+            <span class="badge">All 24</span>
+            <span class="badge success">Paid 18</span>
+            <span class="badge danger">Overdue 4</span>
+          </div>
+          <div class="cluster">
+            <span class="text-sm text-muted">Rows</span>
+            <select class="field" aria-label="Rows per page" style="--field-inline-size: auto">
+              <option>10</option><option>25</option><option>50</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="stack">
+        <div class="table-wrap">
+          <table class="table striped hover compact">
+            <caption class="visually-hidden">Invoices, most recent first</caption>
+            <thead>
+              <tr>
+                <th scope="col">Invoice</th>
+                <th scope="col">Customer</th>
+                <th scope="col">Status</th>
+                <th scope="col">Due</th>
+                <th scope="col">Amount</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="danger">
+                <td><a class="link" href="#invoice" data-nav="invoice">INV-1031</a></td>
+                <td><span class="cluster"><span class="avatar info" style="--avatar-size:1.5rem" aria-hidden="true">GI</span> Globex Inc.</span></td>
+                <td><span class="badge danger">Overdue</span></td>
+                <td>18 Jul 2026</td>
+                <td>$2,400.00</td>
+                <td><div class="table-actions">
+                  <button class="btn ghost square" aria-label="Download INV-1031"><svg aria-hidden="true"><use href="#i-download"></use></svg></button>
+                  <button class="btn ghost square danger" aria-label="Delete INV-1031" data-confirm="INV-1031"><svg aria-hidden="true"><use href="#i-trash"></use></svg></button>
+                </div></td>
+              </tr>
+              <tr>
+                <td><a class="link" href="#invoice" data-nav="invoice">INV-1042</a></td>
+                <td><span class="cluster"><span class="avatar primary" style="--avatar-size:1.5rem" aria-hidden="true">AC</span> Acme Corporation</span></td>
+                <td><span class="badge success">Paid</span></td>
+                <td>02 Aug 2026</td>
+                <td>$4,200.00</td>
+                <td><div class="table-actions">
+                  <button class="btn ghost square" aria-label="Download INV-1042"><svg aria-hidden="true"><use href="#i-download"></use></svg></button>
+                  <button class="btn ghost square danger" aria-label="Delete INV-1042" data-confirm="INV-1042"><svg aria-hidden="true"><use href="#i-trash"></use></svg></button>
+                </div></td>
+              </tr>
+              <tr>
+                <td><a class="link" href="#invoice" data-nav="invoice">INV-1048</a></td>
+                <td><span class="cluster"><span class="avatar success" style="--avatar-size:1.5rem" aria-hidden="true">IT</span> Initech</span></td>
+                <td><span class="badge info">Sent</span></td>
+                <td>19 Aug 2026</td>
+                <td>$860.00</td>
+                <td><div class="table-actions">
+                  <button class="btn ghost square" aria-label="Download INV-1048"><svg aria-hidden="true"><use href="#i-download"></use></svg></button>
+                  <button class="btn ghost square danger" aria-label="Delete INV-1048" data-confirm="INV-1048"><svg aria-hidden="true"><use href="#i-trash"></use></svg></button>
+                </div></td>
+              </tr>
+              <tr class="warning">
+                <td><a class="link" href="#invoice" data-nav="invoice">INV-1050</a></td>
+                <td><span class="cluster"><span class="avatar warning" style="--avatar-size:1.5rem" aria-hidden="true">UM</span> Umbrella Co.</span></td>
+                <td><span class="badge warning">Due soon</span></td>
+                <td>04 Aug 2026</td>
+                <td>$12,900.00</td>
+                <td><div class="table-actions">
+                  <button class="btn ghost square" aria-label="Download INV-1050"><svg aria-hidden="true"><use href="#i-download"></use></svg></button>
+                  <button class="btn ghost square danger" aria-label="Delete INV-1050" data-confirm="INV-1050"><svg aria-hidden="true"><use href="#i-trash"></use></svg></button>
+                </div></td>
+              </tr>
+              <tr>
+                <td><a class="link" href="#invoice" data-nav="invoice">INV-1051</a></td>
+                <td><span class="cluster"><span class="avatar muted" style="--avatar-size:1.5rem" aria-hidden="true">SC</span> Soylent Corp</span></td>
+                <td><span class="badge muted">Draft</span></td>
+                <td>—</td>
+                <td>$1,150.00</td>
+                <td><div class="table-actions">
+                  <button class="btn ghost square" aria-label="Download INV-1051"><svg aria-hidden="true"><use href="#i-download"></use></svg></button>
+                  <button class="btn ghost square danger" aria-label="Delete INV-1051" data-confirm="INV-1051"><svg aria-hidden="true"><use href="#i-trash"></use></svg></button>
+                </div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <nav class="pagination" aria-label="Pagination">
+          <a class="page" href="#invoices" aria-label="Previous page"><svg aria-hidden="true"><use href="#i-chev-l"></use></svg></a>
+          <a class="page" href="#invoices" aria-current="page">1</a>
+          <a class="page" href="#invoices">2</a>
+          <a class="page" href="#invoices">3</a>
+          <span class="page-gap">…</span>
+          <a class="page" href="#invoices">9</a>
+          <a class="page" href="#invoices" aria-label="Next page"><svg aria-hidden="true"><use href="#i-chev-r"></use></svg></a>
+        </nav>
+        </div>
+      </section>
+    </div>
+
+    <!-- ══ Invoice detail ═════════════════════════════════════════ -->
+    <div data-route="invoice" hidden>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ol>
+          <li><a class="link" href="#dashboard" data-nav="dashboard">Dashboard</a></li>
+          <li><a class="link" href="#invoices" data-nav="invoices">Invoices</a></li>
+          <li><a aria-current="page">INV-1042</a></li>
+        </ol>
+      </nav>
+
+      <section class="pane" aria-labelledby="h-invoice">
+        <div class="section-header">
+          <h2 id="h-invoice" class="h4">INV-1042 <span class="badge success">Paid</span></h2>
+          <div class="cluster">
+            <button class="btn outlined">Download</button>
+            <button class="btn danger outlined" data-confirm="INV-1042">Delete</button>
+            <button class="btn primary">Send receipt</button>
+          </div>
+        </div>
+
+        <div class="tabs" id="invoice-tabs">
+          <div class="tablist" role="tablist" aria-label="Invoice sections">
+            <button class="tab" role="tab" id="t-details" aria-controls="v-details" aria-selected="true">Details</button>
+            <button class="tab" role="tab" id="t-history" aria-controls="v-history" aria-selected="false" tabindex="-1">History</button>
+            <button class="tab" role="tab" id="t-notes" aria-controls="v-notes" aria-selected="false" tabindex="-1">Notes</button>
+          </div>
+
+          <article class="view stack" role="tabpanel" id="v-details" aria-labelledby="t-details" tabindex="0">
+            <article class="card">
+              <div class="surface-body">
+                <dl class="facts divided">
+                  <dt>Customer</dt><dd>Acme Corporation</dd>
+                  <dt>Status</dt><dd><span class="badge success">Paid</span></dd>
+                  <dt>Issued</dt><dd>02 Jul 2026</dd>
+                  <dt>Due</dt><dd>02 Aug 2026</dd>
+                  <dt>Reference</dt><dd><code>INV-1042</code></dd>
+                  <dt>Owner</dt>
+                  <dd class="cluster">
+                    <span class="avatar primary" style="--avatar-size:1.25rem" aria-hidden="true">DO</span> Dana Ortiz
+                  </dd>
+                  <dt>Amount</dt><dd><strong>$4,200.00</strong></dd>
+                </dl>
+              </div>
+            </article>
+
+            <article class="alert info">
+              <span class="alert-icon" aria-hidden="true"><svg><use href="#i-info"></use></svg></span>
+              <div class="alert-content">
+                Paid in full on 28 Jul 2026 via bank transfer.
+              </div>
+            </article>
+          </article>
+
+          <article class="view" role="tabpanel" id="v-history" aria-labelledby="t-history" tabindex="0" hidden>
+            <article class="card">
+              <div class="surface-body">
+                <ol class="feed">
+                  <li class="feed-item">
+                    <span class="feed-dot success" aria-hidden="true"></span>
+                    <div class="feed-content"><strong>Payment received</strong> — $4,200.00
+                      <div class="text-sm text-muted">28 Jul 2026</div></div>
+                  </li>
+                  <li class="feed-item">
+                    <span class="feed-dot info" aria-hidden="true"></span>
+                    <div class="feed-content"><strong>Reminder sent</strong> to billing@acme.example
+                      <div class="text-sm text-muted">21 Jul 2026</div></div>
+                  </li>
+                  <li class="feed-item">
+                    <span class="feed-dot" aria-hidden="true"></span>
+                    <div class="feed-content"><strong>Invoice issued</strong>
+                      <div class="text-sm text-muted">02 Jul 2026</div></div>
+                  </li>
+                </ol>
+              </div>
+            </article>
+          </article>
+
+          <article class="view stack" role="tabpanel" id="v-notes" aria-labelledby="t-notes" tabindex="0" hidden>
+            <details class="disclosure">
+              <summary class="disclosure-summary">Internal notes (2)</summary>
+              <div class="disclosure-body">
+                <p>Customer asked for net-45 terms starting next quarter.</p>
+                <p>PO number <code>AC-88213</code> must appear on all future invoices.</p>
+              </div>
+            </details>
+
+            <div class="field-group">
+              <label for="note">Add a note</label>
+              <textarea class="field" id="note" rows="3" placeholder="Visible to your team only"></textarea>
+              <p class="field-hint">Press <kbd>⌘</kbd><kbd>Enter</kbd> to save.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <!-- ══ Customers ══════════════════════════════════════════════ -->
+    <div data-route="customers" hidden>
+      <section class="pane" aria-labelledby="h-customers">
+        <div class="section-header">
+          <h2 id="h-customers" class="h4">Customers</h2>
+          <button class="btn primary"><svg aria-hidden="true"><use href="#i-plus"></use></svg> Add customer</button>
+        </div>
+
+        <article class="card">
+          <ul class="rows divided hover">
+            <li class="list-row">
+              <span class="cluster">
+                <span class="avatar primary" aria-hidden="true">AC</span>
+                <span><strong>Acme Corporation</strong><br>
+                  <span class="text-sm text-muted">12 invoices · $121,004 lifetime</span></span>
+              </span>
+              <span class="row-actions">
+                <div class="avatars" role="group" aria-label="Contacts">
+                  <span class="avatar info" style="--avatar-size:1.5rem" aria-hidden="true">A</span>
+                  <span class="avatar success" style="--avatar-size:1.5rem" aria-hidden="true">B</span>
+                  <span class="avatar muted" style="--avatar-size:1.5rem" aria-hidden="true">+2</span>
+                </div>
+                <button class="btn ghost">Open</button>
+              </span>
+            </li>
+            <li class="list-row">
+              <span class="cluster">
+                <span class="avatar info" aria-hidden="true">GI</span>
+                <span><strong>Globex Inc.</strong><br>
+                  <span class="text-sm text-muted">7 invoices · $38,220 lifetime</span></span>
+              </span>
+              <span class="row-actions">
+                <span class="badge danger">1 overdue</span>
+                <button class="btn ghost">Open</button>
+              </span>
+            </li>
+            <li class="list-row">
+              <span class="cluster">
+                <span class="avatar success" aria-hidden="true">IT</span>
+                <span><strong>Initech</strong><br>
+                  <span class="text-sm text-muted">3 invoices · $9,410 lifetime</span></span>
+              </span>
+              <span class="row-actions">
+                <button class="btn ghost">Open</button>
+              </span>
+            </li>
+          </ul>
+        </article>
+      </section>
+    </div>
+
+    <!-- ══ Settings ═══════════════════════════════════════════════ -->
+    <div data-route="settings" hidden>
+      <section class="pane" aria-labelledby="h-settings">
+        <div class="section-header">
+          <h2 id="h-settings" class="h4">Settings</h2>
+        </div>
+
+        <div class="tabs vertical" id="settings-tabs">
+          <div class="tablist" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+            <button class="tab" role="tab" id="t-profile" aria-controls="v-profile" aria-selected="true">Profile</button>
+            <button class="tab" role="tab" id="t-notify" aria-controls="v-notify" aria-selected="false" tabindex="-1">Notifications</button>
+            <button class="tab" role="tab" id="t-billing" aria-controls="v-billing" aria-selected="false" tabindex="-1">Billing &amp; invoices</button>
+          </div>
+
+          <article class="view" role="tabpanel" id="v-profile" aria-labelledby="t-profile" tabindex="0">
+            <form class="stack" id="profile-form" novalidate>
+              <div class="field-group">
+                <label for="f-name">Display name</label>
+                <input class="field" id="f-name" name="name" value="Dana Ortiz" required>
+              </div>
+
+              <div class="field-group">
+                <label for="f-email">Billing email</label>
+                <input class="field" id="f-email" name="email" type="email" required
+                       placeholder="you@company.com">
+                <p class="field-hint">Receipts and payment failures go here.</p>
+              </div>
+
+              <div class="field-group">
+                <label for="f-rate">Default hourly rate</label>
+                <div class="field-row">
+                  <span class="field-addon">$</span>
+                  <input class="field" id="f-rate" type="number" inputmode="decimal" value="145">
+                  <span class="field-addon">/hr</span>
+                </div>
+              </div>
+
+              <label class="field-check">
+                <input class="switch" type="checkbox" role="switch" checked>
+                <span>Email me a weekly summary</span>
+              </label>
+
+              <label class="field-check">
+                <input type="checkbox">
+                <span>Include draft invoices in reports</span>
+              </label>
+
+              <hr>
+
+              <div class="bar start">
+                <button class="btn primary" type="submit">Save changes</button>
+                <button class="btn ghost" type="reset">Discard</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="view" role="tabpanel" id="v-notify" aria-labelledby="t-notify" tabindex="0" hidden>
+            <ul class="rows divided">
+              <li class="list-row">
+                <span><strong>Invoice paid</strong><br>
+                  <span class="text-sm text-muted">When a customer completes payment</span></span>
+                <span class="row-actions">
+                  <label class="field-check"><input class="switch" type="checkbox" role="switch" checked>
+                    <span class="visually-hidden">Notify on invoice paid</span></label>
+                </span>
+              </li>
+              <li class="list-row">
+                <span><strong>Invoice overdue</strong><br>
+                  <span class="text-sm text-muted">14 days after the due date</span></span>
+                <span class="row-actions">
+                  <label class="field-check danger"><input class="switch" type="checkbox" role="switch" checked>
+                    <span class="visually-hidden">Notify on invoice overdue</span></label>
+                </span>
+              </li>
+              <li class="list-row">
+                <span><strong>Weekly digest</strong><br>
+                  <span class="text-sm text-muted">Monday mornings</span></span>
+                <span class="row-actions">
+                  <label class="field-check"><input class="switch" type="checkbox" role="switch">
+                    <span class="visually-hidden">Weekly digest</span></label>
+                </span>
+              </li>
+            </ul>
+          </article>
+
+          <article class="view stack" role="tabpanel" id="v-billing" aria-labelledby="t-billing" tabindex="0" hidden>
+            <article class="card">
+              <div class="surface-body">
+                <dl class="facts">
+                  <dt>Plan</dt><dd>Team <span class="badge primary">Annual</span></dd>
+                  <dt>Seats</dt><dd>5 of 10 used</dd>
+                  <dt>Renews</dt><dd>01 Jan 2027</dd>
+                </dl>
+              </div>
+              <div class="surface-footer">
+                <button class="btn ghost">Change plan</button>
+                <button class="btn outlined danger">Cancel subscription</button>
+              </div>
+            </article>
+
+            <h3 class="h6">API access</h3>
+            <pre class="code"><code>curl https://api.northwind.example/v1/invoices \
+  -H "Authorization: Bearer $NORTHWIND_KEY"</code></pre>
+          </article>
+        </div>
+      </section>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Overlays ────────────────────────────────────────────────── -->
+
+<dialog class="dialog danger" id="confirm-dialog" aria-labelledby="confirm-h">
+  <div class="surface-header">
+    <h2 id="confirm-h" class="h5">Delete invoice</h2>
+    <button class="btn ghost square" aria-label="Close" data-close><svg aria-hidden="true"><use href="#i-x"></use></svg></button>
+  </div>
+  <div class="surface-body">
+    <p>Delete <strong id="confirm-target">this invoice</strong>? This cannot be undone.</p>
+  </div>
+  <div class="surface-footer">
+    <button class="btn ghost" data-close>Cancel</button>
+    <button class="btn danger" id="confirm-ok">Delete invoice</button>
+  </div>
+</dialog>
+
+<dialog class="drawer from-right" id="filters-drawer" aria-labelledby="filters-h">
+  <div class="surface-header">
+    <h2 id="filters-h" class="h5">Filters</h2>
+    <button class="btn ghost square" aria-label="Close" data-close><svg aria-hidden="true"><use href="#i-x"></use></svg></button>
+  </div>
+  <div class="surface-body stack">
+    <div class="field-group">
+      <label for="f-status">Status</label>
+      <select class="field" id="f-status">
+        <option>Any</option><option>Paid</option><option>Overdue</option><option>Draft</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label for="f-min">Minimum amount</label>
+      <div class="field-row">
+        <span class="field-addon">$</span>
+        <input class="field" id="f-min" type="number" value="0">
+      </div>
+    </div>
+    <label class="field-check"><input type="checkbox"><span>Only mine</span></label>
+  </div>
+  <div class="surface-footer">
+    <button class="btn ghost" data-close>Reset</button>
+    <button class="btn primary" data-close>Apply</button>
+  </div>
+</dialog>
+
+<dialog class="drawer" id="nav-drawer" aria-label="Navigation">
+  <div class="surface-header">
+    <strong>Northwind Billing</strong>
+    <button class="btn ghost square" aria-label="Close" data-close><svg aria-hidden="true"><use href="#i-x"></use></svg></button>
+  </div>
+  <div class="surface-body">
+    <ul class="navlist">
+      <li><a class="navlink" href="#dashboard" data-nav="dashboard">Dashboard</a></li>
+      <li><a class="navlink" href="#invoices" data-nav="invoices">Invoices</a></li>
+      <li><a class="navlink" href="#customers" data-nav="customers">Customers</a></li>
+      <li><a class="navlink" href="#settings" data-nav="settings">Settings</a></li>
+    </ul>
+  </div>
+</dialog>
+
+<div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<!-- ── Icon sprite ─────────────────────────────────────────────────
+     The package deliberately ships no icons — it only sizes what it
+     finds. This is the consumer holding up its end. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <g id="g-base" fill="none" stroke="currentColor" stroke-width="1.75"
+       stroke-linecap="round" stroke-linejoin="round"></g>
+  </defs>
+  <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+    <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+  </symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+    <circle cx="11" cy="11" r="6.5"/><line x1="15.8" y1="15.8" x2="20" y2="20"/>
+  </symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5h-15S6 13 6 9Z"/><path d="M10 18a2 2 0 0 0 4 0"/>
+  </symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+    <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+  </symbol>
+  <symbol id="i-chev-l" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="14,6 8,12 14,18"/>
+  </symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="10,6 16,12 10,18"/>
+  </symbol>
+  <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="4,11 12,4 20,11"/><path d="M6 10v9h12v-9"/>
+  </symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 3h8l4 4v14H6Z"/><polyline points="14,3 14,7 18,7"/>
+    <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/>
+  </symbol>
+  <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="9" cy="9" r="3.25"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/>
+    <path d="M16 6.2a3.25 3.25 0 0 1 0 5.6"/><path d="M17 14.2a5.5 5.5 0 0 1 3.5 4.8"/>
+  </symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/>
+  </symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 7h14"/><path d="M9 7V5h6v2"/><path d="M7 7l1 13h8l1-13"/>
+    <line x1="11" y1="11" x2="11" y2="17"/><line x1="13" y1="11" x2="13" y2="17"/>
+  </symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="12" y1="4" x2="12" y2="14"/><polyline points="8,10 12,14 16,10"/><path d="M5 17v2h14v-2"/>
+  </symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 4 21 20H3Z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="17" r=".6" fill="currentColor"/>
+  </symbol>
+  <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="8.5"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="8" r=".7" fill="currentColor"/>
+  </symbol>
+</svg>
+
+<script src="./demo.js"></script>
+</body>
+</html>

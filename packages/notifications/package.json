@@ -8,8 +8,21 @@
   "exports": {
     ".": "./index.ts"
   },
-  "keywords": ["frontierjs", "notifications", "junction"],
+  "keywords": [
+    "frontierjs",
+    "notifications",
+    "junction"
+  ],
   "peerDependencies": {
     "@frontierjs/junction": "*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@frontierjs/junction": "workspace:*",
+    "@frontierjs/litestone": "workspace:*"
+  },
+  "scripts": {
+    "test": "bun test tests/",
+    "typecheck": "node ../../scripts/typecheck.mjs"
   }
 }

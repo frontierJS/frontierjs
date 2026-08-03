@@ -26,25 +26,32 @@ fli db:migrate
 `fli add notifications` appends this model to your `schema.lite`:
 
 ```litestone
-model notifications {
-  id          Integer   @id
-  userId      Integer
-  type        Text                   -- stable notification class identifier e.g. 'PaymentReceived'
-  data        Json                   -- payload built by toInApp() — varies by type
-  contextType Text?                  -- optional: 'Order', 'Project', 'Invoice'
-  contextId   Integer?               -- optional: id of the related record (loose ref, no FK)
-  readAt      DateTime?              -- null = unread
+model Notification {              // PascalCase singular → accessor db.notification
+  id          Int       @id
+  userId      String              // String, not Int — @frontierjs/auth issues uuid ids
+                                  // (use Int only if your own User.id is an Int)
+  type        String              // stable notification class id, e.g. 'PaymentReceived'
+  data        Json                // payload built by toInApp() — varies by type
+  contextType String?             // optional: 'Order', 'Project', 'Invoice'
+  contextId   Int?                // optional: id of the related record (loose ref, no FK)
+  readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
 
-  @@gate("0.9.4.9")
-  @@policy(
-    read:   "record.userId === ctx.user.id",
-    update: "record.userId === ctx.user.id"
-  )
+  @@gate("0.8.4.8")
+  @@allow('read',   userId == auth().id)
+  @@allow('update', userId == auth().id)
 }
 ```
 
-Gate is RCUD: read=open (policy scopes to own records), create=locked (system only), update=USER (mark as read), delete=locked (system only).
+Gate is RCUD: read=open (the row policy scopes it to your own records), create=SYSTEM
+(only `db.asSystem()`, which is what `notify()` uses), update=USER (mark as read),
+delete=SYSTEM.
+
+**Eight, not nine.** `9` is LOCKED — an absolute wall that `asSystem()` does not pass
+either — so a `9` in the create slot would stop `notify()` from ever writing a row.
+`8` is SYSTEM. Comments use `//`; `--` is a parse error. Row policies are
+`@@allow`/`@@deny` with schema expressions (`auth().id`) — there is no `@@policy`
+attribute and no JS-string predicate.
 
 `type` stores the notification class's `static type` identifier — not a foreign key, not an enum. Adding a new notification type requires no migration.
 
@@ -147,9 +154,12 @@ export const sendInvoiceJob = job({
 })
 
 // From a route handler
-app.post('/orders/:id/complete', async (ctx) => {
+app.post('/orders/{id}/complete', async (ctx) => {
+  // Route handlers get a TransportContext: ctx.params holds the path captures
+  // (:id) and ctx.user is the caller. There is no ctx.app here — close over
+  // the app you created.
   const order = await completeOrder(ctx.params.id)
-  await ctx.app.notify(ctx.params.user, new OrderCompleted(order))
+  await app.notify(ctx.user, new OrderCompleted(order))
   return ctx.json(order)
 })
 ```
@@ -190,7 +200,7 @@ after: {
   create: [
     async (ctx) => {
       // authMethod: 'created' is stamped by @frontierjs/auth createUser()
-      if (ctx.params.user?.authMethod === 'created') {
+      if (ctx.auth.user?.authMethod === 'created') {
         await ctx.app.notify(ctx.result.data, new WelcomeUser())
       }
     }

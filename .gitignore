@@ -9,6 +9,13 @@ bun.lockb
 dist/
 build/
 out/
+# …but `build/` also matched packages/*/src/build/, which is SOURCE — Sierra's
+# whole build pipeline (prerender.js, mesa-plugin.js, scanner-plugin.js…) and
+# jetty's. 20 files were silently untracked; a fresh clone had no prerenderer.
+# The directory itself must be re-included, not just its contents: git cannot
+# re-include a file whose parent directory is excluded.
+!packages/*/src/build/
+!packages/*/src/build/**
 *.js.map
 *.d.ts.map
 
@@ -45,3 +52,6 @@ temp/
 
 *.db*
 *.vsix
+
+# @frontierjs/css test driver (generated per run; removed unless --keep)
+.fjs-test-run.html

@@ -1,8 +1,14 @@
 # Litestone Project State
 
-**Date:** 2026-04-25
-**Tests:** 1045 (1036 unit + 9 CLI smoke), ~150 suites
-**Status:** Pre-publish, unpublished. **All publish-blockers cleared.** Ready to ship.
+**Body written:** 2026-04-25 · **header re-verified:** 2026-08-01
+**Tests:** 1241 pass / 0 fail across 5 files (`bun run test`)
+**Status:** shipped — workspace is **v1.1.0**. npm `latest` is still 1.0.3, so anything
+installed from the registry outside this workspace gets the pre-rename dialect.
+
+> The body below is the April pre-publish snapshot. Its narrative of *what was
+> built and why* still reads true; its numbers, "outstanding work" and backlog
+> are from before the 1.0/1.1 releases. Re-verify before citing — see
+> `../../VERIFYING.md`.
 
 ---
 
@@ -95,8 +101,8 @@ trait SoftDelete {
 }
 
 model Post {
-  id    Integer @id
-  title Text
+  id    Int @id
+  title String
   @@trait(Dates)
   @@trait(SoftDelete)
 }
@@ -112,16 +118,16 @@ Implementation: parser-stage transformation. `resolveTraits()` validates trait d
 
 ```
 type Address {
-  street     Text
-  city       Text
-  state      Text?
-  postalCode Text
-  country    Text @default("US")
+  street     String
+  city       String
+  state      String?
+  postalCode String
+  country    String @default("US")
 }
 
 model User {
-  id      Integer @id
-  name    Text
+  id      Int @id
+  name    String
   address Json @type(Address)
 }
 ```
@@ -130,7 +136,7 @@ Three subsystems:
 
 **Validation (parse time).** Declaration-level: forbidden constructs caught where they appear (relations, model-level attrs, `@id`, `@unique`, `@map`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, runtime defaults like `now()`/`cuid()`, File/Blob types). Use-site: `@type` requires Json field, unknown type names rejected, cycles in nested types detected with de-duplication.
 
-**Validation (write time).** `validateTypedJson()` walks the JSON value against the type declaration. Required-key check, type check (Text → string, Integer → integer, Real → number, Boolean → boolean, DateTime → ISO 8601 string, arrays validated). Strict mode (default) rejects unknown keys with helpful message; loose mode keeps them. Nested types validate recursively with full error path (`address.coords.lat`). Validators (`@email`, `@regex`, `@length`, etc.) and transforms (`@trim`, `@lower`) work inside types same as on columns.
+**Validation (write time).** `validateTypedJson()` walks the JSON value against the type declaration. Required-key check, type check (String → string, Int → integer, Float → number, Boolean → boolean, DateTime → ISO 8601 string, arrays validated). Strict mode (default) rejects unknown keys with helpful message; loose mode keeps them. Nested types validate recursively with full error path (`address.coords.lat`). Validators (`@email`, `@regex`, `@length`, etc.) and transforms (`@trim`, `@lower`) work inside types same as on columns.
 
 **TypeScript generation.** Each `type` becomes a top-level `export interface T` in the generated `.d.ts`. Json fields with `@type(T)` reference the interface name (`address: Address` instead of `address: unknown`). Optional + nullable handling correct.
 
@@ -220,7 +226,7 @@ The unscoped `litestone` name is still blocked by npm's similarity check (suppor
 
 ## Backlog (post-publish, ranked)
 
-1. **`Money` type** — JSON-stored `{ amount, currency, scale }`. The `type` feature now in place is the right primitive to build this on (`type Money { amount Integer; currency Text; scale Integer }` plus runtime helpers).
+1. **`Money` type** — JSON-stored `{ amount, currency, scale }`. The `type` feature now in place is the right primitive to build this on (`type Money { amount Int; currency String; scale Int }` plus runtime helpers).
 2. **`LatLng` + `findNear()`** — Haversine in JS. Self-contained.
 3. **`Embedding(n)` + `findSimilar()`** — needs `sqlite-vec` extension as soft dependency. Bigger distribution story.
 4. **`@slug(source: title)`** — common pattern, small change.
@@ -324,14 +330,14 @@ the same table; default reads exclude templates.
 
 ```
 model quotes {
-  id     Integer @id
-  number Text
-  total  Real
+  id     Int @id
+  number String
+  total  Float
   @@hasTemplates                       // → adds isTemplate Boolean @default(false)
 }
 
 model presets {
-  id    Integer @id
+  id    Int @id
   @@hasTemplates(field: "isPreset")    // → custom column name
 }
 ```
@@ -424,8 +430,8 @@ createClient({
 **Example:**
 
 ```
-model accounts { id Integer @id; tenantId Integer; orders orders[] }
-model orders   { id Integer @id; tenantId Integer; accountId Integer }
+model accounts { id Int @id; tenantId Int; orders orders[] }
+model orders   { id Int @id; tenantId Int; accountId Int }
 
 await db.accounts.create({
   data: {

@@ -1,0 +1,143 @@
+<script>
+  // Table.mesa
+  // Semantic data table. Handles sorting state, loading skeleton, and empty state.
+  // Columns are defined as objects; rows are rendered via the `row` snippet.
+  //
+  // COLUMNS shape:
+  //   { key: string, label: string, sortable?: boolean, align?: 'left'|'center'|'right', width?: string }
+  //
+  // USAGE — basic:
+  //   <Table {columns} {rows} {loading}>
+  //     {#snippet row(r)}
+  //       <tr>
+  //         <td>{r.name}</td>
+  //         <td>{r.email}</td>
+  //       </tr>
+  //     {/snippet}
+  //   </Table>
+  //
+  // USAGE — with sort handling:
+  //   <Table {columns} {rows} bind:sortKey bind:sortDir>
+  //     {#snippet row(r)}...{/snippet}
+  //   </Table>
+
+  export let columns    = []       // { key, label, sortable?, align?, width? }[]
+  export let rows       = []       // any[] — passed to the row snippet
+  export let loading    = false
+  export let emptyText  = 'No results found'
+  export let sortKey    = ''       // bindable — currently sorted column key
+  export let sortDir    = 'asc'    // bindable — 'asc' | 'desc'
+  export let stickyHead = false    // fix thead to top on scroll
+  export let striped    = false    // alternate row shading
+  export let compact    = false    // reduce row padding
+
+  // Snippets
+  export let row      = null       // required — renders each data row
+  export let empty    = null       // optional override for empty state
+  export let actions  = null       // optional top-right toolbar slot
+
+  // Skeleton row count while loading
+  export var skeletonRows = 5
+
+  const alignMap = { left: 'text-left', center: 'text-center', right: 'text-right' }
+
+  function handleSort(col) {
+    if (!col.sortable) return
+    if (sortKey === col.key) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc'
+    } else {
+      sortKey = col.key
+      sortDir = 'asc'
+    }
+  }
+</script>
+
+<div class="w-full overflow-x-auto" {class}>
+  {#if actions}
+    <div class="flex items-center justify-end px-1 pb-3">
+      {@render actions?.()}
+    </div>
+  {/if}
+
+  <table class="w-full text-sm border-collapse">
+    <thead class="{stickyHead ? 'sticky top-0 z-10' : ''}">
+      <tr class="border-b border-gray-200 bg-gray-50">
+        {#each columns as col (col.key)}
+          <th
+            scope="col"
+            class="px-4 {compact ? 'py-2' : 'py-3'} text-xs font-semibold text-gray-500
+                   uppercase tracking-wide whitespace-nowrap
+                   {alignMap[col.align] ?? 'text-left'}
+                   {col.sortable ? 'cursor-pointer select-none hover:text-gray-700 hover:bg-gray-100 transition-colors' : ''}"
+            style:width={col.width ?? undefined}
+            on:click={() => handleSort(col)}
+          >
+            <span class="inline-flex items-center gap-1">
+              {col.label}
+              {#if col.sortable}
+                <span class="inline-flex flex-col gap-px opacity-40
+                             {sortKey === col.key ? '!opacity-100 text-blue-600' : ''}">
+                  {#if sortKey === col.key && sortDir === 'asc'}
+                    <svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor">
+                      <path d="M6 3l4 6H2z"/>
+                    </svg>
+                  {:else if sortKey === col.key && sortDir === 'desc'}
+                    <svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor">
+                      <path d="M6 9L2 3h8z"/>
+                    </svg>
+                  {:else}
+                    <svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+                      <path d="M6 2l3 4H3zm0 8L3 6h6z" opacity=".5"/>
+                    </svg>
+                  {/if}
+                </span>
+              {/if}
+            </span>
+          </th>
+        {/each}
+      </tr>
+    </thead>
+
+    <tbody class="divide-y divide-gray-100 bg-white">
+      {#if loading}
+        <!-- Skeleton rows -->
+        {#each { length: skeletonRows } as _, i (i)}
+          <tr class="animate-pulse">
+            {#each columns as col (col.key)}
+              <td class="px-4 {compact ? 'py-2' : 'py-3'}">
+                <div class="h-4 rounded bg-gray-200
+                            {col.align === 'right' ? 'ml-auto' : ''}
+                            {col.align === 'center' ? 'mx-auto' : ''}"
+                     style:width="{50 + ((i * 13 + col.key.length * 7) % 35)}%">
+                </div>
+              </td>
+            {/each}
+          </tr>
+        {/each}
+
+      {:else if !rows.length}
+        <!-- Empty state -->
+        {#if empty}
+          {@render empty?.()}
+        {:else}
+          <tr>
+            <td colspan={columns.length} class="px-4 py-12 text-center">
+              <p class="text-sm text-gray-400">{emptyText}</p>
+            </td>
+          </tr>
+        {/if}
+
+      {:else}
+        <!-- Data rows -->
+        {#each rows as r, i (i)}
+          <tr class="transition-colors hover:bg-gray-50/60
+                     {striped && i % 2 === 1 ? 'bg-gray-50/40' : ''}
+                     {compact ? '[&>td]:py-2' : '[&>td]:py-3'}
+                     [&>td]:px-4 [&>td]:text-gray-700 [&>td]:align-middle">
+            {@render row?.(r, i)}
+          </tr>
+        {/each}
+      {/if}
+    </tbody>
+  </table>
+</div>

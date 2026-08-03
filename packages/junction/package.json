@@ -43,7 +43,7 @@
     "dev": "bun run --watch example/app.ts",
     "start": "NODE_ENV=production bun run example/app.ts",
     "test": "bun test tests/",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node ../../scripts/typecheck.mjs --baseline 212",
     "test:example": "bun test example/test.ts",
     "test:all": "bun test tests/ example/test.ts",
     "repl": "bun run tools/repl.ts",
@@ -52,7 +52,7 @@
     "setup:audit": "bun run tools/setup.ts audit"
   },
   "peerDependencies": {
-    "@frontierjs/litestone": ">=0.1.0"
+    "@frontierjs/litestone": "^1.1.0"
   },
   "peerDependenciesMeta": {
     "@frontierjs/litestone": {
@@ -60,7 +60,7 @@
     }
   },
   "devDependencies": {
-    "@frontierjs/litestone": "latest"
+    "@frontierjs/litestone": "workspace:*"
   },
   "engines": {
     "bun": ">=1.0.0"

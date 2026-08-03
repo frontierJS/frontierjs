@@ -52,7 +52,8 @@
     "test:bun:phase7": "bun test/phase7.test.js",
     "test:bun": "bun test/phase0.test.js && bun test/phase1.test.js && bun test/phase2.test.js && bun test/phase2.5.test.js && bun test/phase3.test.js && bun test/phase4.test.js && bun test/phase5.test.js && bun test/phase6.test.js && bun test/phase7.test.js && bun test/phase8.test.js",
     "test:phase8": "node test/phase8.test.js",
-    "test:bun:phase8": "bun test/phase8.test.js"
+    "test:bun:phase8": "bun test/phase8.test.js",
+    "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {
     "chokidar": "^5.0.0",

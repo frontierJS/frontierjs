@@ -1828,7 +1828,10 @@
         if (!ex) return
         activeExample = name
         // Reset to single file
-        files = [{ name: ex.file, content: ex.src }]
+        // An example may ship extra files — a child component, a store module.
+        // They become editor tabs and resolve as './Name.mesa' / './name.js'
+        // imports through evalExtraFile, same as files the user adds by hand.
+        files = [{ name: ex.file, content: ex.src }, ...(ex.files ?? [])]
         activeFileIdx = 0
         setEditorValue(ex.src, ex.file)
         renderFileTabs()
@@ -1913,18 +1916,39 @@
             }
           }
 
-          // Mount new component
+          // Mount new component.
+          //
+          // Through mount(), not by calling the component directly. Delegation
+          // roots are registered by mount() alone, and $$delegate() only wires
+          // event types to roots that are already registered — so a hand-rolled
+          // `componentFn(anchor, {}, null)` produces a preview that renders
+          // perfectly and responds to nothing. Every button in every example was
+          // dead from the day per-mount delegation replaced document.body.
+          //
+          // createRoot() owns the whole instance so switching examples disposes
+          // its effects. The old teardown cleared innerHTML and flushed, which
+          // removes the DOM and leaves the reactive graph behind — every example
+          // you clicked through stayed subscribed for the life of the page.
           const container = document.getElementById('pv-container')
           container.innerHTML = ''
           try {
             const componentFn = execCompiled(compiledJS, userImports)
-            const anchor = document.createComment('')
-            container.appendChild(anchor)
+            const label = document.createElement('span')
+            label.style.display = 'none'
+            container.appendChild(label)
             $rt.flushSync()
-            componentFn(anchor, {}, null)
-            $rt.flushSync()
+
+            let instance, disposeRoot
+            $rt.createRoot((dispose) => {
+              disposeRoot = dispose
+              instance = $rt.mount(label, componentFn, { props: {}, root: container })
+              $rt.flushSync()
+            })
+
             currentInstance = {
               destroy() {
+                try { disposeRoot?.() } catch (_) {}      // effects first
+                try { instance?.destroy() } catch (_) {}  // then delegation + styles
                 try { $rt.flushSync() } catch (_) {}
                 container.innerHTML = ''
               }

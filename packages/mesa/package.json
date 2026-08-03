@@ -49,7 +49,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "serve": "npx serve ."
+    "serve": "npx serve .",
+    "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {
     "acorn": "^8.0.0",

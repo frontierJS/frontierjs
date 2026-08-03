@@ -26,20 +26,20 @@ database audit {
 }
 
 model User {
-  id        Integer @id
-  email     Text    @unique
-  name      Text?
-  role      Text    @default("member")
-  apiKey    Text?   @secret           // @encrypted + @guarded(all) + auto-logged to audit
+  id        Int @id
+  email     String    @unique
+  name      String?
+  role      String    @default("member")
+  apiKey    String?   @secret           // @encrypted + @guarded(all) + auto-logged to audit
 
   @@log(audit)     // log every create/update/delete
 }
 
 model Order {
-  id        Integer  @id
-  userId    Integer
-  amount    Real
-  status    Text     @default("pending")
+  id        Int  @id
+  userId    Int
+  amount    Float
+  status    String     @default("pending")
   deletedAt DateTime?
 
   @@softDelete
@@ -167,7 +167,7 @@ Log reads/writes of a specific field, not the whole model:
 
 ```prisma
 model User {
-  salary Real? @log(audit)    // log every read and write of salary
+  salary Float? @log(audit)    // log every read and write of salary
 }
 ```
 
@@ -181,7 +181,7 @@ Produces entries with `field: 'salary'` for reads (via `asSystem()`) and writes.
 
 ```prisma
 model User {
-  apiKey Text? @secret    // @encrypted + @guarded(all) + auto-logged
+  apiKey String? @secret    // @encrypted + @guarded(all) + auto-logged
 }
 ```
 

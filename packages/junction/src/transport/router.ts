@@ -1,8 +1,8 @@
 // transport/router.ts
 // Two-tier route cache — the core performance pattern from Total.js.
 //
-// Tier 1: Fixed URL map  { 'GET/users' → route }    → O(1) lookup
-// Tier 2: Dynamic bucket { 'D' → [routes with params] } → linear scan of candidates only
+// Tier 1: Fixed URL map  { 'users' → route }          → O(1) lookup
+// Tier 2: Dynamic list   [routes with params]         → linear scan of candidates only
 //
 // Routes are compiled once at startup. Nothing is created at request time.
 
@@ -25,11 +25,16 @@ const METHODS_WITH_BODY: Record<string, 1> = {
 
 // ─── Route cache structure ─────────────────────────────────────────────────
 
+// Fixed routes and dynamic routes are kept in SEPARATE fields.
+//
+// They used to share one object, with dynamic routes under the key 'D' and
+// fixed routes keyed by their normalised path. A route registered at '/D'
+// normalises to exactly 'D', so it collided with the bucket: build() threw
+// `methodCache.D.push is not a function`, and lookup() would have returned the
+// bucket array as if it were a route. Two fields cannot collide.
 type RouteCache = {
-  // fixed routes: 'users/profile' → RouteDefinition
-  [fixedKey: string]: RouteDefinition
-  // dynamic routes bucket
-  D?: RouteDefinition[]
+  fixed:   Record<string, RouteDefinition>
+  dynamic: RouteDefinition[]
 }
 
 type MethodCache = Record<string, RouteCache>
@@ -91,19 +96,15 @@ export class Router {
     for (const route of this._routes) {
 
       if (!cache[route.method])
-        cache[route.method] = {}
+        cache[route.method] = { fixed: {}, dynamic: [] }
 
       const methodCache = cache[route.method]
 
       if (!route.dynamic) {
         // Fixed route — key is the path without leading slash
-        const key = normalizeKey(route.path)
-        methodCache[key] = route
+        methodCache.fixed[normalizeKey(route.path)] = route
       } else {
-        // Dynamic route — goes into the D bucket
-        if (!methodCache.D)
-          methodCache.D = []
-        methodCache.D.push(route)
+        methodCache.dynamic.push(route)
       }
     }
 
@@ -125,12 +126,12 @@ export class Router {
     const key = normalizeKey(path)
 
     // ── Tier 1: Fixed URL — O(1) ──────────────────────────────────────
-    const fixed = methodCache[key]
+    const fixed = methodCache.fixed[key]
     if (fixed) return { route: fixed, params: {} }
 
-    // ── Tier 2: Dynamic routes — scan D bucket only ───────────────────
-    const dynamic = methodCache.D
-    if (!dynamic) return null
+    // ── Tier 2: Dynamic routes — scan the dynamic list only ───────────
+    const dynamic = methodCache.dynamic
+    if (!dynamic.length) return null
 
     for (const route of dynamic) {
       const params = matchPathDirect(route.segments, path)
@@ -147,12 +148,7 @@ export class Router {
     let count = 0
     for (const method in this._cache) {
       const mc = this._cache[method]
-      for (const key in mc) {
-        if (key === 'D')
-          count += (mc.D?.length ?? 0)
-        else
-          count++
-      }
+      count += Object.keys(mc.fixed).length + mc.dynamic.length
     }
     return count
   }
@@ -161,8 +157,58 @@ export class Router {
     return this._built
   }
 
+  /**
+   * Would a request for this path match SOMETHING?
+   *
+   * Note this is a matching question, not an existence one: a dynamic route
+   * absorbs paths that were never registered. On a default app,
+   * `hasRoute('GET', '/health')` is **true** because it matches `GET /{service}`.
+   * If you mean "is this exact endpoint mounted", use hasExactRoute().
+   */
   hasRoute(method: string, path: string): boolean {
     return this.lookup(method, path) !== null
+  }
+
+  /**
+   * Is a route registered at EXACTLY this path?
+   *
+   * Compares the registered path literally, so a dynamic route cannot answer
+   * for one that was never mounted. This exists because the startup banner
+   * used hasRoute() to decide whether to advertise /health and /docs — and
+   * `GET /{service}` matched both, so every app printed URLs that then 404'd.
+   *
+   * Works before and after build(); build() frees the registration array, so
+   * afterwards this reads the fixed-route map. An exact literal path is never
+   * dynamic, so the dynamic list is deliberately not consulted.
+   */
+  hasExactRoute(method: string, path: string): boolean {
+    if (!this._built) {
+      return this._routes.some(r => r.method === method && r.path === path)
+    }
+    const methodCache = this._cache[method]
+    if (!methodCache) return false
+    return methodCache.fixed[normalizeKey(path)] !== undefined
+  }
+
+  /**
+   * Every path registered for a method, as written at registration time.
+   *
+   * Lets a caller ask "where did this actually get mounted" instead of
+   * guessing a location and testing it — which is how the startup banner
+   * stayed silent about a health endpoint mounted at a custom path.
+   * Works before and after build().
+   */
+  routePaths(method: string): string[] {
+    if (!this._built) {
+      return this._routes.filter(r => r.method === method).map(r => r.path)
+    }
+    const methodCache = this._cache[method]
+    if (!methodCache) return []
+
+    return [
+      ...Object.values(methodCache.fixed).map(r => r.path),
+      ...methodCache.dynamic.map(r => r.path),
+    ]
   }
 }
 

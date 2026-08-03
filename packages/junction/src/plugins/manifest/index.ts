@@ -90,7 +90,8 @@ export function manifestPlugin(opts: ManifestPluginOptions = {}): Plugin {
     // are still fully visible. (Previously mounted in boot() with a comment
     // explaining why ready() was too late — register() is simply earlier
     // and consistent.)
-    async register(app: App): Promise<void> {
+    // Synchronous: the awaits below are inside route handlers, not here.
+    register(app: App): void {
       if (devOnly && process.env.NODE_ENV === 'production') return
       const prefix = (app.config as Record<string, unknown>).apiPrefix as string ?? ''
 

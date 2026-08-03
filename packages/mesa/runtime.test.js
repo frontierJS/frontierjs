@@ -35,6 +35,7 @@ import {
   // Signals
   createSignal,
   createEffect,
+  createRoot,
   createMemo,
   createWritableSignal,
   batch,
@@ -81,6 +82,7 @@ import {
   // Template constructs
   $$eachBlock,
   ifBlock,
+  keyBlock,
   awaitBlock,
   track,
   trackDerived,
@@ -562,6 +564,81 @@ describe('flush resilience', () => {
       const msg = spy.mock.calls.map((c) => String(c[0])).join('\n')
       expect(msg).toMatch(/Update cycle detected/)
     } finally { spy.mockRestore() }
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §3d  createRoot — an owner scope with an end
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('createRoot', () => {
+  it('disposes everything created inside it', () => {
+    const [n, setN] = createSignal(0)
+    let runs = 0
+    let dispose
+    createRoot((d) => {
+      dispose = d
+      createEffect(() => { n(); runs++ })
+      createEffect(() => { n(); runs++ })
+    })
+    expect(runs).toBe(2)
+    setN(1); flushSync()
+    expect(runs).toBe(4)
+
+    dispose()
+    setN(2); flushSync()
+    expect(runs).toBe(4)   // both children gone
+  })
+
+  it('returns what its callback returns', () => {
+    expect(createRoot(() => 'value')).toBe('value')
+  })
+
+  it('a body that reads then writes a signal runs exactly once (RULE 54)', () => {
+    // This is what earns the primitive. createEffect is the obvious substitute
+    // and it is wrong: an effect subscribes to what its body reads, so a
+    // component that reads a store during setup and then writes it re-notifies
+    // the very scaffolding that is running it. Measured before the rule was
+    // written: 1001 runs for one render, one thousand copies of the markup, and
+    // a cycle warning blaming the user's `$:` statements.
+    const [hits, setHits] = createSignal(0)
+
+    // The createEffect half deliberately induces the cycle, so the runtime's
+    // (misleading, in this case) warning is expected — silence it.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let effectRuns = 0
+    try {
+      const disposeEffect = createEffect(() => {
+        effectRuns++
+        const n = hits()
+        setHits(n + 1)
+      })
+      flushSync()
+      disposeEffect()
+    } finally { spy.mockRestore() }
+    expect(effectRuns).toBeGreaterThan(1)   // the failure mode, pinned
+
+    let rootRuns = 0
+    createRoot((dispose) => {
+      rootRuns++
+      const n = hits()
+      setHits(n + 1)
+      flushSync()
+      dispose()
+    })
+    expect(rootRuns).toBe(1)                // ownership without tracking
+  })
+
+  it('does not subscribe the enclosing effect to reads inside it', () => {
+    const [n, setN] = createSignal(0)
+    let outer = 0
+    createEffect(() => {
+      outer++
+      createRoot((dispose) => { n(); dispose() })
+    })
+    expect(outer).toBe(1)
+    setN(1); flushSync()
+    expect(outer).toBe(1)   // a root is ownership, not tracking
   })
 })
 
@@ -2263,6 +2340,407 @@ describe('block teardown across async boundaries', () => {
     const before = runs
     setN(2); flushSync()
     expect(runs).toBe(before)   // built in a microtask — used to have no owner at all
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §18c  Block teardown — one suite per block type
+//
+// Two failure shapes account for every teardown bug found in this layer, and
+// each block type is checked for both:
+//
+//   1. RANGE ESCAPE — the block records its content's first and last DOM nodes
+//      and removes that range later. An inner block inserts before its own
+//      anchor, so when that anchor is the range's first node, everything the
+//      inner block renders sits outside the range and survives removal. The
+//      fix is a marker comment the outer block owns (or, for {#each} rows,
+//      _guardRange prepending one when the first node is a comment).
+//
+//   2. NO OWNER — content built without an owner node parents its effects to
+//      whatever was ambient (an effect that never disposes its own children,
+//      or nothing at all in a microtask). Those effects then re-run forever
+//      against detached DOM, one more set per swap.
+//
+// Every block also gets a "remove it while something inside is mid-flight"
+// case, which is the condition all four original bugs needed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('block teardown — {#key}', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+
+  const mkAwait = (promise, label = 'v') => () => {
+    const frag = document.createDocumentFragment()
+    const aw = document.createComment('await')
+    frag.appendChild(aw)
+    awaitBlock(aw, () => promise,
+      () => { const s = span(); s.textContent = 'pending'; return s },
+      (v) => { const s = span(); s.textContent = label + ':' + v; return s },
+      null)
+    return frag
+  }
+
+  it('removes a keyed block whose inner {#await} has already resolved', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('key')
+    root.appendChild(anchor)
+    const [k, setK] = createSignal(1)
+    const p = Promise.resolve('X')
+
+    keyBlock(anchor, () => k(), mkAwait(p))
+    flushSync(); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('v:X')
+
+    // The keyed content was tracked by its first/last nodes, which the inner
+    // {#await} replaced on resolve. Removal walked from a detached node and
+    // removed nothing, so the new key's copy was appended beside the old one.
+    setK(2); flushSync(); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('v:X')
+  })
+
+  it('removes a keyed block whose {#await} is still pending', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('key')
+    root.appendChild(anchor)
+    const [k, setK] = createSignal(1)
+    let resolveIt
+    const p = new Promise((r) => { resolveIt = r })
+
+    keyBlock(anchor, () => k(), mkAwait(p))
+    flushSync()
+    expect(root.textContent).toBe('pending')
+
+    setK(2); flushSync()
+    resolveIt('X'); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('v:X')   // exactly one, from the live key
+  })
+
+  it('disposes effects inside the outgoing keyed block', () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('key')
+    root.appendChild(anchor)
+    const [k, setK] = createSignal(1)
+    const [n, setN] = createSignal(0)
+    let runs = 0
+
+    keyBlock(anchor, () => k(), () => {
+      const s = span()
+      createEffect(() => { n(); runs++ })
+      return s
+    })
+    flushSync()
+    setK(2); flushSync()
+    const before = runs
+    setN(1); flushSync()
+    expect(runs - before).toBe(1)   // only the live copy
+  })
+
+  it('removes a multi-node keyed block completely', () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('key')
+    root.appendChild(anchor)
+    const [k, setK] = createSignal(1)
+
+    keyBlock(anchor, () => k(), () => {
+      const frag = document.createDocumentFragment()
+      const a = span(); a.textContent = 'a' + k()
+      const b = span(); b.textContent = 'b' + k()
+      frag.append(a, b)
+      return frag
+    })
+    flushSync()
+    expect(root.textContent).toBe('a1b1')
+    setK(2); flushSync()
+    expect(root.textContent).toBe('a2b2')
+  })
+})
+
+describe('block teardown — {#await}', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+
+  it('re-swapping drops a branch that starts with a resolved nested {#await}', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('await')
+    root.appendChild(anchor)
+    const inner = Promise.resolve('IN')
+    const [which, setWhich] = createSignal(0)
+    const p1 = Promise.resolve('P1')
+    const p2 = Promise.resolve('P2')
+
+    awaitBlock(anchor, () => (which() === 0 ? p1 : p2), null,
+      (v) => {
+        const frag = document.createDocumentFragment()
+        const aw = document.createComment('inner')
+        const t = span(); t.textContent = v
+        frag.append(aw, t)          // inner anchor is the FIRST node of the branch
+        awaitBlock(aw, () => inner, null,
+          (iv) => { const s = span(); s.textContent = iv + '-'; return s }, null)
+        return frag
+      }, null)
+    flushSync(); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('IN-P1')
+
+    setWhich(1); flushSync(); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('IN-P2')
+  })
+
+  it('a promise that resolves after the block is disposed renders nothing', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('await')
+    root.appendChild(anchor)
+    let resolveIt
+    const p = new Promise((r) => { resolveIt = r })
+
+    const dispose = createEffect(() => {
+      awaitBlock(anchor, () => p,
+        () => { const s = span(); s.textContent = 'pending'; return s },
+        (v) => { const s = span(); s.textContent = 'then:' + v; return s }, null)
+    })
+    flushSync()
+    expect(root.textContent).toBe('pending')
+
+    dispose()
+    resolveIt('late'); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('pending')   // no resurrection into detached DOM
+  })
+})
+
+describe('block teardown — {#each}', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+
+  const awaitRow = (p) => (getItem) => {
+    const frag = document.createDocumentFragment()
+    const aw = document.createComment('a')            // row's only node
+    frag.appendChild(aw)
+    awaitBlock(aw, () => p,
+      () => { const s = span(); s.textContent = '?'; return s },
+      (v) => { const s = span(); s.textContent = v + getItem(); return s }, null)
+    return frag
+  }
+
+  it('removes a row whose only content is a resolved {#await}', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('each')
+    root.appendChild(anchor)
+    const [items, setItems] = createSignal([1, 2])
+    const p = Promise.resolve('R')
+
+    $$eachBlock(anchor, 0, () => items(), (x) => x, awaitRow(p), null)
+    flushSync(); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('R1R2')
+
+    setItems([2]); flushSync(); await tick()
+    expect(root.textContent).toBe('R2')
+  })
+
+  it('clears an array of rows whose {#await} already resolved', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('each')
+    root.appendChild(anchor)
+    const [items, setItems] = createSignal([1, 2])
+    const p = Promise.resolve('R')
+
+    $$eachBlock(anchor, 0, () => items(), (x) => x, awaitRow(p), null)
+    flushSync(); await tick(); flushSync(); await tick()
+    setItems([]); flushSync(); await tick()
+    expect(root.textContent).toBe('')
+  })
+
+  it('removes a row while its {#await} is still in flight', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('each')
+    root.appendChild(anchor)
+    const [items, setItems] = createSignal([1, 2])
+    let resolveIt
+    const p = new Promise((r) => { resolveIt = r })
+
+    $$eachBlock(anchor, 0, () => items(), (x) => x, awaitRow(p), null)
+    flushSync()
+    setItems([2]); flushSync()
+    resolveIt('R'); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('R2')
+  })
+
+  it('reorders rows whose {#await} already resolved', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('each')
+    root.appendChild(anchor)
+    const [items, setItems] = createSignal([1, 2])
+    const p = Promise.resolve('R')
+
+    $$eachBlock(anchor, 0, () => items(), (x) => x, awaitRow(p), null)
+    flushSync(); await tick(); flushSync(); await tick()
+    setItems([2, 1]); flushSync(); await tick()
+    expect(root.textContent).toBe('R2R1')
+  })
+})
+
+describe('block teardown — <mesa:boundary>', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+
+  it('disposes the pending branch effects when it swaps to content', () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('b')
+    root.appendChild(anchor)
+    const state = makeAsyncState()
+    const [n, setN] = createSignal(0)
+    let pendingRuns = 0
+
+    boundaryBlock(anchor, () => [state],
+      () => { const e = span(); e.textContent = 'content'; return e },
+      () => {
+        const e = span()
+        createEffect(() => { e.textContent = 'n=' + n(); pendingRuns++ })
+        return e
+      },
+      null)
+    flushSync()
+    expect(pendingRuns).toBe(1)
+
+    state._update('done'); flushSync()
+    expect(root.textContent).toBe('content')
+
+    // The pending branch was built under the boundary's own effect node, which
+    // never disposes its children on re-run — its effects kept rendering into
+    // detached DOM on every write, one more set per swap.
+    const before = pendingRuns
+    setN(1); flushSync()
+    expect(pendingRuns - before).toBe(0)
+  })
+
+  it('swaps out a pending branch whose inner {#await} already resolved', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('b')
+    root.appendChild(anchor)
+    const state = makeAsyncState()
+    const p = Promise.resolve('Y')
+
+    boundaryBlock(anchor, () => [state],
+      () => { const e = span(); e.textContent = 'content'; return e },
+      () => {
+        const frag = document.createDocumentFragment()
+        const aw = document.createComment('await')
+        frag.appendChild(aw)
+        awaitBlock(aw, () => p,
+          () => { const e = span(); e.textContent = 'p0'; return e },
+          (v) => { const e = span(); e.textContent = 'p1:' + v; return e }, null)
+        return frag
+      },
+      null)
+    flushSync(); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('p1:Y')
+
+    state._update('done'); flushSync(); await tick()
+    expect(root.textContent).toBe('content')
+  })
+
+  it('cycles pending → content → failed → content without stranding DOM', () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('b')
+    root.appendChild(anchor)
+    const state = makeAsyncState()
+
+    boundaryBlock(anchor, () => [state],
+      () => { const e = span(); e.textContent = 'content'; return e },
+      () => { const e = span(); e.textContent = 'pending'; return e },
+      (err) => { const e = span(); e.textContent = 'err:' + err; return e })
+    flushSync()
+    expect(root.textContent).toBe('pending')
+    state._update('done');            flushSync(); expect(root.textContent).toBe('content')
+    state._update('error', 'boom');   flushSync(); expect(root.textContent).toBe('err:boom')
+    state._update('start')
+    state._update('done');            flushSync(); expect(root.textContent).toBe('content')
+  })
+
+  it('disposes the live branch when the boundary itself is disposed', () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('b')
+    root.appendChild(anchor)
+    const state = makeAsyncState()
+    const [n, setN] = createSignal(0)
+    let runs = 0
+
+    const dispose = createEffect(() => {
+      boundaryBlock(anchor, () => [state],
+        null,
+        () => { const e = span(); createEffect(() => { n(); runs++ }); return e },
+        null)
+    })
+    flushSync()
+    expect(runs).toBe(1)
+    dispose()
+    const before = runs
+    setN(1); flushSync()
+    expect(runs).toBe(before)
+  })
+})
+
+describe('block teardown — <mesa:mounted>', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+
+  it('disposes pending branch effects once the mount promise resolves', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const anchor = document.createComment('m')
+    root.appendChild(anchor)
+    const [n, setN] = createSignal(0)
+    let pendingRuns = 0
+    let resolveIt
+    const p = new Promise((r) => { resolveIt = r })
+
+    mountedBlock(anchor, () => p,
+      () => { const e = span(); createEffect(() => { n(); pendingRuns++ }); e.textContent = 'pending'; return e },
+      () => { const e = span(); e.textContent = 'content'; return e },
+      null, null)
+    flushSync()
+    expect(pendingRuns).toBe(1)
+
+    resolveIt(true); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('content')
+    const before = pendingRuns
+    setN(1); flushSync()
+    expect(pendingRuns - before).toBe(0)
+  })
+
+  it('removed while the mount promise is in flight — content never appears', async () => {
+    const root = div()
+    document.body.appendChild(root)
+    const ifAnchor = document.createComment('if')
+    root.appendChild(ifAnchor)
+    const [show, setShow] = createSignal(0)
+    let resolveIt
+    const p = new Promise((r) => { resolveIt = r })
+
+    ifBlock(ifAnchor, () => show(), [() => {
+      const frag = document.createDocumentFragment()
+      const m = document.createComment('m')
+      frag.appendChild(m)
+      mountedBlock(m, () => p,
+        () => { const e = span(); e.textContent = 'pending'; return e },
+        () => { const e = span(); e.textContent = 'content'; return e },
+        null, null)
+      return frag
+    }])
+    flushSync()
+    expect(root.textContent).toBe('pending')
+
+    setShow(null); flushSync()
+    expect(root.textContent).toBe('')
+    resolveIt(true); await tick(); flushSync(); await tick()
+    expect(root.textContent).toBe('')
   })
 })
 

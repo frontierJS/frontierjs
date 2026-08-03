@@ -31,10 +31,8 @@
 
 .btn:hover { filter: brightness(1.05); }
 
-.btn:focus-visible {
-  outline:    none;
-  box-shadow: 0 0 0 var(--ring-width) color-mix(in srgb, var(--ring) 30%, transparent);
-}
+/* Focus ring: focus.css. It is not written here on purpose — a ring in
+   box-shadow was erased by `.btn.outlined { box-shadow: none }` below. */
 
 .btn:disabled,
 .btn.disabled {
@@ -42,12 +40,52 @@
   cursor:  not-allowed;
 }
 
-/* ── Variants — read --bg-mix, restructure ─────────────────────── */
+/*
+ * ── Variants — read --bg-mix, restructure ───────────────────────
+ *
+ * .raised / .outlined / .ghost are Treatment classes: the README says
+ * they compose onto anything, and surface.css honours all three. A button
+ * has to honour all three too, or the claim is false — this is the same
+ * rule as "a tone consumer takes all seven tones or it's a bug".
+ *
+ * Through v0.8 only .outlined was here, so `.btn.ghost` and `.btn.raised`
+ * were silent no-ops: a toolbar of ghost icon buttons rendered as a wall
+ * of solid primary blue. The demo app found it by reaching for the
+ * obvious class.
+ */
 .btn.outlined {
   background:   var(--surface);
   color:        var(--bg-mix, var(--color-primary));
   border-color: var(--bg-mix, var(--color-primary));
   box-shadow:   none;
+}
+
+/* Same fill, lifted. The elevation is the whole variant. */
+.btn.raised {
+  box-shadow: var(--shadow-md);
+}
+
+/*
+ * No fill, no border — the low-emphasis button. Toolbar actions, row
+ * actions, "Cancel" beside a primary.
+ *
+ * Untoned it takes --ink-soft rather than the brand accent. A ghost
+ * button's text IS the button, and an accent on a surface has no contrast
+ * guarantee (--color-primary on --surface is 3.96:1); --ink-soft is 7.3:1
+ * and a neutral ghost is the common case anyway. A tone class opts into
+ * the accent deliberately, exactly like .field-hint and .tile-delta.
+ */
+.btn.ghost {
+  background:   transparent;
+  color:        var(--bg-mix, var(--ink-soft));
+  border-color: transparent;
+  box-shadow:   none;
+}
+.btn.ghost:hover {
+  background: color-mix(in srgb, var(--bg-mix, var(--ink)) 8%, transparent);
+  /* The brightness filter is for solid fills; on transparent it does nothing
+     but wash out the label. */
+  filter: none;
 }
 
 .btn.link {
@@ -62,15 +100,66 @@
   filter:          none;
 }
 
-/* ── Icon-only button — equal padding, square via aspect-ratio ──── */
-.btn.icon {
+/*
+ * ── Loading ─────────────────────────────────────────────────────
+ * Hides the label with `color: transparent` rather than removing it, so
+ * the button keeps its width (no layout jump) and screen readers still
+ * have something to read. Draw the spinner with ::after so no extra
+ * markup is needed.
+ *
+ *   <button class="btn primary loading" aria-busy="true" disabled>Save</button>
+ *
+ * aria-busy is the part that actually communicates the state; the class
+ * only draws it. Keep `disabled` so the control is genuinely inert —
+ * pointer-events alone still allows keyboard activation.
+ */
+.btn.loading {
+  position:       relative;
+  color:          transparent;
+  pointer-events: none;
+}
+.btn.loading::after {
+  content:       "";
+  position:      absolute;
+  inset:         0;
+  margin:        auto;
+  inline-size:   1em;
+  block-size:    1em;
+  border:        2px solid color-mix(in srgb, var(--on-fill, white) 30%, transparent);
+  border-block-start-color: var(--on-fill, white);
+  border-radius: 50%;
+  animation:     fjs-spin 600ms linear infinite;
+}
+/* Outlined and link buttons draw their spinner in the tone, not on it. */
+.btn.loading:is(.outlined, .link)::after {
+  border-color: color-mix(in srgb, var(--bg-mix, var(--color-primary)) 30%, transparent);
+  border-block-start-color: var(--bg-mix, var(--color-primary));
+}
+
+/*
+ * ── Square button — equal padding, square via aspect-ratio ────────
+ *
+ * The icon-only button.
+ *
+ *   <button class="btn square" aria-label="Delete invoice">
+ *     <svg aria-hidden="true">…</svg>
+ *   </button>
+ *
+ * The name is `.square`, not `.icon`, since v0.10. `.icon` now means "this
+ * element IS an icon" (icon.css) — the Icon vocabulary term — and one
+ * class cannot mean both "a button shaped for an icon" and "an icon", or
+ * `<button class="btn icon">` would try to size the button itself to
+ * 1.15em. `.square` also happens to describe what the class does, which
+ * `.icon` never did.
+ *
+ * The child sizing that used to live here is in icon.css, where it is one
+ * rule for the whole package instead of three drifting copies.
+ *
+ * `aria-label` on the button is not optional: with no text content there
+ * is nothing else to announce.
+ */
+.btn.square {
   padding:      0.45em;   /* equal on all sides; scales with font-size */
   aspect-ratio: 1;
   gap:          0;
-}
-.btn.icon > svg,
-.btn.icon > [class^="i-heroicons"],
-.btn.icon > [class*=" i-heroicons"] {
-  width:  1.15em;
-  height: 1.15em;
 }

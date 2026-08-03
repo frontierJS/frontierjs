@@ -39,7 +39,7 @@
  *
  *   <div class="section-header">
  *     <h3 id="tags-heading">Tags</h3>
- *     <button class="btn icon" aria-label="Add tag">…</button>
+ *     <button class="btn square" aria-label="Add tag">…</button>
  *   </div>
  */
 .section-header {
@@ -48,6 +48,27 @@
   justify-content: space-between;
   gap:             0.5rem;
   margin-bottom:   0.5rem;
+}
+
+/* ── Divider — a plain horizontal rule ─────────────────────────────
+ * The Region-tier "Divider". <hr> is the element: it means "thematic
+ * break", which is exactly what a rule between sections is, and it is
+ * announced as a separator instead of being invisible to assistive tech
+ * the way a styled <div> would be.
+ *
+ *   <hr>
+ *   <div class="divider"></div>   <!-- only where <hr> is not allowed -->
+ *
+ * The UA default is a beveled 3D border that no theme wants, so the
+ * border is removed outright and the line drawn as a background — that
+ * also lets a theme retint it through --rule alone.
+ */
+hr, .divider {
+  border:       0;
+  block-size:   1px;
+  inline-size:  100%;
+  background:   var(--rule);
+  margin-block: 1.5rem;
 }
 
 /* ── Divider label — a centered label on a horizontal rule ─────────

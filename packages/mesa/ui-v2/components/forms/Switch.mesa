@@ -1,0 +1,106 @@
+<script>
+  // Switch.mesa
+  // Accessible toggle switch. Pure Tailwind — no CSS pseudo-elements or custom styles.
+  // Uses aria-checked + translate classes for the thumb animation.
+  //
+  // Sizes:
+  //   'sm'  — h-5 w-9   thumb h-3.5 w-3.5
+  //   'md'  — h-6 w-11  thumb h-4 w-4      (default)
+  //   'lg'  — h-7 w-[52px] thumb h-5 w-5
+  //
+  // Usage:
+  //   <Switch bind:checked={darkMode} label="Dark mode" />
+  //   <Switch bind:checked={enabled} size="sm" />
+
+  import { uid } from '../../utils.js'
+
+  export let checked     = false
+  export let label       = ''
+  export let description = ''
+  export let disabled    = false
+  export let size        = 'md'   // 'sm' | 'md' | 'lg'
+  export let labelSide   = 'right'  // 'left' | 'right'
+  export let onchange    = undefined
+
+  export var id = ''
+  const switchId = id || uid('switch')
+
+  // Static size maps — derived once from var size (snapshot at mount)
+  // size is export let (reactive), so these derived consts re-compute if size changes
+  const trackMap = {
+    sm: 'h-5 w-9',
+    md: 'h-6 w-11',
+    lg: 'h-7 w-[3.25rem]',
+  }
+  const thumbMap = {
+    sm: 'h-3.5 w-3.5',
+    md: 'h-4 w-4',
+    lg: 'h-5 w-5',
+  }
+  const translateMap = {
+    sm: 'translate-x-[1.125rem]',
+    md: 'translate-x-[1.375rem]',
+    lg: 'translate-x-[1.625rem]',
+  }
+
+  const trackClass  = trackMap[size]  ?? trackMap.md
+  const thumbClass  = thumbMap[size]  ?? thumbMap.md
+  const onTranslate = translateMap[size] ?? translateMap.md
+
+  function toggle() {
+    if (!disabled) {
+      checked = !checked
+      onchange?.(checked)
+    }
+  }
+</script>
+
+<div class="flex items-center gap-3" {class}>
+
+  {#if (label || description) && labelSide === 'left'}
+    <div class="flex flex-col gap-0.5 {disabled ? 'opacity-50' : ''}">
+      {#if label}
+        <label for={switchId} class="text-sm font-medium text-gray-700 cursor-pointer select-none">{label}</label>
+      {/if}
+      {#if description}
+        <p class="text-xs text-gray-500">{description}</p>
+      {/if}
+    </div>
+  {/if}
+
+  <button
+    id={switchId}
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    aria-label={label || 'Toggle'}
+    disabled={disabled}
+    class="relative inline-flex shrink-0 cursor-pointer items-center rounded-full
+           border-2 border-transparent transition-colors duration-200 ease-in-out
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2
+           disabled:cursor-not-allowed disabled:opacity-50
+           {trackClass}
+           {checked ? 'bg-blue-600' : 'bg-gray-200'}"
+    on:click={toggle}
+  >
+    <span
+      aria-hidden="true"
+      class="pointer-events-none inline-block rounded-full bg-white shadow-sm ring-0
+             transition-transform duration-200 ease-in-out
+             {thumbClass}
+             {checked ? onTranslate : 'translate-x-0.5'}"
+    ></span>
+  </button>
+
+  {#if (label || description) && labelSide === 'right'}
+    <div class="flex flex-col gap-0.5 {disabled ? 'opacity-50' : ''}">
+      {#if label}
+        <label for={switchId} class="text-sm font-medium text-gray-700 cursor-pointer select-none">{label}</label>
+      {/if}
+      {#if description}
+        <p class="text-xs text-gray-500">{description}</p>
+      {/if}
+    </div>
+  {/if}
+
+</div>

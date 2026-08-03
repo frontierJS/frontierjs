@@ -119,8 +119,10 @@ against `@@gate("0.4.4.5")`. Everything else follows from having authenticated.
 
 - The client is bundled on boot by `Bun.build` and served at `/client.js`.
   Sierra's build does this for you in a real app.
-- This example imports the **workspace** Litestone (1.0.6) by relative path,
-  while Junction's own `package.json` pins `"latest"`, which resolves to the
-  published 1.0.3. Keeping the example on the workspace copy is deliberate: it
-  is the only place the two are exercised together.
+- This example imports the **workspace** Litestone (1.1.0) by relative path.
+  Junction's `package.json` now resolves there too (`workspace:*` dev-dep,
+  `^1.1.0` peer), so the relative import and the package resolution finally
+  agree. Previously the package pinned `"latest"` and got the published 1.0.3,
+  which is what made this example the only place the two were exercised
+  together — and what caused Junction's 7 long-standing test failures.
 - The database is `:memory:`, so every restart reseeds.

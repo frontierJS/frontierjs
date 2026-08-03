@@ -1,0 +1,63 @@
+---
+siteName: Sierra example
+---
+<script>
+  import { page, isActive, goto } from '@frontierjs/sierra/router'
+  import { status, login, logout } from '@frontierjs/sierra/junction'
+  import { session, setLevel } from '../session.js'
+
+  $: (page.siteName, page.route)
+  $: (status.connected, session.level)
+
+  async function signIn(admin) {
+    const res = await fetch('/login', {
+      method:  'POST',
+      headers: { 'content-type': 'application/json' },
+      body:    JSON.stringify({ admin }),
+    })
+    const { token, level } = await res.json()
+    login(token)
+    setLevel(level)
+  }
+
+  function signOut() {
+    logout()
+    setLevel(0)
+    goto('/')
+  }
+</script>
+
+<header>
+  <strong>{page.siteName}</strong>
+  <nav>
+    <a href="/" class:on={isActive('/', { exact: true })}>Home</a>
+    <a href="/leads/" class:on={isActive('/leads/')}>Leads</a>
+    <a href="/leads/create/" class:on={isActive('/leads/create/')}>New lead</a>
+  </nav>
+  <span class="who">
+    <span class="dot" class:live={status.connected}></span>
+    {#if session.level > 0}
+      level {session.level}
+      <button on:click={signOut}>Sign out</button>
+    {:else}
+      <button on:click={() => signIn(false)}>Sign in (user)</button>
+      <button on:click={() => signIn(true)}>Sign in (admin)</button>
+    {/if}
+  </span>
+</header>
+
+<main><slot /></main>
+
+<style>
+  :global(body) { font-family: system-ui, sans-serif; margin: 0; color: #111 }
+  header { display: flex; gap: 20px; align-items: center; padding: 12px 20px; border-bottom: 1px solid #e5e7eb }
+  nav { display: flex; gap: 14px }
+  nav a { text-decoration: none; color: #6b7280 }
+  nav a.on { color: #111; font-weight: 600 }
+  .who { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 14px; color: #6b7280 }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #d1d5db }
+  .dot.live { background: #22c55e }
+  main { padding: 20px; max-width: 900px }
+  button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer }
+  button[disabled] { opacity: .45; cursor: not-allowed }
+</style>

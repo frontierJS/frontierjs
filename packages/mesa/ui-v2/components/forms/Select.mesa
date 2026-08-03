@@ -1,0 +1,127 @@
+<script>
+  // Select.mesa
+  // Native <select> with option normalisation and Field composition.
+  //
+  // Options accept either:
+  //   string[]                       → { value: s, label: s }
+  //   { value, label, disabled? }[]  → used as-is
+  //
+  // Groups:
+  //   { group: string, options: [...] }[]  → rendered as <optgroup>
+  //
+  // bind:this exposes: focus()
+
+  import Field from './Field.mesa'
+  import { nameToLabel, uid } from '../../utils.js'
+
+  export let value       = null
+  export let options     = []           // flat or grouped (see above)
+  export let placeholder = 'Select…'   // set to '' to suppress
+  export let disabled    = false
+  export let required    = undefined
+  export let multiple    = false
+
+  // Field integration
+  export let name     = ''
+  export let label    = ''
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let badge    = undefined
+  export let help     = undefined
+
+  export var id = ''
+  const selectId  = id || uid('select')
+  const autoLabel = nameToLabel(name)
+
+  // Normalise flat options — derived when options changes
+  const isGrouped = options.length > 0 && typeof options[0] === 'object' && 'group' in options[0]
+
+  function normalise(opts) {
+    return opts.map(o => typeof o === 'string' ? { value: o, label: o, disabled: false } : o)
+  }
+
+  // For flat options, normalise once. For grouped, normalise per group.
+  const flatOptions    = isGrouped ? [] : normalise(options)
+  const groupedOptions = isGrouped ? options.map(g => ({ ...g, options: normalise(g.options) })) : []
+
+  const ringClass = error || errors?.[name]
+    ? 'border-red-300 focus:border-red-400 focus:ring-red-200'
+    : 'border-gray-300 focus:border-blue-400 focus:ring-blue-100'
+
+  let el
+  export function focus() { el?.focus() }
+  // Native event callbacks
+  export let onchange = undefined
+  export let onblur   = undefined
+  export let onfocus  = undefined
+</script>
+
+{#snippet control()}
+  <div class="relative">
+    <select
+      bind:this={el}
+      bind:value={value}
+      id={selectId}
+      name={name || undefined}
+      disabled={disabled}
+      required={required}
+      multiple={multiple}
+      aria-invalid={!!(error || errors?.[name])}
+      class="block w-full appearance-none rounded-md border bg-white px-3 py-2
+             {multiple ? 'pr-3' : 'pr-8'} text-sm shadow-sm transition-colors
+             focus:outline-none focus:ring-2 focus:ring-offset-0
+             disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed
+             {ringClass}"
+    >
+      {#if placeholder && !multiple}
+        <option value={null} disabled selected={value === null}>{placeholder}</option>
+      {/if}
+
+      {#if isGrouped}
+        {#each groupedOptions as grp (grp.group)}
+          <optgroup label={grp.group}>
+            {#each grp.options as opt (opt.value)}
+              <option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+            {/each}
+          </optgroup>
+        {/each}
+      {:else}
+        {#each flatOptions as opt (opt.value)}
+          <option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+        {/each}
+      {/if}
+    </select>
+
+    <!-- Chevron — hidden for multi-select -->
+    {#if !multiple}
+      <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-gray-400">
+        <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06z" clip-rule="evenodd" />
+        </svg>
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+{#if label || (name && !label && autoLabel)}
+  {@const resolvedLabel = label || autoLabel}
+  <Field
+    id={selectId}
+    name={name}
+    label={resolvedLabel}
+    required={required}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  <div {class}>
+    {@render control()}
+  </div>
+{/if}

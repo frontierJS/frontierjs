@@ -1,0 +1,40 @@
+<script>
+  // Fieldset.mesa
+  // Groups related fields with a semantic <fieldset>/<legend>.
+  // Inspired by Flux's flux:fieldset — supports description and optional grid layout.
+  //
+  // Usage:
+  //   <Fieldset legend="Shipping address" description="Where to send your order">
+  //     <Input label="Street" name="street" bind:value={street} />
+  //     <div class="grid grid-cols-2 gap-4">
+  //       <Input label="City"  name="city"  bind:value={city} />
+  //       <Input label="State" name="state" bind:value={state} />
+  //     </div>
+  //   </Fieldset>
+
+  export let legend      = ''
+  export let description = ''
+  export let disabled    = false
+</script>
+
+<fieldset
+  disabled={disabled}
+  class="border-0 p-0 m-0 min-w-0"
+  {class}
+>
+  {#if legend}
+    <legend class="text-sm font-semibold text-gray-900 mb-1 float-left w-full">
+      {legend}
+    </legend>
+  {/if}
+
+  {#if description}
+    <p class="text-xs text-gray-500 mb-4 float-left w-full leading-snug">
+      {description}
+    </p>
+  {/if}
+
+  <div class="flex flex-col gap-4 clear-both {disabled ? 'opacity-60 pointer-events-none' : ''}">
+    <slot />
+  </div>
+</fieldset>

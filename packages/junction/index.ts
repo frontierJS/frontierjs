@@ -5,7 +5,7 @@
 
 // ─── App ──────────────────────────────────────────────────────────────────
 export { createApp }                              from './src/core/app.ts'
-export type { App, Plugin, PluginFn, AppOptions, ServiceCaller } from './src/core/app.ts'
+export type { App, AppConduit, AppJobs, AppNotify, Plugin, PluginFn, AppOptions, ServiceCaller } from './src/core/app.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 export { loadConfig, deepMerge, parseTtl, defaultConfig } from './src/config/index.ts'
@@ -20,8 +20,9 @@ export {
   NotFound, MethodNotAllowed, Conflict, Gone, Unprocessable,
   TooManyRequests, GeneralError, NotImplemented, BadGateway,
   Unavailable, Timeout,
-  toFrameworkError, fromStatusCode
+  toFrameworkError, fromStatusCode, registerErrorMapper
 } from './src/core/errors.ts'
+export type { ErrorMapper } from './src/core/errors.ts'
 
 // ─── Services ─────────────────────────────────────────────────────────────
 export { createService, createBaseService, ServiceRegistry, callService, setServiceCache,

@@ -1,0 +1,185 @@
+/**
+ * scanner-plugin.js — Vite plugin that runs the route scanner
+ *
+ * Responsibilities:
+ * - Runs scan() at build start and writes config/routes.js
+ * - Watches src/routes/ for new/deleted files during dev
+ * - Re-runs scanner and invalidates virtual:sierra on route changes
+ * - Emits build warnings for Sierra-specific issues
+ */
+
+import { resolve, relative } from 'path'
+import { scan } from '../scanner/index.js'
+import { generateManifest } from '../scanner/generate-manifest.js'
+import { classify } from '../scanner/classify.js'
+import { warnDuplicateSnippets, warnReservedFrontmatter } from './warnings.js'
+// From page-fields.js, not router/index.js: this runs in Node during the
+// build, and router/index.js pulls in the Mesa runtime.
+import { PAGE_RESERVED } from '../router/page-fields.js'
+
+/**
+ * @param {import('./index.js').SierraConfig} config
+ * @param {object} sierraContext
+ * @returns {import('vite').Plugin}
+ */
+export function scannerPlugin(config, sierraContext) {
+  const routesDir = config.routesDir ?? 'src/routes'
+  const manifestOutput = config.manifest?.output ?? 'config/routes.js'
+  const trailingSlash = config.trailingSlash ?? 'always'
+
+  let root = process.cwd()
+  let watcher = null
+  // Last manifest emitted. The dev watchers rescan on every route-file save,
+  // but the vast majority of saves are body edits that leave the route tree
+  // untouched — invalidating virtual:sierra and forcing a full reload for those
+  // throws away the component-level HMR that mesa-plugin just set up.
+  let _lastManifest = null
+
+  async function runScan(root, warn, error) {
+    const tree = await scan(routesDir, {
+      cwd: root,
+      trailingSlash,
+    })
+
+    // Write manifest to disk. generateManifest is a no-op when the bytes are
+    // unchanged, so this does not touch the watcher on a body-only edit.
+    const code = await generateManifest(tree, resolve(root, manifestOutput), root)
+    const manifestChanged = _lastManifest !== null && _lastManifest !== code
+    _lastManifest = code
+
+    // Store tree on shared context for virtual:sierra
+    sierraContext.tree = tree
+
+    // Warning: frontmatter using a name the router owns on `page`
+    if (warn) warnReservedFrontmatter(tree, PAGE_RESERVED, warn)
+
+    // Warning 2: duplicate snippet props across layout chain
+    if (warn && sierraContext.layoutPropMap.size > 0) {
+      warnDuplicateSnippets(tree, sierraContext.layoutPropMap, warn)
+    }
+
+    // Build error: dynamic route with render:static but no getStaticPaths
+    if (error) {
+      await checkStaticPaths(tree, root, error)
+    }
+
+    return { tree, manifestChanged }
+  }
+
+  /**
+   * Walk the tree and error on any dynamic route that has render:static
+   * in its frontmatter but no getStaticPaths export in its companion.
+   */
+  async function checkStaticPaths(tree, root, error) {
+    const nodes = flattenTree(tree)
+    for (const node of nodes) {
+      if (!node.meta?.dynamic) continue
+      if (node.meta?.render !== 'static') continue
+
+      // Dynamic route with render:static — companion must export getStaticPaths
+      if (!node.companion) {
+        error(
+          `[Sierra] Dynamic route '${node.path}' has render:static but no companion .meta.js.\n` +
+          `Create ${node.file.replace(/\.(mesa|md)$/, '.meta.js')} and export getStaticPaths().`
+        )
+        continue
+      }
+
+      try {
+        const { pathToFileURL } = await import('url')
+        const mod = await import(pathToFileURL(resolve(root, node.companion)).href)
+        if (typeof mod.getStaticPaths !== 'function') {
+          error(
+            `[Sierra] Dynamic route '${node.path}' has render:static but '${node.companion}' ` +
+            `does not export getStaticPaths().\n` +
+            `Add: export async function getStaticPaths() { return [{ slug: '...' }, ...] }`
+          )
+        }
+      } catch {
+        // Can't import companion — warn but don't hard error (may be a new file)
+        if (warn) {
+          warn(`[Sierra] Could not import companion '${node.companion}' to check getStaticPaths.`)
+        }
+      }
+    }
+  }
+
+  return {
+    name: 'sierra:scanner',
+    enforce: 'pre',
+
+    configResolved(viteConfig) {
+      root = viteConfig.root ?? process.cwd()
+    },
+
+    async buildStart() {
+      const isBuild = this.environment?.mode !== 'serve'
+      // Only enforce getStaticPaths during production builds — not dev server
+      const errorFn = isBuild ? (msg) => this.error(msg) : null
+      await runScan(root, (msg) => this.warn(msg), errorFn)
+    },
+
+    configureServer(server) {
+      watcher = server.watcher
+
+      const absRoutesDir = resolve(root, routesDir)
+
+      // Watch routes directory for file system changes
+      server.watcher.add(absRoutesDir)
+
+      server.watcher.on('add', async (file) => {
+        if (!file.startsWith(absRoutesDir)) return
+        const rel = relative(root, file).replace(/\\/g, '/')
+        const role = classify(rel)
+
+        // Only rescan for route-relevant files
+        if (role === 'ignored') return
+
+        console.log(`[Sierra] New route file: ${rel}`)
+        await runScan(root, (msg) => console.warn(msg), null)
+        invalidateVirtualSierra(server)   // structural — always
+      })
+
+      server.watcher.on('unlink', async (file) => {
+        if (!file.startsWith(absRoutesDir)) return
+        const rel = relative(root, file).replace(/\\/g, '/')
+        const role = classify(rel)
+
+        if (role === 'ignored') return
+
+        console.log(`[Sierra] Removed route file: ${rel}`)
+        await runScan(root, (msg) => console.warn(msg), null)
+        invalidateVirtualSierra(server)   // structural — always
+      })
+
+      // Re-scan when frontmatter changes in a route file
+      server.watcher.on('change', async (file) => {
+        if (!file.startsWith(absRoutesDir)) return
+        const rel = relative(root, file).replace(/\\/g, '/')
+        const role = classify(rel)
+
+        if (role !== 'route' && role !== 'layout') return
+
+        // A body edit leaves the tree identical, so the manifest is unchanged
+        // and there is nothing for virtual:sierra to pick up — mesa-plugin's
+        // HMR boundary already handles the component. Only reload when the scan
+        // actually produced a different manifest (frontmatter affecting routing,
+        // a new layout, a changed redirect…).
+        const { manifestChanged } = await runScan(root, (msg) => console.warn(msg), null)
+        if (manifestChanged) invalidateVirtualSierra(server)
+      })
+    },
+  }
+}
+
+function invalidateVirtualSierra(server) {
+  const virtualModule = server.moduleGraph.getModuleById('\0virtual:sierra')
+  if (virtualModule) {
+    server.moduleGraph.invalidateModule(virtualModule)
+    server.ws.send({ type: 'full-reload' })
+  }
+}
+
+function flattenTree(node) {
+  return [node, ...(node.children ?? []).flatMap(flattenTree)]
+}

@@ -1,0 +1,38 @@
+{
+  // Shared TypeScript settings for every package in the workspace.
+  //
+  // Packages extend this and supply their own `include` (and any
+  // per-package overrides — `checkJs`, `lib`, `types`). Keeping the
+  // options here means "how this repo is type-checked" is one decision
+  // in one file rather than twelve that drift.
+  //
+  // Mirrors what packages/junction already used, since that was the only
+  // working configuration in the repo.
+  "compilerOptions": {
+    // DOM.Iterable is what makes Headers/FormData/URLSearchParams iterable —
+    // without it `headers.entries()` is a type error against working code.
+    "lib":              ["ESNext", "DOM", "DOM.Iterable"],
+    "target":           "ESNext",
+    "module":           "Preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection":  "force",
+    "jsx":              "preserve",
+
+    // Most packages here are JS or mixed. `allowJs` lets them resolve;
+    // whether those .js files are actually *checked* is `checkJs`, set
+    // per package.
+    "allowJs":          true,
+
+    "types":            ["bun-types"],
+
+    "strict":                    true,
+    "skipLibCheck":              true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess":  false,
+
+    // Source is shipped and imported as .ts — see each package's exports map.
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax":       true,
+    "noEmit":                     true
+  }
+}

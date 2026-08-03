@@ -1,0 +1,361 @@
+/*
+ * packages.js — the single source of truth for package features.
+ *
+ * Every page that describes a package reads from here: the overview
+ * (showroom5.html) and the eight dedicated pages. A feature is stated once.
+ *
+ * Deliberately a classic script, not an ES module: these pages are meant to
+ * open straight from the repo, and a browser blocks module imports over
+ * file:// as a cross-origin request.
+ *
+ * Wrapped in an IIFE so it exposes exactly one name. Classic scripts share a
+ * single top-level lexical scope, so a bare `const PKGS` here would collide
+ * with any consumer that destructures it — a SyntaxError, not a warning.
+ *
+ *   k        short label, shown in lists and the table of contents
+ *   v        one-line summary (may contain inline <code>)
+ *   why      one or two sentences of insight
+ *   code     optional example
+ *   r        what it replaces — [] means there is no common equivalent
+ */
+
+;(function () {
+const PKGS = [
+{
+  id:'litestone', install:'npm i @frontierjs/litestone', page:'litestone.html', name:'Litestone', realm:'Data · Model', tone:'primary', who:'@frontierjs/litestone',
+  pitch:'Authorization is part of the data definition, not a layer above it.',
+  rows:[
+    { k:'Shape', v:'Models · enums · relations · reusable functions',
+      why:'One declarative file describes your data. Functions are reusable expressions you can call from defaults and policies, so logic lives beside the data it governs.',
+      code:'model Invoice {\n  id      Int    @id\n  total   Float  @gte(0)\n  ownerId Int\n  owner   User   @relation(ownerId)\n}',
+      r:['Prisma schema','Drizzle schema','TypeORM entities'] },
+    { k:'Types', v:'<code>Int String Float Bool DateTime Json Bytes</code>',
+      why:'Seven scalars, mapped to SQLite storage classes and to TypeScript. Optionality is a trailing ? and it means the same thing in the database, the API and the editor.',
+      r:[] },
+    { k:'Access', v:'Gates on a 0–9 scale · policies compiled into <code>WHERE</code>',
+      why:'A gate grades each operation against a trust level. A policy is a row predicate compiled into the query itself — so there is no code path that can forget to apply it.',
+      code:"@@gate(\"0.4.4.5\")            // read.create.update.delete\n@@allow('read', ownerId == auth().id)\n\n-- every read becomes:\nSELECT * FROM invoices WHERE ownerId = ?",
+      r:['CASL','Oso','Postgres RLS','hand-rolled middleware'] },
+    { k:'Fields', v:'<code>@guarded</code> · <code>@secret</code> · <code>@encrypted</code> at rest',
+      why:'Field-level protection travels with the field. Guarded fields never leave the data layer, secrets are redacted from logs and responses, and encrypted fields are ciphertext on disk.',
+      r:['manual redaction helpers','field-encryption libraries'] },
+    { k:'Lifecycle', v:'Defaults · transforms · <code>@updatedAt</code> · soft delete',
+      why:'What happens automatically over a row\'s life, declared once. Transforms like @trim and @lower run on the way in, so the database never holds the unnormalized version.',
+      code:'email     String   @email @lower @trim\nupdatedAt DateTime @updatedAt\ndeletedAt DateTime?          // soft delete',
+      r:['ORM lifecycle hooks','paranoid / soft-delete plugins'] },
+    { k:'Audit', v:'<code>@@log(audit)</code>, per model',
+      why:'Mark a model and every write is recorded with the actor, the operation and the before/after. No decorator on every mutation, no forgetting the one that matters.',
+      r:['audit-trail libraries','database triggers','temporal tables'] },
+    { k:'Querying', v:'Relations · cursor pagination · transactions · <code>$raw</code>',
+      why:'A full query API with nested reads, aggregates, windowing and distinct — plus a documented raw escape hatch for the cases a builder should not try to own.',
+      code:"await db.invoice.findMany({\n  where:   { total: { gte: 500 }, owner: { is: { active: true } } },\n  orderBy: { createdAt: 'desc' },\n  cursor:  { id: 120 },\n  take:    20,\n})",
+      r:['Knex','Kysely','raw SQL scattered in handlers'] },
+    { k:'Multi-db', v:'<code>@@db(name)</code> · database-per-tenant registries',
+      why:'Route models to separate databases from the schema, and get database-per-tenant isolation from one accessor rather than a connection-juggling layer of your own.',
+      r:['manual connection routing','per-tenant connection pools'] },
+    { k:'External', v:"<code>@@external</code> mirrors tables you don't own",
+      why:'Describe a table another system owns and query it with the same client. Migrations leave it alone, so you get typed reads without claiming responsibility for the schema.',
+      r:['a second read-only ORM client'] },
+    { k:'Migrations', v:'Diffed from the schema as reviewable SQL',
+      why:'Change the schema, and the diff against the live database becomes a migration file you read before applying. Drift between file and database is a command, not a surprise.',
+      code:'$ fli db:migrate\n  + ALTER TABLE invoices ADD COLUMN company TEXT\n  ✓ migrations/0002_company.sql applied\n\n$ fli db:status\n  ✓ live database matches the schema',
+      r:['Prisma Migrate','Knex migrations','Flyway','hand-written SQL'] },
+    { k:'Generates', v:'TypeScript declarations · JSON Schema',
+      why:'The same file emits types for your editor and JSON Schema for validation and the browser — so the three can never describe different shapes.',
+      code:'$ litestone types ./types.d.ts --audience=client\n\ninterface Invoice       { id: number; total: number }\ninterface InvoiceCreate { total: number }',
+      r:['openapi-typescript','zod-to-ts','orval','hand-written types'] },
+    { k:'Tooling', v:'Studio · REPL · doctor · seed · backup',
+      why:'A local web UI over your data, an interactive shell against the live client, a health check for your setup, and seeding and backup as first-class commands.',
+      r:['Prisma Studio','TablePlus','ad-hoc scripts'] },
+  ],
+},
+{
+  id:'junction', install:'npm i @frontierjs/junction', page:'junction.html', name:'Junction', realm:'API · Service', tone:'info', who:'@frontierjs/junction',
+  pitch:'Name a model and its CRUD, validation and authorization come with it.',
+  rows:[
+    { k:'Services', v:'Five methods plus named actions',
+      why:'A service is the unit, not a route. It exposes find, get, create, patch and remove, plus any custom action — callable over HTTP, over WebSocket, or in-process.',
+      code:"createService({ name: 'invoices', model: 'invoice',\n  async markPaid(ctx) { … },\n})\n\n// same service, three ways in:\nGET /api/invoices\nws  { service: 'invoices', method: 'find' }\napp.service('invoices').call('markPaid', id)",
+      r:['Express routers','Fastify plugins','NestJS controllers'] },
+    { k:'Hooks', v:'<code>around</code> · <code>before</code> · <code>after</code> · <code>error</code>',
+      why:'Four phases, per method or for all of them, at app or service level. around wraps everything including failures, which is where timing and tracing belong.',
+      code:'hooks: {\n  around: { all:    [timing] },\n  before: { create: [setOwner] },\n  after:  { create: [broadcast] },\n  error:  { all:    [report] },\n}',
+      r:['Express middleware','Fastify hooks','NestJS interceptors'] },
+    { k:'Context', v:'One shape: auth · client · route · locals · query',
+      why:'Every hook and every method receives the same object, with the caller, the parsed query, the result and the error in known places — not a request object you decorate by convention.',
+      r:['req/res + res.locals conventions'] },
+    { k:'Envelope', v:'Lists keep <code>{ data, total }</code>; singles unwrap',
+      why:'One module decides the response shape for the entire framework, so pagination metadata is always in the same place and a single record is never wrapped for no reason.',
+      code:'GET /api/invoices     → { object: "list", data: [...], total: 17 }\nGET /api/invoices/8   → { id: 8, total: 500 }',
+      r:['hand-rolled response wrappers'] },
+    { k:'Transport', v:'HTTP and WebSocket over one bridge',
+      why:'Both protocols enter through the same boundary and produce the same Context, so a service does not know or care which one a caller used.',
+      r:['Express + Socket.IO wired separately'] },
+    { k:'Directives', v:'<code>$limit $offset $orderBy $select</code>, parsed at the edge',
+      why:'Result shaping is transport syntax, split from filters once at the boundary. Past that line nothing sees a $ — services receive clean filters and a directives object.',
+      code:'GET /api/invoices?status=open&$limit=20&$orderBy=-createdAt\n\nctx.query      → { status: "open" }\nctx.directives → { limit: 20, orderBy: "-createdAt" }',
+      r:['query-string parsers','manual pagination plumbing'] },
+    { k:'Security', v:'CORS · CSRF · headers · rate limiting',
+      why:'The usual middleware stack, configured rather than assembled, and ordered correctly by default — preflights short-circuit before CSRF, which is easy to get wrong by hand.',
+      r:['helmet','cors','csurf','express-rate-limit'] },
+    { k:'Channels', v:'One announcement, two fan-outs, gated on the way out',
+      why:'Declare channel: on a service and every mutation announces once, reaching both the event bus and WebSocket subscribers. Gates still apply, so nobody is pushed a row they could not fetch.',
+      code:"createService({ name: 'invoices', channel: 'invoices' })\n\n// subscribers receive:\n{ type: 'invoices created', data: { id: 9 } }",
+      r:['Socket.IO rooms + manual emit calls'] },
+    { k:'Errors', v:'Named classes; data denials normalize into them',
+      why:'Throw BadRequest or NotFound anywhere and the transport serializes it correctly. A data-layer denial becomes a 403 with the same shape, so clients match one contract.',
+      r:['http-errors','Boom','ad-hoc error middleware'] },
+    { k:'Client', v:'Typed resources and live subscriptions in the browser',
+      why:'The same service API from the other side of the wire, including subscriptions and session handling — not a fetch wrapper you maintain alongside the server.',
+      r:['axios wrappers','generated API clients'] },
+    { k:'Testing', v:'Real apps, real pipelines, no port binding',
+      why:'Boot an app in-process, send real requests through the full hook pipeline, and stub only auth. Tests exercise the code that runs in production.',
+      code:"const app = await createTestApp({ db, auth: createStubAuth() })\nawait request(app).post('/api/invoices').send({ total: 5 })",
+      r:['supertest + mock layers'] },
+    { k:'Storage', v:'<code>IFileStorage</code> — local and object-store drivers',
+      why:'One contract for file storage with local-disk and object-store implementations, so moving from a laptop to production is a driver swap, not a rewrite.',
+      r:['multer + cloud SDK glue'] },
+  ],
+  extra:{
+    title:'Packages that attach through the plugin protocol',
+    rows:[
+      { k:'auth', v:'Sessions · passwords · API keys · OAuth · TOTP',
+        why:'A full identity provider behind the IAuth contract, shipping its own schema fragment. Because it is a contract, swapping it for your own does not touch a single service.',
+        r:['Auth.js','Lucia','Passport','Clerk'] },
+      { k:'caravan', v:'SQLite job queue and cron on <code>app.jobs</code>',
+        why:'Background work with queues, retries and exponential backoff, plus cron scheduling — in the same database as everything else, so there is no second service to run.',
+        code:"export const sendInvoice = defineJob('send-invoice',\n  async job => { … },\n  { queue: 'mail', maxAttempts: 5 })",
+        r:['BullMQ + Redis','Agenda','node-cron'] },
+      { k:'conduit', v:'Declared egress targets over http, ws or unix',
+        why:'Every outbound call goes to a target you declared, which makes an application\'s entire external surface enumerable — something an ad-hoc fetch call can never give you.',
+        r:['scattered fetch calls','per-service HTTP clients'] },
+      { k:'notifications', v:'One <code>notify()</code> → record, event and email',
+        why:'A notification class declares which channels a user gets and how it renders on each. One call fans out to an in-app record, a live event and an email.',
+        r:['Novu','Courier','hand-rolled fan-out'] },
+    ],
+  },
+},
+{
+  id:'sierra', install:'npm i @frontierjs/sierra', page:'sierra.html', name:'Sierra', realm:'UI · Resource', tone:'success', who:'@frontierjs/sierra',
+  pitch:'Your file tree is the route table. A Resource is a service, made reactive.',
+  rows:[
+    { k:'Routing', v:'File tree · dynamic · catch-all · layouts · groups',
+      why:'Routes come from the filesystem, so the URL structure and the folder structure cannot drift. Layouts nest by directory and groups organize without affecting the path.',
+      code:'src/routes/invoices/index.mesa   → /invoices\nsrc/routes/invoices/[id].mesa    → /invoices/42\nsrc/routes/[...404].mesa         → anything else\nsrc/routes/_module.mesa          → the layout',
+      r:['React Router config','TanStack Router','Next app directory'] },
+    { k:'Frontmatter', v:'Title · guards · render mode, per route',
+      why:'Route metadata lives at the top of the route file rather than in a separate config, so moving a page moves its configuration with it.',
+      r:['route config objects','route manifest files'] },
+    { k:'Navigation', v:'Guards · hooks · prefetch · scroll restore · slots',
+      why:'A navigation API with before and after hooks, guards that can redirect, link prefetching, and scroll restoration handled rather than reimplemented per app.',
+      r:['React Router loaders and guards'] },
+    { k:'Resources', v:"The API's four hook phases, client-side",
+      why:'A Resource binds a service to reactive state, with the identical around/before/after/error phases the server uses. Learn the pipeline once and it holds on both sides.',
+      code:"const invoices = createResource('invoices', {\n  hooks: { around: { all: [withSpinner] } },\n})\nawait invoices.find({ status: 'open' })",
+      r:['TanStack Query + a store','SWR + Zustand','RTK Query'] },
+    { k:'make()', v:"A blank record shaped by the schema's defaults",
+      why:'Start a create form from the schema itself, with declared defaults already applied and server-owned fields left out. No hand-written initial state to fall out of sync.',
+      code:"invoices.make()\n// { total: 0, status: 'draft' }  — id and createdAt omitted",
+      r:['hand-written initial form state'] },
+    { k:'Schema', v:'JSON Schema shipped into the bundle',
+      why:'The build puts your schema in the browser, so the client knows the same field rules the server enforces — without a second copy of them written in a client-side validator.',
+      r:['duplicated Zod schemas on the client'] },
+    { k:'Targets', v:'<code>spa</code> · <code>static</code> · <code>widget</code> · <code>extension</code>',
+      why:'One route tree, several outputs, chosen at build time. A prerendered marketing page, an embedded widget and a browser extension come from the same components.',
+      r:['separate build configs per output'] },
+    { k:'Loading', v:'Route loaders · parallel fetch · connection state',
+      why:'Data loading declared per route and resolved in parallel, with live connection state you can render against instead of tracking your own online flag.',
+      r:['suspense boilerplate','manual loading flags'] },
+    { k:'Devtools', v:'Routes, resources, requests, events, jobs',
+      why:'An in-page overlay fed by the server\'s own telemetry, so you see the request, the hooks that ran and the job it queued in one timeline.',
+      r:['React Query Devtools','Router Devtools','network tab archaeology'] },
+    { k:'Build', v:'Vite · state-preserving HMR · auto-imports',
+      why:'Vite underneath with Mesa compilation, hot replacement that keeps signal state across edits, and auto-imports so common components need no import line.',
+      r:['hand-tuned Vite config','plugin wiring'] },
+  ],
+},
+{
+  id:'mesa', install:'npm i @frontierjs/mesa', page:'mesa.html', name:'Mesa', realm:'UI · Component', tone:'success', who:'@frontierjs/mesa',
+  pitch:'One file renders to a page, an email, a fragment or a module. Zero dependencies.',
+  rows:[
+    { k:'Reactivity', v:'Signals · <code>watchProxy()</code> makes plain objects reactive',
+      why:'Fine-grained signals with automatic dependency tracking. State stays a plain object — no wrapper to unwrap, no dependency array to keep correct.',
+      code:'let total = 0\n$: withTax = total * 1.2      // recomputes when total changes',
+      r:['React hooks + dependency arrays','MobX','Immer'] },
+    { k:'Template', v:'<code>{#if}</code> <code>{#each}</code> <code>{#await}</code> <code>{#key}</code> · snippets · bindings',
+      why:'Block directives rather than expressions, keyed lists, await blocks for promises, reusable snippets, and two-way binding that does not require an onChange handler.',
+      code:'{#each rows as row (row.id)}\n  <Row {row} />\n{:else}\n  <EmptyState />\n{/each}',
+      r:['JSX + .map() + ternaries'] },
+    { k:'Styles', v:'Scoped per component',
+      why:'A style block applies to its own component only, with no naming convention to maintain and no runtime style injection.',
+      r:['CSS Modules','styled-components','Emotion'] },
+    { k:'Source', v:'<code>.mesa</code> or Markdown with frontmatter',
+      why:'Content-shaped pages stay content-shaped: a Markdown file compiles to the same component, with tables and syntax highlighting already handled.',
+      r:['MDX'] },
+    { k:'Targets', v:'DOM · SSR · static · email · fragment · modules',
+      why:'The same component renders live in the browser, to an HTML string on the server, to a prerendered file, to an email, or to an isolated fragment for embedding.',
+      r:['separate SSR and email renderers'] },
+    { k:'Email', v:'CSS inlined to attributes · text fallback · subject',
+      why:'Email clients strip style blocks, so styles are inlined into attributes, a plain-text alternative is generated, and the subject comes from the component itself.',
+      r:['react-email','MJML','juice'] },
+    { k:'UI kit', v:'~50 components, no third-party dependencies',
+      why:'A complete application kit — forms, overlays, layout, data display and feedback — built on one Field contract, with alert, toast, theme and command-palette stores.',
+      r:['Radix + shadcn/ui','MUI','Chakra','Headless UI'] },
+  ],
+  chips:[
+    ['Forms','Field Label Button Input Textarea Select Checkbox RadioGroup Switch Fieldset'],
+    ['Overlay','Modal Drawer Tooltip Popover CommandPalette ConfirmationPopover DropdownMenu'],
+    ['Layout','Card Accordion AccordionItem Tabs TabList Tab TabPanel'],
+    ['Display','Table Stat StatCard Sparkline Avatar AvatarGroup Badge Pill Tag Dot Bar Steps Breadcrumbs Pagination SectionHeader Divider Callout EmptyState CopyButton Kbd Mono'],
+    ['Feedback & stores','Alert Toast Toaster Progress Skeleton Spinner alertStore toastStore themeStore commandPaletteStore'],
+  ],
+},
+{
+  id:'css', install:'npm i @frontierjs/css', page:'css.html', name:'The design system', realm:'UI · Style', tone:'success', who:'@frontierjs/css',
+  pitch:'Thirty-five semantic terms. Plain CSS, no build step. This site is styled by it.',
+  rows:[
+    { k:'Layers', v:'tokens → themes → tones → base → components → patterns',
+      why:'Cascade layers give an explicit precedence contract, which replaces the usual "do not reorder these imports" comment with something the browser enforces.',
+      r:['import-order conventions','BEM discipline'] },
+    { k:'Override', v:'Your CSS is unlayered, so it always wins',
+      why:'Because every rule in the package sits in a layer, any unlayered rule you write beats it — no specificity war, and no !important.',
+      code:'/* yours, unlayered — wins by definition */\n.btn { border-radius: 0 }',
+      r:['!important','arbitrary-variant escape hatches'] },
+    { k:'Contrast', v:'Fill and text derived together — AA by construction',
+      why:'Text colour is computed from the fill\'s own luminance, so any tone in any theme — including a brand colour added later — meets AA without being audited.',
+      r:['manual contrast audits','axe passes after the fact'] },
+    { k:'State', v:'From <code>[aria-current]</code> and <code>:user-invalid</code>, never a class',
+      why:'Styling keys off the accessibility state that has to be correct anyway. A tab cannot look selected while telling a screen reader otherwise.',
+      r:['is-active class bookkeeping'] },
+    { k:'Themes', v:'Six, swapped with one class on the root',
+      why:'A theme overrides token values only, so every component follows automatically — no provider, no runtime, no re-render.',
+      r:['CSS-in-JS theme providers'] },
+    { k:'Build', v:'None',
+      why:'Plain CSS files with an import entry point. No compile step, no config, no purge pass, and no build tooling to keep current.',
+      r:['Tailwind + PostCSS pipeline','Sass build'] },
+  ],
+  chips:[
+    ['Frame','app shell topbar sidebar screen pane view'],
+    ['Inline','btn pill badge link chip tooltip avatar kbd icon'],
+    ['Surfaces','card tile alert toast dialog popover drawer'],
+    ['Forms & data','field field-hint switch table tiles facts'],
+    ['Navigation & patterns','tabs breadcrumb pagination navlist steps bar feed disclosure'],
+  ],
+},
+{
+  id:'cli', install:'npm i -g @frontierjs/cli', page:'fli.html', name:'fli', realm:'Tooling', tone:'warning', who:'@frontierjs/cli',
+  pitch:'Every command is a markdown file. Help text and implementation cannot disagree.',
+  rows:[
+    { k:'Scaffold', v:'<code>project:new</code> · <code>make:model</code> <code>:service</code> <code>:resource</code> <code>:route</code>',
+      why:'Generators append to the schema you already have rather than dropping a pile of boilerplate, so the seed stays the single source after generation.',
+      code:'$ fli make:model Invoice\n  ✓ appended to db/schema.lite\n  ✓ api/src/services/invoices.ts\n  ✓ src/routes/invoices/',
+      r:['Yeoman','Plop','Hygen'] },
+    { k:'Data', v:'<code>db:migrate</code> <code>:status</code> <code>:studio</code> <code>:seed</code> <code>:backup</code>',
+      why:'The whole data lifecycle in one namespace — diff and apply migrations, check for drift, browse rows, seed fixtures and take backups.',
+      r:['prisma CLI','knex CLI','ad-hoc scripts'] },
+    { k:'Run', v:'<code>ports:dev</code> claims a port session per project',
+      why:'A broker assigns and remembers ports per project, so two apps on one machine never collide and the URLs are stable between restarts.',
+      code:'$ fli ports:dev\n  api → http://localhost:3200\n  web → http://localhost:5173',
+      r:['concurrently','manual PORT juggling'] },
+    { k:'Ship', v:'<code>deploy</code> infers the environment from your git branch',
+      why:'Build, upload, migrate and cut over in one command, with the target derived from the branch you are on rather than a flag you have to remember.',
+      r:['bespoke shell scripts','hand-written CI deploy jobs'] },
+    { k:'Recover', v:'<code>deploy:rollback</code> · <code>:status</code> · <code>:logs</code> · <code>:doctor</code>',
+      why:'Releases are versioned, so going back is a command. Status reports what is actually running, and doctor checks the target before you find out the hard way.',
+      r:['manual SSH and symlink swaps'] },
+    { k:'Secrets', v:'<code>env:set</code> <code>:get</code> <code>:list</code> <code>:pull</code>, per environment',
+      why:'Environment values are managed per environment and never committed, with pull to bring them down and copy to promote between environments.',
+      r:['dotenv-vault','copying .env files by hand'] },
+    { k:'Monorepo', v:'<code>workspace:</code> link · graph · version · publish',
+      why:'Workspace commands for linking packages, viewing the dependency graph, versioning together and publishing — without adding another build orchestrator.',
+      r:['Lerna','Changesets','Nx'] },
+    { k:'Extend', v:'<code>make:command</code> writes a new markdown command',
+      why:'Frontmatter declares flags, arguments and examples; the body is the script. Your team\'s operational knowledge becomes readable files instead of tribal npm scripts.',
+      code:'--- commands/reports/weekly.md ---\ntitle: reports:weekly\nflags:\n  since: { type: string, defaultValue: 7d }\n---',
+      r:['npm scripts + a README that drifts'] },
+  ],
+},
+{
+  id:'basecamp', install:'npm i @frontierjs/basecamp', page:'basecamp.html', name:'Basecamp', realm:'Control plane', tone:'warning', who:'@frontierjs/basecamp',
+  pitch:'The app for managing your apps — and itself a FrontierJS app.',
+  rows:[
+    { k:'Releases', v:'What is deployed where, and one button to undo it',
+      why:'Every environment, its current release, what changed since the last one, and a rollback that does not require finding the right host first.',
+      r:['deploy dashboards','SSH sessions'] },
+    { k:'Migrations', v:'Applied, pending and drifted, per environment',
+      why:'Read from each app\'s own manifest endpoint, so drift between the schema in your repo and the database in production is visible before it bites.',
+      r:['running migrate status by hand on each host'] },
+    { k:'Jobs', v:'Queues across every app — in flight, failed, retry',
+      why:'One view over every Caravan queue you run, with failures and their reasons, and retries triggered from here.',
+      r:['Bull Board','Agendash'] },
+    { k:'Audit', v:'Every trail, searchable by model, actor and window',
+      why:'The @@log(audit) trails from all your apps in one place, so answering "who changed this record" does not start with a database console.',
+      r:['log aggregation queries'] },
+    { k:'Egress', v:"Each app's declared targets — everything it can reach",
+      why:'Because Conduit targets are declared, the complete outbound surface of an application is a list rather than an audit. Useful for review, and for self-hosters who want to know.',
+      r:['reading the source to find fetch calls'] },
+    { k:'Tenants', v:'Registries, sizes, migration state, and a way in',
+      why:'Database-per-tenant means many databases. This is the list, their sizes, whether each is migrated, and a route into any one of them.',
+      r:['bespoke admin scripts'] },
+    { k:'Health', v:'Liveness and metrics, including plugin-contributed',
+      why:'Every app exposes /health and /metrics, and plugins add their own providers — so a new battery appears here with no configuration.',
+      r:['Grafana dashboards','uptime checkers'] },
+    { k:'Live', v:'Over the same channels your apps use — not polling',
+      why:'Basecamp subscribes the way any client does. It is a demonstration that the realtime layer works, because it is the thing depending on it.',
+      r:['polling dashboards'] },
+  ],
+},
+{
+  id:'editor', install:'code --install-extension frontierjs.frontierjs-vscode', page:'vscode.html', name:'Editor support', realm:'Tooling', tone:'warning', who:'frontierjs-vscode',
+  pitch:'The seed is as pleasant to write as the code it produces.',
+  rows:[
+    { k:'Diagnostics', v:'Errors as you type, from the parser the runtime uses',
+      why:'The extension runs the same parser the framework runs, so the editor cannot tell you something is fine that the build will reject.',
+      r:['finding schema errors at runtime'] },
+    { k:'Completions', v:'Types, attributes, functions, and every model in scope',
+      why:'Field types, @attributes, @@model-attributes and your own schema functions — including models pulled in through schema imports.',
+      r:['memorizing attribute names'] },
+    { k:'Hover', v:'Attribute and type docs, model and function signatures',
+      why:'What an attribute does and what it takes, in the file, without a documentation tab.',
+      r:['tab-switching to docs'] },
+    { k:'Go to def', v:'Model references and function calls, across imported files',
+      why:'Jump from a relation to the model it points at, or from a function call to its block, following schema imports across files.',
+      r:['project-wide text search'] },
+    { k:'Format', v:'Aligned field columns, on command or on save',
+      why:'Canonical formatting for schema files, so aligned columns are automatic rather than something reviewers ask for.',
+      r:['manual alignment','formatting nits in review'] },
+    { k:'Mesa', v:'Markup, script, style, directives and interpolation',
+      why:'Component files highlight correctly across all three regions, including block directives and interpolation inside markup.',
+      r:['plain-text component files'] },
+  ],
+},
+]
+
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+
+const TOK = /(\/\/[^\n]*|--[^\n]*|#[^\n]*)|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|(@@?[a-zA-Z]\w*)|\b(const|let|await|async|import|export|from|return|model|enum|interface|new|function|CREATE|TABLE|SELECT|WHERE|AND|INDEX|ALTER|ADD|COLUMN)\b/g
+
+const hl = s => esc(s).replace(TOK, (m, cm, st, at, kw) =>
+  cm ? `<span class="cm">${cm}</span>` : st ? `<span class="st">${st}</span>` :
+  at ? `<span class="at">${at}</span>` : `<span class="kw">${kw}</span>`)
+
+const theme = () => {
+  const root = document.documentElement
+  const saved = localStorage.getItem('fjs-theme')
+  if (saved) root.className = 'theme-' + saved
+  for (const b of document.querySelectorAll('.swatch')) {
+    b.addEventListener('click', () => {
+      root.className = 'theme-' + b.dataset.theme
+      localStorage.setItem('fjs-theme', b.dataset.theme)
+    })
+  }
+}
+
+const SWATCHES = ['default','sunset','forest','midnight','dark','elite']
+const SWATCH_HEX = {
+  default:'#0d83dd', sunset:'#e07a3f', forest:'#2f7d4f',
+  midnight:'#3b4a6b', dark:'#1c1b18', elite:'#8b6f2e',
+}
+
+  window.FJS = { PKGS, esc, hl, theme, SWATCHES, SWATCH_HEX }
+})()

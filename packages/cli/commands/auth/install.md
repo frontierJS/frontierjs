@@ -30,64 +30,79 @@ import { resolve }                                             from 'path'
 // ─── Auth schema fragments ────────────────────────────────────────────────────
 // Injected at the end of schema.lite.
 // @@db is parameterized from --db flag.
+//
+// KEEP IN SYNC WITH `packages/auth/schema.ts` — this used to be a hand-copy that
+// had drifted: pre-rename scalars (Text/Integer, which no longer parse), no
+// `role`/`accountId` on User, no Session indexes, and `@@gate("9…")`. Nine is
+// LOCKED — an absolute wall nothing can pass, `asSystem()` included — so the
+// generated schema locked the auth tables against the auth package itself.
+// SYSTEM is 8.
 
 const authSchemaFragments = (db) => `
 // ─── Auth — injected by fli auth:install ─────────────────────────────────────
+// Users:         identity table — who you are
+// Credentials:   how you prove it — passwords, API keys, OAuth tokens
+// Sessions:      are you currently logged in
+// Verifications: ephemeral tokens — password reset, email verify
 
 model User {
-  id            Text      @id @default(uuid())
-  email         Text      @email @unique @lower
-  name          Text?     @trim
-  emailVerified Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now()) @updatedAt
+  id             String    @id @default(uuid())
+  email          String    @email @unique @lower
+  name           String?   @trim
+  emailVerified  Boolean   @default(false)
+  role           String    @default("user")
+  accountId      Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
 
   @@db(${db})
-  @@gate("9.9.4.9")
+  @@gate("8")
   @@log(audit)
 }
 
 model Credential {
-  id             Integer   @id
-  userId         Text
-  type           Text
-  value          Text      @guarded(all)
-  label          Text?
-  accessToken    Text?     @secret
-  refreshToken   Text?     @secret
-  tokenExpiresAt DateTime?
-  scope          Text?
-  createdAt      DateTime  @default(now())
+  id              Int        @id
+  userId          String
+  type            String
+  value           String     @guarded(all)
+  label           String?
+  accessToken     String?    @secret
+  refreshToken    String?    @secret
+  tokenExpiresAt  DateTime?
+  scope           String?
+  createdAt       DateTime   @default(now())
 
   @@db(${db})
-  @@gate("9.9.9.9")
+  @@gate("8")
   @@index([userId, type])
   @@index([type, value])
 }
 
 model Session {
-  id        Text     @id @default(uuid())
-  userId    Text
-  token     Text     @unique @guarded(all)
-  expiresAt DateTime
-  ipAddress Text?
-  userAgent Text?
-  createdAt DateTime @default(now())
+  id         String    @id @default(uuid())
+  userId     String
+  token      String    @unique @guarded(all)
+  expiresAt  DateTime
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
 
   @@db(${db})
-  @@gate("9.9.9.9")
+  @@gate("8")
   @@log(audit)
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Verification {
-  id         Integer  @id
-  identifier Text
-  value      Text     @guarded(all)
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  id          Int       @id
+  identifier  String
+  value       String    @guarded(all)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
 
   @@db(${db})
-  @@gate("9.9.9.9")
+  @@gate("8")
   @@index([identifier])
 }
 `

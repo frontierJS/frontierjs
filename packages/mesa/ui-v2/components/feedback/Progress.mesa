@@ -1,0 +1,77 @@
+<script>
+  // Progress.mesa
+  // Progress bar for async operations and determinate progress.
+  // Distinct from Bar.mesa (which is for resource usage with thresholds).
+  // Progress is for "how far through a task are we".
+  //
+  // Modes:
+  //   determinate  — value/max drives the fill width
+  //   indeterminate — animated shimmer, no value needed
+  //
+  // Usage:
+  //   <Progress value={uploadPct} />
+  //   <Progress indeterminate label="Uploading…" />
+  //   <Progress value={3} max={10} color="green" size="lg" showLabel />
+
+  export let value         = 0
+  export let max           = 100
+  export let indeterminate = false
+  export let label         = ''       // aria-label + optional visible text
+  export let showLabel     = false    // show "42%" text alongside bar
+  export let size          = 'md'     // 'xs' | 'sm' | 'md' | 'lg'
+  export let color         = 'blue'   // 'blue' | 'green' | 'red' | 'yellow' | 'purple'
+
+  const pct = Math.min(100, Math.max(0, (value / max) * 100))
+
+  const sizeMap = { xs: 'h-1', sm: 'h-1.5', md: 'h-2.5', lg: 'h-4' }
+
+  const colorMap = {
+    blue:   'bg-blue-500',
+    green:  'bg-green-500',
+    red:    'bg-red-500',
+    yellow: 'bg-yellow-400',
+    purple: 'bg-purple-500',
+  }
+
+  const sz  = sizeMap[size]  ?? sizeMap.md
+  const col = colorMap[color] ?? colorMap.blue
+</script>
+
+<div class="flex flex-col gap-1.5" {class}>
+  {#if label || showLabel}
+    <div class="flex items-center justify-between gap-2">
+      {#if label}
+        <span class="text-xs font-medium text-gray-600">{label}</span>
+      {/if}
+      {#if showLabel && !indeterminate}
+        <span class="text-xs font-mono text-gray-500">{Math.round(pct)}%</span>
+      {/if}
+    </div>
+  {/if}
+
+  <div
+    class="w-full rounded-full bg-gray-200 overflow-hidden {sz}"
+    role="progressbar"
+    aria-label={label || 'Progress'}
+    aria-valuenow={indeterminate ? undefined : value}
+    aria-valuemin={0}
+    aria-valuemax={indeterminate ? undefined : max}
+  >
+    {#if indeterminate}
+      <!-- Animated shimmer — pure CSS, no JS -->
+      <div class="h-full w-1/2 rounded-full {col} animate-[indeterminate_1.4s_ease-in-out_infinite]"></div>
+    {:else}
+      <div
+        class="h-full rounded-full {col} transition-all duration-500 ease-out"
+        style:width="{pct}%"
+      ></div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  @keyframes indeterminate {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+  }
+</style>

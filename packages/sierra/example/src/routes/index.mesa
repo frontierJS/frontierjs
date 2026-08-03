@@ -1,0 +1,18 @@
+---
+title: Home
+---
+<h1>Sierra example</h1>
+
+<p>
+  One <code>db/schema.lite</code>. The API derives its tables, its 401s and its
+  400s from it; the browser derives make() defaults, field rules, enum options,
+  relation targets and gate levels from the same file. Neither side restates the
+  other.
+</p>
+
+<ul>
+  <li><a href="/leads/">Leads</a> — a list, with a delete button the schema decides whether to offer</li>
+  <li><a href="/leads/create/">New lead</a> — a form generated entirely from the schema</li>
+</ul>
+
+<p>Sign in from the header to get past <code>@@gate("0.4.4.5")</code>.</p>

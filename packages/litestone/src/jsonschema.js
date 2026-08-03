@@ -197,8 +197,17 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   const hasPolicies = model.attributes.some(a => a.kind === 'allow' || a.kind === 'deny')
 
   for (const field of model.fields) {
-    // Skip relation fields — they have no JSON representation
-    if (field.type.kind === 'relation') continue
+    // Skip relation fields — they have no JSON representation.
+    //
+    // implicitM2M belongs here too. It is set by the parser's second pass for
+    // `tags Category[]`, and it used to fall through to typeToJsonSchema, where
+    // `type.array` made it `{type:'array', items:{type:'string'}}` — a wire
+    // shape the relation does not have. Worse, being non-optional with no
+    // @default put it in `required[]`, so every consumer of this schema
+    // demanded a relation array on create: Junction's autoValidate rejected
+    // payloads without it, and Sierra's make() seeded a meaningless `[]`.
+    // The relation is still described, structurally, in x-relations below.
+    if (field.type.kind === 'relation' || field.type.kind === 'implicitM2M') continue
 
     // ── Virtual / derived fields — emit as readOnly with x-litestone-kind ──
     // These are real fields in query results but have no DB column and cannot

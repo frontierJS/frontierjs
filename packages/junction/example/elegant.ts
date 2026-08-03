@@ -40,9 +40,9 @@ import type { App, IAuth } from '../index.ts'
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 
 // ─── Schema — the seed. Field rules become 400s, the gate becomes 401s. ───
-// (Scalar names match the published litestone 1.0.x — Integer/Text/Real.
-// The next litestone renames them Int/String/Float; see single-file.ts's
-// dialect note.)
+// Scalars are Int/String/Float/Bytes. The pre-1.0 names (Integer/Text/Real/
+// Blob) are rejected outright, not aliased — junction resolves the workspace
+// litestone, so this file must use the current dialect to start at all.
 
 const db = await createClient({
   db: ':memory:',
@@ -50,11 +50,11 @@ const db = await createClient({
     enum LeadStatus { new active closed }
 
     model Lead {
-      id        Integer    @id
-      name      Text       @length(1, 200) @trim
-      email     Text       @email
+      id        Int    @id
+      name      String       @length(1, 200) @trim
+      email     String       @email
       status    LeadStatus @default(new)
-      value     Real       @gte(0)
+      value     Float       @gte(0)
       createdAt DateTime   @default(now())
 
       @@gate("0.4.4.5")

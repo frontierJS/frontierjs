@@ -1,4 +1,4 @@
-import type { App, ChannelError, NotificationDriver, User } from './types.ts'
+import type { App, ChannelError, InAppMessage, MailMessage, NotificationDriver, User } from './types.ts'
 import type { Notification } from './notification.ts'
 import {
   NotificationChannelNotImplementedError,
@@ -9,8 +9,45 @@ import { sendInApp }  from './drivers/inapp.ts'
 import { sendEmail }  from './drivers/email.ts'
 
 // ─── Built-in channel names ───────────────────────────────────────────────────
+//
+// Channels this package implements natively. 'sms' is deliberately NOT here:
+// there is no built-in SMS implementation, so declaring it built-in let
+// validation pass and then failed at delivery with a bare Error. Treating it
+// as a normal channel means it needs a registered driver, and a missing one is
+// caught eagerly as NotificationDriverNotFoundError like any other.
+const BUILT_IN_CHANNELS = new Set(['inApp', 'email'])
 
-const BUILT_IN_CHANNELS = new Set(['inApp', 'email', 'sms'])
+// ─── Message materialisation ─────────────────────────────────────────────────
+//
+// inApp() and mail() return chainable BUILDERS whose values live in private
+// fields; build() turns one into the plain message the drivers read. The
+// drivers never called it, so they read the chainable METHODS instead:
+//
+//   spread of `message.data`  (a function) → {}          → empty payload
+//   `message.title`           (a function) → truthy      → a function in the JSON
+//   `message.lines`           (no such method) → undefined → `?? []` → EMPTY EMAIL
+//   `message.to`              (a function) → truthy      → the "no recipient"
+//                                                          guard never fired
+//
+// so such a notification delivered an in-app row with an empty payload and an
+// email with no subject and no body — and reported success.
+//
+// Scope, precisely: README.md and examples/ DO call .build(), and that path
+// always worked. The JSDoc @example blocks in this package omitted it (now
+// fixed), and TypeScript rejects the omission — InAppBuilder is not an
+// InAppMessage. So the silent-empty case reached JavaScript consumers and
+// anyone following editor hover text, not typed code that compiles.
+//
+// builders.ts already documented build() as "called internally by the driver".
+// It wasn't. This is that call, in one place, so the failure mode is a working
+// delivery rather than a silent empty one. Already-built messages have no
+// build() method and pass through untouched.
+function materialise(message: unknown): unknown {
+  if (message && typeof (message as { build?: unknown }).build === 'function') {
+    return (message as { build(): unknown }).build()
+  }
+  return message
+}
 
 // ─── notify() — package-internal, not exported ───────────────────────────────
 
@@ -84,30 +121,34 @@ async function deliverChannel(
   notification: Notification,
   app:          App & { _db: unknown; _drivers: Map<string, NotificationDriver> }
 ): Promise<void> {
+  // A registered driver always wins, including for a built-in channel name.
+  // Previously the switch ran first, so a custom `inApp` driver was accepted by
+  // the plugin, stored in the registry, and then never consulted — the built-in
+  // wrote its row and the override was silently ignored. Explicit configuration
+  // should not lose to a default.
+  const driver = app._drivers.get(channel)
+  if (driver) {
+    await driver.send(user, materialise(notification.getMessageFor(channel, user)), app)
+    return
+  }
+
   switch (channel) {
     case 'inApp': {
-      const message = notification.toInApp!(user)
+      const message = materialise(notification.toInApp!(user)) as InAppMessage
       await sendInApp(user, notification, message, app as Parameters<typeof sendInApp>[3])
       break
     }
 
     case 'email': {
-      const message = notification.toEmail!(user)
+      const message = materialise(notification.toEmail!(user)) as MailMessage
       await sendEmail(user, message, app)
       break
     }
 
-    case 'sms': {
-      // SMS driver — deferred until Conduit SMS provider is available
-      throw new Error('SMS channel is not yet implemented.')
-    }
-
     default: {
-      // Custom driver — looked up from plugin-registered drivers map
-      const driver  = app._drivers.get(channel)!
-      const message = notification.getMessageFor(channel, user)
-      await driver.send(user, message, app)
-      break
+      // Unreachable: notify() validates that every non-built-in channel has a
+      // registered driver before any delivery starts.
+      throw new NotificationDriverNotFoundError(channel, notification.notificationType)
     }
   }
 }

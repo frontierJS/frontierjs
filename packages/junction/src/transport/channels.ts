@@ -185,6 +185,8 @@ export function createChannelManager() {
   })
   const presenceFor     = _presence.presenceFor
   const presenceMembers = _presence.members
+  const presenceGet     = _presence.get
+  const presenceByUser  = _presence.byUser
   const presenceJoin    = _presence.join
   const presenceLeave   = _presence.leave
 
@@ -371,19 +373,13 @@ export function createChannelManager() {
     },
 
     presenceOf(userId: string | number): Array<Omit<PresenceMember, 'channelId'> & { channelId: string }> {
-      const results: PresenceMember[] = []
-      for (const [, memberMap] of presence) {
-        for (const member of memberMap.values()) {
-          if (member.userId === userId) results.push(member)
-        }
-      }
-      return results
+      return presenceByUser(userId)
     },
 
     // ── Internal — used by the subscribe message handler in the plugin ────
     // Not part of the public API — prefixed with _ to signal intent.
     _presenceGet(channelId: string, connId: string): PresenceMember | undefined {
-      return presence.get(channelId)?.get(connId)
+      return presenceGet(channelId, connId)
     },
     _presenceMembers:      presenceMembers,
     _broadcastToChannel:   broadcastToChannel,

@@ -24,6 +24,36 @@ export function createPresenceTracker(deps: PresenceDeps) {
     return Array.from(presenceFor(channelId).values())
   }
 
+  // ── Lookups ────────────────────────────────────────────────────────────
+  // This module owns the `presence` Map, so every read of it lives here.
+  // channels.ts used to reach for a bare `presence` identifier in its own
+  // scope — which does not exist there (the tracker is `_presence`, and its
+  // Map is private). Both `presenceOf()` and `_presenceGet()` threw
+  // `ReferenceError: presence is not defined` on every call, so presence
+  // never worked at all and the WS `subscribe` handler crashed on the line
+  // that looked up the member. Delegating instead of re-reaching keeps that
+  // from coming back.
+
+  /**
+   * One member, by channel and connection. Read-only: unlike presenceFor(),
+   * this does NOT create an empty channel map as a side effect — a lookup for
+   * a channel nobody has joined should not allocate one.
+   */
+  function presenceGet(channelId: string, connId: string): PresenceMember | undefined {
+    return presence.get(channelId)?.get(connId)
+  }
+
+  /** Every membership for one user, across all channels. */
+  function presenceByUser(userId: string | number): PresenceMember[] {
+    const results: PresenceMember[] = []
+    for (const memberMap of presence.values()) {
+      for (const member of memberMap.values()) {
+        if (member.userId === userId) results.push(member)
+      }
+    }
+    return results
+  }
+
   function presenceJoin(conn: Connection, channelId: string): void {
     const session = conn.user
     if (!session?.userId) return   // anonymous — not tracked
@@ -65,6 +95,8 @@ export function createPresenceTracker(deps: PresenceDeps) {
   return {
     presenceFor,
     members: presenceMembers,
+    get:     presenceGet,
+    byUser:  presenceByUser,
     join:    presenceJoin,
     leave:   presenceLeave,
   }

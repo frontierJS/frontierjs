@@ -139,16 +139,24 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
   )
   const stmtDeleteHook = db.prepare(`DELETE FROM webhooks WHERE id = ?`)
   const stmtListHooks     = db.prepare(`SELECT * FROM webhooks WHERE active = 1 ORDER BY created_at DESC`)
-  // Find hooks matching a specific event name or the wildcard '*'.
-  // Uses JSON contains check via LIKE — much faster than loading all rows
-  // into JS and filtering. The events field stores a JSON array like
-  // '["orders:created","*"]' so we check for both the literal value and '*'.
+  // Find hooks subscribed to this event, or to the wildcard '*'.
+  //
+  // Uses json_each() for EXACT element equality. This was a LIKE built from
+  // the event name — `events LIKE ('%"' || ? || '"%')` — which made the event
+  // name a SQL pattern, so its metacharacters matched other subscriptions:
+  //
+  //   event 'user_created' → '_' matched any char → delivered to a hook
+  //                          subscribed only to 'userXcreated'
+  //   event '%'            → matched EVERY registration
+  //
+  // That is a payload leak: a partner receives, HMAC-signed, an event they
+  // never subscribed to. Equality has no metacharacters to escape.
   const stmtFindForEvent  = db.prepare(`
     SELECT * FROM webhooks
     WHERE active = 1
-      AND (
-        events LIKE '%"*"%'
-        OR events LIKE ('%"' || ? || '"%')
+      AND EXISTS (
+        SELECT 1 FROM json_each(webhooks.events)
+        WHERE json_each.value = ? OR json_each.value = '*'
       )
     ORDER BY created_at DESC
   `)
@@ -262,12 +270,21 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
     async updateDelivery(id, updates) {
       const existing = stmtGetDelivery.get(id) as DelRow | null
       if (!existing) return
+
+      // Key presence, not `??`. With `??` an explicit null meant "leave it
+      // alone", so a nullable column could never be CLEARED — a delivery that
+      // succeeded on retry kept its stale lastError and next_retry_at, and the
+      // history showed a 'delivered' row still carrying "HTTP 500".
+      type Bindable = string | number | null
+      const pick = <K extends keyof typeof updates>(key: K, current: Bindable): Bindable =>
+        (key in updates ? updates[key] : current) as Bindable
+
       stmtUpdateDel.run(
-        updates.status      ?? existing.status,
-        updates.attempts    ?? existing.attempts,
-        updates.nextRetryAt ?? existing.next_retry_at,
-        updates.deliveredAt ?? existing.delivered_at,
-        updates.lastError   ?? existing.last_error,
+        pick('status',      existing.status),
+        pick('attempts',    existing.attempts),
+        pick('nextRetryAt', existing.next_retry_at),
+        pick('deliveredAt', existing.delivered_at),
+        pick('lastError',   existing.last_error),
         id
       )
     },
@@ -414,7 +431,8 @@ export function webhooks(opts: WebhookOptions): Plugin {
   return {
     name: 'webhooks',
 
-    async register(app: App): Promise<void> {
+    // Synchronous: every await below lives inside a nested handler, not here.
+    register(app: App): void {
 
       // ── Resolve store ──────────────────────────────────────────────
       let store: IWebhookStore
@@ -428,18 +446,27 @@ export function webhooks(opts: WebhookOptions): Plugin {
             'Either pass a custom store option via webhooks({ store: ... }).'
           )
         }
-        store = createSqliteWebhookStore(app.db)
+        store = createSqliteWebhookStore(app.db as DatabaseClient)
       }
 
       // ── Delivery helper ────────────────────────────────────────────
 
-      async function attemptAndRecord(
+      /**
+       * Records the outcome of ONE attempt: status, attempt count, retry
+       * schedule, dead-lettering, and the matching event.
+       *
+       * Split out so manual retry() shares it. retry() used to write its own
+       * status updates and got them wrong — no exhaustion check, so a delivery
+       * retried by hand ran past MAX_ATTEMPTS and never dead-lettered, and no
+       * nextRetryAt, so it kept its stale one.
+       */
+      async function recordResult(
         registration: WebhookRegistration,
-        delivery:     WebhookDelivery
+        delivery:     WebhookDelivery,
+        result:       WebhookDeliveryResult
       ): Promise<void> {
 
-        const result = await attemptDelivery(registration, delivery)
-        const now    = Date.now()
+        const now = Date.now()
 
         if (result.ok) {
           await store.updateDelivery(delivery.id, {
@@ -470,22 +497,46 @@ export function webhooks(opts: WebhookOptions): Plugin {
         )
       }
 
+      async function attemptAndRecord(
+        registration: WebhookRegistration,
+        delivery:     WebhookDelivery
+      ): Promise<void> {
+        await recordResult(registration, delivery, await attemptDelivery(registration, delivery))
+      }
+
       // ── Fan-out on event bus ───────────────────────────────────────
 
       const listenEvents = opts.events
 
-      async function handleEvent(eventName: string, payload: unknown): Promise<void> {
+      /**
+       * @param waitForDelivery await the HTTP attempts before resolving.
+       *
+       * The event-bus path passes false: a slow partner must never block the
+       * emitter, and failures are tracked in the table for the retry scheduler.
+       * manager.deliver() passes true — it is documented as "useful for
+       * testing", and it used to resolve BEFORE anything was sent, so a caller
+       * could not observe the outcome it was calling the method to observe.
+       */
+      async function handleEvent(
+        eventName:       string,
+        payload:         unknown,
+        waitForDelivery = false,
+      ): Promise<void> {
         const registrations = await store.findForEvent(eventName)
+        const inFlight: Promise<void>[] = []
+
         for (const reg of registrations) {
           try {
             const delivery = await store.createDelivery(reg.id, eventName, payload)
-            // Fire and don't await — delivery failures are tracked in the table
-            // and picked up by the retry scheduler. We never block the event handler.
-            attemptAndRecord(reg, delivery).catch(() => {})
+            const attempt  = attemptAndRecord(reg, delivery)
+            if (waitForDelivery) inFlight.push(attempt.catch(() => {}))
+            else                 attempt.catch(() => {})
           } catch (err) {
             app.events.emit('webhook:error', { event: eventName, error: err })
           }
         }
+
+        if (waitForDelivery) await Promise.all(inFlight)
       }
 
       // Subscribe to declared events
@@ -547,7 +598,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
         },
 
         async deliver(event, payload) {
-          await handleEvent(event, payload)
+          await handleEvent(event, payload, true)
         },
 
         async retry(deliveryId) {
@@ -556,20 +607,9 @@ export function webhooks(opts: WebhookOptions): Plugin {
           const reg = await store.getRegistration(delivery.webhookId)
           if (!reg) return null
           const result = await attemptDelivery(reg, delivery)
-          const now = Date.now()
-          if (result.ok) {
-            await store.updateDelivery(deliveryId, {
-              status:      'delivered',
-              attempts:    delivery.attempts + 1,
-              deliveredAt: now,
-              lastError:   null,
-            })
-          } else {
-            await store.updateDelivery(deliveryId, {
-              attempts:  delivery.attempts + 1,
-              lastError: result.error,
-            })
-          }
+          // Shares the recording path, so a manual retry dead-letters and
+          // reschedules exactly like a scheduled one.
+          await recordResult(reg, delivery, result)
           return result
         },
 
@@ -585,8 +625,10 @@ export function webhooks(opts: WebhookOptions): Plugin {
         _attemptAndRecord: attemptAndRecord,
       }
 
-      // Attach to app — typed optional field on the App interface
-      app.webhooks = manager
+      // provide() rather than a plain assignment: two plugins claiming one
+      // name used to be a silent last-write-wins, leaving the loser dead with
+      // no error anywhere.
+      app.provide('webhooks', manager)
 
       // ── HTTP routes ─────────────────────────────────────────────
       // Powers REPL commands and any management UI the app builds.
@@ -654,10 +696,15 @@ export function webhooks(opts: WebhookOptions): Plugin {
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
         const delivery = await store.createDelivery(hook.id, 'webhook:test', { test: true, ts: Date.now() })
         const result   = await attemptDelivery(hook, delivery)
+        // A test ping is one-shot and never enters the retry pipeline, so a
+        // failure is terminal ('dead'), not 'failed'. Marking it 'failed' with
+        // a null next_retry_at left a row that pendingRetries could never
+        // select and nothing would ever resolve — neither retried nor final.
         await store.updateDelivery(delivery.id, {
-          status:      result.ok ? 'delivered' : 'failed',
+          status:      result.ok ? 'delivered' : 'dead',
           attempts:    1,
           deliveredAt: result.ok ? Date.now() : null,
+          nextRetryAt: null,
           lastError:   result.error,
         })
         return ctx.json(result)
@@ -690,9 +737,17 @@ export function webhooks(opts: WebhookOptions): Plugin {
   }
 }
 
-// ─── Type augmentation hint ────────────────────────────────────────────────
-// TypeScript users can extend the App interface in their own code:
+// ─── Note on typing app.webhooks ───────────────────────────────────────────
+// Nothing to do: `App.webhooks?: WebhookManager` is already declared in
+// core/app.ts, because this plugin ships inside Junction.
 //
-//   declare module '@frontierjs/junction' {
-//     interface App { webhooks: WebhookManager }
-//   }
+// This file used to advise users to write
+//
+//   declare module '@frontierjs/junction' { interface App { webhooks: WebhookManager } }
+//
+// which is the redeclaration anti-pattern. Declaration merging requires every
+// declaration of a property to have an identical type, so redeclaring `webhooks`
+// against the existing optional one is TS2717 and the augmentation loses
+// silently — exactly what used to happen to `app.conduit`. Out-of-tree plugins
+// should augment an empty interface Junction exports (AppConduit / AppJobs /
+// AppNotify), never redeclare the property.

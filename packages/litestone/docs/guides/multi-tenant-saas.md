@@ -28,11 +28,11 @@ database audit {
 enum Role { admin  member  viewer }
 
 model User {
-  id        Integer  @id
-  email     Text     @unique @email @lower
-  name      Text?    @trim
+  id        Int  @id
+  email     String     @unique @email @lower
+  name      String?    @trim
   role      Role     @default(member)
-  apiKey    Text?    @secret
+  apiKey    String?    @secret
   createdAt DateTime @default(now())
   deletedAt DateTime?
 
@@ -45,10 +45,10 @@ model User {
 }
 
 model Project {
-  id          Integer   @id
-  name        Text
-  description Text?
-  ownerId     Integer   @default(auth().id)
+  id          Int   @id
+  name        String
+  description String?
+  ownerId     Int   @default(auth().id)
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 

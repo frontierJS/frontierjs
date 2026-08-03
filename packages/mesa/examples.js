@@ -6,8 +6,20 @@
  *   file:  string  — filename shown in the REPL header
  *   group: string  — optgroup label in the example selector
  *   src:   string  — Mesa source
+ *   files: [{ name, content }]  — optional extra files, opened as editor tabs
+ *          and importable from `src` as './Name.mesa' or './name.js'
  *
  * To add an example: add an entry to EXAMPLES. The select menu builds itself.
+ *
+ * Two authoring traps, both of which cost time on 2026-08-02:
+ *   - Mesa syntax in prose is PARSED. A heading reading `{#await}` opens a real
+ *     await block; `{class}` in a paragraph is an expression. Write the literal
+ *     as `{'{#await}'}`.
+ *   - An auto-effect that writes something it also reads is a cycle. The runtime
+ *     caps it at 1000 passes and warns; the example just looks wrong.
+ *
+ * `repl.test.js` compiles every example and every extra file, and checks that
+ * each documented language feature appears in at least one of them.
  */
 
 export const EXAMPLES = {
@@ -3670,6 +3682,245 @@ anything that changes at runtime.`,
 </div>`,
   },
 
+
+  // ── Feature coverage (added 2026-08-02) ──────────────────────────────────────
+
+  awaitBlock: {
+    group: 'Async',
+    file: 'Await.mesa',
+    src: `<script>
+  let attempt = 0
+  let shouldFail = false
+
+  function load(n, fail) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        fail ? reject(new Error('network unreachable')) : resolve('payload #' + n)
+      }, 300)
+    })
+  }
+
+  const request = load(attempt, shouldFail)
+</script>
+
+<h2>{'{#await}'} — pending / then / catch</h2>
+
+{#await request}
+  <p class="pending">loading…</p>
+{:then value}
+  <p class="ok">resolved: <strong>{value}</strong></p>
+{:catch err}
+  <p class="bad">rejected: <strong>{err.message}</strong></p>
+{/await}
+
+<button on:click={() => attempt++}>retry</button>
+<label><input type="checkbox" bind:checked={shouldFail} /> force failure</label>`,
+  },
+
+  slots: {
+    group: 'Template',
+    file: 'SlotHost.mesa',
+    files: [{
+      name: 'Panel.mesa',
+      content: `<div class="panel">
+  <header><slot name="title">Untitled</slot></header>
+  <div class="body"><slot /></div>
+  <footer><slot name="actions"><em>no actions</em></slot></footer>
+</div>`,
+    }],
+    src: `<script>
+  import Panel from './Panel.mesa'
+  let n = 0
+</script>
+
+<Panel>
+  <h3 slot="title">Filled title</h3>
+  <p>Default slot content — count is {n}.</p>
+  <button slot="actions" on:click={() => n++}>bump</button>
+</Panel>
+
+<Panel>
+  <p>This one leaves the named slots empty, so the fallbacks show.</p>
+</Panel>`,
+  },
+
+  classSystem: {
+    group: 'Styling',
+    file: 'ClassSystem.mesa',
+    files: [
+      {
+        name: 'Chip.mesa',
+        content: `<script>
+  // {class} — take the class the parent passed and put it on this element.
+  export let label = ''
+</script>
+<span {class}>{label}</span>`,
+      },
+      {
+        name: 'Field.mesa',
+        content: `<script>
+  // The same shorthand works on any element, not just the root.
+  export let placeholder = ''
+  let text = ''
+</script>
+<input {class} bind:value={text} placeholder={placeholder} />
+<small>{text.length} chars</small>`,
+      },
+    ],
+    src: `<script>
+  import Chip from './Chip.mesa'
+  import Field from './Field.mesa'
+  let tone = 'ok'
+</script>
+
+<h2>class, passed into a component</h2>
+
+<p>
+  A component does not receive <code>class</code> as an ordinary prop — Mesa
+  renames it to <code>$class</code>. The child opts in with
+  <code>{'{class}'}</code>.
+</p>
+
+<Chip label="status" class={'chip chip--' + tone} />
+<Field placeholder="type here" class="field" />
+
+<button on:click={() => tone = tone === 'ok' ? 'warn' : 'ok'}>toggle tone</button>
+
+<style>
+  .chip { padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .chip--ok   { background: #dcfce7; color: #166534; }
+  .chip--warn { background: #fef9c3; color: #854d0e; }
+  .field { padding: 4px 8px; border: 1px solid #d0d7de; border-radius: 6px; }
+  .field--hot { border-color: #fc680a; }
+</style>`,
+  },
+
+  cssFeatures: {
+    group: 'Styling',
+    file: 'CssFeatures.mesa',
+    src: `<script>
+  let wide = false
+</script>
+
+<div class="card" class:wide={wide}>
+  <h3>Nested CSS, @layer, @container</h3>
+  <p>Resize the container with the button.</p>
+  <p class="repl-note">This line is styled by a :global() rule.</p>
+  <button on:click={() => wide = !wide}>{wide ? 'narrow' : 'widen'}</button>
+</div>
+
+<style>
+  @layer components {
+    .card {
+      container-type: inline-size;
+      width: 260px;
+      padding: 14px;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+
+      &.wide { width: 520px; }
+
+      h3 { margin: 0 0 6px; font-size: 14px; }
+
+      button { cursor: pointer; }
+    }
+  }
+
+  @container (min-width: 400px) {
+    .card h3 { color: #0969da; }
+  }
+
+  /* :global() opts out of scoping — the selector is emitted verbatim. */
+  :global(.repl-note) { font-style: italic; opacity: .75; }
+
+  /* @apply is passed through as a declaration for Uno/Tailwind to expand.
+     With no utility framework loaded it is simply inert. */
+  .card p { @apply text-sm; }
+</style>`,
+  },
+
+  autoEffect: {
+    group: 'Reactivity',
+    file: 'AutoEffect.mesa',
+    src: `<script>
+  import { cart } from './store.js'
+
+  let count = 0
+  let title = ''
+
+  // $: { } — an auto-tracked EFFECT. It re-runs whenever anything it reads
+  // changes, with no dependency list. Use it for side effects; use \`const\`
+  // for values you derive.
+  //
+  // Never write something the block also reads — that is a cycle, and the
+  // runtime will cap it at 1000 passes and warn.
+  $: {
+    const next = 'count is ' + count
+    title = next
+    document.title = next
+  }
+
+  // $: (a, b) — a multi-path WATCH. No body: it declares which paths on an
+  // external object are reactive, so mutating them in place re-renders.
+  $: (cart.items, cart.total)
+
+  function addToCart() {
+    cart.items += 1
+    cart.total += 20
+  }
+</script>
+
+<h2>$: auto-effect</h2>
+<p>{title} — also written to document.title</p>
+<button on:click={() => count++}>bump</button>
+
+<h2>$: multi-path watch</h2>
+<p>{cart.items} items — \${cart.total}</p>
+<button on:click={addToCart}>add item</button>`,
+    files: [{ name: 'store.js', content: `export const cart = { items: 2, total: 40 }\n` }],
+  },
+
+  virtualEach: {
+    group: 'Template',
+    file: 'VirtualEach.mesa',
+    src: `<script>
+  const rows = Array.from({ length: 10000 }, (_, i) => ({ id: i, name: 'Row ' + i }))
+</script>
+
+<h2>{'{#virtual each}'} — 10,000 rows</h2>
+
+<div class="scroller">
+  {#virtual each rows as row (row.id)}
+    <div class="row">{row.name}</div>
+  {/virtual}
+</div>
+
+<style>
+  .scroller { height: 240px; overflow-y: auto; border: 1px solid #d0d7de; }
+  .row { height: 32px; line-height: 32px; padding: 0 10px; }
+</style>`,
+  },
+
+  documentGlobals: {
+    group: 'Globals',
+    file: 'DocumentGlobals.mesa',
+    src: `<script>
+  let keys = 0
+  let clicks = 0
+</script>
+
+<mesa:head>
+  <title>Mesa REPL — document globals</title>
+</mesa:head>
+
+<mesa:document on:keydown={() => keys++} />
+<mesa:body on:click={() => clicks++} />
+
+<h2>Document-level listeners</h2>
+<p>keydown anywhere: <strong>{keys}</strong></p>
+<p>click anywhere: <strong>{clicks}</strong></p>`,
+  },
+
 }
 
 /**
@@ -3685,4 +3936,13 @@ export const EXAMPLE_GROUPS = (() => {
   return groups
 })()
 
-/** The key of the example to load on boot. */
+/**
+ * The key of the example to load on boot.
+ *
+ * `index.html` imports this by name. The declaration went missing at some point
+ * — the doc comment above it survived, the `export` did not — and because a
+ * missing named export is a LINK-time error in ESM, the REPL's entire script
+ * module stopped executing. Blank page, one console SyntaxError, no other clue.
+ * `repl.test.js` now checks every name index.html imports.
+ */
+export const DEFAULT_EXAMPLE = 'counter'

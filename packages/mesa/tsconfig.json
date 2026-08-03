@@ -1,0 +1,12 @@
+{
+  // Reactive .mesa compiler and signal runtime (all JS).
+  //
+  // checkJs is off: turning it on today reports 2,625 errors across untyped
+  // JS, which is noise rather than a gate. The config still gives editors
+  // import resolution and go-to-definition, and any .ts in this package is
+  // checked for real. Flip checkJs on per-directory when the JS here grows
+  // types worth enforcing.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": false },
+  "include": ["*.js", "src/**/*.js"]
+}

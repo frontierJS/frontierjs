@@ -33,8 +33,9 @@
  *     </button>
  *   </span>
  *
- * The close button's hover/focus use color-mix on currentColor, so they
- * adapt to whatever tone (and theme) the pill carries.
+ * The close button's hover uses color-mix on currentColor, so it adapts to
+ * whatever tone (and theme) the pill carries. Its focus ring does the same,
+ * and for the same reason, but lives in focus.css with every other ring.
  */
 .pill.removable {
   padding-right: 3px;
@@ -57,18 +58,12 @@
   opacity:         0.7;
   transition:      opacity 120ms, background 120ms;
 }
-.pill-close > svg,
-.pill-close > [class^="i-heroicons"],
-.pill-close > [class*=" i-heroicons"] {
-  width:  0.85em;
-  height: 0.85em;
-}
+/* Icon sizing: icon.css. .pill-close sets --icon-size: 0.85em there. */
 .pill-close:hover {
   opacity:    1;
   background: color-mix(in srgb, currentColor 22%, transparent);
 }
+/* Full opacity on focus; the ring itself is in focus.css. */
 .pill-close:focus-visible {
-  outline:    none;
-  opacity:    1;
-  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 50%, transparent);
+  opacity: 1;
 }

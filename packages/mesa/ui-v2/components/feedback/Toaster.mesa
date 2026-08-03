@@ -1,0 +1,66 @@
+<script>
+  // Toaster.mesa
+  // Mount once near your app root. Watches toastStore.items and renders
+  // each toast as a Toast component. Handles dismiss by calling toasts.remove().
+  //
+  // Usage:
+  //   <!-- App.mesa -->
+  //   <Toaster position="bottom-right" />
+  //
+  //   <!-- Anywhere else -->
+  //   import { toasts } from '../stores/toastStore.js'
+  //   toasts.success('File uploaded!')
+  //   toasts.error('Upload failed — file too large.')
+
+  import Toast from './Toast.mesa'
+  import { toasts } from '../../stores/toastStore.js'
+
+  export let position = 'bottom-right'  // 'top-right'|'top-left'|'bottom-right'|'bottom-left'|'top-center'|'bottom-center'
+  export let max      = 5               // max simultaneous toasts shown
+
+  // Watch the items array — re-renders when toasts.add() replaces it
+  $: toasts.items
+
+  const posMap = {
+    'top-right':      'top-4 right-4 items-end',
+    'top-left':       'top-4 left-4  items-start',
+    'bottom-right':   'bottom-4 right-4 items-end',
+    'bottom-left':    'bottom-4 left-4  items-start',
+    'top-center':     'top-4    left-1/2 -translate-x-1/2 items-center',
+    'bottom-center':  'bottom-4 left-1/2 -translate-x-1/2 items-center',
+  }
+
+  const posClass     = posMap[position] ?? posMap['bottom-right']
+
+  // visibleItems is a derived const — auto-re-derives when toasts.items changes.
+  // toasts.items is watched via $: above, making it a reactive signal in this
+  // component's graph. Rule 2: any const referencing a reactive var auto-derives.
+  const isBottom     = position.startsWith('bottom')
+  const visibleItems = isBottom
+    ? toasts.items.slice(-max).reverse()
+    : toasts.items.slice(0, max)
+
+  function handleDismiss(id) {
+    toasts.remove(id)
+  }
+</script>
+
+<mesa:portal to={document.body}>
+  <div
+    class="fixed z-[250] flex flex-col gap-2 pointer-events-none {posClass}"
+    aria-live="polite"
+    aria-label="Notifications"
+  >
+    {#each visibleItems as toast (toast.id)}
+      <div class="pointer-events-auto">
+        <Toast
+          id={toast.id}
+          message={toast.message}
+          type={toast.type}
+          duration={toast.duration}
+          ondismiss={handleDismiss}
+        />
+      </div>
+    {/each}
+  </div>
+</mesa:portal>

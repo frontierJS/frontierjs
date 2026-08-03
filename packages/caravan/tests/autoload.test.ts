@@ -1,0 +1,105 @@
+// ============================================================
+// autoloadJobs() — against a real, non-empty directory.
+//
+// This feature had never once run to completion: `dir` was declared inside
+// the try block and read in the loop outside it, so the first entry threw
+// `ReferenceError: dir is not defined`. Nothing caught it because no test
+// ever pointed autoload at a directory containing a job file — an empty
+// glob result skips the loop entirely and reports success.
+//
+// Every test here therefore uses a directory that actually has files in it.
+// ============================================================
+
+import { describe, it, expect, beforeEach } from 'bun:test'
+import { resolve } from 'node:path'
+import { autoloadJobs } from '../src/autoload.ts'
+import { createCaravan } from '../src/index.ts'
+import type { CaravanInstance, HandlerOptions, JobHandler } from '../src/types.ts'
+
+const FIXTURES = resolve(import.meta.dir, 'fixtures/jobs')
+
+// Collects what autoload registers, so the assertions are about the call
+// autoload makes rather than about queue internals.
+function collector() {
+  const registered: Array<{ name: string; opts: HandlerOptions }> = []
+  const stub: Pick<CaravanInstance, 'handle'> = {
+    handle<T = unknown>(name: string, _handler: JobHandler<T>, opts: HandlerOptions = {}) {
+      registered.push({ name, opts })
+    },
+  }
+  return { stub, registered }
+}
+
+describe('autoloadJobs against a directory with job files', () => {
+  let c: ReturnType<typeof collector>
+  beforeEach(() => { c = collector() })
+
+  it('loads every *.job.ts file and returns their names', async () => {
+    const loaded = await autoloadJobs(FIXTURES, c.stub)
+
+    // This line is the regression: before the fix it threw ReferenceError.
+    expect(loaded.sort()).toEqual(['cleanup', 'send-email'])
+  })
+
+  it('registers each handler with the options from defineJob()', async () => {
+    await autoloadJobs(FIXTURES, c.stub)
+
+    const email = c.registered.find(r => r.name === 'send-email')
+    expect(email).toBeDefined()
+    expect(email!.opts.queue).toBe('email')
+    expect(email!.opts.maxAttempts).toBe(5)
+    expect(email!.opts.retryDelay).toEqual([10, 20])
+  })
+
+  it('recurses into subdirectories', async () => {
+    const loaded = await autoloadJobs(FIXTURES, c.stub)
+    expect(loaded).toContain('cleanup')
+  })
+
+  it('skips a file whose default export is not a defineJob() result', async () => {
+    const loaded = await autoloadJobs(FIXTURES, c.stub)
+
+    expect(loaded).not.toContain('not-a-real-job')
+    expect(c.registered.map(r => r.name)).not.toContain('not-a-real-job')
+  })
+
+  it('accepts a path relative to cwd, not just an absolute one', async () => {
+    const rel = resolve(import.meta.dir, '..')
+    const loaded = await autoloadJobs(
+      `${rel.slice(process.cwd().length + 1) || '.'}/tests/fixtures/jobs`,
+      c.stub,
+    )
+    expect(loaded.sort()).toEqual(['cleanup', 'send-email'])
+  })
+
+  it('returns an empty list for a directory that does not exist', async () => {
+    expect(await autoloadJobs(resolve(FIXTURES, 'nope'), c.stub)).toEqual([])
+    expect(c.registered).toHaveLength(0)
+  })
+})
+
+describe('jobsDir wired through createCaravan().start()', () => {
+  it('start() autoloads handlers and they can process a dispatch', async () => {
+    const caravan = createCaravan({
+      db:           ':memory:',
+      pollInterval: 10,
+      jobsDir:      FIXTURES,
+      queues:       { default: { concurrency: 2 }, email: { concurrency: 1 } },
+    })
+
+    await caravan.start()
+
+    // The autoloaded 'send-email' handler declares queue 'email'; dispatch
+    // must route there off the registration, not the default queue.
+    const id = await caravan.dispatch('send-email', { to: 'alice@example.com' })
+    expect(caravan.find(id)!.queue).toBe('email')
+
+    const deadline = Date.now() + 2_000
+    while (Date.now() < deadline && caravan.find(id)!.status !== 'done') {
+      await new Promise(r => setTimeout(r, 10))
+    }
+    expect(caravan.find(id)!.status).toBe('done')
+
+    await caravan.stop()
+  })
+})

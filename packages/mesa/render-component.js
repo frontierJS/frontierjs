@@ -58,7 +58,7 @@ import { readFile, writeFile, unlink } from 'fs/promises'
 import { existsSync }  from 'fs'
 import { fileURLToPath } from 'url'
 import { compileSource } from './compiler.js'
-import { initRenderer }  from './render.js'
+import { initRenderer, renderToHTML } from './render.js'
 import { inlineCSS }     from './css-inliner.js'
 
 // ── Module-level renderer init guard ─────────────────────────────────────────
@@ -133,13 +133,15 @@ function isMesaSpecifier(spec) {
  *   - modules   — Map<originalPath, compiledJS> (JS target)
  *   - tempFiles — array of all temp file paths created (for cleanup)
  *   - exports   — named exports extracted from the module (e.g. subject)
+ *   - islands   — every `client:*` call site in this file and its deps, each
+ *                 tagged with the file it was written in
  */
 async function compileTree(filePath, visited = new Map(), tempFiles = [], opts = {}, sourceOverride = null) {
   const canonical = path.resolve(filePath)
 
   // Cycle guard
   if (visited.has(canonical)) {
-    return { tmpPath: visited.get(canonical).tmpPath, css: '', tempFiles, modules: new Map() }
+    return { tmpPath: visited.get(canonical).tmpPath, css: '', tempFiles, modules: new Map(), islands: [] }
   }
 
   // Read source — use override at entry point to avoid writing a temp .mesa file
@@ -183,6 +185,12 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
   }
   const modules = new Map([[canonical, js]])
 
+  // `ctx.islands` is per-module and the caller only ever sees the tree, so tag
+  // each entry with the file it came from. Without that, two components both
+  // declaring `<Counter client:load />` are indistinguishable in the flattened
+  // list, and a loader cannot resolve `Counter` to a module to import.
+  const islands = (ctx.islands ?? []).map((i) => ({ ...i, file: canonical }))
+
   // Reserve the tmpPath before recursing so cycle guard works
   const tmpPath = makeTmpPath(canonical)
   visited.set(canonical, { tmpPath })
@@ -198,6 +206,7 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     const child = await compileTree(depPath, visited, tempFiles, opts)
     css += '\n' + child.css
     for (const [k, v] of child.modules) modules.set(k, v)
+    islands.push(...child.islands)
     rewrites.push({ match: m[0], prefix: m[1], tmpPath: child.tmpPath, suffix: m[3] })
   }
 
@@ -217,7 +226,7 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     tempFiles.push(tmpPath)
   }
 
-  return { tmpPath, css, tempFiles, modules }
+  return { tmpPath, css, tempFiles, modules, islands }
 }
 
 // ── HTML rendering ────────────────────────────────────────────────────────────
@@ -233,26 +242,13 @@ async function executeComponent(tmpPath, props) {
     throw new Error('[Mesa renderComponent] Compiled module has no default function export.')
   }
 
-  const doc       = global.document
-  const container = doc.createElement('div')
-  const anchor    = doc.createComment('mesa-root')
-  container.appendChild(anchor)
-  doc.body.appendChild(container)
-
-  try {
-    fn(anchor, props ?? {}, null)
-  } catch (err) {
-    throw new Error(`[Mesa renderComponent] Component threw during render: ${err.message}`)
-  }
-
-  // Collect rendered HTML — strip the root anchor comment and all internal
-  // Mesa anchor comments (<!---->  and <!-- mesa:... --> left by block directives).
-  const raw  = container.innerHTML
-  const html = raw
-    .replace(/<!--mesa-root-->/g, '')   // root anchor
-    .replace(/<!---->/g, '')            // empty block anchors
-    .replace(/<!-- [^>]* -->/g, '')     // named anchor comments
-    .trim()
+  // One renderer, two entry points. This used to be a second copy of the same
+  // container/anchor/serialize/strip sequence, which is how render.js drifted
+  // onto a calling convention the compiler had stopped emitting without anyone
+  // noticing — nothing exercised it. Delegating also picks up root disposal,
+  // which this copy never had: rendering N pages left N live effect sets
+  // subscribed to any module-scope signal they read.
+  const html = await renderToHTML(fn, props)
 
   // Named exports: <script module> exports are real ES module-level exports.
   // export const/let inside the component function are props, not module exports.
@@ -260,8 +256,6 @@ async function executeComponent(tmpPath, props) {
   for (const key of Object.keys(mod)) {
     if (key !== 'default') namedExports[key] = mod[key]
   }
-
-  try { doc.body.removeChild(container) } catch {}
 
   return { html, namedExports }
 }
@@ -378,6 +372,11 @@ async function generateUnoCSS(html, unoConfig) {
  * @param {'html'|'email'|'fragment'|'js'} [options.target='html']
  * @param {object}  [options.unocss]        — UnoCSS config object (@unocss/core createGenerator options)
  * @param {object}  [options.compileOptions] — Extra options forwarded to compileSource()
+ * @param {boolean} [options.islands=false]  — Wrap `client:*` components in island
+ *                                             markers so a client loader can find them
+ *                                             in the output. Off by default: RULE 26
+ *                                             strips `client:*` unless a meta-framework
+ *                                             asks for markers. See runtime.js `island()`.
  * @param {boolean} [options.preserveMediaQueries=true] — Keep @media in a <style> block (email/fragment)
  *
  * @returns {Promise<RenderResult>}
@@ -389,6 +388,12 @@ async function generateUnoCSS(html, unoConfig) {
  *     .subject  {string|undefined} — from `export const subject` in the component
  *     .text     {string|undefined} — plain text fallback (email target only)
  *     .exports  {object}  — all named exports from the component
+ *     .islands  {Array}   — every `client:*` call site in the rendered tree, in
+ *                           compile order, each `{ component, directive, media?,
+ *                           props?, file }`. This is `ctx.islands` per module,
+ *                           flattened — the build-time view of what the markers
+ *                           in `.html` refer to, which is what a loader needs to
+ *                           map a component name onto a module to import.
  *
  *   target js:
  *     .modules  {Map<string,string>} — Map<originalPath, compiledJS>
@@ -403,8 +408,15 @@ export async function renderComponent(source, options = {}) {
     target               = 'html',
     unocss               = null,
     compileOptions       = {},
+    islands              = false,
     preserveMediaQueries = true,
   } = options
+
+  // `islands` is sugar over compileOptions — the compiler flag is what actually
+  // switches emission, and it has to reach every module in the tree, not just
+  // the entry, because an island call site can be anywhere in it. An explicit
+  // compileOptions.islands still wins, so a caller can force it either way.
+  const _compileOptions = { islands, ...compileOptions }
 
   // ── JS target — compile only, no rendering ────────────────────────────────
   if (target === 'js') {
@@ -414,7 +426,7 @@ export async function renderComponent(source, options = {}) {
       ? filePath
       : filePath + '.mesa'
 
-    let modules, css
+    let modules, css, treeIslands
     // Pass source directly — no temp .mesa file needed at entry point.
     // tempFiles is tracked and cleaned even though noEmit should leave it empty:
     // this call used to pass a throwaway [] and drop it, so every js-target
@@ -422,10 +434,11 @@ export async function renderComponent(source, options = {}) {
     const tempFiles = []
     try {
       const result = await compileTree(
-        srcPath, new Map(), tempFiles, { compileOptions, noEmit: true }, source
+        srcPath, new Map(), tempFiles, { compileOptions: _compileOptions, noEmit: true }, source
       )
-      modules = result.modules
-      css     = result.css
+      modules     = result.modules
+      css         = result.css
+      treeIslands = result.islands
     } finally {
       await cleanTempFiles(tempFiles)
     }
@@ -437,7 +450,7 @@ export async function renderComponent(source, options = {}) {
       cleanModules.set(key, v)
     }
 
-    return { modules: cleanModules, entry: entryKey, css: css.trim() }
+    return { modules: cleanModules, entry: entryKey, css: css.trim(), islands: treeIslands ?? [] }
   }
 
   // ── Render targets — html / email / fragment ──────────────────────────────
@@ -453,12 +466,13 @@ export async function renderComponent(source, options = {}) {
   // compileTree will still create temp .mjs files for compiled output,
   // but only for the compiled JS, never a duplicate .mesa temp file.
   const tempFiles = []
-  let html, namedExports, css, unocss_css, preWrapHTML
+  let html, namedExports, css, unocss_css, preWrapHTML, treeIslands
 
   try {
     // 1. Compile recursively — sourceOverride means rootPath doesn't need to exist on disk
-    const tree = await compileTree(rootPath, new Map(), tempFiles, { compileOptions }, source)
+    const tree = await compileTree(rootPath, new Map(), tempFiles, { compileOptions: _compileOptions }, source)
     css = tree.css.trim()
+    treeIslands = tree.islands
 
     // 2. Execute the component
     const rendered = await executeComponent(tree.tmpPath, data)
@@ -514,6 +528,7 @@ export async function renderComponent(source, options = {}) {
     css,
     exports: namedExports,
     subject: namedExports.subject,
+    islands: treeIslands ?? [],
   }
 
   if (target === 'email') {

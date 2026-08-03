@@ -13,7 +13,13 @@
   --surface-sunken: #0f0f0f;
   --ink:            #f5f5f5;
   --ink-soft:       #c5c5c5;
-  --ink-mute:       #8a8a8a;
+  /*
+   * Two shades up from #8a8a8a, which was 4.44:1 against --surface-raised
+   * — under AA on the one dark surface light enough to matter. It cleared
+   * on --surface and --surface-sunken, so the failure only showed on
+   * raised cards and .surface-raised regions.
+   */
+  --ink-mute:       #8c8c8c;
   --rule:           #2d2d2d;
   --rule-strong:    #404040;
 

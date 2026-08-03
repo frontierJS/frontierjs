@@ -7,7 +7,7 @@
 //
 //   import { createTestConduit } from '@frontierjs/conduit/testing'
 //
-//   const { conduit, stubs } = createTestConduit({
+//   const { conduit, stubs } = await createTestConduit({
 //     'agent:srv_abc': {
 //       '/deploy':       { deployed: true },
 //       '/health-check': { healthy: true },
@@ -25,11 +25,11 @@
 //   stubs['agent:srv_abc'].reset()
 // ============================================================
 
-import { createConduit }       from './conduit.ts'
-import { StubTransport }       from './transports/stub.ts'
-import { createNullResolver }  from './credentials.ts'
+import { createConduit }     from './conduit.ts'
+import { StubTransport }     from './transports/stub.ts'
+import { createNullResolver } from './credentials.ts'
 import type { IConduit, TargetDescriptor, ConduitOptions } from './types.ts'
-import type { BaseTransport }              from './transports/base.ts'
+import type { BaseTransport } from './transports/base.ts'
 
 // Map of targetId → { path → response data }
 export type StubMocks = Record<string, Record<string, unknown>>
@@ -39,12 +39,23 @@ export type TestConduit<T extends StubMocks> = {
   stubs:   { [K in keyof T]: StubTransport }
 }
 
-export function createTestConduit<T extends StubMocks>(
+export type TestConduitOptions = Pick<ConduitOptions, 'hooks' | 'store' | 'credentials'> & {
+  // Extra descriptors registered in the store without a stub. Use to test
+  // code that mixes stubbed calls with real target resolution.
+  targets?: TargetDescriptor[]
+}
+
+// Async because the store is async. Stubbed targets are registered in the
+// store as well as in the transport overrides, so resolve(), list() and
+// stats() report them — code that calls send() alongside resolve() can be
+// integration-tested, which the previous bypass made impossible.
+export async function createTestConduit<T extends StubMocks>(
   mocks: T,
-  opts:  Pick<ConduitOptions, 'hooks'> = {}
-): TestConduit<T> {
-  const overrides = new Map<string, BaseTransport>()
-  const stubs     = {} as { [K in keyof T]: StubTransport }
+  opts:  TestConduitOptions = {}
+): Promise<TestConduit<T>> {
+  const overrides   = new Map<string, BaseTransport>()
+  const stubs       = {} as { [K in keyof T]: StubTransport }
+  const descriptors: TargetDescriptor[] = [...(opts.targets ?? [])]
 
   for (const [targetId, pathMocks] of Object.entries(mocks)) {
     // Minimal descriptor — protocol and auth don't matter for stubs
@@ -61,27 +72,25 @@ export function createTestConduit<T extends StubMocks>(
     const stub = new StubTransport(descriptor, 'http')
 
     // Register each path mock on the stub
-    for (const [path, data] of Object.entries(pathMocks)) {
-      stub.mock(path, data)
+    for (const [pattern, data] of Object.entries(pathMocks)) {
+      stub.mock(pattern, data)
     }
 
     overrides.set(targetId, stub)
-    ;(stubs as any)[targetId] = stub
+    ;(stubs as Record<string, StubTransport>)[targetId] = stub
+    descriptors.push(descriptor)
   }
 
   const conduit = createConduit({
     hooks: opts.hooks,
+    store: opts.store,
     // Never the env resolver here — a test must not be able to pick up a
     // real credential from the developer's environment.
-    credentials: createNullResolver(),
+    credentials: opts.credentials ?? createNullResolver(),
+    targets: descriptors,
   }, overrides)
 
-  // createTestConduit() is synchronous by design so test setup doesn't
-  // require await. Stubs bypass the store, so there is nothing for init()
-  // to load and nothing to wait on — the in-memory store's init() and
-  // list() both resolve without I/O. A custom async store would need
-  // createTestConduitAsync() (not yet built).
-  void conduit.init()
+  await conduit.init()
 
   return { conduit, stubs }
 }

@@ -216,7 +216,8 @@
     "watch:parser": "node scripts/build-parser.js --watch",
     "dev": "npm run watch",
     "package": "vsce package",
-    "publish": "vsce publish"
+    "publish": "vsce publish",
+    "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1",

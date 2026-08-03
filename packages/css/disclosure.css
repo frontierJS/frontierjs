@@ -36,10 +36,8 @@
 .disclosure-summary::-webkit-details-marker {
   display: none;                  /* kill default disclosure triangle (WebKit) */
 }
-.disclosure-summary:focus-visible {
-  outline:         none;
-  box-shadow:      inset 0 0 0 var(--ring-width) color-mix(in srgb, var(--ring) 25%, transparent);
-}
+/* Focus ring: focus.css, in the inset set — the summary fills its
+   bordered box edge to edge, so an outward ring would be clipped. */
 .disclosure-summary:hover {
   background: var(--surface-sunken);
 }

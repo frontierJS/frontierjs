@@ -1,0 +1,37 @@
+<script>
+  // Divider.mesa
+  // Horizontal separator. Optionally renders a label centered in the rule.
+  //
+  // Usage:
+  //   <Divider />
+  //   <Divider label="or continue with" />
+  //   <Divider label="Settings" align="left" />
+
+  export let label    = ''
+  export let align    = 'center'   // 'left' | 'center' | 'right'
+  export let spacing  = 'md'       // 'sm' | 'md' | 'lg' — vertical padding
+
+  const spacingMap = { sm: 'my-3', md: 'my-5', lg: 'my-8' }
+  const sp = spacingMap[spacing] ?? spacingMap.md
+
+  const alignMap = { left: 'justify-start', center: 'justify-center', right: 'justify-end' }
+  const al = alignMap[align] ?? alignMap.center
+
+  const hasLabel = label || children
+</script>
+
+{#if hasLabel}
+  <div class="relative flex items-center {sp}" {class}>
+    <div class="flex-1 border-t border-gray-200"></div>
+    <span class="flex items-center {al} px-3 text-xs font-medium text-gray-400 shrink-0">
+      {#if children}
+        <slot />
+      {:else}
+        {label}
+      {/if}
+    </span>
+    <div class="flex-1 border-t border-gray-200"></div>
+  </div>
+{:else}
+  <hr class="border-t border-gray-200 {sp}" {class} />
+{/if}

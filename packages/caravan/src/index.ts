@@ -16,7 +16,7 @@ import { QueueWorker, WorkerPool }                  from './worker.ts'
 import { autoloadJobs }                             from './autoload.ts'
 import { CronScheduler, nextFireTime }              from './cron.ts'
 import type {
-  CaravanOptions, CaravanInstance, CaravanApp,
+  CaravanOptions, CaravanInstance, CaravanApp, CaravanTelemetry,
   CaravanStats, DispatchOptions, HandlerOptions,
   JobHandler, JobRecord, JobStatus, RegisteredHandler,
 } from './types.ts'
@@ -27,6 +27,14 @@ export type {
   JobRecord, JobStatus, QueueConfig, QueueStats,
   CronEntry,
 } from './types.ts'
+
+// Contribute the real type of `app.jobs` to Junction's augmentable slot.
+// Augment the interface — never redeclare `App.jobs` — see the AppConduit
+// note in the repo CLAUDE.md: a redeclaration silently loses (TS2717) and
+// `app.jobs` resolves to `{}` at every call site.
+declare module '@frontierjs/junction' {
+  interface AppJobs extends CaravanInstance {}
+}
 
 // ─── createCaravan ────────────────────────────────────────────────────────────
 
@@ -44,7 +52,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   const pool     = new WorkerPool()
   const cron     = new CronScheduler()
   let   started  = false
-  let   telemetry: { emit(event: string, data: unknown): void } | null = null
+  let   telemetry: CaravanTelemetry | null = null
 
   // Build a worker for each configured queue
   for (const [name, config] of Object.entries(queueConf)) {
@@ -262,16 +270,20 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     register(app: CaravanApp): void {
       // If junction.config.js has a caravan section, apply values not already
       // set by opts (opts always wins — explicit beats config file)
-      const junctionCaravan = (app as Record<string, unknown>)
-        ?.config?._junction?.caravan as Partial<CaravanOptions> | undefined
+      const junctionCaravan = (app as {
+        config?: { _junction?: { caravan?: Partial<CaravanOptions> } }
+      }).config?._junction?.caravan
 
       if (junctionCaravan) {
         if (!opts.jobsDir      && junctionCaravan.jobsDir)      jobsDir      = junctionCaravan.jobsDir
         if (!opts.cleanupAfter && junctionCaravan.cleanupAfter) cleanupAfter = junctionCaravan.cleanupAfter
       }
 
-      // Expose caravan instance on app.jobs
-      app.jobs = caravan
+      // Expose caravan instance on app.jobs. provide() refuses to overwrite an
+      // existing claim — two plugins owning one name used to be last-write-wins,
+      // and the loser just stopped working with no error anywhere.
+      if (typeof app.provide === 'function') app.provide('jobs', caravan)
+      else app.jobs = caravan
 
       // Wire Junction telemetry — job lifecycle events flow to devtools feed
       if (app.telemetry) {
@@ -293,10 +305,24 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         const basePath  = adminCfg.path ?? '/jobs'
         const secret    = adminCfg.secret
 
-        const guard = (ctx: Record<string, unknown>) => {
+        // These are raw app.get/app.post routes, so ctx is Junction's
+        // TransportContext: headers live on ctx.headers (lowercased by the
+        // transport), NOT nested under ctx.params — params is path params only.
+        //
+        // Throwing an error that CARRIES its status. Junction's error boundary
+        // reads a numeric `status`/`statusCode`/`code` off any thrown value, so
+        // this maps to a real 401 without Caravan importing anything from
+        // Junction. (It used to return a hand-built Response, because the
+        // boundary only understood Junction's own error classes and a thrown
+        // `{ code: 401 }` surfaced as a 500.)
+        const deny = (status: number, message: string): never => {
+          throw Object.assign(new Error(message), { status })
+        }
+
+        const guard = (ctx: Record<string, unknown>): void => {
           if (!secret) return
-          const auth = (ctx.params as Record<string, unknown>)?.headers?.['x-caravan-secret']
-          if (auth !== secret) throw Object.assign(new Error('Unauthorized'), { code: 401 })
+          const headers = (ctx.headers ?? {}) as Record<string, string>
+          if (headers['x-caravan-secret'] !== secret) deny(401, 'Unauthorized')
         }
 
         const appRouter = app as unknown as {
@@ -304,6 +330,9 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
           post(path: string, fn: (ctx: unknown) => unknown): void
         }
 
+        // Junction's router uses brace syntax for path params ({id}); an
+        // Express-style ':id' parses as a literal static segment and never
+        // matches, which 404s every by-id route.
         appRouter.get(basePath, (ctx: unknown) => {
           const c = ctx as Record<string, unknown>
           guard(c)
@@ -322,16 +351,16 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
           return Response.json(caravan.nextRuns())
         })
 
-        appRouter.get(`${basePath}/:id`, (ctx: unknown) => {
+        appRouter.get(`${basePath}/{id}`, (ctx: unknown) => {
           const c = ctx as Record<string, unknown>
           guard(c)
           const id  = (c.params as Record<string, string>)?.id
           const job = caravan.find(id)
-          if (!job) throw Object.assign(new Error('Not found'), { code: 404 })
+          if (!job) deny(404, `Job '${id}' not found`)
           return Response.json(job)
         })
 
-        appRouter.post(`${basePath}/:id/retry`, async (ctx: unknown) => {
+        appRouter.post(`${basePath}/{id}/retry`, async (ctx: unknown) => {
           const c = ctx as Record<string, unknown>
           guard(c)
           const id = (c.params as Record<string, string>)?.id
@@ -339,7 +368,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
           return Response.json({ ok })
         })
 
-        appRouter.post(`${basePath}/:id/cancel`, async (ctx: unknown) => {
+        appRouter.post(`${basePath}/{id}/cancel`, async (ctx: unknown) => {
           const c = ctx as Record<string, unknown>
           guard(c)
           const id = (c.params as Record<string, string>)?.id

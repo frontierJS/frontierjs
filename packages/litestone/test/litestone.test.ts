@@ -9216,6 +9216,40 @@ describe('implicit many-to-many', () => {
     expect(r.valid).toBe(false)
   })
 
+  // ── JSON Schema ─────────────────────────────────────────────────────────────
+  //
+  // An implicit m2m field is a relation, not a column. It used to reach
+  // typeToJsonSchema, where type.array turned it into an array-of-string
+  // property — and, being non-optional with no @default, into a REQUIRED one.
+  // Junction's autoValidate then demanded `tags` on every create.
+
+  test('m2m field is excluded from properties', () => {
+    const r = parse(m2mSchema)
+    const js = generateJsonSchema(r.schema)
+    expect(js['$defs']?.posts?.properties?.tags).toBeUndefined()
+    expect(js['$defs']?.tags?.properties?.posts).toBeUndefined()
+  })
+
+  test('m2m field is not required', () => {
+    const r = parse(m2mSchema)
+    const js = generateJsonSchema(r.schema)
+    expect(js['$defs']?.posts?.required ?? []).not.toContain('tags')
+  })
+
+  test('m2m field is excluded in full mode too', () => {
+    const r = parse(m2mSchema)
+    const js = generateJsonSchema(r.schema, { mode: 'full' })
+    expect(js['$defs']?.posts?.properties?.tags).toBeUndefined()
+  })
+
+  test('the relation is still described in x-relations', () => {
+    const r = parse(m2mSchema)
+    const js = generateJsonSchema(r.schema)
+    const rels = js['$defs']?.posts?.['x-relations'] as any[]
+    const tags = rels?.find((x: any) => x.field === 'tags')
+    expect(tags).toEqual({ field: 'tags', model: 'tags', type: 'm2m' })
+  })
+
   // ── DDL ─────────────────────────────────────────────────────────────────────
 
   test('detectM2MPairs finds the pair', async () => {

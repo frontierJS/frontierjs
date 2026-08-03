@@ -43,16 +43,19 @@ or `.md` files alongside your other source. See [Vite plugin](#vite-plugin).
 | `compiler.js` | Mesa → JS compiler. `compile(src, opts)` → `ctx` |
 | `compiler-md.js` | Markdown + frontmatter compiler. `compileMd(src, opts)` → `ctx` |
 | `runtime.js` | Signals, effects, DOM helpers, event delegation, mount, blocks |
-| `render.js` | `renderToHTML(component, props, opts)` — happy-dom SSR |
+| `render.js` | `renderToHTML(component, props, opts)` / `renderAll` / `wrapPage` — happy-dom static rendering. See `STATIC_RENDERING.md` |
 | `render-component.js` | Source-in pipeline: `renderComponent` / `renderFile` for HTML, email, fragment, JS |
 | `css-inliner.js` | CSS-to-`style=""` inliner with custom-property resolution |
-| `index.html` | Browser REPL — `npm run serve` |
-| `examples.js` | All REPL examples — 55 across 20 groups |
-| `compiler_test.js` | Compiler tests (399) |
-| `runtime.test.js` | Runtime tests (236) |
-| `render-component.test.js` | Render pipeline tests (25) |
+| `index.html` | Browser REPL — `npm run serve`. Mounts previews via `mount()`; see `repl.test.js` |
+| `examples.js` | All REPL examples — 66 across 22 groups |
+| `compiler_test.js` | Compiler tests (406) |
+| `runtime.test.js` | Runtime tests (286) |
+| `render-component.test.js` | Render pipeline tests (29) |
+| `render-ssr.test.js` | Static renderer + server↔client agreement (30) |
+| `repl.test.js` | REPL module graph, example compile + coverage, preview interactivity (9) |
+| `emission.test.js` | Compiler must emit parseable JS — component `bind:`, multi-line attrs (7) |
 | `css-inliner.test.js` | CSS inliner tests (36) |
-| `email-kit.test.js` | Email kit integration (27, requires `@frontierjs/mesa-email`) |
+| `email-kit.test.js` | Email kit integration (27, skipped — requires `@frontierjs/mesa-email`) |
 | `mesa-vite/` | Vite plugin |
 | `mesa-bench/` | Benchmark component |
 
@@ -222,6 +225,30 @@ app.find(sel)    // querySelector scoped to the mounted tree
 app.destroy()    // unmount + cleanup delegation listeners + removed styles
 ```
 
+### Owning a lifetime — `createRoot`
+
+`mount()` and `destroy()` cover an app. When you need a span of work that ends —
+rendering one page of a static build, swapping one preview for another —
+`createRoot` owns everything created inside it and disposes it on demand.
+
+```js
+import { createRoot, flushSync } from '@frontierjs/mesa/runtime.js'
+
+const html = createRoot((dispose) => {
+  Component(anchor, props, null)
+  flushSync()
+  const out = container.innerHTML
+  dispose()                  // every effect created above is gone
+  return out
+})
+```
+
+It gives **ownership without tracking**: the root subscribes to nothing, so it
+can never re-run. `createEffect` looks like a substitute and is not — an effect
+subscribes to what its body reads, so a component that reads and then writes a
+store during setup re-triggers the effect that is running it. See VISION
+**RULE 54**.
+
 ### Shadow DOM mount
 
 `mount()` accepts a `root` option that scopes both event delegation and
@@ -274,16 +301,87 @@ const { html } = await renderFile('./snippets/Hero.mesa', { target: 'fragment' }
 const { modules, entry } = await renderFile('./App.mesa', { target: 'js' })
 ```
 
-For low-level rendering of an already-compiled component factory, use
-`render.js`:
+For low-level rendering of an **already-compiled** component factory — a bundler
+plugin, or an SSG loop that imports its own pages — use `render.js`. The
+pipeline above renders through it, so there is only one renderer.
 
 ```js
 import { initRenderer, renderToHTML } from '@frontierjs/mesa/render'
 
-initRenderer()  // call once before importing compiled components
-
-const html = await renderToHTML(MyComponent, { title: 'Hello' })
+initRenderer()                                   // 1. install DOM globals
+const { default: Page } = await import('./Page.mesa.js')   // 2. then import
+const html = await renderToHTML(Page, { title: 'Hello' })  // 3. then render
 ```
+
+The order matters: compiled components call `htmlToFragment()` at module-load
+time, so the DOM has to exist before the `import()`, not just before the render.
+
+```js
+// A whole static page, shell included
+const page = await renderToHTML(Page, props, {
+  full: true,
+  title: 'My Page',
+  css: '/assets/site.css',
+  scripts: ['/assets/app.js'],
+  islandLoader: '/assets/islands.js',
+  meta: { description: 'a page' },
+})
+
+// Many pages — serial by construction; see STATIC_RENDERING.md on concurrency
+const pages = await renderAll([
+  { component: Page, props: { slug: 'a' } },
+  { component: Page, props: { slug: 'b' } },
+])
+```
+
+On the server, `$onMount` and path watches are inert while effects and block
+directives run and are then disposed; `{#await}` renders its `{:pending}`
+branch; `{#virtual each}` renders nothing. Comment anchors are stripped unless
+you pass `{ keepAnchors: true }`.
+
+### Islands — `{ islands: true }`
+
+`client:*` directives are stripped by default (RULE 26). Pass `islands: true` to
+mark them in the output instead, so a client loader can find a prerendered
+island and mount into it:
+
+```js
+const { html, islands } = await renderFile('./pages/Post.mesa', {
+  target: 'fragment',
+  islands: true,
+})
+```
+
+```html
+<article>
+  <p>static</p>
+  <!--mesa-island {"component":"Counter","directive":"load","props":{"start":3}}-->
+  <button>3</button>
+  <!--/mesa-island-->
+</article>
+```
+
+The marker carries the props **as rendered**, not just the literal attributes a
+compile-time pass can see — `start={2 + 3}` gives `{"start":5}`. The returned
+`.islands` array is the complementary build-time view (`{ component, directive,
+media?, props?, file }` per call site), which is what maps a component name onto
+a module to import.
+
+Markers are written in a **server render only** — `island()` calls the component
+directly on a live client — and omitting the flag produces byte-identical output
+to before. Mounting one needs no new protocol: remove the nodes between the
+markers, then `mount(openComment, Comp, { props })`. Use `mount`, not a bare
+`Comp(anchor, props, null)`, or the island renders correctly and responds to
+nothing — a direct call registers no delegation root.
+
+The loader itself, per-island bundling, and name→module resolution belong to the
+meta-framework; `SSR_SPEC.md` W3 has the full rationale, including why the
+markers are comments rather than a `<mesa-island>` element and two traps waiting
+for whoever writes the loader.
+
+**[`STATIC_RENDERING.md`](./STATIC_RENDERING.md)** has the full model — server
+semantics, the page shell, concurrency, lifetimes, and what is and isn't wired
+up to Sierra's `static` target yet.
 
 ---
 

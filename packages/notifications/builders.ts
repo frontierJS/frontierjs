@@ -57,7 +57,12 @@ class InAppBuilder {
   }
 
   /**
-   * Build the final InAppMessage. Called internally by the inApp driver.
+   * Build the final InAppMessage. Call this at the end of the chain.
+   *
+   * notify() also calls it for you if a builder reaches it un-built, so an
+   * omitted build() degrades to working rather than to an empty payload — but
+   * the declared return type of toInApp() is InAppMessage, so TypeScript will
+   * (correctly) ask you for it.
    */
   build(): InAppMessage {
     return {
@@ -81,6 +86,7 @@ class InAppBuilder {
  *   .action('View order', `/orders/${payment.orderId}`)
  *   .context('Order', payment.orderId)
  *   .data({ amount: payment.amount, orderId: payment.orderId })
+ *   .build()          // ← required: build() produces the plain message
  */
 export function inApp(): InAppBuilder {
   return new InAppBuilder()
@@ -134,7 +140,10 @@ class MailBuilder {
   }
 
   /**
-   * Build the final MailMessage. Called internally by the email driver.
+   * Build the final MailMessage. Call this at the end of the chain.
+   *
+   * notify() also calls it for you if a builder reaches it un-built — without
+   * that, an omitted build() produced an email with no subject and no body.
    */
   build(): MailMessage {
     return {
@@ -154,6 +163,7 @@ class MailBuilder {
  *   .greeting(`Hi ${user.firstName}`)
  *   .line(`$${payment.amount} received for order #${payment.orderId}.`)
  *   .action('View order', `https://app.example.com/orders/${payment.orderId}`)
+ *   .build()          // ← required: build() produces the plain message
  */
 export function mail(): MailBuilder {
   return new MailBuilder()

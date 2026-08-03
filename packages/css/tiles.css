@@ -1,0 +1,67 @@
+/*
+ * tiles.css
+ * Tile — the compact metric unit dashboards are built from. Closes the
+ * twelfth vocabulary term; only Tooltip is contract-only after this.
+ *
+ * A Tile is a surface composite, so it gets background, border, radius and
+ * the whole tone recipe by having its name added to the :where() list in
+ * surface.css — one edit, which is what that list is supposed to cost.
+ *
+ *   <article class="tile">
+ *     <div class="tile-label">Revenue</div>
+ *     <div class="tile-value">$48,290</div>
+ *     <div class="tile-delta success">+12.4%</div>
+ *   </article>
+ *
+ * <article> because a Tile is a self-contained unit you could lift out
+ * (Principle 2). The label goes first in the DOM so a screen reader hears
+ * "Revenue, $48,290" rather than a number with no subject; put
+ * `order: -1` on .tile-value if you want the number visually on top.
+ */
+
+/*
+ * ── Tiles — the dashboard grid ──────────────────────────────────────
+ * auto-fit + minmax means the column count responds to the container
+ * without a single media query, and without the consumer picking a number.
+ */
+.tiles {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--tile-min, 12rem), 1fr));
+  gap:                   1rem;
+}
+
+.tile {
+  padding: 1rem 1.25rem;
+}
+
+.tile-label {
+  font-size:      0.8125rem;
+  font-weight:    500;
+  color:          var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tile-value {
+  font-size:   1.75rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color:       var(--surface-color);
+  /* Tabular figures so a column of tiles does not jitter as values change. */
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Reads --bg-mix, so `class="tile-delta success"` tints it like anything
+ * else. Untoned it falls back to muted rather than inheriting the tile's
+ * tone — tones are element-scoped (see tones.css).
+ */
+.tile-delta {
+  display:     inline-flex;
+  align-items: center;
+  gap:         0.25rem;
+  font-size:   0.8125rem;
+  font-weight: 600;
+  color:       var(--bg-mix, var(--ink-mute));
+  font-variant-numeric: tabular-nums;
+}

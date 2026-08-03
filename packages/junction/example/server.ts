@@ -5,11 +5,15 @@
 // Endpoints:
 //   POST /auth/login   { username, password } → { token, user }
 //   POST /auth/logout  → { ok }
-//   GET    /api/leads
-//   POST   /api/leads        (auth required)
-//   GET    /api/leads/:id
-//   PATCH  /api/leads/:id    (auth required)
-//   DELETE /api/leads/:id    (auth required)
+//   GET    /api/leads         (auth required)
+//   POST   /api/leads         (auth required)
+//   GET    /api/leads/:id     (auth required)
+//   PATCH  /api/leads/:id     (auth required)
+//   DELETE /api/leads/:id     (owner)
+//
+// EVERY lead route needs a token, reads included — the model is
+// @@gate("4.4.4.6"), so R/C/U are USER and D is OWNER. Log in first and send
+// `authorization: Bearer <token>`; without one, reads are a 401, not a 200.
 //
 // WebSocket:
 //   ws://localhost:3000  — real-time lead events
@@ -50,12 +54,12 @@ enum LeadStatus {
 }
 
 model leads {
-  id        Integer    @id
-  name      Text       @length(1, 200) @trim
-  company   Text       @trim
-  email     Text       @email
+  id        Int    @id
+  name      String       @length(1, 200) @trim
+  company   String       @trim
+  email     String       @email
   status    LeadStatus @default(new)
-  value     Real       @gte(0)
+  value     Float       @gte(0)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @default(now()) @updatedAt
 
@@ -72,11 +76,13 @@ const gate = new GatePlugin({
   },
 })
 
-const db = await createClient('./smoke.db', SCHEMA, { plugins: [gate] })
+const db = await createClient({ db: './smoke.db', schema: SCHEMA, plugins: [gate] })
 
-// Apply migrations / create tables on first run
+// Tables: createClient() already ran the DDL — it does that for :memory: and
+// for a file that doesn't exist yet. apply() is the FILE-migrations function
+// and takes a directory, not an options object; it is a no-op with no files.
 const { apply } = await import('@frontierjs/litestone')
-await apply(db, { schema: SCHEMA, migrations: './smoke-migrations' })
+await apply(db, './smoke-migrations')
 
 // Seed some leads if the table is empty
 const count = await db.asSystem().leads.count()
@@ -109,8 +115,10 @@ function issueToken(username: string): string {
 const app = createApp({
   config: {
     ...defaultConfig,
-    port:     3000,
-    database: { url: '', log: false },
+    port:      3000,
+    apiPrefix: '/api',   // apiPrefix defaults to '' — without this the service
+                         // mounts at /leads and every documented /api/… path 404s
+    database:  { url: '', log: false },
   },
   auth: {
     async verifySession(token: string) {

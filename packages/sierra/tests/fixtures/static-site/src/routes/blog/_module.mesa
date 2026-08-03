@@ -1,0 +1,7 @@
+<!-- Prop form — what slot-rewrite.js emits, and what Sierra's own fixtures use.
+     Paired with the native <slot /> layout above, this route's chain is mixed,
+     which is the case the wrapper has to satisfy without knowing either. -->
+<script>
+  export let children = null
+</script>
+<main class="blog"><nav>blog-nav</nav>{@render children?.()}</main>

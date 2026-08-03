@@ -198,7 +198,14 @@ export interface CronSchedule {
   name:      string
   cron:      string
   timeZone?: string
-  fn:        () => void | Promise<void>
+  /**
+   * Declared `() => void`, not `() => void | Promise<void>`, on purpose.
+   * TypeScript only discards a returned value when the expected return type is
+   * exactly `void`; the union makes any handler that returns something — e.g.
+   * `() => caravan.dispatch(...)`, which resolves a job id — a type error.
+   * `async` functions still assign fine here, and _tick() awaits the result.
+   */
+  fn:        () => void
 }
 
 export class CronScheduler {
@@ -258,7 +265,9 @@ export class CronScheduler {
 
       if (isValid) {
         try {
-          const result = schedule.fn()
+          // fn is declared `() => void` (see CronSchedule) but may really
+          // return a promise — recover it to attach rejection handling.
+          const result = schedule.fn() as unknown
           if (result instanceof Promise) {
             result.catch(err =>
               console.error(`[Caravan] Cron "${schedule.name}" failed:`, err)

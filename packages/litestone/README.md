@@ -1542,10 +1542,10 @@ bun run build:lib:testing     # also emits testing.js (makeTestClient, Factory)
 import { createClient, parse } from './vendor/litestone.js'
 ```
 
-**Why this exists: vendoring.** Dropping the bundle into another package pins it to *this* workspace build, instead of whatever `"@frontierjs/litestone": "latest"` resolves to from npm. The two are not interchangeable — 1.0.6 uses `Int`/`String`/`Float` and hard-rejects the older `Integer`/`Text`/`Real` scalars, so a package silently loading the npm copy fails on schemas that are valid here. Every bundle carries a banner naming its version and git SHA:
+**Why this exists: vendoring.** Dropping the bundle into another package pins it to *this* workspace build, instead of whatever `"@frontierjs/litestone": "latest"` resolves to from npm. The two are not interchangeable — 1.1.0 uses `Int`/`String`/`Float` and hard-rejects the older `Integer`/`Text`/`Real` scalars still served by npm's `latest`, so a package silently loading the registry copy fails on schemas that are valid here. Every bundle carries a banner naming its version and git SHA:
 
 ```js
-// @frontierjs/litestone 1.0.6 (git 3560dba) — bundled single-file build
+// @frontierjs/litestone 1.1.0 (git 3560dba) — bundled single-file build
 ```
 
 Sourcemaps are emitted by default (`--no-sourcemap` to skip) — without them, stack traces point into minified output. `--no-minify` gives readable source at 549 KB.

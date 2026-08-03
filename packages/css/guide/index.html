@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ksite Design System — @frontierjs/css style guide</title>
+
+<!--
+  The interactive reference. Plain HTML + one plain .js file, no build step,
+  no framework — the same bet the package itself makes.
+
+  The real system CSS is linked, never copied. That is the whole point: the
+  guide cannot drift from the source. guide.css below is chrome only (.sg-*)
+  plus a few preview utilities UnoCSS used to provide.
+-->
+<link rel="stylesheet" href="../index.css">
+<link rel="stylesheet" href="./guide.css">
+</head>
+
+<body>
+
+<!--
+  The shell is rendered by guide.js, not written here. Two reasons: the theme
+  switcher has to write custom properties onto .sg-app, and the 45 pages are
+  one map in JS rather than 45 hidden sections in the DOM.
+-->
+<div class="sg-app" id="app"></div>
+
+<script src="./guide.js"></script>
+
+</body>
+</html>

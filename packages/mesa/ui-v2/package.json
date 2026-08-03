@@ -1,0 +1,17 @@
+{
+  "name": "@frontierjs/mesa-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Mesa UI component kit — forms, display, layout, overlay, feedback",
+  "exports": {
+    "./tokens.css":     "./tokens.css",
+    "./utils.js":       "./utils.js",
+    "./stores/*":       "./stores/*.js",
+    "./components/*":   "./components/*.mesa"
+  },
+  "peerDependencies": {
+    "@frontierjs/mesa": "^0.1.0"
+  },
+  "keywords": ["mesa", "ui", "components", "forms", "overlay"],
+  "license": "MIT"
+}

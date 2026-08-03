@@ -28,7 +28,7 @@
  * rules in their own file.
  */
 
-:where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer) {
+:where(.surface, .card, .tile, .alert, .toast, .dialog, .popover, .drawer) {
   --surface-tint-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
   --surface-tint-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
   --surface-tint-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
@@ -68,6 +68,30 @@
     --surface-border: transparent;
     box-shadow:       none;
   }
+}
+
+/*
+ * ── A closed <dialog> has to be told to stay closed ─────────────
+ *
+ * The UA stylesheet hides an inactive dialog with
+ * `dialog:not([open]) { display: none }` — and an *author* declaration
+ * beats a UA one at any specificity, including the zero-specificity
+ * `display: block` above. So the base silently unhid every closed
+ * `.dialog` and `.drawer` in the package: they rendered on page load,
+ * before anything called showModal().
+ *
+ * This is the same trap frame.css documents for `.view[hidden]`. The
+ * lesson was learned there and never carried across to the two
+ * composites that are real <dialog> elements. It went unnoticed because
+ * nothing consumed the package until the demo app did.
+ *
+ * Scoped to the element rather than the class: `[open]` means nothing on
+ * a <div>, so an unscoped `:not([open])` would hide anything that
+ * borrowed the class. `dialog` + `:not()` also puts this at (0,1,1),
+ * comfortably above the base it is correcting.
+ */
+dialog:where(.dialog, .drawer, .surface):not([open]) {
+  display: none;
 }
 
 /* ── Shared sub-regions ───────────────────────────────────────── */

@@ -1,0 +1,50 @@
+<script>
+  // Card.mesa
+  // General-purpose content container with optional header and footer snippets.
+  //
+  // Usage:
+  //   <!-- Simple -->
+  //   <Card>Content here</Card>
+  //
+  //   <!-- With header and footer -->
+  //   <Card>
+  //     {#snippet header()}<h3>Title</h3>{/snippet}
+  //     <p>Body</p>
+  //     {#snippet footer()}<Button>Save</Button>{/snippet}
+  //   </Card>
+
+  export let padding  = 'md'    // 'none' | 'sm' | 'md' | 'lg'
+  export let shadow   = 'sm'    // 'none' | 'sm' | 'md' | 'lg'
+  export let border   = true
+  export let header   = null    // snippet
+  export let footer   = null    // snippet
+
+  const paddingMap = { none: '', sm: 'p-3', md: 'p-5', lg: 'p-7' }
+  const shadowMap  = { none: '', sm: 'shadow-sm', md: 'shadow-md', lg: 'shadow-lg' }
+
+  const bodyPad   = paddingMap[padding] ?? paddingMap.md
+  const cardShadow = shadowMap[shadow]  ?? shadowMap.sm
+</script>
+
+<div
+  class="rounded-xl bg-white overflow-hidden
+         {border ? 'border border-gray-200' : ''}
+         {cardShadow}"
+  {class}
+>
+  {#if header}
+    <div class="px-5 py-4 border-b border-gray-100 {!border ? 'border-0' : ''}">
+      {@render header?.()}
+    </div>
+  {/if}
+
+  <div class="{bodyPad}">
+    <slot />
+  </div>
+
+  {#if footer}
+    <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50 {!border ? 'border-0 bg-transparent' : ''}">
+      {@render footer?.()}
+    </div>
+  {/if}
+</div>

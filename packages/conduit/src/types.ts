@@ -26,7 +26,10 @@ export type TargetKind =
 export type TargetAuth =
   | { type: 'bearer';  ref: string }
   | { type: 'api_key'; ref: string; header: string }   // header name is not secret
-  | { type: 'hmac';    ref: string }
+  // Signs a canonical string over method, path, timestamp, nonce and a
+  // hash of the body. `header_prefix` names the three headers this emits
+  // (default 'X-Hub' → X-Hub-Signature, X-Hub-Timestamp, X-Hub-Nonce).
+  | { type: 'hmac';    ref: string; header_prefix?: string }
   | { type: 'none' }
 
 export interface TargetDescriptor {
@@ -107,7 +110,25 @@ export interface ConduitRequest {
   // Auth headers take precedence: a caller cannot override or strip them.
   headers?:    Record<string, string>
 
+  // Opts a non-idempotent request (POST, PATCH) into the retry policy, and
+  // is forwarded as an `Idempotency-Key` header so the target can collapse
+  // duplicates. Without it, POST and PATCH are never retried — a timed-out
+  // `POST /servers` that actually committed must not create four servers.
+  idempotency_key?: string
+
+  // Checks the decoded response before it is handed back. Without one,
+  // `data` is an unchecked cast: a provider returning {"error": …} under
+  // HTTP 200 types and behaves as a success.
+  validate?: ResponseValidator
+
   timeout_ms?: number
+}
+
+// Deliberately structural rather than tied to a schema library — Junction's
+// `createSchema`, zod, valibot or a hand-written predicate all satisfy it
+// with a small adapter, and Conduit's core stays dependency-free.
+export interface ResponseValidator<T = unknown> {
+  validate(data: unknown): { ok: true; value: T } | { ok: false; errors: string[] }
 }
 
 export interface ConduitResponse<T = unknown> {
@@ -166,6 +187,12 @@ export type ConduitErrorKind =
   // response larger than the configured cap. The caller is at fault, not
   // the network or the target, so these are never retryable.
   | 'invalid_request'
+  // The breaker for this target is open: it failed repeatedly and Conduit
+  // is refusing to send until the reset window elapses. Nothing left the
+  // process — this is load shed on the way out.
+  | 'circuit_open'
+  // The per-target concurrency cap is full. Also shed before dispatch.
+  | 'overloaded'
 
 export interface ConduitError {
   kind:      ConduitErrorKind
@@ -178,13 +205,36 @@ export interface ConduitError {
 
 // ─── Hooks ──────────────────────────────────────────────────
 
+// Hooks may be async. They are invoked fire-and-forget — a hook is never
+// awaited, so exporting a span or writing a log cannot slow a request — and
+// a throw or rejection is caught and logged rather than failing the caller.
+//
+// Declared `void` rather than `void | Promise<void>` deliberately. TypeScript
+// only ignores a returned value when the expected return type is exactly
+// `void`; widening it to a union means the most natural way to write a hook —
+// `(req) => seen.push(req)` — becomes a type error. `void` still accepts an
+// async hook, since `Promise<void>` is assignable in a void return position.
+export type HookResult = void
+
 export interface ConduitHooks {
-  onRequest?:      (req: ConduitRequest) => void
-  onResponse?:     (req: ConduitRequest, res: ConduitResult<unknown>) => void
-  onError?:        (req: ConduitRequest, err: ConduitError) => void
-  onReconnect?:    (target: string) => void
-  onRegistered?:   (descriptor: TargetDescriptor) => void
-  onDeregistered?: (target: string) => void
+  onRequest?:      (req: ConduitRequest) => HookResult
+  onResponse?:     (req: ConduitRequest, res: ConduitResult<unknown>) => HookResult
+  onError?:        (req: ConduitRequest, err: ConduitError) => HookResult
+
+  // Fires once per retried attempt, before the backoff sleep. `attempt` is
+  // 1-based: the first retry reports 1. Without this, retries were invisible
+  // to any observability the caller wired up.
+  onRetry?:        (req: ConduitRequest, err: ConduitError, attempt: number) => HookResult
+
+  // Stream lifecycle. onStreamEnd reports how many chunks were yielded;
+  // a stream that fails to establish or drops mid-flight reports through
+  // onError instead.
+  onStreamStart?:  (req: ConduitRequest) => HookResult
+  onStreamEnd?:    (req: ConduitRequest, chunks: number) => HookResult
+
+  onReconnect?:    (target: string) => HookResult
+  onRegistered?:   (descriptor: TargetDescriptor) => HookResult
+  onDeregistered?: (target: string) => HookResult
 }
 
 // ─── Options ────────────────────────────────────────────────
@@ -205,6 +255,11 @@ export interface ConduitOptions {
   timeout_ms?:  number    // default: 10_000
   retry_limit?: number    // default: 3
 
+  // Total wall-clock budget for one send(), across every attempt and every
+  // backoff sleep. Default: 45_000. Without it, four attempts at 10s plus
+  // backoff can occupy a request handler for ~43.5s.
+  deadline_ms?: number
+
   // Hard cap on a response body, in bytes. Default: 10 MiB.
   // Reading stops and the request fails with `invalid_request` rather than
   // buffering an unbounded response from a misbehaving provider.
@@ -212,13 +267,59 @@ export interface ConduitOptions {
 
   hooks?:       ConduitHooks
 
-  // Expose management routes as a Junction service.
-  // Disabled by default. Descriptors returned by these routes carry
-  // credential *refs* only — no secret material. The routes are still
-  // unauthenticated unless the app installs auth, either app-wide via
-  // app.hooks({ before: { all: [authenticate] } }) or per-service.
-  management?:  boolean | { path?: string }
+  // Per-target load shedding. Without it, a provider outage produces
+  // retry_limit+1 amplification against the failing dependency while
+  // pinning your own request handlers.
+  resilience?:  ResilienceOptions
+
+  // Returns headers to attach to every outbound request — a traceparent,
+  // a correlation id. Caller-supplied `req.headers` override these, and
+  // auth headers override everything.
+  // See createTraceContext() for a W3C-traceparent implementation.
+  trace?:       (req: ConduitRequest) => Record<string, string> | null | undefined
+
+  // Expose management routes as a Junction service. Disabled by default.
+  //
+  // Descriptors returned by these routes carry credential *refs* only —
+  // no secret material. But the routes still enumerate your infrastructure
+  // and can deregister targets, so access has to be a decision, not an
+  // oversight: enabling management requires either `hooks` or an explicit
+  // `public: true`. Enabling it with neither throws at configure().
+  //
+  // `hooks` is Junction's HookMap; it is typed loosely here so the core
+  // stays free of a Junction import.
+  management?:  {
+    path?:   string
+    hooks?:  unknown
+    public?: true
+  }
 }
+
+// ─── Resilience ─────────────────────────────────────────────
+
+export interface ResilienceOptions {
+  /**
+   * Consecutive failures before a target's breaker opens.
+   * Default 5. Set to 0 to disable the breaker.
+   *
+   * Only failures that implicate the target count — connection_failed,
+   * timeout, server_error. A misconfigured credential or an unserialisable
+   * body is your bug, not the target's, and must not shed load.
+   */
+  failure_threshold?: number
+
+  /** How long a breaker stays open before admitting one trial request. Default 30_000. */
+  reset_ms?: number
+
+  /**
+   * Max in-flight requests per target. Default: unlimited.
+   * Excess requests fail fast with `overloaded` rather than queueing —
+   * a bounded queue just moves the pile-up somewhere less visible.
+   */
+  max_concurrent?: number
+}
+
+export type BreakerState = 'closed' | 'open' | 'half_open'
 
 // ─── The Interface ──────────────────────────────────────────
 
@@ -232,6 +333,13 @@ export interface IConduit {
   deregister(target: string): Promise<void>
   resolve(target: string): Promise<TargetDescriptor | null>
   list(): Promise<TargetDescriptor[]>
+
+  /**
+   * Refresh a target's `last_seen_at` — the heartbeat path.
+   * Cheaper than re-`register()`ing a whole descriptor, and it does not
+   * evict the pooled connection.
+   */
+  touch(target: string): Promise<void>
 
   /** Synchronous snapshot for metrics — reads maintained counters, never the store. */
   stats(): ConduitStats
@@ -264,4 +372,14 @@ export interface ConduitStats {
   }
 
   errors: Record<string, number>   // keyed by ConduitErrorKind
+
+  // Only targets that are not closed-and-idle appear here, so an empty
+  // object means everything is healthy — the shape you want to eyeball
+  // at 3am without reading past it.
+  breakers: Record<string, {
+    state:      BreakerState
+    failures:   number
+    opened_at:  number | null
+    in_flight:  number
+  }>
 }

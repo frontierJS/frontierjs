@@ -1,0 +1,2 @@
+<!-- Native Mesa slot — reads the third (block) argument. -->
+<div class="site"><header>site-header</header><slot /></div>

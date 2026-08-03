@@ -1,0 +1,86 @@
+<script>
+  // Tooltip.mesa
+  // Hover-triggered informational label. Uses mesa:portal for correct stacking.
+  // Position is calculated from the trigger's bounding rect on mouseenter.
+  //
+  // Usage:
+  //   <Tooltip label="Saved to cloud">
+  //     <Button>Save</Button>
+  //   </Tooltip>
+  //
+  //   <Tooltip label="Delete permanently" placement="bottom">
+  //     <button>Delete</button>
+  //   </Tooltip>
+
+  export let label     = ''         // tooltip text
+  export let placement = 'top'      // 'top' | 'bottom' | 'left' | 'right'
+  export let delay     = 300        // ms before showing (prevents flash on quick pass)
+  let visible   = false
+  let x         = 0
+  let y         = 0
+  let triggerEl
+  let showTimer
+
+  // Placement-to-transform map — static (placement is export let so these derive if it changes)
+  const transformMap = {
+    top:    'translateX(-50%) translateY(-100%)',
+    bottom: 'translateX(-50%)',
+    left:   'translateX(-100%) translateY(-50%)',
+    right:  'translateY(-50%)',
+  }
+  const offsetDir = {
+    top:    (r) => ({ x: r.left + r.width / 2,  y: r.top - 8 }),
+    bottom: (r) => ({ x: r.left + r.width / 2,  y: r.bottom + 8 }),
+    left:   (r) => ({ x: r.left - 8,            y: r.top + r.height / 2 }),
+    right:  (r) => ({ x: r.right + 8,           y: r.top + r.height / 2 }),
+  }
+
+  const transform  = transformMap[placement] ?? transformMap.top
+  const getOffset  = offsetDir[placement]    ?? offsetDir.top
+
+  function show() {
+    if (!label) return
+    clearTimeout(showTimer)
+    showTimer = setTimeout(() => {
+      if (!triggerEl) return
+      const pos = getOffset(triggerEl.getBoundingClientRect())
+      x = pos.x
+      y = pos.y
+      visible = true
+    }, delay)
+  }
+
+  function hide() {
+    clearTimeout(showTimer)
+    visible = false
+  }
+</script>
+
+<!-- Trigger wrapper -->
+<div
+  bind:this={triggerEl}
+  class="inline-block"
+  {class}
+  on:mouseenter={show}
+  on:mouseleave={hide}
+  on:focusin={show}
+  on:focusout={hide}
+>
+  <slot />
+</div>
+
+{#if visible && label}
+  <mesa:portal to={document.body}>
+    <div
+      role="tooltip"
+      class="fixed z-[200] px-2.5 py-1.5 rounded-md text-xs font-medium
+             bg-gray-900 text-white shadow-lg pointer-events-none
+             max-w-xs whitespace-normal leading-snug"
+      style:left="{x}px"
+      style:top="{y}px"
+      style:transform={transform}
+    >
+      {label}
+    </div>
+  </mesa:portal>
+{/if}

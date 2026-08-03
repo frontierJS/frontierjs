@@ -1,0 +1,140 @@
+/*
+ * facts.css
+ * Facts — the label/value list a detail screen is mostly made of.
+ * "Customer: Acme Corp", "Created: 12 Mar", "Status: [Paid]".
+ *
+ * ── Structure ────────────────────────────────────────────────────────
+ *
+ *   <dl class="facts">
+ *     <dt>Customer</dt>
+ *     <dd>Acme Corp</dd>
+ *
+ *     <dt>Status</dt>
+ *     <dd><span class="badge success">Paid</span></dd>
+ *
+ *     <dt>Owner</dt>
+ *     <dd class="cluster">
+ *       <img class="avatar" src="/u/12.jpg" alt="" style="--avatar-size: 1.25rem">
+ *       Dana Ortiz
+ *     </dd>
+ *   </dl>
+ *
+ * <dl> is the whole point. A pile of divs with a bold span makes the
+ * pairing visual only; a description list announces "Customer, Acme Corp"
+ * as an associated pair, and lets a screen reader user move between terms.
+ * This is one of the few remaining HTML elements that does real semantic
+ * work no ARIA pattern replaces.
+ *
+ * ── No Anatomy classes ───────────────────────────────────────────────
+ *
+ * There is no .fact-label / .fact-value, because <dt> and <dd> already
+ * name those positions — adding classes would be Principle 1 (minimal DOM)
+ * violated for no gain, and would let markup drift from meaning by putting
+ * .fact-label on something that is not a <dt>.
+ *
+ * The cost is that the grid targets direct children only, so a <div> class
+ * wrapper around each pair breaks the layout. That is deliberate: the
+ * wrapper is what the <dl> is for.
+ */
+
+.facts {
+  /*
+   * The label column sizes to the longest label rather than to a guess,
+   * capped so one long label cannot eat the value column.
+   *
+   * `fit-content(40%)` is the track function that means exactly that. The
+   * obvious-looking `min(max-content, 40%)` does NOT work and fails
+   * silently: min() takes <length-percentage>, `max-content` is not one,
+   * so the whole grid-template-columns declaration is invalid and the grid
+   * quietly collapses to a single column.
+   */
+  --fact-label-max: 40%;
+
+  display:               grid;
+  grid-template-columns: fit-content(var(--fact-label-max)) minmax(0, 1fr);
+  gap:                   0.625rem 1.25rem;
+  align-items:           baseline;
+
+  margin:      0;
+  font-family: var(--font-primary);
+  font-size:   0.875rem;
+  line-height: 1.5;
+}
+
+.facts > dt {
+  color:       var(--ink-mute);
+  font-weight: 500;
+  /* Long labels wrap rather than forcing the column wider. */
+  overflow-wrap: anywhere;
+}
+
+.facts > dd {
+  margin: 0;
+  color:  var(--ink);
+  /* Values are the thing that is actually variable — IDs, URLs, emails. */
+  overflow-wrap: anywhere;
+}
+
+/*
+ * ── Divided — a rule between pairs ───────────────────────────────────
+ *
+ * Same modifier name and meaning as `.rows.divided`. Long fact lists on a
+ * detail pane read much better ruled.
+ *
+ * The rule goes on the top edge of both cells in a row, and the first row
+ * is excluded — with a two-column grid that is children 1 and 2, which is
+ * what :nth-child(-n + 2) says.
+ */
+.facts.divided {
+  /*
+   * The column gap has to go, and the label carries it as padding instead.
+   * A border cannot span a grid gap, so with a gap the rule comes out as
+   * two disconnected segments with a hole between the columns — visible
+   * and obviously wrong the moment it is rendered, and invisible to a test
+   * that only asks whether a border exists.
+   */
+  column-gap: 0;
+}
+.facts.divided > dt {
+  padding-inline-end: 1.25rem;
+}
+
+.facts.divided > dt,
+.facts.divided > dd {
+  padding-block-start: 0.625rem;
+  border-block-start:  1px solid var(--rule);
+}
+.facts.divided > :nth-child(-n + 2) {
+  padding-block-start: 0;
+  border-block-start:  none;
+}
+
+/*
+ * ── Narrow ───────────────────────────────────────────────────────────
+ *
+ * Below sm the two columns stop being worth it — the label column is
+ * either too narrow to read or too wide to leave room for the value. Stack
+ * them, and tighten the pair spacing so a stacked pair still reads as one
+ * unit rather than two rows.
+ *
+ * 640px is the sm breakpoint; see tokens.css for why these are literals.
+ */
+@media (max-width: 639px) {
+  .facts {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .facts > dt {
+    padding-block-start: 0.625rem;
+  }
+  .facts > dd {
+    padding-block-end: 0.125rem;
+  }
+  .facts.divided > dd {
+    border-block-start: none;
+    padding-block-start: 0;
+  }
+  .facts.divided > :nth-child(2) {
+    padding-block-start: 0;
+  }
+}

@@ -21,7 +21,7 @@
  * see: the real label on an icon-only control, a table caption, a
  * status region, the word "current" in a breadcrumb.
  *
- *   <button class="btn icon">
+ *   <button class="btn square">
  *     <svg aria-hidden="true">…</svg>
  *     <span class="visually-hidden">Delete invoice</span>
  *   </button>
@@ -88,7 +88,14 @@
   color:          var(--ink);
   border:         1px solid var(--rule-strong);
   border-radius:  var(--btn-radius);
-  box-shadow:     var(--shadow-lg);
+  /*
+   * No shadow at rest. The link is moved off the top of the viewport with
+   * a transform, but a shadow paints outside its box — --shadow-lg reaches
+   * 16px past the bottom edge, which was enough to leave a faint grey
+   * smudge across the top of every page that had a skip link. Off-screen
+   * has to mean nothing paints, not just that the box is gone.
+   */
+  box-shadow:     none;
   font-family:    var(--font-primary);
   font-size:      0.875rem;
   font-weight:    600;
@@ -98,8 +105,8 @@
   transform:  translateY(calc(-100% - 1rem));
   transition: transform 120ms ease-out;
 }
+/* Slide into view on focus; the ring comes from focus.css. */
 .skip-link:focus {
-  transform: translateY(0);
-  outline:      2px solid var(--ring);
-  outline-offset: 2px;
+  transform:  translateY(0);
+  box-shadow: var(--shadow-lg);
 }

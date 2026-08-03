@@ -5,11 +5,12 @@
 // ============================================================
 
 import { BaseTransport } from './base.ts'
-import { ConduitStreamError } from '../types.ts'
+import { ConduitStreamError, CredentialError } from '../types.ts'
 import type {
   ConduitRequest,
   ConduitResult,
   ConduitChunk,
+  ConduitError,
   CredentialResolver,
   TargetDescriptor
 } from '../types.ts'
@@ -41,15 +42,19 @@ type PendingRequest = {
   timer:   ReturnType<typeof setTimeout>
 }
 
-// Internal stream event — keeps the end signal out of ConduitChunk
+// Internal stream event — keeps the end signal out of ConduitChunk.
+// `error` distinguishes a clean stream_end from a socket that dropped
+// mid-stream; without it a consumer cannot tell "the log ended" from
+// "the connection died" (§2.2).
 type StreamEvent =
   | { done: false; chunk: ConduitChunk }
-  | { done: true }
+  | { done: true; error?: ConduitError }
 
 export class WebSocketTransport extends BaseTransport {
   readonly protocol = 'websocket' as const
 
   private ws:             WebSocket | null = null
+  private connecting:     Promise<WebSocket | null> | null = null
   private pending         = new Map<string, PendingRequest>()
   private streamListeners = new Map<string, (event: StreamEvent) => void>()
   private pingTimer:      ReturnType<typeof setInterval> | null = null
@@ -59,11 +64,6 @@ export class WebSocketTransport extends BaseTransport {
 
   onReconnect?: (target: string) => void
 
-  // NOTE(§1.1): this transport still applies no authentication — neither on
-  // the upgrade nor per frame. The resolver is threaded through so the fix
-  // has somewhere to read from, but the mechanism is an open design question
-  // (the standard WebSocket constructor cannot set headers, and signing a
-  // frame does not fit a headers-shaped helper). Tracked as Tier 2.
   constructor(descriptor: TargetDescriptor, credentials: CredentialResolver) {
     super(descriptor, credentials)
   }
@@ -71,7 +71,16 @@ export class WebSocketTransport extends BaseTransport {
   async send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
     const elapsed = this.timer()
 
-    const ws = await this.getConnection()
+    let ws: WebSocket | null
+    try {
+      ws = await this.getConnection()
+    } catch (err) {
+      if (err instanceof CredentialError) {
+        return this.fail('auth_failed', err.message, { retryable: false })
+      }
+      throw err
+    }
+
     if (!ws) {
       return this.fail('connection_failed', `Cannot connect to ${this.descriptor.id}`, {
         retryable: true
@@ -115,7 +124,21 @@ export class WebSocketTransport extends BaseTransport {
   }
 
   async *stream(req: ConduitRequest): AsyncIterable<ConduitChunk> {
-    const ws = await this.getConnection()
+    let ws: WebSocket | null
+    try {
+      ws = await this.getConnection()
+    } catch (err) {
+      if (err instanceof CredentialError) {
+        throw new ConduitStreamError({
+          kind:      'auth_failed',
+          target:    this.descriptor.id,
+          protocol:  this.protocol,
+          message:   err.message,
+          retryable: false,
+        })
+      }
+      throw err
+    }
 
     // Throw rather than return: an unreachable agent and an agent with no
     // output are otherwise indistinguishable to the consumer, and the
@@ -163,6 +186,11 @@ export class WebSocketTransport extends BaseTransport {
           const event = buf.shift()!
           if (event.done) {
             done = true
+            // A socket that dropped mid-stream terminates the consumer with
+            // an error. Previously the close handler touched only `pending`,
+            // so a live `for await` simply never woke again — any network
+            // blip during a log tail wedged the caller forever (§2.2).
+            if (event.error) throw new ConduitStreamError(event.error)
             break
           }
           yield event.chunk
@@ -183,20 +211,62 @@ export class WebSocketTransport extends BaseTransport {
       pending.reject(new Error('Transport destroyed'))
     }
     this.pending.clear()
+
+    // Terminate live stream consumers too — otherwise a `for await` blocks
+    // forever on a transport that has been torn down.
+    for (const listener of this.streamListeners.values()) {
+      listener({
+        done:  true,
+        error: {
+          kind:      'stream_error',
+          target:    this.descriptor.id,
+          protocol:  this.protocol,
+          message:   'Transport destroyed',
+          retryable: false,
+        }
+      })
+    }
+    this.streamListeners.clear()
   }
 
   // ─── Connection Management ────────────────────────────────
 
   private async getConnection(): Promise<WebSocket | null> {
     if (this.ws?.readyState === WebSocket.OPEN) return this.ws
-    return this.connect()
+
+    // Memoise the in-flight connect. Without this, N concurrent sends made
+    // before the socket is up each opened their own socket; every `open`
+    // handler overwrote this.ws and this.pingTimer, so all but the last
+    // became untracked — still open on both ends, each with an orphaned
+    // ping interval that nothing could ever clear (§2.1).
+    if (this.connecting) return this.connecting
+
+    this.connecting = this.connect().finally(() => { this.connecting = null })
+    return this.connecting
   }
 
   private async connect(): Promise<WebSocket | null> {
     if (this.destroyed) return null
 
+    // Credentials are applied to the upgrade request. Resolved before the
+    // socket is constructed so an unresolvable ref throws CredentialError
+    // and no unauthenticated connection is ever opened (§1.1).
+    //
+    // The signature covers method CONNECT and the address path, so a
+    // captured upgrade signature cannot be replayed against a different
+    // endpoint. There is no per-frame signature: this authenticates the
+    // connection, and anything able to write to an established socket can
+    // issue any command on it.
+    const headers = await this.buildAuthHeaders({
+      method: 'CONNECT',
+      path:   safePath(this.descriptor.address),
+    })
+
     return new Promise((resolve) => {
-      const ws = new WebSocket(this.descriptor.address)
+      // `headers` is a Bun extension to the WebSocket constructor — the
+      // standard signature takes only protocols. Conduit is Bun-only
+      // (see engines.bun), so this is a supported path, not a hack.
+      const ws = new WebSocket(this.descriptor.address, { headers } as unknown as string[])
 
       ws.addEventListener('open', () => {
         this.ws             = ws
@@ -212,11 +282,30 @@ export class WebSocketTransport extends BaseTransport {
 
       ws.addEventListener('close', () => {
         this.clearPing()
-        this.ws = null
+        // Only surrender the slot if this socket is still the live one —
+        // a late close from a superseded socket must not null out a
+        // healthy connection.
+        if (this.ws === ws) this.ws = null
+
         for (const pending of this.pending.values()) {
           pending.reject(new Error('WebSocket closed'))
         }
         this.pending.clear()
+
+        // Wake every live stream consumer with a terminal error rather than
+        // leaving them blocked on a notify that will never fire.
+        const err: ConduitError = {
+          kind:      'stream_error',
+          target:    this.descriptor.id,
+          protocol:  this.protocol,
+          message:   'WebSocket closed before the stream ended',
+          retryable: true,
+        }
+        for (const listener of this.streamListeners.values()) {
+          listener({ done: true, error: err })
+        }
+        this.streamListeners.clear()
+
         if (!this.destroyed) void this.scheduleReconnect()
       })
 
@@ -273,6 +362,10 @@ export class WebSocketTransport extends BaseTransport {
   // ─── Ping / Keepalive ────────────────────────────────────
 
   private startPing(ws: WebSocket) {
+    // Clear any prior timer first — otherwise a reconnect leaks the old
+    // interval, which pings a dead socket forever and keeps the event loop
+    // alive at shutdown.
+    this.clearPing()
     this.pingTimer = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         this.sendWire(ws, { id: crypto.randomUUID(), type: 'ping' })
@@ -294,4 +387,15 @@ export class WebSocketTransport extends BaseTransport {
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// The path component of a ws:// address, for signature binding.
+// Falls back to '/' for anything unparseable rather than throwing —
+// a malformed address should fail at connect, not at signing.
+function safePath(address: string): string {
+  try {
+    return new URL(address).pathname || '/'
+  } catch {
+    return '/'
+  }
 }

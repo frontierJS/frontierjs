@@ -1,0 +1,68 @@
+<script>
+  // StatCard.mesa
+  // Metric tile — a Stat inside a Card. The most-used component in the app.
+  // Accepts all Stat props plus optional icon slot and click handler.
+  //
+  // Usage:
+  //   <StatCard label="MRR" value="$12,400" sub="+8% MoM" trend="up" />
+  //
+  //   <StatCard label="Churn rate" value="2.4%" color="red" trend="down">
+  //     {#snippet icon()}<IconTrendDown />{/snippet}
+  //   </StatCard>
+  //
+  //   <!-- Clickable — on:click is the correct Mesa DOM event directive -->
+  //   <StatCard label="Open tickets" value={42} onclick={() => goto('/tickets')} />
+
+  import Stat from './Stat.mesa'
+
+  // Stat props
+  export let label  = ''
+  export let value  = ''
+  export let sub    = ''
+  export let trend  = ''
+  export let color  = ''
+
+  // Card props
+  export let loading  = false
+  export let onclick  = undefined   // when set, card becomes interactive
+  export let icon     = null        // snippet — rendered top-right
+
+  const isClickable = !!onclick
+</script>
+
+{#snippet body()}
+  {#if icon}
+    <div class="absolute top-4 right-4 text-gray-400">{@render icon?.()}</div>
+  {/if}
+  {#if loading}
+    <div class="flex flex-col gap-2 animate-pulse">
+      <div class="h-3 w-24 rounded bg-gray-200"></div>
+      <div class="h-7 w-32 rounded bg-gray-200"></div>
+      <div class="h-2.5 w-20 rounded bg-gray-100"></div>
+    </div>
+  {:else}
+    <Stat {label} {value} {sub} {trend} {color} />
+  {/if}
+{/snippet}
+
+{#if isClickable}
+  <div
+    class="relative flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5
+           shadow-sm transition-shadow cursor-pointer hover:shadow-md hover:border-gray-300"
+    {class}
+    role="button"
+    tabindex="0"
+    on:click={onclick}
+    on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') onclick?.(e) }}
+  >
+    {@render body()}
+  </div>
+{:else}
+  <div
+    class="relative flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5
+           shadow-sm"
+    {class}
+  >
+    {@render body()}
+  </div>
+{/if}

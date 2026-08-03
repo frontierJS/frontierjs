@@ -56,13 +56,18 @@
 
 /* Components */
 @import './typography.css' layer(components);
+@import './icon.css'       layer(components);
 @import './buttons.css'    layer(components);
 @import './pills.css'      layer(components);
 @import './badges.css'     layer(components);
 @import './cards.css'      layer(components);
+@import './tiles.css'      layer(components);
+@import './avatar.css'     layer(components);
+@import './feedback.css'   layer(components);
 @import './alerts.css'     layer(components);
 @import './toasts.css'     layer(components);
 @import './popovers.css'   layer(components);
+@import './tooltips.css'   layer(components);
 @import './drawers.css'    layer(components);
 @import './form-core.css'  layer(components);
 @import './tables.css'     layer(components);
@@ -73,6 +78,19 @@
 @import './lists.css'      layer(patterns);
 @import './feed.css'       layer(patterns);
 @import './disclosure.css' layer(patterns);
+@import './facts.css'      layer(patterns);
+@import './steps.css'      layer(patterns);
+@import './tabs.css'       layer(patterns);
+@import './nav.css'        layer(patterns);
 
-/* Accessibility primitives — last layer on purpose */
-@import './a11y.css' layer(a11y);
+/*
+ * Accessibility primitives — last layer on purpose.
+ *
+ * focus.css is here rather than with the components because the focus ring
+ * is an accessibility guarantee, not a component detail. In the last layer
+ * a stray `outline: none` in a component file cannot switch it off; that is
+ * exactly how .btn.outlined lost its ring to a `box-shadow: none` before
+ * v0.7. See the header of focus.css.
+ */
+@import './focus.css' layer(a11y);
+@import './a11y.css'  layer(a11y);

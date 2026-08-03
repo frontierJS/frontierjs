@@ -20,11 +20,13 @@ export async function autoloadJobs(
 ): Promise<string[]> {
   const loaded: string[] = []
 
+  // `dir` must outlive the try — the loop below builds absolute paths from it.
+  let dir: string
   let entries: string[]
   try {
     const glob = new Bun.Glob('**/*.job.{ts,js}')
     const { resolve } = await import('node:path')
-    const dir = resolve(process.cwd(), rawDir)
+    dir = resolve(process.cwd(), rawDir)
     entries = await Array.fromAsync(glob.scan({ cwd: dir }))
   } catch {
     // Directory doesn't exist or isn't readable — silent skip

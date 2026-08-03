@@ -142,10 +142,8 @@
 .view[hidden] {
   display: none;
 }
-.view:focus-visible {
-  outline:        2px solid var(--ring);
-  outline-offset: 2px;
-}
+/* Focus ring: focus.css. A View carries tabindex="0" so a keyboard user
+   can reach panel content that holds nothing focusable of its own. */
 
 /*
  * ── Narrow viewports ─────────────────────────────────────────────────
@@ -166,5 +164,39 @@
   }
   .screen {
     padding: 1rem;
+  }
+}
+
+/*
+ * ── Sidebar toggle — the button that opens the drawer ────────────────
+ *
+ * The rule above hides the Sidebar below md and hands its contents to a
+ * <dialog class="drawer">. That instruction was incomplete: something has
+ * to open the drawer, and that something must be hidden *above* md, where
+ * the real sidebar is back. The package created the need and then had no
+ * way to express it, so the demo wrote the media query by hand — as would
+ * every other app using .shell.
+ *
+ *   <header class="topbar">
+ *     <button class="btn ghost square sidebar-toggle"
+ *             aria-label="Open navigation" aria-expanded="false">…</button>
+ *
+ * Opening it is still the app's job (Principle 6) — this only decides
+ * when the control exists. It is deliberately one class tied to this one
+ * contract rather than a general responsive-visibility set: the
+ * breakpoints are literals, and a full `.md-up`/`.md-down` matrix is ten
+ * rules of somebody else's design system.
+ */
+.sidebar-toggle {
+  display: none;
+}
+@media (max-width: 767px) {
+  /*
+   * `revert` rather than a hardcoded `inline-flex`, so the control keeps
+   * whatever display its own class gives it — .btn is inline-flex today,
+   * but this rule should not be the thing that decides that.
+   */
+  .sidebar-toggle {
+    display: revert;
   }
 }

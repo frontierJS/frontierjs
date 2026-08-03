@@ -104,7 +104,19 @@
  */
 
 import { getClient } from '@frontierjs/sierra/junction'
-import { schemaFor, hasSchemas, allSchemas } from './schema-registry.js'
+import {
+  schemaFor, modelNameFor, hasSchemas, allSchemas, resolveRef, suggestModel,
+} from './schema-registry.js'
+import {
+  derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
+  validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
+} from './field-rules.js'
+
+// Re-exported so `sierra/junction` stays the one import for resource work.
+export {
+  buildFieldRules, buildRelations, buildGate, canAtLevel,
+  validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
+}
 
 // ── Hook runners ──────────────────────────────────────────────────────────────
 
@@ -143,8 +155,14 @@ async function runPhase(hookMap, phase, method, ctx) {
  *
  * @param {object} properties   — JSON schema properties for the model
  * @param {string[]} [skip]     — server-managed fields to exclude from make()
+ * @param {(ref: string) => object|null} [resolve]
+ *        `$ref` resolver, defaulting to the registry the build populates.
  */
-export function createMakeFromSchema(properties, skip = ['id', 'createdAt', 'updatedAt']) {
+export function createMakeFromSchema(
+  properties,
+  skip = ['id', 'createdAt', 'updatedAt'],
+  resolve = resolveRef,
+) {
   const typeDefaults = {
     string:  '',
     integer: 0,
@@ -156,12 +174,29 @@ export function createMakeFromSchema(properties, skip = ['id', 'createdAt', 'upd
 
   const fieldDefaults = {}
 
-  for (const [key, def] of Object.entries(properties ?? {})) {
+  for (const [key, raw] of Object.entries(properties ?? {})) {
     if (skip.includes(key)) continue
+
+    // Not a field definition. Reached when a caller hands us something that is
+    // not a properties map at all — an enum def used to arrive here and throw
+    // on the `in` check below.
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+
+    // Enum and @type(T) fields arrive as {$ref}. Without following it there is
+    // no `type` to read, and every such field silently defaulted to null.
+    const def = derefFieldSchema(raw, resolve)
 
     // Explicit default wins
     if ('default' in def) {
       fieldDefaults[key] = def.default
+      continue
+    }
+
+    // An enum with no @default has no blank value that is a member of it.
+    // '' would be as invalid as null, and picking the first member would invent
+    // a choice the user never made — so leave it unset for the form to fill.
+    if (Array.isArray(def.enum)) {
+      fieldDefaults[key] = null
       continue
     }
 
@@ -287,17 +322,88 @@ function mergeHooks(target, incoming) {
  *   createResource('leads', { hooks, schema, idField })       — no schema arg
  *   createResource({ model, service, optionsQuery, hooks })   — object form
  *
- * Returns { service, store, make, load, context, hooks }
- *   service — pass-through of the Junction client: find() gives the list
- *             envelope, single-record methods give the record. See "Return
- *             shapes" in the module header.
- *   store   — holds ROWS, never an envelope. Subscribe for renders.
- *   load    — populates store and resolves to the rows.
- *   make    — schema-seeded factory for a blank record.
- *   hooks() — add hooks after creation.
+ * Returns { service, store, make, load, fields, relations, gate, can,
+ *           validate, normalize, coerce, context, hooks }
+ *   service  — pass-through of the Junction client: find() gives the list
+ *              envelope, single-record methods give the record. See "Return
+ *              shapes" in the module header.
+ *   store    — holds ROWS, never an envelope. Subscribe for renders.
+ *   load     — populates store and resolves to the rows.
+ *   make     — schema-seeded factory for a blank record.
+ *   fields   — per-field rules from the schema: { type, required, nullable,
+ *              enum?, format?, minLength?, … }. Render a select from
+ *              `fields.plan.enum`; mark a label from `fields.plan.required`.
+ *   validate — validate(data, mode?) → [{ field, message }], empty when fine.
+ *   normalize— normalize(data) → the record with '' replaced by null on
+ *              nullable fields. See opts.blankToNull.
+ *   coerce   — coerce(data) → the record with DOM strings cast to the schema's
+ *              declared types. See opts.coerce.
+ *   hooks()  — add hooks after creation.
+ *
+ * ── opts.model ─────────────────────────────────────────────────────────────
+ * Which Litestone model this resource is backed by. Defaults to the service
+ * name, and the registry knows English's regular plurals, so `leads` → Lead,
+ * `companies` → Company and `statuses` → Status all resolve on their own.
+ *
+ * Name it when they cannot: an irregular plural, or a service deliberately not
+ * named after its model.
+ *
+ *   createResource('people',   { model: 'Person' })
+ *   createResource('children', { model: 'Child'  })
+ *   createResource('roster',   { model: 'Person' })
+ *
+ * It also labels `ctx.model` in hooks and `resource.context.model`, so naming it
+ * is what makes those read as the model rather than as the service.
+ *
+ * ── opts.coerce ────────────────────────────────────────────────────────────
+ * `coerce: true` casts the strings a DOM control produces into the types the
+ * schema declares, before every create and patch.
+ *
+ *   createResource('leads', { coerce: true })
+ *
+ * `el.value` is a string for every control there is — `<input type="number">`
+ * and `<select>` included — and Mesa's bindInput passes it through unchanged,
+ * correctly, because it has no idea what the field is. So a form bound to
+ * make() sends `"42"` for a Float and `"1"` for an Int, and the server (and
+ * `validate`) reject both. Only the schema knows what they were meant to be.
+ *
+ * A form bound to DOM inputs almost certainly wants this. Default OFF, for the
+ * same reason as the others: it changes what is sent.
+ *
+ * ── opts.blankToNull ───────────────────────────────────────────────────────
+ * `blankToNull: true` applies that normalisation automatically before every
+ * create and patch.
+ *
+ *   createResource('leads', { blankToNull: true })
+ *
+ * A text input cannot produce "no value" — an untouched box submits '' — so
+ * without this a form writes '' into a column the schema declared nullable.
+ * SQLite does not treat those as the same: `String? @unique` accepts any number
+ * of NULLs but rejects a second '', and `WHERE col IS NULL` never matches ''.
+ * The form keeps binding to a string; the wire carries the distinction.
+ *
+ * Default OFF, because it changes what is stored.
+ *
+ * ── opts.validate ──────────────────────────────────────────────────────────
+ * `validate: true` also runs that check automatically before every create and
+ * patch, throwing ResourceValidationError instead of making the request.
+ *
+ *   createResource('leads', { validate: true })
+ *
+ * Default OFF. The server validates regardless — Junction derives its rules
+ * from the same .lite file — so this is about failing in the browser, before a
+ * round trip, rather than about being the thing that says no. Turning it on
+ * changes where an invalid payload surfaces, which is why existing resources
+ * are not opted in for you.
+ *
+ * It runs AFTER the before-hooks, so a hook that completes the record (stamping
+ * a tenant id, coercing a field) is reflected in what gets checked. A throw
+ * lands in the error phase like any other failure, so an `error` hook can
+ * present it or recover from it.
  */
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
-  let serviceName, model, optionsQuery, initialHooks, schema, idField
+  let serviceName, model, optionsQuery, initialHooks, schema, idField,
+      autoValidate, autoBlank, autoCoerce
 
   if (typeof nameOrSpec === 'string') {
     serviceName = nameOrSpec
@@ -309,6 +415,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       idField      = maybeOpts.idField  ?? 'id'
       model        = maybeOpts.model    ?? serviceName
       optionsQuery = maybeOpts.optionsQuery
+      autoValidate = maybeOpts.validate === true
+      autoBlank    = maybeOpts.blankToNull === true
+      autoCoerce   = maybeOpts.coerce === true
     } else {
       // second arg is opts
       const opts   = schemaOrOpts
@@ -317,6 +426,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       idField      = opts.idField  ?? 'id'
       model        = opts.model    ?? serviceName
       optionsQuery = opts.optionsQuery
+      autoValidate = opts.validate === true
+      autoBlank    = opts.blankToNull === true
+      autoCoerce   = opts.coerce === true
     }
   } else {
     // object form
@@ -326,6 +438,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     initialHooks = nameOrSpec.hooks        ?? {}
     schema       = nameOrSpec.schema
     idField      = nameOrSpec.idField      ?? 'id'
+    autoValidate = nameOrSpec.validate === true
+    autoBlank    = nameOrSpec.blankToNull === true
+    autoCoerce   = nameOrSpec.coerce === true
   }
 
   // No schema passed — take it from the registry, which Sierra's build fills
@@ -336,17 +451,39 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // Tried in order: the explicit model name, the service name, and the
   // conventional singular of the service name — so createResource('leads') and
   // createResource('leads', { model: 'Lead' }) both resolve.
+  //
+  // `model` is the override for everything the registry's plural rules cannot
+  // reach. English irregulars are the obvious case — no rule turns 'people'
+  // into 'Person' — but it equally covers a service deliberately named
+  // something other than its model ('roster' over `model Person`).
   if (!schema) {
     const singular = serviceName.endsWith('ies')
       ? serviceName.slice(0, -3) + 'y'
       : serviceName.endsWith('s') ? serviceName.slice(0, -1) : serviceName
-    schema = schemaFor(model, serviceName, singular) ?? undefined
+
+    // Resolve the NAME, not just the shape. `model` defaults to the service
+    // name, so without this `ctx.model` on a `statuses` resource read
+    // 'statuses' — the service name wearing the label of the model name, which
+    // is what this field is documented to be. It also normalises an accessor
+    // spelling ({ model: 'person' }) to the declared 'Person'.
+    const resolvedName = modelNameFor(model, serviceName, singular)
+    if (resolvedName) {
+      schema = schemaFor(resolvedName)
+      model  = resolvedName
+    }
 
     if (!schema && hasSchemas()) {
+      const known   = Object.keys(allSchemas())
+      const guess   = suggestModel(model) ?? suggestModel(serviceName)
+      const example = guess ?? known[0] ?? 'ModelName'
+
       console.warn(
-        `[resource:${serviceName}] no schema found for model '${model}'. ` +
-        `make() will return a bare object. Known models: ` +
-        `${Object.keys(allSchemas()).join(', ')}`
+        `[resource:${serviceName}] no schema found for '${model}'. ` +
+        `make() returns a bare object, fields is empty, and validate() reports nothing.\n` +
+        `  Name the model explicitly: ` +
+        `createResource('${serviceName}', { model: '${example}' })` +
+        (guess ? `   ← '${guess}' looks like the one` : '') + `\n` +
+        `  Known models: ${known.join(', ')}`
       )
     }
   }
@@ -365,18 +502,68 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const junctionResource = client.resource(serviceName, idField)
   const { store } = junctionResource
 
-  // Schema-driven make() or pass-through
+  // Schema-driven make() or pass-through.
+  //
+  // `modelDef` is the definition make() and fields both read: a caller can pass
+  // a whole document ($defs/definitions) or a single model definition, and the
+  // registry hands back the latter.
+  const modelDef = schema?.$defs?.[serviceName]
+    ?? schema?.$defs?.[model]
+    ?? schema?.definitions?.[serviceName]
+    ?? schema?.definitions?.[model]
+    ?? schema
+
   let make
   if (schema) {
-    const properties = schema?.$defs?.[serviceName]?.properties
-      ?? schema?.$defs?.[model]?.properties
-      ?? schema?.definitions?.[serviceName]?.properties
-      ?? schema?.definitions?.[model]?.properties
-      ?? schema?.properties
-      ?? schema
-    make = createMakeFromSchema(properties)
+    make = createMakeFromSchema(modelDef?.properties ?? modelDef)
   } else {
     make = (spec) => Object.assign({}, spec)
+  }
+
+  // Per-field rules — empty when there is no schema, so a resource without one
+  // reports no constraints rather than pretending everything is optional.
+  const fields    = schema ? buildFieldRules(modelDef) : {}
+  const relations = schema ? buildRelations(modelDef)  : {}
+  const gate      = schema ? buildGate(modelDef)       : null
+
+  /**
+   * Would the given level clear this model's gate for that operation?
+   * A UI affordance only — see canAtLevel. The server enforces regardless.
+   */
+  function can(operation, level) {
+    return canAtLevel(gate, operation, level)
+  }
+
+  /**
+   * Check a record against the schema. Always available; only enforced
+   * automatically when the resource was created with `validate: true`.
+   */
+  function validate(data, mode = 'create') {
+    return validateAgainstFields(fields, data, mode)
+  }
+
+  /**
+   * Replace `''` with `null` on nullable fields. Always available; only applied
+   * automatically when the resource was created with `blankToNull: true`.
+   */
+  function normalize(data) {
+    return normalizeBlanks(fields, data)
+  }
+
+  /**
+   * Cast the strings a DOM control produces into the schema's declared types.
+   * Always available; only applied automatically with `coerce: true`.
+   */
+  function coerce(data) {
+    return coerceToSchema(fields, data)
+  }
+
+  if (!schema && (autoValidate || autoBlank || autoCoerce)) {
+    const on = [autoValidate && 'validate', autoBlank && 'blankToNull', autoCoerce && 'coerce'].filter(Boolean)
+    console.warn(
+      `[resource:${serviceName}] ${on.join(' / ')} set, but no schema resolved — ` +
+      `there are no field rules to act on, so nothing will happen.`
+    )
   }
 
   // ── _call — full 4-phase pipeline ──────────────────────────────────────────
@@ -404,6 +591,28 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     async function inner() {
       // before
       await runPhase(_hooks, 'before', method, ctx)
+
+      // Blank → null and pre-flight validation — both opt-in, both after the
+      // before-hooks: a hook that stamps a tenant id or coerces a field is part
+      // of the payload, and acting on the pre-hook data would reject or rewrite
+      // records the server would have accepted.
+      //
+      // Normalisation runs first so validation judges what will actually be
+      // sent, not an intermediate form of it.
+      // Coercion first: '' must still look blank to normalize() below, and
+      // Number('') is 0 — so this deliberately leaves empty strings alone.
+      if (autoCoerce && (method === 'create' || method === 'patch')) {
+        ctx.data = coerce(ctx.data)
+      }
+
+      if (autoBlank && (method === 'create' || method === 'patch')) {
+        ctx.data = normalize(ctx.data)
+      }
+
+      if (autoValidate && (method === 'create' || method === 'patch')) {
+        const problems = validate(ctx.data, method === 'create' ? 'create' : 'patch')
+        if (problems.length) throw new ResourceValidationError(serviceName, problems)
+      }
 
       // network call
       const proxy = client.service(serviceName)
@@ -493,7 +702,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     mergeHooks(_hooks, incoming)
   }
 
-  return { service, store, make, load, context, hooks: addHooks }
+  return {
+    service, store, make, load,
+    fields, relations, gate, can, validate, normalize, coerce,
+    context, hooks: addHooks,
+  }
 }
 
 // ── Empty resource fallback ───────────────────────────────────────────────────
@@ -509,6 +722,13 @@ function _emptyResource(name) {
     store:   { get: () => [], subscribe: fn => { fn([]); return () => {} }, set: () => {}, upsert: () => {}, remove: () => {} },
     make:    (spec) => Object.assign({}, spec),
     load:    async () => [],
+    fields:    {},
+    relations: {},
+    gate:      null,
+    can:       () => true,
+    validate:  () => [],
+    normalize: (data) => data,
+    coerce:    (data) => data,
     context: { model: name, service: name, idField: 'id' },
     hooks:   () => {},
   }

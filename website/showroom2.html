@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en" class="theme-default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walkthrough — from schema to running app | FrontierJS</title>
+<meta name="description" content="Step through building a FrontierJS app: Litestone seeds the data, Junction derives the API, Sierra binds the UI. Watch the files grow and see what each line gives you.">
+
+<!-- Local path so this file renders straight from the repo.
+     Deploy rewrites this to ./css/index.css — see README.md. -->
+<link rel="stylesheet" href="../packages/css/index.css">
+
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: var(--surface); color: var(--ink); }
+  .container { max-width: 78rem; margin-inline: auto; padding-inline: 1.25rem; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
+  }
+  .topbar .container { display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.25rem; }
+  .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; text-decoration: none; color: var(--ink); }
+  .brand span { color: var(--color-primary); }
+  .navset { display: flex; gap: .25rem; flex-wrap: wrap; }
+  .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
+  .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .navset a[aria-current] { background: var(--surface-sunken); color: var(--ink); font-weight: 600; }
+  .swatches { display: flex; gap: .3rem; }
+  .swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+
+  h1 { font-size: clamp(1.6rem, 3.6vw, 2.3rem); line-height: 1.1; letter-spacing: -.03em; margin: .2em 0 .25em; }
+  h2 { font-size: 1.15rem; margin: 0; letter-spacing: -.01em; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+
+  pre {
+    background: var(--surface-sunken); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 1rem 1.15rem; overflow-x: auto; margin: 0;
+    font-size: .8rem; line-height: 1.75;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre .kw { color: var(--color-primary); font-weight: 600; }
+  pre .cm { color: var(--ink-mute); }
+  pre .st { color: var(--color-success); }
+  pre .at { color: var(--color-warning); font-weight: 600; }
+
+  /* ── Stage: vertical step list beside a stacked work column ────────── */
+  .stage { display: grid; gap: 2rem; align-items: start; margin-top: 2rem; }
+  @media (min-width: 62rem) {
+    .stage { grid-template-columns: 17.5rem 1fr; }
+    .steps { position: sticky; top: 5.25rem; }
+  }
+
+  .steps { display: grid; gap: .1rem; }
+  .act-head {
+    display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap;
+    font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-mute); margin: 1.25rem 0 .4rem; padding-left: .7rem;
+  }
+  .act-head:first-child { margin-top: 0; }
+  .act-head .pkg {
+    font-family: ui-monospace, Menlo, monospace; font-size: .68rem;
+    text-transform: none; letter-spacing: 0;
+  }
+
+  /* Own class, not .btn — background and color are both set here, so the
+     chip.css auto-contrast pairing is not involved. */
+  .stepbtn {
+    display: flex; gap: .65rem; align-items: baseline; width: 100%; text-align: left;
+    font: inherit; font-size: .87rem; line-height: 1.35;
+    background: transparent; color: var(--ink-soft);
+    border: 0; border-left: 2px solid var(--rule);
+    border-radius: 0 6px 6px 0; padding: .5rem .75rem; cursor: pointer;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .stepbtn:hover { background: var(--surface-sunken); color: var(--ink); }
+  .stepbtn .n {
+    font-variant-numeric: tabular-nums; font-size: .75rem;
+    color: var(--ink-mute); min-width: 1.25rem; flex: none;
+  }
+  .stepbtn.done { color: var(--ink); border-left-color: var(--color-success); }
+  .stepbtn.done .n { color: var(--color-success); }
+  .stepbtn.now {
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border-left-color: var(--color-primary);
+    color: var(--ink); font-weight: 600;
+  }
+  .stepbtn.now .n { color: var(--color-primary); }
+
+  /* Right column — the file on top, what it bought you underneath. */
+  .work { display: grid; gap: 1.25rem; }
+
+  .filename {
+    font-family: ui-monospace, Menlo, monospace; font-size: .78rem;
+    color: var(--ink-mute); margin: 0 0 .4rem; display: flex; gap: .5rem; align-items: center;
+  }
+  .ln { display: block; padding: 0 .35rem; margin: 0 -.35rem; border-radius: 4px; }
+  .ln.fresh { background: color-mix(in srgb, var(--color-success) 15%, transparent); }
+
+  .nocode {
+    border: 1px dashed var(--rule-strong); border-radius: 10px;
+    padding: .7rem .9rem; font-size: .84rem; color: var(--ink-soft);
+    background: color-mix(in srgb, var(--color-success) 7%, transparent);
+  }
+
+  .controls { display: flex; align-items: center; gap: .75rem; margin-top: 1.75rem; flex-wrap: wrap; }
+  .counter { font-size: .82rem; color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+  .hint { font-size: .78rem; color: var(--ink-mute); margin-left: auto; }
+  .hint kbd {
+    font-family: ui-monospace, Menlo, monospace; font-size: .72rem;
+    border: 1px solid var(--rule-strong); border-radius: 4px; padding: 0 .3rem; background: var(--surface-sunken);
+  }
+
+  /* Untoned .btn.outlined paints --color-primary on --surface — 3.96:1 in the
+     default theme and 1.99:1 in elite, both below AA. Take the neutral ink,
+     exactly as .btn.ghost does and for the same reason. Safe to set color
+     alone: outlined's background is --surface, not the derived --fill. */
+  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 3.5rem; color: var(--ink-mute); font-size: .875rem; margin-top: 4rem; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="container">
+    <a class="brand" href="index.html">Frontier<span>JS</span></a>
+    <nav class="navset">
+      <a href="index.html#idea">Idea</a>
+      <a href="showroom.html">Showroom</a>
+      <a href="showroom2.html" aria-current="page">Walkthrough</a>
+      <a href="showroom3.html">The ripple</a>
+      <a href="showroom4.html">The loop</a>
+      <a href="showroom5.html">The stack</a>
+      <a href="journey.html">The journey</a>
+      <a href="index.html#packages">Packages</a>
+      <a href="index.html#start">Start</a>
+    </nav>
+    <div class="swatches" role="group" aria-label="Theme">
+      <button class="swatch" data-theme="default"  title="Default"  style="background:#0d83dd"></button>
+      <button class="swatch" data-theme="sunset"   title="Sunset"   style="background:#e07a3f"></button>
+      <button class="swatch" data-theme="forest"   title="Forest"   style="background:#2f7d4f"></button>
+      <button class="swatch" data-theme="midnight" title="Midnight" style="background:#3b4a6b"></button>
+      <button class="swatch" data-theme="dark"     title="Dark"     style="background:#1c1b18"></button>
+      <button class="swatch" data-theme="elite"    title="Elite"    style="background:#8b6f2e"></button>
+    </div>
+  </div>
+</header>
+
+<main class="container" style="padding-top:2.5rem">
+  <p class="eyebrow">Walkthrough</p>
+  <h1>Build it once, step by step.</h1>
+  <p class="text-muted" style="max-width:56ch; margin:0">
+    One model becomes a database, an API, and a UI. Step forward and watch the files
+    grow on the left — and what each line buys you on the right.
+  </p>
+
+  <div class="stage">
+
+    <!-- Left — every step, named -->
+    <nav class="steps" id="steps" aria-label="Walkthrough steps"></nav>
+
+    <!-- Right — the file, then what it bought you -->
+    <div class="work">
+      <div>
+        <p class="filename"><span id="f-name"></span><span class="badge" id="f-pkg"></span></p>
+        <pre id="f-code"></pre>
+        <div class="nocode" id="f-nocode" hidden></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; align-items:baseline; gap:.6rem; flex-wrap:wrap">
+          <h2 id="s-title"></h2>
+          <span class="badge" id="s-act"></span>
+        </div>
+        <p class="text-sm text-muted" id="s-say" style="margin:.4rem 0 1rem"></p>
+        <p class="filename" id="r-label"></p>
+        <pre id="r-code"></pre>
+      </div>
+
+      <div class="controls">
+        <button class="btn outlined" id="prev">← Back</button>
+        <button class="btn" id="next">Next →</button>
+        <span class="counter" id="counter"></span>
+        <span class="hint">Use <kbd>←</kbd> <kbd>→</kbd> to move</span>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="container split">
+    <span>Every sample is the real API — see <code>packages/junction/example/</code>.</span>
+    <span><a class="link" href="showroom.html">Prefer to browse? → Showroom</a></span>
+  </div>
+</footer>
+
+<script>
+// ─── Acts ────────────────────────────────────────────────────────────────────
+const ACTS = [
+  { id:'Data', name:'Data',  pkg:'@frontierjs/litestone', tone:'primary' },
+  { id:'API',  name:'API',   pkg:'@frontierjs/junction',  tone:'info'    },
+  { id:'UI',   name:'UI',    pkg:'@frontierjs/sierra',    tone:'success' },
+]
+
+// ─── Steps. `code` is the WHOLE file at that point; `fresh` marks new lines. ──
+const STEPS = [
+
+  // ═══ Act 1 — Litestone ════════════════════════════════════════════════════
+  { act:'Data', title:'Describe the data',
+    say:'Everything starts in one file. Model names are PascalCase and singular — always.',
+    file:'db/schema.lite',
+    code:[
+      "model Lead {",
+      "  id        Int      @id",
+      "  name      String",
+      "  email     String",
+      "  value     Float",
+      "  createdAt DateTime @default(now())",
+      "}",
+    ],
+    fresh:[0,1,2,3,4,5,6],
+    rlabel:'You already have a typed client',
+    result:
+`import { createClient } from '@frontierjs/litestone'
+
+const db = await createClient({ db: 'app.db', schema: './db/schema.lite' })
+
+// model Lead  →  accessor db.lead
+await db.lead.create({ data: { name: 'Acme', email: 'hi@acme.com', value: 12000 } })
+await db.lead.findMany({ where: { value: { gte: 5000 } }, limit: 20 })` },
+
+  { act:'Data', title:'Constrain it',
+    say:'Field rules live on the field. You will not write these checks anywhere else — that is the whole point.',
+    file:'db/schema.lite',
+    code:[
+      "model Lead {",
+      "  id        Int      @id",
+      "  name      String   @length(1, 200) @trim",
+      "  email     String   @email @unique @lower",
+      "  value     Float    @gte(0)",
+      "  createdAt DateTime @default(now())",
+      "}",
+    ],
+    fresh:[2,3,4],
+    rlabel:'Enforced at the data layer',
+    result:
+`await db.lead.create({ data: { name: '', email: 'nope', value: -5 } })
+
+// ValidationError — nothing was written
+{
+  name:  'must be between 1 and 200 characters',
+  email: 'must be a valid email address',
+  value: 'must be >= 0'
+}
+
+// @trim and @lower are transforms, applied on the way in.` },
+
+  { act:'Data', title:'Say who may do what',
+    say:'One ordinal level per operation, read against the Trust Hierarchy. Read is open; writing needs a user; deleting needs an admin.',
+    file:'db/schema.lite',
+    code:[
+      "model Lead {",
+      "  id        Int      @id",
+      "  name      String   @length(1, 200) @trim",
+      "  email     String   @email @unique @lower",
+      "  value     Float    @gte(0)",
+      "  createdAt DateTime @default(now())",
+      "",
+      "  @@gate(\"0.4.4.5\")",
+      "}",
+    ],
+    fresh:[6,7],
+    rlabel:'Authorization, below every caller',
+    result:
+`@@gate("0.4.4.5")
+//       │ │ │ └── delete : 5  ADMINISTRATOR
+//       │ │ └──── update : 4  USER
+//       │ └────── create : 4  USER
+//       └──────── read   : 0  STRANGER
+
+const scoped = db.$setAuth(user)      // level comes from GatePlugin
+
+await scoped.lead.findMany()          // ✓ anyone
+await scoped.lead.create({ ... })     // ✗ AccessDeniedError below level 4
+
+await db.asSystem().lead.create({...}) // the one documented bypass` },
+
+  { act:'Data', title:'Say which rows',
+    say:'Gates are per-operation. Policies are per-row, and they compile into SQL — so this is not a filter a caller can forget.',
+    file:'db/schema.lite',
+    code:[
+      "model Lead {",
+      "  id        Int      @id",
+      "  name      String   @length(1, 200) @trim",
+      "  email     String   @email @unique @lower",
+      "  value     Float    @gte(0)",
+      "  ownerId   Int",
+      "  createdAt DateTime @default(now())",
+      "",
+      "  @@gate(\"0.4.4.5\")",
+      "  @@allow('read', ownerId == auth().id)",
+      "}",
+    ],
+    fresh:[5,9],
+    rlabel:'Appended to every query',
+    result:
+`await db.$setAuth(user).lead.findMany({ where: { value: { gte: 5000 } } })
+
+-- the SQL actually executed (user.id = 42):
+SELECT * FROM leads
+ WHERE value >= 5000
+   AND ownerId = 42        -- from the policy. Not optional.
+
+// There is no code path that skips this, because it is not in a code path.` },
+
+  { act:'Data', title:'Ship the schema',
+    say:'The schema is the migration source. fli diffs it against the live database and writes the SQL.',
+    file:'db/schema.lite',
+    code:[
+      "model Lead {",
+      "  id        Int      @id",
+      "  name      String   @length(1, 200) @trim",
+      "  email     String   @email @unique @lower",
+      "  value     Float    @gte(0)",
+      "  ownerId   Int",
+      "  createdAt DateTime @default(now())",
+      "",
+      "  @@gate(\"0.4.4.5\")",
+      "  @@allow('read', ownerId == auth().id)",
+      "  @@index([ownerId, createdAt])",
+      "  @@log(audit)",
+      "}",
+    ],
+    fresh:[10,11],
+    rlabel:'fli db:migrate',
+    result:
+`$ fli db:migrate
+
+-- migrations/0001_init.sql  (generated)
+CREATE TABLE leads (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL,
+  email      TEXT    NOT NULL UNIQUE,
+  value      REAL    NOT NULL DEFAULT 0,
+  ownerId    INTEGER NOT NULL,
+  createdAt  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX leads_ownerId_createdAt ON leads (ownerId, createdAt);
+
+$ litestone types ./types.d.ts     # and TypeScript, from the same file` },
+
+  // ═══ Act 2 — Junction ═════════════════════════════════════════════════════
+  { act:'API', title:'Put it on the wire',
+    say:'Naming the model on a service derives the whole CRUD surface. This is the entire server.',
+    file:'api/server.ts',
+    code:[
+      "import { createApp, createService } from '@frontierjs/junction'",
+      "",
+      "const app = createApp({ db, auth, config: { port: 3200, apiPrefix: '/api' } })",
+      "",
+      "app.services.register(createService({",
+      "  name:  'leads',",
+      "  model: 'lead',",
+      "}))",
+      "",
+      "await app.start()",
+    ],
+    fresh:[0,1,2,3,4,5,6,7,8,9],
+    rlabel:'Five endpoints, no handlers',
+    result:
+`GET    /api/leads          find    → { object, data, total }
+GET    /api/leads/:id      get
+POST   /api/leads          create
+PATCH  /api/leads/:id      patch
+DELETE /api/leads/:id      remove
+
+// createApp({ db }) also scopes Litestone per request, so the gate and
+// the policy you wrote in Act 1 already see the calling user.` },
+
+  { act:'API', title:'The rules became 400s',
+    say:'Nothing was added to the server. The field rules from Act 1 are enforced at the edge because the API reads the same schema.',
+    file:'api/server.ts',
+    code:[
+      "import { createApp, createService } from '@frontierjs/junction'",
+      "",
+      "const app = createApp({ db, auth, config: { port: 3200, apiPrefix: '/api' } })",
+      "",
+      "app.services.register(createService({",
+      "  name:  'leads',",
+      "  model: 'lead',",
+      "}))",
+      "",
+      "await app.start()",
+    ],
+    fresh:[],
+    nocode:'No new code this step. This is derived from @length, @email and @gte.',
+    rlabel:'POST /api/leads',
+    result:
+`{ "name": "", "email": "not-an-email", "value": -5 }
+
+→ 400 Bad Request
+{
+  "name": "BadRequest",
+  "code": 400,
+  "data": {
+    "name":  "must be between 1 and 200 characters",
+    "email": "must be a valid email address",
+    "value": "must be >= 0"
+  }
+}` },
+
+  { act:'API', title:'The gate became 401s and 403s',
+    say:'Also derived. A Litestone denial is normalized into the framework error shape, so success and failure are one contract.',
+    file:'api/server.ts',
+    code:[
+      "import { createApp, createService } from '@frontierjs/junction'",
+      "",
+      "const app = createApp({ db, auth, config: { port: 3200, apiPrefix: '/api' } })",
+      "",
+      "app.services.register(createService({",
+      "  name:  'leads',",
+      "  model: 'lead',",
+      "}))",
+      "",
+      "await app.start()",
+    ],
+    fresh:[],
+    nocode:'No new code this step. This is derived from @@gate and @@allow.',
+    rlabel:'The same gate, over HTTP',
+    result:
+`GET    /api/leads                     → 200  read is level 0
+POST   /api/leads                     → 401  no session
+POST   /api/leads      (level 4 user) → 201
+DELETE /api/leads/7    (level 4 user) → 403  needs ADMINISTRATOR
+
+// And the row policy still applies — a level 4 user listing leads
+// sees only their own, because the WHERE clause says so.` },
+
+  { act:'API', title:'Paginate and sort',
+    say:'Transport syntax uses $ prefixes; nothing past the bridge ever sees one. Filters land in ctx.query, shaping lands in ctx.directives.',
+    file:'api/server.ts',
+    code:[
+      "import { createApp, createService } from '@frontierjs/junction'",
+      "",
+      "const app = createApp({ db, auth, config: { port: 3200, apiPrefix: '/api' } })",
+      "",
+      "app.services.register(createService({",
+      "  name:  'leads',",
+      "  model: 'lead',",
+      "}))",
+      "",
+      "await app.start()",
+    ],
+    fresh:[],
+    nocode:'No new code this step. Directives are parsed by the transport bridge.',
+    rlabel:'GET /api/leads?value[gte]=5000&$limit=2&$orderBy=-createdAt',
+    result:
+`{
+  "object": "list",
+  "data": [
+    { "id": 8, "name": "Acme Corp",  "value": 12000 },
+    { "id": 5, "name": "Globex Inc", "value":  8500 }
+  ],
+  "total": 17,
+  "limit": 2,
+  "offset": 0
+}
+
+// A list keeps its envelope; a single record unwraps.` },
+
+  { act:'API', title:'Broadcast changes',
+    say:'One announcement point. Every mutation fans out to the event bus and to the declared channel — there is no second publish path to forget.',
+    file:'api/server.ts',
+    code:[
+      "import { createApp, createService, publish } from '@frontierjs/junction'",
+      "",
+      "const app = createApp({ db, auth, config: { port: 3200, apiPrefix: '/api' } })",
+      "const live = publish(() => app.channel('leads'))",
+      "",
+      "app.services.register(createService({",
+      "  name:    'leads',",
+      "  model:   'lead',",
+      "  channel: 'leads',",
+      "  hooks: { after: { create: [live], patch: [live], remove: [live] } },",
+      "}))",
+      "",
+      "await app.start()",
+    ],
+    fresh:[0,3,7,8],
+    rlabel:'Over the WebSocket',
+    result:
+`// a client subscribed to the 'leads' channel receives:
+
+{ "type": "leads created", "data": { "id": 9, "name": "Initech" } }
+{ "type": "leads patched", "data": { "id": 5, "value": 9100  } }
+{ "type": "leads removed", "data": { "id": 2 } }
+
+// Same gate applies on the way out — subscribers only get rows
+// their policy would have let them read.` },
+
+  // ═══ Act 3 — Sierra ═══════════════════════════════════════════════════════
+  { act:'UI', title:'Bind it to a page',
+    say:'A route is a file. createResource gives you the service as a reactive object — no fetch, no store wiring.',
+    file:'src/routes/leads/index.mesa',
+    code:[
+      "<script>",
+      "  import { createResource } from '@frontierjs/sierra'",
+      "",
+      "  const leads = createResource('leads')",
+      "  await leads.find({ value: { gte: 5000 } })",
+      "<\/script>",
+      "",
+      "<table class=\"table\">",
+      "  {#each leads.data as lead}",
+      "    <tr><td>{lead.name}</td><td>{lead.value}</td></tr>",
+      "  {/each}",
+      "</table>",
+    ],
+    fresh:[0,1,2,3,4,5,6,7,8,9,10,11],
+    rlabel:'The file path is the route',
+    result:
+`src/routes/leads/index.mesa   →   /leads
+src/routes/leads/[id].mesa    →   /leads/42
+src/routes/_module.mesa       →   the layout wrapping both
+
+// leads.data is reactive. The table re-renders when it changes;
+// there is no subscribe-and-setState step to write.` },
+
+  { act:'UI', title:'Step into the pipeline',
+    say:'The same four hook phases as the API realm — around, before, after, error — with a Context that mirrors it. Learn the pipeline once.',
+    file:'src/routes/leads/index.mesa',
+    code:[
+      "<script>",
+      "  import { createResource } from '@frontierjs/sierra'",
+      "",
+      "  let busy = false",
+      "",
+      "  const leads = createResource('leads', {",
+      "    hooks: {",
+      "      around: { all:    [async (ctx, next) => {",
+      "        busy = true; await next(); busy = false",
+      "      }] },",
+      "      before: { create: [ctx => { ctx.data.source = 'web' }] },",
+      "      error:  { all:    [ctx => toast(ctx.error.message)] },",
+      "    },",
+      "  })",
+      "",
+      "  await leads.find({ value: { gte: 5000 } })",
+      "<\/script>",
+    ],
+    fresh:[3,5,6,7,8,9,10,11,12,13],
+    rlabel:'Identical on both sides of the wire',
+    result:
+`// UI — src/routes/leads/index.mesa
+hooks: { around: {...}, before: {...}, after: {...}, error: {...} }
+
+// API — api/server.ts
+hooks: { around: {...}, before: {...}, after: {...}, error: {...} }
+
+// Pipeline, both realms:
+//   around:enter → before → [work] → after → around:exit
+//                              ↓ on throw
+//                            error
+
+// ctx.params is UI-only and never crosses the wire.` },
+
+  { act:'UI', title:'Start a blank one',
+    say:'make() builds an empty record shaped by the schema, with its declared defaults already applied. The starting value for a create form.',
+    file:'src/routes/leads/index.mesa',
+    code:[
+      "<script>",
+      "  import { createResource } from '@frontierjs/sierra'",
+      "",
+      "  const leads = createResource('leads')",
+      "  await leads.find()",
+      "",
+      "  let draft = leads.make()",
+      "<\/script>",
+      "",
+      "<form on:submit={() => leads.create(draft)}>",
+      "  <input class=\"field\" bind:value={draft.name}  placeholder=\"Name\">",
+      "  <input class=\"field\" bind:value={draft.email} placeholder=\"Email\">",
+      "  <button class=\"btn\">Add lead</button>",
+      "</form>",
+    ],
+    fresh:[6,9,10,11,12,13],
+    rlabel:'Shaped by the same JSON Schema',
+    result:
+`leads.make()
+
+{
+  name:  '',
+  email: '',
+  value: 0,          // from @gte(0)
+  // id, ownerId and createdAt are omitted — the server owns them
+}
+
+// The browser has the JSON Schema, so it knows email is an email and
+// name maxes at 200. Rendering a full form from it is the next step
+// for the framework — see the Vision section.` },
+
+  { act:'UI', title:'Make it live',
+    say:'The consuming side of the publish you declared in Act 2. One line, and the table follows the database.',
+    file:'src/routes/leads/index.mesa',
+    code:[
+      "<script>",
+      "  import { createResource } from '@frontierjs/sierra'",
+      "",
+      "  const leads = createResource('leads')",
+      "  await leads.find()",
+      "",
+      "  leads.subscribe()      // joins the 'leads' channel",
+      "<\/script>",
+      "",
+      "<table class=\"table\">",
+      "  {#each leads.data as lead}",
+      "    <tr><td>{lead.name}</td><td>{lead.value}</td></tr>",
+      "  {/each}",
+      "</table>",
+    ],
+    fresh:[6],
+    rlabel:'No refresh logic anywhere',
+    result:
+`// Someone else POSTs a lead. Your table gains a row.
+
+  server  ── create ──▶ channel 'leads'
+                            │
+                            ▼
+  browser ── leads.data ──▶ re-render
+
+// You wrote: one subscribe() call, and channel: 'leads' on the service.
+// Everything between them was already there.` },
+
+  { act:'UI', title:'That is the app',
+    say:'Three files. Everything else was derived from the first one — and it all traces back to a schema you can read in ten seconds.',
+    file:'the whole thing',
+    code:[
+      "db/schema.lite               13 lines   the seed",
+      "api/server.ts                12 lines   the API",
+      "src/routes/leads/index.mesa  14 lines   the UI",
+      "",
+      "# derived, unwritten:",
+      "#   migrations + indexes + audit log",
+      "#   row policies compiled into SQL",
+      "#   five REST endpoints + pagination",
+      "#   400s from the field rules",
+      "#   401s and 403s from the gate",
+      "#   TypeScript types + JSON Schema",
+      "#   WebSocket events, both directions",
+    ],
+    fresh:[4,5,6,7,8,9,10,11],
+    rlabel:'Where to go next',
+    result:
+`$ npx @frontierjs/cli new my-app
+
+# then read, in this order:
+#   ARCHITECT.md    the mental model and the vocabulary
+#   PHILOSOPHY.md   the axioms underneath it
+#   DECISIONS.md    why things are the way they are
+
+# and the runnable ladder:
+#   packages/junction/example/minimal/
+#   packages/junction/example/elegant.ts
+#   packages/junction/example/fullstack/` },
+]
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+const TOK = /(\/\/[^\n]*|--[^\n]*|#[^\n]*)|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|(@@?[a-zA-Z]\w*)|\b(const|let|await|async|export|import|from|function|return|interface|type|model|enum|new|class|CREATE|TABLE|INDEX|UNIQUE|NOT|NULL|DEFAULT|PRIMARY|AUTOINCREMENT|SELECT|WHERE|AND|ON|INTEGER|TEXT|REAL)\b/g
+const hl = src => esc(src).replace(TOK, (m, cm, st, at, kw) =>
+  cm ? `<span class="cm">${cm}</span>` :
+  st ? `<span class="st">${st}</span>` :
+  at ? `<span class="at">${at}</span>` :
+       `<span class="kw">${kw}</span>`)
+
+const $ = id => document.getElementById(id)
+let i = 0
+
+// Left rail — every step named, grouped under its act
+$('steps').innerHTML = ACTS.map(a => `
+  <p class="act-head"><strong>${a.name}</strong><span class="pkg">${a.pkg.replace('@frontierjs/', '')}</span></p>
+  ${STEPS.map((s, n) => s.act === a.id
+    ? `<button class="stepbtn" data-n="${n}" aria-label="Step ${n + 1}: ${esc(s.title)}">
+         <span class="n">${n + 1}</span><span>${esc(s.title)}</span>
+       </button>`
+    : '').join('')}`).join('')
+
+function render() {
+  const s = STEPS[i]
+  const a = ACTS.find(x => x.id === s.act)
+
+  // Step list state
+  for (const b of document.querySelectorAll('.stepbtn')) {
+    const n = +b.dataset.n
+    b.classList.toggle('now', n === i)
+    b.classList.toggle('done', n < i)
+    if (n === i) b.setAttribute('aria-current', 'step')
+    else b.removeAttribute('aria-current')
+  }
+
+  // Left — the file as it stands
+  $('f-name').textContent = s.file
+  $('f-pkg').textContent  = a.pkg.replace('@frontierjs/', '')
+  $('f-pkg').className    = 'badge ' + a.tone
+  $('f-code').innerHTML   = s.code
+    .map((l, n) => `<span class="ln${s.fresh.includes(n) ? ' fresh' : ''}">${hl(l) || '&nbsp;'}</span>`)
+    .join('')
+  $('f-nocode').hidden      = !s.nocode
+  $('f-nocode').textContent = s.nocode || ''
+
+  // Right — what it bought you
+  $('s-title').textContent = s.title
+  $('s-act').textContent   = a.name
+  $('s-act').className     = 'badge ' + a.tone
+  $('s-say').textContent   = s.say
+  $('r-label').textContent = s.rlabel
+  $('r-code').innerHTML    = hl(s.result)
+
+  // Controls
+  $('prev').disabled = i === 0
+  $('next').disabled = i === STEPS.length - 1
+  $('next').textContent = i === STEPS.length - 1 ? 'Done' : 'Next →'
+  $('counter').textContent = `Step ${i + 1} of ${STEPS.length}`
+
+  history.replaceState(null, '', '#' + (i + 1))
+}
+
+const go = n => { i = Math.max(0, Math.min(STEPS.length - 1, n)); render() }
+
+$('prev').addEventListener('click', () => go(i - 1))
+$('next').addEventListener('click', () => go(i + 1))
+$('steps').addEventListener('click', e => {
+  const b = e.target.closest('.stepbtn')
+  if (b) go(+b.dataset.n)
+})
+addEventListener('keydown', e => {
+  if (e.target.matches('input, textarea')) return
+  if (e.key === 'ArrowRight') { e.preventDefault(); go(i + 1) }
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); go(i - 1) }
+})
+
+const start = parseInt(location.hash.slice(1), 10)
+go(Number.isFinite(start) ? start - 1 : 0)
+
+// ─── Theme switcher ──────────────────────────────────────────────────────────
+const root = document.documentElement
+const saved = localStorage.getItem('fjs-theme')
+if (saved) root.className = 'theme-' + saved
+for (const b of document.querySelectorAll('.swatch')) {
+  b.addEventListener('click', () => {
+    root.className = 'theme-' + b.dataset.theme
+    localStorage.setItem('fjs-theme', b.dataset.theme)
+  })
+}
+</script>
+
+</body>
+</html>

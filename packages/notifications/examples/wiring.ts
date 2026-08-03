@@ -3,30 +3,32 @@
 // Add this model via `fli add notifications` or paste manually.
 // Run `fli db:migrate` after adding.
 //
-// Gate: RCUD = 0.9.4.9
-//   R (read):   0 — open (policy enforces ownership — users see only their own)
-//   C (create): 9 — locked — system only via db.asSystem() inside notify()
-//   U (update): 4 — USER  — mark as read (PATCH readAt)
-//   D (delete): 9 — locked — system only
+// Gate: RCUD = 0.8.4.8
+//   R (read):   0 — open (the row policy enforces ownership — you see only yours)
+//   C (create): 8 — SYSTEM — db.asSystem(), which is what notify() uses
+//   U (update): 4 — USER   — mark as read (PATCH readAt)
+//   D (delete): 8 — SYSTEM
+//
+// Eight, not nine: 9 is LOCKED, a wall that asSystem() does not pass either, so
+// a 9 in the create slot stops notify() from ever writing a row. 8 is SYSTEM.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
 /*
-model notifications {
-  id          Integer   @id
-  userId      Integer
-  type        Text                   -- stable notification class identifier e.g. 'PaymentReceived'
-  data        Json                   -- payload built by toInApp() — varies by type
-  contextType Text?                  -- optional: 'Order', 'Project', 'Invoice'
-  contextId   Integer?               -- optional: id of the related record (loose ref, no FK)
-  readAt      DateTime?              -- null = unread
+model Notification {              // PascalCase singular → accessor db.notification
+  id          Int       @id
+  userId      String              // String, not Int — @frontierjs/auth issues uuid ids
+                                  // (use Int only if your own User.id is an Int)
+  type        String              // stable notification class id, e.g. 'PaymentReceived'
+  data        Json                // payload built by toInApp() — varies by type
+  contextType String?             // optional: 'Order', 'Project', 'Invoice'
+  contextId   Int?                // optional: id of the related record (loose ref, no FK)
+  readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
 
-  @@gate("0.9.4.9")
-  @@policy(
-    read:   "record.userId === ctx.user.id",
-    update: "record.userId === ctx.user.id"
-  )
+  @@gate("0.8.4.8")
+  @@allow('read',   userId == auth().id)
+  @@allow('update', userId == auth().id)
 }
 */
 
@@ -60,7 +62,7 @@ app.configure(notificationsPlugin({
 after: {
   create: [
     async (ctx) => {
-      if (ctx.params.user?.authMethod === 'created') {
+      if (ctx.auth.user?.authMethod === 'created') {
         await ctx.app.notify(ctx.result.data, new WelcomeUser())
       }
     }
@@ -88,9 +90,11 @@ export const sendInvoiceJob = job({
 })
 
 // 4. From a Junction route handler
-app.post('/orders/:id/complete', async (ctx) => {
+app.post('/orders/{id}/complete', async (ctx) => {
+  // TransportContext: ctx.params = path captures (:id), ctx.user = caller.
+  // No ctx.app on a route handler — close over the app you created.
   const order = await completeOrder(ctx.params.id)
-  await ctx.app.notify(ctx.params.user, new OrderCompleted(order))
+  await app.notify(ctx.user, new OrderCompleted(order))
   return ctx.json(order)
 })
 */

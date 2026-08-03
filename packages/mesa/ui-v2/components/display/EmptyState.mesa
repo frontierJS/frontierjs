@@ -1,0 +1,90 @@
+<script>
+  // EmptyState.mesa
+  // Full-section empty state. Use inside tables, lists, and dashboards
+  // when there's no data to show.
+  //
+  // Usage — minimal:
+  //   <EmptyState title="No results" />
+  //
+  // Usage — with action:
+  //   <EmptyState
+  //     title="No API keys"
+  //     description="Create a key to start using the API."
+  //   >
+  //     {#snippet action()}
+  //       <Button onclick={createKey}>Create key</Button>
+  //     {/snippet}
+  //   </EmptyState>
+  //
+  // Usage — custom icon:
+  //   <EmptyState title="No servers">
+  //     {#snippet icon()}
+  //       <IconServer class="h-8 w-8" />
+  //     {/snippet}
+  //   </EmptyState>
+  //
+  // Usage — compact (for inside table cells, cards):
+  //   <EmptyState compact title="No items" description="Add one to get started." />
+
+  export let title       = ''
+  export let description = ''
+  export let compact     = false    // tighter padding, smaller text
+  export let icon        = null     // snippet — custom icon
+  export let action      = null     // snippet — CTA button(s)
+
+  const hasAction = action || children
+</script>
+
+<div
+  class="flex flex-col items-center justify-center text-center
+         {compact ? 'py-8 px-4 gap-3' : 'py-16 px-6 gap-4'}"
+  {class}
+>
+  <!-- Icon -->
+  <div class="text-gray-300 {compact ? '' : 'mb-1'}">
+    {#if icon}
+      {@render icon?.()}
+    {:else}
+      <!-- Default inbox/empty box icon -->
+      <svg
+        class="{compact ? 'h-10 w-10' : 'h-16 w-16'}"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M20 13V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7"/>
+        <path d="M4 13h3l3 3h4l3-3h3"/>
+        <path d="M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>
+      </svg>
+    {/if}
+  </div>
+
+  <!-- Text -->
+  <div class="flex flex-col gap-1.5 max-w-xs">
+    {#if title}
+      <p class="{compact ? 'text-sm font-semibold' : 'text-base font-semibold'} text-gray-700">
+        {title}
+      </p>
+    {/if}
+    {#if description}
+      <p class="{compact ? 'text-xs' : 'text-sm'} text-gray-400 leading-relaxed">
+        {description}
+      </p>
+    {/if}
+  </div>
+
+  <!-- Action -->
+  {#if hasAction}
+    <div class="flex items-center gap-2 {compact ? 'mt-1' : 'mt-2'}">
+      {#if action}
+        {@render action?.()}
+      {:else}
+        <slot />
+      {/if}
+    </div>
+  {/if}
+</div>

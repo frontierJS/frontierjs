@@ -23,7 +23,15 @@ const CREATE_TABLE = `
 // bun:sqlite is synchronous. The ConduitStore interface is async so that a
 // networked registry is implementable — these methods satisfy it without
 // pretending to do I/O off-thread.
+// bun:sqlite accepts a named-parameter object at runtime, but its `run`
+// overload is typed `SQLQueryBindings[]` (positional only). Narrowed here
+// once rather than casting at four call sites.
+type NamedParams = Record<string, string | number | null>
+type RunNamed = (sql: string, params: NamedParams) => unknown
+
 export function createSQLiteStore(db: Database): ConduitStore {
+  const run = db.run.bind(db) as unknown as RunNamed
+
 
   async function init() {
     db.run(CREATE_TABLE)
@@ -40,7 +48,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
   async function set(descriptor: TargetDescriptor): Promise<void> {
     // registered_at is intentionally excluded from the UPDATE clause —
     // we never overwrite the original registration timestamp on heartbeat.
-    db.run(`
+    run(`
       INSERT INTO conduit_targets (id, kind, protocol, address, auth, registered_at, last_seen_at)
       VALUES ($id, $kind, $protocol, $address, $auth, $registered_at, $last_seen_at)
       ON CONFLICT(id) DO UPDATE SET
@@ -61,7 +69,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
   }
 
   async function deleteTarget(id: string): Promise<void> {
-    db.run(`DELETE FROM conduit_targets WHERE id = $id`, { $id: id })
+    run(`DELETE FROM conduit_targets WHERE id = $id`, { $id: id })
   }
 
   async function list(): Promise<TargetDescriptor[]> {
@@ -73,7 +81,7 @@ export function createSQLiteStore(db: Database): ConduitStore {
   }
 
   async function touch(id: string): Promise<void> {
-    db.run(`
+    run(`
       UPDATE conduit_targets SET last_seen_at = $now WHERE id = $id
     `, { $id: id, $now: Date.now() })
   }

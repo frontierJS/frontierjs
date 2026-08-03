@@ -13,16 +13,22 @@
       "name": "@frontierjs/auth",
       "version": "1.0.0",
       "devDependencies": {
+        "@frontierjs/junction": "workspace:*",
+        "@frontierjs/litestone": "workspace:*",
         "bun-types": "latest",
       },
       "peerDependencies": {
         "@frontierjs/junction": "*",
-        "@frontierjs/litestone": "*",
+        "@frontierjs/litestone": "^1.1.0",
       },
     },
     "packages/caravan": {
       "name": "@frontierjs/caravan",
       "version": "0.1.0",
+      "devDependencies": {
+        "@frontierjs/junction": "workspace:*",
+        "@types/bun": "latest",
+      },
       "peerDependencies": {
         "@frontierjs/junction": ">=0.1.0",
       },
@@ -46,19 +52,16 @@
       "name": "@frontierjs/conduit",
       "version": "0.1.0",
       "devDependencies": {
-        "@frontierjs/junction": "*",
+        "@frontierjs/junction": "workspace:*",
         "@types/bun": "latest",
       },
       "peerDependencies": {
         "@frontierjs/junction": ">=0.1.0",
       },
-      "optionalPeers": [
-        "@frontierjs/junction",
-      ],
     },
     "packages/css": {
       "name": "@frontierjs/css",
-      "version": "0.6.0",
+      "version": "0.10.0",
     },
     "packages/frontierjs-vscode": {
       "name": "frontierjs",
@@ -116,10 +119,10 @@
         "junction": "./tools/cli.ts",
       },
       "devDependencies": {
-        "@frontierjs/litestone": "latest",
+        "@frontierjs/litestone": "workspace:*",
       },
       "peerDependencies": {
-        "@frontierjs/litestone": ">=0.1.0",
+        "@frontierjs/litestone": "^1.1.0",
       },
       "optionalPeers": [
         "@frontierjs/litestone",
@@ -127,7 +130,7 @@
     },
     "packages/litestone": {
       "name": "@frontierjs/litestone",
-      "version": "1.0.6",
+      "version": "1.1.0",
       "bin": {
         "litestone": "./src/tools/cli.js",
       },
@@ -157,6 +160,11 @@
     "packages/notifications": {
       "name": "@frontierjs/notifications",
       "version": "0.1.0",
+      "devDependencies": {
+        "@frontierjs/junction": "workspace:*",
+        "@frontierjs/litestone": "workspace:*",
+        "@types/bun": "latest",
+      },
       "peerDependencies": {
         "@frontierjs/junction": "*",
       },
@@ -168,9 +176,23 @@
         "js-yaml": "^4.1.0",
       },
       "devDependencies": {
+        "@frontierjs/litestone": "workspace:*",
         "happy-dom": "^20.11.1",
         "vite": "^8.0.3",
         "vitest": "^4.1.2",
+      },
+    },
+    "packages/sierra/example": {
+      "name": "@frontierjs/sierra-example",
+      "version": "0.0.0",
+      "dependencies": {
+        "@frontierjs/junction": "workspace:*",
+        "@frontierjs/litestone": "workspace:*",
+        "@frontierjs/mesa": "workspace:*",
+        "@frontierjs/sierra": "workspace:*",
+      },
+      "devDependencies": {
+        "vite": "^8.0.3",
       },
     },
   },
@@ -296,6 +318,8 @@
     "@frontierjs/notifications": ["@frontierjs/notifications@workspace:packages/notifications"],
 
     "@frontierjs/sierra": ["@frontierjs/sierra@workspace:packages/sierra"],
+
+    "@frontierjs/sierra-example": ["@frontierjs/sierra-example@workspace:packages/sierra/example"],
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 
@@ -1165,13 +1189,15 @@
 
     "@bramus/specificity/css-tree": ["css-tree@3.2.1", "", { "dependencies": { "mdn-data": "2.27.1", "source-map-js": "^1.2.1" } }, "sha512-X7sjQzceUhu1u7Y/ylrRZFU2FS6LRiFVp6rKLPg23y3x3c3DOKAwuXGDp+PAGjh6CSnCjYeAul8pcT8bAl+lSA=="],
 
-    "@frontierjs/jetty/@frontierjs/mesa": ["@frontierjs/mesa@file:packages/mesa", { "dependencies": { "acorn": "^8.0.0", "astring": "^1.0.0", "css-select": "^7.0.0", "css-tree": "^2.0.0", "css-what": "^8.0.0", "rehype-slug": "^6.0.0", "rehype-stringify": "^10.0.1", "remark-gfm": "^4.0.1", "remark-parse": "^11.0.0", "remark-rehype": "^11.1.2", "unified": "^11.0.5" }, "devDependencies": { "happy-dom": "^14.12.3", "vite": "^8.0.10", "vitest": "^2.0.0" } }],
+    "@frontierjs/auth/bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
-    "@frontierjs/junction/@frontierjs/litestone": ["@frontierjs/litestone@1.0.3", "", { "bin": { "litestone": "src/tools/cli.js" } }, "sha512-DiR5UKuC6CzF1DH4qYOfnDbCgJ0I+vrormtThHI631AD5JwqnYUZ6SoyKbbk4XBRWUU53EDpIonB38UCbBCErA=="],
+    "@frontierjs/jetty/@frontierjs/mesa": ["@frontierjs/mesa@file:packages/mesa", { "dependencies": { "acorn": "^8.0.0", "astring": "^1.0.0", "css-select": "^7.0.0", "css-tree": "^2.0.0", "css-what": "^8.0.0", "rehype-slug": "^6.0.0", "rehype-stringify": "^10.0.1", "remark-gfm": "^4.0.1", "remark-parse": "^11.0.0", "remark-rehype": "^11.1.2", "unified": "^11.0.5" }, "devDependencies": { "happy-dom": "^14.12.3", "vite": "^8.0.10", "vitest": "^2.0.0" } }],
 
     "@frontierjs/sierra/happy-dom": ["happy-dom@20.11.1", "", { "dependencies": { "@types/node": ">=20.0.0", "@types/whatwg-mimetype": "^3.0.2", "@types/ws": "^8.18.1", "buffer-image-size": "^0.6.4", "entities": "^7.0.1", "whatwg-mimetype": "^3.0.0", "ws": "^8.21.0" } }, "sha512-XSt8tMzbW9ymE7687xztkO1ckR7qJNQ3LywY9vlYGhGi3zXrGBHuUo2Cl1ztZaICW+1eAGdkLbj6iwVqDT33kg=="],
 
     "@frontierjs/sierra/vitest": ["vitest@4.1.5", "", { "dependencies": { "@vitest/expect": "4.1.5", "@vitest/mocker": "4.1.5", "@vitest/pretty-format": "4.1.5", "@vitest/runner": "4.1.5", "@vitest/snapshot": "4.1.5", "@vitest/spy": "4.1.5", "@vitest/utils": "4.1.5", "es-module-lexer": "^2.0.0", "expect-type": "^1.3.0", "magic-string": "^0.30.21", "obug": "^2.1.1", "pathe": "^2.0.3", "picomatch": "^4.0.3", "std-env": "^4.0.0-rc.1", "tinybench": "^2.9.0", "tinyexec": "^1.0.2", "tinyglobby": "^0.2.15", "tinyrainbow": "^3.1.0", "vite": "^6.0.0 || ^7.0.0 || ^8.0.0", "why-is-node-running": "^2.3.0" }, "peerDependencies": { "@edge-runtime/vm": "*", "@opentelemetry/api": "^1.9.0", "@types/node": "^20.0.0 || ^22.0.0 || >=24.0.0", "@vitest/browser-playwright": "4.1.5", "@vitest/browser-preview": "4.1.5", "@vitest/browser-webdriverio": "4.1.5", "@vitest/coverage-istanbul": "4.1.5", "@vitest/coverage-v8": "4.1.5", "@vitest/ui": "4.1.5", "happy-dom": "*", "jsdom": "*" }, "optionalPeers": ["@edge-runtime/vm", "@opentelemetry/api", "@types/node", "@vitest/browser-playwright", "@vitest/browser-preview", "@vitest/browser-webdriverio", "@vitest/coverage-istanbul", "@vitest/coverage-v8", "@vitest/ui", "happy-dom", "jsdom"], "bin": { "vitest": "vitest.mjs" } }, "sha512-9Xx1v3/ih3m9hN+SbfkUyy0JAs72ap3r7joc87XL6jwF0jGg6mFBvQ1SrwaX+h8BlkX6Hz9shdd1uo6AF+ZGpg=="],
+
+    "@frontierjs/sierra-example/@frontierjs/mesa": ["@frontierjs/mesa@file:packages/mesa", { "dependencies": { "acorn": "^8.0.0", "astring": "^1.0.0", "css-select": "^7.0.0", "css-tree": "^2.0.0", "css-what": "^8.0.0", "rehype-slug": "^6.0.0", "rehype-stringify": "^10.0.1", "remark-gfm": "^4.0.1", "remark-parse": "^11.0.0", "remark-rehype": "^11.1.2", "unified": "^11.0.5" }, "devDependencies": { "happy-dom": "^14.12.3", "vite": "^8.0.10", "vitest": "^2.0.0" } }],
 
     "@types/bun/bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 

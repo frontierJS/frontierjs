@@ -21,12 +21,16 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "node ../../scripts/typecheck.mjs",
+    "example:api": "bun run example/api/app.ts",
+    "example": "vite --config example/vite.config.js"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
+    "@frontierjs/litestone": "workspace:*",
     "happy-dom": "^20.11.1",
     "vite": "^8.0.3",
     "vitest": "^4.1.2"

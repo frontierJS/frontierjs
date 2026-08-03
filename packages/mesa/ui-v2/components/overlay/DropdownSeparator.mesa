@@ -1,0 +1,9 @@
+<!--
+  DropdownSeparator — visual divider between groups of items in a DropdownMenu.
+
+  Usage:
+    <DropdownItem onclick={edit}>Edit</DropdownItem>
+    <DropdownSeparator />
+    <DropdownItem variant="destructive" onclick={remove}>Delete</DropdownItem>
+-->
+<div role="separator" class="my-1 mx-1 h-px bg-gray-100 {class}"></div>

@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en" class="theme-default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FrontierJS — the schema is the app</title>
+<meta name="description" content="A schema-seeded fullstack framework. One .lite file seeds your database, your API, and your UI. CRUD, validation, authorization and live updates are derived, not written.">
+
+<!-- Local path so this file renders straight from the repo.
+     Deploy rewrites this to ./css/index.css — see README.md. -->
+<link rel="stylesheet" href="../packages/css/index.css">
+
+<style>
+  /* Page-specific layout only. Everything visual comes from @frontierjs/css tokens. */
+  html { scroll-behavior: smooth; }
+  body { background: var(--surface); color: var(--ink); }
+  section { scroll-margin-top: 5rem; padding: 5rem 0; border-top: 1px solid var(--rule); }
+  section:first-of-type { border-top: 0; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--rule);
+  }
+  .topbar .container { display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.25rem; }
+  .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; }
+  .brand span { color: var(--color-primary); }
+  .navset { display: flex; gap: .25rem; flex-wrap: wrap; }
+  .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
+  .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+
+  .swatches { display: flex; gap: .3rem; }
+  .swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+
+  .lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 46ch; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
+  h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); line-height: 1.05; letter-spacing: -.03em; margin: .4em 0 .3em; }
+  h2 { font-size: clamp(1.6rem, 3.5vw, 2.2rem); letter-spacing: -.02em; margin: 0 0 .3em; }
+  h3 { font-size: 1rem; margin: 0 0 .5rem; }
+
+  pre {
+    background: var(--surface-sunken); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 1rem 1.15rem; overflow-x: auto; margin: 0;
+    font-size: .82rem; line-height: 1.65;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre b   { color: var(--color-primary); font-weight: 600; }        /* keyword */
+  pre i   { color: var(--ink-mute);      font-style: normal; }      /* comment */
+  pre em  { color: var(--color-success); font-style: normal; }      /* string/attr */
+
+  .grid  { display: grid; gap: 1.5rem; }
+  .cols3 { grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); }
+  .cols2 { grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
+  .hero  { display: grid; gap: 2.5rem; grid-template-columns: minmax(0,1fr); align-items: center; }
+  @media (min-width: 60rem) { .hero { grid-template-columns: 1.05fr .95fr; } }
+
+  .flow  { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .9rem; }
+  .flow .step { border: 1px solid var(--rule-strong); border-radius: 999px; padding: .3rem .8rem; background: var(--surface-raised); }
+  .flow .arrow { color: var(--ink-mute); }
+
+  /* Untoned .btn.outlined paints --color-primary on --surface — 3.96:1 in the
+     default theme and 1.99:1 in elite, both below AA. Take the neutral ink, as
+     .btn.ghost already does and for the same reason. Safe to set color alone:
+     outlined's background is --surface, not the derived --fill. */
+  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+
+  .checks { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+  .checks li { display: flex; gap: .6rem; align-items: flex-start; font-size: .92rem; }
+  .checks li::before { content: "✓"; color: var(--color-success); font-weight: 700; flex: none; }
+
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 3.5rem; color: var(--ink-mute); font-size: .875rem; }
+  .container { max-width: 68rem; margin-inline: auto; padding-inline: 1.25rem; }
+</style>
+</head>
+<body>
+
+<a href="#top" class="visually-hidden">Skip to content</a>
+
+<!-- ─── Nav ─────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="container">
+    <div class="brand">Frontier<span>JS</span></div>
+    <nav class="navset">
+      <a href="#idea">Idea</a>
+      <a href="#code">See it</a>
+      <a href="showroom.html">Showroom</a>
+      <a href="showroom2.html">Walkthrough</a>
+      <a href="showroom3.html">The ripple</a>
+      <a href="showroom4.html">The loop</a>
+      <a href="showroom5.html">The stack</a>
+      <a href="journey.html">The journey</a>
+      <a href="#packages">Packages</a>
+      <a href="#extend">Extend</a>
+      <a href="#vision">Vision</a>
+      <a href="#start">Start</a>
+    </nav>
+    <div class="swatches" role="group" aria-label="Theme">
+      <button class="swatch" data-theme="default"  title="Default"  style="background:#0d83dd"></button>
+      <button class="swatch" data-theme="sunset"   title="Sunset"   style="background:#e07a3f"></button>
+      <button class="swatch" data-theme="forest"   title="Forest"   style="background:#2f7d4f"></button>
+      <button class="swatch" data-theme="midnight" title="Midnight" style="background:#3b4a6b"></button>
+      <button class="swatch" data-theme="dark"     title="Dark"     style="background:#1c1b18"></button>
+      <button class="swatch" data-theme="elite"    title="Elite"    style="background:#8b6f2e"></button>
+    </div>
+  </div>
+</header>
+
+<!-- ─── Hero ────────────────────────────────────────────────────────── -->
+<section id="top">
+  <div class="container hero">
+    <div>
+      <p class="eyebrow">Schema-seeded fullstack framework</p>
+      <h1>The schema<br>is the app.</h1>
+      <p class="lede">
+        One <code>.lite</code> file seeds your database, your API, and your UI.
+        Write the schema and a six-line service — CRUD, validation, authorization,
+        pagination and live updates are <strong>derived, not written</strong>.
+      </p>
+      <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+        <a class="btn primary raised" href="#start">Get started</a>
+        <a class="btn outlined" href="#code">See the code</a>
+        <span class="badge warning" title="Working, but APIs may still move">Alpha</span>
+      </div>
+    </div>
+
+    <pre><i>// db/schema.lite — the seed</i>
+<b>model</b> Lead {
+  id        Int      <em>@id</em>
+  name      String   <em>@length(1, 200) @trim</em>
+  email     String   <em>@email @unique @lower</em>
+  status    LeadStatus <em>@default(new)</em>
+  value     Float    <em>@gte(0)</em>
+  createdAt DateTime <em>@default(now())</em>
+
+  <i>// read · create · update · delete</i>
+  <em>@@gate</em>(<em>"0.4.4.5"</em>)
+  <em>@@allow</em>(<em>'read'</em>, ownerId == auth().id)
+}</pre>
+  </div>
+</section>
+
+<!-- ─── The idea ────────────────────────────────────────────────────── -->
+<section id="idea">
+  <div class="container stack">
+    <p class="eyebrow">The idea</p>
+    <h2>One seed, three realms</h2>
+    <p class="lede" style="max-width:60ch">
+      Every framework helps you write the glue between database, server, and browser.
+      FrontierJS derives glue you never write — and everything traces back to one file.
+    </p>
+
+    <div class="flow" style="margin:1.5rem 0 2rem">
+      <span class="step"><strong>Data</strong> · Model</span>
+      <span class="arrow">→</span>
+      <span class="step"><strong>API</strong> · Service</span>
+      <span class="arrow">→</span>
+      <span class="step"><strong>UI</strong> · Resource</span>
+      <span class="arrow" style="margin-left:.5rem">+</span>
+      <span class="step muted">Release</span>
+      <span class="step muted">Suite</span>
+    </div>
+
+    <div class="grid cols3">
+      <article class="card stack">
+        <h3>Derived, not declared</h3>
+        <p class="text-sm text-muted">
+          Other frameworks give you a config file to describe your routes and queries.
+          That is still glue you type. Here the schema already knows the shape, the rules,
+          and who may do what — so the API is read out of it, not written beside it.
+        </p>
+      </article>
+      <article class="card stack">
+        <h3>Authorization travels with the data</h3>
+        <p class="text-sm text-muted">
+          Gates and row policies live on the Model and compile into SQL. A query cannot
+          take a code path that forgot to check, because the check is not in the code path —
+          it is in the data layer, under every caller.
+        </p>
+      </article>
+      <article class="card stack">
+        <h3>One engine on both sides</h3>
+        <p class="text-sm text-muted">
+          Litestone is SQLite. The same schema, the same query API and the same gates can
+          run on the server and in the browser — which is what makes offline-first a
+          direction rather than a rewrite.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ─── See it ──────────────────────────────────────────────────────── -->
+<section id="code">
+  <div class="container stack">
+    <p class="eyebrow">See it</p>
+    <h2>Schema → Service → Resource</h2>
+    <p class="lede" style="max-width:60ch">
+      The whole application below is the schema in the hero plus these three files.
+      Nothing is elided.
+    </p>
+
+    <div class="grid cols2" style="margin-top:1.5rem">
+      <div class="stack">
+        <h3><code>api/server.ts</code> — the API</h3>
+        <pre><b>import</b> { createApp, createService, publish } <b>from</b> <em>'@frontierjs/junction'</em>
+
+<b>const</b> app = createApp({ db, auth, config: { port: <em>3200</em> } })
+<b>const</b> live = publish(() => app.channel(<em>'leads'</em>))
+
+app.services.register(createService({
+  name:  <em>'leads'</em>,
+  model: <em>'lead'</em>,
+  hooks: { after: { create: [live], patch: [live] } },
+
+  <i>// custom action, dispatched by X-Service-Method</i>
+  <b>async</b> getStats(ctx) {
+    <b>const</b> leads = <b>await</b> ctx.locals.db.lead.findMany()
+    <b>return</b> { count: leads.length }
+  },
+}))
+
+<b>await</b> app.start()</pre>
+      </div>
+
+      <div class="stack">
+        <h3><code>src/routes/leads/index.mesa</code> — the UI</h3>
+        <pre><b>&lt;script&gt;</b>
+  <b>import</b> { createResource } <b>from</b> <em>'@frontierjs/sierra'</em>
+
+  <i>// Same four hook phases as the API realm.</i>
+  <b>const</b> leads = createResource(<em>'leads'</em>, {
+    hooks: {
+      around: { all: [<b>async</b> (ctx, next) =&gt; {
+        busy = <b>true</b>; <b>await</b> next(); busy = <b>false</b>
+      }] },
+    },
+  })
+
+  <b>let</b> busy = <b>false</b>
+  <b>await</b> leads.find()
+<b>&lt;/script&gt;</b>
+
+&lt;table <b>class</b>=<em>"table"</em>&gt;
+  {#each leads.data <b>as</b> lead}
+    &lt;tr&gt;&lt;td&gt;{lead.name}&lt;/td&gt;&lt;td&gt;{lead.email}&lt;/td&gt;&lt;/tr&gt;
+  {/each}
+&lt;/table&gt;</pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:2rem">
+      <h3>What you did not write</h3>
+      <div class="grid cols3" style="margin-top:1rem">
+        <ul class="checks">
+          <li>Full CRUD at <code>/api/leads</code></li>
+          <li><code>400</code>s from the schema's own rules</li>
+          <li><code>401</code>/<code>403</code>s from the Model's gate</li>
+        </ul>
+        <ul class="checks">
+          <li>Pagination and a stable result envelope</li>
+          <li>Row policies compiled into every query</li>
+          <li>TypeScript types for every Model</li>
+        </ul>
+        <ul class="checks">
+          <li>Live WebSocket events on mutation</li>
+          <li>Migrations diffed from the schema</li>
+          <li>JSON Schema, shared by API and UI</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Packages ────────────────────────────────────────────────────── -->
+<section id="packages">
+  <div class="container stack">
+    <p class="eyebrow">The map</p>
+    <h2>Twelve packages, one direction</h2>
+    <p class="lede" style="max-width:60ch">
+      <code>Litestone ← Junction ← Sierra</code>, never the reverse.
+      Mesa is a leaf with zero workspace dependencies. Use the whole stack, or one piece.
+    </p>
+
+    <div class="table-wrap" style="margin-top:1.5rem">
+      <table class="table">
+        <thead>
+          <tr><th>Package</th><th>Realm</th><th>What it is</th><th>State</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>litestone</strong></td><td>Data</td><td><code>.lite</code> language, SQLite client, gates &amp; policies, migrations, tenants, studio</td><td><span class="badge success">v1.1 · 1241 tests</span></td></tr>
+          <tr><td><strong>junction</strong></td><td>API</td><td>Services, hook pipeline, HTTP/WS transport, channels, browser client</td><td><span class="badge success">703 tests</span></td></tr>
+          <tr><td><strong>sierra</strong></td><td>UI</td><td>File-tree routing, Vite build, <code>createResource</code>, static prerender</td><td><span class="badge success">558 tests</span></td></tr>
+          <tr><td><strong>mesa</strong></td><td>UI</td><td>Reactive compiler + signal runtime. Renders to HTML, email, fragment or JS</td><td><span class="badge success">869 tests</span></td></tr>
+          <tr><td><strong>auth</strong></td><td>Identity</td><td>Native provider over Litestone, ships schema fragments and <code>/auth/*</code></td><td><span class="badge warning">thin coverage</span></td></tr>
+          <tr><td><strong>caravan</strong></td><td>Jobs</td><td>SQLite job queue and cron, exposed as <code>app.jobs</code></td><td><span class="badge success">67 tests</span></td></tr>
+          <tr><td><strong>conduit</strong></td><td>Egress</td><td>Outbound boundary — declared targets over http, ws or unix</td><td><span class="badge success">169 tests</span></td></tr>
+          <tr><td><strong>notifications</strong></td><td>Slice</td><td>In-app record + WebSocket event + email fan-out via <code>app.notify</code></td><td><span class="badge">working</span></td></tr>
+          <tr><td><strong>cli</strong> (<code>fli</code>)</td><td>Tooling</td><td>Markdown-native command runtime, scaffolds, deploy pipeline</td><td><span class="badge success">142 tests</span></td></tr>
+          <tr><td><strong>css</strong></td><td>UI</td><td>Semantics-first design system. Plain CSS, no build step — this page uses it</td><td><span class="badge success">v0.10 · 202 tests</span></td></tr>
+          <tr><td><strong>jetty</strong></td><td>UI</td><td>Browser-extension container — Mesa UI with a service-worker relay</td><td><span class="badge warning">pre-production</span></td></tr>
+          <tr><td><strong>vscode</strong></td><td>Tooling</td><td>Litestone language server and Mesa editor support</td><td><span class="badge warning">early</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Extend ──────────────────────────────────────────────────────── -->
+<section id="extend">
+  <div class="container stack">
+    <p class="eyebrow">Extend</p>
+    <h2>Four concepts, everywhere</h2>
+    <p class="lede" style="max-width:60ch">
+      Learn these once and they hold across every realm. That is the whole design
+      constraint: keep the mental model small enough to fit in your head.
+    </p>
+
+    <div class="grid cols2" style="margin-top:1.5rem">
+      <article class="card stack">
+        <h3><span class="pill primary">Declaration</span> change the data's own rules</h3>
+        <pre><b>model</b> Invoice {
+  total Float <em>@gte(0)</em>
+  <em>@@gate</em>(<em>"0.4.4.8"</em>)
+  <em>@@allow</em>(<em>'read'</em>, ownerId == auth().id)
+  <em>@@log</em>(audit)
+}</pre>
+      </article>
+
+      <article class="card stack">
+        <h3><span class="pill primary">Hook</span> step into a pipeline</h3>
+        <pre><i>// Same four phases in the API and the UI.</i>
+hooks: {
+  around: { all:    [timing] },
+  before: { create: [setDefaults] },
+  after:  { create: [broadcast] },
+  error:  { all:    [report] },
+}</pre>
+      </article>
+
+      <article class="card stack">
+        <h3><span class="pill primary">Plugin</span> attach a capability</h3>
+        <pre><b>export function</b> audit(opts) {
+  <b>return</b> {
+    name: <em>'audit'</em>,
+    register(app) { app.provide(<em>'audit'</em>, inst) },
+    <b>async</b> boot(app)     { <b>await</b> inst.init() },
+    <b>async</b> shutdown(app) { <b>await</b> inst.close() },
+  }
+}
+
+app.configure(audit({ … }))</pre>
+      </article>
+
+      <article class="card stack">
+        <h3><span class="pill primary">Provider</span> swap an implementation</h3>
+        <pre><i>// A Plugin adds. A Provider replaces.</i>
+<b>const</b> auth: IAuth = {
+  verifySession, login, logout,
+  createUser, deleteUser, createApiKey,
+}
+
+createApp({ db, auth })</pre>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Vision ──────────────────────────────────────────────────────── -->
+<section id="vision">
+  <div class="container stack">
+    <p class="eyebrow">Direction</p>
+    <h2>Where this is going</h2>
+    <p class="lede" style="max-width:60ch">
+      Stated plainly as direction, not as shipped features. Everything above this
+      section runs today; everything in it does not yet.
+    </p>
+
+    <div class="grid cols3" style="margin-top:1.5rem">
+      <article class="card stack">
+        <h3>Slices — installable full-stack modules</h3>
+        <p class="text-sm text-muted">
+          One package that ships a Model, a Service, a Resource and its own conformance
+          tests — install only the parts you want. Take the API without the frontend, and
+          have that be checkable rather than hopeful.
+        </p>
+      </article>
+      <article class="card stack">
+        <h3>Offline-first, small, self-hosted</h3>
+        <p class="text-sm text-muted">
+          The same SQLite engine on both sides means the schema, the queries and the gates
+          come along. Local enforcement, a sync queue, and an app you can run as one
+          binary next to one file.
+        </p>
+      </article>
+      <article class="card stack">
+        <h3>One target axis</h3>
+        <p class="text-sm text-muted">
+          One component set, many outputs: SPA, static, widget, extension — and later
+          desktop and mobile. A new platform should be an entry on a list, not a new
+          framework to learn.
+        </p>
+      </article>
+    </div>
+
+    <p class="text-sm text-muted" style="margin-top:1.5rem">
+      MIT licensed. No account, no hosted service, no phone-home — self-hosting is the
+      default path, not the fallback.
+    </p>
+  </div>
+</section>
+
+<!-- ─── Start ───────────────────────────────────────────────────────── -->
+<section id="start">
+  <div class="container stack">
+    <p class="eyebrow">Start</p>
+    <h2>Five minutes to a running API</h2>
+
+    <div class="grid cols2" style="margin-top:1.5rem">
+      <div class="stack">
+        <pre><i># scaffold a new app</i>
+$ npx @frontierjs/cli new my-app
+$ cd my-app
+
+<i># edit db/schema.lite, then</i>
+$ fli db:migrate
+$ fli dev
+
+  <em>→ http://localhost:3200</em></pre>
+      </div>
+
+      <div class="stack">
+        <pre><i># or add pieces to an existing project</i>
+$ npm i @frontierjs/litestone   <i># Data</i>
+$ npm i @frontierjs/junction    <i># API</i>
+$ npm i @frontierjs/sierra      <i># UI</i>
+
+<i># batteries, when you want them</i>
+$ npm i @frontierjs/auth @frontierjs/caravan</pre>
+      </div>
+    </div>
+
+    <div class="cluster" style="margin-top:2rem; gap:.75rem;">
+      <a class="btn primary raised" href="https://github.com/frontierjs/frontierjs">GitHub</a>
+      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/blob/main/ARCHITECT.md">Architecture</a>
+      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/blob/main/PHILOSOPHY.md">Philosophy</a>
+      <a class="btn ghost" href="https://github.com/frontierjs/frontierjs/tree/main/packages/junction/example">Runnable examples</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container split">
+    <span>FrontierJS — MIT licensed. Built with Bun and SQLite.</span>
+    <span>This page is styled entirely by <code>@frontierjs/css</code>.</span>
+  </div>
+</footer>
+
+<script>
+  // Theme switcher — swaps the .theme-* class the design system reads.
+  const root = document.documentElement
+  const saved = localStorage.getItem('fjs-theme')
+  if (saved) root.className = 'theme-' + saved
+
+  for (const b of document.querySelectorAll('.swatch')) {
+    b.addEventListener('click', () => {
+      root.className = 'theme-' + b.dataset.theme
+      localStorage.setItem('fjs-theme', b.dataset.theme)
+    })
+  }
+</script>
+
+</body>
+</html>

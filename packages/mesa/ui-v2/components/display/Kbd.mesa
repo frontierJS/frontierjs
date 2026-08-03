@@ -1,0 +1,45 @@
+<script>
+  // Kbd.mesa
+  // Keyboard shortcut badge. Renders key sequences as styled <kbd> elements.
+  //
+  // Usage:
+  //   <Kbd>⌘K</Kbd>
+  //   <Kbd>Ctrl+S</Kbd>
+  //   <Kbd keys={['⌘', 'Shift', 'P']} />   ← renders each key separately
+  //
+  // The `keys` prop splits into individual badges joined by a thin plus.
+  // The children form renders the whole thing as one badge.
+
+  export let keys     = []     // string[] — each key gets its own badge
+  export let size     = 'sm'   // 'xs' | 'sm' | 'md'
+  const sizeMap = {
+    xs: 'px-1   py-px   text-[10px] min-w-[1.1rem]',
+    sm: 'px-1.5 py-0.5  text-[11px] min-w-[1.375rem]',
+    md: 'px-2   py-0.5  text-xs     min-w-[1.625rem]',
+  }
+  const sz = sizeMap[size] ?? sizeMap.sm
+</script>
+
+{#if keys.length}
+  <span class="inline-flex items-center gap-0.5" {class}>
+    {#each keys as key, i (i)}
+      {#if i > 0}
+        <span class="text-gray-400 text-[10px] select-none">+</span>
+      {/if}
+      <kbd
+        class="inline-flex items-center justify-center rounded border border-gray-300
+               bg-white font-mono font-medium text-gray-600 shadow-[0_1px_0_1px_#d1d5db]
+               select-none {sz}"
+      >{key}</kbd>
+    {/each}
+  </span>
+{:else}
+  <kbd
+    class="inline-flex items-center justify-center rounded border border-gray-300
+           bg-white font-mono font-medium text-gray-600 shadow-[0_1px_0_1px_#d1d5db]
+           select-none {sz}"
+    {class}
+  >
+    <slot />
+  </kbd>
+{/if}

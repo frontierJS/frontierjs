@@ -1,5 +1,5 @@
 // Every claim the new §4 makes, checked against the compiler.
-const { compileSource } = await import('/home/claude/review/mesa/compiler.js')
+const { compileSource } = await import('./compiler.js')
 const C = (script, cfg = {}) => compileSource(
   `<script>\n${script}\n</script><p>{1}</p>`, { filename: '/t/T.mesa', dev: false, ...cfg })
 

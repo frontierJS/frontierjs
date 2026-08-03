@@ -2,6 +2,26 @@
 
 _Audited: 2026-08-01 · Package: `@frontierjs/conduit` 0.1.0 (`conduit.zip`) · 2,516 lines across 17 files · Runtime: Bun 1.3.13_
 
+---
+
+> ## Status — updated 2026-08-01
+>
+> **This audit describes the pre-remediation tree. Most of it has since been addressed.** Read the findings for the reasoning; check here for what is still true.
+>
+> **Fixed** — every blocker in §1, every finding in §2 and §3, §4 and §5 in full, and most of §6. Specifically: §1.1 (auth on the WS upgrade), §1.2 (credentials behind a `CredentialResolver`, descriptors carry refs only, and management now *requires* an access decision at `configure()`), §1.3 (canonical `method\npath\ntimestamp\nnonce\nbody-hash` signing, always applied), §1.4 (auth headers win), §1.5 (timeout covers the body read; `max_response_bytes` cap), §2.1–§2.6, §2.7 (jitter, `deadline_ms`, per-target circuit breaker and concurrency cap), §2.8 (`req.validate`), §3.1 (`UnixTransport extends HttpTransport` — the divergence is gone), §3.2–§3.6, §4 (populated `stats()` incl. breaker state, `onRetry`, stream hooks, async hooks, W3C trace propagation), §5 (`StubTransport` can simulate failure; stubs register into the store; SQLite store tested).
+>
+> Test count went 46 → 189. Every source file is at 100% line coverage except `websocket.ts` (96.5%) and `router.ts` (93.9%).
+>
+> **Not fixed, by decision** — per-frame WebSocket signing. Auth is applied to the connection upgrade only; anything able to write to an established socket can issue any command on it. Documented in the README.
+>
+> **Still open** — the response cap and breaker are per-target, not global, so there is no process-wide memory or concurrency ceiling. `meta.duration_ms` still measures only the last attempt (the conduit-level counters measure the whole call correctly). No `tsconfig.json` — a repo-wide gap, not conduit's.
+>
+> **Corrections to this audit** — §1.6 ("does not install") was an artifact of auditing a zip outside the monorepo; the surviving parts were the false `peerDependenciesMeta.optional` and the missing `tsconfig.json` (the latter is a repo-wide gap, not conduit's). §1.2's "fails open" is softened by Junction's app-level hooks, which do reach this service — now covered by a test.
+>
+> **Found later, not in this audit** — `management: true` registered a service named `conduit/targets`, which Junction can never route (`{service}` matches one path segment), so the default management endpoint 404'd on every request. Found by integration-testing against a real Junction app rather than a fake one.
+
+---
+
 Every finding below was **reproduced by executing the code**, not inferred from reading it. Where a hypothesis failed under test it was discarded (noted in §8). File and line references are to the shipped tree.
 
 ---

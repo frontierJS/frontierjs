@@ -13,9 +13,20 @@
      No tone-name list — see the recipe note in surface.css. */
   --field-border: var(--bg-mix, var(--rule-strong));
 
-  /* Box — was the `field` Uno shortcut */
+  /*
+   * Full width is right in a form column and wrong everywhere else — a
+   * <select> in a toolbar, a search box in a topbar, a number input in a
+   * .field-row. It is a token so those cases set a value instead of
+   * fighting `width: 100%` with an override:
+   *
+   *   <select class="field" style="--field-inline-size: auto">
+   *   .toolbar .field { --field-inline-size: auto; }
+   *
+   * `auto` gives the control its intrinsic size, which is what a bare
+   * <select> or a short <input> wants.
+   */
   display:     block;
-  width:       100%;
+  inline-size: var(--field-inline-size, 100%);
   padding:     0.5rem 0.75rem;
   font-size:   0.875rem;
   line-height: 1.25rem;
@@ -30,12 +41,12 @@
 }
 .field::placeholder { color: var(--ink-mute); }
 
-/* Focus adopts the tone when there is one, the ring color otherwise. */
+/*
+ * The border adopts the tone on focus; the ring itself comes from
+ * focus.css, which reads the same --bg-mix so the two always agree.
+ */
 .field:focus {
-  outline:      none;
-  border-color: var(--bg-mix, var(--ring));
-  box-shadow:   0 0 0 var(--ring-width)
-                color-mix(in srgb, var(--bg-mix, var(--ring)) 18%, transparent);
+  border-color: var(--bg-mix, var(--ring, var(--color-primary)));
 }
 
 .field:disabled {
@@ -87,10 +98,174 @@ select.field {
   font-size:   14px;
   color:       var(--ink);
 }
-.field-check input {
+/*
+ * The tone usually sits on the label, not the input — but --bg-mix is
+ * element-scoped (inherits:false), so the input cannot see it. The label
+ * derives it into a normal inheriting property and passes that down, the
+ * same shape tables and dialogs use.
+ *
+ * The input still checks its own --bg-mix first, so a tone class works on
+ * either element.
+ */
+.field-check {
+  --check-accent: var(--bg-mix, var(--color-primary));
+}
+/*
+ * `:not(.switch)` is load-bearing. This rule is (0,1,1) and `.switch`
+ * below is (0,1,0), so without the exclusion it wins and squashes the
+ * switch to a 16x16 circle — inside the very markup the switch section
+ * documents. A switch whose entire affordance is its shape rendered as a
+ * small round checkbox, and only building a real settings screen showed
+ * it.
+ */
+.field-check input:not(.switch) {
   width:        16px;
   height:       16px;
   margin:       0;
   cursor:       pointer;
-  accent-color: var(--color-primary);
+  accent-color: var(--bg-mix, var(--check-accent));
+}
+
+/* The switch has its own box. `accent-color` does nothing on it — it is
+   appearance:none and paints its own track — so it takes the label's
+   derived accent through --check-accent instead, below. */
+.field-check .switch {
+  margin: 0;
+}
+.field-check:has(input:disabled) {
+  opacity: 0.55;
+  cursor:  not-allowed;
+}
+
+/*
+ * ── Native validation drives the tone ───────────────────────────
+ *
+ * `:user-invalid` matches only after the user has actually interacted
+ * with the field — unlike `:invalid`, which matches an empty required
+ * input the instant the page loads and shouts at someone who has not
+ * typed anything yet.
+ *
+ * Setting --bg-mix is the whole implementation: the border, the focus
+ * ring and any .field-hint in scope already derive from it, so one line
+ * turns the entire field red at the right moment with no JavaScript and
+ * no class to toggle. This is the same principle as [aria-current] in
+ * nav.css — let the platform own the state.
+ *
+ * Opt into the positive case per form if you want it:
+ *   .field:user-valid { --bg-mix: var(--color-success); }
+ */
+.field:user-invalid {
+  --bg-mix: var(--color-danger);
+}
+
+/*
+ * ── Switch ──────────────────────────────────────────────────────
+ *
+ *   <label class="field-check">
+ *     <input type="checkbox" role="switch" class="switch" checked>
+ *     <span>Email notifications</span>
+ *   </label>
+ *
+ * A real checkbox with role="switch", so checked state, keyboard
+ * activation and label association are all native (Principle 4).
+ *
+ * The knob is a background-image rather than a pseudo-element. An
+ * <input> is a replaced element, and pseudo-elements on replaced
+ * elements are not guaranteed by spec — they happen to work on
+ * appearance:none checkboxes in current browsers, but a background
+ * gradient is defined behaviour everywhere.
+ */
+.switch {
+  appearance:    none;
+  flex-shrink:   0;
+  inline-size:   2.25rem;
+  block-size:    1.25rem;
+  border-radius: 999px;
+  cursor:        pointer;
+
+  background-color: var(--rule-strong);
+  background-image: radial-gradient(circle at center, #fff 42%, transparent 44%);
+  background-size:     1rem 1rem;
+  background-repeat:   no-repeat;
+  background-position: 0.125rem center;
+
+  transition: background-color 150ms ease, background-position 150ms ease;
+}
+/*
+ * The checked track reads the same three-step chain the checkbox does:
+ * a tone on the switch itself, else the one the .field-check label
+ * derived into --check-accent, else primary. Without the middle step a
+ * tone on the label cannot cross to the input, because --bg-mix is
+ * element-scoped; without the last step a switch outside a .field-check
+ * would resolve to nothing and render untinted.
+ */
+.switch:checked {
+  background-color:    var(--bg-mix, var(--check-accent, var(--color-primary)));
+  background-position: calc(100% - 0.125rem) center;
+}
+/* Focus ring: focus.css. */
+.switch:disabled {
+  opacity: 0.5;
+  cursor:  not-allowed;
+}
+
+/*
+ * ── Field row — inputs with attached addons ─────────────────────
+ *
+ *   <div class="field-row">
+ *     <span class="field-addon">$</span>
+ *     <input class="field" type="number" inputmode="decimal">
+ *     <span class="field-addon">.00</span>
+ *   </div>
+ *
+ *   <div class="field-row">
+ *     <input class="field" type="search">
+ *     <button class="btn">Search</button>
+ *   </div>
+ *
+ * An addon is decoration. If it carries meaning the input does not,
+ * put that meaning in the <label> or a .field-hint — a screen reader
+ * user should not have to infer "dollars" from a glyph beside the box.
+ */
+.field-row {
+  display:     flex;
+  align-items: stretch;
+}
+/* Square every internal edge, then round the outer two. */
+.field-row > * {
+  border-radius: 0;
+}
+.field-row > :first-child {
+  border-start-start-radius: var(--field-radius);
+  border-end-start-radius:   var(--field-radius);
+}
+.field-row > :last-child {
+  border-start-end-radius: var(--field-radius);
+  border-end-end-radius:   var(--field-radius);
+}
+/* Collapse the doubled border between neighbours. */
+.field-row > * + * {
+  margin-inline-start: -1px;
+}
+.field-row > .field {
+  flex:            1;
+  min-inline-size: 0;
+}
+/* Lift the focused control so its ring is not clipped by its neighbour. */
+.field-row > .field:focus,
+.field-row > .btn:focus-visible {
+  position: relative;
+  z-index:  1;
+}
+
+.field-addon {
+  display:     inline-flex;
+  align-items: center;
+  padding-inline: 0.75rem;
+  background:  var(--surface-sunken);
+  border:      1px solid var(--rule-strong);
+  color:       var(--ink-soft);
+  font-family: var(--font-primary);
+  font-size:   0.875rem;
+  white-space: nowrap;
 }

@@ -1,0 +1,227 @@
+// auto-gen — synthesizes main.js and index.html for Pages w/ only App.mesa.
+//
+// Layout (flat at cache root, so Vite's `root: cacheDir` emits flat outputs):
+//   cacheDir/dock.html          ← script src="./dock/main.js"
+//   cacheDir/dock/main.js
+//   cacheDir/options.html       ← script src="./options/main.js"
+//   cacheDir/options/main.js
+//   cacheDir/piers/<id>.html    ← script src="./<id>/main.js"
+//   cacheDir/piers/<id>/main.js
+//
+// Vite then emits dist/dock.html + dist/dock.js (and same for options/piers),
+// matching the spec's build output shape.
+
+import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
+import { join, dirname, relative } from 'node:path'
+import { isUnoCSSInstalled } from './uno-plugin.js'
+
+export function autoGenForPage({ page, cacheDir, packageRoot, dev = null, extRoot = null }) {
+  const htmlPath = page.type === 'pier'
+    ? join(cacheDir, 'piers', `${page.id}.html`)
+    : join(cacheDir, `${page.type}.html`)
+
+  const mainDir  = page.type === 'pier'
+    ? join(cacheDir, 'piers', page.id)
+    : join(cacheDir, page.type)
+  const mainPath = join(mainDir, 'main.js')
+
+  ensureDir(dirname(htmlPath))
+  ensureDir(mainDir)
+
+  const appAbs       = page.app.replace(/\\/g, '/')
+  const runtimeAbs   = join(packageRoot, 'src/runtime/index.js').replace(/\\/g, '/')
+  const resourcesAbs = join(packageRoot, 'src/resources/index.js').replace(/\\/g, '/')
+
+  const idLine = page.type === 'pier'
+    ? `globalThis.__JETTY_PIER_ID__ = ${JSON.stringify(page.id)}\n`
+    : ''
+
+  // UnoCSS virtual import — only emitted if the consumer extension has
+  // UnoCSS installed. The 'virtual:uno.css' module is provided by the
+  // unocss/vite plugin and resolves to the generated atomic CSS for this
+  // build. Without UnoCSS installed, the module wouldn't exist and Vite
+  // would fail at resolve time, so we omit the line entirely.
+  const unoLine = isUnoCSSInstalled(extRoot)
+    ? `import 'virtual:uno.css'\n`
+    : ''
+
+  // Dev-client import + invocation. Emitted ONLY when dev mode is on; in
+  // prod the lines are absent so the dev client is not bundled.
+  // The auto-gen file IS the Vite entry, so this static import goes through
+  // Vite's normal resolve+bundle pipeline — no virtual modules needed.
+  let devClientLines = ''
+  let hmrPrologue = ''
+  let hmrEpilogue = ''
+  let hmrFirstRunGuard = ''   // prefix before mount/connect calls in dev
+  if (dev?.port) {
+    const devClientAbs = join(packageRoot, 'src/dev/dev-client.js').replace(/\\/g, '/')
+    const clientType = page.type === 'pier' ? `pier:${page.id}` : page.type
+    const sentinelKey = `__JETTY_MOUNTED_${clientType.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}__`
+
+    // dev-client is also sentinel-protected: only start the WS once, even
+    // when the entry module is re-evaluated by HMR (cache-busted re-import).
+    devClientLines =
+`// --- jetty dev client (auto-injected in dev mode) ---
+import { startDevClient as __jettyStartDev } from ${JSON.stringify(devClientAbs)}
+if (!globalThis.__JETTY_DEV_CLIENT_STARTED__) {
+  globalThis.__JETTY_DEV_CLIENT_STARTED__ = true
+  __jettyStartDev({ port: ${dev.port}, clientType: ${JSON.stringify(clientType)} })
+}
+// --- end jetty dev client ---
+`
+
+    // First-run sentinel: distinguishes initial page load from HMR re-imports.
+    // Initial load mounts; HMR re-imports skip the mount (component swap is
+    // handled by dev-client via the global App registry).
+    hmrPrologue =
+`// --- jetty HMR sentinel (skip remount on re-import) ---
+const __jettyHmrFirstRun = !globalThis.${sentinelKey}
+globalThis.${sentinelKey} = true
+`
+
+    // After App is imported, publish it so dev-client can grab the new
+    // reference on hot-update. We attach the named exports __mesaOrigFn and
+    // __setMark as properties of App so the registry's hot_update finds
+    // them via the wrapper function alone.
+    hmrEpilogue =
+`// Publish App reference for HMR. On a hot-update re-import this captures
+// the NEW component fn; dev-client reads it and calls __jettyMesa.hot_update.
+// Attach named exports as properties so hot_update can find them via App.
+if (typeof __mesaOrigFn === 'function') App.__mesaOrigFn = __mesaOrigFn
+if (typeof __setMark === 'function')   App.__setMark   = __setMark
+globalThis.__JETTY_HMR_APPS = globalThis.__JETTY_HMR_APPS || {}
+globalThis.__JETTY_HMR_APPS[${JSON.stringify(clientType)}] = App
+`
+
+    hmrFirstRunGuard = '__jettyHmrFirstRun && '
+  }
+
+  // In dev mode, the App import also brings in named HMR exports that
+  // mesa-plugin's wrapping emits. We attach them to App below for the
+  // dev-client's hot_update to find. In prod, those exports don't exist
+  // and we just import the default.
+  const appImportLine = dev?.port
+    ? `import App, { __mesaOrigFn, __setMark } from ${JSON.stringify(appAbs)}`
+    : `import App from ${JSON.stringify(appAbs)}`
+
+  const mainSrc = `// AUTO-GENERATED by @frontierjs/jetty — do not edit.
+${idLine}${unoLine}${devClientLines}${hmrPrologue}${appImportLine}
+import { connectHarbor, mount } from ${JSON.stringify(runtimeAbs)}
+import { _registerActivePort } from ${JSON.stringify(resourcesAbs)}
+
+${hmrEpilogue}const root = document.getElementById('app')
+if (!root) throw new Error('[jetty] #app not found in ${page.type} index.html')
+
+// Top-level await: open port, register it for resources, then mount.
+// The port becomes available to:
+//   - Mesa components via the \`harbor\` prop
+//   - jetty's resources module via _registerActivePort (mirror of Sierra's getClient)
+// In dev mode, the \`__jettyHmrFirstRun &&\` guard skips re-running these
+// when the entry is dynamic-imported by dev-client for an HMR swap.
+if (${hmrFirstRunGuard || ''}true) {
+  const harbor = await connectHarbor({ type: ${JSON.stringify(page.type)}, id: ${JSON.stringify(idSlug(page))} })
+  _registerActivePort(harbor)
+  await mount(root, App, { harbor })
+}
+`
+
+  writeFileSync(mainPath, mainSrc, 'utf8')
+
+  const scriptSrc = './' + relative(dirname(htmlPath), mainPath).replace(/\\/g, '/')
+
+  const htmlSrc = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${escapeHtml(titleFor(page))}</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="${scriptSrc}"></script>
+</body>
+</html>
+`
+  writeFileSync(htmlPath, htmlSrc, 'utf8')
+
+  return { mainPath, htmlPath }
+}
+
+function idSlug(page) { return page.id ?? page.type }
+
+function titleFor(page) {
+  if (page.type === 'dock')    return 'Dock'
+  if (page.type === 'options') return 'Options'
+  return `Pier — ${page.id}`
+}
+
+function ensureDir(dir) {
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c])
+}
+
+/**
+ * Auto-generate the content script entry for an island.
+ *
+ * Layout:
+ *   cacheDir/islands/<id>.js  ← Vite entry (imports user's island file + island runtime)
+ *
+ * The user's island file lives in src/islands/<id>.js; we import it via its
+ * absolute path. The Vite build emits dist/islands/<id>.js which is what
+ * chrome.scripting.registerContentScripts loads.
+ *
+ * We don't auto-gen anything HTML-side for islands — they don't have a
+ * Page entry; they ARE the entry.
+ */
+export function autoGenForIsland({ island, cacheDir, packageRoot, dev = null }) {
+  const dir   = join(cacheDir, 'islands')
+  const path  = join(dir, `${island.id}.js`)
+  ensureDir(dir)
+
+  const islandSrcAbs   = island.path.replace(/\\/g, '/')
+  const islandRuntimeAbs = join(packageRoot, 'src/island/index.js').replace(/\\/g, '/')
+
+  // Note: NO dev-client injection in islands. Three reasons:
+  //   1. Content scripts inherit the host page's network origin. Chrome's
+  //      Private Network Access policy blocks public-origin pages (https://*)
+  //      from connecting to localhost — the WS connection to ws://127.0.0.1
+  //      fails with ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS.
+  //   2. Islands have nothing to do with WS events anyway. The event types
+  //      are: extension:reload (harbor only), page:reload (page surfaces
+  //      only), island:reload-tabs (harbor only — calls chrome.tabs.reload),
+  //      mesa:hot-update (page surfaces only). Islands never react to any
+  //      of them.
+  //   3. When an island file changes, the orchestrator emits
+  //      `island:reload-tabs` to harbor, harbor calls chrome.tabs.reload()
+  //      for matching tabs, the new content script gets injected — full
+  //      reload-on-change without the island ever needing the WS.
+
+  const src = `// AUTO-GENERATED by @frontierjs/jetty — do not edit.
+import islandModule from ${JSON.stringify(islandSrcAbs)}
+import { runIsland } from ${JSON.stringify(islandRuntimeAbs)}
+
+// MV3 content scripts are loaded as CLASSIC scripts — top-level await
+// causes a parse-time SyntaxError ("await is only valid in async functions
+// and the top level bodies of modules"). Wrap the bootstrap in an async
+// IIFE so the await is inside a function body.
+//
+// Errors from runIsland are caught and logged but don't propagate; nothing
+// catches an unhandled promise rejection at the content-script level
+// anyway, so making them visible in the page console is the best we can do.
+;(async () => {
+  try {
+    await runIsland(islandModule, { id: ${JSON.stringify(island.id)}, type: 'island' })
+  } catch (err) {
+    console.error('[jetty:island:${island.id}] bootstrap failed:', err)
+  }
+})()
+`
+
+  writeFileSync(path, src, 'utf8')
+  return { path }
+}

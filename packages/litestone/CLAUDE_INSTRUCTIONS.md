@@ -69,7 +69,8 @@ src/
   index.d.ts       — static TypeScript declarations
 
 test/
-  litestone.test.ts  — 929 tests, 122 suites
+  litestone.test.ts  — 1187 tests (plus cli-smoke, elegance-fixes,
+                       migrations-fixes, nullable-optional: 1241 total)
 ```
 
 ---
@@ -107,18 +108,18 @@ Single-DB schemas omit database blocks and pass `db:` to `createClient`.
 
 ### Field types
 ```
-Integer    Real      Text      Boolean
-DateTime   Blob      Json
+Int        Float     String    Boolean
+DateTime   Bytes     Json
 File                           — stores JSON ref in SQLite, bytes in S3/R2/local
 Enum       — inline: status Status  OR standalone: enum Status { active inactive }
-Type[]     — arrays stored as JSON: tags Text[]
+Type[]     — arrays stored as JSON: tags String[]
 Model[]    — implicit many-to-many: tags tags[]
 Type?      — optional (nullable)
 ```
 
 ### Field attributes
 ```
-@id                              primary key (auto-increment for Integer)
+@id                              primary key (auto-increment for Int)
 @unique                          UNIQUE constraint
 @default(value)                  literal, now(), uuid(), ulid(), cuid(), nanoid()
 @default(auth().field)           stamp from ctx.auth at write time (runtime-only)
@@ -142,7 +143,7 @@ Type?      — optional (nullable)
 @computed                        derived field — implement in computed.js, not stored in DB
 @generated("sql expr")           SQL-generated column
 @hardDelete                      on a relation field: hard-delete children during @@softDelete(cascade)
-@markdown                        semantic annotation — Text field contains Markdown (no validation)
+@markdown                        semantic annotation — String field contains Markdown (no validation)
 @trim  @lower  @upper  @slug     string transforms applied before write
 @email  @url  @date  @datetime   string format validators
 @phone                           E.164 phone format validator
@@ -184,7 +185,7 @@ Without `@@softDelete(cascade)`, soft-deleting a parent row leaves FK children l
 
 ```
 model accounts {
-  id        Integer  @id
+  id        Int  @id
   users     users[]                   // ← soft-deleted when account is soft-deleted
   sessions  sessions[]  @hardDelete   // ← hard-deleted (row gone) when account is soft-deleted
   deletedAt DateTime?
@@ -225,7 +226,7 @@ const db = await createClient({
 const db = await createClient({ parsed: parseResult })
 
 // Inline schema
-const db = await createClient({ schema: `model users { id Integer @id; name Text }`, db: ':memory:' })
+const db = await createClient({ schema: `model users { id Int @id; name String }`, db: ':memory:' })
 ```
 
 All models route automatically to their declared database.
@@ -383,10 +384,10 @@ db.sql`SELECT * FROM users WHERE id = ${1}`
 
 ```
 model posts {
-  id      Integer @id
-  ownerId Integer @default(auth().id)
-  status  Text    @default("draft")
-  title   Text
+  id      Int @id
+  ownerId Int @default(auth().id)
+  status  String    @default("draft")
+  title   String
 
   @@allow('read',   ownerId == auth().id || status == 'published')
   @@allow('create', auth() != null)
@@ -417,7 +418,7 @@ expr1 && expr2  expr1 || expr2  !expr
 Auto-stamps a field from `ctx.auth` at create time. Runtime-only — no SQL DEFAULT emitted.
 ```
 model posts {
-  ownerId Integer @default(auth().id)
+  ownerId Int @default(auth().id)
 }
 ```
 
@@ -427,10 +428,10 @@ model posts {
 
 ```
 model users {
-  id     Integer @id
-  salary Real?   @allow('read',  auth().role == 'admin')
-  apiKey Text?   @allow('write', auth().role == 'admin')
-  name   Text
+  id     Int @id
+  salary Float?   @allow('read',  auth().role == 'admin')
+  apiKey String?   @allow('write', auth().role == 'admin')
+  name   String
 }
 ```
 
@@ -471,7 +472,7 @@ export default {
 
 ```
 model users {
-  fullName Text    @computed
+  fullName String    @computed
   isActive Boolean @computed
 }
 ```
@@ -605,10 +606,10 @@ database logs {
 }
 
 model apiRequests {
-  method    Text
-  path      Text
-  status    Integer
-  duration  Integer
+  method    String
+  path      String
+  status    Int
+  duration  Int
   createdAt DateTime @default(now())
   @@db(logs)
 }
@@ -648,9 +649,9 @@ onLog: (entry, ctx) => ({
 
 ```
 model quotes {
-  id          Integer  @id
-  accountId   Integer
-  quoteNumber Integer  @sequence(scope: accountId)
+  id          Int  @id
+  accountId   Int
+  quoteNumber Int  @sequence(scope: accountId)
 }
 ```
 
@@ -828,7 +829,7 @@ await tenants.migrate()
 
 ```bash
 bun test test/litestone.test.ts
-# 929 tests, 122 suites
+# 1241 tests across 5 files, 0 fail
 ```
 
 Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, soft delete cascade, `@hardDelete` cascade, softDelete footgun warning, select/include, transactions, cursor pagination, FTS, backup, attach, WAL, computed fields, query helpers, metadata, `@updatedAt`, `@date`, `@sequence`, `@markdown`, File type, File[], `@accept`, RETURNING, `$walStatus`, `createClient` input forms, `@omit`/`@guarded`, `@guarded(all)`, `@encrypted`, `@secret`, `$rotateKey`, `onLog` callback, `@@allow`/`@@deny`, `@allow` field-level, `policyDebug`, GatePlugin, `FrontierGateGetLevel`, plugin system, `onAfterDelete`, `onAfterDelete` soft-delete boundary, FileStorage, `fileUrl`, `fileUrls`, `buildReadFilter`, `onAfterRead`, upsert/upsertMany/removeMany hooks, transform hooks, event listeners, enum transitions, lock primitive, seeder/factory, entity generator, `makeTestClient`, `generateFactory`, `generateGateMatrix`, `generateValidationCases`, `factoryFrom`, auto-factories, `generateTypeScript`, `@markdown` generateTypeScript, `generateJsonSchema` x-gate/x-relations, implicit many-to-many, `@from` derived fields, `aggregate`, `groupBy`, `groupBy` interval+fillGaps, `findManyAndCount`, `@@external`, `ExternalRefPlugin`, recursive CTE tree queries, JS migrations, `@phone`, `@slug`, `@updatedBy`, doc comments, relation orderBy, relation aggregate orderBy, `exists`, `$raw`/`sql` tag, `NULLS FIRST/LAST`, `distinct`, `_stringAgg`, `_count distinct`, named aggregates + FILTER, `select: false`, window functions, `query()` dispatcher.

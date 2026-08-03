@@ -27,18 +27,18 @@ Use both together for defence in depth.
 enum Role { admin  editor  viewer }
 
 model User {
-  id    Integer @id
-  email Text    @unique
+  id    Int @id
+  email String    @unique
   role  Role    @default(viewer)
   @@auth
 }
 
 model Post {
-  id        Integer  @id
-  authorId  Integer  @default(auth().id)
-  status    Text     @default("draft")  // draft | published | archived
-  title     Text
-  body      Text
+  id        Int  @id
+  authorId  Int  @default(auth().id)
+  status    String     @default("draft")  // draft | published | archived
+  title     String
+  body      String
   createdAt DateTime @default(now())
   deletedAt DateTime?
 
@@ -131,9 +131,9 @@ Restrict visibility of specific fields:
 
 ```prisma
 model User {
-  email  Text
-  salary Real?   @allow('read',  auth().role == 'admin')  // hidden unless admin
-  notes  Text?   @allow('write', auth().role == 'admin')  // read-only unless admin
+  email  String
+  salary Float?   @allow('read',  auth().role == 'admin')  // hidden unless admin
+  notes  String?   @allow('write', auth().role == 'admin')  // read-only unless admin
 }
 ```
 
@@ -173,7 +173,7 @@ Useful during development to verify the SQL being generated.
 
 ```prisma
 model Task {
-  teamId Integer
+  teamId Int
 
   @@allow('read',   teamId == auth().teamId)
   @@allow('create', teamId == auth().teamId)

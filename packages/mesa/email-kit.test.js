@@ -1,6 +1,25 @@
 /**
  * email-kit.test.js — integration tests for the Mesa email component kit
  *
+ * ── SKIPPED: the components under test are not in this repo ────────────────
+ *
+ * These suites render 14 `.mesa` files (WelcomeEmail, Button, Stars, Avatar,
+ * Card, DataTable, Contact, Address, …) that ship with `@frontierjs/mesa-email`.
+ * That package is not part of this workspace — there is no `mesa-email/`
+ * directory and nothing in node_modules — and EMAIL_DIR points at an absolute
+ * `/tmp` path that no checkout can reproduce. Every assertion here failed with
+ * ENOENT, which is a missing-fixture problem, not a rendering bug.
+ *
+ * What IS covered and green, in this repo:
+ *   • the email render target  — render-component.js, `target: 'email'`
+ *   • CSS inlining for email   — css-inliner.test.js, 36/36
+ *
+ * To re-enable: vendor the kit into this package (e.g. `email/`), point
+ * EMAIL_DIR at it instead of /tmp, and drop the two `.skip`s below. Do not
+ * hand-write stand-in components to make these pass — the assertions check
+ * MSO/VML namespaces, bulletproof VML buttons and exact SVG star counts, so
+ * invented fixtures would only be asserting themselves.
+ *
  * Run: npx vitest run email-kit.test.js
  */
 
@@ -8,11 +27,12 @@ import { describe, it, expect } from 'vitest'
 import { renderFile, renderComponent } from './render-component.js'
 import path from 'path'
 
+// Absolute /tmp path — part of why this cannot run here. Repoint when vendoring.
 const EMAIL_DIR = path.join('/tmp/mesa/email')
 
 // ── WelcomeEmail end-to-end ───────────────────────────────────────────────────
 
-describe('WelcomeEmail template', () => {
+describe.skip('WelcomeEmail template', () => {
   let result
 
   it('renders without error', async () => {
@@ -94,7 +114,7 @@ describe('WelcomeEmail template', () => {
 
 // ── Individual component tests ────────────────────────────────────────────────
 
-describe('Email component kit — individual components', () => {
+describe.skip('Email component kit — individual components', () => {
   const render = (src, data = {}) =>
     renderComponent(src, { cwd: EMAIL_DIR, target: 'email', data })
 

@@ -1879,9 +1879,13 @@ export function analyzeScript(raw, ast) {
           }
         } else {
           // Auto-tracked block effect — re-runs when any reactive dep changes.
+          // `node` is what lets the emitter run rewriteAssignments over the
+          // body; without it, writes inside the block are emitted as
+          // `$runtime.get($$sig_x) = …` and throw at runtime.
           effects.push({
             type: 'block',
             raw: raw.slice(body.start, body.end),
+            node: body,
             debugName
           })
         }
@@ -2022,6 +2026,7 @@ export function analyzeScript(raw, ast) {
       effects.push({
         type: 'expression',
         raw: raw.slice(body.start, body.end),
+        node: body,
         debugName
       })
     }
@@ -3886,7 +3891,8 @@ export function makeComponent(node, option = {}) {
   const accessor = !option.self && ctx.accessors?.[rawName]
   const componentName = (accessor && accessor !== rawName) ? accessor : rawName
   const allProps = [],
-    reactiveProps = []
+    reactiveProps = [],
+    twoWayProps = []          // bind:prop — child→parent, wired via bindProp
   const slotBlocks = [],
     attachments = []
 
@@ -3932,6 +3938,36 @@ export function makeComponent(node, option = {}) {
         const exp = ctx.accessors ? rewriteExpr(spreadExpr, ctx.accessors) : spreadExpr
         ctx.detectDependency(spreadExpr)
         spreadProps.push(exp)
+        return
+      }
+
+      // bind:prop={x} on a COMPONENT — two-way. The prop name is what is left
+      // after the prefix; `bind:` itself never reaches the child.
+      //
+      // This used to fall through to inspectProp, which kept the raw attribute
+      // name, so the props object was emitted as `{bind:value: …}` — not
+      // parseable. The compiler reported nothing and the module threw at load.
+      // Nothing in the repo used the form, so it appears never to have worked,
+      // despite VISION §3.4 documenting it.
+      if (prop.name.startsWith('bind:') && prop.name !== 'bind:this') {
+        const rawName  = prop.name.slice(5)
+        const propName = rawName === 'class' ? '$class' : rawName
+        const varName  = prop.value ? unwrapExp(prop.value) : rawName
+        const setter   = ctx.setters?.[varName]
+        if (!setter) {
+          ctx.analysis.errors.push(
+            `bind:${rawName}={${varName}} — '${varName}' must be a writable top-level ` +
+            `\`let\` in this component to receive the child's changes.`
+          )
+          return
+        }
+        const readExpr = ctx.accessors ? rewriteExpr(varName, ctx.accessors) : varName
+        ctx.detectDependency(varName)
+        // Parent → child goes through the ordinary prop path…
+        allProps.push({ name: propName, value: readExpr, isStatic: false })
+        reactiveProps.push({ name: propName, value: readExpr })
+        // …and child → parent through bindProp.
+        twoWayProps.push({ name: propName, setter })
         return
       }
 
@@ -4031,28 +4067,55 @@ export function makeComponent(node, option = {}) {
   const hasSpreads  = spreadProps.length > 0
   const hasBindThis = !!bindThisSetter
 
+  // ── client:* — island directive ───────────────────────────────────────────
+  // RULE 26 stands by default: the directive is stripped and never reaches the
+  // child as a prop. `{ islands: true }` opts a meta-framework into routing the
+  // call through $runtime.island(), which is what lets a *server* render wrap
+  // the output in markers a client loader can find. Client output is unchanged
+  // either way — island() calls the component directly there — so the flag
+  // costs one indirection and no DOM.
+  const clientAttr = node.attributes.find((a) => a.name?.startsWith('client:'))
+  let island = null
+  if (clientAttr && ctx.config?.islands) {
+    island = {
+      component: option.self ? (ctx.config?.name ?? 'self') : node.name,
+      directive: clientAttr.name.slice('client:'.length),
+    }
+    if (island.directive === 'media' && clientAttr.value) {
+      island.media = String(clientAttr.value).replace(/^["']|["']$/g, '')
+    }
+  }
+
   // makeBind(anchorName) — called by insertComponent with the template anchor var
   const makeBind = (anchorName) => xNode(
     'component',
-    { anchorName, componentName, allProps, reactiveProps, spreadProps,
-      slots: slotBlocks, bindThisSetter, hasSlots, hasReactive, hasSpreads, hasBindThis },
+    { anchorName, componentName, allProps, reactiveProps, spreadProps, twoWayProps,
+      slots: slotBlocks, bindThisSetter, hasSlots, hasReactive, hasSpreads, hasBindThis, island },
     (w, n) => {
       const propsObj = buildPropsObj(n.allProps, n.hasSpreads ? n.spreadProps : [])
 
       // Call: ComponentFn(anchor, props, slotsObj | null)
+      // As an island: $runtime.island(anchor, ComponentFn, props, slots, meta)
+      const open  = n.island ? `$runtime.island(${n.anchorName}, ${n.componentName}, ` : `${n.componentName}(${n.anchorName}, `
+      const close = n.island ? `, ${JSON.stringify(n.island)});` : ');'
       if (!n.hasSlots) {
-        w.writeLine(`${n.componentName}(${n.anchorName}, ${propsObj}, null);`)
+        w.writeLine(`${open}${propsObj}, null${close}`)
       } else {
-        w.write(true, `${n.componentName}(${n.anchorName}, ${propsObj}, {`)
+        w.write(true, `${open}${propsObj}, {`)
         w.indent++
         n.slots.forEach((s, i) => { if (i) w.write(','); w.add(s) })
         w.indent--
-        w.writeLine('});')
+        w.writeLine(`}${close}`)
       }
 
-      // Register anchor so pushProps can find the child's prop registry
-      if (n.hasReactive || n.hasSpreads) {
+      // Register anchor so pushProps and bindProp can find the child's registry
+      if (n.hasReactive || n.hasSpreads || n.twoWayProps.length) {
         w.writeLine(`$runtime.registerComponentAnchor(${n.anchorName});`)
+      }
+
+      // bind:prop — subscribe to the child's prop signal and write back out.
+      for (const b of n.twoWayProps) {
+        w.writeLine(`$runtime.bindProp(${n.anchorName}, '${b.name}', (v) => ${b.setter}(v));`)
       }
 
       // bind:this
@@ -4171,7 +4234,23 @@ export function bindProp(prop, node, element) {
     } else {
       const rw = ctx.accessors ? rewriteExpr(varName, ctx.accessors) : varName
       getter = `() => (${rw})`
-      setter = `($$v) => { ${varName} = $$v; }`
+
+      // The WRITE target has to be rewritten too, not just the read.
+      //
+      // `bind:value={draft[key]}` used to emit
+      //     getter: () => ($runtime.get($$sig_draft)[key])
+      //     setter: ($$v) => { draft[key] = $$v }
+      // — the getter resolved, the setter referred to a name that no longer
+      // exists once `draft` became `$$sig_draft`, so every keystroke threw
+      // `ReferenceError: draft is not defined`. Binding to any object property,
+      // which is what a form bound to a draft record does, was broken.
+      //
+      // Only member expressions are rewritten. The rewritten form stays a legal
+      // assignment target (`$runtime.get($$sig_draft)[key] = $$v` is fine),
+      // whereas a bare identifier could rewrite to a call expression, and
+      // `$runtime.get($$sig_x) = $$v` is a syntax error.
+      const isMemberTarget = /[.[]/.test(varName)
+      setter = `($$v) => { ${isMemberTarget ? rw : varName} = $$v; }`
     }
 
     // bind:value|mask({"pattern"}) or bind:value|mask({reactiveExpr})
@@ -5281,7 +5360,15 @@ export function emitScript(ctx) {
   // $: { block }  — same, multi-statement form
   // Dependencies are tracked automatically at runtime via the reactive graph.
   ctx.analysis.effects.forEach((ef) => {
-    const rewritten = rewriteExpr(ef.raw, ctx.accessors)
+    // rewriteAssignments FIRST, exactly as the script-statement and watch-handler
+    // emitters do. Skipping it here meant `$: { count = count + 1 }` compiled to
+    // `$runtime.get($$sig_count) = …` — an invalid assignment target that the
+    // compiler accepted without complaint and that threw "Invalid left-hand side
+    // in assignment" the moment the effect ran. Any write to a top-level `let`
+    // inside a `$: { }` block was affected; member writes (`obj.n = …`) went
+    // through the proxy and were never broken, which is why this survived.
+    const src = ef.node ? rewriteAssignments(ef.raw, ef.node, ctx) : ef.raw
+    const rewritten = rewriteExpr(src, ctx.accessors)
     if (ef.type === 'expression') {
       mod.code.push(xNode.raw(`$runtime.createEffect(() => { ${rewritten}; }, { user: true });`))
     } else {
@@ -5730,47 +5817,63 @@ function _isReactive(expr) {
   return false
 }
 
+// Is this line a COMPLETE bind statement, or the first line of one that runs on?
+//
+// A bind statement spans lines whenever its expression does — an attribute value
+// containing a newline is the common case:
+//
+//   <div style="background:{a};
+//               width:{b}%">
+//
+// which emits a template literal with a real newline in it. That matters here
+// because this pass is regex surgery on generated source, and the old pattern
+// (`bindAttribute(...` up to the first `;` before a newline) matched the CSS
+// semicolon at the end of the first line. The statement was then "grouped" —
+// its continuation discarded — leaving an unterminated template literal and a
+// SyntaxError with no line number anywhere near the attribute. It silently
+// broke the guiTimer REPL example.
+//
+// Balanced backticks are the test: an odd count means the literal runs on.
+function _isCompleteBindLine(line) {
+  if (!/;\s*$/.test(line)) return false
+  let ticks = 0
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '`' && line[i - 1] !== '\\') ticks++
+  }
+  return ticks % 2 === 0
+}
+
 function _renderGroup(code) {
-  // Match consecutive runs of bindText / bindAttribute lines at ANY indentation level.
-  // The regex anchors to line-start (after \n or at string start) and captures the
-  // leading whitespace so we can reproduce the correct indent in the output.
+  // Collect consecutive runs of complete bindText / bindAttribute statements at
+  // the same indent, and fold each run into one render() block.
   //
-  // Each matched line is:
-  //   <indent>$runtime.bindText(el, () => expr);\n
-  //   <indent>$runtime.bindAttribute(el, 'name', () => expr);\n
+  //   <indent>$runtime.bindText(el, () => expr);
+  //   <indent>$runtime.bindAttribute(el, 'name', () => expr);
   //
-  // Consecutive lines must share the same leading indent to be grouped together.
-  // We do this in two passes: first split into logical blocks by indent, then transform.
+  // Anything that is not a complete single-line bind statement — including a
+  // bind whose expression wraps onto the next line — ends the run and is passed
+  // through untouched. Grouping is an optimisation; leaving a binding alone is
+  // always correct, and truncating one never is.
+  const BIND_START = /^([ \t]*)\$runtime\.(?:bindText|bindAttribute)\(/
 
-  // Single-pass approach: match any run of bind lines, extract indent from first line.
-  const BIND_LINE = /^([ \t]*)\$runtime\.(bindText|bindAttribute)\([^\n]+;\n/m
+  const srcLines = code.split('\n')
+  const output = []
+  let cursor = 0
 
-  // Process iteratively — find the first bind line, collect its group, replace, repeat.
-  let result = code
-  let safety = 0
+  while (cursor < srcLines.length) {
+    const startM = srcLines[cursor].match(BIND_START)
+    if (!startM || !_isCompleteBindLine(srcLines[cursor])) {
+      output.push(srcLines[cursor++])
+      continue
+    }
 
-  while (safety++ < 1000) {
-    // Find the first bindText/bindAttribute line in the remaining code
-    const firstM = BIND_LINE.exec(result)
-    if (!firstM) break
-
-    const indent = firstM[1]           // leading whitespace of this group
-    const groupStart = firstM.index   // start position in the string
-
-    // Build regex that matches consecutive bind lines at the SAME indent
-    const escapedIndent = indent.replace(/\t/g, '\\t').replace(/ /g, ' ')
-    const groupRe = new RegExp(
-      `^(?:${escapedIndent}\\$runtime\\.(?:bindText|bindAttribute)\\([^\\n]+;\\n)+`,
-      'm'
-    )
-
-    // Find the full group starting at groupStart
-    const sub = result.slice(groupStart)
-    const groupM = groupRe.exec(sub)
-    if (!groupM) break  // shouldn't happen, but guard
-
-    const block = groupM[0]
-    const lines = block.trimEnd().split('\n').filter(Boolean)
+    const indent = startM[1]
+    const lines = []
+    while (cursor < srcLines.length) {
+      const m = srcLines[cursor].match(BIND_START)
+      if (!m || m[1] !== indent || !_isCompleteBindLine(srcLines[cursor])) break
+      lines.push(srcLines[cursor++])
+    }
 
     const bindings = lines.map(line => {
       const textM = line.match(/\$runtime\.bindText\((\S+),\s*\(\)\s*=>\s*\(?([\s\S]+?)\)?\);\s*$/)
@@ -5820,11 +5923,10 @@ function _renderGroup(code) {
       out.push(I + '}, { ' + initStr + ' });')
     }
 
-    const replacement = out.join('\n') + '\n'
-    result = result.slice(0, groupStart) + replacement + result.slice(groupStart + block.length)
+    output.push(...out)
   }
 
-  return result
+  return output.join('\n')
 }
 
 

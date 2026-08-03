@@ -165,6 +165,15 @@ export interface Service {
   model?:   string   // model name — used in result envelope object field
   /** Channel(s) to broadcast mutations to. Omitted = no broadcast. */
   channel?: PublishDeclaration
+  /**
+   * Whether bulk (query-targeted, id-less) writes are permitted.
+   *
+   * Carried onto the built service so consumers can read it back. It was
+   * declared on ServiceDefinition and honoured internally, but never landed
+   * on the service object — so `/metrics` reported `allowBulk: false` for
+   * every service, including ones configured `allowBulk: true`.
+   */
+  allowBulk?: boolean
   find:     (ctx: ServiceContext) => Promise<unknown>
   get:      (ctx: ServiceContext) => Promise<unknown>
   create:   (ctx: ServiceContext) => Promise<unknown>
@@ -992,6 +1001,9 @@ export function createService(def: ServiceDefinition): Service {
     // Carried through so callService can find it after the pipeline. Reserved
     // in SERVICE_OPTION_KEYS, so a function form never becomes an action.
     ...(def.channel !== undefined ? { channel: def.channel as PublishDeclaration } : {}),
+    // Same reason: declared, honoured internally, but previously not carried
+    // onto the built service, so anything reading it back saw undefined.
+    allowBulk: def.allowBulk ?? (base as { allowBulk?: boolean }).allowBulk ?? false,
 
     find:    def.find    ?? base.find,
     get:     def.get     ?? base.get,

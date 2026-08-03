@@ -5,9 +5,13 @@
 export { createConduit }       from './conduit.ts'
 export { conduit }             from './plugin.ts'
 
-// Store factories
+// Store factories.
+//
+// createSQLiteStore is deliberately NOT re-exported here — it imports
+// bun:sqlite at module top level, so putting it in the barrel pulls that
+// dependency into every consumer whether or not they use it.
+// Import it from '@frontierjs/conduit/stores/sqlite'.
 export { createMemoryStore }   from './stores/memory.ts'
-export { createSQLiteStore }   from './stores/sqlite.ts'
 
 // Credential resolvers — targets carry refs, these resolve them at send time
 export {
@@ -17,10 +21,14 @@ export {
   withCache,
 } from './credentials.ts'
 
-// Test double — import via '@frontierjs/conduit/testing' in tests
-export { StubTransport }       from './transports/stub.ts'
-export { createTestConduit }   from './testing.ts'
-export type { StubMocks, TestConduit } from './testing.ts'
+// Trace context propagation
+export { createTraceContext } from './trace.ts'
+export type { TraceContextOptions } from './trace.ts'
+
+// Test doubles are NOT exported here. StubTransport and createTestConduit
+// live behind '@frontierjs/conduit/testing' so they cannot be reached from
+// the production entry point — shipping them in the main barrel meant every
+// consumer's bundle carried the test harness.
 
 export type {
   // Interface
@@ -44,6 +52,11 @@ export type {
 
   // Credentials
   CredentialResolver,
+
+  // Resilience + validation
+  ResilienceOptions,
+  BreakerState,
+  ResponseValidator,
 
   // Targets
   TargetDescriptor,

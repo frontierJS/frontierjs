@@ -1,0 +1,130 @@
+<script>
+  // Steps.mesa
+  // Step indicator for multi-step forms and wizards.
+  // Renders a sequence of numbered steps with complete/active/pending states.
+  //
+  // STEPS shape:
+  //   { id: string, label: string, description?: string }
+  //
+  // Usage:
+  //   <Steps
+  //     steps={[
+  //       { id: 'account', label: 'Account' },
+  //       { id: 'billing', label: 'Billing' },
+  //       { id: 'confirm', label: 'Confirm' },
+  //     ]}
+  //     currentStep="billing"
+  //   />
+  //
+  //   <!-- Clickable steps (wizard nav) -->
+  //   <Steps {steps} {currentStep} clickable onStepClick={(id) => goTo(id)} />
+  //
+  //   <!-- Vertical layout -->
+  //   <Steps {steps} {currentStep} orientation="vertical" />
+
+  export let steps       = []          // { id, label, description? }[]
+  export let currentStep = ''          // id of the active step
+  export let orientation = 'horizontal' // 'horizontal' | 'vertical'
+  export let clickable   = false
+  export let onStepClick = undefined   // (id: string) => void
+
+  // Derive step status from currentStep
+  const currentIdx = steps.findIndex(s => s.id === currentStep)
+
+  function statusOf(i) {
+    if (i < currentIdx)  return 'complete'
+    if (i === currentIdx) return 'active'
+    return 'pending'
+  }
+
+  function handleClick(step, i) {
+    if (!clickable) return
+    if (statusOf(i) === 'pending') return   // can't skip forward
+    onStepClick?.(step.id)
+  }
+</script>
+
+<nav aria-label="Progress" {class}>
+  <ol
+    class="{orientation === 'vertical'
+      ? 'flex flex-col gap-0'
+      : 'flex items-center'}"
+  >
+    {#each steps as step, i (step.id)}
+      {@const status = statusOf(i)}
+      {@const isLast = i === steps.length - 1}
+
+      <li
+        class="{orientation === 'vertical'
+          ? 'relative flex gap-4 pb-8 last:pb-0'
+          : 'relative flex items-center flex-1 last:flex-none'}"
+      >
+        <!-- Connector line -->
+        {#if !isLast}
+          {#if orientation === 'vertical'}
+            <div
+              class="absolute left-[1.125rem] top-10 bottom-0 w-0.5
+                     {status === 'complete' ? 'bg-blue-600' : 'bg-gray-200'}"
+            ></div>
+          {:else}
+            <div
+              class="absolute left-[2.25rem] right-0 top-[1.125rem] h-0.5 -z-0
+                     {status === 'complete' ? 'bg-blue-600' : 'bg-gray-200'}"
+            ></div>
+          {/if}
+        {/if}
+
+        <!-- Step button / indicator -->
+        <button
+          type="button"
+          class="relative z-10 flex items-center
+                 {orientation === 'vertical' ? 'gap-4' : 'flex-col gap-1.5'}
+                 {clickable && status !== 'pending' ? 'cursor-pointer' : 'cursor-default'}
+                 group"
+          disabled={!clickable || status === 'pending'}
+          aria-current={status === 'active' ? 'step' : undefined}
+          on:click={() => handleClick(step, i)}
+        >
+          <!-- Circle -->
+          <span
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full
+                   border-2 transition-colors font-semibold text-sm
+                   {status === 'complete'
+                     ? 'bg-blue-600 border-blue-600 text-white'
+                     : status === 'active'
+                       ? 'bg-white border-blue-600 text-blue-600'
+                       : 'bg-white border-gray-300 text-gray-400'}"
+          >
+            {#if status === 'complete'}
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>
+              </svg>
+            {:else}
+              {i + 1}
+            {/if}
+          </span>
+
+          <!-- Labels -->
+          <span
+            class="{orientation === 'vertical' ? 'text-left' : 'text-center'}
+                   {orientation === 'horizontal' && !isLast ? 'hidden sm:block' : ''}"
+          >
+            <span
+              class="block text-xs font-semibold tracking-wide
+                     {status === 'active'   ? 'text-blue-600'
+                      : status === 'complete' ? 'text-gray-700'
+                      : 'text-gray-400'}"
+            >
+              {step.label}
+            </span>
+            {#if step.description}
+              <span class="block text-xs text-gray-400 mt-0.5 leading-snug">
+                {step.description}
+              </span>
+            {/if}
+          </span>
+        </button>
+      </li>
+    {/each}
+  </ol>
+</nav>

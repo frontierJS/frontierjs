@@ -1,0 +1,196 @@
+/*
+ * nav.css
+ * Navigation patterns: breadcrumbs, pagination, and the sidebar nav list.
+ *
+ * All three take their active state from `[aria-current]` rather than a
+ * class, for the reason spelled out in tabs.css — a class lets the visual
+ * state and the announced state drift apart. `aria-current="page"` is the
+ * correct attribute for "this is the thing you are looking at", and it is
+ * what a screen reader announces, so it is also what the CSS keys off.
+ *
+ * Every pattern here expects a landmark with a label, because a page with
+ * three unlabelled <nav>s is three identical entries in a screen reader's
+ * landmark list:
+ *
+ *   <nav class="breadcrumb" aria-label="Breadcrumb">
+ *   <nav class="pagination" aria-label="Pagination">
+ *   <nav class="sidebar"    aria-label="Main">
+ */
+
+/*
+ * ── Breadcrumb ──────────────────────────────────────────────────────
+ *
+ *   <nav class="breadcrumb" aria-label="Breadcrumb">
+ *     <ol>
+ *       <li><a class="link" href="/">Home</a></li>
+ *       <li><a class="link" href="/invoices">Invoices</a></li>
+ *       <li><a aria-current="page">INV-1042</a></li>
+ *     </ol>
+ *   </nav>
+ *
+ * <ol> because the order is the hierarchy. The last crumb keeps its <a>
+ * without an href — it is the current page, so it is not a link, but
+ * staying an <a> keeps it in the same visual and semantic run.
+ */
+.breadcrumb > ol {
+  display:     flex;
+  flex-wrap:   wrap;
+  align-items: center;
+  gap:         0.375rem;
+  list-style:  none;
+  margin:      0;
+  padding:     0;
+  font-size:   0.875rem;
+}
+
+.breadcrumb li {
+  display:     inline-flex;
+  align-items: center;
+  gap:         0.375rem;
+}
+
+/*
+ * The separator is decoration, so it gets empty alternative text — the
+ * `/ ""` half of the content shorthand — and is not announced. Without
+ * that, some screen readers read "slash" between every crumb.
+ */
+.breadcrumb li + li::before {
+  content: var(--breadcrumb-separator, "/") / "";
+  color:   var(--ink-mute);
+}
+
+.breadcrumb [aria-current="page"] {
+  color:           var(--ink);
+  font-weight:     600;
+  text-decoration: none;
+  cursor:          default;
+}
+
+/*
+ * ── Pagination ──────────────────────────────────────────────────────
+ *
+ *   <nav class="pagination" aria-label="Pagination">
+ *     <a class="page" href="?p=1" rel="prev">Previous</a>
+ *     <a class="page" href="?p=1">1</a>
+ *     <a class="page" href="?p=2" aria-current="page">2</a>
+ *     <span class="page-gap" aria-hidden="true">…</span>
+ *     <a class="page" href="?p=9">9</a>
+ *     <a class="page" href="?p=3" rel="next">Next</a>
+ *   </nav>
+ *
+ * `.page` is in the chip lineage (chip.css), so it gets inline-flex
+ * centering and the auto-contrast machinery for free — the current page
+ * is a solid fill, and its text color is derived from that fill's
+ * luminance like any other filled thing in the system.
+ */
+.pagination {
+  display:     flex;
+  flex-wrap:   wrap;
+  align-items: center;
+  gap:         0.25rem;
+}
+
+.page {
+  min-inline-size: 2rem;
+  padding:         0.375rem 0.625rem;
+  border-radius:   var(--btn-radius);
+  font-size:       0.875rem;
+  font-weight:     600;
+  color:           var(--ink-soft);
+  text-decoration: none;
+  cursor:          pointer;
+  transition:      background 120ms, color 120ms;
+}
+
+.page:hover:not([aria-current="page"]):not([aria-disabled="true"]) {
+  background: var(--surface-sunken);
+  color:      var(--ink);
+}
+
+/* Focus ring: focus.css. */
+
+.page[aria-current="page"] {
+  --tone-fill: var(--bg-mix, var(--color-primary));
+  background:  var(--fill, var(--tone-fill));
+  color:       var(--on-fill, white);
+  cursor:      default;
+}
+
+.page[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor:  not-allowed;
+}
+
+.page-gap {
+  padding:     0.375rem 0.25rem;
+  color:       var(--ink-mute);
+  user-select: none;
+}
+
+/*
+ * ── Nav list — the sidebar's links ──────────────────────────────────
+ *
+ *   <nav class="sidebar" aria-label="Main">
+ *     <div class="navlist-label">Workspace</div>
+ *     <ul class="navlist">
+ *       <li><a class="navlink" href="/dash" aria-current="page">Dashboard</a></li>
+ *       <li><a class="navlink" href="/inv">Invoices <span class="pill muted">7</span></a></li>
+ *     </ul>
+ *   </nav>
+ *
+ * Use this, not `.items.menu`, for anything navigable. `.items.menu .item`
+ * styles an <li> to look clickable, but an <li> is not focusable and takes
+ * no keyboard input — the hover state writes a cheque the markup cannot
+ * cash. `.navlink` goes on a real <a>, so it is focusable, activatable and
+ * announced as a link.
+ */
+.navlist {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.125rem;
+  list-style:     none;
+  margin:         0;
+  padding:        0;
+}
+
+.navlink {
+  display:         flex;
+  align-items:     center;
+  gap:             0.5rem;
+  padding:         0.4375rem 0.625rem;
+  border-radius:   var(--btn-radius);
+  font-size:       0.875rem;
+  font-weight:     500;
+  color:           var(--ink-soft);
+  text-decoration: none;
+  transition:      background 120ms, color 120ms;
+}
+
+.navlink:hover {
+  background: var(--surface-sunken);
+  color:      var(--ink);
+}
+
+/* Focus ring: focus.css, in the inset set — the sidebar's edge would
+   otherwise clip an outward ring. */
+
+.navlink[aria-current="page"] {
+  background:  color-mix(in srgb, var(--bg-mix, var(--color-primary)) 12%, var(--surface));
+  color:       var(--bg-mix, var(--color-primary));
+  font-weight: 600;
+}
+
+/* A trailing count or badge sits at the far end. */
+.navlink > .pill,
+.navlink > .badge {
+  margin-inline-start: auto;
+}
+
+.navlist-label {
+  padding:        0.75rem 0.625rem 0.25rem;
+  font-size:      0.6875rem;
+  font-weight:    700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color:          var(--ink-mute);
+}

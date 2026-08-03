@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en" class="theme-default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The stack — every package, at a glance | FrontierJS</title>
+<meta name="description" content="Litestone, Junction, Sierra, Mesa, the design system, the CLI, Basecamp and the editor tooling — one spec sheet per package, and what each feature replaces.">
+
+<!-- Local path so this file renders straight from the repo.
+     Deploy rewrites this to ./css/index.css — see README.md. -->
+<link rel="stylesheet" href="../packages/css/index.css">
+
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: var(--surface); color: var(--ink); }
+  .container { max-width: 76rem; margin-inline: auto; padding-inline: 1.25rem; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
+  }
+  .topbar .container { display: flex; align-items: center; gap: 1.5rem; padding: .7rem 1.25rem; }
+  .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; text-decoration: none; color: var(--ink); }
+  .brand span { color: var(--color-primary); }
+  .navset { display: flex; gap: .25rem; flex-wrap: wrap; }
+  .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
+  .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .navset a[aria-current] { background: var(--surface-sunken); color: var(--ink); font-weight: 600; }
+  .swatches { display: flex; gap: .3rem; }
+  .swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+
+  .subnav {
+    position: sticky; top: 3.05rem; z-index: 45;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
+  }
+  .subnav .container { display: flex; gap: .15rem; overflow-x: auto; padding: .45rem 1.25rem; }
+  .subnav a {
+    white-space: nowrap; font-size: .78rem; text-decoration: none; color: var(--ink-mute);
+    padding: .28rem .55rem; border-radius: 6px; font-family: ui-monospace, Menlo, monospace;
+  }
+  .subnav a:hover { background: var(--surface-sunken); color: var(--ink); }
+
+  h1 { font-size: clamp(1.8rem, 4.4vw, 2.6rem); line-height: 1.06; letter-spacing: -.03em; margin: .2em 0 .35em; }
+  .eyebrow { font-size: .76rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+
+  .pkg { padding: 3.25rem 0; border-top: 1px solid var(--rule); scroll-margin-top: 7rem; }
+  .pkg-id { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
+  .pkg-id h2 { font-size: 1.65rem; letter-spacing: -.02em; margin: 0; }
+  .pkg-id .who { font-family: ui-monospace, Menlo, monospace; font-size: .76rem; color: var(--ink-mute); margin-left: auto; }
+  .pitch { font-size: 1rem; color: var(--ink-soft); max-width: 58ch; margin: .55rem 0 0; }
+
+  /* Detail on the left, feature list on the right. */
+  .body { display: grid; gap: 2rem; align-items: start; margin-top: 1.75rem; }
+  @media (min-width: 62rem) {
+    .body { grid-template-columns: 1fr 1fr; }
+    .detail { position: sticky; top: 7rem; }
+  }
+
+  /* ── Feature rows ──────────────────────────────────────────────────── */
+  .rows { display: grid; }
+  .row {
+    display: grid; grid-template-columns: 7.25rem 1fr; gap: .75rem; width: 100%;
+    text-align: left; font: inherit; cursor: pointer;
+    background: transparent; border: 0; border-top: 1px solid var(--rule);
+    padding: .5rem .6rem .5rem .55rem; border-left: 2px solid transparent;
+    transition: background .13s ease, border-color .13s ease;
+  }
+  .row:first-child { border-top: 0; }
+  .row:hover { background: var(--surface-sunken); }
+  .row .k { font-size: .79rem; font-weight: 600; color: var(--ink); }
+  .row .v { font-size: .81rem; color: var(--ink-soft); line-height: 1.45; }
+  .row .v code { font-size: .75rem; }
+  .row[aria-selected="true"] {
+    background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+    border-left-color: var(--color-primary);
+  }
+  .row[aria-selected="true"] .k { color: var(--color-primary); }
+
+  /* ── Detail card ───────────────────────────────────────────────────── */
+  .detail {
+    border: 1px solid var(--rule); border-radius: 12px; padding: 1.15rem 1.25rem;
+    background: var(--surface-raised);
+  }
+  .detail h3 { margin: 0; font-size: 1.05rem; letter-spacing: -.01em; }
+  .detail .sub { font-size: .8rem; color: var(--ink-mute); margin: .2rem 0 .85rem; }
+  .detail .why { font-size: .88rem; color: var(--ink-soft); line-height: 1.6; margin: 0; }
+  .detail pre { margin-top: .9rem; }
+  .rep { margin-top: 1.1rem; padding-top: .9rem; border-top: 1px solid var(--rule); }
+  .rep h4 {
+    margin: 0 0 .4rem; font-size: .68rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-mute);
+  }
+  .rep .list { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .rep .list span {
+    font-size: .74rem; padding: .14rem .5rem; border-radius: 999px;
+    border: 1px solid var(--rule-strong); color: var(--ink-soft);
+  }
+  .rep .none { font-size: .8rem; color: var(--ink-mute); margin: 0; }
+
+  pre {
+    background: var(--surface-sunken); border: 1px solid var(--rule); border-radius: 9px;
+    padding: .8rem .95rem; overflow-x: auto; margin: 0;
+    font-size: .74rem; line-height: 1.65;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre .kw { color: var(--color-primary); font-weight: 600; }
+  pre .cm { color: var(--ink-mute); }
+  pre .st { color: var(--color-success); }
+  pre .at { color: var(--color-warning); font-weight: 600; }
+
+  .chips { margin-top: 1.75rem; }
+  .chips h3 {
+    font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-mute); margin: 1rem 0 .4rem;
+  }
+  .chips h3:first-child { margin-top: 0; }
+  .chipline { display: flex; flex-wrap: wrap; gap: .28rem; }
+  .chipline code {
+    font-size: .73rem; padding: .12rem .42rem; border-radius: 4px;
+    background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-soft);
+  }
+
+  .map { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); margin-top: 1.75rem; }
+  .map a {
+    text-decoration: none; border: 1px solid var(--rule); border-radius: 9px;
+    padding: .6rem .7rem; background: var(--surface-raised); display: block;
+    border-left: 3px solid var(--rule-strong);
+  }
+  .map a:hover { border-color: var(--rule-strong); }
+  .map a.d { border-left-color: var(--color-primary); }
+  .map a.a { border-left-color: var(--color-info); }
+  .map a.u { border-left-color: var(--color-success); }
+  .map a.t { border-left-color: var(--color-warning); }
+  .map b { display: block; font-size: .88rem; color: var(--ink); }
+  .map span { display: block; font-size: .73rem; color: var(--ink-mute); margin-top: .1rem; }
+
+  .hint { font-size: .76rem; color: var(--ink-mute); margin: .6rem 0 0; }
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 3.5rem; color: var(--ink-mute); font-size: .875rem; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="container">
+    <a class="brand" href="index.html">Frontier<span>JS</span></a>
+    <nav class="navset">
+      <a href="showroom.html">Showroom</a>
+      <a href="showroom2.html">Walkthrough</a>
+      <a href="showroom3.html">The ripple</a>
+      <a href="showroom4.html">The loop</a>
+      <a href="showroom5.html" aria-current="page">The stack</a>
+      <a href="journey.html">The journey</a>
+    </nav>
+    <div class="swatches" role="group" aria-label="Theme">
+      <button class="swatch" data-theme="default"  title="Default"  style="background:#0d83dd"></button>
+      <button class="swatch" data-theme="sunset"   title="Sunset"   style="background:#e07a3f"></button>
+      <button class="swatch" data-theme="forest"   title="Forest"   style="background:#2f7d4f"></button>
+      <button class="swatch" data-theme="midnight" title="Midnight" style="background:#3b4a6b"></button>
+      <button class="swatch" data-theme="dark"     title="Dark"     style="background:#1c1b18"></button>
+      <button class="swatch" data-theme="elite"    title="Elite"    style="background:#8b6f2e"></button>
+    </div>
+  </div>
+</header>
+
+<nav class="subnav">
+  <div class="container">
+    <a href="#litestone">litestone</a><a href="#junction">junction</a><a href="#sierra">sierra</a>
+    <a href="#mesa">mesa</a><a href="#css">css</a><a href="#cli">fli</a>
+    <a href="#basecamp">basecamp</a><a href="#editor">vscode</a>
+  </div>
+</nav>
+
+<div class="container" style="padding-top:3rem; padding-bottom:.5rem">
+  <p class="eyebrow">The stack</p>
+  <h1>Eight pieces. One vocabulary.</h1>
+  <p class="pitch" style="max-width:62ch">
+    Each stands alone — Litestone with any server, Mesa with any bundler. Together they
+    share one model: <strong>Data → API → UI</strong>, seeded by a single schema.
+  </p>
+  <p class="hint">Click any feature to see what it does, and what it saves you wiring up.</p>
+
+  <div class="map">
+    <a class="d" href="litestone.html"><b>Litestone</b><span>schema · database</span></a>
+    <a class="a" href="junction.html"><b>Junction</b><span>services · transport</span></a>
+    <a class="u" href="sierra.html"><b>Sierra</b><span>routing · resources</span></a>
+    <a class="u" href="mesa.html"><b>Mesa</b><span>components · runtime</span></a>
+    <a class="u" href="css.html"><b>css</b><span>design system</span></a>
+    <a class="t" href="fli.html"><b>fli</b><span>command runtime</span></a>
+    <a class="t" href="basecamp.html"><b>Basecamp</b><span>control plane</span></a>
+    <a class="t" href="vscode.html"><b>vscode</b><span>editor tooling</span></a>
+  </div>
+</div>
+
+<div id="stack"></div>
+
+<footer>
+  <div class="container split">
+    <span>Each package stands alone. Together they share one vocabulary.</span>
+    <span><a class="link" href="index.html">← Back to the overview</a></span>
+  </div>
+</footer>
+
+<script src="./packages.js"></script>
+<script>
+const { PKGS, esc, hl, theme } = window.FJS
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+const stack = document.getElementById('stack')
+
+stack.innerHTML = PKGS.map(p => `
+  <div class="pkg" id="${p.id}">
+    <div class="container">
+      <div class="pkg-id">
+        <h2><a href="${p.page}" style="color:inherit;text-decoration:none">${p.name} <span style="font-size:.75em;color:var(--ink-mute)">→</span></a></h2><span class="badge ${p.tone}">${p.realm}</span>
+        <span class="who">${p.who}</span>
+      </div>
+      <p class="pitch">${p.pitch}</p>
+
+      <div class="body">
+        <div class="detail" id="d-${p.id}" role="region" aria-live="polite"></div>
+        <div class="rows" id="r-${p.id}" role="tablist" aria-label="${p.name} features"></div>
+      </div>
+
+      ${p.extra ? `
+        <p class="hint" style="margin-top:2rem">${p.extra.title}</p>
+        <div class="body" style="margin-top:.5rem">
+          <div class="detail" id="d-${p.id}x" role="region" aria-live="polite"></div>
+          <div class="rows" id="r-${p.id}x" role="tablist" aria-label="${p.name} packages"></div>
+        </div>` : ''}
+
+      ${p.chips ? `<div class="chips">${p.chips.map(([h, terms]) => `
+        <h3>${h}</h3>
+        <div class="chipline">${terms.split(' ').map(t => `<code>${t}</code>`).join('')}</div>`).join('')}
+      </div>` : ''}
+    </div>
+  </div>`).join('')
+
+function paint(listId, rows, i) {
+  const box  = document.getElementById('d-' + listId)
+  const list = document.getElementById('r-' + listId)
+  const row  = rows[i]
+
+  for (const b of list.querySelectorAll('.row'))
+    b.setAttribute('aria-selected', String(+b.dataset.i === i))
+
+  box.innerHTML = `
+    <h3>${row.k}</h3>
+    <p class="sub">${row.v}</p>
+    <p class="why">${row.why}</p>
+    ${row.code ? `<pre>${hl(row.code)}</pre>` : ''}
+    <div class="rep">
+      <h4>Replaces</h4>
+      ${row.r && row.r.length
+        ? `<div class="list">${row.r.map(t => `<span>${esc(t)}</span>`).join('')}</div>`
+        : `<p class="none">Nothing — there is no common equivalent to swap out.</p>`}
+    </div>`
+}
+
+function wire(listId, rows) {
+  const list = document.getElementById('r-' + listId)
+  list.innerHTML = rows.map((r, i) => `
+    <button class="row" role="tab" data-i="${i}" aria-selected="false">
+      <span class="k">${r.k}</span><span class="v">${r.v}</span>
+    </button>`).join('')
+
+  list.addEventListener('click', e => {
+    const b = e.target.closest('.row'); if (b) paint(listId, rows, +b.dataset.i)
+  })
+  list.addEventListener('keydown', e => {
+    const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key]
+    if (!d) return
+    e.preventDefault()
+    const cur = +document.activeElement.dataset.i
+    const nxt = (cur + d + rows.length) % rows.length
+    paint(listId, rows, nxt)
+    list.querySelector(`[data-i="${nxt}"]`).focus()
+  })
+
+  paint(listId, rows, 0)
+}
+
+for (const p of PKGS) {
+  wire(p.id, p.rows)
+  if (p.extra) wire(p.id + 'x', p.extra.rows)
+}
+
+theme()
+</script>
+
+</body>
+</html>

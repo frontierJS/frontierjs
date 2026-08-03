@@ -16,6 +16,10 @@ import {
   expiresAt,
 } from './crypto.ts'
 import type { LitestoneAuthOptions } from './types.ts'
+import {
+  InvalidCredentialsError, EmailTakenError, InvalidTokenError,
+  UserNotFoundError, AuthConfigError,
+} from './errors.ts'
 
 // Minimal interface — avoids a hard import of @frontierjs/litestone types
 // while still getting type-safe asSystem() usage.
@@ -71,7 +75,7 @@ export function createLitestoneAuth(
   // Using a lazy check so apps that never use API keys don't need to provide it.
   function requireEncryptionKey(operation: string): string {
     if (!encryptionKey) {
-      throw new Error(
+      throw new AuthConfigError(
         `LitestoneAuthOptions.encryptionKey is required for ${operation}. ` +
         `Pass { encryptionKey: process.env.ENCRYPTION_KEY } to createLitestoneAuth().`
       )
@@ -112,15 +116,15 @@ export function createLitestoneAuth(
 
     async login(email: string, password: string): Promise<{ token: string; user: SessionContext }> {
       const user = await sys.user.findFirst({ where: { email } })
-      if (!user) throw new Error('Invalid credentials')
+      if (!user) throw new InvalidCredentialsError()
 
       const cred = await sys.credential.findFirst({
         where: { userId: user.id, type: 'password' }
       })
-      if (!cred) throw new Error('Invalid credentials')
+      if (!cred) throw new InvalidCredentialsError()
 
       const valid = await verifyPassword(password, cred.value)
-      if (!valid) throw new Error('Invalid credentials')
+      if (!valid) throw new InvalidCredentialsError()
 
       const token = generateSessionToken()
 
@@ -149,7 +153,7 @@ export function createLitestoneAuth(
 
     async createUser(data: CreateUserInput): Promise<SessionContext> {
       const existing = await sys.user.findFirst({ where: { email: data.email } })
-      if (existing) throw new Error('Email already registered')
+      if (existing) throw new EmailTakenError()
 
       const user = await sys.user.create({
         data: {
@@ -225,11 +229,11 @@ export function createLitestoneAuth(
           expiresAt: { gt: new Date() },
         }
       })
-      if (!verification) throw new Error('Invalid or expired reset token')
+      if (!verification) throw new InvalidTokenError('Invalid or expired reset token')
 
       const email = verification.identifier.replace(/^reset:/, '')
       const user  = await sys.user.findFirst({ where: { email } })
-      if (!user) throw new Error('User not found')
+      if (!user) throw new UserNotFoundError()
 
       const hash = await hashPassword(newPassword)
 
@@ -249,7 +253,7 @@ export function createLitestoneAuth(
 
     async requestEmailVerification(userId: string): Promise<void> {
       const user = await sys.user.findUnique({ where: { id: userId } })
-      if (!user) throw new Error('User not found')
+      if (!user) throw new UserNotFoundError()
       if (user.emailVerified) return   // already verified — no-op
 
       await sys.verification.deleteMany({
@@ -279,11 +283,11 @@ export function createLitestoneAuth(
           expiresAt: { gt: new Date() },
         }
       })
-      if (!verification) throw new Error('Invalid or expired verification token')
+      if (!verification) throw new InvalidTokenError('Invalid or expired verification token')
 
       const email = verification.identifier.replace(/^verify:/, '')
       const user  = await sys.user.findFirst({ where: { email } })
-      if (!user) throw new Error('User not found')
+      if (!user) throw new UserNotFoundError()
 
       await sys.user.update({
         where: { id: user.id },

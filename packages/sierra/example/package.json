@@ -1,0 +1,21 @@
+{
+  "name": "@frontierjs/sierra-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runnable Sierra app — one db/schema.lite, seeding both halves.",
+  "scripts": {
+    "api": "bun run api/app.ts",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@frontierjs/junction": "workspace:*",
+    "@frontierjs/litestone": "workspace:*",
+    "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/sierra": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^8.0.3"
+  }
+}

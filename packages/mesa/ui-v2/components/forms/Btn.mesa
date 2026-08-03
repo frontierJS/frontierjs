@@ -1,0 +1,47 @@
+<script>
+  // Btn.mesa
+  // Compact action button for toolbars, table rows, and icon-dense UIs.
+  // Tighter than Button — no loading state, no leading/trailing icon snippets.
+  // Use Button for primary CTAs; use Btn for inline actions.
+  //
+  // Usage:
+  //   <Btn onclick={save}>Save</Btn>
+  //   <Btn variant="danger" icon onclick={del}><IconTrash /></Btn>
+  //   <Btn variant="outline" size="xs">Export</Btn>
+
+  export let variant  = 'ghost'    // 'ghost'|'outline'|'primary'|'danger'|'secondary'
+  export let size     = 'sm'       // 'xs' | 'sm' | 'md'
+  export let icon     = false      // square icon-only shape
+  export let disabled = false
+  export let type     = 'button'
+  export let onclick  = undefined
+  const base = 'inline-flex items-center justify-center font-medium rounded-md transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none select-none'
+
+  const variantMap = {
+    ghost:    'text-gray-600 hover:bg-gray-100 hover:text-gray-800 focus-visible:ring-gray-400',
+    outline:  'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus-visible:ring-gray-400',
+    primary:  'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500',
+    danger:   'text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-400',
+    secondary:'bg-gray-100 text-gray-700 hover:bg-gray-200 focus-visible:ring-gray-400',
+  }
+
+  const sizeMap = {
+    xs: { text: 'h-6  text-xs  gap-1',   pad: 'px-2',   sq: 'w-6  p-1'   },
+    sm: { text: 'h-7  text-xs  gap-1.5', pad: 'px-2.5', sq: 'w-7  p-1.5' },
+    md: { text: 'h-8  text-sm  gap-2',   pad: 'px-3',   sq: 'w-8  p-2'   },
+  }
+
+  const sz      = sizeMap[size]    ?? sizeMap.sm
+  const vClass  = variantMap[variant] ?? variantMap.ghost
+  const padClass = icon ? sz.sq : `${sz.pad} ${sz.text}`
+</script>
+
+<button
+  type={type}
+  disabled={disabled}
+  class="{base} {vClass} {padClass}"
+  {class}
+  on:click={onclick}
+>
+  <slot />
+</button>

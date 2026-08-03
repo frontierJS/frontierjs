@@ -1,0 +1,68 @@
+<script>
+  // Tab.mesa
+  // Individual tab trigger button. Must be inside TabList > Tabs.
+  // Registers its id with the Tabs context on mount for arrow-key cycling.
+  //
+  // Usage:
+  //   <Tab id="general">General</Tab>
+  //   <Tab id="security" disabled>Security</Tab>
+
+  export let id       = ''
+  export let disabled = false
+  // Consume from Tabs context — const always tracks provider (Rule 25a)
+  const activeId  = $context.activeId
+  const setActive = $context.setActive
+  const variant   = $context.tabVariant ?? 'underline'
+
+  const isActive = activeId === id
+
+  // Capture context functions at top level (Rule 25) then use in lifecycle callbacks
+  const registerTab   = $context.registerTab
+  const unregisterTab = $context.unregisterTab
+
+  // Register/unregister for keyboard nav — imperative, not reactive
+  $onMount(() => { registerTab?.(id) })
+  $onDestroy(() => { unregisterTab?.(id) })
+
+  // Per-variant active/inactive styles
+  const styleMap = {
+    underline: {
+      base:     'relative px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500',
+      active:   'text-blue-600 after:absolute after:inset-x-0 after:bottom-[-1px] after:h-0.5 after:bg-blue-600',
+      inactive: 'text-gray-500 hover:text-gray-700 hover:bg-gray-50',
+    },
+    pills: {
+      base:     'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+      active:   'bg-white text-gray-900 shadow-sm',
+      inactive: 'text-gray-500 hover:text-gray-700',
+    },
+    boxed: {
+      base:     'px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 flex-1 text-center',
+      active:   'bg-blue-50 text-blue-700',
+      inactive: 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700',
+    },
+  }
+
+  const style = styleMap[variant] ?? styleMap.underline
+  const buttonClass = `${style.base} ${isActive ? style.active : style.inactive}`
+
+  function handleClick() {
+    if (!disabled) setActive(id)
+  }
+</script>
+
+<button
+  type="button"
+  role="tab"
+  id="tab-{id}"
+  aria-selected={isActive}
+  aria-controls="panel-{id}"
+  tabindex={isActive ? 0 : -1}
+  disabled={disabled}
+  data-tab-id={id}
+  class="{buttonClass} disabled:opacity-40 disabled:cursor-not-allowed"
+  {class}
+  on:click={handleClick}
+>
+  <slot />
+</button>

@@ -12,11 +12,18 @@ import { configureFetch } from '../fetch/index.js'
 import { createSignal, watchProxy } from '@frontierjs/mesa/runtime'
 
 // Model schemas generated from the .lite file — see build/schema-plugin.js.
-export { registerSchemas, schemaFor, allSchemas, hasSchemas } from './schema-registry.js'
+export {
+  registerSchemas, schemaFor, modelNameFor, allSchemas, allDefs, hasSchemas,
+  resolveRef, suggestModel,
+} from './schema-registry.js'
 import { createJunctionClient } from '@frontierjs/junction/client'
 
 // Resource factory — re-exported from the resource module
-export { createResource, createStore, createMakeFromSchema } from './resource.js'
+export {
+  createResource, createStore, createMakeFromSchema,
+  buildFieldRules, buildRelations, buildGate, canAtLevel,
+  validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
+} from './resource.js'
 
 // ─── Module-level refs (set by initJunction) ──────────────────────────────────
 

@@ -72,11 +72,31 @@ export interface User {
 
 // ─── Minimal App interface — only what notify() needs ────────────────────────
 
+/**
+ * The wire shape junction's IMail actually accepts. Deliberately NOT
+ * `MailMessage & { to }` — MailMessage is this package's *authoring* shape
+ * (`lines`), which no mailer understands. The email driver renders one into
+ * the other; stating both here is what stopped that mismatch from being
+ * invisible. Keep in sync with junction's `MailMessage` in `src/mail/index.ts`.
+ */
+export interface OutgoingMail {
+  to:       string
+  subject:  string
+  text?:    string
+  html?:    string
+}
+
 export interface App {
   db?:      unknown          // captured by plugin from opts
-  mail?:    { send(msg: MailMessage & { to: string }): Promise<void> }
+  mail?:    { send(msg: OutgoingMail): Promise<void> }
   channel?: (name: string) => { send(event: string, payload: unknown): void } | undefined
   notify?:  (user: User, notification: Notification) => Promise<void>
+  /**
+   * Junction's guarded namespace claim. Used when present so a second plugin
+   * claiming `app.notify` fails loudly instead of silently winning; falls back
+   * to plain assignment against an older Junction.
+   */
+  provide?: (name: string, value: unknown) => void
 }
 
 // ─── Plugin options ───────────────────────────────────────────────────────────

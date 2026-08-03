@@ -226,6 +226,21 @@ export var region  = 'US'      // stable for the component's lifetime
 
 > **RULE 22** — `bind:` is only valid on `export let` props.
 
+The table above is the *child* side. The parent side has a matching requirement:
+the variable being bound must be a writable top-level `let`, since the child's
+changes are written into it. Binding to a `const`, a `var` or an import is a
+compile error naming the variable.
+
+```mesa
+let name = ''
+<Child bind:value={name} />     <!-- parent → child via props, child → parent via bindProp -->
+```
+
+Both directions are live: the parent's writes push into the child's prop signal,
+and the child's writes are read back out. Nothing loops — the value that comes
+back from the child is the one already in the parent's signal, so its equality
+check stops there.
+
 ---
 
 ## 4. The `$:` Annotation System
@@ -635,11 +650,58 @@ nothing else.
 > and derived is computed at the write site, not the read site.
 
 That rule is a discipline, not an enforcement — `createSignal` and `createEffect` are
-ordinary functions and work anywhere. Mesa deliberately provides no scope primitive
-(`createRoot`, `effectScope`) because naming the pattern is what blesses it. When you
-genuinely need an effect outside a component, `createEffect` returns a disposer and owns
-any effects created inside it; `onCleanup` with no owner warns rather than silently
-dropping the callback.
+ordinary functions and work anywhere. When you genuinely need an effect outside a
+component, `createEffect` returns a disposer and owns any effects created inside it;
+`onCleanup` with no owner warns rather than silently dropping the callback.
+
+#### Lifetime boundaries — `createRoot`
+
+Mesa long declined to ship a scope primitive at all, on the grounds that naming the
+pattern is what blesses it. That reasoning holds for the case RULE 51 is about — a `.js`
+store reaching for reactivity it should not have. It does not reach the places where
+something genuinely *owns* a span of work and must end it: mounting an app, rendering a
+page to a string, tearing down a preview to show another.
+
+```js
+const html = createRoot((dispose) => {
+  Component(anchor, props, null)     // effects created here belong to this root
+  flushSync()
+  const out = container.innerHTML
+  dispose()                          // …and end here
+  return out
+})
+```
+
+> **RULE 54** — `createRoot(fn)` gives **ownership without tracking**. Everything created
+> inside belongs to the root and dies with `dispose()`; the root itself subscribes to
+> nothing and can never re-run. Use it where a lifetime begins and ends — a mount, a
+> server render — never as a substitute for a component.
+
+The "without tracking" half is the part that earns the primitive, and it is not a
+nicety. `createEffect` is the obvious substitute and it is wrong here, because an effect
+*subscribes to what its body reads*. A component that reads and then writes a store
+during setup — an analytics counter, a "seen" registry — re-notifies the very
+subscription that is scaffolding it:
+
+```js
+const Page = (anchor) => {
+  const n = hits()          // the enclosing createEffect subscribes to `hits`
+  setHits(n + 1)            // …and this write re-notifies it
+  anchor.before(el('hit ' + n))
+}
+```
+
+| Scaffolding | Times the component ran for ONE page |
+|---|---|
+| `createEffect` + `dispose()` | **1001** — one thousand copies of the markup, then the cycle cap |
+| `createRoot` + `dispose()` | **1** |
+
+The `createEffect` version also reports `Update cycle detected … two reactive statements
+write each other's signals`, which is a lie: the cycle is the scaffolding, not the
+component. A root that cannot subscribe cannot produce that failure at all.
+
+RULE 51 is unchanged by this. Reactive *logic* still does not belong in a `.js` module;
+`createRoot` is for owning a lifetime, not for doing reactive work outside a component.
 
 > **RULE 9** — Store files cannot import from component files — compiler enforced.
 
@@ -1683,6 +1745,59 @@ hydration strategy. The Mesa core compiler strips these — they are build-layer
 | `client:visible` | Hydrate when element enters viewport |
 | `client:media="(query)"` | Hydrate when media query matches |
 
+#### Island markers — `{ islands: true }`
+
+Stripping is the default and stays the default, but "build-layer concern" turned
+out to describe a layer with no seam. The compiler collected `ctx.islands` and a
+meta-framework could read it, yet SSR emitted an island's markup inline with
+nothing to identify it — `<article><p>static</p><button>0</button></article>`
+does not say which nodes came from `Counter`. A loader had nothing to find and
+no boundary to mount into, and nothing outside Mesa could add one, because the
+markup is produced inside Mesa's own renderer.
+
+Compiling with `{ islands: true }` routes a `client:*` call site through
+`$runtime.island()` instead of calling the component directly. What that
+produces depends on the environment, not the flag:
+
+```
+server render →  <!--mesa-island {"component":"Counter","directive":"load","props":{"start":3}}-->
+                 <button>3</button>
+                 <!--/mesa-island-->
+client         →  identical to the direct call — no markers, no extra DOM
+```
+
+> **RULE 26** *(amended)* — `client:*` directives are stripped by the Mesa core
+> compiler. Compiling with `{ islands: true }` instead emits the call site
+> through `$runtime.island()`, which wraps the output in island markers **in a
+> server render only**. The directive still never reaches the child as a prop,
+> and omitting the flag produces byte-identical output to before.
+
+Markers are comment-delimited, not a `<mesa-island>` element. An element is
+easier to query and is what `SSR_SPEC.md` first sketched, but it fails in two
+ways that produce no error: the HTML parser foster-parents a non-table element
+out of `<tbody>`, relocating the marker away from the island it identifies, and
+a wrapper element joins `>` selectors and flex/grid layout, so a page would
+style differently prerendered than client-rendered. Comments are legal wherever
+content is, cost a `TreeWalker` instead of `querySelectorAll`, and match Mesa's
+own convention — every block directive already delimits itself with comment
+anchors.
+
+The marker carries the prop values **as rendered**, which `ctx.islands` cannot:
+that is a compile-time view and sees only literal attributes, so `start={2 + 3}`
+contributes nothing to it and `{"start":5}` to the marker. Props that cannot
+survive JSON (functions, symbols) are dropped with a named warning; a props
+object that cannot be serialized at all degrades to identity-only rather than
+losing the marker.
+
+Mounting needs no new protocol — clear the range, then
+`mount(openComment, Comp, { props })`. It must be `mount` and not a bare
+`Comp(anchor, props, null)`: a direct call renders the right markup and
+registers no delegation root, so the island comes back inert.
+
+Out of scope here, and Sierra's: the loader itself, per-island bundling, and
+resolving a component *name* to a module to import — which is what the
+`.islands` array returned by `renderComponent` is for.
+
 ### 18.6 Compilation API
 
 ```js
@@ -1942,7 +2057,7 @@ components hydrate to their initial render and serialize cleanly.
 | 24 | `bind:group` requires a top-level `let` variable |
 | 25 | `$context` provides and consumes must be at the top level of the script block |
 | 25a | `const` context consumers always track the provider; `let` initializes at mount then is independent; `var` snapshots at mount only |
-| 26 | `client:*` directives are stripped by the Mesa core compiler — build-layer concern |
+| 26 | `client:*` directives are stripped by the Mesa core compiler — build-layer concern. **Amended:** `{ islands: true }` emits the call site through `$runtime.island()`, which wraps it in island markers in a **server render only** (§18.5) |
 | 27 | `{#key expr}` destroys and recreates content on every change of `expr` |
 | 28 | `{#snippet name(args)}` defines a reusable template fragment; `{@render name(args)}` mounts it |
 | 29 | Snippets close over outer reactive variables; args are plain values, not signals |

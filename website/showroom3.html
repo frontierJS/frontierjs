@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en" class="theme-default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The ripple — change one line, watch everything move | FrontierJS</title>
+<meta name="description" content="Derivation is not a one-time scaffold. Change a line of schema and see the blast radius across migrations, types, validation, HTTP, live events and UI — then follow a single request through every named seam.">
+
+<!-- Local path so this file renders straight from the repo.
+     Deploy rewrites this to ./css/index.css — see README.md. -->
+<link rel="stylesheet" href="../packages/css/index.css">
+
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: var(--surface); color: var(--ink); }
+  .container { max-width: 78rem; margin-inline: auto; padding-inline: 1.25rem; }
+  section { scroll-margin-top: 5rem; padding: 4.5rem 0; border-top: 1px solid var(--rule); }
+  section:first-of-type { border-top: 0; padding-top: 3rem; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
+  }
+  .topbar .container { display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.25rem; }
+  .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; text-decoration: none; color: var(--ink); }
+  .brand span { color: var(--color-primary); }
+  .navset { display: flex; gap: .25rem; flex-wrap: wrap; }
+  .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
+  .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .navset a[aria-current] { background: var(--surface-sunken); color: var(--ink); font-weight: 600; }
+  .swatches { display: flex; gap: .3rem; }
+  .swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+
+  h1 { font-size: clamp(1.9rem, 4.6vw, 2.9rem); line-height: 1.06; letter-spacing: -.03em; margin: .25em 0 .3em; }
+  h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.02em; margin: 0 0 .35em; }
+  h3 { font-size: .95rem; margin: 0 0 .4rem; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  .lede { font-size: 1.05rem; color: var(--ink-soft); max-width: 62ch; }
+
+  pre {
+    background: var(--surface-sunken); border: 1px solid var(--rule); border-radius: 10px;
+    padding: .9rem 1.05rem; overflow-x: auto; margin: 0;
+    font-size: .78rem; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre .kw { color: var(--color-primary); font-weight: 600; }
+  pre .cm { color: var(--ink-mute); }
+  pre .st { color: var(--color-success); }
+  pre .at { color: var(--color-warning); font-weight: 600; }
+
+  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+
+  /* ── Ripple ────────────────────────────────────────────────────────── */
+  .ripple { display: grid; gap: 1.75rem; align-items: start; }
+  @media (min-width: 66rem) { .ripple { grid-template-columns: 26rem 1fr; } }
+  @media (min-width: 66rem) { .ripple-left { position: sticky; top: 5.25rem; } }
+
+  .changeset { display: grid; gap: .4rem; margin-bottom: 1.25rem; }
+  .changeset .btn { justify-content: flex-start; text-align: left; font-size: .84rem; padding: .45rem .75rem; }
+
+  .ln { display: block; padding: 0 .4rem; margin: 0 -.4rem; border-radius: 4px; }
+  .ln.del { background: color-mix(in srgb, var(--color-danger) 15%, transparent); }
+  .ln.add { background: color-mix(in srgb, var(--color-success) 16%, transparent); }
+  .ln.del::before { content: '- '; color: var(--color-danger); }
+  .ln.add::before { content: '+ '; color: var(--color-success); }
+  .ln.ctx::before { content: '  '; }
+
+  .blast { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+  .hit { border: 1px solid var(--rule); border-radius: 10px; padding: .85rem .95rem; background: var(--surface-raised); }
+  .hit.moved { border-color: var(--color-success); }
+  .hit.still { opacity: .62; }
+  .hit-top { display: flex; align-items: center; gap: .5rem; margin-bottom: .45rem; }
+  .hit-top .realm { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); margin-left: auto; }
+  .hit p { margin: 0; font-size: .8rem; color: var(--ink-soft); line-height: 1.5; }
+  .hit code { font-size: .76rem; }
+  .tally { font-size: .82rem; color: var(--ink-mute); margin: 0 0 .9rem; }
+  .tally strong { color: var(--color-success); font-size: 1.1rem; }
+
+  /* ── Journey ───────────────────────────────────────────────────────── */
+  .hops { display: grid; gap: 0; margin-top: 1.5rem; }
+  .hop {
+    display: grid; gap: .15rem .9rem; grid-template-columns: 2.2rem 1fr;
+    padding: .7rem 0 .9rem; border-left: 2px solid var(--rule); margin-left: 1rem; padding-left: 1.25rem;
+    position: relative;
+  }
+  .hop:last-child { border-left-color: transparent; }
+  .hop .pip {
+    position: absolute; left: -.47rem; top: 1rem;
+    width: .8rem; height: .8rem; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--rule-strong);
+  }
+  .hop.d .pip { border-color: var(--color-primary); }
+  .hop.a .pip { border-color: var(--color-info); }
+  .hop.u .pip { border-color: var(--color-success); }
+  .hop-name { grid-column: 1 / -1; font-weight: 600; font-size: .92rem; }
+  .hop-name code { font-size: .82rem; }
+  .hop-where {
+    grid-column: 1 / -1; font-family: ui-monospace, Menlo, monospace;
+    font-size: .74rem; color: var(--ink-mute);
+  }
+  .hop-say { grid-column: 1 / -1; font-size: .84rem; color: var(--ink-soft); margin: .2rem 0 0; }
+
+  /* ── Counterfactual ────────────────────────────────────────────────── */
+  .versus { display: grid; gap: 1.25rem; }
+  @media (min-width: 60rem) { .versus { grid-template-columns: 1fr 1fr; } }
+
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 3.5rem; color: var(--ink-mute); font-size: .875rem; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="container">
+    <a class="brand" href="index.html">Frontier<span>JS</span></a>
+    <nav class="navset">
+      <a href="index.html#idea">Idea</a>
+      <a href="showroom.html">Showroom</a>
+      <a href="showroom2.html">Walkthrough</a>
+      <a href="showroom3.html" aria-current="page">The ripple</a>
+      <a href="showroom4.html">The loop</a>
+      <a href="showroom5.html">The stack</a>
+      <a href="journey.html">The journey</a>
+      <a href="index.html#packages">Packages</a>
+      <a href="index.html#start">Start</a>
+    </nav>
+    <div class="swatches" role="group" aria-label="Theme">
+      <button class="swatch" data-theme="default"  title="Default"  style="background:#0d83dd"></button>
+      <button class="swatch" data-theme="sunset"   title="Sunset"   style="background:#e07a3f"></button>
+      <button class="swatch" data-theme="forest"   title="Forest"   style="background:#2f7d4f"></button>
+      <button class="swatch" data-theme="midnight" title="Midnight" style="background:#3b4a6b"></button>
+      <button class="swatch" data-theme="dark"     title="Dark"     style="background:#1c1b18"></button>
+      <button class="swatch" data-theme="elite"    title="Elite"    style="background:#8b6f2e"></button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ 1. The ripple ═══════════════════════════════════════════════════ -->
+<section id="ripple">
+  <div class="container">
+    <p class="eyebrow">The ripple</p>
+    <h1>Change one line.<br>Watch what moves.</h1>
+    <p class="lede">
+      Scaffolding generates code once and then drifts. Derivation does not.
+      Pick an edit to the schema — the diff appears on the left, and everything
+      downstream that moves because of it appears on the right. Including,
+      importantly, the things that <em>don't</em>.
+    </p>
+
+    <div class="ripple" style="margin-top:2rem">
+      <div class="ripple-left">
+        <div class="changeset" id="changes" role="tablist" aria-label="Schema edits"></div>
+        <p class="filename" style="font-family:ui-monospace,Menlo,monospace; font-size:.75rem; color:var(--ink-mute); margin:0 0 .4rem">db/schema.lite</p>
+        <pre id="diff"></pre>
+      </div>
+
+      <div>
+        <p class="tally" id="tally"></p>
+        <div class="blast" id="blast"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2. The journey ══════════════════════════════════════════════════ -->
+<section id="journey">
+  <div class="container">
+    <p class="eyebrow">The journey</p>
+    <h2>One request, every seam it crosses</h2>
+    <p class="lede">
+      Most frameworks hide this. FrontierJS names each handoff, because a boundary
+      you can name is a boundary you can reason about — and every one of these is a
+      real function you can open. Here is a single <code>POST /api/leads</code>,
+      end to end.
+    </p>
+    <div class="hops" id="hops"></div>
+  </div>
+</section>
+
+<!-- ═══ 3. The counterfactual ═══════════════════════════════════════════ -->
+<section id="versus">
+  <div class="container">
+    <p class="eyebrow">The counterfactual</p>
+    <h2>What the 13 lines replace</h2>
+    <p class="lede">
+      "You didn't write this" means nothing until you see what you would otherwise
+      have assembled — and, more to the point, kept in agreement with itself
+      forever after.
+    </p>
+
+    <div class="versus" style="margin-top:1.75rem">
+      <article class="card">
+        <h3>The usual assembly</h3>
+        <p class="text-sm text-muted" style="margin:0 0 .75rem">
+          Every one of these is a good library, and most are better at their one job
+          than anything here. The cost is not any of them individually — it is that
+          your <em>field list</em> gets restated in ten places, in ten dialects.
+        </p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Concern</th><th>What a Node dev reaches for</th></tr></thead>
+            <tbody>
+              <tr><td>Schema &amp; migrations</td><td>Prisma · Drizzle · TypeORM</td></tr>
+              <tr><td>Validation</td>          <td>Zod · Valibot · Yup</td></tr>
+              <tr><td>HTTP routing</td>        <td>Express · Fastify · Hono</td></tr>
+              <tr><td>Authentication</td>      <td>Auth.js · Lucia · Passport</td></tr>
+              <tr><td>Authorization</td>       <td>CASL · Oso · hand-rolled middleware</td></tr>
+              <tr><td>Row-level access</td>    <td>Postgres RLS · CASL conditions · hand-written <code>WHERE</code></td></tr>
+              <tr><td>API spec</td>            <td>zod-to-openapi · @fastify/swagger · NestJS Swagger</td></tr>
+              <tr><td>Client types</td>        <td>openapi-typescript · orval · ORM-generated types</td></tr>
+              <tr><td>Data fetching</td>       <td>TanStack Query · SWR · RTK Query</td></tr>
+              <tr><td>Realtime</td>            <td>Socket.IO · Ably / Pusher · raw <code>ws</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-sm" style="margin:.9rem 0 0; color:var(--ink-mute)">
+          Add a field: ten edits across ten files, and nothing tells you when you
+          have missed one. The compiler cannot help — these tools do not know about
+          each other.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>The seed</h3>
+        <p class="text-sm text-muted" style="margin:0 0 .75rem">
+          The same ten concerns, stated once. Everything downstream reads from the
+          schema, so disagreement is not something you have to police.
+        </p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Concern</th><th>Where it lives</th></tr></thead>
+            <tbody>
+              <tr><td>Schema &amp; migrations</td><td>the <code>.lite</code> file, diffed by <code>fli db:migrate</code></td></tr>
+              <tr><td>Validation</td>          <td><code>@email</code> <code>@length</code> <code>@gte</code>, on the field</td></tr>
+              <tr><td>HTTP routing</td>        <td><code>model:</code> on the service</td></tr>
+              <tr><td>Authentication</td>      <td><code>IAuth</code> — swap the provider, keep the contract</td></tr>
+              <tr><td>Authorization</td>       <td><code>@@gate</code>, one level per operation</td></tr>
+              <tr><td>Row-level access</td>    <td><code>@@allow</code>, compiled into the <code>WHERE</code></td></tr>
+              <tr><td>API spec</td>            <td>derived from the registered services</td></tr>
+              <tr><td>Client types</td>        <td><code>litestone types</code>, same file</td></tr>
+              <tr><td>Data fetching</td>       <td><code>createResource</code> — reactive, hooks matching the API's</td></tr>
+              <tr><td>Realtime</td>            <td><code>channel:</code> — one announcement point, two fan-outs</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-sm" style="margin:.9rem 0 0; color:var(--ink-mute)">
+          Add a field: one edit. That is the entire pitch.
+        </p>
+      </article>
+    </div>
+
+    <div class="card" style="margin-top:1.25rem">
+      <h3>The fair comparison — things that already consolidate</h3>
+      <p class="text-sm text-muted" style="margin:0 0 .7rem">
+        Almost nobody wires all ten by hand any more, and pretending otherwise would
+        be a strawman. These are the real alternatives, and each is genuinely good at
+        collapsing part of that table.
+      </p>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Option</th><th>What it collapses</th><th>What is still separate</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>tRPC</strong></td>
+              <td>Routing, client types and data fetching — types flow end to end with no spec step</td>
+              <td>Your schema, validators and authorization are still three declarations. Nothing derives a UI.</td>
+            </tr>
+            <tr>
+              <td><strong>Supabase</strong></td>
+              <td>Database, auth, realtime, and row-level access via Postgres RLS — the closest thing to this idea in production</td>
+              <td>RLS is written in SQL, beside the schema rather than in it; validation and the client layer are yours. Self-hosting is possible but is not the default path.</td>
+            </tr>
+            <tr>
+              <td><strong>Wasp · RedwoodJS</strong></td>
+              <td>The whole stack, from one config — the same ambition as this project</td>
+              <td>The glue is <em>declared</em> in a spec file you maintain, rather than <em>derived</em> from the data. Authorization lives in handlers, not on the model.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-sm" style="margin:.9rem 0 0; color:var(--ink-mute)">
+        The line worth arguing about is narrower than "fewer dependencies": it is
+        whether authorization belongs <em>on the data</em>, and whether the glue should be
+        written at all. If those two do not matter to you, the options above are mature
+        and this one is not.
+      </p>
+    </div>
+
+    <div class="card" style="margin-top:1.25rem; border-color: var(--color-warning)">
+      <h3>And the part that is not done</h3>
+      <p class="text-sm text-muted" style="margin:0">
+        Derivation currently stops at the API boundary. Junction derives services from
+        a Model; Sierra does not yet derive forms or tables from one — the JSON Schema
+        reaches the browser and nothing renders from it. That is the single largest gap
+        in the framework, it is tracked openly, and it is the next thing worth building.
+        A page that only showed you the wins would be the wrong kind of page.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container split">
+    <span>Every seam named above is a real function — see the bridge index in <code>CLAUDE.md</code>.</span>
+    <span><a class="link" href="showroom2.html">← Build it step by step</a></span>
+  </div>
+</footer>
+
+<script>
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+const TOK = /(\/\/[^\n]*|--[^\n]*|#[^\n]*)|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|(@@?[a-zA-Z]\w*)|\b(const|await|async|import|from|return|interface|model|enum|CREATE|TABLE|ALTER|ADD|COLUMN|INDEX|UNIQUE|NOT|NULL|DEFAULT|SELECT|WHERE|AND|INTEGER|TEXT|REAL)\b/g
+const hl = src => esc(src).replace(TOK, (m, cm, st, at, kw) =>
+  cm ? `<span class="cm">${cm}</span>` : st ? `<span class="st">${st}</span>` :
+  at ? `<span class="at">${at}</span>` : `<span class="kw">${kw}</span>`)
+const $ = id => document.getElementById(id)
+
+// ─── The base schema. Each change rewrites part of it. ───────────────────────
+const BASE = [
+  "model Lead {",
+  "  id        Int      @id",
+  "  name      String   @length(1, 200) @trim",
+  "  email     String   @email @unique @lower",
+  "  value     Float    @gte(0)",
+  "  ownerId   Int",
+  "  createdAt DateTime @default(now())",
+  "",
+  "  @@gate(\"0.4.4.5\")",
+  "}",
+]
+
+// Each hit: { realm, what, moved, note }
+const CHANGES = [
+  {
+    id: 'field', label: 'Add a field',
+    diff: [
+      ['ctx',"  value     Float    @gte(0)"],
+      ['add',"  company   String?  @trim @length(1, 120)"],
+      ['ctx',"  ownerId   Int"],
+    ],
+    hits: [
+      { realm:'Data', what:'Migration',    moved:1, note:'<code>ALTER TABLE leads ADD COLUMN company TEXT</code> — diffed, not hand-written.' },
+      { realm:'Data', what:'TypeScript',   moved:1, note:'<code>company?: string</code> on <code>Lead</code>, <code>LeadCreate</code> and <code>LeadUpdate</code>.' },
+      { realm:'API',  what:'Validation',   moved:1, note:'Optional, but trimmed and length-checked when present. A 400 you did not write.' },
+      { realm:'API',  what:'OpenAPI',      moved:1, note:'The <code>Lead</code> component schema gains the property automatically.' },
+      { realm:'API',  what:'Endpoints',    moved:0, note:'Same five routes. A field is not a route.' },
+      { realm:'UI',   what:'make()',       moved:1, note:'<code>leads.make()</code> now returns a <code>company</code> key, ready to bind.' },
+    ],
+  },
+  {
+    id: 'rule', label: 'Tighten a rule',
+    diff: [
+      ['ctx',"  email     String   @email @unique @lower"],
+      ['del',"  value     Float    @gte(0)"],
+      ['add',"  value     Float    @gte(100) @lte(1000000)"],
+      ['ctx',"  ownerId   Int"],
+    ],
+    hits: [
+      { realm:'API',  what:'Validation',   moved:1, note:'<code>value: 50</code> now 400s with "must be >= 100". One edit, every entry point.' },
+      { realm:'Data', what:'Direct writes',moved:1, note:'<code>db.lead.create()</code> rejects it too — the rule is on the data, not the route.' },
+      { realm:'API',  what:'JSON Schema',  moved:1, note:'<code>minimum: 100</code>, <code>maximum: 1000000</code> — shipped to the browser.' },
+      { realm:'Data', what:'Migration',    moved:0, note:'No schema change. The column is unchanged; only the rule moved.' },
+      { realm:'Data', what:'TypeScript',   moved:0, note:'Still <code>value: number</code>. Types carry shape, not range.' },
+      { realm:'UI',   what:'Form bounds',  moved:1, note:'The browser has the same JSON Schema, so the constraint is known client-side.' },
+    ],
+  },
+  {
+    id: 'gate', label: 'Close the front door',
+    diff: [
+      ['ctx',"  createdAt DateTime @default(now())"],
+      ['ctx',""],
+      ['del',"  @@gate(\"0.4.4.5\")"],
+      ['add',"  @@gate(\"4.4.4.5\")"],
+    ],
+    hits: [
+      { realm:'API',  what:'HTTP',         moved:1, note:'<code>GET /api/leads</code> flips from <code>200</code> to <code>401</code>. No handler edited.' },
+      { realm:'Data', what:'Direct reads', moved:1, note:'<code>db.lead.findMany()</code> throws below level 4. The API is not the only door being locked.' },
+      { realm:'API',  what:'Live events',  moved:1, note:'Channel subscribers are held to the same level — the gate applies on the way out.' },
+      { realm:'Data', what:'asSystem()',   moved:0, note:'Still bypasses, by design. It is the one documented escape and it stays explicit.' },
+      { realm:'API',  what:'Endpoints',    moved:0, note:'The routes still exist. They answer 401 instead of 200 — a different thing from vanishing.' },
+      { realm:'UI',   what:'Resource',     moved:1, note:'<code>leads.find()</code> now needs a session; the error hook sees a 401 to react to.' },
+    ],
+  },
+  {
+    id: 'policy', label: 'Add a row policy',
+    diff: [
+      ['ctx',"  @@gate(\"0.4.4.5\")"],
+      ['add',"  @@allow('read',   ownerId == auth().id)"],
+      ['add',"  @@allow('update', ownerId == auth().id)"],
+    ],
+    hits: [
+      { realm:'Data', what:'Every query',  moved:1, note:'<code>AND ownerId = ?</code> is compiled into the WHERE clause. Not a filter a caller applies.' },
+      { realm:'API',  what:'List results', moved:1, note:'<code>GET /api/leads</code> returns only yours — and <code>total</code> counts only yours.' },
+      { realm:'API',  what:'HTTP',         moved:1, note:"Patching someone else's row is a <code>403</code>, from the data layer up." },
+      { realm:'API',  what:'Live events',  moved:1, note:'Subscribers stop receiving rows the policy would not have let them read.' },
+      { realm:'Data', what:'Migration',    moved:0, note:'Policies are query-time, not schema-time. Nothing to migrate.' },
+      { realm:'UI',   what:'Code',         moved:0, note:'Not one line changes. The UI was never the thing enforcing this.' },
+    ],
+  },
+  {
+    id: 'rename', label: 'Rename the model',
+    diff: [
+      ['del',"model Lead {"],
+      ['add',"model Opportunity {"],
+      ['ctx',"  id        Int      @id"],
+      ['ctx',"  name      String   @length(1, 200) @trim"],
+    ],
+    hits: [
+      { realm:'Data', what:'Accessor',     moved:1, note:'<code>db.lead</code> becomes <code>db.opportunity</code>. PascalCase singular in, camelCase out.' },
+      { realm:'Data', what:'Migration',    moved:1, note:'A table rename is diffed like any other change — review it before applying.' },
+      { realm:'Data', what:'TypeScript',   moved:1, note:'The interface is renamed, so every stale reference is a compile error rather than a runtime surprise.' },
+      { realm:'API',  what:'Service',      moved:1, note:'One key: <code>model: \'opportunity\'</code>. That is the whole server-side edit.' },
+      { realm:'API',  what:'URL',          moved:0, note:'<code>/api/leads</code> is unchanged — the service <em>name</em> is not the model name. Renaming your data does not break your clients.' },
+      { realm:'UI',   what:'Resource',     moved:0, note:'<code>createResource(\'leads\')</code> still resolves. It binds to the service, not the table.' },
+    ],
+  },
+]
+
+// ─── Render the ripple ───────────────────────────────────────────────────────
+$('changes').innerHTML = CHANGES.map(c =>
+  `<button class="btn outlined" role="tab" data-id="${c.id}" aria-selected="false">${c.label}</button>`).join('')
+
+function pick(id) {
+  const c = CHANGES.find(x => x.id === id)
+  for (const b of $('changes').querySelectorAll('.btn')) {
+    const on = b.dataset.id === id
+    b.setAttribute('aria-selected', String(on))
+    b.classList.toggle('outlined', !on)
+  }
+
+  $('diff').innerHTML = c.diff
+    .map(([k, l]) => `<span class="ln ${k}">${hl(l) || '&nbsp;'}</span>`).join('')
+
+  const moved = c.hits.filter(h => h.moved).length
+  const still = c.hits.length - moved
+  $('tally').innerHTML =
+    `<strong>${moved}</strong> things moved. ${still} deliberately did not.`
+
+  $('blast').innerHTML = c.hits.map(h => `
+    <div class="hit ${h.moved ? 'moved' : 'still'}">
+      <div class="hit-top">
+        <span class="badge ${h.moved ? 'success' : ''}">${h.moved ? 'moved' : 'unchanged'}</span>
+        <h3 style="margin:0">${h.what}</h3>
+        <span class="realm">${h.realm}</span>
+      </div>
+      <p>${h.note}</p>
+    </div>`).join('')
+
+  history.replaceState(null, '', '#' + id)
+}
+
+$('changes').addEventListener('click', e => {
+  const b = e.target.closest('.btn'); if (b) pick(b.dataset.id)
+})
+
+// ─── The journey — real seams, in the order a request meets them ─────────────
+const HOPS = [
+  { r:'a', name:'HTTP arrives', where:'transport/http.ts',
+    say:'The server matches a route. If an Authorization header is present, IAuth.verifySession(token) resolves it to a session — the inbound auth bridge.' },
+  { r:'a', name:'bridge.toContext()', where:'transport/bridge.ts',
+    say:'THE transport-to-service boundary. The HTTP request becomes a Context: body to ctx.data, path captures to ctx.route, filters to ctx.query.' },
+  { r:'a', name:'parseDirectives()', where:'transport/bridge.ts',
+    say:'$limit and $orderBy are split off into ctx.directives. The $ prefix is transport syntax and nothing past this line ever sees one.' },
+  { r:'a', name:'around hooks', where:'core/hooks.ts',
+    say:'The outermost pipeline phase wraps everything that follows, including the failure paths. Timing and tracing live here.' },
+  { r:'a', name:'gateAuth()', where:'core/litestone.ts',
+    say:'Derived from the model @@gate. No session where one is required stops here as a 401, before any query is built.' },
+  { r:'a', name:'autoValidate()', where:'core/litestone.ts',
+    say:'Derived from the field rules. @email, @length and @gte become a 400 with per-field messages — still before the database is touched.' },
+  { r:'a', name:'before hooks', where:'core/service.ts',
+    say:'Your code, finally. Defaults, enrichment, anything that should happen to the data on the way in.' },
+  { r:'d', name:'ctx.locals.db', where:'core/litestone.ts',
+    say:'withLitestoneDb() put a per-request Litestone client here at createApp({ db }) time, already scoped to the caller.' },
+  { r:'d', name:'$setAuth(user)', where:'litestone/core/client.js',
+    say:'The Data-boundary checkpoint. Everything past this point knows who is asking — and asSystem() is the single documented way around it.' },
+  { r:'d', name:'GatePlugin level check', where:'litestone/plugins/gate.js',
+    say:'The same @@gate, enforced a second time at the data layer. Not redundancy — the API is one door, and the door is not the lock.' },
+  { r:'d', name:'buildReadFilter()', where:'litestone/core/plugin.js',
+    say:'@@allow predicates become a WHERE fragment, AND-merged with your own. This is why a policy cannot be skipped by a forgetful caller.' },
+  { r:'d', name:'SQL', where:'litestone/core/query.js',
+    say:'One statement, with your filters, the policy, and the pagination already folded in. Then the row comes back.' },
+  { r:'a', name:'after hooks', where:'core/service.ts',
+    say:'Your code again, on the way out. Shape it, format it, redact it.' },
+  { r:'a', name:'wrapResult()', where:'core/envelope.ts',
+    say:'THE result envelope, one owner. A list keeps { object, data, total }; a single record unwraps. Nothing else in the framework decides this.' },
+  { r:'a', name:'publishToChannels()', where:'core/service.ts',
+    say:'The single announcement point. One mutation, fanned out to both the event bus and the declared channel — there is no second path to forget.' },
+  { r:'u', name:'WebSocket frame', where:'transport/channels.ts',
+    say:'Subscribers receive "leads created". The gate still applies on the way out, so nobody is pushed a row they could not have fetched.' },
+  { r:'a', name:'bridge.toResponse()', where:'transport/bridge.ts',
+    say:'Back across the same boundary. A thrown FrameworkError becomes its status code here; a Litestone AccessDeniedError was normalized to 403 on the way.' },
+  { r:'u', name:'The resource updates', where:'sierra/junction/index.js',
+    say:'watchProxy() makes the result reactive, so whatever reads it re-renders. That seam — not a fetch call — is where the UI actually binds.' },
+]
+
+$('hops').innerHTML = HOPS.map(h => `
+  <div class="hop ${h.r}">
+    <span class="pip"></span>
+    <div class="hop-name">${h.name.includes('(') ? `<code>${esc(h.name)}</code>` : esc(h.name)}</div>
+    <div class="hop-where">${esc(h.where)}</div>
+    <p class="hop-say">${esc(h.say)}</p>
+  </div>`).join('')
+
+// ─── Boot ────────────────────────────────────────────────────────────────────
+pick(CHANGES.some(c => c.id === location.hash.slice(1)) ? location.hash.slice(1) : 'field')
+
+const root = document.documentElement
+const saved = localStorage.getItem('fjs-theme')
+if (saved) root.className = 'theme-' + saved
+for (const b of document.querySelectorAll('.swatch')) {
+  b.addEventListener('click', () => {
+    root.className = 'theme-' + b.dataset.theme
+    localStorage.setItem('fjs-theme', b.dataset.theme)
+  })
+}
+</script>
+
+</body>
+</html>

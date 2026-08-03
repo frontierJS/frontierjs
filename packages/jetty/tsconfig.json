@@ -1,0 +1,12 @@
+{
+  // Browser-extension app container (all JS).
+  //
+  // checkJs is off: turning it on today reports 1,219 errors across untyped
+  // JS, which is noise rather than a gate. The config still gives editors
+  // import resolution and go-to-definition, and any .ts in this package is
+  // checked for real. Flip checkJs on per-directory when the JS here grows
+  // types worth enforcing.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": false },
+  "include": ["src/**/*.js", "test/**/*.js"]
+}

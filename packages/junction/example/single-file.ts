@@ -60,6 +60,7 @@
 
 import {
   createApp,
+  createService,
   createLogger,
   channels,
   publish,
@@ -90,23 +91,23 @@ import type { ServiceContext } from '../src/transport/bridge.ts'
 // ─── Schema ───────────────────────────────────────────────────────────────
 // Litestone schema as a string. See gate digits comment on the model.
 //
-// DIALECT NOTE: scalar names below match the PUBLISHED litestone (1.0.3):
-// Integer / Text / Real / Blob / Boolean / DateTime / Json / File.
-// The unpublished next litestone renames these Prisma-style (Int / String /
-// Float). When that version ships: update these names, pin the new version
-// in package.json (replace "latest"), and consider keeping the old names
-// as parser aliases so schemas work across the upgrade.
+// DIALECT NOTE: scalars are Int / String / Float / Bytes / Boolean /
+// DateTime / Json / File. The pre-1.0 names (Integer/Text/Real/Blob) are
+// REJECTED, not aliased — the parser errors with the new name to use. That
+// was a deliberate hard cut; `litestone codemod` migrates .lite files.
+// Junction resolves the workspace litestone (peer ^1.1.0), so this file needs
+// the current dialect. npm's `latest` is still 1.0.3 and speaks the old one.
 
 const SCHEMA = `
 enum LeadStatus { new active closed }
 
 model leads {
-  id        Integer    @id
-  name      Text       @length(1, 200) @trim
-  company   Text       @trim
-  email     Text       @email
+  id        Int    @id
+  name      String       @length(1, 200) @trim
+  company   String       @trim
+  email     String       @email
   status    LeadStatus @default(new)
-  value     Real       @gte(0)
+  value     Float       @gte(0)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 

@@ -1,0 +1,93 @@
+<script>
+  // Field.mesa
+  // The structural wrapper for all form controls. Composes Label, renders the input
+  // slot, and handles hint and error display.
+  //
+  // Two usage patterns:
+  //
+  //   Pattern A — explicit Field wrapping a naked input:
+  //     <Field label="Email" name="email" {errors}>
+  //       <Input type="email" bind:value={email} />
+  //     </Field>
+  //
+  //   Pattern B — shorthand label prop on the input itself (Field is internal):
+  //     <Input label="Email" name="email" bind:value={email} {errors} />
+  //
+  //   Both are identical in output. Pattern B is implemented by each input
+  //   component composing Field internally when the label prop is provided.
+  //
+  // Error resolution order:
+  //   1. Direct `error` string prop
+  //   2. `errors[name]` — server-returned error map (replace, not mutate, for reactivity)
+  //   3. Nothing shown
+
+  import Label from './Label.mesa'
+  import { nameToLabel } from '../../utils.js'
+
+  export let id       = ''
+  export let name     = ''
+  export let label    = nameToLabel(name)    // auto-derive from name if not set
+  export let required = undefined
+  export let badge    = undefined            // label badge override ('Required', 'Beta'...)
+  export let help     = undefined            // label tooltip: string or { text }
+  export let hint     = ''                  // helper text below input (hides when error shows)
+  export let error    = ''                  // direct error string
+  export let errors   = undefined           // error map: { [fieldName]: string }
+  export let type     = undefined           // forwarded to Label for styling decisions
+  export let removable   = false              // show × button next to label (dynamic form rows)
+  export let onremovekey = undefined          // called when × is clicked
+
+  // Derived: error text to display. Direct error wins; falls back to errors[name].
+  // errors is export let (reactive) — re-derives when errors object is replaced.
+  // errors[name] is a dynamic path — trigger set: [errors, name]. See Rule 11.
+  const displayError = error || (errors?.[name] ?? '')
+
+  function handleRemove() {
+    onremovekey?.()
+  }
+</script>
+
+<div class="flex flex-col gap-1.5" {class}>
+
+  <!-- Label row: label + optional remove-key × button -->
+  {#if type !== 'hidden' && label}
+    <div class="flex items-center justify-between gap-2">
+      <Label {label} {id} {required} {badge} {help} type={type} />
+
+      {#if removable}
+        <button
+          type="button"
+          class="text-gray-400 hover:text-gray-600 transition-colors
+                 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+          aria-label="Remove field"
+          on:click={handleRemove}
+        >
+          <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+          </svg>
+        </button>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Input slot -->
+  <div class="relative">
+    <slot />
+  </div>
+
+  <!-- Hint — shown only when no error -->
+  {#if hint && !displayError}
+    <p class="text-xs text-gray-500 leading-snug">{hint}</p>
+  {/if}
+
+  <!-- Error — shown when present, replaces hint -->
+  {#if displayError}
+    <p class="text-xs text-red-600 flex items-center gap-1 leading-snug" role="alert">
+      <svg class="w-3.5 h-3.5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+      </svg>
+      {displayError}
+    </p>
+  {/if}
+
+</div>
