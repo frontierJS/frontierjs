@@ -106,3 +106,82 @@ describe('make() does not throw on things that are not properties maps', () => {
     expect(createMakeFromSchema(undefined)()).toEqual({})
   })
 })
+
+/**
+ * A relation's local key must not default to 0.
+ *
+ * Reported from a real form: not picking a customer produced
+ * `500 FOREIGN KEY constraint failed` instead of "customer is required".
+ *
+ * `0` is not "no customer" — it is customer #0, a claim the user never made,
+ * and it is the one invented default nothing downstream can catch. A bad enum
+ * value fails validation with the field's name on it; `0` is a perfectly good
+ * integer, so coerce() keeps it, validate() approves it, and SQLite is the
+ * first thing to object — as a 500, from the server, after a round trip.
+ *
+ * The property carries no marker: a belongsTo is emitted as a plain integer and
+ * `x-relations` is the only place the relation exists on the client. So the FK
+ * columns have to be handed in.
+ */
+describe('foreign keys default to null, not 0', () => {
+  const ORDER = {
+    type: 'object',
+    properties: {
+      reference:  { type: 'string' },
+      total:      { type: 'number', default: 0 },
+      quantity:   { type: 'integer' },              // NOT a relation
+      customerId: { type: 'integer' },              // the relation's local key
+    },
+    required: ['reference', 'customerId'],
+    'x-relations': [
+      { field: 'customer', model: 'Customer', type: 'belongsTo',
+        fields: ['customerId'], references: ['id'], optional: false },
+    ],
+  }
+  const fks = ORDER['x-relations'].flatMap(r => r.fields)
+
+  test('the FK is null; a plain integer still gets 0', () => {
+    const make = createMakeFromSchema(ORDER.properties, undefined, undefined, fks)
+    expect(make()).toEqual({
+      reference:  '',
+      total:      0,        // an explicit @default wins, as before
+      quantity:   0,        // not a relation — unchanged
+      customerId: null,     // the fix
+    })
+  })
+
+  test('an explicit default still wins over the null', () => {
+    const make = createMakeFromSchema(
+      { ...ORDER.properties, customerId: { type: 'integer', default: 7 } },
+      undefined, undefined, fks,
+    )
+    expect(make().customerId).toBe(7)
+  })
+
+  test('passing no FK list leaves every integer at 0 — the old behaviour', () => {
+    const make = createMakeFromSchema(ORDER.properties)
+    expect(make().customerId).toBe(0)
+  })
+
+  test('a compound foreign key nulls every column it names', () => {
+    const props = { aId: { type: 'integer' }, bId: { type: 'integer' }, other: { type: 'integer' } }
+    const make  = createMakeFromSchema(props, undefined, undefined, ['aId', 'bId'])
+    expect(make()).toEqual({ aId: null, bId: null, other: 0 })
+  })
+
+  test('the null reaches the required check instead of the database', async () => {
+    const { validateAgainstFields, buildFieldRules } =
+      await import('../src/junction/field-rules.js')
+    registerSchemas({ Order: ORDER }, ['Order'])
+    const rules = buildFieldRules(ORDER)
+    const make  = createMakeFromSchema(ORDER.properties, undefined, undefined, fks)
+
+    const errors = validateAgainstFields(rules, make(), 'create')
+    expect(errors.map(e => e.field)).toContain('customerId')
+    expect(errors.find(e => e.field === 'customerId').message).toMatch(/required/)
+
+    // And with 0 — what used to be produced — nothing objects at all.
+    const withZero = validateAgainstFields(rules, { ...make(), customerId: 0 }, 'create')
+    expect(withZero.find(e => e.field === 'customerId')).toBeUndefined()
+  })
+})

@@ -1,0 +1,35 @@
+<script>
+  export let width    = undefined   // e.g. '50%', '200px', or undefined (auto)
+  export let bgcolor  = undefined
+  export let padding  = '0 16px'
+  export let valign   = 'top'
+  export let align    = 'left'
+  export let colspan  = undefined
+</script>
+
+<!--
+  Column — a <td> inside a Row.
+  Use for full-width single-column content or inside TwoCol.
+
+  <Row>
+    <Column padding="16px">
+      <p>Content here</p>
+    </Column>
+  </Row>
+-->
+
+<td
+  align="{align}"
+  valign="{valign}"
+  colspan="{colspan}"
+  style="
+    font-family:Helvetica,Arial,sans-serif;
+    font-size:16px;
+    vertical-align:{valign};
+    text-align:{align};
+    padding:{padding};
+    {width   ? `width:${width};`                      : ''}
+    {bgcolor ? `background-color:${bgcolor};`         : ''}
+  ">
+  <slot />
+</td>

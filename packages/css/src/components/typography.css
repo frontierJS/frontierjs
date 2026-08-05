@@ -1,0 +1,144 @@
+/*
+ * typography.css
+ * Heading scale (element + class pairs).
+ * Text color utilities.
+ */
+
+/* ── Heading scale ────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: var(--font-primary);
+  color:       var(--ink);
+  margin:      0;
+  line-height: 1.2;
+}
+
+h1, .h1 { font-size: 2.25rem;  font-weight: 700; letter-spacing: -0.02em;  line-height: 1.1; }
+h2, .h2 { font-size: 1.75rem;  font-weight: 700; letter-spacing: -0.015em; line-height: 1.2; }
+h3, .h3 { font-size: 1.375rem; font-weight: 600; }
+h4, .h4 { font-size: 1.125rem; font-weight: 600; }
+h5, .h5 { font-size: 1rem;     font-weight: 600; }
+h6, .h6 {
+  font-size:      0.875rem;
+  font-weight:    600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/*
+ * ── Link ──────────────────────────────────────────────────────
+ * The Inline-tier "Link" term. It was referenced by the anatomy examples
+ * in lists.css but never actually defined; .btn.link is a button that
+ * looks like a link, which is a different thing.
+ *
+ * Reads --bg-mix, so `class="link danger"` works like any other tone.
+ */
+.link {
+  color:           var(--bg-mix, var(--color-primary));
+  text-decoration: none;
+  cursor:          pointer;
+}
+.link:hover { text-decoration: underline; }
+/* Ring in focus.css; the small radius here is just the shape it traces
+   around what is otherwise a square run of inline text. */
+.link:focus-visible {
+  border-radius: 2px;
+}
+
+/*
+ * ── Kbd — a key the user is meant to press ────────────────────────
+ *
+ *   Press <kbd>⌘</kbd><kbd>K</kbd> to search
+ *   <kbd class="kbd">Esc</kbd>
+ *
+ * Styled on the element as well as the class, because <kbd> already means
+ * exactly this and the class exists only for markup that cannot use it.
+ *
+ * The heavier bottom border is the whole "keycap" effect — a box-shadow
+ * would be more literal but would not survive a dark theme, where the
+ * shadow disappears and the cap flattens.
+ */
+kbd, .kbd {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+
+  min-inline-size: 1.5em;
+  padding:         0.125em 0.375em;
+
+  font-family: var(--font-mono);
+  /* em, so a kbd inside small print shrinks with it. */
+  font-size:   0.8125em;
+  font-weight: 500;
+  line-height: 1.4;
+  color:       var(--ink);
+
+  background:              var(--surface-sunken);
+  border:                  1px solid var(--rule-strong);
+  border-block-end-width:  2px;
+  border-radius:           4px;
+}
+
+/*
+ * ── Code ──────────────────────────────────────────────────────────
+ *
+ *   an inline <code>identifier</code>
+ *
+ *   <pre class="code"><code>bun run test</code></pre>
+ *
+ * <pre> is what makes a code block preserve whitespace; the class only
+ * dresses it. The nested <code> is not optional decoration either — it is
+ * what says "this is code" rather than "this is preformatted text", and
+ * screen readers and search engines both use the distinction.
+ *
+ * A code block must scroll in its own box. Without `overflow-x`, one long
+ * line pushes its grid track wider than the viewport and takes the whole
+ * page sideways with it — the same failure `.table-wrap` exists to
+ * prevent, and the reason `.screen` sets min-inline-size: 0.
+ */
+code, .code-inline {
+  font-family: var(--font-mono);
+  font-size:   0.875em;
+  padding:     0.125em 0.375em;
+  border-radius: 4px;
+  background:  color-mix(in srgb, var(--ink) 6%, transparent);
+  color:       var(--ink);
+}
+
+.code {
+  display:    block;
+  overflow-x: auto;
+  margin:     0;
+  padding:    0.875rem 1rem;
+
+  background:    var(--surface-sunken);
+  border:        1px solid var(--rule);
+  border-radius: var(--card-radius);
+
+  font-family: var(--font-mono);
+  font-size:   0.8125rem;
+  line-height: 1.6;
+  color:       var(--ink);
+
+  /* Long lines scroll; they do not silently wrap and renumber themselves. */
+  white-space: pre;
+  tab-size:    2;
+}
+
+/* Inside a block the inline treatment would double the background. */
+.code > code,
+.code .code-inline {
+  padding:       0;
+  background:    none;
+  border-radius: 0;
+  font-size:     inherit;
+}
+
+/*
+ * ── The .text-* utilities moved out in v0.10.1 ────────────────────
+ *
+ * Both the size scale and the colour utilities now live in utilities.css,
+ * in the `utilities` layer. In this file they shared the `components` layer
+ * with .btn, which sets its own font-size — so every size modifier tied on
+ * specificity and lost on source order. See utilities.css for the detail.
+ */

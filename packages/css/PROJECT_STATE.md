@@ -233,7 +233,7 @@ table (tabular)    — own structure, tones on <tr> for row tinting
 4. **`color-mix()` for derivation** — surface tints and row tinting all derive
    from `--bg-mix`. No manual color math.
 5. **Cascade layers** — index.css declares
-   `@layer tokens, themes, tones, base, layout, components, patterns, a11y` and imports
+   `@layer tokens, themes, tones, base, layout, components, patterns, utilities, a11y` and imports
    each file into its layer. Layer order beats specificity, so the old "don't
    reshuffle the imports" convention is now an explicit contract. Unlayered CSS
    beats every layer, so consumer styles override the package without
@@ -317,69 +317,99 @@ thing.
 
 ## File map
 
-All files live **flat** in the package root. The groupings below are logical
-(and match the `@import` order in `index.css`), not directories.
+Stylesheets live under **`src/`**, grouped into directories that mirror the
+cascade layers declared in `index.css`, so the tree teaches the order rather
+than competing with it. The package root holds only the manifest, the docs and
+the tooling directories.
+
+`src/` earns its name as of v0.11: `bun run build` bundles it into
+`dist/frontier.css` + `.min.css` for consumers who want one file. The default
+`import '@frontierjs/css'` is unchanged and still needs no build — the bundle
+is a convenience artifact, not the product.
+
+> Directories were tried once before, and are why v0.6 exists — every `@import`
+> pointed at a `./themes/` and `./utilities/` that had never been created, so
+> the entry point resolved nothing and the package did not load at all.
+>
+> Two tests make the layout safe now. **`meta: every @import in index.css
+> resolved`** catches an import with no file (a failed `@import` is otherwise
+> silent — the rule stays in place with a null `styleSheet`). **`meta: every
+> shipped stylesheet is reachable from index.css`** catches the opposite: a
+> file that exists and nothing imports, which is what a move makes easy and
+> which breaks nothing loudly. Move a file, run `bun run test`.
 
 ```
 @frontierjs/css/
-├── package.json                   ← manifest; "." → index.css, "./*.css" → flat files
+├── package.json                   ← manifest; exports map hides src/ from the
+│                                     public path (@frontierjs/css/themes/…)
+├── build.js                       ← src/ → dist/, one file            (NEW v0.11)
+│
+└── src/
 ├── index.css                      ← single entry point (one import covers all)
-├── tokens.css                     ← :root defaults + border-box + reduced-motion guard
+├── utilities.css                  ← .text-* size + colour; late layer, beats
+│                                     components                        (v0.10.1)
 │
-│  themes ─────────────────────────────────────────────────────────
-├── default.css                    ← blue brand + neutral surfaces
-├── sunset.css                     ← warm orange
-├── forest.css                     ← deep green
-├── midnight.css                   ← purple accent
-├── dark.css                       ← neutral dark
-├── elite.css                      ← navy + lime + Montserrat (real client theme)
+├── foundation/ ─────────────────────────────────────────────────────
+│   ├── tokens.css                 ← :root defaults + border-box + reduced-motion
+│   ├── tones.css                  ← tone vocabulary (.primary, .danger, …)
+│   ├── chip.css                   ← inline visual base (:where group)   (NEW v0.6)
+│   ├── surface.css                ← block visual base (:where group)
+│   └── layout.css                 ← stack / cluster / center / split + .container
 │
-│  foundation ─────────────────────────────────────────────────────
-├── tones.css                      ← tone vocabulary (.primary, .danger, …)
-├── chip.css                       ← inline visual base (:where group)   (NEW v0.6)
-├── surface.css                    ← block visual base (:where group)
-├── layout.css                     ← stack / cluster / center / split + .container (NEW v0.6)
+├── themes/ ─────────────────────────────────────────────────────────
+│   ├── default.css                ← blue brand + neutral surfaces
+│   ├── sunset.css                 ← warm orange
+│   ├── forest.css                 ← deep green
+│   ├── midnight.css               ← purple accent
+│   ├── dark.css                   ← neutral dark
+│   └── elite.css                  ← navy + lime + Montserrat (real client theme)
 │
-│  components ─────────────────────────────────────────────────────
-├── frame.css                      ← Frame + Page tiers: app shell        (NEW v0.6)
-├── typography.css                 ← h1-h6, .text-* size + color utilities
-├── icon.css                       ← THE icon sizing rule + .icon        (NEW v0.10)
-├── buttons.css                    ← .btn (+ .square, .ghost, .raised)
-├── pills.css                      ← .pill (+ .removable / .pill-close added v0.4.x)
-├── badges.css                     ← .badge
-├── cards.css                      ← .card
-├── tiles.css                      ← .tiles/.tile + label/value/delta     (NEW v0.6)
-├── avatar.css                     ← .avatar (chip lineage) + .avatars     (NEW v0.8)
-├── feedback.css                   ← .spinner .progress .skeleton .empty  (NEW v0.6)
-├── alerts.css                     ← .alert
-├── toasts.css                     ← .toast
-├── popovers.css                   ← .popover
-├── tooltips.css                   ← .tooltip + .tooltip-anchor            (NEW v0.6)
-├── drawers.css                    ← .drawer
-├── form-core.css                  ← .field, .field-group, .field-hint, .field-check,
-│                                     .switch, .field-row/.field-addon      (v0.6)
-├── tables.css                     ← .table + variants + row tones
-├── dialogs.css                    ← .dialog
+├── components/ ─────────────────────────────────────────────────────
+│   ├── frame.css                  ← Frame + Page tiers: app shell        (NEW v0.6)
+│   ├── typography.css             ← h1-h6, .link, kbd, code
+│   ├── icon.css                   ← THE icon sizing rule + .icon        (NEW v0.10)
+│   ├── buttons.css                ← .btn (+ .square, .ghost, .raised)
+│   ├── pills.css                  ← .pill (+ .removable / .pill-close)
+│   ├── badges.css                 ← .badge
+│   ├── cards.css                  ← .card
+│   ├── tiles.css                  ← .tiles/.tile + label/value/delta     (NEW v0.6)
+│   ├── avatar.css                 ← .avatar (chip lineage) + .avatars     (NEW v0.8)
+│   ├── feedback.css               ← .spinner .progress .skeleton .empty  (NEW v0.6)
+│   ├── alerts.css                 ← .alert
+│   ├── toasts.css                 ← .toast
+│   ├── popovers.css               ← .popover
+│   ├── tooltips.css               ← .tooltip + .tooltip-anchor            (NEW v0.6)
+│   ├── drawers.css                ← .drawer
+│   ├── form-core.css              ← .field, .field-group, .field-hint,
+│   │                                .field-check, .switch, .field-row/-addon
+│   ├── tables.css                 ← .table + variants + row tones
+│   └── dialogs.css                ← .dialog
 │
-│  block-tier patterns ────────────────────────────────────────────
-├── bars.css                       ← .bar, .section-header, .divider-label   (NEW v0.5)
-├── lists.css                      ← .items/.item, .rows/.list-row/.row-actions (NEW v0.5)
-├── feed.css                       ← .feed/.feed-item/.feed-dot/.feed-content (NEW v0.5)
-├── disclosure.css                 ← .disclosure + summary/body              (NEW v0.5)
-├── facts.css                      ← <dl> label/value pairs                  (NEW v0.8)
-├── steps.css                      ← .steps/.step + marker/label/hint        (NEW v0.8)
+├── patterns/ ───────────────────────────────────────────────────────
+│   ├── bars.css                   ← .bar, .section-header, .divider-label (NEW v0.5)
+│   ├── lists.css                  ← .items/.item, .rows/.list-row         (NEW v0.5)
+│   ├── feed.css                   ← .feed/.feed-item/.feed-dot            (NEW v0.5)
+│   ├── disclosure.css             ← .disclosure + summary/body            (NEW v0.5)
+│   ├── facts.css                  ← <dl> label/value pairs                (NEW v0.8)
+│   ├── steps.css                  ← .steps/.step + marker/label/hint      (NEW v0.8)
+│   ├── tabs.css                   ← .tabs/.tablist/.tab                   (NEW v0.6)
+│   └── nav.css                    ← .breadcrumb .pagination .navlist      (NEW v0.6)
 │
-├── tabs.css                       ← .tabs/.tablist/.tab                    (NEW v0.6)
-├── nav.css                        ← .breadcrumb .pagination .navlist       (NEW v0.6)
-│
-│  accessibility ───────────────────────────────────────────────────
-├── focus.css                      ← THE focus ring — one recipe, all of it  (NEW v0.7)
-└── a11y.css                       ← .visually-hidden, .skip-link            (NEW v0.6)
+└── a11y/ ───────────────────────────────────────────────────────────
+    ├── focus.css                  ← THE focus ring — one recipe, all of it (NEW v0.7)
+    └── a11y.css                   ← .visually-hidden, .skip-link          (NEW v0.6)
 
-   test/                           ← the assertion suite                     (NEW v0.7)
+   guide/                          ← the interactive reference (49 pages)
+   ├── index.html                  ← shell; <link>s the real ../index.css
+   ├── guide.js                    ← data, page builders, hash router
+   └── guide.css                   ← chrome only (.sg-*)
+
+   demo/                           ← a realistic SaaS admin, the first consumer
+   test/                           ← the assertion suite                    (NEW v0.7)
    ├── run.js                      ← driver: builds a page, runs Chrome, reports
-   ├── harness.js                  ← in-page assertions + the computed-style rulers
-   └── specs/*.spec.js             ← meta · focus · tables · tones · contrast · layers
+   ├── harness.js                  ← in-page assertions + computed-style rulers
+   └── specs/*.spec.js             ← meta · focus · tables · tones · contrast ·
+                                     layers · components · core-gaps
 ```
 
 > **In the repo:** all 36 `*.css` files, `package.json`, `README.md`,
@@ -623,8 +653,31 @@ frontier-demo.html still carries an inlined copy and is therefore stale. Either
 regenerate it with `bun build ./index.css` or retire it — the guide covers the
 same ground.
 
-### Markup naming breaking change
-`card-header` → `surface-header` (since v0.3). Old code needs renaming.
+### Markup naming breaking changes
+- `card-header` → `surface-header` (since v0.3). Old code needs renaming.
+- `.btn.icon` → `.btn.square` (v0.10).
+- **`.shell.fixed` → `.shell.viewport` (v0.10.1).** `fixed` is a core
+  UnoCSS/Tailwind utility name, generated unlayered, so unlayered beat every
+  layer and merely *installing* Uno turned the app shell into a
+  `position: fixed` element. Measured, not theorised — see below.
+
+### UnoCSS interop, measured (v0.10.1)
+The package stopped *requiring* Uno in v0.6 and the docs then claimed it "no
+longer cares either way". Measured against UnoCSS 66.7.5 + `presetWind3`, that
+was false in four places. What is true:
+
+- **The layer architecture does the right thing for free.** Uno's output is
+  unlayered, everything here is layered, so every Uno utility beats every
+  component — the escape hatch works with no ordering discipline.
+- **`@unocss/reset/tailwind.css` flattens the package.** It is unlayered too,
+  so it beats the components; `h1` 36px → 16px, `.btn` background →
+  transparent, `.btn` padding → 0. **Load order does not help** — layer
+  priority ignores it. Import the reset `layer(reset)`.
+- **Three name collisions:** `container` (breaks `.container.narrow`),
+  `text-xs…xl` (Uno's scale replaces this one), and `fixed` (now renamed).
+  `table`/`tab` collide harmlessly.
+- The verified recipe — layer order and a `blocklist` — is in README.md under
+  *Using it with UnoCSS*, and on the guide's Install page.
 
 ### Solid fills may render slightly darker than the token (v0.6)
 A tone used as a *solid fill* (btn, pill, badge) is luminance-capped so white
@@ -786,23 +839,37 @@ vertical tabs all ship with tests. Toast stacking already existed as
 A theme-builder UI is the only thing left on that list, and it is a tool rather
 than CSS — it belongs in the style guide, not the package.
 
-### The style guide is two versions behind
-1b. **The guide has no page for anything added since v0.7.** It
-   `<link>`s the real `index.css`, so what it *does* show cannot drift — but it
-   shows nothing at all for **Avatar, Facts, Code blocks, vertical Tabs, the
-   `.text-*` size scale, or `icon.css`**, and only glancing coverage of Steps
-   and Kbd. Its 45-page nav ends at the v0.7 surface area, it still badges
-   itself **v0.6**, and its Vocabulary page still claims **29 terms** where 35
-   now ship. (Converting it from JSX to plain HTML/JS on 2026-08-02 moved this
-   content verbatim — the gap is unchanged, not widened.)
+### ~~The style guide is two versions behind~~ — closed 2026-08-03
+1b. The guide had no page for anything added since v0.7: nothing for **Avatar,
+   Facts, Code blocks, vertical Tabs, the `.text-*` size scale, or
+   `icon.css`**, only glancing coverage of Steps and Kbd, a **v0.6** badge, and
+   a Vocabulary page claiming **29 terms** where 35 ship. A reference that omits
+   a third of the components sends people to read the CSS instead.
 
-   That matters more than it sounds: PROJECT_STATE calls the guide "the
-   interactive reference", and a reference that omits a third of the components
-   sends people to read the CSS instead. Six new pages, and the Icons page
-   needs rewriting for `.icon` / `--icon-size` / the `.btn.square` rename.
+   **Now 49 pages.** Added: Avatar, Facts, Steps, Code & Kbd. Rewritten: Icons
+   (for `.icon` / `--icon-size` / the three-way drift it replaced) and the
+   Typography type scale. Extended: Tabs gained a vertical section. The
+   Vocabulary table lists all 35 terms and every one has a page.
 
-   `demo/` partly covers for it — it uses every one of those in real markup —
-   but a demo is not a reference.
+   Four claims were false rather than merely missing, and are fixed:
+   - The type scale table listed **eight** Tailwind-shaped tokens
+     (`text-base`, `text-2xl` … `text-4xl`) at Tailwind's pixel values. Five of
+     the eight had no rule behind them; the real scale is `xs/sm/md/lg/xl`.
+   - The Buttons → Sizes demo used two of those non-existent classes, and the
+     other three were inert — see the `utilities` layer note above.
+   - `.text-center`, `.leading-*` and `.tracking-*` were documented and ship
+     nowhere. The page now says so.
+   - `guide.css` redefined `.text-*` **unlayered**, so it beat the package's
+     own utilities: every `text-sm` in the guide was rendering guide chrome,
+     and the Typography page was demonstrating itself. Removed.
+
+   Also fixed while in there: the tonal-ramp strips on Themes, Colors and the
+   Cheat sheet rendered **unpainted** — they set `--bg-mix` on a parent and
+   mixed it in the children, and `--bg-mix` is registered `inherits: false`, so
+   the `color-mix()` was invalid at computed-value time. They use a guide-owned
+   inheriting variable now. The config modal was titled `uno.config.js` and
+   carried a stale copy of `index.css`; it now fetches the real file when
+   served over http.
 
 ### Found while building v0.8, not yet decided
 4. **Accent-as-text has no contrast guarantee.** The chip lineage caps a tone
@@ -817,11 +884,25 @@ than CSS — it belongs in the style guide, not the package.
    It is a real fix — probably a `--on-surface-accent` derived the way `--fill`
    is — but it changes the look of five shipped components, so it wants a
    deliberate decision rather than a drive-by.
-5. **`.text-*` utilities enumerate the seven tones.** typography.css lists
+5. **`.text-*` utilities enumerate the seven tones.** utilities.css lists
    `.text-primary` … `.text-danger` by hand, so "adding a tone is one line in
    tones.css" is not quite true. They dodge `tones.spec.js` because the class
    names are prefixed. Low harm, but it is the same shape as the bug the whole
    v0.6 tone cycle was about.
+
+   ~~**And they were inert on any component that set the same property.**~~
+   Fixed in v0.10.1: they lived in the `components` layer beside `.btn`, which
+   declares its own `font-size`, so all five size steps rendered at 14px on a
+   button and the guide showed five identical buttons under a caption
+   explaining how they differ. They now have their own `utilities` layer,
+   after `patterns` and before `a11y`, with a regression test in
+   `layers.spec.js`.
+
+6. **The package ships no alignment, leading or tracking utilities.** The
+   guide documented `.text-center`, `.leading-snug` and `.tracking-wide` —
+   all Uno shortcuts through v0.5, none replaced when the config was deleted.
+   The guide now says so; the open question is whether to ship them or keep
+   pointing at Uno.
 
 ### Deliberately not doing
 Combobox, date picker, command palette, data grid. All behaviour-heavy;
@@ -841,9 +922,21 @@ invites half-implementations.
    whether the mental model survives contact with a reader.
 3. **`index.css`** — the layer order is the architecture in one screen.
 
-**The files:** all 40 `*.css` files live flat in the package root. There is no
-`styles/` directory and no `uno.config.ts` — both are gone as of v0.6.
-`guide/` is the interactive reference (45 pages) and `<link>`s the real
+**The files:** 41 `*.css` files under `src/`, grouped since v0.11 into
+`foundation/`, `themes/`, `components/`, `patterns/` and `a11y/` — folders that
+mirror the cascade layers, with `index.css` and `utilities.css` at the top of
+`src/`. `dist/` is generated by `bun run build` and gitignored. There is no
+`uno.config.ts`.
+
+**The bundler drops the layer order declaration.** `bun build` inlines each
+`@import` as an `@layer name { … }` block but does not emit the
+`@layer a, b, c;` statement, so a naive bundle falls back to first-appearance
+order. Today that agrees with the declaration; it does not have to. Measured:
+move the utilities import above the first components import and rebuild, and
+`.btn.text-lg` goes 16px → 14px in the bundle while the source stays 16px.
+`build.js` reads the statement out of `index.css`, prepends it, and refuses to
+write a bundle without it.
+`guide/` is the interactive reference (49 pages, all 35 vocabulary terms) and `<link>`s the real
 `index.css`, so it can never drift from the source again.
 
 **Verification is empirical here.** Do not trust a claim in this doc — including
@@ -1127,3 +1220,83 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
   (+ `.focusable`) and `.skip-link` — in a final `a11y` layer so they win
   without `!important`. The system had no accessible-labelling primitive at all
   before this, which made icon-only controls impossible to label properly.
+
+---
+
+## Open finding — `.btn.outlined` fails WCAG AA in all six themes (2026-08-03)
+
+Found by the FrontierJS website (`website/`), which is this package's second
+consuming app. Measured with `getComputedStyle` in headless Chrome, not estimated.
+
+Untoned `.btn.outlined` paints `color: var(--bg-mix, var(--color-primary))` on
+`background: var(--surface)`:
+
+| default | sunset | forest | midnight | dark | elite |
+| ------- | ------ | ------ | -------- | ---- | ----- |
+| 3.96    | 2.35   | 3.30   | 4.23     | 4.40 | 1.99  |
+
+All below the 4.5:1 threshold for body-size text; elite is the worst at 1.99:1.
+
+**The reasoning for the fix is already in this package.** `buttons.css`, in the
+comment above `.btn.ghost`:
+
+> Untoned it takes `--ink-soft` rather than the brand accent. A ghost button's
+> text IS the button, and an accent on a surface has no contrast guarantee
+> (`--color-primary` on `--surface` is 3.96:1); `--ink-soft` is 7.3:1 …
+
+That is the same 3.96 measured above. `.ghost` applies the conclusion; `.outlined`
+does not, and inherited the failure.
+
+**Suggested fix** — the same move `.ghost` already makes:
+
+```css
+.btn.outlined {
+  color:        var(--bg-mix, var(--ink));
+  border-color: var(--bg-mix, var(--rule-strong));
+}
+```
+
+A tone class still opts into the accent deliberately, exactly as with `.ghost`,
+`.field-hint` and `.tile-delta`. Untoned falls back to neutral ink.
+
+This is a visual change to a shipped v0.10 component, so it is a judgement call
+whether it lands as a patch or a breaking change. The website currently carries
+the override locally in `site.css`, with the measurements in a comment.
+
+### Smaller ergonomics note — `.code` is the block variant
+
+`typography.css` ships both treatments correctly: `code, .code-inline` is inline,
+`.code` is the block (`display:block`, 0.875rem padding, border, `overflow-x`).
+A consumer reading "the code class" reasonably assumes it matches `<code>`, which
+is an inline element in HTML — writing `<code class="code">` inline produces a
+full block box. It cost this site 26 wrong usages before it was noticed.
+
+Non-breaking suggestion: add a `.code-block` alias and keep `.code` working, so
+the pair reads `.code-inline` / `.code-block` and neither is the surprising default.
+
+---
+
+## Fixed — a chip on an `<a>` kept the UA underline (2026-08-03)
+
+Found by the Sierra example app (`packages/sierra/example`) on its first hour as
+a consumer: every navigating button — `<a class="btn primary">New lead</a>`,
+`<a class="btn outlined">Open the list</a>` — rendered with a line through the
+label.
+
+The chip base sets layout, colour and contrast but never touched
+`text-decoration`, and the shipped demo only ever uses `<button>`, so nothing in
+the package exercised the case. A link-shaped button is not an edge case; it is
+half of all buttons in an app with routes.
+
+Fixed in `foundation/chip.css`, in the `:where()` base so it stays at zero
+specificity:
+
+```css
+:where(.chip, .btn, .pill, .badge, .page, .tooltip, .avatar, .step-marker) {
+  text-decoration: none;
+}
+```
+
+`.btn.link` (buttons.css) and `.link:hover` (typography.css) still turn the
+underline back on — those are deliberate, this is a default. Affects `.pill` and
+`.page` identically, which is why it belongs on the base rather than on `.btn`.

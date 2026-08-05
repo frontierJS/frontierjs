@@ -72,7 +72,8 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Derived relation fields** (`@from(Model, sum: amount)`) | ✓ | ✗ | ✗ | ✗ |
 | **Computed fields** (`@computed`) | ✓ | ✗ | ✗ | ✗ |
 | **Generated columns** (`@generated("expr")`) | ✓ | ✗ | ✗ | ✗ |
-| **Enum state machines** (with declared transitions) | ✓ | ✗ | ✗ | ✗ |
+| **State machines** (`@@transitions`, enforced at the data boundary) | ✓ | ✗ | ✗ | ✗ |
+| **Authorized transitions** (`@gate(5)` per move, and it reaches the client) | ✓ | ✗ | ✗ | ✗ |
 | **Full-text search** (FTS5 declared with `@@fts`) | ✓ | ✗ | ✗ | ✗ |
 | **`@@external`** (declare a table you don't own) | ✓ | ✗ | partial ⁴ | ✗ |
 | **STRICT mode by default** | ✓ | ✗ | ✗ | ✗ |
@@ -197,6 +198,28 @@ bunx litestone migrate create initial
 bunx litestone migrate apply
 bunx litestone studio            # browser UI at http://localhost:5001
 ```
+
+---
+
+### Where the schema lives in a FrontierJS app
+
+Litestone is usable standalone — put the `.lite` file wherever you like. Inside a
+FrontierJS app it has one home: **`db/schema.lite` at the app root**, a sibling of `api/`
+and `web/` and inside neither.
+
+```
+my-app/
+├── db/               ← this package's territory
+│   ├── schema.lite   ← the single source of truth
+│   ├── migrations/
+│   └── backups/
+├── api/              ← Junction reads the schema from here
+└── web/              ← Sierra's build reads the same file
+```
+
+Both realms read that one file, so it belongs above both of them. Sierra's schema
+auto-detection looks for `../db/schema.lite` from its own root for exactly this reason.
+The full layout is in the [root README](../../README.md#project-structure).
 
 ---
 
@@ -408,7 +431,7 @@ const n     = await db.active_users.count()
 const found = await db.active_users.exists({ where: { email: 'alice@example.com' } })
 
 // Works with include — other models can still relate to @@external models
-const posts = await db.posts.findMany({ include: { author: true } })
+const posts = await db.post.findMany({ include: { author: true } })
 
 // @@external models are excluded from autoMigrate and litestone migrate create
 // — Litestone will never emit CREATE TABLE, ALTER TABLE, or DROP for them
@@ -424,7 +447,7 @@ export async function up(db) {
   await db.sql`
     CREATE VIEW IF NOT EXISTS active_users AS
     SELECT id, email, name, accountId
-    FROM users
+    FROM user
     WHERE deletedAt IS NULL
   `
 }
@@ -490,7 +513,7 @@ const sysDb  = db.asSystem()           // bypasses @@gate + @@allow/@@deny, unlo
 `@@allow` and `@@deny` compile to SQL WHERE injections — filtering happens in SQLite, not JS:
 
 ```prisma
-model posts {
+model Post {
   id        Int  @id
   accountId Int
   status    String     @default("draft")
@@ -507,10 +530,10 @@ model posts {
 const userDb = db.$setAuth({ id: 1, accountId: 5 })
 
 // Only returns posts where status='published' OR accountId=5
-const posts = await userDb.posts.findMany()
+const posts = await userDb.post.findMany()
 
 // Returns ALL posts — policies bypassed
-const all = await db.asSystem().posts.findMany()
+const all = await db.asSystem().post.findMany()
 ```
 
 **Policy expressions** support: `auth()`, `auth().field`, `now()`, comparison operators, `&&`, `||`, string/number/boolean literals, and `check(relatedModel, expr)` for relation-based checks.
@@ -522,7 +545,7 @@ const all = await db.asSystem().posts.findMany()
 Level-based access control. Assign levels 0–9, declare required levels per operation:
 
 ```prisma
-model posts {
+model Post {
   @@gate("1.3.4.6")   // read=VISITOR, create=CREATOR, update=USER, delete=OWNER
 }
 ```
@@ -556,7 +579,7 @@ Reserved: `SYSTEM=8` (asSystem() only)  `LOCKED=9` (impassable — not even asSy
 ## Encryption
 
 ```prisma
-model users {
+model User {
   ssn    String  @encrypted                   // AES-256-GCM, guarded — asSystem() only
   email  String  @encrypted(searchable: true)  // HMAC-indexed — equality WHERE works
   apiKey String  @secret                       // @encrypted + @guarded(all) + @log(audit)
@@ -569,8 +592,8 @@ const db = await createClient({ path: './schema.lite',
 })
 
 // searchable: true allows WHERE on encrypted fields
-await db.users.findFirst({ where: { email: 'alice@example.com' } })  // ✓ works
-await db.users.findFirst({ where: { ssn: '123-45-6789' } })           // → always null (not searchable)
+await db.user.findFirst({ where: { email: 'alice@example.com' } })  // ✓ works
+await db.user.findFirst({ where: { ssn: '123-45-6789' } })           // → always null (not searchable)
 
 // Rotate encryption key
 await db.$rotateKey(newKey)
@@ -583,51 +606,51 @@ await db.$rotateKey(newKey)
 ### Read
 
 ```js
-db.users.findMany({ where, orderBy, limit, offset, include, select, withDeleted, onlyDeleted })
-db.users.findMany({ where, distinct: true })                    // SELECT DISTINCT
-db.users.findMany({ where, window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } } })
-db.users.findFirst({ where, orderBy, include, select })
-db.users.findUnique({ where, include, select })
-db.users.findFirstOrThrow({ where })
-db.users.findUniqueOrThrow({ where })
-db.users.findManyAndCount({ where, orderBy, limit, offset, include, select })  // → { rows, total }
-db.users.count({ where })                                                       // → number
-db.users.exists({ where })                                                      // → boolean
-db.users.aggregate({ where, _count, _sum, _avg, _min, _max })
-db.users.groupBy({ by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max })
-db.users.groupBy({ by, interval: { createdAt: 'month' }, fillGaps: true, _count, _sum })
-db.users.query({ ...args })                                    // unified dispatcher — see below
-db.users.search('query', { where, limit, offset, highlight, snippet })  // requires @@fts
-db.users.findManyCursor({ where, limit, cursor, orderBy })              // O(log n) pagination
-db.users.findMany({ where, recursive: true })                           // CTE tree (self-referential)
-db.users.findMany({ where, recursive: { direction: 'ancestors', nested: true, maxDepth: 3 } })
+db.user.findMany({ where, orderBy, limit, offset, include, select, withDeleted, onlyDeleted })
+db.user.findMany({ where, distinct: true })                    // SELECT DISTINCT
+db.user.findMany({ where, window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } } })
+db.user.findFirst({ where, orderBy, include, select })
+db.user.findUnique({ where, include, select })
+db.user.findFirstOrThrow({ where })
+db.user.findUniqueOrThrow({ where })
+db.user.findManyAndCount({ where, orderBy, limit, offset, include, select })  // → { rows, total }
+db.user.count({ where })                                                       // → number
+db.user.exists({ where })                                                      // → boolean
+db.user.aggregate({ where, _count, _sum, _avg, _min, _max })
+db.user.groupBy({ by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max })
+db.user.groupBy({ by, interval: { createdAt: 'month' }, fillGaps: true, _count, _sum })
+db.user.query({ ...args })                                    // unified dispatcher — see below
+db.user.search('query', { where, limit, offset, highlight, snippet })  // requires @@fts
+db.user.findManyCursor({ where, limit, cursor, orderBy })              // O(log n) pagination
+db.user.findMany({ where, recursive: true })                           // CTE tree (self-referential)
+db.user.findMany({ where, recursive: { direction: 'ancestors', nested: true, maxDepth: 3 } })
 ```
 
 ### Write
 
 ```js
 // Single-row ops — return the full row (with include/select applied)
-db.users.create({ data, include, select })          // → TRow
-db.users.update({ where, data, include, select })   // → TRow | null
-db.users.upsert({ where, create: {...}, update: {...} })  // → TRow
-db.users.restore({ where })                         // → TRow[]
+db.user.create({ data, include, select })          // → TRow
+db.user.update({ where, data, include, select })   // → TRow | null
+db.user.upsert({ where, create: {...}, update: {...} })  // → TRow
+db.user.restore({ where })                         // → TRow[]
 
 // select: false — skip RETURNING, return null. Fastest write path.
 // No benefit on @@log models (logging requires the row snapshot).
-db.users.create({ data, select: false })            // → null
-db.users.update({ where, data, select: false })     // → null
+db.user.create({ data, select: false })            // → null
+db.user.update({ where, data, select: false })     // → null
 
 // Bulk ops — return { count: number } only, no row data
 // Use single-row ops in a $transaction if you need the affected rows back
-db.users.createMany({ data: [...] })                // → { count: number }
-db.users.updateMany({ where, data })                // → { count: number }
-db.users.upsertMany({ data, conflictTarget, update })  // → { count: number }
-db.users.removeMany({ where })                      // → { count: number }
-db.users.deleteMany({ where })                      // → { count: number }
+db.user.createMany({ data: [...] })                // → { count: number }
+db.user.updateMany({ where, data })                // → { count: number }
+db.user.upsertMany({ data, conflictTarget, update })  // → { count: number }
+db.user.removeMany({ where })                      // → { count: number }
+db.user.deleteMany({ where })                      // → { count: number }
 
-db.users.remove({ where })      // soft delete if @@softDelete, else hard delete → TRow
-db.users.delete({ where })      // always hard delete → TRow
-db.users.optimizeFts()          // merge FTS5 segments — requires @@fts
+db.user.remove({ where })      // soft delete if @@softDelete, else hard delete → TRow
+db.user.delete({ where })      // always hard delete → TRow
+db.user.optimizeFts()          // merge FTS5 segments — requires @@fts
 ```
 
 Bulk ops intentionally skip `RETURNING` — fetching potentially thousands of rows back negates the performance reason for using a bulk op. If you need the modified rows, use a single-row op in a `$transaction` loop, or `findMany` after the bulk op.
@@ -655,20 +678,20 @@ orderBy: { deletedAt: { dir: 'asc', nulls: 'last' } }
 orderBy: { priority: { dir: 'desc', nulls: 'first' } }
 
 // Relation field orderBy — sort by a field on a belongsTo relation (LEFT JOIN)
-db.posts.findMany({ orderBy: { author: { name: 'asc' } } })
+db.post.findMany({ orderBy: { author: { name: 'asc' } } })
 
 // Two-hop
-db.users.findMany({ orderBy: { company: { country: { name: 'asc' } } } })
+db.user.findMany({ orderBy: { company: { country: { name: 'asc' } } } })
 
 // Mixed flat + relation
-db.posts.findMany({ orderBy: [{ author: { name: 'asc' } }, { createdAt: 'desc' }] })
+db.post.findMany({ orderBy: [{ author: { name: 'asc' } }, { createdAt: 'desc' }] })
 
 // Relation aggregate orderBy — sort by count/sum/avg/min/max of a hasMany or manyToMany
 // Uses a correlated subquery — no row duplication, works on any table size
-db.authors.findMany({ orderBy: { books: { _count: 'desc' } } })
-db.authors.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
-db.authors.findMany({ orderBy: { books: { _max: { rating: 'desc' } } } })
-db.authors.findMany({ orderBy: { tags:  { _count: 'asc' } } })   // manyToMany — _count only
+db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
+db.author.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
+db.author.findMany({ orderBy: { books: { _max: { rating: 'desc' } } } })
+db.author.findMany({ orderBy: { tags:  { _count: 'asc' } } })   // manyToMany — _count only
 ```
 
 Relation field orderBy (`belongsTo` only — single-row joins). Aggregate orderBy works on `hasMany` and `manyToMany`; `_sum`/`_avg`/`_min`/`_max` require `hasMany`. Both compose with `where`, `limit`, `offset`, `include`, and `select`.
@@ -681,12 +704,12 @@ For predicates the structured `where` builder can't express — `json_extract`, 
 import { sql } from '@frontierjs/litestone'
 
 // Simple
-db.products.findMany({
+db.product.findMany({
   where: { $raw: sql`price > IF(state = ${state}, ${minPrice}, 100)` }
 })
 
 // Mixed with structured where — ANDed together
-db.orders.findMany({
+db.order.findMany({
   where: {
     status: 'active',
     $raw: sql`json_extract(meta, '$.tier') = ${3}`,
@@ -694,7 +717,7 @@ db.orders.findMany({
 })
 
 // Composed inside AND / OR
-db.users.findMany({
+db.user.findMany({
   where: {
     AND: [
       { accountId: 1 },
@@ -704,7 +727,7 @@ db.users.findMany({
 })
 
 // Works everywhere where: is accepted — findMany, findFirst, count, exists, update, updateMany...
-const n = await db.products.count({ where: { $raw: sql`stock < ${10}` } })
+const n = await db.product.count({ where: { $raw: sql`stock < ${10}` } })
 ```
 
 The `sql` tag pulls interpolated values out as params and substitutes `?` placeholders — values are never concatenated into the SQL string. For simple parameterless expressions a plain string also works: `where: { $raw: 'deletedAt IS NULL' }`.
@@ -712,10 +735,10 @@ The `sql` tag pulls interpolated values out as params and substitutes `?` placeh
 ### Cursor pagination
 
 ```js
-const page1 = await db.users.findManyCursor({ limit: 50, orderBy: { id: 'asc' } })
+const page1 = await db.user.findManyCursor({ limit: 50, orderBy: { id: 'asc' } })
 // → { items: [...], nextCursor: 'eyJ...', hasMore: true }
 
-const page2 = await db.users.findManyCursor({
+const page2 = await db.user.findManyCursor({
   limit: 50, orderBy: { id: 'asc' }, cursor: page1.nextCursor
 })
 ```
@@ -724,8 +747,8 @@ const page2 = await db.users.findManyCursor({
 
 ```js
 await db.$transaction(async tx => {
-  const acct = await tx.accounts.create({ data: { name: 'Acme' } })
-  const user = await tx.users.create({ data: { accountId: acct.id, email: 'a@b.com' } })
+  const acct = await tx.account.create({ data: { name: 'Acme' } })
+  const user = await tx.user.create({ data: { accountId: acct.id, email: 'a@b.com' } })
   return { acct, user }
 })
 ```
@@ -746,11 +769,11 @@ Event shape:
 
 ```js
 {
-  model:     'users',
+  model:     'User',
   operation: 'findMany',        // all ORM operations
   database:  'main',
   actorId:   'user_abc',        // ctx.auth?.id
-  sql:       'SELECT * FROM "users" WHERE "status" = ? LIMIT ?',
+  sql:       'SELECT * FROM "user" WHERE "status" = ? LIMIT ?',
   params:    ['active', 20],
   duration:  1.4,               // ms — SQLite call only
   rowCount:  17,
@@ -776,7 +799,7 @@ Use `db.$tapQuery(fn)` for temporary one-shot captures (Studio REPL, tests):
 ```js
 const log = []
 const stop = db.$tapQuery(e => log.push(e))
-await db.users.findMany()
+await db.user.findMany()
 stop()
 // log contains all queries that fired
 ```
@@ -821,13 +844,13 @@ function fullName(first: String, last: String): String {
   @@expr("COALESCE({first}, '') || ' ' || COALESCE({last}, '')")
 }
 
-model users {
+model User {
   firstName   String?
   lastName    String?
   displayName String  @fullName(firstName, lastName)  // STORED generated column
 }
 
-model posts {
+model Post {
   title String
   slug  String  @slug(title)   // same function, different model
 }
@@ -836,8 +859,8 @@ model posts {
 Generated columns are `STORED` and indexable:
 
 ```js
-await db.posts.findMany({ where: { slug: 'hello-world' } })
-await db.users.findMany({ orderBy: { displayName: 'asc' } })
+await db.post.findMany({ where: { slug: 'hello-world' } })
+await db.user.findMany({ orderBy: { displayName: 'asc' } })
 ```
 
 ---
@@ -845,7 +868,7 @@ await db.users.findMany({ orderBy: { displayName: 'asc' } })
 ## @sequence — per-scope auto-increment
 
 ```prisma
-model quotes {
+model Quote {
   id          Int @id
   accountId   Int
   quoteNumber Int @sequence(scope: accountId)
@@ -855,7 +878,7 @@ model quotes {
 Each account gets its own counter starting at 1:
 
 ```js
-const q = await db.quotes.create({ data: { accountId: 5, ... } })
+const q = await db.quote.create({ data: { accountId: 5, ... } })
 // q.quoteNumber → 1  (first quote for account 5)
 String(q.quoteNumber).padStart(4, '0')  // → '0001'
 ```
@@ -867,7 +890,7 @@ String(q.quoteNumber).padStart(4, '0')  // → '0001'
 Computed aggregates and lookups from related models — evaluated at query time, not stored.
 
 ```prisma
-model accounts {
+model Account {
   id           Int  @id
   name         String
   userCount    Int  @from(users, count: true)
@@ -885,7 +908,7 @@ Derived fields are read-only — they appear in query results automatically. Sup
 
 ```js
 // Simple aggregate
-const stats = await db.orders.aggregate({
+const stats = await db.order.aggregate({
   where:  { status: 'completed' },
   _count: true,
   _sum:   { amount: true },
@@ -896,17 +919,17 @@ const stats = await db.orders.aggregate({
 // → { _count: 142, _sum: { amount: 98432.50 }, _avg: { amount: 693.19 }, ... }
 
 // COUNT(DISTINCT field)
-db.orders.aggregate({ _count: { distinct: 'accountId' } })
+db.order.aggregate({ _count: { distinct: 'accountId' } })
 
 // string_agg / group_concat
-db.orders.aggregate({
+db.order.aggregate({
   _stringAgg: { field: 'status', separator: ', ', orderBy: 'status' }
 })
 // → { _stringAgg: { status: 'paid, pending, refund' } }
 
 // Named aggregates — any _-prefixed key with an agg fn spec
 // Supports FILTER (WHERE ...) for single-pass pivot queries
-const pivot = await db.orders.aggregate({
+const pivot = await db.order.aggregate({
   _count:       true,
   _countPaid:   { count: true,   filter: sql`status = 'paid'` },
   _countRefund: { count: true,   filter: sql`status = 'refund'` },
@@ -916,7 +939,7 @@ const pivot = await db.orders.aggregate({
 // → { _count: 100, _countPaid: 72, _countRefund: 8, _sumPaid: 3200, _avgPaid: 44.4 }
 
 // Group by field
-const byStatus = await db.orders.groupBy({
+const byStatus = await db.order.groupBy({
   by:      ['status'],
   _count:  true,
   _sum:    { amount: true },
@@ -925,7 +948,7 @@ const byStatus = await db.orders.groupBy({
 })
 
 // Per-group filtered stats
-await db.orders.groupBy({
+await db.order.groupBy({
   by:           ['accountId'],
   _count:       true,
   _countPaid:   { count: true,   filter: sql`status = 'paid'` },
@@ -933,7 +956,7 @@ await db.orders.groupBy({
 })
 
 // Time-series bucketing with gap fill
-const monthly = await db.orders.groupBy({
+const monthly = await db.order.groupBy({
   by:       ['createdAt'],
   interval: { createdAt: 'month' },   // year | quarter | month | week | day | hour
   where:    { createdAt: { gte: '2024-01-01', lte: '2024-12-31' } },
@@ -944,7 +967,7 @@ const monthly = await db.orders.groupBy({
 // → [{ createdAt: '2024-01', _count: 18, _sum: { amount: 4200 } }, ...]
 
 // findManyAndCount — single query, total for pagination
-const { rows, total } = await db.posts.findManyAndCount({
+const { rows, total } = await db.post.findManyAndCount({
   where: { status: 'published' },
   limit: 20, offset: 40,
 })
@@ -957,36 +980,36 @@ const { rows, total } = await db.posts.findManyAndCount({
 Self-referential models (a field referencing the same model) automatically support CTE-based tree traversal:
 
 ```prisma
-model categories {
+model Category {
   id       Int     @id
   name     String
-  parent   categories? @relation(fields: [parentId], references: [id])
+  parent   Category? @relation(fields: [parentId], references: [id])
   parentId Int?
-  children categories[]
+  children Category[]
 }
 ```
 
 ```js
 // All descendants of node 5
-const tree = await db.categories.findMany({
+const tree = await db.category.findMany({
   where:     { id: 5 },
   recursive: true,             // direction: 'descendants' (default)
 })
 
 // All ancestors (path to root)
-const breadcrumb = await db.categories.findMany({
+const breadcrumb = await db.category.findMany({
   where:     { id: 42 },
   recursive: { direction: 'ancestors' },
 })
 
 // Nested tree structure (children array on each node)
-const nested = await db.categories.findMany({
+const nested = await db.category.findMany({
   where:     { parentId: null },
   recursive: { direction: 'descendants', nested: true, maxDepth: 3 },
 })
 
 // Multiple self-relations — disambiguate with via:
-const reports = await db.employees.findMany({
+const reports = await db.employee.findMany({
   where:     { id: 1 },
   recursive: { direction: 'descendants', via: 'reports' },
 })
@@ -999,7 +1022,7 @@ const reports = await db.employees.findMany({
 Window functions add computed columns to each row based on a set of surrounding rows — rankings, running totals, moving averages, period comparisons. Pass a `window` object to `findMany`:
 
 ```js
-db.orders.findMany({
+db.order.findMany({
   where:   { accountId: 1 },
   orderBy: { id: 'asc' },
   window:  {
@@ -1046,23 +1069,23 @@ Routes a single args object to `findMany`, `groupBy`, or `aggregate` based on it
 ```js
 // One handler, all query types
 app.get('/orders', async (req) => {
-  return db.orders.query(req.query)
+  return db.order.query(req.query)
 })
 
 // → findMany (no aggregate keys, no by)
-db.orders.query({ where: { status: 'paid' }, orderBy: { id: 'asc' }, limit: 20 })
+db.order.query({ where: { status: 'paid' }, orderBy: { id: 'asc' }, limit: 20 })
 
 // → aggregate (has _count/_sum/etc, no by)
-db.orders.query({ _count: true, _sum: { amount: true }, where: { accountId: 1 } })
+db.order.query({ _count: true, _sum: { amount: true }, where: { accountId: 1 } })
 
 // → groupBy (has by)
-db.orders.query({ by: ['status'], _count: true, where: { accountId: 1 } })
+db.order.query({ by: ['status'], _count: true, where: { accountId: 1 } })
 
 // → findMany + window
-db.orders.query({ window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } } })
+db.order.query({ window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } } })
 
 // → aggregate (named agg with FILTER)
-db.orders.query({ _countPaid: { count: true, filter: sql`status = 'paid'` } })
+db.order.query({ _countPaid: { count: true, filter: sql`status = 'paid'` } })
 ```
 
 Routing rules — checked in order: `by` present → `groupBy`; `_count`/`_sum`/`_avg`/`_min`/`_max`/`_stringAgg` or named agg present → `aggregate`; everything else → `findMany`. All standard args (`where`, `orderBy`, `limit`, `select`, `include`, `window`, `distinct`, `$raw`, etc.) pass through unchanged.
@@ -1151,9 +1174,9 @@ Migrations can be `.js` files alongside SQL files in the migrations directory:
 // migrations/20240101000001_backfill-slugs.js
 export async function up(db) {
   // db = full Litestone client — all ORM operations available
-  const posts = await db.posts.findMany({ where: { slug: null } })
+  const posts = await db.post.findMany({ where: { slug: null } })
   for (const post of posts) {
-    await db.posts.update({
+    await db.post.update({
       where: { id: post.id },
       data:  { slug: post.title.toLowerCase().replace(/\s+/g, '-') },
     })
@@ -1174,7 +1197,7 @@ await apply(rawDb, './migrations', client)
 ```js
 // computed.js
 export default {
-  users: {
+  User: {
     fullName: row => [row.firstName, row.lastName].filter(Boolean).join(' '),
     isActive: row => !row.deletedAt,
 
@@ -1188,7 +1211,7 @@ export default {
 ```
 
 ```prisma
-model users {
+model User {
   fullName String    @computed
   isActive Boolean @computed
 }
@@ -1214,7 +1237,7 @@ const db = await createClient({ path: './schema.lite',
 ```
 
 ```prisma
-model users {
+model User {
   avatar  File?              // single file — upload on create/update, delete on row delete
   resume  File?  @keepVersions  // keep old S3 object on update
   photos  File[]             // multiple files — array of refs stored as JSON
@@ -1225,11 +1248,11 @@ model users {
 
 ```js
 // Single file
-const user = await db.users.update({ where: { id: 1 }, data: { avatar: file } })
+const user = await db.user.update({ where: { id: 1 }, data: { avatar: file } })
 fileUrl(user.avatar)                              // → 'https://cdn.example.com/...'
 
 // Multiple files
-const user2 = await db.users.update({ where: { id: 1 }, data: { photos: [file1, file2] } })
+const user2 = await db.user.update({ where: { id: 1 }, data: { photos: [file1, file2] } })
 fileUrls(user2.photos)                            // → ['https://...', 'https://...']
 
 // Storage utilities
@@ -1303,9 +1326,9 @@ import {
 const { db, factories } = await makeTestClient(schemaText, {
   seed:         42,               // deterministic RNG for all factories
   autoFactories: true,            // auto-generate factories for all sqlite models
-  factories: { users: UserFactory },  // explicit factories (override auto-generated)
+  factories: { user: UserFactory },  // explicit factories (override auto-generated)
   data: async (db) => {          // seeder fn runs after tables created
-    await db.accounts.create({ data: { id: 1, name: 'Test Co' } })
+    await db.account.create({ data: { id: 1, name: 'Test Co' } })
   },
 })
 ```
@@ -1314,7 +1337,7 @@ const { db, factories } = await makeTestClient(schemaText, {
 
 ```js
 class UserFactory extends Factory {
-  model = 'users'
+  model = 'User'
 
   traits = {
     admin:  { role: 'admin' },
@@ -1337,20 +1360,92 @@ const post = await posts.withRelation('author', users).createOne()
 
 // for() — use existing parent
 const post2 = await posts.for('author', existingUser).createOne()
+
+// withParents() — auto-create EVERY required parent, recursively, from the schema.
+// The only way to seed a uuid-keyed model: a String FK has no fallback value.
+const deployment = await factories.deployment.withParents().createOne()
+
+// has() — hasMany children, FK pointed back at the parent
+const author = await factories.author.has('posts', 3).createOne()
+author.posts   // → 3 posts, each with authorId = author.id
+
+// attach() — implicit many-to-many
+await factories.post.withParents().attach('tags', 3).createOne()
+
+// asSystem() / actingAs() — a schema with @@gate refuses an anonymous factory.
+// The client propagates through the whole wired graph.
+await factories.order.asSystem().withParents().createOne()
+
+// create()/build() overload on the FIRST argument: a number is a count,
+// anything else is overrides.
+await users.create()                     // → 1 row
+await users.create({ role: 'admin' })    // → 1 row with overrides
+await users.create(5)                    // → 5 rows
+await users.create(5, { role: 'admin' }) // → 5 rows with overrides
+```
+
+`model` is the schema's model name — PascalCase singular. Every chain method returns
+a **clone**, so `f.seed(42)` does not mutate `f`.
+
+### defineFactory — no subclass
+
+```js
+import { defineFactory } from '@frontierjs/litestone'
+
+export const UserFactory = defineFactory({
+  model:      'User',
+  definition: (seq, rng) => ({ email: `u${seq}@x.com`, role: 'member' }),
+  traits:     { admin: { role: 'admin' } },
+})
+// returns a CLASS — registers like any other:
+await makeTestClient(schemaText, { factories: { user: UserFactory } })
+```
+
+`fli make:factory User` scaffolds one into `db/factories/`.
+
+### snapshot / restore — seed once, reset between tests
+
+```js
+import { snapshot, restore } from '@frontierjs/litestone/testing'
+
+await seedEverything(db)
+const clean = snapshot(db)
+beforeEach(() => restore(db, clean))
+```
+
+Raw rows through the write connection: `@encrypted` keeps its exact ciphertext, no
+gate/hook/audit fires, FTS shadow tables are skipped. Not a transaction.
+
+### Fixtures — authored reference data
+
+```js
+import { loadFixture } from '@frontierjs/litestone'
+
+await loadFixture(db, 'Country', './db/fixtures/countries.json')
+await loadFixture(db, 'Plan',    './db/fixtures/plans.csv', { upsert: 'code' })
+```
+
+### Seeder ordering
+
+```js
+class OrderSeeder extends Seeder {
+  static dependsOn = [AccountSeeder, ProductSeeder]   // run first, once each
+  async run(db) { … }
+}
 ```
 
 ### factoryFrom — zero-config
 
 ```js
 const { schema } = parse(schemaText)
-const users = factoryFrom(schema, 'users', db)
+const users = factoryFrom(schema, 'User', db)
 const admin = await users.state({ role: 'admin' }).createOne()
 ```
 
 ### generateFactory — schema-derived definition
 
 ```js
-const defFn = generateFactory(schema, 'users')
+const defFn = generateFactory(schema, 'User')
 // Returns a definition(seq, rng) function that generates valid data from field types + constraints
 // @email → 'users1@test.com', @gte(0) @lte(100) → 50, String? → null, etc.
 ```
@@ -1358,7 +1453,7 @@ const defFn = generateFactory(schema, 'users')
 ### generateGateMatrix — permission test cases
 
 ```js
-const matrix = generateGateMatrix(schema, 'posts')
+const matrix = generateGateMatrix(schema, 'Post')
 // → [{ op: 'read', level: 1, label: 'VISITOR', expect: 'allow' }, ...]
 
 for (const { op, level, label, expect: expected } of matrix) {
@@ -1376,12 +1471,12 @@ const { valid, invalid, boundary } = generateValidationCases(schema, 'leads')
 // boundary — boundary values that should pass: { field, value, rule, expect: 'pass' }
 
 test('valid data passes', async () => {
-  await db.leads.create({ data: valid })
+  await db.lead.create({ data: valid })
 })
 
 for (const c of invalid) {
   test(`${c.field}: ${c.rule} rejects ${c.value}`, async () => {
-    await expect(db.leads.create({ data: { ...valid, [c.field]: c.value } }))
+    await expect(db.lead.create({ data: { ...valid, [c.field]: c.value } }))
       .rejects.toThrow(c.message)
   })
 }
@@ -1390,7 +1485,7 @@ for (const c of invalid) {
 ### Teardown
 
 ```js
-await truncate(db, 'posts')    // hard-delete all rows in one table
+await truncate(db, 'Post')    // hard-delete all rows in one table
 await reset(db)                // hard-delete all tables in FK-safe order
 await factory.truncate()       // instance method shorthand
 ```
@@ -1401,7 +1496,7 @@ await factory.truncate()       // instance method shorthand
 class BaseSeeder extends Seeder {
   async run(db) {
     await this.once(db, 'base-v1', async () => {
-      await db.accounts.createMany({ data: [...] })
+      await db.account.createMany({ data: [...] })
     })
     // runs once and never again, even across deploys
   }
@@ -1419,7 +1514,7 @@ await db.$backup('./backups/compact.db', { vacuum: true })
 
 // Cross-database queries
 db.$attach('./archive.db', 'archive')
-const rows = await db.sql`SELECT * FROM users UNION ALL SELECT * FROM archive.users`
+const rows = await db.sql`SELECT * FROM user UNION ALL SELECT * FROM archive.user`
 db.$detach('archive')
 
 // Schema introspection
@@ -1464,7 +1559,7 @@ litestone migrate verify             check live db matches schema
 litestone migrate dry-run [label]    preview SQL, no file
 litestone studio                     browser UI (default port 5001)
 litestone types [out.d.ts]           generate TypeScript declarations
-  --only=users,posts                 emit types for specific models only
+  --only=User,Post                 emit types for specific models only
 litestone seed                       run seeder
 litestone seed run [name]            run a named calendar/data seed
   --db=main --force

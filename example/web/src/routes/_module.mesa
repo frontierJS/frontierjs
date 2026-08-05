@@ -1,0 +1,140 @@
+---
+siteName: Kitchen sink
+---
+<script>
+  import { page, isActive, goto } from '@frontierjs/sierra/router'
+  import { status } from '@frontierjs/sierra/junction'
+  import { session, signIn, signOut } from '../session.js'
+
+  import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button         from '@frontierjs/ui/components/forms/Button.mesa'
+  import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
+  import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
+  import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
+  import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
+  import { toasts }         from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.siteName, page.route)
+  $: (status.connected, session.level, session.email, session.role, session.error)
+  $: commandPalette.open
+
+  // ⌘K. The commands are ordinary functions — the palette is a way to reach
+  // what the nav and the header already do, not a second set of behaviours.
+  const COMMANDS = [
+    { id: 'go-home',      group: 'Navigate', label: 'Home',       action: () => goto('/') },
+    { id: 'go-orders',    group: 'Navigate', label: 'Orders',     action: () => goto('/orders/') },
+    { id: 'go-new-order', group: 'Navigate', label: 'New order',  sub: 'Create an order', action: () => goto('/orders/create/') },
+    { id: 'go-products',  group: 'Navigate', label: 'Products',   action: () => goto('/products/') },
+    { id: 'go-customers', group: 'Navigate', label: 'Customers',  action: () => goto('/customers/') },
+    { id: 'go-settings',  group: 'Navigate', label: 'Settings',   action: () => goto('/settings/') },
+    { id: 'sign-in-user',  group: 'Session', label: 'Sign in as sam (level 4)',  action: () => as('user') },
+    { id: 'sign-in-admin', group: 'Session', label: 'Sign in as alex (level 5)', action: () => as('admin') },
+    { id: 'sign-out',      group: 'Session', label: 'Sign out',                  action: out },
+  ]
+
+  // Plain `let`s are already component state — they must NOT go in the `$:`
+  // path-watch above, which is for fields of plain objects (Mesa RULE 43).
+  // Listing one there compiles cleanly and throws `$runtime.get(...) is not a
+  // function` on mount.
+  let email    = 'sam@shop.test'
+  let password = 'correct-horse-battery'
+  let busy     = false
+
+  async function submit() {
+    busy = true
+    try { await signIn(email, password) } finally { busy = false }
+  }
+
+  function as(who) {
+    email = who === 'admin' ? 'alex@shop.test' : 'sam@shop.test'
+    password = 'correct-horse-battery'
+    return submit()
+  }
+
+  function out() {
+    signOut()
+    goto('/')
+  }
+</script>
+
+<!--
+  Every class here comes from @frontierjs/css. There is no <style> block in this
+  app: the frame (shell / topbar / screen), the nav, the tables, the forms and
+  the alerts are all vocabulary.
+
+  Current-page state is aria-current="page", not a class — the stylesheet keys
+  off the attribute, so what a screen reader announces and what you see cannot
+  drift. Mesa drops an attribute whose value is null, which is what makes the
+  ternary produce a bare <a> rather than aria-current="false".
+
+  The leading `page.route` in each expression is load-bearing. isActive() reads
+  that path internally, but Mesa decides what an expression depends on from the
+  expression's own text — without the read written here the attribute is set
+  once at mount and the highlight never moves.
+-->
+<div class="shell">
+  <header class="topbar">
+    <span class="cluster">
+      <strong>{page.siteName}</strong>
+      <Badge tone="muted">pre-alpha</Badge>
+    </span>
+
+    <nav class="cluster" aria-label="Main">
+      <a class="navlink" href="/"          aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Home</a>
+      <!-- exact, because isActive() prefix-matches and /orders/ is a prefix of
+           /orders/create/ — without it both links light up at once. -->
+      <a class="navlink" href="/orders/"   aria-current={(page.route, isActive('/orders/', { exact: true })) ? 'page' : null}>Orders</a>
+      <a class="navlink" href="/orders/create/" aria-current={(page.route, isActive('/orders/create/')) ? 'page' : null}>New order</a>
+      <a class="navlink" href="/products/" aria-current={(page.route, isActive('/products/')) ? 'page' : null}>Products</a>
+      <a class="navlink" href="/customers/" aria-current={(page.route, isActive('/customers/')) ? 'page' : null}>Customers</a>
+      <a class="navlink" href="/settings/"  aria-current={(page.route, isActive('/settings/')) ? 'page' : null}>Settings</a>
+    </nav>
+
+    <span class="cluster">
+      <!-- The live WebSocket, as a tone rather than a hand-mixed green. The kit
+           takes the tone as a prop; naming status.connected inside the
+           expression is what makes it re-evaluate when the socket drops. -->
+      <Pill tone={status.connected ? 'success' : 'muted'}>
+        {status.connected ? 'live' : 'offline'}
+      </Pill>
+
+      <Button variant="ghost" id="palette-open" onclick={() => commandPalette.show()}>
+        Search <kbd class="kbd">⌘K</kbd>
+      </Button>
+
+      {#if session.level > 0}
+        <Badge tone="info">{session.email} · level {session.level}</Badge>
+        <!-- A kit component takes its handler as a PROP (`onclick`), not as
+             `on:click` — that directive belongs to elements. -->
+        <Button variant="ghost" onclick={out}>Sign out</Button>
+      {:else}
+        <Button variant="outlined" onclick={() => as('user')}  disabled={busy}>Sign in (user)</Button>
+        <Button variant="primary"  onclick={() => as('admin')} disabled={busy}>Sign in (admin)</Button>
+      {/if}
+    </span>
+  </header>
+
+  <main class="screen">
+    {#if session.error}
+      <Alert tone="danger">{session.error}</Alert>
+    {/if}
+
+    <div class="container stack"><slot /></div>
+  </main>
+</div>
+
+<!--
+  ⌘K anywhere. `mesa:window` is the one place a global key listener belongs —
+  a document listener added by hand in a component outlives the component.
+-->
+<mesa:window on:keydown={(e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); commandPalette.toggle() }
+}} />
+
+{#if commandPalette.open}
+  <CommandPalette items={COMMANDS} onclose={() => commandPalette.hide()} />
+{/if}
+
+<!-- One Toaster for the app; anything can call toasts.success(). -->
+<Toaster position="bottom-right" />

@@ -1,0 +1,74 @@
+<script>
+  export let href     = ''
+  export let text     = ''
+  export let bgcolor  = '#9fc612'
+  export let color    = '#ffffff'
+  export let target   = '_blank'
+  export let align    = 'center'
+  export let padding  = '16px'
+  export let radius   = 4
+  export let size     = 14
+  export let weight   = 700
+
+  /*
+   * ── Why the VML never touches the DOM ────────────────────────────────
+   *
+   * The static renderer runs in happy-dom, and happy-dom ends a conditional
+   * comment early for several shapes of tag inside it — an attribute with a
+   * namespace prefix (`xmlns:v="…"`) and some `style` values are each enough
+   * on their own. When it does, `<!--[if mso]>` is serialised as
+   * `<!--[if mso]-->`, the comment closes, and the VML that follows is parsed
+   * as live markup: `<v:roundrect …>` becomes `<v :roundrect="" …>`.
+   *
+   * That is not cosmetic. The Outlook-only fallback stops being hidden, so
+   * every recipient on every client sees the button twice — and the HTML is
+   * still well-formed, so nothing complains.
+   *
+   * `{@html}` was the previous attempt at protecting it and is not enough:
+   * {@html} sets innerHTML, which is the DOM. The only reliable answer is to
+   * keep the markup out of the DOM altogether — it is emitted percent-encoded
+   * in a data attribute and spliced back into the HTML string after rendering
+   * by `expandMsoPlaceholders()` in ../render.js.
+   *
+   * Percent-encoding rather than raw text in the attribute, because happy-dom
+   * does not escape `"` when it serialises an attribute value — the payload's
+   * own quotes would close the attribute and scatter the VML back across the
+   * tag as separate attributes. encodeURIComponent leaves no `<`, `>` or `"`
+   * for anything downstream to interpret.
+   */
+  const msoHTML = `<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="${href}" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="${Math.round(radius * 2)}%" stroke="f" fillcolor="${bgcolor}">
+<w:anchorlock/>
+<center style="color:${color};font-family:Helvetica,Arial,sans-serif;font-size:${size}px;font-weight:${weight};">${text}</center>
+</v:roundrect>
+<![endif]--><!--[if !mso]><!-->`
+
+  const msoClose = `<!--<![endif]-->`
+</script>
+
+<!--
+  Button — email-safe CTA with an Outlook VML fallback.
+
+  <Button href="https://example.com" text="View Order" />
+  <Button href="/confirm" bgcolor="#ee380d" text="Confirm Now" />
+
+  The `data-mso` / `data-mso-close` attributes are placeholders, expanded
+  into real conditional comments after render. See the note above and
+  `expandMsoPlaceholders()` in ../render.js. Rendering this component through
+  `renderComponent` directly, without that step, leaves the placeholders in
+  place and drops the Outlook fallback — use the kit's `renderEmail*`.
+-->
+
+<tr>
+  <td align="{align}" style="padding:0;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="{align}" style="margin:0 auto;">
+      <tr>
+        <td style="padding:{padding};">
+          <span data-mso={encodeURIComponent(msoHTML)}></span>
+          <a href={href} target={target} style="display:inline-block;background-color:{bgcolor};color:{color};font-family:Helvetica,Arial,sans-serif;font-size:{size}px;font-weight:{weight};letter-spacing:1.5px;line-height:1;text-decoration:none;text-align:center;padding:12px 28px;border-radius:{radius}px;mso-padding-alt:0;-webkit-text-size-adjust:none;">{text}</a>
+          <span data-mso-close={encodeURIComponent(msoClose)}></span>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>

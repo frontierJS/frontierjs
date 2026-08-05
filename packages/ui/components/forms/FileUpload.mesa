@@ -1,0 +1,263 @@
+<script>
+  // FileUpload.mesa
+  // Drag-and-drop file input with click-to-browse, file preview list,
+  // per-file progress, and remove. Does not upload — provides the File objects
+  // via onchange for the parent to handle.
+  //
+  // Usage — basic:
+  //   <FileUpload onchange={(files) => handleFiles(files)} />
+  //
+  // Usage — images only, multiple:
+  //   <FileUpload accept="image/*" multiple onchange={uploadImages} />
+  //
+  // Usage — with Field label:
+  //   <FileUpload label="Attachments" name="files" multiple onchange={fn} />
+  //
+  // Usage — show progress per file (pass progressMap):
+  //   <!-- progressMap: { [filename]: 0-100 } -->
+  //   <FileUpload {files} progressMap={uploadProgress} multiple />
+
+  import Field from './Field.mesa'
+  import { uid } from '../../utils.js'
+
+  export let accept       = '*/*'     // MIME types e.g. 'image/*' or '.pdf,.doc'
+  export let multiple     = false
+  export let maxSizeMB    = 0         // 0 = no limit
+  export let label        = ''
+  export let name         = ''
+  export let hint         = ''
+  export let error        = ''
+  export let errors       = undefined
+  export let disabled     = false
+  export let files        = []        // File[] — bindable, current selection
+  export let progressMap  = {}        // { [filename]: 0-100 } — optional upload progress
+  export let onchange     = undefined // (files: File[]) => void
+
+  export var id = ''
+  const inputId = id || uid('file')
+
+  let dragging     = false
+  let inputEl
+  let localError   = ''
+
+  function formatBytes(bytes) {
+    if (bytes < 1024)         return `${bytes} B`
+    if (bytes < 1024 ** 2)   return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  }
+
+  function isImage(file) {
+    return file.type.startsWith('image/')
+  }
+
+  function validate(fileList) {
+    if (maxSizeMB <= 0) return ''
+    const oversized = fileList.find(f => f.size > maxSizeMB * 1024 * 1024)
+    if (oversized) return `"${oversized.name}" exceeds ${maxSizeMB} MB`
+    return ''
+  }
+
+  function addFiles(newFiles) {
+    if (disabled) return
+    const list = Array.from(newFiles)
+    const err  = validate(list)
+    if (err) { localError = err; return }
+    localError = ''
+    files = multiple ? [...files, ...list] : list
+    onchange?.(files)
+  }
+
+  function removeFile(i) {
+    files = files.filter((_, idx) => idx !== i)
+    onchange?.(files)
+    localError = ''
+  }
+
+  function handleDrop(e) {
+    e.preventDefault()
+    dragging = false
+    if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files)
+  }
+
+  function handleInputChange(e) {
+    if (e.target.files?.length) {
+      addFiles(e.target.files)
+      e.target.value = ''   // reset so same file can be re-selected
+    }
+  }
+
+  const displayError = localError || error || errors?.[name] || ''
+</script>
+
+{#snippet dropzone()}
+  <div class="stack" style:gap="0.75rem">
+    <!--
+      A real <button> for the drop area, not a div with role="button" and a
+      hand-written Enter/Space handler — the platform already does that, and
+      the old version's keydown fired on Space *and* scrolled the page.
+    -->
+    <button
+      type="button"
+      class="fjs-dropzone"
+      data-dragging={dragging || null}
+      data-invalid={displayError ? 'true' : null}
+      disabled={disabled}
+      aria-label="Choose a file to upload"
+      on:dragover|preventDefault={() => dragging = true}
+      on:dragleave={() => dragging = false}
+      on:drop={handleDrop}
+      on:click={() => inputEl?.click()}
+    >
+      <svg
+        class="fjs-dropzone-icon"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+      >
+        <path d="M12 16V4m0 0-3 3m3-3 3 3"/>
+        <path d="M20 16.7A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/>
+      </svg>
+
+      <span class="stack" style:gap="0.125rem">
+        <span>{dragging ? 'Drop to upload' : 'Drag & drop or click to browse'}</span>
+        <span class="text-xs text-muted">
+          {accept !== '*/*' ? accept : 'Any file type'}
+          {maxSizeMB > 0 ? ` · Max ${maxSizeMB} MB` : ''}
+          {multiple ? ' · Multiple allowed' : ''}
+        </span>
+      </span>
+    </button>
+
+    <input
+      bind:this={inputEl}
+      id={inputId}
+      type="file"
+      accept={accept}
+      multiple={multiple}
+      disabled={disabled}
+      class="visually-hidden"
+      on:change={handleInputChange}
+    />
+
+    {#if displayError}
+      <p class="field-hint danger" role="alert">{displayError}</p>
+    {/if}
+
+    <!-- File list -->
+    {#if files.length}
+      <ul class="rows divided">
+        {#each files as file, i (file.name + i)}
+          {@const progress = progressMap[file.name] ?? null}
+          <li class="list-row">
+            <!-- Thumbnail or icon -->
+            {#if isImage(file)}
+              <img
+                class="avatar"
+                style:--avatar-size="2.5rem"
+                style:--avatar-radius="var(--card-radius)"
+                style:object-fit="cover"
+                src={URL.createObjectURL(file)}
+                alt=""
+              />
+            {:else}
+              <span
+                class="avatar muted"
+                style:--avatar-size="2.5rem"
+                style:--avatar-radius="var(--card-radius)"
+                aria-hidden="true"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z"/>
+                </svg>
+              </span>
+            {/if}
+
+            <!-- Info -->
+            <div class="stack" style:gap="0.25rem" style:flex="1" style:min-inline-size="0">
+              <span class="text-sm">{file.name}</span>
+              <span class="text-xs text-muted">{formatBytes(file.size)}</span>
+              {#if progress !== null}
+                <progress
+                  class="progress {progress >= 100 ? 'success' : ''}"
+                  style:block-size="0.25rem"
+                  value={progress}
+                  max="100"
+                  aria-label="Upload progress for {file.name}"
+                >{progress}%</progress>
+              {/if}
+            </div>
+
+            <!-- Remove -->
+            {#if progress === null || progress >= 100}
+              <span class="row-actions">
+                <button
+                  type="button"
+                  class="btn ghost square"
+                  aria-label="Remove {file.name}"
+                  on:click={() => removeFile(i)}
+                >
+                  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+                  </svg>
+                </button>
+              </span>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+{/snippet}
+
+{#if label || name}
+  <Field
+    id={inputId}
+    name={name}
+    label={label || name}
+    hint={hint}
+    {class}
+  >
+    {@render dropzone()}
+  </Field>
+{:else}
+  <div {class}>
+    {@render dropzone()}
+  </div>
+{/if}
+
+
+<style>
+  /* @frontierjs/css has no dropzone term; this draws one from its tokens. */
+  .fjs-dropzone {
+    display:        flex;
+    flex-direction: column;
+    align-items:    center;
+    justify-content:center;
+    gap:            0.5rem;
+    inline-size:    100%;
+    padding:        2rem 1.5rem;
+    text-align:     center;
+    cursor:         pointer;
+    font:           inherit;
+    color:          var(--ink-soft);
+    background:     var(--surface-sunken);
+    border:         2px dashed var(--rule-strong);
+    border-radius:  var(--card-radius);
+    transition:     border-color 120ms, background 120ms, color 120ms;
+  }
+  .fjs-dropzone:hover:not(:disabled) { border-color: var(--ink-mute); }
+  .fjs-dropzone[data-dragging] {
+    border-color: var(--color-primary);
+    color:        var(--color-primary);
+    background:   color-mix(in srgb, var(--color-primary) 8%, var(--surface));
+  }
+  .fjs-dropzone[data-invalid="true"] { border-color: var(--color-danger); }
+  .fjs-dropzone:disabled {
+    opacity: 0.5;
+    cursor:  not-allowed;
+  }
+  .fjs-dropzone-icon {
+    inline-size: 2rem;
+    block-size:  2rem;
+    flex-shrink: 0;
+  }
+</style>

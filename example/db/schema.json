@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$defs": {
+    "Product": {
+      "type": "object",
+      "title": "Product",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "barcode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Nullable AND unique — the pairing that makes `blankToNull` matter on the client. An empty text box submits '', SQLite accepts any number of NULLs in a UNIQUE column but rejects a second '', so without normalisation the second product saved with a blank barcode fails a constraint nobody wrote."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "sku",
+        "price"
+      ],
+      "x-gate": {
+        "read": 0,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      }
+    },
+    "Customer": {
+      "type": "object",
+      "title": "Customer",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Staff-only. Field-level @allow is the tool for \"some callers may read this column\": the field is stripped from the response for anyone the policy rejects, without a line of service code saying so.  NOT @guarded — that is a system-context lock (@guarded / @guarded(all)), not a level, and it takes no numeric argument. @guarded(5) does not parse.",
+          "x-litestone-read-policy": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "email"
+      ],
+      "x-gate": {
+        "read": 0,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "orders",
+          "model": "Order",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Order": {
+      "type": "object",
+      "title": "Order",
+      "properties": {
+        "reference": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "x-messages": {
+            "length": "A reference is 3 to 20 characters, like ORD-1001",
+            "minLength": "A reference is 3 to 20 characters, like ORD-1001",
+            "maxLength": "A reference is 3 to 20 characters, like ORD-1001"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/OrderStatus",
+          "default": "pending"
+        },
+        "total": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "customerId": {
+          "type": "integer",
+          "description": "belongsTo. `customerId` is emitted as a plain integer, so the browser only knows it is a reference because x-relations says so — that is what turns it into a picker instead of a number spinner.  @label is what a human calls this field; @required carries the wording for the one rule that has nowhere else to live (required-ness is the absence of `?`, not an attribute). Both reach the browser AND the server from here — the form, the client-side check and the API all say this sentence.",
+          "title": "Customer",
+          "x-messages": {
+            "required": "Please select a customer from the list"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "customerId"
+      ],
+      "x-gate": {
+        "read": 0,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
+      "x-transitions": {
+        "status": {
+          "pay": {
+            "from": [
+              "pending"
+            ],
+            "to": "paid",
+            "gate": null
+          },
+          "ship": {
+            "from": [
+              "paid"
+            ],
+            "to": "shipped",
+            "gate": null
+          },
+          "refund": {
+            "from": [
+              "paid"
+            ],
+            "to": "refunded",
+            "gate": 5
+          },
+          "cancel": {
+            "from": [
+              "pending",
+              "paid"
+            ],
+            "to": "cancelled",
+            "gate": null
+          }
+        }
+      },
+      "x-relations": [
+        {
+          "field": "customer",
+          "model": "Customer",
+          "type": "belongsTo",
+          "fields": [
+            "customerId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "OrderStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "paid",
+        "shipped",
+        "refunded",
+        "cancelled"
+      ],
+      "title": "OrderStatus"
+    }
+  }
+}

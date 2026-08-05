@@ -58,13 +58,20 @@ export function mesaPlugin(options = {}) {
       // Try to locate and load Mesa's compiler. Search order:
       //   1. Explicit mesaCompilerPath option
       //   2. Explicit mesaPackageRoot/compiler.js
-      //   3. <extRoot>/node_modules/@frontierjs/mesa/compiler.js  (the consumer extension's node_modules)
-      //   4. <viteRoot>/node_modules/@frontierjs/mesa/compiler.js  (fallback when extRoot not provided)
+      //   3. <extRoot>/node_modules/@frontierjs/mesa/…      (the consumer extension's node_modules)
+      //   4. <viteRoot>/node_modules/@frontierjs/mesa/…      (fallback when extRoot not provided)
+      //
+      // Mesa's source moved under `src/` (2026-08-04), so each package-root
+      // guess is tried as `src/compiler.js` first and flat second — a
+      // node_modules copy taken before the move is still flat, and `bun
+      // install` copies a workspace dep rather than symlinking it.
       const candidates = []
       if (mesaCompilerPath) candidates.push(mesaCompilerPath)
-      if (mesaPackageRoot)  candidates.push(resolve(mesaPackageRoot, 'compiler.js'))
-      if (extRoot)          candidates.push(resolve(extRoot,  'node_modules/@frontierjs/mesa/compiler.js'))
-      candidates.push(resolve(viteRoot, 'node_modules/@frontierjs/mesa/compiler.js'))
+      for (const rel of ['src/compiler.js', 'compiler.js']) {
+        if (mesaPackageRoot) candidates.push(resolve(mesaPackageRoot, rel))
+        if (extRoot)         candidates.push(resolve(extRoot,  'node_modules/@frontierjs/mesa', rel))
+        candidates.push(resolve(viteRoot, 'node_modules/@frontierjs/mesa', rel))
+      }
 
       for (const p of candidates) {
         if (existsSync(p)) {

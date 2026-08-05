@@ -1,0 +1,105 @@
+---
+siteName: Basecamp
+---
+<script>
+  import { page, goto, isActive } from '@frontierjs/sierra/router'
+  import { status } from '@frontierjs/sierra/junction'
+  import { session, signOut, switchWorkspace } from '../session.js'
+
+  $: (page.siteName, page.route)
+  $: (status.connected, session.user, session.workspaceId, session.workspaces)
+
+  function out() {
+    signOut()
+    goto('/login/')
+  }
+
+  function pick(e) {
+    switchWorkspace(e.target.value)
+  }
+</script>
+
+<!--
+  Every class here comes from @frontierjs/css: the frame (shell / topbar /
+  screen), the badges, the field. No <style> block, no colour, no utility
+  classes (repo invariant 13).
+
+  There is no nav yet on purpose — the sections it would link to arrive in
+  Phase 3. A link to a route that does not exist is worse than no link.
+-->
+<!-- The skip link is the first focusable thing on the page and is invisible
+     until focused. Without it, a keyboard user tabs through the nav, the
+     workspace switcher and sign-out on EVERY navigation before reaching the
+     content — the design system's frame documents it as part of the shell
+     anatomy (css components/frame.css) and it was simply missing. -->
+<a class="skip-link" href="#screen">Skip to content</a>
+
+<div class="shell">
+  <header class="topbar">
+    <span class="cluster">
+      <strong>{page.siteName}</strong>
+      <span class="badge muted">alpha</span>
+    </span>
+
+    {#if session.user}
+      <!-- Only routes that exist are linked. Current-page state is
+           aria-current="page", not a class — the stylesheet keys off the
+           attribute so the look and the announcement cannot drift apart, and
+           Mesa drops an attribute whose value is null rather than rendering
+           aria-current="false".
+
+           The leading `page.route` in each expression is load-bearing:
+           isActive() reads it internally, but Mesa decides what an expression
+           depends on from the expression's own text, so without the read
+           written here the attribute is set once at mount and the highlight
+           never moves. -->
+      <nav class="cluster" aria-label="Main">
+        <a class="navlink" href="/"
+           aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Overview</a>
+        <a class="navlink" href="/projects/"
+           aria-current={(page.route, isActive('/projects/')) ? 'page' : null}>Projects</a>
+        <a class="navlink" href="/servers/"
+           aria-current={(page.route, isActive('/servers/')) ? 'page' : null}>Servers</a>
+        <a class="navlink" href="/deployments/"
+           aria-current={(page.route, isActive('/deployments/')) ? 'page' : null}>Deployments</a>
+        <a class="navlink" href="/jobs/"
+           aria-current={(page.route, isActive('/jobs/')) ? 'page' : null}>Jobs</a>
+        <a class="navlink" href="/admin/"
+           aria-current={(page.route, isActive('/admin/')) ? 'page' : null}>Admin</a>
+      </nav>
+    {/if}
+
+    <span class="cluster">
+      {#if session.user && session.workspaces.length}
+        <!-- The switcher is the whole of Phase 2: nothing downstream of here
+             works without X-Workspace-Id, and the header is where the scope a
+             page is showing has to be legible. -->
+        <label class="visually-hidden" for="workspace-switch">Workspace</label>
+        <!-- .field is full-width because that is right in a form column and
+             wrong in a topbar; --field-inline-size is the knob the design
+             system provides for exactly this (css components/form-core.css). -->
+        <select class="field" id="workspace-switch" style="--field-inline-size: auto"
+                on:change={pick}>
+          {#each session.workspaces as ws}
+            <option value={ws.id} selected={ws.id === session.workspaceId}>{ws.name}</option>
+          {/each}
+        </select>
+      {/if}
+
+      <!-- The live WebSocket as a tone, not a hand-mixed green. It opens only
+           once a token is stored, so 'offline' before sign-in is correct. -->
+      <span class="pill" class:success={status.connected} class:muted={!status.connected}>
+        {status.connected ? 'live' : 'offline'}
+      </span>
+
+      {#if session.user}
+        <span class="text-sm text-muted">{session.user.email}</span>
+        <button class="btn ghost" on:click={out}>Sign out</button>
+      {/if}
+    </span>
+  </header>
+
+  <main class="screen" id="screen" tabindex="-1">
+    <div class="container stack"><slot /></div>
+  </main>
+</div>

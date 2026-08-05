@@ -10,4 +10,5 @@ examples:
 
 ```js
 context.exec({ command: 'killall node', dry: flag.dry })
+context.exec({ command: 'killall bun', dry: flag.dry })
 ```

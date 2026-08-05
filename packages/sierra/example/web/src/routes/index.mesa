@@ -1,0 +1,41 @@
+---
+title: Home
+---
+<div class="section-header">
+  <h1>Sierra example</h1>
+  <span class="text-sm text-muted">one schema, both halves</span>
+</div>
+
+<!-- Prose stays on one line per sentence on purpose: Mesa joins the lines of a
+     static text node without reinserting the newline as a space, so a wrapped
+     paragraph renders as "…and its400s from it". See the note in the README. -->
+<p class="text-body">
+  One <code>db/schema.lite</code>. The API derives its tables, its 401s and its 400s from it; the browser derives make() defaults, field rules, enum options, relation targets and gate levels from the same file. Neither side restates the other.
+</p>
+
+<!-- .tiles is the responsive grid: auto-fit + minmax, no media query here.
+     The button sits in a .cluster because .stack stretches its children,
+     and a button stretched to the card's width is a banner, not a button. -->
+<div class="tiles" style="--tile-min: 18rem">
+  <article class="card stack">
+    <h2 class="h4">Leads</h2>
+    <p class="text-sm text-muted">
+      A list, with a delete button the schema decides whether to offer — <code>@@gate</code> wants level 5, so <code>can('delete', level)</code> is asked before it renders.
+    </p>
+    <div class="cluster"><a class="btn outlined" href="/leads/">Open the list</a></div>
+  </article>
+
+  <article class="card stack">
+    <h2 class="h4">New lead</h2>
+    <p class="text-sm text-muted">
+      A form generated entirely from the schema — no field list, no types, no enum values and no mention of the accounts service in the component.
+    </p>
+    <div class="cluster"><a class="btn outlined" href="/leads/create/">Open the form</a></div>
+  </article>
+</div>
+
+<article class="alert info">
+  <div class="alert-content">
+    Sign in from the header to get past <code>@@gate("0.4.4.5")</code> — reads are public, writes want level 4, delete wants 5.
+  </div>
+</article>

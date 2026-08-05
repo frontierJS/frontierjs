@@ -1,0 +1,101 @@
+<script>
+  // Textarea.mesa
+  // Multi-line text input with optional auto-resize.
+  // Field composition pattern: a label prop triggers self-wrapping in Field.
+  //
+  // bind:this exposes: focus()
+
+  import Field from './Field.mesa'
+  import { nameToLabel, uid } from '../../utils.js'
+
+  export let value       = ''
+  export let placeholder = ''
+  export let rows        = 3
+  export let maxlength   = undefined
+  export let disabled    = false
+  export let required    = undefined
+  export let readonly    = false
+  export let resize      = true      // allow manual resize via drag
+  export let autogrow    = false     // auto-expand height to content
+
+  // Field integration
+  export let name     = ''
+  export let label    = ''
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let badge    = undefined
+  export let help     = undefined
+
+  export var id = ''
+  const textareaId = id || uid('textarea')
+  const autoLabel  = nameToLabel(name)
+
+  const hasError = !!(error || errors?.[name])
+
+  let el
+  export function focus() { el?.focus() }
+
+  function handleInput(e) {
+    value = e.target.value
+    if (autogrow) {
+      e.target.style.height = 'auto'
+      e.target.style.height = `${e.target.scrollHeight}px`
+    }
+  }
+  // Native event callbacks
+  export let onchange = undefined
+  export let onblur   = undefined
+  export let onfocus  = undefined
+</script>
+
+{#snippet control()}
+  <textarea
+    bind:this={el}
+    class="field"
+    id={textareaId}
+    name={name || undefined}
+    rows={rows}
+    maxlength={maxlength}
+    placeholder={placeholder}
+    disabled={disabled}
+    required={required}
+    readonly={readonly}
+    aria-invalid={hasError || null}
+    style:resize={resize ? null : 'none'}
+    on:input={handleInput}
+    on:change={onchange}
+    on:blur={onblur}
+    on:focus={onfocus}
+  >{value}</textarea>
+
+  {#if maxlength}
+    <!--
+      aria-live so a screen reader user hears they are approaching the cap;
+      a silent counter only helps people who can see it.
+    -->
+    <p class="field-hint" style:text-align="end" aria-live="polite">
+      {value.length} / {maxlength}
+    </p>
+  {/if}
+{/snippet}
+
+{#if label || (name && !label && autoLabel)}
+  {@const resolvedLabel = label || autoLabel}
+  <Field
+    id={textareaId}
+    name={name}
+    label={resolvedLabel}
+    required={required}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}

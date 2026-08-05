@@ -1,0 +1,165 @@
+<script>
+  // Input.mesa
+  // Flexible text input. When a label prop is provided the component
+  // self-wraps in <Field>, giving label + input + hint + error in one
+  // declaration.
+  //
+  // `.field` goes on the <input> itself — it IS the control, not a wrapper.
+  // Its invalid border comes from `:user-invalid` with no JS and no class,
+  // which is why the old ring-colour map is gone; only a *server* error needs
+  // a tone, and Field owns that.
+  //
+  // Naked (inside an explicit Field):
+  //   <Field label="Email" name="email" {errors}>
+  //     <Input type="email" bind:value={email} />
+  //   </Field>
+  //
+  // Shorthand (Field implicit):
+  //   <Input label="Email" name="email" type="email" bind:value={email} {errors} />
+  //
+  // bind:this exposes: focus(), select()
+
+  import Field from './Field.mesa'
+  import { nameToLabel, uid } from '../../utils.js'
+
+  // Core input props
+  export let value       = ''
+  export let type        = 'text'
+  export let placeholder = ''
+  export let disabled    = false
+  export let required    = undefined
+  export let readonly    = false
+  export let pattern     = undefined
+  export let min         = undefined
+  export let max         = undefined
+  export let step        = undefined
+  // A length limit is as much a schema fact as a min or a max — @length(3, 20)
+  // reaches the browser as maxLength, and without this prop the only way to
+  // honour it was to stop using the component.
+  export let maxlength   = undefined
+  export let minlength   = undefined
+  export let autocomplete = undefined
+  export let icon        = undefined   // trailing icon snippet
+  export let datalist    = undefined   // string[] — renders <datalist>
+
+  // Field integration props (only used when label is set)
+  export let name     = ''
+  export let label    = ''             // '' = naked, no Field wrapper
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let badge    = undefined
+  export let help     = undefined
+  export let removable = false
+  export let onremovekey = undefined
+  // Native event callbacks
+  //
+  // `oninput` fires on every keystroke, AFTER `value` has been written back.
+  // Without it the event was swallowed: a caller could see the new value only
+  // through bind:value, so anything that has to react to typing itself — live
+  // validation that may clear an error but never reveal one, a search-as-you-
+  // type box, a character counter — could not be written against this input.
+  export let oninput   = undefined
+  export let onchange  = undefined
+  export let onblur    = undefined
+  export let onfocus   = undefined
+  export let onkeydown = undefined
+  export let onkeypress = undefined
+
+  // id — snapshot at mount, stable for label association
+  export var id = ''
+
+  const inputId   = id || uid('input')
+  const listId    = datalist ? `${inputId}-list` : undefined
+  const autoLabel = nameToLabel(name)
+
+  const hasError = !!(error || errors?.[name])
+
+  // Exported methods — exposed via bind:this on this component
+  let inputEl
+  export function focus()  { inputEl?.focus() }
+  export function select() { inputEl?.select() }
+
+  function handleInput(e) {
+    // An empty number field is empty, not zero: Number('') is 0, which silently
+    // turned "the user cleared the box" into a real value the schema accepts.
+    value = type === 'number'
+      ? (e.target.value === '' ? '' : Number(e.target.value))
+      : e.target.value
+    oninput?.(e)
+  }
+</script>
+
+{#snippet field()}
+  <input
+    bind:this={inputEl}
+    class="field"
+    id={inputId}
+    name={name || undefined}
+    type={type}
+    value={value}
+    placeholder={placeholder}
+    disabled={disabled}
+    required={required}
+    readonly={readonly}
+    pattern={pattern}
+    min={min}
+    max={max}
+    step={step}
+    maxlength={maxlength}
+    minlength={minlength}
+    autocomplete={autocomplete}
+    list={listId}
+    aria-invalid={hasError || null}
+    on:input={handleInput}
+    on:change={onchange}
+    on:blur={onblur}
+    on:focus={onfocus}
+    on:keydown={onkeydown}
+    on:keypress={onkeypress}
+  />
+{/snippet}
+
+<!-- The control, with the trailing addon when one was given. -->
+{#snippet control()}
+  {#if icon}
+    <!-- .field-row joins a control to an addon; the addon sizes its own icon. -->
+    <div class="field-row">
+      {@render field()}
+      <span class="field-addon">{@render icon?.()}</span>
+    </div>
+  {:else}
+    {@render field()}
+  {/if}
+{/snippet}
+
+{#if label || name}
+  {@const resolvedLabel = label || autoLabel}
+  <Field
+    id={inputId}
+    name={name}
+    label={resolvedLabel}
+    required={required}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error}
+    errors={errors}
+    type={type}
+    removable={removable}
+    onremovekey={onremovekey}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}
+
+{#if datalist}
+  <datalist id={listId}>
+    {#each datalist as opt (opt)}
+      <option value={opt} />
+    {/each}
+  </datalist>
+{/if}

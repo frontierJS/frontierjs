@@ -226,10 +226,18 @@ export async function loadFrontierConfig(projectRoot) {
 //   1. `.fli.json`  — explicit project marker. Deepest match wins. Lets users
 //                     override the default boundary for monorepos and other
 //                     nested-package setups.
-//   2. `.git/`      — git repository root. Treats the whole repo as one project
+//   2. `db/schema.lite` — an FJS app root. A FrontierJS app IS its schema seed
+//                     (root README §Project Structure: db/ + api/ + web/ at the
+//                     root), so the deepest directory holding one is the app the
+//                     user means. Without this, a nested app inside a monorepo
+//                     (example/, packages/basecamp/) resolves to the repo's .git
+//                     root, and every paths.* points at a directory with no
+//                     schema — which is what made `fli project:view` unusable
+//                     there.
+//   3. `.git/`      — git repository root. Treats the whole repo as one project
 //                     even when there are nested package.jsons (e.g. ksite sites
 //                     with their own deps, or workspace member packages).
-//   3. `package.json` — legacy fallback for projects that aren't in git.
+//   4. `package.json` — legacy fallback for projects that aren't in git.
 //
 // `fliRootSelf` is FLI's own checkout — we skip the `.git/` check if cwd is
 // inside it, so running FLI from within its own source doesn't try to treat
@@ -250,14 +258,18 @@ export function findProjectRoot(start, fliRootSelf) {
   const explicit = walkUp(start, '.fli.json')
   if (explicit) return explicit
 
-  // 2. .git/ — git repo root, skip if running inside fli's own checkout
+  // 2. db/schema.lite — the FJS app marker, deepest wins
+  const appRoot = walkUp(start, 'db/schema.lite')
+  if (appRoot) return appRoot
+
+  // 3. .git/ — git repo root, skip if running inside fli's own checkout
   const insideFliRoot = fliRootSelf && (start === fliRootSelf || start.startsWith(fliRootSelf + '/'))
   if (!insideFliRoot) {
     const gitRoot = walkUp(start, '.git')
     if (gitRoot) return gitRoot
   }
 
-  // 3. package.json — legacy fallback
+  // 4. package.json — legacy fallback
   const pkgRoot = walkUp(start, 'package.json')
   if (pkgRoot && pkgRoot !== fliRootSelf) return pkgRoot
   if (pkgRoot) return pkgRoot

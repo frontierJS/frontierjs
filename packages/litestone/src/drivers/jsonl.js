@@ -132,7 +132,12 @@ function extractWhereFields(where) {
 
 // ─── SQLite type mapping ───────────────────────────────────────────────────────
 
-const FIELD_TYPES = { Integer: 'INTEGER', Real: 'REAL', Boolean: 'INTEGER', DateTime: 'TEXT', Text: 'TEXT', Json: 'TEXT', File: 'TEXT' }
+// Keyed by the CURRENT dialect. These were `Integer`/`Real`/`Text` — the
+// pre-rename names the parser now rejects outright — so every lookup missed and
+// fell through to the `?? 'TEXT'` default below: an indexed `Int` column was
+// created as TEXT in the index table, and numeric comparisons against it sorted
+// lexicographically ('10' < '9'). Keep these keys in step with SCALARS.
+const FIELD_TYPES = { Int: 'INTEGER', Float: 'REAL', Boolean: 'INTEGER', DateTime: 'TEXT', String: 'TEXT', Json: 'TEXT', File: 'TEXT' }
 
 // ─── Default resolution ───────────────────────────────────────────────────────
 

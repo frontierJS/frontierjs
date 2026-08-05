@@ -1,5 +1,13 @@
 import { describe, test, expect } from 'bun:test'
 import { extractFrontmatter, transformMarkdown, compileCli, extractSegments } from '../core/compiler.js'
+import { readdirSync, statSync, readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+// Parse ESM the way the loader will — `new Function` cannot take import
+// statements or top-level await, so it is not an oracle for this output.
+const _transpiler = new Bun.Transpiler({ loader: 'js' })
+const parseEsm = (src) => _transpiler.transformSync(src)
 
 // ─── extractFrontmatter ───────────────────────────────────────────────────────
 
@@ -638,4 +646,111 @@ log.success('done')
     expect(out.segments[5].content).toContain('log.success')
   })
 
+})
+
+// ─── Nested <script> in a generated file ──────────────────────────────────────
+
+describe('script block extraction with nested tags', () => {
+
+  // A scaffold command WRITES files that contain their own <script> tags — every
+  // .mesa Resource does. A non-greedy match ended the command's script at the
+  // first inner </script>, and the remainder was compiled as prose. The output
+  // was broken JavaScript; eleven shipped commands were in that state.
+  const NESTED = `---
+title: test:nested
+---
+
+<script>
+const makeResource = (name) => `+ '`' + `<script module>
+export const \${name} = 1
+</script>
+`+ '`' + `
+</script>
+
+Prose after the block.
+
+\`\`\`js
+log.success(makeResource('x'))
+\`\`\`
+`
+
+  test('the block runs to the LAST close tag, not the first', () => {
+    const out = extractSegments(NESTED)
+    expect(out.script).toContain('const makeResource')
+    expect(out.script).toContain('<script module>')
+    // The prose and the code fence must survive as segments, not be swallowed
+    expect(out.segments.some(s => s.type === 'code' && s.content.includes('log.success'))).toBe(true)
+  })
+
+  test('compiles to parseable JavaScript', () => {
+    const src = compileCli(NESTED, '', 'test/nested.md')
+    expect(src).toContain('const makeResource')
+    expect(() => parseEsm(src)).not.toThrow()
+  })
+})
+
+// ─── A MENTIONED script tag is not a script block ─────────────────────────────
+//
+// project/view.md explains in a comment that it injects a <script> tag. That
+// mid-sentence mention opened a second "block" with no close, so the strip loop
+// deleted the rest of the file: project:view compiled cleanly, parsed cleanly,
+// built its map — and returned without ever starting its server.
+// Truncated output still parses, so the shipped-command parse sweep cannot see
+// this. Assert the tail survives.
+
+describe('script tag mentioned after the script block', () => {
+  const MENTIONS = `---
+title: test:mentions
+---
+
+<script>
+const helper = () => 1
+</script>
+
+\`\`\`js
+// The viewer is compiled, so we inject a <script> tag at serve time.
+const tag = '<scr' + 'ipt src="/x.js"></scr' + 'ipt>'
+log.success(tag + helper())
+\`\`\`
+`
+
+  test('code after the mention survives compilation', () => {
+    const src = compileCli(MENTIONS, '', 'test/mentions.md')
+    expect(src).toContain('const helper = () => 1')
+    expect(src).toContain('log.success')
+    expect(() => parseEsm(src)).not.toThrow()
+  })
+
+  test('the real block is still the one extracted', () => {
+    const out = extractSegments(MENTIONS)
+    expect(out.script).toBe('const helper = () => 1')
+  })
+})
+
+// ─── Every shipped command compiles to parseable JS ───────────────────────────
+//
+// Repo invariant: a clean compile is not proof of valid JS, so this parses the
+// output rather than merely producing it.
+
+describe('all shipped commands', () => {
+  const COMMANDS = join(dirname(fileURLToPath(import.meta.url)), '..', 'commands')
+
+  const walk = (dir) => readdirSync(dir).flatMap((f) => {
+    const p = join(dir, f)
+    return statSync(p).isDirectory() ? walk(p) : (p.endsWith('.md') ? [p] : [])
+  })
+
+  const files = walk(COMMANDS)
+
+  test('there are commands to check', () => {
+    expect(files.length).toBeGreaterThan(100)
+  })
+
+  for (const file of files) {
+    const rel = file.slice(COMMANDS.length + 1)
+    test(`${rel} compiles to parseable JS`, () => {
+      const out = compileCli(readFileSync(file, 'utf8'), '', file)
+      expect(() => parseEsm(out)).not.toThrow()
+    })
+  }
 })

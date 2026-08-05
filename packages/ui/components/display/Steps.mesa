@@ -1,0 +1,98 @@
+<script>
+  // Steps.mesa
+  // Step indicator for multi-step forms and wizards.
+  //
+  // `.steps` is an <ol> because the sequence IS the meaning — a screen reader
+  // announcing "list of 3 items" and a position is most of what a stepper
+  // communicates. The connector lines and the numbering are drawn by the
+  // stylesheet; `.step-marker` is in the chip lineage so its fill and its
+  // number keep a verified contrast ratio.
+  //
+  // ── The one place the markup has to say it twice ─────────────────────
+  //
+  // There is no ARIA token for "done", so `.step.complete` is a styling hook
+  // with nothing behind it. Without the visually-hidden suffix below, a
+  // sighted user sees three states and a screen reader user hears two.
+  //
+  // STEPS shape:
+  //   { id: string, label: string, description?: string }
+  //
+  // Usage:
+  //   <Steps
+  //     steps={[
+  //       { id: 'account', label: 'Account' },
+  //       { id: 'billing', label: 'Billing' },
+  //       { id: 'confirm', label: 'Confirm' },
+  //     ]}
+  //     currentStep="billing"
+  //   />
+  //
+  //   <Steps {steps} {currentStep} clickable onStepClick={(id) => goTo(id)} />
+  //   <Steps {steps} {currentStep} orientation="vertical" />
+
+  import { cx } from '../../utils.js'
+
+  export let steps       = []           // { id, label, description? }[]
+  export let currentStep = ''           // id of the active step
+  export let orientation = 'horizontal' // 'horizontal' | 'vertical'
+  export let clickable   = false
+  export let label       = 'Progress'   // accessible name for the list
+  export let onStepClick = undefined    // (id: string) => void
+
+  const currentIdx = steps.findIndex(s => s.id === currentStep)
+
+  function statusOf(i) {
+    if (i < currentIdx)   return 'complete'
+    if (i === currentIdx) return 'active'
+    return 'pending'
+  }
+
+  function handleClick(step, i) {
+    if (!clickable) return
+    if (statusOf(i) === 'pending') return   // can't skip forward
+    onStepClick?.(step.id)
+  }
+</script>
+
+<ol
+  class={cx('steps', orientation === 'vertical' && 'vertical')}
+  aria-label={label}
+  {class}
+>
+  {#each steps as step, i (step.id)}
+    {@const status = statusOf(i)}
+
+    <li
+      class={cx('step', status === 'complete' && 'complete')}
+      aria-current={status === 'active' ? 'step' : null}
+    >
+      <span class="step-marker">
+        {#if status === 'complete'}
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>
+          </svg>
+        {:else}
+          {i + 1}
+        {/if}
+      </span>
+
+      {#if clickable && status !== 'pending'}
+        <span class="step-label">
+          <button type="button" class="btn link" on:click={() => handleClick(step, i)}>
+            {step.label}
+          </button>
+          {#if status === 'complete'}<span class="visually-hidden"> — completed</span>{/if}
+        </span>
+      {:else}
+        <span class="step-label">
+          {step.label}
+          {#if status === 'complete'}<span class="visually-hidden"> — completed</span>{/if}
+        </span>
+      {/if}
+
+      {#if step.description}
+        <span class="step-hint">{step.description}</span>
+      {/if}
+    </li>
+  {/each}
+</ol>

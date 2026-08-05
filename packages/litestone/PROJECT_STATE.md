@@ -1,7 +1,7 @@
 # Litestone Project State
 
 **Body written:** 2026-04-25 · **header re-verified:** 2026-08-01
-**Tests:** 1241 pass / 0 fail across 5 files (`bun run test`)
+**Tests:** 1286 pass / 0 fail across 5 files (`bun run test`)
 **Status:** shipped — workspace is **v1.1.0**. npm `latest` is still 1.0.3, so anything
 installed from the registry outside this workspace gets the pre-rename dialect.
 
@@ -329,14 +329,14 @@ Categorical "definition vs instance" distinction. Templates and instances cohabi
 the same table; default reads exclude templates.
 
 ```
-model quotes {
+model Quote {
   id     Int @id
   number String
   total  Float
   @@hasTemplates                       // → adds isTemplate Boolean @default(false)
 }
 
-model presets {
+model Preset {
   id    Int @id
   @@hasTemplates(field: "isPreset")    // → custom column name
 }
@@ -344,13 +344,13 @@ model presets {
 
 **Query API** (parallel to soft-delete):
 ```js
-db.quotes.findMany()                         // instances only
-db.quotes.findMany({ withTemplates: true })  // instances + templates
-db.quotes.findMany({ onlyTemplates: true })  // templates only
+db.quote.findMany()                         // instances only
+db.quote.findMany({ withTemplates: true })  // instances + templates
+db.quote.findMany({ onlyTemplates: true })  // templates only
 
 // Same flags work on findFirst, findUnique, findManyAndCount, count, exists, search
 // Nested in includes:
-db.accounts.findMany({ include: { quotes: { withTemplates: true } } })
+db.account.findMany({ include: { quotes: { withTemplates: true } } })
 ```
 
 **Default behaviour:**
@@ -430,10 +430,10 @@ createClient({
 **Example:**
 
 ```
-model accounts { id Int @id; tenantId Int; orders orders[] }
-model orders   { id Int @id; tenantId Int; accountId Int }
+model Account { id Int @id; tenantId Int; orders Order[] }
+model Order   { id Int @id; tenantId Int; accountId Int }
 
-await db.accounts.create({
+await db.account.create({
   data: {
     id: 10, tenantId: 5,
     orders: { create: [{ id: 100 }] },   // → tenantId: 5 auto-injected
@@ -476,7 +476,7 @@ post-codemod; not worth the complexity of an actual lexer in the codemod.
 24-hour clock validation for `String` fields.
 
 ```
-model businessHours {
+model BusinessHours {
   id        Int    @id
   openTime  String @time                    // HH:MM, leading zeros required
   closeTime String @time(seconds: true)     // HH:MM or HH:MM:SS

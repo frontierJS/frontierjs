@@ -48,6 +48,21 @@ export interface FieldDef {
   schema?:     Schema          // object nested schema
   transform?:  (value: unknown) => unknown
   validate?:   (value: unknown) => string | null  // return error string or null
+
+  /**
+   * What a human calls this field — Litestone's `@label`, arriving as JSON
+   * Schema `title`. Every generated message below uses it, so an error stops
+   * reading `customerId` under a form label that says "customer".
+   */
+  label?:      string
+
+  /**
+   * Author-supplied wording, keyed by the JSON Schema keyword that failed —
+   * Litestone's `@length(3, 20, "…")` / `@required("…")`, arriving as
+   * `x-messages`. Consulted before the generated sentence, so one string
+   * written in db/schema.lite is what the server AND the browser say.
+   */
+  messages?:   Record<string, string>
 }
 
 export type Schema = Record<string, FieldDef>
@@ -158,14 +173,14 @@ function buildCompiledSchema(schema: Schema, opts: SchemaOptions = {}): Compiled
         // i.e. optional fields were mandatory.
         if (value === undefined) {
           if (def.required) {
-            errors.push({ field, message: `${field} is required` })
+            errors.push({ field, message: _say(def, 'required', `${_label(field, def)} is required`) })
           }
           continue
         }
 
         // Explicit null on a field that does not accept it.
         if (value === null && !def.nullable && def.required) {
-          errors.push({ field, message: `${field} is required` })
+          errors.push({ field, message: _say(def, 'required', `${_label(field, def)} is required`) })
           continue
         }
 
@@ -282,6 +297,17 @@ interface FieldResult {
   errors: ValidationError[]
 }
 
+/** What to call a field in a message: `@label`, else the field name. */
+const _label = (field: string, def?: FieldDef) => def?.label ?? field
+
+/**
+ * The message for a failed rule: whatever the schema declared for it, else the
+ * generated sentence. `keyword` is the JSON Schema keyword that failed, which
+ * is exactly how `x-messages` is keyed — no mapping table on this side.
+ */
+const _say = (def: FieldDef | undefined, keyword: string, fallback: string) =>
+  def?.messages?.[keyword] ?? fallback
+
 function validateField(field: string, value: unknown, def: FieldDef): FieldResult {
   const errors: ValidationError[] = []
 
@@ -292,7 +318,7 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
 
     case 'string': {
       if (typeof v !== 'string') {
-        errors.push({ field, message: `${field} must be a string` })
+        errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a string`) })
         break
       }
       if (def.trim)      v = (v as string).trim()
@@ -300,22 +326,22 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
       if (def.uppercase) v = (v as string).toUpperCase()
 
       if (def.minLength !== undefined && (v as string).length < def.minLength)
-        errors.push({ field, message: `${field} must be at least ${def.minLength} characters` })
+        errors.push({ field, message: _say(def, 'minLength', `${_label(field, def)} must be at least ${def.minLength} characters`) })
 
       if (def.maxLength !== undefined && (v as string).length > def.maxLength)
-        errors.push({ field, message: `${field} must be at most ${def.maxLength} characters` })
+        errors.push({ field, message: _say(def, 'maxLength', `${_label(field, def)} must be at most ${def.maxLength} characters`) })
 
       if (def.pattern) {
         // def.pattern is always a RegExp — pre-compiled in buildCompiledSchema
         if (!(def.pattern as RegExp).test(v as string))
-          errors.push({ field, message: `${field} format is invalid` })
+          errors.push({ field, message: _say(def, 'pattern', `${_label(field, def)} format is invalid`) })
       }
       break
     }
 
     case 'email': {
       if (typeof v !== 'string' || !EMAIL_RE.test(v as string))
-        errors.push({ field, message: `${field} must be a valid email address` })
+        errors.push({ field, message: _say(def, 'format', `${_label(field, def)} must be a valid email address`) })
       else
         v = (v as string).toLowerCase().trim()
       break
@@ -325,7 +351,7 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
       try {
         new URL(v as string)
       } catch {
-        errors.push({ field, message: `${field} must be a valid URL` })
+        errors.push({ field, message: _say(def, 'format', `${_label(field, def)} must be a valid URL`) })
       }
       break
     }
@@ -338,21 +364,21 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
 
     case 'number': {
       if (typeof v !== 'number' || isNaN(v as number))
-        errors.push({ field, message: `${field} must be a number` })
+        errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a number`) })
       else {
         if (def.integer && !Number.isInteger(v))
-          errors.push({ field, message: `${field} must be an integer` })
-        if (def.min         !== undefined && (v as number) <  def.min)         errors.push({ field, message: `${field} must be at least ${def.min}` })
-        if (def.max         !== undefined && (v as number) >  def.max)         errors.push({ field, message: `${field} must be at most ${def.max}` })
-        if (def.exclusiveMin !== undefined && (v as number) <= def.exclusiveMin) errors.push({ field, message: `${field} must be greater than ${def.exclusiveMin}` })
-        if (def.exclusiveMax !== undefined && (v as number) >= def.exclusiveMax) errors.push({ field, message: `${field} must be less than ${def.exclusiveMax}` })
+          errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be an integer`) })
+        if (def.min         !== undefined && (v as number) <  def.min)         errors.push({ field, message: _say(def, 'minimum', `${_label(field, def)} must be at least ${def.min}`) })
+        if (def.max         !== undefined && (v as number) >  def.max)         errors.push({ field, message: _say(def, 'maximum', `${_label(field, def)} must be at most ${def.max}`) })
+        if (def.exclusiveMin !== undefined && (v as number) <= def.exclusiveMin) errors.push({ field, message: _say(def, 'exclusiveMinimum', `${_label(field, def)} must be greater than ${def.exclusiveMin}`) })
+        if (def.exclusiveMax !== undefined && (v as number) >= def.exclusiveMax) errors.push({ field, message: _say(def, 'exclusiveMaximum', `${_label(field, def)} must be less than ${def.exclusiveMax}`) })
       }
       break
     }
 
     case 'boolean': {
       if (typeof v !== 'boolean')
-        errors.push({ field, message: `${field} must be a boolean` })
+        errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a boolean`) })
       break
     }
 
@@ -364,13 +390,13 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
 
     case 'array': {
       if (!Array.isArray(v)) {
-        errors.push({ field, message: `${field} must be an array` })
+        errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be an array`) })
         break
       }
       if (def.minItems !== undefined && (v as unknown[]).length < def.minItems)
-        errors.push({ field, message: `${field} must have at least ${def.minItems} item${def.minItems === 1 ? '' : 's'}.` })
+        errors.push({ field, message: _say(def, 'minItems', `${_label(field, def)} must have at least ${def.minItems} item${def.minItems === 1 ? '' : 's'}.`) })
       if (def.maxItems !== undefined && (v as unknown[]).length > def.maxItems)
-        errors.push({ field, message: `${field} must have at most ${def.maxItems} item${def.maxItems === 1 ? '' : 's'}.` })
+        errors.push({ field, message: _say(def, 'maxItems', `${_label(field, def)} must have at most ${def.maxItems} item${def.maxItems === 1 ? '' : 's'}.`) })
       if (def.items) {
         const itemErrors: ValidationError[] = []
         const validated: unknown[] = []
@@ -406,7 +432,7 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
 
   // Enum check (after coercion)
   if (!errors.length && def.enum && !def.enum.includes(v)) {
-    errors.push({ field, message: `${field} must be one of: ${def.enum.join(', ')}` })
+    errors.push({ field, message: _say(def, 'enum', `${_label(field, def)} must be one of: ${def.enum.join(', ')}`) })
   }
 
   return { value: v, errors }

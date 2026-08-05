@@ -581,7 +581,9 @@ export function channels(setup?: ChannelSetupFn): Plugin {
 
               const extra   = (extraParams as Record<string, unknown> ?? {})
               const wsQuery = (extra.query ?? {}) as Record<string, unknown>
-              const { query: _q, ...restExtra } = extra
+              // workspaceId is lifted onto ctx.client.headers below, so it does
+              // not also belong in locals — one owner per translation.
+              const { query: _q, workspaceId: _ws, ...restExtra } = extra
 
               const svcCtx = _bridge2.internal(
                 serviceName as string,
@@ -595,8 +597,23 @@ export function channels(setup?: ChannelSetupFn): Plugin {
                 },
                 app
               )
-              // WS-origin client facts (headers/ip) belong on ctx.client
-              svcCtx.client.headers = ctx.headers
+              // WS-origin client facts (headers/ip) belong on ctx.client.
+              //
+              // `ctx.headers` are the UPGRADE request's headers — one set for
+              // the life of the connection. Anything a caller varies per call
+              // therefore cannot arrive that way, and the workspace is exactly
+              // that: X-Workspace-Id changes when a person switches workspace,
+              // without reconnecting. The browser client sends it on the frame
+              // (meta.workspaceId) and it is merged in here, so a hook reading
+              // ctx.client.headers['x-workspace-id'] sees the same value it
+              // would have seen over HTTP.
+              //
+              // ONE key, deliberately. Merging a client-supplied header map
+              // wholesale would let a frame carry its own Authorization and
+              // override the identity established at upgrade.
+              svcCtx.client.headers = extra.workspaceId
+                ? { ...ctx.headers, 'x-workspace-id': String(extra.workspaceId) }
+                : ctx.headers
               svcCtx.client.ip      = ctx.ip
               svcCtx.method    = method as string
               svcCtx.transport = 'websocket'

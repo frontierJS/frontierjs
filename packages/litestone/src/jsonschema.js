@@ -36,13 +36,13 @@
 //
 //  Litestone   JSON Schema type
 //  ─────────── ──────────────────────────────────────────────────────────────
-//  Text        string
-//  Integer     integer
-//  Real        number
+//  String      string
+//  Int         integer
+//  Float       number
 //  Boolean     boolean
 //  DateTime    string  + format: date-time  + @datetime validator implicit
 //  Json        {}  (any — JSON Schema has no opaque JSON type)
-//  Blob        string  + contentEncoding: base64
+//  Bytes       string  + contentEncoding: base64
 //  EnumName    $ref to enum definition (or inline enum array)
 //
 // ─── Validator mappings ───────────────────────────────────────────────────────
@@ -79,6 +79,37 @@
 //  Pass { mode: 'update' } for PATCH schemas (all fields optional).
 
 /**
+ * Which JSON Schema keyword each message-carrying validator compiles to.
+ *
+ * Mirrors the attribute→keyword mapping documented at the top of this file, and
+ * exists so `x-messages` can be keyed by the keyword a consumer actually checks
+ * rather than by the rule name it would then have to translate. Verified against
+ * emitted output, not assumed — @gt is `exclusiveMinimum`, not `minimum`.
+ *
+ * A validator absent from here still publishes its message under its rule name;
+ * it simply has no keyword alias. `required` is its own key either way — it is
+ * not a keyword on the field at all, it lives in the model's `required` array.
+ */
+const MESSAGE_KEYWORDS = {
+  email:      ['format'],
+  url:        ['format'],
+  date:       ['format'],
+  datetime:   ['format'],
+  time:       ['format'],
+  regex:      ['pattern'],
+  startsWith: ['pattern'],
+  endsWith:   ['pattern'],
+  contains:   ['pattern'],
+  length:     ['minLength', 'maxLength'],
+  gte:        ['minimum'],
+  gt:         ['exclusiveMinimum'],
+  lte:        ['maximum'],
+  lt:         ['exclusiveMaximum'],
+  minItems:   ['minItems'],
+  maxItems:   ['maxItems'],
+}
+
+/**
  * Generate JSON Schema from a Litestone parse result schema.
  *
  * @param {object} schema        — parseResult.schema
@@ -108,13 +139,12 @@ export function generateJsonSchema(schema, options = {}) {
   // Build enum definitions first — referenced by $ref in model fields
   const enumDefs = {}
   for (const en of schema.enums) {
-    const def = { type: 'string', enum: en.values.map(v => v.name), title: en.name }
-    if (en.transitions) {
-      def['x-litestone-transitions'] = Object.fromEntries(
-        Object.entries(en.transitions).map(([name, { from, to }]) => [name, { from, to }])
-      )
-    }
-    enumDefs[en.name] = def
+    // Transitions are NOT emitted here. An `enum { transitions { ... } }` block
+    // is desugared onto every model that uses the enum, and the model is where a
+    // per-transition @gate can exist — so x-transitions on the model def is the
+    // resolved truth and the only thing a client should read. Emitting both
+    // would give the UI two sources that drift the moment one model narrows.
+    enumDefs[en.name] = { type: 'string', enum: en.values.map(v => v.name), title: en.name }
   }
 
   // Build type definitions for `type T { ... }` declarations. Referenced by
@@ -260,6 +290,38 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       fieldSchema.description = field.comments.join(' ')
     }
 
+    // @label("Customer") → JSON Schema `title`, the standard slot for a
+    // human-readable name. Every realm builds its generated messages from this
+    // rather than the column, so an error stops reading `customerId` under a
+    // form label that says "customer".
+    const label = field.attributes.find(a => a.kind === 'label')
+    if (label?.text) fieldSchema.title = label.text
+
+    // Validator messages, keyed by the rule they belong to.
+    //
+    // These were parsed and honoured by Litestone's own validator and then
+    // dropped here, so they died at the Data boundary: a message written once
+    // in the schema was invisible to Junction's autoValidate and to Sierra's
+    // client-side rules, both of which derive from this document. Emitting them
+    // is what makes one authored sentence the sentence all three realms say.
+    //
+    // Keyed BOTH by the rule name ('length', 'gte', 'required') and by the
+    // JSON Schema keyword it compiles to ('minLength', 'minimum', …). One
+    // authored string, several lookup aliases — never two sources.
+    //
+    // Keying by keyword is the point: a consumer checking `minLength` looks up
+    // `minLength`. The alternative — publish the rule name and make each
+    // consumer map keyword→rule — puts the same table in Junction AND Sierra,
+    // and this file is the one that already owns that translation (it is the
+    // mapping documented at the top of this file).
+    const messages = {}
+    for (const attr of field.attributes) {
+      if (typeof attr?.message !== 'string' || !attr.message) continue
+      messages[attr.kind] = attr.message
+      for (const kw of MESSAGE_KEYWORDS[attr.kind] ?? []) messages[kw] = attr.message
+    }
+    if (Object.keys(messages).length) fieldSchema['x-messages'] = messages
+
     // @allow('read', expr) — field is conditionally visible; mark as optional + annotate
     const readAllows = field.attributes.filter(a => a.kind === 'fieldAllow' && a.operations.includes('read'))
     if (readAllows.length && audience === 'client') {
@@ -314,6 +376,25 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       update: gate.update,
       delete: gate.delete,
     }
+  }
+
+  // ── x-transitions ──────────────────────────────────────────────────────────
+  // The model's state machines, keyed by field (a model can have more than one
+  // status column). This is what lets the UI render exactly the legal buttons
+  // for a record without hand-written logic — see sierra's
+  // resource.transitions(row, level). `gate` is a UI affordance only: the move
+  // is enforced at the Data boundary regardless of what the client believes.
+  const transitionAttrs = model.attributes.filter(a => a.kind === 'transitions')
+  if (transitionAttrs.length) {
+    result['x-transitions'] = Object.fromEntries(
+      transitionAttrs.map(a => [
+        a.field,
+        Object.fromEntries(
+          Object.entries(a.transitions).map(([name, { from, to, gate }]) =>
+            [name, { from, to, gate: gate ?? null }])
+        ),
+      ])
+    )
   }
 
   // ── x-relations ─────────────────────────────────────────────────────────────
@@ -428,7 +509,7 @@ function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false) {
     return { '$ref': `#/$defs/${type.name}` }
   }
 
-  // Array types — Text[] / Integer[]
+  // Array types — String[] / Int[]
   if (type.array) {
     const itemType = type.name === 'Int' ? 'integer' : 'string'
     return { type: 'array', items: { type: itemType } }

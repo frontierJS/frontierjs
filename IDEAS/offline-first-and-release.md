@@ -106,6 +106,33 @@ A Slice (`IDEAS/slices.md`) should be able to contribute to a release — migrat
 secrets, ports — which is the open question that document already raised. These
 two ideas meet here.
 
+### Provisioning from declarations, and the tension it creates
+
+Added 2026-08-03, from the Encore comparison in `IDEAS/operational-edge.md`.
+
+FJS apps already declare their infrastructure — databases via `schema.lite` and
+`@@db(name)`, queues and cron via Caravan, egress via Conduit targets, realtime via
+`channel:`, secrets via `.env.example` — and `fli project:map --json` already
+collects most of it. Nothing reads that and provisions anything.
+
+An Encore-style "provision from declarations" step would land naturally on
+primitives that already exist. **But it pulls against this document's whole
+direction**, and the tension should be settled rather than discovered later:
+
+- Provisioning assumes cloud resources to create. The single-binary target assumes
+  there is nothing to create.
+- **Constraint:** provisioning must degrade to nothing. The SQLite-and-one-file path
+  stays the shortest one. If `fli deploy` grows a provisioner and the portable path
+  becomes the special case, the framework has traded its best property for a
+  competitor's.
+- The reconciliation is probably per-artifact-kind: a single binary needs no
+  provisioner; a container needs volumes and secrets; a multi-node deployment needs
+  the full set. That is another argument for artifact kinds being first-class here.
+
+Preview environments are the strongest argument *for* provisioning — nobody
+hand-configures a throwaway environment — and they are also where the offline-first
+story is least relevant. That asymmetry is a useful guide to where the line falls.
+
 ### A byte budget
 
 "Small and portable" is unfalsifiable without a number. What is the target for

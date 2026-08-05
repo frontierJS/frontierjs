@@ -1,0 +1,75 @@
+---
+title: Adapters
+---
+<script>
+  import { portal } from '../../../resources/portal.mesa'
+
+  let rows    = []
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // find() is the fast path — it reports which adapters are wired without
+      // pinging any of them. The ping is per-adapter, on demand, below.
+      rows = (await portal.service.find()).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  async function ping(entry) {
+    error = null; busy = entry.id
+    try {
+      const fresh = await portal.service.create({ id: entry.id })
+      const i = rows.findIndex(r => r.id === entry.id)
+      if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...fresh }, ...rows.slice(i + 1)]
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const TONE = { healthy: 'success', unconfigured: 'muted', unreachable: 'danger', degraded: 'warning' }
+</script>
+
+<p class="text-body">
+  The eight self-hosted appliances Basecamp expects to operate. <strong>Unconfigured</strong> means the adapter is a stub until its environment variables are set — it is not an error.
+</p>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else}
+  <div class="tiles" style="--tile-min: 17rem" id="adapter-tiles">
+    {#each rows as entry}
+      <article class="card stack">
+        <div class="cluster">
+          <h2 class="h4">{entry.name}</h2>
+          <span class="pill {TONE[entry.status] ?? ''}">{entry.status}</span>
+        </div>
+        <p class="text-sm text-muted">{entry.description}</p>
+        <dl class="facts">
+          <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
+        </dl>
+        <div class="cluster">
+          <button class="btn ghost" disabled={busy === entry.id} on:click={() => ping(entry)}>
+            {busy === entry.id ? 'Checking…' : 'Check now'}
+          </button>
+        </div>
+      </article>
+    {/each}
+  </div>
+{/if}

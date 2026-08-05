@@ -224,6 +224,19 @@ class ParseError extends Error {
   }
 }
 
+// ─── Gate level names ─────────────────────────────────────────────────────────
+// The 0–9 scale, by name. One owner: @@gate's named form and @@transitions'
+// per-transition @gate() both read this, so a level can never mean two things.
+// Mirrors LEVELS in plugins/gate.js, which is the runtime-side copy.
+
+const LEVEL_NAMES = {
+  STRANGER: 0, VISITOR: 1, READER: 2, CREATOR: 3,
+  USER: 4, ADMINISTRATOR: 5, OWNER: 6,
+  SYSADMIN: 7,  // global system admin — real human, user.isSystemAdmin
+  SYSTEM:   8,  // asSystem() only
+  LOCKED:   9,  // absolute wall
+}
+
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
 class Parser {
@@ -234,7 +247,7 @@ class Parser {
 
   // ── Primitives ──────────────────────────────────────────────────────────────
 
-  peek()      { return this.tokens[this.pos] }
+  peek(n = 0) { return this.tokens[this.pos + n] }
   advance()   { return this.tokens[this.pos++] }
   isEOF()     { return this.peek().type === TK.EOF }
 
@@ -471,7 +484,7 @@ class Parser {
   // ── Function ─────────────────────────────────────────────────────────────────
   // Defines a named SQL expression usable as a @generated field shorthand.
   //
-  // function discount(price: Integer, pct: Real): Integer {
+  // function discount(price: Int, pct: Float): Int {
   //   @@expr("CAST({price} * (1.0 - {pct}) AS INTEGER)")
   // }
 
@@ -590,11 +603,11 @@ class Parser {
   // ── Type ────────────────────────────────────────────────────────────────────
   //
   // type Address {
-  //   street     Text
-  //   city       Text
-  //   state      Text?
-  //   postalCode Text
-  //   country    Text @default("US")
+  //   street     String
+  //   city       String
+  //   state      String?
+  //   postalCode String
+  //   country    String @default("US")
   // }
   //
   // A type declares the shape of a JSON value. Used as `Json @type(Address)`
@@ -836,6 +849,29 @@ class Parser {
         return { kind: 'sequence', scope: scopeField }
       }
 
+      // ── Presentation ───────────────────────────────────────────────────────
+      // @label("Customer") — what a human calls this field.
+      //
+      // Emitted as JSON Schema `title`, which is the standard slot for exactly
+      // this, and read by every generated message so an error never says
+      // `customerId` under a form label that says "customer". Doc comments
+      // already become `description`; a label is the short form, not the prose.
+      case 'label':      return { kind: 'label', text: this.parseParenString() }
+
+      // @required("Please select a customer from the list")
+      //
+      // Carries the WORDING only — it does not make the field required. The
+      // absence of `?` already did that, and this attribute on a nullable field
+      // is a no-op message nothing will ever emit (validated below).
+      //
+      // Required-ness is the one rule with no natural home for a message: every
+      // other validator is an attribute that can take one as its last argument,
+      // but "required" is the absence of a `?`. ZenStack reaches for model-level
+      // @@validate(expr, msg) here; this follows Remult's field-level
+      // Validators.required(msg) instead, so the wording sits beside the rule
+      // it belongs to like every other message in this file.
+      case 'required':   return { kind: 'required', ...this.parseOptMessage() }
+
       // ── String validators ──────────────────────────────────────────────────
       case 'email':      return { kind: 'email',      ...this.parseOptMessage() }
       case 'url':        return { kind: 'url',        ...this.parseOptMessage() }
@@ -1053,10 +1089,10 @@ class Parser {
   // Operations (exactly one required):
   //   last: true     — last row as full object  (ORDER BY {orderBy|id} DESC LIMIT 1)
   //   first: true    — first row as full object (ORDER BY {orderBy|id} ASC  LIMIT 1)
-  //   count: true    — COUNT(*) as Integer
-  //   sum: fieldName — COALESCE(SUM(field), 0) as Real/Integer
-  //   max: fieldName — MAX(field) as DateTime/Real/Integer
-  //   min: fieldName — MIN(field) as DateTime/Real/Integer
+  //   count: true    — COUNT(*) as Int
+  //   sum: fieldName — COALESCE(SUM(field), 0) as Float/Int
+  //   max: fieldName — MAX(field) as DateTime/Float/Int
+  //   min: fieldName — MIN(field) as DateTime/Float/Int
   //   exists: true   — EXISTS(...) as Boolean
   parseFrom() {
     this.eat(TK.LPAREN)
@@ -1140,13 +1176,6 @@ class Parser {
     }
 
     // Named form — parse key: LEVEL pairs
-    const LEVEL_NAMES = {
-      STRANGER: 0, VISITOR: 1, READER: 2, CREATOR: 3,
-      USER: 4, ADMINISTRATOR: 5, OWNER: 6,
-      SYSADMIN: 7,  // global system admin — real human, user.isSystemAdmin
-      SYSTEM:   8,  // asSystem() only
-      LOCKED:   9,  // absolute wall
-    }
     const VALID_KEYS = new Set(['read', 'create', 'update', 'delete', 'write'])
 
     const named = {}
@@ -1440,6 +1469,7 @@ class Parser {
         return { kind: name === 'allow' ? 'allow' : 'deny', operations, expr, message }
       }
       case 'gate':   return { kind: 'gate',         value: this.parseGateArg() }
+      case 'transitions': return { kind: 'transitions', ...this.parseTransitionsArg() }
       case 'auth':   return { kind: 'auth' }
       case 'log': {
         // @@log(audit)               — log create/update/delete (default)
@@ -1525,6 +1555,97 @@ class Parser {
     const fields = this.parseFieldList()
     this.eat(TK.RPAREN)
     return fields
+  }
+
+  // ── @@transitions argument parser ───────────────────────────────────────────
+  //
+  //   @@transitions(status,
+  //     pay:    pending         -> paid,
+  //     ship:   paid            -> shipped,
+  //     refund: paid            -> refunded @gate(5),
+  //     cancel: [pending, paid] -> cancelled)
+  //
+  // The leading name is optional — `pending -> paid` names itself after the
+  // target value. `@gate(N)` takes a number or a level name (ADMINISTRATOR).
+  //
+  // Values are checked against the field's enum in validate(), not here: the
+  // enum may be declared after the model, or in another file.
+
+  parseTransitionsArg() {
+    this.eat(TK.LPAREN)
+    const field = this.eat(TK.IDENT).value
+    if (!this.maybeEat(TK.COMMA))
+      throw new ParseError(`@@transitions(${field}): expected at least one transition after the field name`, this.peek())
+
+    const transitions = {}
+    do {
+      if (this.check(TK.RPAREN)) break   // tolerate a trailing comma
+
+      // Optional `name:` — an IDENT followed by COLON. Anything else starts `from`.
+      let name = null
+      if (this.check(TK.IDENT) && this.peek(1)?.type === TK.COLON) {
+        name = this.eat(TK.IDENT).value
+        this.eat(TK.COLON)
+      }
+
+      // from — a single value or [a, b, ...]
+      let from
+      if (this.check(TK.LBRACKET)) {
+        this.eat(TK.LBRACKET)
+        from = [this.eat(TK.IDENT).value]
+        while (this.maybeEat(TK.COMMA)) from.push(this.eat(TK.IDENT).value)
+        this.eat(TK.RBRACKET)
+      } else {
+        from = [this.eat(TK.IDENT).value]
+      }
+
+      const arrow = this.advance()
+      if (arrow.type !== TK.ARROW)
+        throw new ParseError(`@@transitions(${field}): expected '->' after '${from.join(', ')}', got '${arrow.value}'`, arrow)
+
+      const to = this.eat(TK.IDENT).value
+      if (name === null) name = to   // unnamed → named after the target state
+
+      // Optional @gate(N) — the minimum level allowed to make this move
+      let gate = null
+      if (this.check(TK.AT)) {
+        this.eat(TK.AT)
+        const attr = this.eat(TK.IDENT)
+        if (attr.value !== 'gate')
+          throw new ParseError(`@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate is supported`, attr)
+        gate = this.parseTransitionGate(field, name)
+      }
+
+      if (name in transitions)
+        throw new ParseError(`@@transitions(${field}): duplicate transition name '${name}'`, this.peek())
+      transitions[name] = { from, to, gate }
+    } while (this.maybeEat(TK.COMMA))
+
+    this.eat(TK.RPAREN)
+    return { field, transitions }
+  }
+
+  // @gate(5) or @gate(ADMINISTRATOR) — a single level, unlike @@gate's R.C.U.D tuple
+  parseTransitionGate(field, name) {
+    this.eat(TK.LPAREN)
+    const tok = this.advance()
+    let level
+    if (tok.type === TK.NUMBER) {
+      level = tok.value
+    } else if (tok.type === TK.IDENT) {
+      level = LEVEL_NAMES[tok.value]
+      if (level === undefined)
+        throw new ParseError(
+          `@@transitions(${field}) '${name}': unknown level '${tok.value}'. Valid: ${Object.keys(LEVEL_NAMES).join(', ')}`,
+          tok,
+        )
+    } else {
+      throw new ParseError(`@@transitions(${field}) '${name}': @gate expects a level 0–9 or a level name, got '${tok.value}'`, tok)
+    }
+    if (!Number.isInteger(level) || level < 0 || level > 9)
+      throw new ParseError(`@@transitions(${field}) '${name}': @gate level must be an integer 0–9, got ${level}`, tok)
+    this.eat(TK.RPAREN)
+    return level
   }
 
   // ── Enum ────────────────────────────────────────────────────────────────────
@@ -1780,9 +1901,9 @@ function resolveTraits(schema) {
 // write at runtime.
 //
 // What can appear in a type:
-//   - Scalar fields (Text, Integer, Real, Boolean, DateTime)
-//   - Optional fields (Text?)
-//   - Array fields (Text[], Integer[])
+//   - Scalar fields (String, Int, Float, Boolean, DateTime)
+//   - Optional fields (String?)
+//   - Array fields (String[], Int[])
 //   - Enum fields
 //   - Nested types via Json @type(Other)
 //   - Validators (@email, @regex, @length, @gte, @gt, @lte, @lt, @url,
@@ -1793,7 +1914,7 @@ function resolveTraits(schema) {
 //
 // What CANNOT appear in a type:
 //   - Relations (@relation) — JSON can't carry FK columns
-//   - File / Blob field types — bytes don't JSON-encode
+//   - File / Bytes field types — bytes don't JSON-encode
 //   - @id, @unique, @map — column-only concepts
 //   - @encrypted, @guarded, @secret — column-only protections
 //   - @default(now()) / @updatedAt / @default(auth().id) / cuid()/ulid() —
@@ -2045,6 +2166,50 @@ function expandEdgeAttributes(schema) {
   return errors
 }
 
+// ─── Transition resolution ────────────────────────────────────────────────────
+// `enum Status { transitions { ... } }` is the shorthand for "these rules apply
+// wherever this enum is used". It desugars here into a @@transitions attribute
+// on every model that has a field of that type, so from this point on the model
+// attribute is the only representation — one enforcement path, one thing in the
+// JSON Schema, and gates have a model-scoped place to hang.
+//
+// An explicit @@transitions on the same field wins outright rather than merging:
+// a model narrowing the shared machine to two moves means two moves, not two
+// plus whatever the enum declared.
+//
+// Runs before validate(), which is where field.type.kind is resolved to 'enum' —
+// so match on the type *name* here, not the kind.
+
+function resolveTransitions(schema) {
+  const enumTransitions = new Map()
+  for (const e of schema.enums ?? [])
+    if (e.transitions) enumTransitions.set(e.name, e.transitions)
+  if (!enumTransitions.size) return
+
+  for (const model of schema.models) {
+    const declared = new Set(
+      model.attributes.filter(a => a.kind === 'transitions').map(a => a.field)
+    )
+    for (const field of model.fields) {
+      if (field.type.kind === 'relation' || field.type.kind === 'implicitM2M') continue
+      if (declared.has(field.name)) continue
+      const shared = enumTransitions.get(field.type.name)
+      if (!shared) continue
+
+      model.attributes.push({
+        kind:  'transitions',
+        field: field.name,
+        // The enum form carries no gates — a gate is a model concern.
+        transitions: Object.fromEntries(
+          Object.entries(shared).map(([name, { from, to }]) => [name, { from: [...from], to, gate: null }])
+        ),
+        fromEnum: field.type.name,   // provenance, for error messages
+      })
+      declared.add(field.name)
+    }
+  }
+}
+
 function validate(schema) {
   const errors   = []
   const warnings = []
@@ -2116,7 +2281,7 @@ function validate(schema) {
           errors.push(`Model '${model.name}': unknown onDelete action '${rel.onDelete}'`)
       }
 
-      // Array type validation — only Text, Integer, and File support []
+      // Array type validation — only String, Int, and File support []
       if (field.type.array) {
         const arrayAllowed = new Set(['String', 'Int', 'File'])
         const isImplicitM2M = modelNames.has(field.type.name)
@@ -2339,6 +2504,27 @@ function validate(schema) {
         errors.push(`Model '${model.name}': @@log database '${attr.db}' must use driver logger (got '${schema.databases.find(d => d.name === attr.db)?.driver}')`)
     }
 
+    // @required carries a message for a rule it does not create. On a nullable
+    // field there is no such rule, so the message can never fire — the author
+    // meant to drop the `?` and this would fail silently forever otherwise.
+    for (const field of model.fields) {
+      const req = field.attributes.find(a => a.kind === 'required')
+      if (!req) continue
+      const t = field.type
+      const isOptional = (typeof t === 'object' && t.optional) || field.optional || false
+      if (isOptional)
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @required on an optional field. ` +
+          `@required only carries the message — drop the '?' to make the field required, ` +
+          `or remove @required.`
+        )
+      if (req.message == null)
+        warnings.push(
+          `Model '${model.name}', field '${field.name}': @required with no message has no effect — ` +
+          `the field is already required by the absence of '?'.`
+        )
+    }
+
     // @secret validation — check for conflicting explicit attributes
     for (const field of model.fields) {
       if (!field.attributes.some(a => a.kind === 'secret')) continue
@@ -2441,6 +2627,52 @@ function validate(schema) {
         errors.push(`Enum '${e.name}' transition '${tName}': unknown value '${to}' in 'to'`)
       if (from.includes(to))
         errors.push(`Enum '${e.name}' transition '${tName}': self-transition (from and to are the same value '${to}')`)
+    }
+  }
+
+  // ── @@transitions validation ────────────────────────────────────────────────
+  // Attributes carrying `fromEnum` were desugared from an enum block by
+  // resolveTransitions() — the loop above already checked their values, and the
+  // field is an enum field by construction. Only hand-written ones land here.
+  for (const model of schema.models) {
+    const seenFields = new Set()
+    for (const attr of model.attributes) {
+      if (attr.kind !== 'transitions') continue
+
+      if (seenFields.has(attr.field))
+        errors.push(`Model '${model.name}': two @@transitions declared for field '${attr.field}' — merge them into one`)
+      seenFields.add(attr.field)
+
+      if (attr.fromEnum) continue
+
+      const field = model.fields.find(f => f.name === attr.field)
+      if (!field) {
+        errors.push(`Model '${model.name}': @@transitions(${attr.field}) — no such field`)
+        continue
+      }
+      const enumDef = schema.enums.find(e => e.name === field.type.name)
+      if (!enumDef) {
+        errors.push(
+          `Model '${model.name}': @@transitions(${attr.field}) — '${attr.field}' is ${field.type.name}, not an enum. ` +
+          `Transition states are checked against enum values, so the field must be an enum type.`
+        )
+        continue
+      }
+      if (field.type.array)
+        errors.push(`Model '${model.name}': @@transitions(${attr.field}) — '${attr.field}' is an array; a state machine needs a single value`)
+
+      const valueNames = new Set(enumDef.values.map(v => v.name))
+      for (const [tName, { from, to, gate }] of Object.entries(attr.transitions)) {
+        for (const f of from)
+          if (!valueNames.has(f))
+            errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': unknown value '${f}' in 'from' — not a member of enum '${enumDef.name}'`)
+        if (!valueNames.has(to))
+          errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': unknown value '${to}' in 'to' — not a member of enum '${enumDef.name}'`)
+        if (from.includes(to))
+          errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': self-transition (from and to are both '${to}')`)
+        if (gate != null && (!Number.isInteger(gate) || gate < 0 || gate > 9))
+          errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': @gate level must be an integer 0–9, got ${gate}`)
+      }
     }
   }
 
@@ -2793,6 +3025,7 @@ export function parseFile(filePath) {
   expandSecretAttributes(schema)
   expandHasTemplatesAttributes(schema)
   allErrors.push(...expandEdgeAttributes(schema))
+  resolveTransitions(schema)
   const { valid, errors, warnings } = validate(schema)
   allErrors.push(...errors)
   allWarnings.push(...warnings)
@@ -2829,6 +3062,7 @@ export function parse(src) {
   expandSecretAttributes(schema)
   expandHasTemplatesAttributes(schema)
   const edgeErrors = expandEdgeAttributes(schema)
+  resolveTransitions(schema)
   const { valid, errors, warnings } = validate(schema)
   const merged = [...edgeErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings }

@@ -1,0 +1,149 @@
+<script>
+  // Sparkline.mesa
+  // Compact SVG time-series chart. Polyline + optional area fill.
+  // No axes, no labels — pure visual trend indicator.
+  //
+  // Colour comes from the tone, via currentColor — so a Sparkline in a themed
+  // subtree recolours with the theme, instead of holding a private hex palette
+  // that all six themes would have to be reconciled against by hand.
+  //
+  // Usage:
+  //   <Sparkline data={[12, 18, 14, 22, 19, 28, 31]} />
+  //   <Sparkline data={values} tone="success" fill width={120} height={36} />
+  //   <Sparkline data={values} tone="danger" />
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let data   = []      // number[] — raw values
+  export let width  = 80      // px
+  export let height = 28      // px
+  export let tone   = ''      // one of the 7 css tones; '' is primary
+  export let color  = ''      // legacy alias for `tone`
+  export let fill   = true    // area fill under the line
+  export let smooth = false   // cubic bezier curves instead of a polyline
+  export let label  = ''      // accessible summary; without one it is decorative
+
+  const t = toTone(color || tone)
+
+  // Normalise data to SVG coordinates
+  // SVG origin is top-left; we flip Y so higher values go up
+  const pad = 2  // px padding so the stroke isn't clipped at edges
+
+  const normalized = (() => {
+    if (!data.length) return []
+    const min = Math.min(...data)
+    const max = Math.max(...data)
+    const range = max - min || 1
+    const innerW = width  - pad * 2
+    const innerH = height - pad * 2
+    return data.map((v, i) => ({
+      x: pad + (i / Math.max(data.length - 1, 1)) * innerW,
+      y: pad + (1 - (v - min) / range) * innerH,
+    }))
+  })()
+
+  // Build polyline points string
+  const pointsStr = normalized.map(p => `${p.x},${p.y}`).join(' ')
+
+  // Build filled area path: line down to baseline, back to start
+  const areaPath = normalized.length
+    ? `M ${normalized[0].x},${height - pad}
+       L ${normalized.map(p => `${p.x},${p.y}`).join(' L ')}
+       L ${normalized[normalized.length - 1].x},${height - pad} Z`
+    : ''
+
+  // Smooth cubic bezier path
+  const smoothPath = (() => {
+    if (!normalized.length) return ''
+    const pts = normalized
+    let d = `M ${pts[0].x},${pts[0].y}`
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1]
+      const curr = pts[i]
+      const cpX  = (prev.x + curr.x) / 2
+      d += ` C ${cpX},${prev.y} ${cpX},${curr.y} ${curr.x},${curr.y}`
+    }
+    return d
+  })()
+
+  const smoothAreaPath = (() => {
+    if (!normalized.length || !smooth) return ''
+    const pts = normalized
+    let d = `M ${pts[0].x},${height - pad} L ${pts[0].x},${pts[0].y}`
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1]
+      const curr = pts[i]
+      const cpX  = (prev.x + curr.x) / 2
+      d += ` C ${cpX},${prev.y} ${cpX},${curr.y} ${curr.x},${curr.y}`
+    }
+    d += ` L ${pts[pts.length - 1].x},${height - pad} Z`
+    return d
+  })()
+
+  const fillId = `spark-fill-${Math.random().toString(36).slice(2, 7)}`
+</script>
+
+<svg
+  width={width}
+  height={height}
+  viewBox="0 0 {width} {height}"
+  xmlns="http://www.w3.org/2000/svg"
+  class={cx('fjs-sparkline', t)}
+  role={label ? 'img' : null}
+  aria-label={label || null}
+  aria-hidden={label ? null : 'true'}
+  {class}
+>
+  {#if fill && normalized.length}
+    <defs>
+      <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="currentColor" stop-opacity="0.2" />
+        <stop offset="100%" stop-color="currentColor" stop-opacity="0.02" />
+      </linearGradient>
+    </defs>
+    <path
+      d={smooth ? smoothAreaPath : areaPath}
+      fill="url(#{fillId})"
+    />
+  {/if}
+
+  {#if normalized.length}
+    {#if smooth}
+      <path
+        d={smoothPath}
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    {:else}
+      <polyline
+        points={pointsStr}
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    {/if}
+
+    <!-- Terminal dot at the last value -->
+    <circle
+      cx={normalized[normalized.length - 1].x}
+      cy={normalized[normalized.length - 1].y}
+      r="2"
+      fill="currentColor"
+    />
+  {/if}
+</svg>
+
+<style>
+  /* The tone class sets --bg-mix; currentColor is what the strokes and the
+     gradient stops read, so one declaration drives the whole drawing. */
+  .fjs-sparkline {
+    color:       var(--bg-mix, var(--color-primary));
+    display:     block;
+    flex-shrink: 0;
+  }
+</style>

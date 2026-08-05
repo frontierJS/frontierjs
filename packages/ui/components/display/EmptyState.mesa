@@ -1,0 +1,73 @@
+<script>
+  // EmptyState.mesa
+  // Full-section empty state. Use inside tables, lists, and dashboards
+  // when there's no data to show.
+  //
+  // `.empty` in @frontierjs/css treats the action as part of the anatomy
+  // rather than an afterthought — an empty state without a way out is a dead
+  // end. `.empty-text` also caps the copy at 42ch, so the text stays readable
+  // however wide the container is.
+  //
+  // Usage — minimal:
+  //   <EmptyState title="No results" />
+  //
+  // Usage — with action:
+  //   <EmptyState
+  //     title="No API keys"
+  //     description="Create a key to start using the API."
+  //   >
+  //     {#snippet action()}
+  //       <Button onclick={createKey}>Create key</Button>
+  //     {/snippet}
+  //   </EmptyState>
+  //
+  // Usage — custom icon:
+  //   <EmptyState title="No servers">
+  //     {#snippet icon()}<IconServer />{/snippet}
+  //   </EmptyState>
+  //
+  // Usage — compact (inside table cells, cards):
+  //   <EmptyState compact title="No items" description="Add one to get started." />
+
+  export let title       = ''
+  export let description = ''
+  export let compact     = false    // tighter padding, smaller icon
+  export let icon        = null     // snippet — custom icon
+  export let action      = null     // snippet — CTA button(s)
+</script>
+
+<div class="empty" style:padding={compact ? '1.5rem 1rem' : null} {class}>
+  <!-- .empty-icon sets --icon-size: 1em, so the svg tracks this font-size. -->
+  <div class="empty-icon" style:font-size={compact ? '1.5rem' : null} aria-hidden="true">
+    {#if icon}
+      {@render icon?.()}
+    {:else}
+      <!-- Default inbox/empty box icon -->
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M20 13V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7"/>
+        <path d="M4 13h3l3 3h4l3-3h3"/>
+        <path d="M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>
+      </svg>
+    {/if}
+  </div>
+
+  {#if title}
+    <h3 class="empty-title">{title}</h3>
+  {/if}
+  {#if description}
+    <p class="empty-text">{description}</p>
+  {/if}
+
+  {#if action}
+    <div class="empty-actions">
+      {@render action?.()}
+    </div>
+  {/if}
+</div>

@@ -1,0 +1,26 @@
+<script>
+  import { RouterView, beforeNavigate } from '@frontierjs/sierra/router'
+  import { session, ready } from './session.js'
+
+  // Registered here, in component setup, on purpose. Sierra defers its boot
+  // navigation by a microtask precisely so guards registered during mount are
+  // in place before the first route commits — register this anywhere later and
+  // a direct load or refresh of a protected URL goes through unguarded, while
+  // client-side navigation to the same URL is stopped. See the note at
+  // sierra/src/router/index.js ~262.
+  beforeNavigate(async ({ to }) => {
+    await ready
+
+    const path = to.path.split('?')[0]
+
+    // Order matters. Setup outranks auth: with no account, there is nobody to
+    // log in as, and /auth/login would answer 401 forever.
+    if (session.needsSetup) return path === '/setup/' ? undefined : '/setup/'
+    if (path === '/setup/')  return '/'
+
+    if (!session.user) return path === '/login/' ? undefined : '/login/'
+    if (path === '/login/') return '/'
+  })
+</script>
+
+<RouterView />

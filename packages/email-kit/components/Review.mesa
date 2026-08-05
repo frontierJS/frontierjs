@@ -1,0 +1,61 @@
+<script>
+  import Avatar from './Avatar.mesa'
+  import Stars from './Stars.mesa'
+
+  export let name       = ''
+  export let rating     = 5
+  export let avatarBg   = '#9fc612'
+  export let avatarColor = '#ffffff'
+  export let padding    = '16px'
+</script>
+
+<!--
+  Review — a testimonial block. Shows avatar initial, name, star rating, and body text.
+
+  <Review name="Alice Johnson" rating={5}>
+    The service was outstanding — exceeded all expectations.
+  </Review>
+-->
+
+<tr>
+  <td style="padding:{padding};">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+      <tbody>
+        <!-- Avatar + name row -->
+        <tr valign="middle">
+          <td style="width:56px;vertical-align:middle;padding:0;">
+            <Avatar name="{name}" bgcolor="{avatarBg}" color="{avatarColor}" size={44} padding="0" />
+          </td>
+          <td style="vertical-align:middle;padding-left:12px;">
+            <p style="
+              font-family:Helvetica,Arial,sans-serif;
+              font-size:15px;
+              font-weight:700;
+              color:#222222;
+              margin:0;
+              padding:0;
+            ">{name}</p>
+          </td>
+        </tr>
+        <!-- Stars -->
+        <Stars count="{rating}" padding="8px 0" />
+        <!-- Review body -->
+        <tr>
+          <td colspan="2" style="padding-top:8px;">
+            <p style="
+              font-family:Helvetica,Arial,sans-serif;
+              font-size:15px;
+              line-height:1.6;
+              color:#555555;
+              font-style:italic;
+              margin:0;
+              padding:0;
+            ">
+              <slot />
+            </p>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </td>
+</tr>

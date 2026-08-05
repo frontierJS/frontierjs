@@ -1,0 +1,100 @@
+<script>
+  export let columns  = []   // [{ key, label, align }]
+  export let rows     = []   // array of objects
+  export let heading  = ''
+  export let headingColor = '#38993a'
+  export let headerBg = '#f9f9f9'
+  export let border   = '#eeeeee'
+  export let size     = 14
+  export let padding  = '8px 16px'
+  export let striped  = false
+</script>
+
+<!--
+  DataTable — structured data table with header row.
+  Two usage modes:
+
+  1. Data-driven (columns + rows props):
+     <DataTable
+       heading="Line Items"
+       columns={[
+         { key: 'item',  label: 'Item' },
+         { key: 'qty',   label: 'Qty',    align: 'center' },
+         { key: 'price', label: 'Price',  align: 'right' },
+       ]}
+       rows={[
+         { item: 'Lawn mowing', qty: 1, price: '$85.00' },
+         { item: 'Edging',      qty: 1, price: '$25.00' },
+       ]}
+     />
+
+  2. Custom rows (children slot):
+     <DataTable heading="Summary">
+       <tr>
+         <td>Custom row</td>
+       </tr>
+     </DataTable>
+-->
+
+<tr>
+  <td style="padding:0 16px 16px;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+      style="border-collapse:collapse;border:1px solid {border};border-radius:4px;overflow:hidden;">
+
+      {#if heading}
+      <tr>
+        <th colspan="{columns.length || 2}" style="
+          padding:{padding};
+          font-family:Helvetica,Arial,sans-serif;
+          font-size:{size}px;
+          font-weight:800;
+          color:{headingColor};
+          text-align:left;
+          border-bottom:2px solid {border};
+          background-color:{headerBg};
+        ">{heading}</th>
+      </tr>
+      {/if}
+
+      {#if columns.length}
+      <!-- Header row -->
+      <tr style="background-color:{headerBg};">
+        {#each columns as col}
+        <th style="
+          padding:{padding};
+          font-family:Helvetica,Arial,sans-serif;
+          font-size:{size - 1}px;
+          font-weight:700;
+          color:#888888;
+          text-align:{col.align || 'left'};
+          text-transform:uppercase;
+          letter-spacing:0.5px;
+          border-bottom:1px solid {border};
+          white-space:nowrap;
+        ">{col.label}</th>
+        {/each}
+      </tr>
+      <!-- Data rows — pre-indexed so i is a plain value, not a signal getter -->
+      {#each rows.map((row, i) => ({ row, i })) as entry}
+      <tr style="{striped && entry.i % 2 === 0 ? `background-color:${headerBg};` : ''}">
+        {#each columns as col}
+        <td style="
+          padding:{padding};
+          font-family:Helvetica,Arial,sans-serif;
+          font-size:{size}px;
+          color:#444444;
+          text-align:{col.align || 'left'};
+          border-bottom:{entry.i < rows.length - 1 ? `1px solid ${border}` : 'none'};
+        ">{entry.row[col.key] ?? ''}</td>
+        {/each}
+      </tr>
+      {/each}
+      {/if}
+
+      {#if $slots.default}
+        <slot />
+      {/if}
+
+    </table>
+  </td>
+</tr>

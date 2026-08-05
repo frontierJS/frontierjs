@@ -1,0 +1,78 @@
+<script>
+  // Toaster.mesa
+  // Mount once near your app root. Watches toastStore.items and renders each
+  // toast, dismissing via toasts.remove().
+  //
+  // `.toast-stack` is the container: it is fixed, pointer-events:none, and
+  // re-statics its direct `.toast` children. Each Toast must therefore be a
+  // DIRECT child — the previous version wrapped each in a div, which broke
+  // the `>` selector so every toast kept `position: fixed` and they stacked
+  // on top of one another in the same corner.
+  //
+  // Usage:
+  //   <!-- App.mesa -->
+  //   <Toaster position="bottom-right" />
+  //
+  //   <!-- Anywhere else -->
+  //   import { toasts } from '@frontierjs/ui/stores/toastStore'
+  //   toasts.success('File uploaded!')
+  //   toasts.error('Upload failed — file too large.')
+
+  import Toast from './Toast.mesa'
+  import { toasts } from '../../stores/toastStore.js'
+
+  export let position = 'bottom-right'  // 'top-right'|'top-left'|'bottom-right'|'bottom-left'|'top-center'|'bottom-center'
+  export let max      = 5               // max simultaneous toasts shown
+
+  // Watch the items array — re-renders when toasts.add() replaces it
+  $: toasts.items
+
+  // .toast-stack defaults to bottom-right; only the other corners need
+  // inset overrides, and they are inline rather than six utility classes.
+  const posMap = {
+    'top-right':     { top: '1rem',    right: '1rem', bottom: 'auto', left: 'auto',  align: 'flex-end'   },
+    'top-left':      { top: '1rem',    left: '1rem',  bottom: 'auto', right: 'auto', align: 'flex-start' },
+    'bottom-right':  { bottom: '1rem', right: '1rem', top: 'auto',    left: 'auto',  align: 'flex-end'   },
+    'bottom-left':   { bottom: '1rem', left: '1rem',  top: 'auto',    right: 'auto', align: 'flex-start' },
+    'top-center':    { top: '1rem',    left: '50%',   bottom: 'auto', right: 'auto', align: 'center'     },
+    'bottom-center': { bottom: '1rem', left: '50%',   top: 'auto',    right: 'auto', align: 'center'     },
+  }
+
+  const pos        = posMap[position] ?? posMap['bottom-right']
+  const isCentered = position.endsWith('center')
+
+  // visibleItems is a derived const — re-derives when toasts.items changes.
+  const isBottom     = position.startsWith('bottom')
+  const visibleItems = isBottom
+    ? toasts.items.slice(-max).reverse()
+    : toasts.items.slice(0, max)
+
+  function handleDismiss(id) {
+    toasts.remove(id)
+  }
+</script>
+
+<mesa:portal to={document.body}>
+  <div
+    class="toast-stack"
+    style:top={pos.top}
+    style:right={pos.right}
+    style:bottom={pos.bottom}
+    style:left={pos.left}
+    style:align-items={pos.align}
+    style:transform={isCentered ? 'translateX(-50%)' : null}
+    style:flex-direction={isBottom ? 'column-reverse' : 'column'}
+    aria-live="polite"
+    aria-label="Notifications"
+  >
+    {#each visibleItems as toast (toast.id)}
+      <Toast
+        id={toast.id}
+        message={toast.message}
+        tone={toast.type}
+        duration={toast.duration}
+        ondismiss={handleDismiss}
+      />
+    {/each}
+  </div>
+</mesa:portal>

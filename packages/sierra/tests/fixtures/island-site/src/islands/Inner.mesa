@@ -1,0 +1,7 @@
+<script>
+  let hits = 0
+</script>
+<button id="inner" onclick={() => hits++}>Inner: {hits}</button>
+<style>
+  button { background: rgb(70, 80, 90); }
+</style>

@@ -1,0 +1,70 @@
+<script>
+  // Skeleton.mesa
+  // Loading placeholder. @frontierjs/css draws `.skeleton` as a shimmer over
+  // the surface tokens, with `.text` and `.circle` as the two shape modifiers;
+  // everything else is a box you size.
+  //
+  // Wrap the loading region in aria-busy="true" — a screenful of empty boxes
+  // should not be read out.
+  //
+  // Usage — inline shapes:
+  //   <Skeleton variant="text" width="60%" />
+  //   <Skeleton variant="avatar" size="md" />
+  //   <Skeleton variant="button" />
+  //
+  // Usage — custom block:
+  //   <Skeleton height="12rem" />
+  //
+  // Usage — pre-built composites:
+  //   <Skeleton variant="card" />
+  //   <Skeleton variant="stat" />
+
+  export let variant = 'block'  // 'block'|'text'|'avatar'|'button'|'card'|'stat'
+  export let width   = undefined
+  export let height  = undefined
+  export let size    = 'md'     // for 'avatar': 'xs'|'sm'|'md'|'lg'
+
+  const avatarSizeMap = { xs: '1.5rem', sm: '2rem', md: '2.5rem', lg: '3.5rem' }
+  const avatarSz = avatarSizeMap[size] ?? avatarSizeMap.md
+</script>
+
+{#if variant === 'text'}
+  <div class="skeleton text" style:inline-size={width ?? '100%'} {class}></div>
+
+{:else if variant === 'avatar'}
+  <div class="skeleton circle" style:inline-size={avatarSz} {class}></div>
+
+{:else if variant === 'button'}
+  <div
+    class="skeleton"
+    style:inline-size={width ?? '6rem'}
+    style:block-size="2.25rem"
+    {class}
+  ></div>
+
+{:else if variant === 'card'}
+  <!-- Pre-built card skeleton — a real .card so the box matches the content -->
+  <article class="card stack" aria-busy="true" {class}>
+    <div class="cluster">
+      <div class="skeleton" style:inline-size="2.25rem" style:block-size="2.25rem"></div>
+      <div class="stack" style:gap="0.375rem" style:flex="1">
+        <div class="skeleton text" style:inline-size="6rem"></div>
+        <div class="skeleton text" style:inline-size="4rem"></div>
+      </div>
+    </div>
+    <div class="skeleton text"></div>
+    <div class="skeleton text" style:inline-size="80%"></div>
+  </article>
+
+{:else if variant === 'stat'}
+  <!-- Pre-built tile skeleton — matches Stat/StatCard's .tile anatomy -->
+  <article class="tile stack" style:gap="0.5rem" aria-busy="true" {class}>
+    <div class="skeleton text" style:inline-size="5rem"></div>
+    <div class="skeleton" style:inline-size="7rem" style:block-size="2rem"></div>
+    <div class="skeleton text" style:inline-size="4rem"></div>
+  </article>
+
+{:else}
+  <!-- Bare block — size via width/height or your own class -->
+  <div class="skeleton" style:inline-size={width} style:block-size={height} {class}></div>
+{/if}

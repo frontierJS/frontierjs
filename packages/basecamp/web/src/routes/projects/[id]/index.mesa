@@ -1,0 +1,180 @@
+---
+title: Project
+---
+<script>
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { projects } from '../../../resources/projects.mesa'
+  import { environments } from '../../../resources/environments.mesa'
+
+  $: page.params
+
+  let project = null
+  let envs    = []
+  let error   = null
+  let loading = true
+
+  // Renaming happens in place rather than on a separate edit page: a project
+  // has three editable fields, and a round trip to another route to change one
+  // of them is ceremony.
+  let editing = false
+  let draft   = { name: '', description: '' }
+
+  async function load() {
+    error = null; loading = true
+    try {
+      project = await projects.service.get(page.params.id)
+      draft   = { name: project.name, description: project.description ?? '' }
+      // The environments service filters by projectId; the workspace is already
+      // on the header, so this is the only filter the page supplies.
+      envs = (await environments.service.find({ projectId: page.params.id })).data
+    } catch (e) {
+      // A project in another workspace answers 404, not 403 — an id you cannot
+      // see should not be confirmable by asking.
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: page.params.id, () => load()
+
+  async function save() {
+    error = null
+    try {
+      project = await projects.service.patch(project.id, draft)
+      editing = false
+    } catch (e) { error = e.message }
+  }
+
+  async function remove() {
+    error = null
+    try {
+      await projects.service.remove(project.id)
+      goto('/projects/')
+    } catch (e) { error = e.message }
+  }
+
+  // Environments are created from here because a tier is only meaningful
+  // inside a project — there is no useful "all environments" screen.
+  let newTier = 'development'
+  let adding  = false
+
+  async function addEnvironment() {
+    error = null; adding = true
+    try {
+      await environments.service.create({
+        projectId:   project.id,
+        name:        newTier[0].toUpperCase() + newTier.slice(1),
+        slug:        newTier,
+        tier:        newTier,
+        isProtected: newTier === 'production',
+      })
+      envs = (await environments.service.find({ projectId: project.id })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      adding = false
+    }
+  }
+
+  // The tier list is not written here. It comes from the enum in
+  // db/schema.lite, through the JSON Schema the build generated — so adding a
+  // tier to the schema adds it to this picker with no edit.
+  $: tiers = environments.fields?.tier?.enum ?? ['development', 'staging', 'production']
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error && !project}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+  <div class="cluster"><a class="btn ghost" href="/projects/">Back to projects</a></div>
+{:else if project}
+  <div class="section-header">
+    <h1>{project.name}</h1>
+    <div class="cluster">
+      <a class="btn ghost" href="/projects/">All projects</a>
+      <button class="btn outlined" on:click={() => editing = !editing}>
+        {editing ? 'Cancel' : 'Edit'}
+      </button>
+      <button class="btn ghost danger" on:click={remove}>Delete</button>
+    </div>
+  </div>
+
+  {#if error}
+    <article class="alert danger">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if editing}
+    <div class="container narrow">
+      <form class="card stack" on:submit|preventDefault={save}>
+        <div class="field-group">
+          <label for="name">Name</label>
+          <input class="field" id="name" bind:value={draft.name} required />
+        </div>
+        <div class="field-group">
+          <label for="description">Description</label>
+          <input class="field" id="description" bind:value={draft.description} />
+        </div>
+        <div class="cluster">
+          <button class="btn primary" type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+  {:else}
+    <dl class="facts">
+      <dt>Slug</dt>      <dd><code>{project.slug}</code></dd>
+      <dt>Status</dt>    <dd><span class="pill">{project.status}</span></dd>
+      <dt>Description</dt><dd>{project.description ?? '—'}</dd>
+    </dl>
+  {/if}
+
+  <div class="section-header">
+    <h2 class="h4">Environments</h2>
+    <div class="cluster">
+      <label class="visually-hidden" for="tier-select">Tier</label>
+      <select class="field" id="tier-select" style="--field-inline-size: auto"
+              bind:value={newTier}>
+        {#each tiers as tier}
+          <option value={tier}>{tier}</option>
+        {/each}
+      </select>
+      <button class="btn outlined" on:click={addEnvironment} disabled={adding}>
+        {adding ? 'Adding…' : 'Add environment'}
+      </button>
+    </div>
+  </div>
+
+  {#if !envs.length}
+    <article class="alert info">
+      <div class="alert-content">No environments yet. Add one above — the slug is unique per project, so each tier exists once.</div>
+    </article>
+  {:else}
+    <div class="table-wrap">
+      <table class="table striped hover">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Tier</th>
+            <th scope="col">Protected</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="environment-rows">
+          {#each envs as environment}
+            <tr>
+              <td><a href={`/environments/${environment.id}/`}>{environment.name}</a></td>
+              <td><span class="pill">{environment.tier}</span></td>
+              <td>{environment.isProtected ? 'yes' : 'no'}</td>
+              <td><a class="btn ghost" href={`/environments/${environment.id}/`}>Open</a></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+{/if}

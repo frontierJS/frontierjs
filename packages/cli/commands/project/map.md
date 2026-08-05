@@ -10,6 +10,7 @@ examples:
   - fli project:map --layer api
   - fli project:map --layer ui
   - fli project:map --layer migrations
+  - fli project:map --project packages/basecamp
 flags:
   json:
     type: boolean
@@ -46,7 +47,7 @@ const toJson = flag.json || !!flag.out
 // ── Guard ──────────────────────────────────────────────────────────────────────
 
 if (!existsSync(schemaLite)) {
-  log.error('schema.lite not found — run this from a FJS project root')
+  log.error(`no db/schema.lite under ${root} — cd into a FJS app, or point at one with --project <dir>`)
   return
 }
 
@@ -90,7 +91,7 @@ if (!layer || layer === 'api') {
 
 let resources = []
 if (!layer || layer === 'ui') {
-  const files = scanFiles(resourcesDir, '.mesa', '.svelte')
+  const files = scanFiles(resourcesDir, '.js', '.mesa')
   resources = files.map(f => extractResourceMeta(readFileSync(f, 'utf8'), f))
   if (!toJson) log.info(`UI:   ${resources.length} resource${resources.length !== 1 ? 's' : ''} found`)
 }

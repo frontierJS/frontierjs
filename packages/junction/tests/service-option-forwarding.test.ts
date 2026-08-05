@@ -103,3 +103,91 @@ describe('createService → createBaseService option forwarding', () => {
     expect(svc._meta.idField).toBe('ref')
   })
 })
+
+// ─── model inference ──────────────────────────────────────────────────────
+//
+// The same failure as above, one option earlier: `model` is optional on
+// createBaseService (the accessor resolves per call from `model ?? ctx.service`)
+// and createService accepted it as optional too — but only built the CRUD base
+// `if (def.model)`, falling back to a stand-in whose every method threw
+// 'No model/db configured for this service'.
+//
+// So in one file, with the same options:
+//
+//   createBaseService({})                 → working CRUD on db.lead
+//   createService({ name: 'leads' })      → every method throws
+//
+// while the service it returned still reported `model: 'leads'`. The base is
+// now built unconditionally; these pin that.
+
+describe('createService — model inference from the service name', () => {
+
+  // The accessor is resolved PER CALL from `model ?? ctx.service` — not from
+  // svc.name, which the transport is what puts on the context. Tests that vary
+  // the service name must vary it here, or they pass for the wrong reason.
+  const ctxFor = (service: string, method: string, id: unknown = 1) =>
+    ({ ...(ctx(method, id) as unknown as Record<string, unknown>), service }) as unknown as ServiceContext
+
+  test('createService({ name }) with no model resolves the accessor', async () => {
+    const log: Log = []
+    const svc = createService({ name: 'leads', db: mkDb(log) })
+
+    // 'leads' → db.lead, the same singularisation createBaseService does.
+    await svc.remove(ctx('remove'))
+
+    expect(log.join('\n')).toContain('delete where')
+  })
+
+  test('a model-less service behaves identically through both factories', async () => {
+    const viaBase: Log = []
+    const viaService: Log = []
+
+    // createBaseService's return type leaves the methods `unknown`; narrow once
+    // here rather than adding another `Object is of type 'unknown'` to the
+    // package's typecheck count.
+    const removeVia = (svc: unknown) =>
+      (svc as { remove: (c: ServiceContext) => Promise<unknown> }).remove(ctx('remove'))
+
+    await removeVia(createBaseService({ db: mkDb(viaBase) }))
+    await removeVia(createService({ name: 'leads', db: mkDb(viaService) }))
+
+    expect(viaService).toEqual(viaBase)
+  })
+
+  test('an explicit model still wins over the service name', async () => {
+    const log: Log = []
+    // The client has only `lead`, and the service is called 'things', so this
+    // resolves only if `model` is preferred over ctx.service.
+    const svc = createService({ name: 'things', model: 'lead', db: mkDb(log) })
+
+    await svc.remove(ctxFor('things', 'remove'))
+
+    expect(log.join('\n')).toContain('delete where')
+  })
+
+  test('the name the autoloader assigns after construction still resolves', async () => {
+    const log: Log = []
+    // What loader.ts does: import a file declaring neither name nor model, then
+    // assign the name derived from the filename. Nothing may be bound at build
+    // time — the accessor is read from ctx.service on the call.
+    const svc = createService({ db: mkDb(log) })
+    ;(svc as { name: string }).name = 'leads'
+
+    await svc.remove(ctxFor('leads', 'remove'))
+
+    expect(svc.name).toBe('leads')
+    expect(log.join('\n')).toContain('delete where')
+  })
+
+  test('a service with no resolvable model fails with the base diagnostic', async () => {
+    const svc = createService({ name: 'reports', db: mkDb([]) })
+
+    // Custom-action-only services keep working; their unused CRUD now reports
+    // what it tried and what the client has, rather than a bare sentence.
+    const err = await svc.find(ctxFor('reports', 'find')).then(() => null, (e: Error) => e)
+
+    expect(err).toBeInstanceOf(Error)
+    expect(err!.message).toContain('report')
+    expect(err!.message).toContain('not found on db client')
+  })
+})

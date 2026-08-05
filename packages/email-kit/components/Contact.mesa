@@ -1,0 +1,38 @@
+<script>
+  export let name     = ''
+  export let email    = ''
+  export let phone    = ''
+  export let url      = ''
+  export let urlText  = 'View in app'
+  export let urlColor = '#9fc612'
+  export let size     = 14
+  export let padding  = '6px 16px'
+</script>
+
+{#if name}
+<tr>
+  <td style="padding:{padding};font-family:Helvetica,Arial,sans-serif;font-size:{size}px;font-weight:700;color:#222222;">{name}</td>
+</tr>
+{/if}
+
+{#if email}
+<tr>
+  <td style="padding:{padding};font-family:Helvetica,Arial,sans-serif;font-size:{size}px;color:#555555;">
+    <a href="mailto:{email}" style="color:#555555;text-decoration:none;">{email}</a>
+  </td>
+</tr>
+{/if}
+
+{#if phone}
+<tr>
+  <td style="padding:{padding};font-family:Helvetica,Arial,sans-serif;font-size:{size}px;color:#555555;">{phone}</td>
+</tr>
+{/if}
+
+{#if url}
+<tr>
+  <td style="padding:{padding};">
+    <a href="{url}" target="_blank" style="display:inline-block;color:{urlColor};font-family:Helvetica,Arial,sans-serif;font-size:{size}px;font-weight:700;text-decoration:none;">{urlText} →</a>
+  </td>
+</tr>
+{/if}

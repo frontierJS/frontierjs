@@ -1,0 +1,36 @@
+<script>
+  export let color   = '#eeeeee'
+  export let height  = 1
+  export let margin  = 8       // vertical spacing above and below in px
+  export let width   = '90%'
+</script>
+
+<!--
+  Divider — a horizontal rule safe across email clients.
+  Uses a table cell background instead of <hr> which has inconsistent rendering.
+
+  <Divider />
+  <Divider color="#dddddd" margin={16} />
+-->
+
+<tr>
+  <td colspan="2" style="padding:{margin}px 0;font-size:0;line-height:0;">
+    <table
+      role="presentation"
+      cellspacing="0"
+      cellpadding="0"
+      border="0"
+      width="{width}"
+      align="center"
+      style="border-collapse:collapse;">
+      <tr>
+        <td style="
+          background-color:{color};
+          height:{height}px;
+          font-size:0;
+          line-height:0;
+        ">&nbsp;</td>
+      </tr>
+    </table>
+  </td>
+</tr>

@@ -1,0 +1,732 @@
+/// Basecamp — Litestone Schema
+///
+/// THE SEED. Every other realm derives from this file. Nothing here is
+/// hand-mirrored anywhere else: the SQL in `db/migrations/` is generated from
+/// this schema, not written alongside it.
+///
+/// Data hierarchy:
+///   Account → User → Workspace → { WorkspaceMember, Project, Server, Secret }
+///                                     └ Project → Environment → App
+///                                                               ├ Deployment → DeploymentStep
+///                                                               └ Job → JobRun
+///
+/// Conventions (Litestone, not optional):
+///   Model names are PascalCase singular. The table name is snake_case of the
+///   model name (`WorkspaceMember` → `workspace_member`), the client accessor
+///   is camelCase (`db.workspaceMember`).
+///   Field names are emitted as columns VERBATIM — Litestone does NOT
+///   snake_case them. `workspaceId` is the column, not `workspace_id`.
+///   DateTime is stored as ISO-8601 TEXT, not epoch milliseconds.
+///   Tables are STRICT by default.
+///
+/// ACCESS CONTROL — @@gate is MISSING. This is a known gap, not a design.
+///
+/// It violates VISION.md constraint 3 and repo Invariant 6, both of which say
+/// access is declared in the schema. There is no longer a decision excusing it:
+/// the 2026-08-04 ruling that gates could not work here was withdrawn once
+/// example/ proved otherwise by running it.
+///
+/// What was believed: declaring ANY @@gate makes Litestone auto-install
+/// GatePlugin({ getLevel: FrontierGateGetLevel }), which grades every
+/// @frontierjs/auth session as VISITOR(1), so all 24 gated models would 403.
+/// The first half is true. The second was true only until 2026-08-04, when that
+/// resolver was fixed to stop reading an ABSENT verifiedAt as "unverified" — it
+/// now grades a verified auth session USER(4) on its own. Either way an app
+/// supplies its own
+/// getLevel, and sessionGateLevel() plus a role wrapper grades a verified user
+/// USER(4) and a verified admin ADMINISTRATOR(5). See example/api/gate.ts.
+///
+/// What Basecamp still needs beyond that pattern is the per-request part: a
+/// getLevel that resolves the active workspace and maps WorkspaceMember.role
+/// onto the 0–7 scale. The intended level for every model is recorded in
+/// db/README.md §Access control so the design is not lost.
+///
+/// Access control TODAY is service hooks (requireWorkspaceRole, scopeToWorkspace),
+/// which is weaker than the schema-declared version and should be replaced.
+///
+/// STILL ENFORCED AT THE DATA BOUNDARY, gates or no gates: @guarded and
+/// @encrypted. Those are field policy keyed on asSystem(), not GatePlugin, so
+/// Secret.data stays unreadable and encrypted regardless. Verified by test.
+///
+/// The database path is declared below in `database main`. litestone.config.js
+/// carries the schema and migrations paths for the CLI.
+
+// ============================================================
+// DATABASES
+// ============================================================
+// The audit logger. Every write to a @@log(audit) model lands in
+// db/audit/auditLogs.jsonl with before/after snapshots, queryable through the
+// `auditLogs` accessor. Two things to know:
+//   • The path is resolved relative to the PROCESS CWD, not this file — it
+//     assumes the API is started from the package root.
+//   • Entries flush on a ~1s timer and on exit — a read in the same session
+//     immediately after a write sees nothing. That is lag, not data loss.
+// @encrypted / @guarded / @secret fields are REDACTED in log entries — the
+// trail records that the field was written, never what it holds. That is why
+// Secret and the auth tables are logged: an access trail over a credential is
+// the point, and it costs nothing to read. Requires litestone >= 2026-08-03.
+
+// The application database. Declared here rather than passed to createClient()
+// because the schema is the seed: a client that names its own file can point at
+// a database this schema never described. `env()` keeps DATABASE_URL working —
+// the fallback is what every local run uses.
+//
+// Resolved against the PROCESS CWD, like the audit path below, so both assume
+// the API is started from the package root.
+//
+// NOTE: this declaration WINS over `createClient({ db })`. Passing both is not
+// an error and produces no warning — the option is simply ignored — so core/db.ts
+// deliberately does not pass one.
+database main { path env("DATABASE_URL", "./db/basecamp.db") }
+
+database audit { path "./db/audit/" driver logger retention 90d }
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum AccountType    { individual organization }
+enum WorkspaceType  { personal team enterprise }
+enum WorkspaceRole  { viewer billing developer admin owner }
+enum UserKind       { human bot ai }
+enum SecretKind     { ssh_key provider_key registry_auth tls_cert generic }
+enum ServerStatus   { pending provisioning installing ready online unreachable draining stopped destroyed }
+enum ServerRole     { general build database gateway worker }
+enum EnvironmentTier { development test preview staging production }
+enum AppType        { container worker database daemon cron static function }
+enum AppStatus      { unknown stopped starting running stopping deploying error }
+enum DeployStatus   { pending building pushing deploying success failed cancelled rolled_back }
+enum StepStatus     { pending running success failed skipped }
+enum JobKind        { one_shot scheduled triggered workflow }
+enum JobStatus      { pending running failed cancelled }
+enum JobRunStatus   { pending running success failed timeout }
+
+// ============================================================
+// IDENTITY — owned by @frontierjs/auth
+// ============================================================
+// These four models are auth's schema fragments (`authSchemaFragments()` in
+// packages/auth/schema.ts). auth.ts reaches for the accessors db.user,
+// db.credential, db.session and db.verification via asSystem(), so the model
+// names are load-bearing — do not rename them.
+//
+// Two deliberate deviations from the shipped fragment, each load-bearing:
+//   1. `accountId` is String, not Int. Account.id is a uuid; Int cannot hold
+//      it. Safe for auth.ts, which only does String(user.accountId).
+//   2. `@secret` → `@guarded(all)` on the Credential/Session token columns.
+//      Not for the logging reason any more — log entries redact protected
+//      fields as of 2026-08-03, so `@secret` is safe here. What still defers it
+//      is encryption: `@secret` implies `@encrypted`, and `Session.token` is
+//      looked up BY VALUE, which needs `@encrypted(searchable: true)`.
+//      Credential.value already holds a hash, so encrypting it buys little.
+//      Revisit in the API pass alongside the rest of the auth wiring.
+//
+// `@@log(audit)` is kept, as auth ships it.
+//
+// Everything Basecamp adds to User is nullable or defaulted ON PURPOSE:
+// auth's createUser() writes only { email, name, role }, so a required
+// Basecamp column would make account creation throw.
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @email @unique @lower
+  name           String?   @trim
+  emailVerified  Boolean   @default(false)
+  role           String    @default("user")
+  accountId      String?
+  account        Account?  @relation(fields: [accountId], references: [id])
+
+  // ── Basecamp additions ──
+  kind           UserKind  @default(human)
+  status         String    @default("pending_verification")
+  username       String?   @trim
+  displayName    String?   @trim
+  avatarUrl      String?
+  scopes         Json      @default("[]")
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+  deletedAt      DateTime?
+
+  memberships    WorkspaceMember[]
+  deployments    Deployment[]
+
+  @@softDelete
+  @@log(audit)
+  @@unique([accountId, username])
+  @@index([accountId])
+  @@index([email])
+}
+
+// How you prove who you are — passwords, API keys, OAuth tokens.
+// NOT to be confused with Secret below, which is machine credentials.
+model Credential {
+  id              String     @id @default(uuid())
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String
+  value           String     @guarded(all)
+  label           String?
+  accessToken     String?    @guarded(all)
+  refreshToken    String?    @guarded(all)
+  tokenExpiresAt  DateTime?
+  scope           String?
+  createdAt       DateTime   @default(now())
+
+  @@log(audit)
+  @@index([userId, type])
+  @@index([type, value])
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String    @unique @guarded(all)
+  expiresAt  DateTime
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  @@log(audit)
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Verification {
+  id          String    @id @default(uuid())
+  identifier  String
+  value       String    @guarded(all)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@log(audit)
+  @@index([identifier])
+}
+
+// ============================================================
+// ACCOUNT
+// ============================================================
+
+model Account {
+  id          String      @id @default(uuid())
+  type        AccountType @default(organization)
+  status      String      @default("pending_verification")
+  slug        String      @unique @trim @length(1, 64)
+  displayName String      @trim @length(1, 200)
+  avatarUrl   String?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  users       User[]
+  workspaces  Workspace[]
+
+  @@softDelete(cascade)
+  @@log(audit)
+}
+
+// ============================================================
+// WORKSPACE
+// ============================================================
+
+model Workspace {
+  id        String        @id @default(uuid())
+  accountId String
+  account   Account       @relation(fields: [accountId], references: [id])
+
+  name      String        @trim @length(1, 80)
+  slug      String        @unique @trim @length(1, 64)
+  type      WorkspaceType @default(team)
+  ownerId   String
+  settings  Json          @default("{}")
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @default(now()) @updatedAt
+  deletedAt DateTime?
+
+  members     WorkspaceMember[]
+  projects    Project[]
+  servers     Server[]
+  secrets     Secret[]
+  jobs        Job[]
+  alertRules  AlertRule[]
+  auditEvents AuditEvent[]
+
+  @@softDelete(cascade)
+  @@log(audit)
+  @@index([accountId])
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        WorkspaceRole @default(viewer)
+  invitedBy   String?
+  invitedAt   DateTime?
+  acceptedAt  DateTime?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @default(now()) @updatedAt
+
+  @@log(audit)
+  @@unique([workspaceId, userId])
+  @@index([workspaceId, userId])
+}
+
+// ============================================================
+// SECRETS
+// ============================================================
+// Machine credentials — SSH keys, provider API keys, registry auth, TLS certs.
+// Renamed from `credential` because @frontierjs/auth owns that model name and
+// that accessor. The distinction is real, not cosmetic: a Credential is how a
+// PERSON proves identity to Basecamp; a Secret is how BASECAMP proves identity
+// to a machine or a provider.
+//
+// VISION.md constraint 7 says Basecamp holds secrets but never shows them —
+// `@guarded(all)` is that constraint enforced at the Data boundary, so the
+// value cannot be read out even by a caller allowed to list the secret.
+
+model Secret {
+  id          String     @id @default(uuid())
+  workspaceId String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String     @trim @length(1, 200)
+  kind        SecretKind @default(generic)
+  data        String     @default("{}") @encrypted
+  isVerified  Boolean    @default(false)
+  createdBy   String?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  @@softDelete
+  @@log(audit)
+  @@unique([workspaceId, name])
+}
+
+// ============================================================
+// SERVERS
+// ============================================================
+
+model Server {
+  id               String       @id @default(uuid())
+  workspaceId      String
+  workspace        Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name             String       @trim @length(1, 200)
+  slug             String       @trim
+  status           ServerStatus @default(pending)
+  role             ServerRole   @default(general)
+
+  providerKind     String       @default("custom")
+  providerId       String?
+  providerServerId String?
+  registerMethod   String       @default("imported")
+
+  region           String       @default("custom")
+  ipAddress        String?
+  ipv6Address      String?
+  sshPort          Int          @default(22)
+  sshUser          String       @default("root")
+  sshKeyId         String?
+
+  agentVersion     String?
+  agentUrl         String?
+  lastHeartbeatAt  DateTime?
+
+  plan             Json         @default("{}")
+  actualSpecs      Json?
+  health           Json?
+  dockerState      Json?
+  labels           Json         @default("{}")
+
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @default(now()) @updatedAt
+  deletedAt        DateTime?
+
+  events           ServerEvent[]
+  appServers       AppServer[]
+  serverNetworks   ServerNetwork[]
+
+  @@softDelete
+  @@log(audit)
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+  @@index([status])
+  @@index([lastHeartbeatAt])
+}
+
+model ServerEvent {
+  id        String   @id @default(uuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  kind      String
+  message   String
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([serverId])
+}
+
+// ============================================================
+// NETWORKING
+// ============================================================
+
+model Network {
+  id          String   @id @default(uuid())
+  workspaceId String
+
+  name        String   @trim
+  slug        String   @trim
+  type        String   @default("mesh")
+  cidr        String   @default("10.0.0.0/16")
+  provider    String   @default("netbird")
+  config      Json     @default("{}")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  appNetworks    AppNetwork[]
+  serverNetworks ServerNetwork[]
+
+  @@softDelete
+  @@log(audit)
+  @@unique([workspaceId, slug])
+}
+
+model ServerNetwork {
+  id        String   @id @default(uuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  networkId String
+  network   Network  @relation(fields: [networkId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  joinedAt  DateTime @default(now())
+
+  @@unique([serverId, networkId])
+}
+
+// ============================================================
+// PROJECTS
+// ============================================================
+
+model Project {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String    @trim @length(1, 80)
+  slug        String    @trim @length(1, 64)
+  description String?
+  status      String    @default("active")
+  tags        Json      @default("[]")
+  metadata    Json      @default("{}")
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  environments Environment[]
+
+  @@softDelete(cascade)
+  @@log(audit)
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model Environment {
+  id          String          @id @default(uuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workspaceId String
+
+  name        String          @trim @length(1, 64)
+  slug        String          @trim @length(1, 64)
+  tier        EnvironmentTier @default(development)
+  isProtected Boolean         @default(false)
+  variables   Json            @default("[]")
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  apps        App[]
+  deployments Deployment[]
+  jobs        Job[]
+
+  @@softDelete(cascade)
+  @@log(audit)
+  @@unique([projectId, slug])
+  @@index([projectId])
+}
+
+// ============================================================
+// APPS
+// ============================================================
+// The deployable unit inside an Environment. Named App, never Service —
+// Service is the API realm's primary noun and means "the CRUD surface for a
+// model". VISION.md §Vocabulary forbids the overload by name. The rest of the
+// codebase already agreed: apps.service.ts, AppType, AppStatus.
+
+model App {
+  id            String      @id @default(uuid())
+  workspaceId   String
+  environmentId String
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  name          String      @trim @length(1, 80)
+  slug          String      @trim @length(1, 64)
+  type          AppType     @default(container)
+  status        AppStatus   @default(unknown)
+
+  source        Json        @default("{}")
+  config        Json        @default("{}")
+  domain        String?
+  port          Int?
+  isPublic      Boolean     @default(false)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @default(now()) @updatedAt
+  deletedAt     DateTime?
+
+  deployments   Deployment[]
+  jobs          Job[]
+  appServers    AppServer[]
+  appNetworks   AppNetwork[]
+
+  @@softDelete(cascade)
+  @@log(audit)
+  @@unique([environmentId, slug])
+  @@index([workspaceId])
+  @@index([environmentId])
+  @@index([status])
+}
+
+// Placement — which servers an App's replicas actually landed on.
+// Written by the deployment engine, never by a person.
+model AppServer {
+  id           String   @id @default(uuid())
+  appId        String
+  app          App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  serverId     String
+  server       Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  replicaIndex Int      @default(0)
+  status       String   @default("unknown")
+  containerId  String?
+  assignedAt   DateTime @default(now())
+  startedAt    DateTime?
+  stoppedAt    DateTime?
+
+  @@unique([appId, serverId, replicaIndex])
+}
+
+model AppNetwork {
+  id        String   @id @default(uuid())
+  appId     String
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  networkId String
+  network   Network  @relation(fields: [networkId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  dnsName   String?
+  joinedAt  DateTime @default(now())
+
+  @@unique([appId, networkId])
+}
+
+// ============================================================
+// DEPLOYMENTS
+// ============================================================
+// A Release — a Manifest realized at a point in time (VISION.md §Where
+// Basecamp Fits). The record is append-only from a user's point of view:
+// creating a deployment is a USER action, advancing its status is the engine's
+// (SYSTEM), and erasing deployment history takes a SYSADMIN.
+
+model Deployment {
+  id                   String       @id @default(uuid())
+  appId                String
+  app                  App          @relation(fields: [appId], references: [id], onDelete: Cascade)
+  environmentId        String?
+  environment          Environment? @relation(fields: [environmentId], references: [id])
+  workspaceId          String
+
+  status               DeployStatus @default(pending)
+  trigger              String       @default("manual")
+  fromImage            String?
+  toImage              String?
+  commitSha            String?
+  commitMessage        String?
+  branch               String?
+  author               String?
+  builtImage           String?
+  previousDeploymentId String?
+  configSnapshot       Json         @default("{}")
+  triggeredBy          String?
+  triggeredByUser      User?        @relation(fields: [triggeredBy], references: [id])
+
+  queuedAt             DateTime     @default(now())
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  durationMs           Int?
+
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @default(now()) @updatedAt
+
+  steps                DeploymentStep[]
+
+  @@log(audit)
+  @@index([appId])
+  @@index([workspaceId])
+  @@index([status])
+}
+
+model DeploymentStep {
+  id           String     @id @default(uuid())
+  deploymentId String
+  deployment   Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  name         String
+  status       StepStatus @default(pending)
+  output       String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  durationMs   Int?
+
+  @@index([deploymentId])
+}
+
+// ============================================================
+// JOBS
+// ============================================================
+
+model Job {
+  id             String       @id @default(uuid())
+  workspaceId    String
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  appId          String?
+  app            App?         @relation(fields: [appId], references: [id])
+  environmentId  String?
+  environment    Environment? @relation(fields: [environmentId], references: [id])
+
+  name           String       @trim @length(1, 200)
+  kind           JobKind      @default(one_shot)
+  status         JobStatus    @default(pending)
+  command        String?
+  cronExpression String?
+  nextRunAt      DateTime?
+  trigger        String       @default("manual")
+  triggerConfig  Json         @default("{}")
+  timeoutSeconds Int          @default(300)
+  retryLimit     Int          @default(3)
+  retryCount     Int          @default(0)
+  lastRunAt      DateTime?
+  lastRunStatus  String?
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
+  deletedAt      DateTime?
+
+  runs           JobRun[]
+
+  @@softDelete
+  @@log(audit)
+  @@index([workspaceId])
+  @@index([nextRunAt])
+}
+
+model JobRun {
+  id         String       @id @default(uuid())
+  jobId      String
+  job        Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  status     JobRunStatus @default(pending)
+  trigger    String       @default("manual")
+  startedAt  DateTime     @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+  exitCode   Int?
+  error      String?
+  output     Json         @default("{}")
+
+  createdAt  DateTime     @default(now())
+
+  @@index([jobId])
+}
+
+// ============================================================
+// ALERTS
+// ============================================================
+
+model AlertRule {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String    @trim @length(1, 200)
+  description String?
+  severity    String    @default("medium")
+  metricName  String
+  condition   Json      @default("{}")
+  channels    Json      @default("[]")
+  isActive    Boolean   @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  events      AlertEvent[]
+
+  @@log(audit)
+  @@index([workspaceId])
+}
+
+// Fired by the system; acknowledged by a person — hence the split gate.
+model AlertEvent {
+  id             String     @id @default(uuid())
+  ruleId         String
+  rule           AlertRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  status         String     @default("firing")
+  severity       String
+  subjectType    String
+  subjectId      String
+  valueAtTrigger Float      @default(0)
+  message        String
+  firedAt        DateTime   @default(now())
+  resolvedAt     DateTime?
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+
+  @@index([ruleId])
+  @@index([status])
+}
+
+// ============================================================
+// AUDIT
+// ============================================================
+// "An audit trail — every operational action attributable to a person"
+// (VISION.md §Operate). Written by the system, never edited, never deleted:
+// update and delete are LOCKED, which not even asSystem() passes.
+
+model AuditEvent {
+  id          String     @id @default(uuid())
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  actorId     String?
+  actorType   String     @default("user")
+  action      String
+  subjectType String
+  subjectId   String
+  diff        Json?
+  createdAt   DateTime   @default(now())
+
+  @@index([workspaceId])
+  @@index([subjectType, subjectId])
+}

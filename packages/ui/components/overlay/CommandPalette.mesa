@@ -1,0 +1,587 @@
+<script>
+  // CommandPalette.mesa
+  // Full ⌘K command palette. Converted from React. Dark-themed, keyboard navigable,
+  // grouped results, fuzzy search across label + sub + group.
+  //
+  // ITEM SHAPE:
+  //   {
+  //     id:      string           — unique key
+  //     group:   string           — section heading
+  //     label:   string           — primary text (searched)
+  //     icon?:   string           — emoji or text glyph
+  //     sub?:    string           — secondary text (searched)
+  //     kbd?:    string           — shortcut hint shown on row ("⌘ D")
+  //     badge?:  string           — accent badge ("New", "Beta")
+  //     color?:  string           — CSS color for sub text
+  //     action:  () => void       — called on select
+  //   }
+  //
+  // USAGE:
+  //   import { commandPalette } from '../stores/commandPaletteStore.js'
+  //   $: commandPalette.open
+  //
+  //   <mesa:window on:keydown={(e) => {
+  //     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+  //       e.preventDefault()
+  //       commandPalette.toggle()
+  //     }
+  //   }} />
+  //
+  //   {#if commandPalette.open}
+  //     <CommandPalette
+  //       items={COMMANDS}
+  //       groupOrder={['Navigate', 'Actions', 'Servers']}
+  //       onclose={() => commandPalette.hide()}
+  //     />
+  //   {/if}
+
+  export let items        = []      // Item[]
+  export let placeholder  = 'Search commands…'
+  export let groupOrder   = []      // explicit group sort order
+  export let emptyText    = undefined  // (query: string) => string
+  export let onclose      = undefined
+
+  // export var — snapshot at mount, layout never changes after open
+  export var maxHeight     = '62vh'
+  export var maxWidth      = 580
+  export var closeOnSelect = true
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let query = ''
+  let idx   = 0
+  let inputEl
+  let listEl
+
+  // Focus search input immediately on mount
+  $onMount(() => inputEl?.focus())
+
+  // ── Derived chain ────────────────────────────────────────────────────────
+  // Each const auto-derives when its dependencies change (Rule 2).
+  // query → filtered → groupMap → groupNames → flat — all reactive.
+
+  const filtered = query.trim()
+    ? items.filter(c => {
+        const q = query.toLowerCase()
+        return (
+          c.label.toLowerCase().includes(q) ||
+          c.group.toLowerCase().includes(q)  ||
+          (c.sub || '').toLowerCase().includes(q)
+        )
+      })
+    : items
+
+  const groupMap = filtered.reduce((acc, c) => {
+    if (!acc[c.group]) acc[c.group] = []
+    acc[c.group].push(c)
+    return acc
+  }, {})
+
+  const allGroups  = Object.keys(groupMap)
+  const groupNames = groupOrder.length
+    ? [...groupOrder.filter(g => groupMap[g]), ...allGroups.filter(g => !groupOrder.includes(g))]
+    : allGroups
+
+  // Flat list across all groups — used for keyboard navigation bounds + scrollIntoView
+  const flat = groupNames.flatMap(g => groupMap[g] ?? [])
+
+  // Precomputed id → flat index map — O(1) active lookup per row
+  const flatIdx = Object.fromEntries(flat.map((item, i) => [item.id, i]))
+
+  // ── Watchers ─────────────────────────────────────────────────────────────
+
+  // Reset cursor to top when query changes
+  $: query, () => { idx = 0 }
+
+  // Scroll active row into view whenever idx moves
+  $: idx, () => {
+    listEl?.querySelector('[data-active="true"]')
+           ?.scrollIntoView({ block: 'nearest' })
+  }
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+
+  function run(item) {
+    item.action()
+    if (closeOnSelect) close()
+  }
+
+  function close() {
+    onclose?.()
+  }
+
+  function handleBackdrop(e) {
+    if (e.target === e.currentTarget) close()
+  }
+
+  function handleKeydown(e) {
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        idx = Math.min(idx + 1, flat.length - 1)
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        idx = Math.max(idx - 1, 0)
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (flat[idx]) run(flat[idx])
+        break
+      case 'Escape':
+        close()
+        break
+    }
+  }
+
+  // ── Animation ─────────────────────────────────────────────────────────────
+
+  const backdropAnim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0 }, { opacity: 1 }],
+      { duration: 100, fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1 }, { opacity: 0 }],
+      { duration: 80, fill: 'forwards' }
+    ).finished,
+  })
+
+  const panelAnim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'scale(0.97) translateY(-6px)' },
+       { opacity: 1, transform: 'scale(1)    translateY(0)' }],
+      { duration: 120, easing: 'ease-out', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'scale(1)'    },
+       { opacity: 0, transform: 'scale(0.97)' }],
+      { duration: 80, fill: 'forwards' }
+    ).finished,
+  })
+</script>
+
+<mesa:portal to={document.body}>
+
+  <!-- Backdrop -->
+  <div
+    class="cp-backdrop"
+    {@attach backdropAnim}
+    on:click={handleBackdrop}
+    on:keydown={handleKeydown}
+  >
+    <!-- Panel -->
+    <div
+      class="cp-panel"
+      style:max-height={maxHeight}
+      style:max-width="{maxWidth}px"
+      {@attach panelAnim}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+    >
+
+      <!-- ── Search input ── -->
+      <div class="cp-input-row">
+        <span class="cp-search-icon" aria-hidden="true">⌕</span>
+        <input
+          bind:this={inputEl}
+          bind:value={query}
+          type="text"
+          class="cp-input"
+          placeholder={placeholder}
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Search commands"
+          on:keydown={handleKeydown}
+        />
+        {#if query}
+          <button
+            type="button"
+            class="cp-clear"
+            aria-label="Clear search"
+            on:click={() => query = ''}
+          >✕</button>
+        {/if}
+        <kbd class="cp-kbd">Esc</kbd>
+      </div>
+
+      <!-- ── Results list ── -->
+      <div
+        bind:this={listEl}
+        class="cp-list"
+        role="listbox"
+        aria-label="Commands"
+      >
+        {#if flat.length === 0}
+          <!-- Empty state -->
+          <div class="cp-empty">
+            <span class="cp-empty-icon" aria-hidden="true">⌕</span>
+            <span>
+              {#if emptyText}
+                {emptyText(query)}
+              {:else if query}
+                No results for "{query}"
+              {:else}
+                No commands available.
+              {/if}
+            </span>
+          </div>
+
+        {:else}
+          {#each groupNames as group (group)}
+            <!-- Group header -->
+            <div class="cp-group-header" aria-hidden="true">
+              <span class="cp-group-label">{group}</span>
+              <div class="cp-group-rule"></div>
+            </div>
+
+            <!-- Group rows -->
+            {#each groupMap[group] as item (item.id)}
+              {@const gi       = flatIdx[item.id]}
+              {@const isActive = gi === idx}
+
+              <button
+                type="button"
+                class="cp-row {isActive ? 'cp-row--active' : ''}"
+                data-active={isActive}
+                role="option"
+                aria-selected={isActive}
+                on:mouseenter={() => idx = gi}
+                on:click={() => run(item)}
+              >
+                <!-- Icon -->
+                {#if item.icon !== undefined}
+                  <span class="cp-row-icon {isActive ? 'cp-row-icon--active' : ''}">
+                    {item.icon}
+                  </span>
+                {/if}
+
+                <!-- Label + sub -->
+                <span class="cp-row-text">
+                  <span class="cp-row-label {isActive ? 'cp-row-label--active' : ''}">
+                    {item.label}
+                  </span>
+                  {#if item.sub}
+                    <span
+                      class="cp-row-sub"
+                      style:color={item.color || undefined}
+                    >{item.sub}</span>
+                  {/if}
+                </span>
+
+                <!-- Badge -->
+                {#if item.badge}
+                  <span class="cp-badge">{item.badge}</span>
+                {/if}
+
+                <!-- Shortcut hint: ↵ when active, kbd string otherwise -->
+                {#if isActive}
+                  <kbd class="cp-kbd">↵</kbd>
+                {:else if item.kbd}
+                  <span class="cp-row-kbd">{item.kbd}</span>
+                {/if}
+              </button>
+            {/each}
+          {/each}
+        {/if}
+      </div>
+
+      <!-- ── Footer ── -->
+      <div class="cp-footer" aria-hidden="true">
+        <div class="cp-footer-hints">
+          {#each [['↑↓', 'navigate'], ['↵', 'select'], ['Esc', 'close']] as [key, hint] (key)}
+            <div class="cp-footer-hint">
+              <kbd class="cp-kbd">{key}</kbd>
+              <span class="cp-footer-hint-label">{hint}</span>
+            </div>
+          {/each}
+        </div>
+        <span class="cp-result-count">
+          {flat.length} result{flat.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+    </div>
+  </div>
+
+</mesa:portal>
+
+<style>
+  /* ── Theme tokens — override via --cp-* on any ancestor ─────────────────── */
+  .cp-panel {
+    --cp-bg:           var(--surface);
+    --cp-border:       color-mix(in srgb, var(--ink) 8%, transparent);
+    --cp-border-md:    color-mix(in srgb, var(--ink) 14%, transparent);
+    --cp-text:         var(--ink);
+    --cp-sec:          var(--ink-mute);
+    --cp-muted:        var(--ink-soft);
+    --cp-active-row:   color-mix(in srgb, var(--color-primary) 12%, transparent);
+    --cp-active-text:  var(--color-primary);
+    --cp-active-bd:    color-mix(in srgb, var(--color-primary) 35%, transparent);
+    --cp-group:        var(--ink-soft);
+    --cp-kbd-bg:       color-mix(in srgb, var(--ink) 6%, transparent);
+    --cp-kbd-bd:       color-mix(in srgb, var(--ink) 12%, transparent);
+    --cp-kbd-text:     var(--ink-mute);
+    --cp-shadow:       0 24px 80px rgba(0,0,0,0.72);
+    --cp-badge-bg:     color-mix(in srgb, var(--color-success) 15%, transparent);
+    --cp-badge-bd:     color-mix(in srgb, var(--color-success) 35%, transparent);
+    --cp-badge-text:   var(--color-success);
+    --cp-radius:       12px;
+    --cp-row-radius:   7px;
+    --cp-font:         'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+    --cp-font-size:    13px;
+  }
+
+  /* ── Backdrop ────────────────────────────────────────────────────────────── */
+  .cp-backdrop {
+    position:        fixed;
+    inset:           0;
+    background:      rgba(0,0,0,0.72);
+    display:         flex;
+    align-items:     flex-start;
+    justify-content: center;
+    padding-top:     11vh;
+    z-index:         9000;
+    backdrop-filter: blur(2px);
+  }
+
+  /* ── Panel ───────────────────────────────────────────────────────────────── */
+  .cp-panel {
+    background:    var(--cp-bg);
+    border:        0.5px solid var(--cp-border-md);
+    border-radius: var(--cp-radius);
+    width:         100%;
+    margin:        0 16px;
+    display:       flex;
+    flex-direction: column;
+    overflow:      hidden;
+    box-shadow:    var(--cp-shadow);
+    font-family:   var(--cp-font);
+    font-size:     var(--cp-font-size);
+  }
+
+  /* ── Input row ───────────────────────────────────────────────────────────── */
+  .cp-input-row {
+    display:       flex;
+    align-items:   center;
+    gap:           10px;
+    padding:       13px 16px;
+    border-bottom: 0.5px solid var(--cp-border);
+    flex-shrink:   0;
+  }
+
+  .cp-search-icon {
+    font-size:   16px;
+    color:       var(--cp-muted);
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .cp-input {
+    flex:        1;
+    background:  transparent;
+    border:      none;
+    outline:     none;
+    font-size:   14px;
+    color:       var(--cp-text);
+    font-family: inherit;
+    line-height: 20px;
+    caret-color: var(--cp-active-text);
+  }
+
+  .cp-input::placeholder { color: var(--cp-muted); }
+
+  .cp-clear {
+    background:  none;
+    border:      none;
+    cursor:      pointer;
+    color:       var(--cp-muted);
+    font-size:   14px;
+    padding:     0 2px;
+    flex-shrink: 0;
+    line-height: 1;
+    transition:  color 0.1s;
+  }
+  .cp-clear:hover { color: var(--cp-sec); }
+
+  /* ── Shared kbd chip ─────────────────────────────────────────────────────── */
+  .cp-kbd {
+    display:         inline-flex;
+    align-items:     center;
+    justify-content: center;
+    padding:         2px 6px;
+    border-radius:   4px;
+    background:      var(--cp-kbd-bg);
+    border:          0.5px solid var(--cp-kbd-bd);
+    color:           var(--cp-kbd-text);
+    font-size:       10px;
+    font-family:     var(--cp-font);
+    line-height:     16px;
+    white-space:     nowrap;
+    letter-spacing:  0.03em;
+    user-select:     none;
+  }
+
+  /* ── Results list ────────────────────────────────────────────────────────── */
+  .cp-list {
+    flex:           1;
+    overflow-y:     auto;
+    padding:        4px 0;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--ink) 10%, transparent) transparent;
+  }
+
+  /* ── Empty state ─────────────────────────────────────────────────────────── */
+  .cp-empty {
+    display:        flex;
+    flex-direction: column;
+    align-items:    center;
+    gap:            10px;
+    padding:        32px 20px;
+    text-align:     center;
+    color:          var(--cp-muted);
+    font-size:      13px;
+  }
+
+  .cp-empty-icon {
+    font-size: 22px;
+    opacity:   0.4;
+  }
+
+  /* ── Group header ────────────────────────────────────────────────────────── */
+  .cp-group-header {
+    display:     flex;
+    align-items: center;
+    gap:         8px;
+    padding:     10px 14px 4px;
+  }
+
+  .cp-group-label {
+    font-size:      9px;
+    font-weight:    600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color:          var(--cp-group);
+    white-space:    nowrap;
+  }
+
+  .cp-group-rule {
+    flex:       1;
+    height:     0.5px;
+    background: var(--cp-border);
+  }
+
+  /* ── Command row ─────────────────────────────────────────────────────────── */
+  .cp-row {
+    width:           calc(100% - 12px);
+    display:         flex;
+    align-items:     center;
+    gap:             10px;
+    padding:         8px 14px;
+    margin:          1px 6px;
+    border:          0.5px solid transparent;
+    border-radius:   var(--cp-row-radius);
+    background:      transparent;
+    cursor:          pointer;
+    text-align:      left;
+    transition:      background 0.07s, border-color 0.07s;
+    outline:         none;
+  }
+
+  .cp-row--active {
+    background:   var(--cp-active-row);
+    border-color: var(--cp-active-bd);
+  }
+
+  .cp-row-icon {
+    font-size:   13px;
+    width:       18px;
+    text-align:  center;
+    color:       var(--cp-sec);
+    flex-shrink: 0;
+    transition:  color 0.07s;
+  }
+
+  .cp-row-icon--active { color: var(--cp-active-text); }
+
+  .cp-row-text {
+    flex:      1;
+    min-width: 0;
+  }
+
+  .cp-row-label {
+    font-size:     var(--cp-font-size);
+    color:         var(--cp-sec);
+    font-weight:   400;
+    display:       block;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    white-space:   nowrap;
+    transition:    color 0.07s;
+  }
+
+  .cp-row-label--active {
+    color:       var(--cp-text);
+    font-weight: 500;
+  }
+
+  .cp-row-sub {
+    font-size:     11px;
+    color:         var(--cp-muted);
+    display:       block;
+    margin-top:    1px;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    white-space:   nowrap;
+  }
+
+  .cp-badge {
+    font-size:     9px;
+    padding:       2px 6px;
+    border-radius: 3px;
+    background:    var(--cp-badge-bg);
+    border:        0.5px solid var(--cp-badge-bd);
+    color:         var(--cp-badge-text);
+    font-weight:   600;
+    flex-shrink:   0;
+    white-space:   nowrap;
+  }
+
+  .cp-row-kbd {
+    font-size:    10px;
+    color:        var(--cp-muted);
+    font-family:  var(--cp-font);
+    flex-shrink:  0;
+  }
+
+  /* ── Footer ──────────────────────────────────────────────────────────────── */
+  .cp-footer {
+    padding:      8px 14px;
+    border-top:   0.5px solid var(--cp-border);
+    display:      flex;
+    align-items:  center;
+    flex-shrink:  0;
+  }
+
+  .cp-footer-hints {
+    display: flex;
+    gap:     14px;
+  }
+
+  .cp-footer-hint {
+    display:     flex;
+    align-items: center;
+    gap:         5px;
+  }
+
+  .cp-footer-hint-label {
+    font-size: 11px;
+    color:     var(--cp-muted);
+  }
+
+  .cp-result-count {
+    margin-left: auto;
+    font-size:   11px;
+    color:       var(--cp-muted);
+  }
+</style>

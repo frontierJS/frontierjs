@@ -1,0 +1,19 @@
+<script>
+  // Mono.mesa
+  // Inline monospace text — for code snippets, IDs, paths, keys.
+  // Renders as <code>, which @frontierjs/css styles directly (typography.css).
+  //
+  // Usage:
+  //   <Mono>bun add @frontierjs/ui</Mono>
+  //   <Mono size="xs">user_8x92ka</Mono>
+  //   The config lives at <Mono>~/.config/fjs.json</Mono>
+
+  export let size = ''    // '' | 'xs' | 'md'
+
+  const sizeMap = { xs: '0.6875rem', sm: '', md: '0.875rem' }
+  const fontSize = sizeMap[size] ?? ''
+</script>
+
+<code style:font-size={fontSize || null} {class}>
+  <slot />
+</code>

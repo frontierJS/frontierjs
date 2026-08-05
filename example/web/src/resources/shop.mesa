@@ -1,0 +1,39 @@
+<script module>
+  // web/src/resources/shop.mesa — the Resource layer.
+  //
+  // A resource is a UI-realm file, so it is a .mesa file. There is no markup:
+  // everything here is module scope, which is what `<script module>` means —
+  // it runs once at import, shared by every instance, and its named exports are
+  // importable by any other module (Mesa VISION §11, rule 30).
+  //
+  // Read this file next to db/schema.lite. Nothing here restates anything there:
+  // no field list, no types, no enum values, no required list, no relations, no
+  // gate levels. A resource names a model and turns three flags on.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  const derived = {
+    // Every DOM control hands back a string — <input type="number"> and <select>
+    // included. The schema is the only thing that knows `total` is a Float and
+    // `customerId` an Int, so it does the casting.
+    coerce: true,
+
+    // Check the record against the schema before the request, and throw
+    // ResourceValidationError rather than round-trip to be told the same thing.
+    // The server still validates — this only moves the first `no` closer to you.
+    validate: true,
+
+    // An empty text box submits '', which is not NULL to SQLite: `barcode String?
+    // @unique` accepts any number of NULLs but rejects a second ''. Rewrite blanks
+    // on nullable fields on the way out.
+    blankToNull: true,
+  }
+
+  export const orders   = createResource('orders',   derived)
+  export const products = createResource('products', derived)
+
+  // Populates the picker for Order.customerId. Which resource that is is not
+  // written down here either — see orders/create.mesa deriving it from
+  // orders.relations.customer.model.
+  export const customers = createResource('customers', derived)
+</script>

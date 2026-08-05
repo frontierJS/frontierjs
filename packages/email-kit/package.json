@@ -1,0 +1,38 @@
+{
+  "name": "@frontierjs/email-kit",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Mesa email component kit — table-based email components with CSS inlining for transactional email",
+  "main": "./index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    },
+    "./render": {
+      "import": "./render.js"
+    },
+    "./components/*": {
+      "import": "./components/*.mesa"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@frontierjs/mesa": "^0.1.0"
+  },
+  "devDependencies": {
+    "happy-dom": "^14.12.3",
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "mesa",
+    "email",
+    "transactional",
+    "mjml",
+    "react-email"
+  ],
+  "license": "MIT",
+  "_built": "2026-04-13"
+}

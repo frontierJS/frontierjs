@@ -1,0 +1,64 @@
+<script>
+  // Label.mesa
+  // Standalone label. Used internally by Field and directly where needed.
+  //
+  // `.field-group > label` is already styled by @frontierjs/css, so a label
+  // inside a Field needs no class of its own. This component only adds the
+  // badge and the help affordance on top.
+  //
+  // Props:
+  //   label    — display text (required to render anything)
+  //   id       — for="" attribute linking to the input
+  //   required — undefined = unspecified, false = show "(Optional)"
+  //   badge    — explicit override badge text e.g. "Required", "Beta", "New"
+  //   help     — string or { text } — help affordance at the end of the label
+  //   type     — forwarded from the input; suppresses Optional for checkbox etc.
+  export let label    = ''
+  export let id       = undefined
+  export let required = undefined  // undefined = not specified, false = show optional
+  export let badge    = undefined  // explicit badge text
+  export let help     = undefined  // string or { text }
+  // type is snapshot at mount — a label for a checkbox does not become a
+  // label for a text input.
+  export var type = undefined
+
+  const suppressOptional = ['checkbox', 'radio', 'search', 'hidden', 'file'].includes(type)
+
+  // Explicit badge always wins; otherwise "(Optional)" when not required and
+  // the type does not suppress it. Required fields show nothing extra.
+  const badgeText = badge ?? (!required && !suppressOptional ? 'Optional' : null)
+
+  const helpText = typeof help === 'string' ? help : help?.text
+</script>
+
+{#if label}
+  <!-- `for` is dropped when there is no id: `for=""` points at nothing, and a
+       label that points at nothing is worse than one that only reads as text
+       (a RadioGroup, whose control is a group, hit exactly this). -->
+  <label for={id || null} class="cluster" style:gap="0.375rem" {class}>
+
+  <span>
+    {label}
+  </span>
+
+    {#if badgeText}
+      <span class="text-xs text-muted">({badgeText})</span>
+    {/if}
+
+    <slot />
+
+    {#if helpText}
+      <!--
+        The text is also in a visually-hidden span. `title` alone is not
+        announced reliably and is unreachable on touch, so a help affordance
+        that lives only there is no help at all.
+      -->
+      <span class="text-muted" title={helpText} style:cursor="help">
+        <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+        </svg>
+        <span class="visually-hidden">{helpText}</span>
+      </span>
+    {/if}
+  </label>
+{/if}

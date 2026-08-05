@@ -1,0 +1,28 @@
+<script>
+  export let bgcolor   = undefined
+  export let valign    = 'top'
+  export let leftWidth = '50%'
+  export let rightWidth = '50%'
+  export let gap       = 0
+</script>
+
+<!--
+  TwoCol — responsive two-column layout. Stacks to single column on mobile.
+
+  Usage (named slots):
+    <TwoCol>
+      <div slot="left"><p>Left content</p></div>
+      <div slot="right"><p>Right content</p></div>
+    </TwoCol>
+-->
+
+<tr valign="{valign}" class="two-col" style="{bgcolor ? `background-color:${bgcolor};` : ''}">
+  <td width="{leftWidth}" valign="{valign}"
+      style="width:{leftWidth};vertical-align:{valign};{gap ? `padding-right:${gap/2}px;` : ''}">
+    <slot name="left" />
+  </td>
+  <td width="{rightWidth}" valign="{valign}"
+      style="width:{rightWidth};vertical-align:{valign};{gap ? `padding-left:${gap/2}px;` : ''}">
+    <slot name="right" />
+  </td>
+</tr>

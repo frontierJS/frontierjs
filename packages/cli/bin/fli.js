@@ -41,10 +41,40 @@ global.fliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
   } catch {}
 })()
 
-// ─── Project root — user's project (walk up from cwd to find package.json) ───
-// Falls back to cwd if no package.json is found (e.g. running in /tmp)
+// ─── Project root — user's project (walk up from cwd, see findProjectRoot) ───
+// Falls back to cwd if nothing matches (e.g. running in /tmp)
+//
+// `--project <dir>` (or FLI_PROJECT) pins it explicitly, so a command can be
+// run against an app that isn't cwd — `fli project:view --project example`
+// from a monorepo root. Stripped from the command's flags in bootstrap.js.
 const { findProjectRoot } = await import('../core/utils.js')
-global.projectRoot = findProjectRoot(process.cwd(), global.fliRoot)
+
+const explicitProject = (() => {
+  const argv = process.argv.slice(2)
+  const i = argv.indexOf('--project')
+  if (i !== -1) {
+    const next = argv[i + 1]
+    if (!next || next.startsWith('-')) {
+      console.error(`\x1b[31m✗\x1b[0m --project needs a directory`)
+      process.exit(1)
+    }
+    return next
+  }
+  const eq = argv.find(a => a.startsWith('--project='))
+  if (eq) return eq.slice('--project='.length)
+  return process.env.FLI_PROJECT || null
+})()
+
+if (explicitProject) {
+  const abs = resolve(process.cwd(), explicitProject)
+  if (!existsSync(abs)) {
+    console.error(`\x1b[31m✗\x1b[0m --project directory not found: ${abs}`)
+    process.exit(1)
+  }
+  global.projectRoot = abs
+} else {
+  global.projectRoot = findProjectRoot(process.cwd(), global.fliRoot)
+}
 
 // Warn if we couldn't find a real project root (cwd has no package.json above
 // it). A handful of commands work without one — list, help, search, the
@@ -55,7 +85,7 @@ const NO_PROJECT_NEEDED = new Set(['list', 'help', '?', 'init'])
 const firstArg = process.argv[2]
 const projectLessNs = firstArg?.startsWith('fli:') || firstArg === '--help' || firstArg === '-h' || !firstArg
 const cwdHasPkg = existsSync(resolve(process.cwd(), 'package.json'))
-if (global.projectRoot === process.cwd() && !cwdHasPkg
+if (!explicitProject && global.projectRoot === process.cwd() && !cwdHasPkg
     && !NO_PROJECT_NEEDED.has(firstArg) && !projectLessNs) {
   console.error(`\x1b[33m⚠\x1b[0m no project root found above ${process.cwd()}`)
   console.error(`\x1b[2m  paths.* will resolve relative to cwd. cd into a project or run \`fli init\`\x1b[0m`)

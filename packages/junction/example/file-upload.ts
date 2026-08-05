@@ -52,7 +52,7 @@ const log = createLogger({ ns: 'file-example' })
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 const SCHEMA = `
-  model users {
+  model User {
     id        Int  @id
     name      String     @trim @length(1, 100)
     avatar    File?
@@ -192,7 +192,7 @@ app.hooks({
 app.services.register(
   createService({
     name:   'users',
-    model:  'users',
+    model:  'user',
 
     hooks: {
       before: {
@@ -225,7 +225,7 @@ app.patch('/api/users/{id}/avatar', async ctx => {
   const userId   = parseInt(ctx.params.id)
   const scopedDb = db
 
-  const user = await scopedDb.users.update({
+  const user = await scopedDb.user.update({
     where: { id: userId },
     data:  { avatar: file },
   })

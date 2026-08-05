@@ -1,0 +1,129 @@
+---
+title: Home
+---
+<script>
+  // Signed-in home. The guard in App.mesa means this route is never reached
+  // without a session, so there is no loading state for the session itself.
+  //
+  // What it does show is the one thing Phase 2 is about: everything below the
+  // header is scoped to the workspace named in it, and switching that header
+  // control re-scopes the page. The projects list is here as the proof, not as
+  // the projects screen — that arrives in Phase 3.
+  import { session } from '../session.js'
+  import { projects } from '../resources/projects.mesa'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  const { get: rows, unsubscribe } = useStore(projects.store)
+  $onDestroy(unsubscribe)
+
+  $: (session.user, session.workspaceId, session.workspaces)
+
+  // Derived HERE, not called from the template. Mesa tracks the reads a
+  // component makes; a helper imported from session.js reads the raw object
+  // inside its own module, where no proxy is watching (RULE 44/45) — so
+  // `currentWorkspace()?.name` in the markup rendered once and then never
+  // changed, and switching workspace re-scoped the data while the heading
+  // still named the old one.
+  $: current = session.workspaces.find(w => w.id === session.workspaceId) ?? null
+
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error   = null
+    loading = true
+    try {
+      // No workspace id is passed. The Junction client carries it as a header
+      // on every request, set once by session.js — a page that had to remember
+      // to filter by workspace would eventually forget, and that is a tenancy
+      // leak rather than a missing filter.
+      await projects.load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  // Explicit-dependency effect (Mesa §4.2): the handler runs untracked, so the
+  // reads inside load() add no subscriptions of their own.
+  $: session.workspaceId, () => load()
+</script>
+
+<div class="section-header">
+  <h1>{current?.name ?? 'Basecamp'}</h1>
+  <span class="text-sm text-muted">UI realm — Phase 2</span>
+</div>
+
+<p class="text-body">
+  Every request from this page carries <code>X-Workspace-Id</code>. Switch workspace in the header and the list below re-scopes — the server decides what is in it, the browser only asks.
+</p>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<div class="tiles" style="--tile-min: 16rem">
+  <article class="card stack">
+    <h2 class="h4">Session</h2>
+    <p class="text-sm text-muted">From GET /auth/me.</p>
+    <div class="cluster">
+      <span class="badge success">{session.user?.email ?? '—'}</span>
+    </div>
+  </article>
+
+  <article class="card stack">
+    <h2 class="h4">Workspace</h2>
+    <p class="text-sm text-muted">Stamped on every scoped request.</p>
+    <div class="cluster">
+      <span class="badge {session.workspaceId ? 'success' : 'warning'}">
+        {current?.slug ?? 'none'}
+      </span>
+      <span class="badge muted">{session.workspaces.length} member of</span>
+    </div>
+  </article>
+
+  <article class="card stack">
+    <h2 class="h4">Projects</h2>
+    <p class="text-sm text-muted">In this workspace only.</p>
+    <div class="cluster">
+      <span class="badge {rows().length ? 'success' : 'muted'}" id="project-count">
+        {loading ? '…' : `${rows().length} projects`}
+      </span>
+    </div>
+  </article>
+</div>
+
+{#if !loading && rows().length}
+  <div class="table-wrap">
+    <table class="table striped hover">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Slug</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody id="project-rows">
+        {#each rows() as project}
+          <tr>
+            <td>{project.name}</td>
+            <td><code>{project.slug}</code></td>
+            <td><span class="pill">{project.status}</span></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{:else if !loading}
+  <article class="alert info">
+    <div class="alert-content">
+      No projects in this workspace yet. Creating them is Phase 3 — see <code>docs/UI_PLAN.md</code>.
+    </div>
+  </article>
+{/if}

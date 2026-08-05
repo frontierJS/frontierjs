@@ -13,11 +13,59 @@ import { parseFrontmatter } from '../scanner/parse-frontmatter.js'
 import { warnUnexportedSnippets, extractLayoutProps } from './warnings.js'
 import { injectAutoImports } from './auto-import-plugin.js'
 import { rewriteMesaSlots, rewriteLayoutSlots } from './slot-rewrite.js'
-import { resolve } from 'path'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+import { existsSync } from 'fs'
+import { createRequire } from 'module'
 import { injectHMR, canInject, HMR_CLIENT_ID } from './hmr-inject.js'
 import { readFile } from 'fs/promises'
 
 const MESA_EXTENSIONS = /\.(mesa|md)$/
+
+// src/build/mesa-plugin.js → the sierra package root
+const SIERRA_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+
+/**
+ * Locate a file in the installed @frontierjs/mesa, wherever it is.
+ *
+ * The candidate order is deliberate and shared with `buildStart`: the app's own
+ * dependency first, then Sierra's, then a `packages/*` checkout, then the app
+ * root as the last guess. Anything that returns a path WITHOUT checking it
+ * exists turns a resolvable install into a rollup "could not load" error.
+ *
+ * Existence is checked on the filesystem rather than through createRequire,
+ * because require-resolution cannot see these files at all: mesa's exports map
+ * declares `"./runtime.js": { "import": … }` with no `require` condition.
+ *
+ * @returns {string|undefined} absolute path, or undefined to let Vite try
+ */
+export function findMesaFile(file, root) {
+  const candidates = []
+  try {
+    const req = createRequire(resolve(root, 'package.json'))
+    candidates.push(req.resolve(`@frontierjs/mesa/${file}`))
+  } catch { /* not resolvable from the app root — the paths below still might */ }
+
+  // Mesa's source moved under `src/` (2026-08-04). Its exports map hides that
+  // from `@frontierjs/mesa/runtime.js`, but these are filesystem paths, so they
+  // have to name it. The flat variants stay as a fallback: `bun install` copies
+  // a `workspace:*` dep rather than symlinking it, so a node_modules copy taken
+  // before the move is still flat until someone reinstalls.
+  for (const rel of [`src/${file}`, file]) {
+    candidates.push(
+      resolve(SIERRA_ROOT, 'node_modules/@frontierjs/mesa', rel),
+      resolve(SIERRA_ROOT, '..', 'mesa', rel),          // packages/* checkout
+      resolve(root, 'node_modules/@frontierjs/mesa', rel),
+    )
+  }
+
+  for (const c of candidates) {
+    if (c && existsSync(c)) return c
+  }
+  // Undefined rather than a guess: Vite's own resolver gets a turn, and if it
+  // also fails the error names the specifier instead of a path we invented.
+  return undefined
+}
 
 /**
  * @param {object} mesaOptions — passed through to @frontierjs/mesa/compiler
@@ -86,12 +134,23 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
     // load phase we fall back to process.cwd().
     resolveId(id) {
       if (id === HMR_CLIENT_ID) return HMR_CLIENT_ID
-      const base = root
+      // Every compiled .mesa module imports the runtime, so this is the single
+      // resolution every Mesa build depends on.
+      //
+      // It used to return `resolve(root, 'node_modules/@frontierjs/mesa/…')`
+      // unconditionally — the exact trap `buildStart` below documents and
+      // guards against, applied to the compiler and never to the runtime. It
+      // returns a path whether or not anything is there, so rollup fails with
+      // "Could not load <root>/node_modules/@frontierjs/mesa/runtime.js" for
+      // any layout where mesa is installed somewhere else: a workspace where it
+      // is hoisted, or an app nested under the package that depends on it. It
+      // survived because the apps exercised so far each happened to have their
+      // own node_modules/@frontierjs.
       if (id === '@frontierjs/mesa/runtime.js' || id === '@frontierjs/mesa/runtime') {
-        return resolve(base, 'node_modules/@frontierjs/mesa/runtime.js')
+        return findMesaFile('runtime.js', root)
       }
       if (id === '@frontierjs/mesa/compiler.js' || id === '@frontierjs/mesa/compiler') {
-        return resolve(base, 'node_modules/@frontierjs/mesa/compiler.js')
+        return findMesaFile('compiler.js', root)
       }
     },
 
@@ -128,11 +187,14 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
       // root — so any layout where mesa is not under the Vite root failed with
       // "check your workspace root node_modules" even though it was installed.
       // (Same trap already documented in build/schema-plugin.js.)
-      candidates.push(
-        resolve(sierraRoot, 'node_modules/@frontierjs/mesa/compiler.js'),
-        resolve(sierraRoot, '..', 'mesa', 'compiler.js'),      // packages/* checkout
-        resolve(root, 'node_modules/@frontierjs/mesa/compiler.js'),
-      )
+      // src/ first, flat second — see the note in findMesaFile above.
+      for (const rel of ['src/compiler.js', 'compiler.js']) {
+        candidates.push(
+          resolve(sierraRoot, 'node_modules/@frontierjs/mesa', rel),
+          resolve(sierraRoot, '..', 'mesa', rel),      // packages/* checkout
+          resolve(root, 'node_modules/@frontierjs/mesa', rel),
+        )
+      }
 
       let compilerPath = null
       for (const c of candidates) {
@@ -225,7 +287,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
             // NOTE: sierra/junction is deliberately absent. Its connection state
             // is a plain `status` object now, made reactive per-component with a
             // `$:` path watch — so there is nothing for the accessor rewrite to
-            // do. See VISION §5 and PLAIN_OBJECT_STATE.md.
+            // do. See mesa docs/VISION.md §5 and docs/PLAIN_OBJECT_STATE.md.
             // User-provided externalSignals (from config.mesa.externalSignals)
             // are merged in last so they can extend or override the above.
             ...(mesaOptions.externalSignals ?? {}),
@@ -233,7 +295,15 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
         })
 
         if (sierraContext) {
-          sierraContext.islandMap.set(id, ctx.islands ?? [])
+          // ctx.islands is deliberately NOT collected here.
+          //
+          // It used to be, into sierraContext.islandMap, which nothing ever read —
+          // the same populated-and-unused state that hid Mesa's own ctx.islands for
+          // months. The island list the build actually uses is gathered by the
+          // PRERENDERER (src/build/prerender.js), and has to be: this hook sees
+          // every .mesa Vite transforms, which is the whole route tree, while only
+          // `render: static` routes get prerendered and only those pages carry
+          // markers. A map keyed on everything transformed would over-report.
           sierraContext.staticMap.set(id, ctx.isStatic ?? false)
 
           // If this is a layout file, extract its export let props
@@ -242,6 +312,22 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
             const props = extractLayoutProps(source)
             sierraContext.layoutPropMap.set(id, props)
           }
+        }
+
+        // Compiler ERRORS fail the transform.
+        //
+        // They used to be dropped on the floor: the compiler filled
+        // `analysis.errors`, this plugin read only `warnings`, and Vite served
+        // the half-compiled module. A page with five `bind:` errors in it
+        // rendered, looked right, and silently did not write anything back —
+        // which is the worst of both worlds, because the compiler HAD caught it
+        // and said so to nobody.
+        if (ctx.analysis?.errors?.length) {
+          const rel = id.replace(process.cwd() + '/', '')
+          throw new Error(
+            `[Mesa] ${ctx.analysis.errors.length} error(s) in ${rel}:\n` +
+            ctx.analysis.errors.map(e => `  • ${e}`).join('\n')
+          )
         }
 
         // Forward Mesa compiler warnings (e.g. redundant $: path watches) to Vite

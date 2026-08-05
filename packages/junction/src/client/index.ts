@@ -292,6 +292,14 @@ export class ServiceProxy<
         header: { 'x-service-method': 'restore' }
       }) as Promise<T[]>
     }
+    // Prefer the socket, like find/get/create/patch/remove. This was the one
+    // CRUD method that always used HTTP, contradicting the documented rule —
+    // "CRUD methods prefer WebSocket when connected, fall back to HTTP
+    // automatically" (README). The bulk form above stays HTTP: a query-shaped
+    // restore travels in the URL.
+    if (this._client._wsReady) {
+      return this._client._wsCall(this.name, 'restore', idOrQuery, null) as Promise<T>
+    }
     return this._client._request('PUT', `${this._base}/${idOrQuery}`, undefined, {
       header: { 'x-service-method': 'restore' }
     }) as Promise<T>
@@ -306,14 +314,27 @@ export class ServiceProxy<
   }
 
   // ── Actions ─────────────────────────────────────────────────────────
-  // Custom actions are dispatched via X-Service-Method header on POST /{id}.
-  // WS calls use service_call with method = name (no URL involved).
+  // Same transport rule as CRUD: the socket when one is connected, HTTP when it
+  // is not. Over WS that is a service_call frame with method = the action name
+  // (no URL involved); over HTTP it is POST /{id} with an X-Service-Method
+  // header, which keeps the URL space flat.
 
   async action(
     name: string,
     id: string | number,
     data?: Record<string, unknown> | null
   ): Promise<unknown> {
+    // Same rule as CRUD: the socket when it is there, HTTP when it is not.
+    // This used to be unconditionally HTTP, which made a custom action the only
+    // service call that ignored a live connection — and the WS path dispatches
+    // any method name generically, so there was never a reason for it.
+    //
+    // Files are the documented exception: multipart cannot travel over the
+    // socket, so a payload carrying one goes over HTTP exactly as create and
+    // patch do.
+    if (this._client._wsReady && !_hasFiles(data ?? {})) {
+      return this._client._wsCall(this.name, name, id, data ?? null)
+    }
     return this._client._request(
       'POST',
       `${this._base}/${id}`,
@@ -772,6 +793,21 @@ export class JunctionClient extends EventEmitter {
       if (id != null)                                meta.id    = id
       if (query && Object.keys(query).length > 0)    meta.query = query
 
+      // The workspace travels per CALL, not per connection.
+      //
+      // Over HTTP it is the X-Workspace-Id header on every request. Over the
+      // socket there is no per-call header — the server sees only the headers
+      // of the upgrade request — so without this the workspace silently
+      // disappears the moment the socket connects, and setWorkspace() stops
+      // having any effect on anything. An app that scopes by header then works
+      // until it goes live and breaks with 'workspace_id required', which
+      // points at the app rather than at the transport that dropped it.
+      //
+      // Only the workspace rides here. The caller's identity stays with the
+      // connection (authenticated at upgrade), because a client that could put
+      // arbitrary headers on a frame could put Authorization on one.
+      if (this.workspaceId)                          meta.workspaceId = this.workspaceId
+
       this._ws!.send(
         JSON.stringify({
           type: 'service_call',
@@ -806,8 +842,15 @@ export class JunctionClient extends EventEmitter {
         return svc.patch(id!, data ?? {})
       case 'remove':
         return svc.remove(id!)
+      case 'restore':
+        return svc.restore(id!)
       default:
-        return svc.call(method, id!, data)
+        // Anything else is a custom action, and action() is the HTTP form of
+        // one. This used to call svc.call(), which is _wsCall() — and _wsCall
+        // routes here when the socket is down, so a custom action with no
+        // connection recursed between the two forever. Async recursion, so no
+        // stack overflow to tell you: the call simply never settled.
+        return svc.action(method, id!, data)
     }
   }
 

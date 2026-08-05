@@ -207,20 +207,63 @@ model User {
 }
 ```
 
-### Enum state machines
+### State machines
 
-Litestone can enforce valid transitions:
+An `Order` can go `pending → paid → shipped` but never `shipped → pending`, and only an admin can refund. Declare that once on the model and Litestone enforces it at the Data boundary:
 
 ```prisma
-enum OrderStatus {
-  pending
-  paid     @from(pending)
-  refunded @from(paid)
-  cancelled @from(pending, paid)
+enum OrderStatus { pending  paid  shipped  refunded  cancelled }
+
+model Order {
+  id     Int @id
+  status OrderStatus @default(pending)
+
+  @@transitions(status,
+    pay:    pending         -> paid,
+    ship:   paid            -> shipped,
+    refund: paid            -> refunded @gate(5),
+    cancel: [pending, paid] -> cancelled)
 }
 ```
 
-Any attempt to transition outside the declared `@from` values throws `TransitionViolationError`. Use `updateMany` if you need to skip enforcement (power tool — caller takes responsibility).
+- **The name is optional** — `pending -> paid` names itself after the target state. Name it when you want to call it: `db.order.transition(id, 'pay')`.
+- **`from` takes a list** — `[pending, paid] -> cancelled`.
+- **`@gate(N)`** is the minimum level allowed to make that particular move, on Litestone's 0–9 scale (a number or a name: `@gate(ADMINISTRATOR)`). It is a floor *on top of* `@@gate`'s update level, which had to pass to reach the write at all — shipping an order and refunding one are not the same authority.
+
+Any move that isn't declared throws `TransitionViolationError`; a declared one the caller can't make throws `TransitionGateError` (which carries `status: 403`). The `WHERE` clause is narrowed to the from-state, so two concurrent writers can't both win — the loser gets a retryable `TransitionConflictError`.
+
+> **`@gate` needs a level resolver.** A schema with any gated transition auto-installs `GatePlugin({ getLevel: FrontierGateGetLevel })` if you configure none — a declared gate that silently did nothing would be a fail-open default. But the shipped resolver grades a bare session at `VISITOR(1)`: it wants both `verifiedAt` and `activatedAt` on the user object, and returns `CREATOR(3)` when it gets them. It never returns 4+. Pass your own `getLevel` to `GatePlugin` for anything real.
+
+`updateMany` skips enforcement, deliberately: it's a power tool and the caller takes responsibility. `asSystem()` bypasses it too, and says so on stderr.
+
+#### Asking what's legal
+
+```js
+await db.order.transitions(row)   // or transitions(id)
+// → [{ name: 'ship',   field: 'status', from: 'paid', to: 'shipped',  gate: null, allowed: true  },
+//    { name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5,    allowed: false }]
+```
+
+The legal next states for *this* record at *this* user's level. A gated move the caller can't make is returned with `allowed: false` rather than dropped — a disabled button is usually better UI than a missing one.
+
+The same list reaches the browser: `generateJsonSchema` emits `x-transitions` on the model, and Sierra's `resource.transitions(row, level)` returns the identical shape. That's a UI affordance only — the server enforces regardless.
+
+#### Declaring it on the enum instead
+
+When one enum means the same thing everywhere it's used, declare the machine once and every model with a field of that type picks it up:
+
+```prisma
+enum OrderStatus {
+  pending  paid  shipped
+
+  transitions {
+    pay:  pending -> paid
+    ship: paid    -> shipped
+  }
+}
+```
+
+This is shorthand: it desugars into a `@@transitions` on each model using the enum, so everything above applies unchanged. A model that declares its own `@@transitions` for that field overrides the enum's outright rather than merging. Gates need the model form — the same enum on two models would otherwise be forced to share one authority level.
 
 ## Schema functions
 

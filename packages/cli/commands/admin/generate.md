@@ -1,595 +1,870 @@
 ---
 title: admin:generate
-description: Generate a gate-aware CRUD admin UI from schema.lite — list, detail, create, and edit views for every model
+description: Generate a gate-aware CRUD admin UI from schema.lite — Mesa routes for Sierra, derived at runtime
 alias: admin-gen
 examples:
   - fli admin:generate
-  - fli admin:generate --model users
-  - fli admin:generate --model leads --force
+  - fli admin:generate --model Lead
+  - fli admin:generate leads --force
   - fli admin:generate --dry
 args:
   -
     name: model
-    description: Generate for a single model only (lowercase, as in schema.lite). Omit to generate for all models.
+    description: Generate routes for a single model only — model name or service name, any case. Omit for all models.
     defaultValue: ''
 flags:
   force:
     type: boolean
     description: Overwrite existing files
     defaultValue: false
+  external:
+    type: boolean
+    description: Include @@external models (they mirror foreign tables and usually have no service)
+    defaultValue: false
 ---
 
 <script>
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve, dirname } from 'path'
-import { execSync } from 'child_process'
 
-// ─── JSON Schema helpers ──────────────────────────────────────────────────────
-// Reads db/schema.json and returns:
-//   models  — Map<modelName, { properties, required, defs }>
-//   defs    — raw $defs (for resolving $ref enums)
+// A literal closing script tag ends this block — core/compiler.js extracts it
+// with a non-greedy match, and does not care that the tag is inside a comment
+// or a string. Every generated Mesa file needs one, so it is assembled from two
+// halves here and interpolated into the templates below.
+const SC = '<' + '/script>'
 
-function loadSchema(schemaJsonPath) {
-  const raw   = JSON.parse(readFileSync(schemaJsonPath, 'utf8'))
-  const defs  = raw.$defs || raw.definitions || {}
-  const models = new Map()
+// ─── Model discovery ──────────────────────────────────────────────────────────
+// Read model names straight out of schema.lite. The JSON Schema is not usable
+// for this: $defs is the whole definition table — models, enums and `type T`
+// blocks alike — with nothing marking which entries are models.
+//
+// Same regex make:service --auto uses, plus a body scan for @@external.
 
-  for (const [key, val] of Object.entries(defs)) {
-    if (val.type === 'object' && val.properties) {
-      models.set(key, {
-        properties: val.properties,
-        required:   new Set(val.required || []),
-      })
+function scanModels(src) {
+  const braces = (line) => (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
+
+  const out = []
+  let current = null
+  let depth = 0
+
+  for (const raw of src.split('\n')) {
+    const line = raw.replace(/\/\/.*$/, '')
+
+    if (!current) {
+      const m = line.match(/^\s*model\s+([A-Za-z_]\w*)\s*\{/)
+      if (!m) continue
+      // The opening line is scanned for @@external too — a one-line model body
+      // closes on this same line and would otherwise never be looked at.
+      current = { name: m[1], external: /@@external/.test(line) }
+      depth = braces(line)
+      if (depth <= 0) { out.push(current); current = null }
+      continue
     }
+
+    if (/@@external/.test(line)) current.external = true
+    depth += braces(line)
+    if (depth <= 0) { out.push(current); current = null }
   }
 
-  return { models, defs }
+  return out
 }
 
-// ─── Field type resolver ──────────────────────────────────────────────────────
-// Resolves a JSON Schema field descriptor to an input type + optional enum options.
-// Returns: { inputType, optional, options? }
+// ─── Naming ───────────────────────────────────────────────────────────────────
+// Model → service name. Regular English plurals only — the same three rules
+// Sierra's schema registry applies in the other direction (schema-registry.js).
+// Irregulars are not guessed anywhere in this framework; the generated resource
+// passes `model:` explicitly so a miss cannot break resolution either way.
 
-function resolveField(fieldSchema, defs) {
-  // Optional: anyOf [type, null]
-  if (fieldSchema.anyOf) {
-    const nonNull = fieldSchema.anyOf.find(s => s.type !== 'null')
-    if (nonNull) return { ...resolveField(nonNull, defs), optional: true }
-    return { inputType: 'text', optional: true }
-  }
-
-  // Enum $ref
-  if (fieldSchema.$ref) {
-    const defName = fieldSchema.$ref.replace(/^#\/\$defs\/|^#\/definitions\//, '')
-    const def = defs[defName]
-    if (def?.enum) return { inputType: 'select', options: def.enum, optional: false }
-    return { inputType: 'text', optional: false }
-  }
-
-  // Format overrides
-  if (fieldSchema.format === 'email')     return { inputType: 'email',          optional: false }
-  if (fieldSchema.format === 'uri')       return { inputType: 'url',            optional: false }
-  if (fieldSchema.format === 'date-time') return { inputType: 'datetime-local', optional: false }
-
-  // Base types
-  switch (fieldSchema.type) {
-    case 'integer':
-    case 'number':  return { inputType: 'number',   optional: false }
-    case 'boolean': return { inputType: 'checkbox', optional: false }
-    default:        return { inputType: 'text',     optional: false }
-  }
+function servicePlural(modelName) {
+  const a = modelName.charAt(0).toLowerCase() + modelName.slice(1)
+  if (/[^aeiou]y$/.test(a))     return a.slice(0, -1) + 'ies'
+  if (/(s|x|z|ch|sh)$/.test(a)) return a + 'es'
+  return a + 's'
 }
-
-// ─── Label helper ─────────────────────────────────────────────────────────────
 
 function toLabel(name) {
   return name
-    .replace(/([A-Z])/g, ' $1')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[_-]/g, ' ')
-    .replace(/^\s/, '')
     .replace(/\b\w/g, c => c.toUpperCase())
+    .trim()
 }
 
-// ─── Resource file (minimal, for service access) ──────────────────────────────
+// ─── resources/admin.mesa ─────────────────────────────────────────────────────
+// One module, every model. Deliberately not one file per model: a project's own
+// src/resources/leads.mesa is hand-written and must never be clobbered by this.
 
-function makeResourceFile(modelName) {
-  const lower  = modelName.charAt(0).toLowerCase() + modelName.slice(1)
-  const plural  = lower + 's'
-  const sc = '</' + 'script>'
+function makeResources(models) {
+  const decls = models.map(m =>
+    `export const ${m.key} = createResource('${m.key}', { model: '${m.name}', ...options })`
+  ).join('\n')
+
+  const index = models.map(m =>
+    `  { key: '${m.key}', label: '${m.label}', model: '${m.name}', resource: ${m.key} },`
+  ).join('\n')
+
   return `<script module>
-  import { resource } from '@/core/frontier'
+// web/src/resources/admin.mesa — generated by \`fli admin:generate\`.
+//
+// A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
+// no markup, everything in <script module>.
+//
+// One Resource per model in db/schema.lite. Read this file next to the schema:
+// nothing here restates it. No field list, no types, no enum values, no
+// required list, no relations. The admin pages read resource.fields,
+// resource.relations and resource.gate at runtime, so a schema change shows up
+// on the next reload — regenerating is for new models, not new columns.
 
-  const _res = resource.createResource({
-    model:   '${modelName}',
-    service: '${plural}',
-  })
+import { createResource } from '@frontierjs/sierra/junction'
 
-  export const { store, service, load, context } = _res
+// coerce      — every DOM control hands back a string, \`<input type="number">\`
+//               and \`<select>\` included. The schema is the only thing that
+//               knows the column is an Int, so it does the casting. Without it
+//               a form sends "42" for a Float and is told it is not a number.
+// blankToNull — an empty text box submits '', which SQLite does not agree is
+//               NULL: \`slug String? @unique\` takes any number of NULLs and
+//               rejects the second ''.
+// validate    — apply the schema's own rules before the request so the first
+//               "no" is local. The server validates regardless; this only moves
+//               the answer closer to the user.
+const options = { coerce: true, blankToNull: true, validate: true }
 
-  export function make(spec) {
-    return _res.make(Object.assign({}, spec))
+// The first argument is the SERVICE name, the second is the MODEL. They are
+// related by convention rather than by rule, and only the regular English
+// plurals were guessed — an irregular (Person → people) comes out wrong. Fix
+// the string if one did; nothing else has to change, because \`model\` is stated
+// rather than inferred.
+${decls}
+
+// Every model this admin covers. The layout's nav and the dashboard read this
+// rather than a second hand-written list.
+export const models = [
+${index}
+]
+
+// The resource for a model named by a relation — how a generated form fills a
+// foreign-key picker without naming the target service anywhere.
+//
+// Regular English plurals only. An irregular (Person → people) is not
+// guessable: add an explicit \`export const people = createResource('people',
+// { model: 'Person', ...options })\` above and the cache below never has to ask.
+const _cache = new Map(models.map(m => [m.model, m.resource]))
+
+export function related(model) {
+  if (!_cache.has(model)) {
+    _cache.set(model, createResource(_plural(model), { model }))
   }
-${sc}
+  return _cache.get(model)
+}
+
+function _plural(model) {
+  const a = model.charAt(0).toLowerCase() + model.slice(1)
+  if (/[^aeiou]y$/.test(a))     return a.slice(0, -1) + 'ies'
+  if (/(s|x|z|ch|sh)$/.test(a)) return a + 'es'
+  return a + 's'
+}
 `
 }
 
-// ─── Admin _layout.svelte — auth guard ───────────────────────────────────────
-// Guards all /admin/* routes. Redirects if not authenticated or not admin.
-// NOTE: $session is imported from @/core/auth — wire this to your project's
-// actual session store if the path differs.
+// ─── admin/_session.js ────────────────────────────────────────────────────────
+// Only written when the project has no src/session.js of its own.
 
-function makeAdminLayout(modelNames) {
-  const sc  = '</' + 'script>'
-  const nav = modelNames.map(m =>
-    `    <a href="/admin/${m}">${toLabel(m)}</a>`
-  ).join('\n')
+function makeSession() {
+  return `// web/src/routes/admin/_session.js — generated by \`fli admin:generate\`.
+//
+// The caller's Litestone gate level (0–9) as judged by the SERVER. The admin UI
+// reads it only to decide what to offer — \`resource.can('delete', level)\` is a
+// UI affordance and never a boundary. Every request is graded again on arrival,
+// so a wrong number here changes what a page shows and nothing else.
+//
+// It starts permissive on purpose: an unknown answer that hides a button the
+// user could have pressed is a worse and much quieter failure than one that
+// shows a button which comes back 403. Call setLevel() with whatever your login
+// response reports and it stops guessing.
+//
+// Plain object, not a signal — Mesa RULE 8 puts shared state in plain
+// JavaScript. Readers declare \`$: session.level\`; this module is the writer, so
+// it mutates through its own watchProxy handle, because assigning
+// \`session.level\` directly updates the object and notifies nobody (RULE 45).
 
-  return `<script>
-  import { session } from '@/core/auth'
-  import { goto }    from '@/core/router'
-  import { title }   from '@/core/app'
+import { watchProxy } from '@frontierjs/mesa/runtime'
 
-  // Redirect if not logged in or not admin.
-  // "isAdmin" is a Boolean field on the users model — add it via fli scaffold or make:model.
-  $: if ($session === null) $goto('/login?next=/admin')
-  $: if ($session && !$session.user?.isAdmin) $goto('/')
-${sc}
+export const session = { level: 7 }
 
-{#if $session?.user?.isAdmin}
+const _w = watchProxy(session)
+
+export function setLevel(level) {
+  _w.level = Number(level) || 0
+}
+`
+}
+
+// ─── admin/_module.mesa — the layout ──────────────────────────────────────────
+// Layouts nest: this one composes inside the app's root _module.mesa rather
+// than replacing it (router/internals.js walks _layoutParents).
+
+function makeLayout(paths) {
+  return `---
+title: Admin
+---
+<script>
+  import { models } from '${paths.resources}'
+  import { isActive } from '@frontierjs/sierra/router'
+  import { status } from '@frontierjs/sierra/junction'
+  import { session } from '${paths.session}'
+
+  // Both are plain objects that other modules write through a proxy — naming
+  // the paths here is what subscribes this component to them.
+  $: (status.connected, session.level)
+${SC}
+
+<header class="admin-bar">
+  <a href="/admin/" class="admin-brand">Admin</a>
+
   <nav class="admin-nav">
-    <a href="/admin" class="admin-home">Admin</a>
-${nav}
+    {#each models as m}
+      <a href={'/admin/' + m.key + '/'} class:on={isActive('/admin/' + m.key + '/')}>{m.label}</a>
+    {/each}
   </nav>
 
-  <main class="admin-content">
-    <slot />
-  </main>
-{/if}
+  <span class="admin-meta">
+    <span class="dot" class:live={status.connected}></span>
+    gate level {session.level}
+  </span>
+</header>
+
+<main class="admin-main"><slot /></main>
+
+<style>
+  .admin-bar { display: flex; gap: 20px; align-items: center; padding: 12px 20px; border-bottom: 1px solid #e5e7eb; font-family: system-ui, sans-serif }
+  .admin-brand { font-weight: 600; color: #111; text-decoration: none }
+  .admin-nav { display: flex; gap: 14px; flex-wrap: wrap }
+  .admin-nav a { text-decoration: none; color: #6b7280; font-size: 14px }
+  .admin-nav a.on { color: #111; font-weight: 600 }
+  .admin-meta { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 13px; color: #6b7280 }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #d1d5db }
+  .dot.live { background: #22c55e }
+  .admin-main { padding: 20px; max-width: 980px; font-family: system-ui, sans-serif; color: #111 }
+</style>
 `
 }
 
-// ─── Admin index — dashboard ──────────────────────────────────────────────────
+// ─── admin/index.mesa — the dashboard ─────────────────────────────────────────
 
-function makeAdminIndex(modelNames) {
-  const sc    = '</' + 'script>'
-  const cards = modelNames.map(m => `
-  <a href="/admin/${m}" class="admin-card">
-    <h2>${toLabel(m)}</h2>
-    <span>Manage ${m}</span>
-  </a>`).join('')
+function makeDashboard(paths) {
+  return `---
+title: Admin
+---
+<script>
+  import { models } from '${paths.resources}'
+${SC}
 
-  return `<script>
-  import { title } from '@/core/app'
-  $title = 'Admin'
-${sc}
+<h1>Admin</h1>
 
-<div class="admin-page">
-  <h1>Admin</h1>
-  <div class="admin-cards">${cards}
-  </div>
+<div class="cards">
+  {#each models as m}
+    <a class="card" href={'/admin/' + m.key + '/'}>
+      <b>{m.label}</b>
+      <span>model {m.model} · service {m.key}</span>
+    </a>
+  {/each}
 </div>
+
+<style>
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px }
+  .card { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid #e5e7eb; border-radius: 8px; text-decoration: none; color: #111 }
+  .card:hover { border-color: #9ca3af }
+  .card span { color: #6b7280; font-size: 12px }
+</style>
 `
 }
 
-// ─── Model: list view ─────────────────────────────────────────────────────────
+// ─── admin/<service>/index.mesa — the list ────────────────────────────────────
 
-function makeModelList(modelName, properties, required, defs) {
-  const lower   = modelName.charAt(0).toLowerCase() + modelName.slice(1)
-  const plural  = lower + 's'
-  const sc      = '</' + 'script>'
+function makeList(m, paths) {
+  return `---
+title: ${m.label}
+---
+<script>
+  import { ${m.key} as resource } from '${paths.resources}'
+  import { session } from '${paths.session}'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
-  // Show first 5 non-id fields in the table (id always shown)
-  const displayFields = [
-    'id',
-    ...Object.keys(properties).filter(f => f !== 'id').slice(0, 4)
+  const { get: rows, unsubscribe } = useStore(resource.store)
+  $onDestroy(unsubscribe)
+
+  $: session.level
+
+  const idField = resource.context.idField
+
+  // The one choice in this file rather than a consequence of the schema: how
+  // many columns fit. Reorder or extend the list — the names come from the
+  // schema either way.
+  const columns = [
+    idField,
+    ...Object.keys(resource.fields).filter(f => f !== idField).slice(0, 5),
   ]
 
-  const ths = displayFields.map(f => `      <th>${toLabel(f)}</th>`).join('\n')
-  const tds = displayFields.map(f => `        <td>{item.${f} ?? ''}</td>`).join('\n')
-
-  return `<script>
-  import { service } from '@/resources/${modelName}.svelte'
-  import { goto }    from '@/core/router'
-  import { title }   from '@/core/app'
-
-  $title = '${toLabel(modelName)}s — Admin'
-
-  let items = []
-  let loading = true
   let error = null
+  let busy  = null
 
-  async function load() {
-    try {
-      const res = await service.find({ $limit: 500, $sort: { id: -1 } })
-      items   = res.data ?? res
-      loading = false
-    } catch (e) {
-      error   = e.message
-      loading = false
-    }
+  resource.load().catch(e => { error = e.message })
+
+  // @@gate answers are UI affordances. The button is disabled rather than
+  // hidden, and the server refuses regardless of what this says.
+  $: canCreate = resource.can('create', session.level)
+  $: canDelete = resource.can('delete', session.level)
+
+  function cell(row, name) {
+    const v = row[name]
+    if (v === null || v === undefined) return '—'
+    if (typeof v === 'boolean') return v ? 'yes' : 'no'
+    if (typeof v === 'object')  return JSON.stringify(v)
+    return String(v)
   }
-
-  load()
 
   async function remove(id) {
-    if (!confirm('Delete this record?')) return
-    await service.remove(id)
-    items = items.filter(i => i.id !== id)
+    if (!confirm('Delete ${m.name} ' + id + '?')) return
+    error = null
+    busy  = id
+    try { await resource.service.remove(id) }
+    catch (e) { error = e.message }
+    finally { busy = null }
   }
-${sc}
+${SC}
 
-<div class="admin-page">
-  <header class="admin-header">
-    <h1>${toLabel(modelName)}s</h1>
-    <a href="/admin/${plural}/new" class="btn">New ${toLabel(modelName)}</a>
-  </header>
+<header class="head">
+  <h1>${m.label}</h1>
+  <a class="btn" href="/admin/${m.key}/create/" class:muted={!canCreate}>New ${m.singularLabel}</a>
+</header>
 
-  {#if loading}
-    <p>Loading…</p>
-  {:else if error}
-    <p class="admin-error">{error}</p>
-  {:else if !items.length}
-    <p class="admin-empty">No ${lower}s yet. <a href="/admin/${plural}/new">Create one</a>.</p>
-  {:else}
-    <table class="admin-table">
-      <thead>
-        <tr>
-${ths}
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each items as item (item.id)}
-          <tr>
-${tds}
-            <td class="admin-actions">
-              <a href="/admin/${plural}/{item.id}">View</a>
-              <a href="/admin/${plural}/{item.id}/edit">Edit</a>
-              <button on:click={() => remove(item.id)}>Delete</button>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
-</div>
+{#if error}<p class="err">{error}</p>{/if}
+
+<table>
+  <thead>
+    <tr>
+      {#each columns as c}<th>{c}</th>{/each}
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {#each rows() as row}
+      <tr>
+        {#each columns as c}<td>{cell(row, c)}</td>{/each}
+        <td class="actions">
+          <a href={'/admin/${m.key}/' + row[idField] + '/'}>Open</a>
+          <button
+            on:click={() => remove(row[idField])}
+            disabled={!canDelete || busy === row[idField]}
+          >Delete</button>
+        </td>
+      </tr>
+    {/each}
+  </tbody>
+</table>
+
+{#if !rows().length && !error}
+  <p class="muted">No ${m.pluralLabel} yet.</p>
+{/if}
+
+{#if !canDelete}
+  <p class="muted">
+    Delete needs gate level {resource.gate?.delete} and this session reports
+    {session.level}.
+  </p>
+{/if}
+
+<style>
+  .head { display: flex; align-items: center; gap: 16px }
+  .head h1 { margin: 0; font-size: 22px }
+  .btn { margin-left: auto; border: 1px solid #d1d5db; border-radius: 6px; padding: 5px 12px; text-decoration: none; color: #111; font-size: 14px }
+  .btn.muted { opacity: .5 }
+  table { border-collapse: collapse; width: 100%; margin-top: 16px }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 14px }
+  th { color: #6b7280; font-weight: 500 }
+  .actions { display: flex; gap: 10px; align-items: center }
+  .actions a { color: #2563eb; text-decoration: none }
+  button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; font-size: 13px }
+  button[disabled] { opacity: .45; cursor: not-allowed }
+  .muted { color: #6b7280; font-size: 13px }
+  .err { color: #b91c1c }
+</style>
 `
 }
 
-// ─── Model: detail view ───────────────────────────────────────────────────────
+// ─── The derived form ─────────────────────────────────────────────────────────
+// Shared by create.mesa and [id].mesa. Everything it renders — which fields,
+// their types, their enum members, which ones are required, which one is a
+// reference and to what — is read off resource.fields at runtime. Nothing about
+// the model is written into it, which is why a new column needs no regenerate.
 
-function makeModelDetail(modelName, properties, defs) {
-  const lower  = modelName.charAt(0).toLowerCase() + modelName.slice(1)
-  const plural = lower + 's'
-  const sc     = '</' + 'script>'
-  const allFields = ['id', ...Object.keys(properties).filter(f => f !== 'id')]
-  const rows = allFields.map(f =>
-    `    <tr><th>${toLabel(f)}</th><td>{${lower}?.${f} ?? '—'}</td></tr>`
-  ).join('\n')
+function formScript(indent) {
+  const i = indent
+  return [
+    `${i}const idField = resource.context.idField`,
+    ``,
+    `${i}// Every field the schema declares, which is already the right list: the`,
+    `${i}// registered document is the CREATE-mode one, so @id and the columns the`,
+    `${i}// server assigns (@default(now()), computed, generated) are not in it and`,
+    `${i}// cannot be rendered as inputs. The idField guard is belt-and-braces for`,
+    `${i}// a project that registers a full-mode schema instead.`,
+    `${i}const entries = Object.entries(resource.fields)`,
+    `${i}  .filter(([name]) => name !== idField)`,
+    ``,
+    `${i}// A foreign key is emitted as a plain integer; x-relations is the only`,
+    `${i}// place it is knowable as a reference, and buildFieldRules surfaces that`,
+    `${i}// as rule.references. That is what turns a spinner into a picker.`,
+    `${i}const pickers = entries`,
+    `${i}  .filter(([, rule]) => rule.references)`,
+    `${i}  .map(([name, rule]) => {`,
+    `${i}    const res   = related(rule.references.model)`,
+    `${i}    const label = Object.keys(res.fields).find(f => res.fields[f].type === 'string')`,
+    `${i}    return { name, res, label: label ?? res.context.idField }`,
+    `${i}  })`,
+    ``,
+    `${i}// Replaced wholesale rather than mutated: replacement is the reactive`,
+    `${i}// operation (Mesa RULE 43).`,
+    `${i}let options = {}`,
+    ``,
+    `${i}Promise.all(pickers.map(p =>`,
+    `${i}  p.res.service.getOptions({}, { limit: 200, orderBy: p.label })`,
+    `${i}    .then(r => [p.name, (r.data ?? r ?? []).map(row => ({`,
+    `${i}      value: row[p.res.context.idField],`,
+    `${i}      label: String(row[p.label] ?? row[p.res.context.idField]),`,
+    `${i}    }))])`,
+    `${i}    .catch(() => [p.name, []])`,
+    `${i})).then(pairs => { options = Object.fromEntries(pairs) })`,
+    ``,
+    `${i}const problem = (name) => errors.find(e => e.field === name)?.message`,
+  ].join('\n')
+}
 
-  return `<script>
-  import { service } from '@/resources/${modelName}.svelte'
-  import { goto }    from '@/core/router'
-  import { title }   from '@/core/app'
+function formMarkup() {
+  return `  {#each entries as [name, rule]}
+    <label>
+      <span class="lbl">
+        <b>{name}</b>
+        {#if rule.required}<i class="req">*</i>{/if}
+        <em class="hint">
+          {rule.references ? '→ ' + rule.references.model + '.' + rule.references.field : rule.type}{rule.enum ? ' · enum' : ''}{rule.nullable ? ' · nullable' : ''}
+        </em>
+      </span>
 
-  export let id
-  let ${lower} = null
-  let error = null
-  $title = '${toLabel(modelName)} — Admin'
+      {#if rule.references}
+        <select bind:value={draft[name]}>
+          <option value="">—</option>
+          {#each (options[name] ?? []) as opt}
+            <option value={opt.value}>{opt.label}</option>
+          {/each}
+        </select>
+      {:else if rule.enum}
+        <select bind:value={draft[name]}>
+          <option value="">—</option>
+          {#each rule.enum as choice}
+            <option value={choice}>{choice}</option>
+          {/each}
+        </select>
+      {:else if rule.type === 'boolean'}
+        <input type="checkbox" bind:checked={draft[name]} />
+      {:else if rule.type === 'integer' || rule.type === 'number'}
+        <input type="number" bind:value={draft[name]} min={rule.minimum} max={rule.maximum} />
+      {:else if rule.format === 'date-time'}
+        <input type="datetime-local" bind:value={draft[name]} />
+      {:else}
+        <input
+          type={rule.format === 'email' ? 'email' : rule.format === 'uri' ? 'url' : 'text'}
+          bind:value={draft[name]}
+          maxlength={rule.maxLength}
+        />
+      {/if}
 
-  async function load() {
-    try { ${lower} = await service.get(id) }
-    catch (e) { error = e.message }
+      {#if problem(name)}<span class="err">{problem(name)}</span>{/if}
+    </label>
+  {/each}`
+}
+
+const FORM_STYLE = `<style>
+  form { display: grid; gap: 14px; max-width: 520px; margin-top: 16px }
+  label { display: grid; gap: 4px }
+  .lbl { font-size: 13px; color: #374151 }
+  .req { color: #b91c1c; font-style: normal }
+  .hint { color: #9ca3af; font-style: normal; font-size: 11px; margin-left: 6px }
+  input, select { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit }
+  .row { display: flex; gap: 10px; align-items: center }
+  button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit }
+  button[disabled] { opacity: .45; cursor: not-allowed }
+  button.danger { color: #b91c1c; border-color: #fca5a5 }
+  a.cancel { color: #6b7280; text-decoration: none; font-size: 14px }
+  .err { color: #b91c1c; font-size: 12px }
+  .warn { background: #fffbeb; border: 1px solid #fde68a; padding: 8px 12px; border-radius: 6px; font-size: 14px }
+  .muted { color: #6b7280; font-size: 13px }
+</style>`
+
+// ─── admin/<service>/create.mesa ──────────────────────────────────────────────
+
+function makeCreate(m, paths) {
+  return `---
+title: New ${m.singularLabel}
+---
+<script>
+  import { ${m.key} as resource, related } from '${paths.resources}'
+  import { ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { goto } from '@frontierjs/sierra/router'
+  import { session } from '${paths.session}'
+
+  let draft  = resource.make()
+  let errors = []
+  let failed = null
+  let saving = false
+
+  $: session.level
+
+${formScript('  ')}
+
+  async function save() {
+    failed = null
+
+    // Validate what will actually be SENT, not what the DOM holds: the inputs
+    // give back strings and coerce() casts them with the schema's types.
+    // Checking the raw draft reports "must be a number" for a good "42".
+    const payload = resource.coerce(draft)
+    errors = resource.validate(payload, 'create')
+    if (errors.length) return
+
+    saving = true
+    try {
+      const created = await resource.service.create(payload)
+      goto('/admin/${m.key}/' + created[idField] + '/')
+    } catch (e) {
+      // A ResourceValidationError never left the browser. Anything else is the
+      // server's answer — including @@gate's 401.
+      errors = e instanceof ResourceValidationError ? e.errors : []
+      failed = e.message
+    } finally {
+      saving = false
+    }
   }
+${SC}
 
-  load()
+<h1>New ${m.singularLabel}</h1>
+
+{#if !resource.can('create', session.level)}
+  <p class="warn">
+    <code>@@gate</code> wants level {resource.gate?.create} to create and this
+    session reports {session.level}. The button is not disabled — the server is
+    the thing that decides.
+  </p>
+{/if}
+
+<form on:submit|preventDefault={save}>
+${formMarkup()}
+
+  <div class="row">
+    <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Create'}</button>
+    <a class="cancel" href="/admin/${m.key}/">Cancel</a>
+  </div>
+</form>
+
+{#if failed}<p class="err">{failed}</p>{/if}
+
+${FORM_STYLE}
+`
+}
+
+// ─── admin/<service>/[id].mesa — detail and edit, one page ────────────────────
+
+function makeDetail(m, paths) {
+  return `---
+title: ${m.singularLabel}
+---
+<script>
+  import { ${m.key} as resource, related } from '${paths.resources}'
+  import { ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { session } from '${paths.session}'
+
+  // Read once at setup: navigating to a different id remounts the component.
+  const id = page.params.id
+
+  let draft   = resource.make()
+  let loaded  = false
+  let errors  = []
+  let failed  = null
+  let saving  = false
+  let deleting = false
+
+  $: session.level
+
+${formScript('  ')}
+
+  resource.service.get(id)
+    .then(record => { draft = record; loaded = true })
+    .catch(e => { failed = e.message })
+
+  $: canUpdate = resource.can('update', session.level)
+  $: canDelete = resource.can('delete', session.level)
+
+  async function save() {
+    failed = null
+
+    const payload = resource.coerce(draft)
+    // 'patch' mode: an absent field means "leave it alone", so required is not
+    // re-asserted on fields this form did not touch.
+    errors = resource.validate(payload, 'patch')
+    if (errors.length) return
+
+    saving = true
+    try {
+      draft = await resource.service.patch(id, payload)
+    } catch (e) {
+      errors = e instanceof ResourceValidationError ? e.errors : []
+      failed = e.message
+    } finally {
+      saving = false
+    }
+  }
 
   async function remove() {
-    if (!confirm('Delete this record?')) return
-    await service.remove(id)
-    $goto('/admin/${plural}')
+    if (!confirm('Delete ${m.name} ' + id + '?')) return
+    failed = null
+    deleting = true
+    try {
+      await resource.service.remove(id)
+      goto('/admin/${m.key}/')
+    } catch (e) {
+      failed = e.message
+      deleting = false
+    }
   }
-${sc}
+${SC}
 
-<div class="admin-page">
-  <header class="admin-header">
-    <h1>${toLabel(modelName)} #{id}</h1>
-    <div>
-      <a href="/admin/${plural}/{id}/edit" class="btn">Edit</a>
-      <button class="btn danger" on:click={remove}>Delete</button>
+<header class="head">
+  <h1>${m.singularLabel} {id}</h1>
+  <a class="cancel" href="/admin/${m.key}/">← All ${m.pluralLabel}</a>
+</header>
+
+{#if !loaded && !failed}<p class="muted">Loading…</p>{/if}
+
+{#if loaded}
+  <form on:submit|preventDefault={save}>
+${formMarkup()}
+
+    <div class="row">
+      <button type="submit" disabled={saving || !canUpdate}>{saving ? 'Saving…' : 'Save'}</button>
+      <button type="button" class="danger" on:click={remove} disabled={deleting || !canDelete}>Delete</button>
     </div>
-  </header>
-
-  {#if error}
-    <p class="admin-error">{error}</p>
-  {:else if !${lower}}
-    <p>Loading…</p>
-  {:else}
-    <table class="admin-detail">
-      <tbody>
-${rows}
-      </tbody>
-    </table>
-  {/if}
-
-  <footer class="admin-footer">
-    <a href="/admin/${plural}">← Back to ${toLabel(modelName)}s</a>
-  </footer>
-</div>
-`
-}
-
-// ─── Model: create / edit form (shared template) ──────────────────────────────
-
-function makeModelForm(modelName, properties, required, defs, isEdit) {
-  const lower  = modelName.charAt(0).toLowerCase() + modelName.slice(1)
-  const plural = lower + 's'
-  const sc     = '</' + 'script>'
-
-  // Skip id in forms — auto-assigned
-  const formFields = Object.entries(properties).filter(([f]) => f !== 'id')
-
-  const inputs = formFields.map(([fieldName, fieldSchema]) => {
-    const { inputType, optional, options } = resolveField(fieldSchema, defs)
-    const label    = toLabel(fieldName)
-    const req      = required.has(fieldName) ? ' required' : ''
-    const optLabel = optional ? ' <span class="optional">(optional)</span>' : ''
-
-    if (inputType === 'select' && options) {
-      const opts = options.map(o => `          <option value="${o}">${o}</option>`).join('\n')
-      return `  <label>
-    ${label}${optLabel}
-    <select name="${fieldName}" bind:value={data.${fieldName}}${req}>
-          <option value="">— select —</option>
-${opts}
-    </select>
-  </label>`
-    }
-
-    if (inputType === 'checkbox') {
-      return `  <label class="checkbox">
-    <input type="checkbox" name="${fieldName}" bind:checked={data.${fieldName}} />
-    ${label}
-  </label>`
-    }
-
-    if (inputType === 'number') {
-      return `  <label>
-    ${label}${optLabel}
-    <input type="number" name="${fieldName}" bind:value={data.${fieldName}}${req} />
-  </label>`
-    }
-
-    return `  <label>
-    ${label}${optLabel}
-    <input type="${inputType}" name="${fieldName}" bind:value={data.${fieldName}}${req} />
-  </label>`
-  }).join('\n\n')
-
-  if (isEdit) {
-    return `<script>
-  import { service, make } from '@/resources/${modelName}.svelte'
-  import { goto }          from '@/core/router'
-  import { title }         from '@/core/app'
-
-  export let id
-  let data = make()
-  let error = null
-  let saving = false
-  $title = 'Edit ${toLabel(modelName)} — Admin'
-
-  async function load() {
-    try { data = await service.get(id) }
-    catch (e) { error = e.message }
-  }
-
-  load()
-
-  async function save() {
-    saving = true
-    try {
-      await service.patch(id, data)
-      $goto('/admin/${plural}/{id}')
-    } catch (e) {
-      error  = e.message
-      saving = false
-    }
-  }
-${sc}
-
-<div class="admin-page">
-  <header class="admin-header">
-    <h1>Edit ${toLabel(modelName)} #{id}</h1>
-  </header>
-
-  {#if error}<p class="admin-error">{error}</p>{/if}
-
-  <form on:submit|preventDefault={save} class="admin-form">
-${inputs}
-
-    <footer class="admin-form-footer">
-      <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-      <a href="/admin/${plural}/{id}">Cancel</a>
-    </footer>
   </form>
-</div>
-`
-  }
+{/if}
 
-  // Create form
-  return `<script>
-  import { service, make } from '@/resources/${modelName}.svelte'
-  import { goto }          from '@/core/router'
-  import { title }         from '@/core/app'
+{#if failed}<p class="err">{failed}</p>{/if}
 
-  let data = make()
-  let error = null
-  let saving = false
-  $title = 'New ${toLabel(modelName)} — Admin'
+{#if !canUpdate}
+  <p class="muted">
+    Update needs gate level {resource.gate?.update} and this session reports
+    {session.level}.
+  </p>
+{/if}
 
-  async function save() {
-    saving = true
-    try {
-      const created = await service.create(data)
-      $goto('/admin/${plural}/{created.id}')
-    } catch (e) {
-      error  = e.message
-      saving = false
-    }
-  }
-${sc}
-
-<div class="admin-page">
-  <header class="admin-header">
-    <h1>New ${toLabel(modelName)}</h1>
-  </header>
-
-  {#if error}<p class="admin-error">{error}</p>{/if}
-
-  <form on:submit|preventDefault={save} class="admin-form">
-${inputs}
-
-    <footer class="admin-form-footer">
-      <button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-      <a href="/admin/${plural}">Cancel</a>
-    </footer>
-  </form>
-</div>
+${FORM_STYLE}
 `
 }
 </script>
 
-Generates a complete admin UI directly from `schema.lite` — one list, detail,
-create, and edit view per model, plus an index dashboard and an auth-guarded
-layout. All files are plain Svelte components dropped into `web/src/routes/admin/`
-— editable after generation, not a black-box runtime.
+Generates a CRUD admin from `db/schema.lite` — a list, a create form and a
+detail/edit page per model, plus a dashboard and a nested layout. The output is
+plain Mesa routes for Sierra, dropped into `web/src/routes/admin/`, editable
+after generation.
 
-**Auth guard:** checks `$session.user.isAdmin` in `_layout.svelte`.
-`isAdmin` must be a Boolean field on your `users` model. Add it with:
+**Nothing about a model is written into the generated pages.** Field names,
+types, enum members, required flags, foreign keys and gate levels are all read
+off `resource.fields` / `.relations` / `.gate` at runtime, the way
+`packages/sierra/example` does it. Adding a column to `schema.lite` shows up on
+the next reload; regenerate only when you add a **model**.
 
-```
-fli scaffold IsAdmin --fields "isAdmin:boolean"
-```
+**Gate levels are UI affordances, never boundaries.** `resource.can(op, level)`
+decides whether a button is disabled; Litestone enforces `@@gate` at the data
+layer and Junction turns the refusal into a status code no matter what the page
+believed. The level comes from `session.level` — the project's own
+`web/src/session.js` when it exists, otherwise a generated
+`admin/_session.js` stub that starts permissive and wants `setLevel()` wired to
+your login response.
 
-or add manually to `schema.lite` and run `fli db:push`.
-
-**Relation fields** (Integer foreign keys) render as plain number inputs.
-
-Run `fli db:push` and `fli db:jsonschema` before this command if schema has
-changed recently — or just run `fli validate` first.
+Each model also needs a Junction service on the API side. Missing ones are
+reported at the end — create them with `fli make:service <Model>`.
 
 ```js
 const root         = context.paths.root
 const schemaLite   = resolve(context.paths.db, 'schema.lite')
-const schemaJson   = resolve(context.paths.db, 'schema.json')
 const resourcesDir = resolve(context.paths.web, 'src/resources')
-const routesDir    = resolve(context.paths.web, 'src/routes')
-const adminDir     = resolve(routesDir, 'admin')
-const onlyModel    = arg.model?.toLowerCase() || null
+const adminDir     = resolve(context.paths.web, 'src/routes/admin')
 const created      = []
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
 if (!existsSync(schemaLite)) {
-  log.error('schema.lite not found — run fli db:push first')
+  log.error(`schema.lite not found at ${schemaLite}`)
+  log.info('Run this from a FJS project root, or add models with fli make:model.')
   return
 }
 
-// ─── Generate fresh schema.json ───────────────────────────────────────────────
+// ─── Models ───────────────────────────────────────────────────────────────────
 
-log.info('Generating schema.json...')
-try {
-  execSync(`cd ${root} && bunx litestone jsonschema --schema db/schema.lite`, { stdio: 'pipe' })
-} catch (e) {
-  log.error(`litestone jsonschema failed: ${e.stderr?.toString().trim() || e.message}`)
+const scanned = scanModels(readFileSync(schemaLite, 'utf8'))
+
+if (!scanned.length) {
+  log.error('No models found in schema.lite')
   return
 }
 
-const { models, defs } = loadSchema(schemaJson)
+const external = scanned.filter(m => m.external).map(m => m.name)
+const usable   = flag.external ? scanned : scanned.filter(m => !m.external)
 
-const targetModels = onlyModel
-  ? (models.has(onlyModel) ? [[onlyModel, models.get(onlyModel)]] : [])
-  : [...models.entries()]
+if (external.length && !flag.external) {
+  log.info(`Skipping @@external model(s): ${external.join(', ')}  (--external to include)`)
+}
 
-if (!targetModels.length) {
-  log.error(onlyModel
-    ? `Model '${onlyModel}' not found in schema.lite`
-    : 'No models found in schema.lite')
+if (!usable.length) {
+  log.error('Every model in schema.lite is @@external — nothing to generate')
   return
 }
 
-log.info(`Generating admin for: ${targetModels.map(([m]) => m).join(', ')}`)
+// Model names are PascalCase and singular; the service is the regular plural.
+// `model` is passed to createResource explicitly so an irregular can never
+// silently resolve to nothing.
+const allModels = usable.map(({ name }) => ({
+  name,
+  key:           servicePlural(name),
+  label:         toLabel(servicePlural(name)),
+  singularLabel: toLabel(name),
+  pluralLabel:   toLabel(servicePlural(name)).toLowerCase(),
+}))
+
+// ─── Target selection ─────────────────────────────────────────────────────────
+// --model accepts either spelling, any case: `Lead`, `lead` or `leads`.
+
+const want = (arg.model || '').trim().toLowerCase()
+
+const targets = want
+  ? allModels.filter(m => m.name.toLowerCase() === want || m.key.toLowerCase() === want)
+  : allModels
+
+if (!targets.length) {
+  log.error(`Model '${arg.model}' not found in schema.lite`)
+  log.info(`Known: ${allModels.map(m => m.name).join(', ')}`)
+  return
+}
+
+log.info(`Generating admin routes for: ${targets.map(m => m.name).join(', ')}`)
+
+// ─── Session module ───────────────────────────────────────────────────────────
+// Prefer the project's own session over a second copy of the same idea.
+
+const projectSession = resolve(context.paths.web, 'src/session.js')
+const ownSession     = existsSync(projectSession)
+
+if (ownSession) log.info('Using the existing web/src/session.js for gate levels')
+
+// Import specifiers, per generated file's depth under src/routes/.
+//   admin/_module.mesa, admin/index.mesa      → src is two levels up
+//   admin/<service>/*.mesa                    → three
+const pathsAt = (depth) => ({
+  resources: '../'.repeat(depth) + 'resources/admin.mesa',
+  session:   ownSession
+    ? '../'.repeat(depth) + 'session.js'
+    : (depth === 2 ? './_session.js' : '../'.repeat(depth - 2) + '_session.js'),
+})
 
 // ─── Write helper ─────────────────────────────────────────────────────────────
 
 const write = (filePath, content, label) => {
+  const shown = filePath.replace(root + '/', '')
+
   if (existsSync(filePath) && !flag.force) {
-    log.warn(`${label} exists — skipping (--force to overwrite)`)
+    log.warn(`${label.padEnd(22)} exists — skipping (--force to overwrite)`)
     return
   }
   if (flag.dry) {
-    log.dry(`Would create ${label}:  ${filePath}`)
+    log.dry(`Would write ${label.padEnd(22)} ${shown}`)
     return
   }
+
   mkdirSync(dirname(filePath), { recursive: true })
   writeFileSync(filePath, content, 'utf8')
-  log.success(`Created ${label.padEnd(16)}  ${filePath.replace(root + '/', '')}`)
-  created.push(filePath)
+  log.success(`${label.padEnd(22)} ${shown}`)
+  created.push(shown)
 }
 
-// ─── _layout.svelte ───────────────────────────────────────────────────────────
+// ─── Shared files ─────────────────────────────────────────────────────────────
+// resources/admin.mesa, the layout and the dashboard cover every model regardless
+// of --model: they are the index, and generating a partial one would drop the
+// models a previous run added.
 
-const allModelNames = [...models.keys()]
-write(
-  resolve(adminDir, '_layout.svelte'),
-  makeAdminLayout(allModelNames),
-  'admin layout'
-)
+write(resolve(resourcesDir, 'admin.mesa'), makeResources(allModels), 'resources/admin.mesa')
 
-// ─── Admin index ──────────────────────────────────────────────────────────────
-
-write(
-  resolve(adminDir, 'index.svelte'),
-  makeAdminIndex(targetModels.map(([m]) => m)),
-  'admin index'
-)
-
-// ─── Per-model files ──────────────────────────────────────────────────────────
-
-for (const [modelName, { properties, required }] of targetModels) {
-  const modelDir = resolve(adminDir, modelName)
-
-  // Resource file — create if missing, never overwrite (user may have customised it)
-  const resourcePath = resolve(resourcesDir, `${modelName}.svelte`)
-  const meshPath     = resolve(resourcesDir, `${modelName}.mesa`)
-  if (!existsSync(resourcePath) && !existsSync(meshPath)) {
-    write(resourcePath, makeResourceFile(modelName), `${modelName} resource`)
-  }
-
-  // PascalCase for resource imports
-  const pascal = modelName.charAt(0).toUpperCase() + modelName.slice(1)
-
-  write(resolve(modelDir, 'index.svelte'),        makeModelList(pascal, properties, required, defs),           `${modelName}/list`)
-  write(resolve(modelDir, '[id].svelte'),          makeModelDetail(pascal, properties, defs),                   `${modelName}/detail`)
-  write(resolve(modelDir, 'new.svelte'),           makeModelForm(pascal, properties, required, defs, false),    `${modelName}/new`)
-  write(resolve(modelDir, '[id]/edit.svelte'),     makeModelForm(pascal, properties, required, defs, true),     `${modelName}/edit`)
+if (!ownSession) {
+  write(resolve(adminDir, '_session.js'), makeSession(), 'admin/_session.js')
 }
+
+write(resolve(adminDir, '_module.mesa'), makeLayout(pathsAt(2)),    'admin/_module.mesa')
+write(resolve(adminDir, 'index.mesa'),   makeDashboard(pathsAt(2)), 'admin/index.mesa')
+
+// ─── Per-model routes ─────────────────────────────────────────────────────────
+
+const routePaths = pathsAt(3)
+
+for (const m of targets) {
+  const dir = resolve(adminDir, m.key)
+  write(resolve(dir, 'index.mesa'),  makeList(m, routePaths),   `${m.key}/index.mesa`)
+  write(resolve(dir, 'create.mesa'), makeCreate(m, routePaths), `${m.key}/create.mesa`)
+  write(resolve(dir, '[id].mesa'),   makeDetail(m, routePaths), `${m.key}/[id].mesa`)
+}
+
+// ─── Missing services ─────────────────────────────────────────────────────────
+// A route with no service behind it renders and then fails on load, which reads
+// as a broken page rather than a missing file. Say so here instead.
+
+const serviceDirs = [
+  resolve(context.paths.api, 'src/services'),
+  resolve(context.paths.api, 'services'),
+]
+
+const missing = targets.filter((m) => {
+  const accessor = m.name.charAt(0).toLowerCase() + m.name.slice(1)
+  return !serviceDirs.some(d =>
+    existsSync(resolve(d, `${accessor}.service.ts`)) ||
+    existsSync(resolve(d, `${m.key}.service.ts`))
+  )
+})
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
-if (!flag.dry && created.length) {
-  echo('')
-  echo(`  ${created.length} file${created.length !== 1 ? 's' : ''} created`)
-  echo(`  Admin dashboard:  /admin`)
-  if (targetModels.length) {
-    echo('')
-    for (const [m] of targetModels) {
-      echo(`  /${m.padEnd(16)}  /admin/${m}  ·  /admin/${m}/new`)
-    }
-  }
-  echo('')
-  echo('  Auth guard checks $session.user.isAdmin')
-  echo('  Ensure isAdmin: Boolean is present on your users model')
-  echo('')
+echo('')
+
+if (flag.dry) {
+  echo('  Dry run — nothing written')
+} else if (created.length) {
+  echo(`  ${created.length} file${created.length !== 1 ? 's' : ''} written`)
+} else {
+  echo('  Nothing written — every file already exists (--force to overwrite)')
 }
+
+echo('')
+echo('  /admin/')
+for (const m of targets) {
+  echo(`  /admin/${m.key}/`.padEnd(30) + `list · create · [id]`)
+}
+
+if (missing.length) {
+  echo('')
+  log.warn(`No Junction service found for: ${missing.map(m => m.name).join(', ')}`)
+  for (const m of missing) echo(`    fli make:service ${m.name}`.padEnd(34) + `→ the admin calls '${m.key}'`)
+  echo('')
+  echo('  If the service exists under another name — an irregular plural, say —')
+  echo('  correct the createResource() call in web/src/resources/admin.mesa.')
+}
+
+echo('')
+echo('  Sierra rescans src/routes on the next build — restart fli web:dev if it is running.')
+echo('')
 ```

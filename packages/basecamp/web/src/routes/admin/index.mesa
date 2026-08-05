@@ -1,0 +1,121 @@
+---
+title: Members
+---
+<script>
+  import { session } from '../../session.js'
+  import { workspaces } from '../../resources/workspaces.mesa'
+
+  $: (session.workspaceId, session.user)
+
+  let members = []
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  // The roles come from the schema's WorkspaceRole enum, so this picker cannot
+  // offer a role the CHECK constraint would refuse.
+  $: roles = workspaces.fields?.role?.enum ?? ['viewer', 'developer', 'admin', 'owner']
+
+  const rowsOf = (result) => Array.isArray(result) ? result : result?.data ?? []
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // `members` is a custom method on the workspaces service — the workspace
+      // is ctx.id, which is why this one service needs no X-Workspace-Id.
+      members = rowsOf(await workspaces.service.action('members', session.workspaceId))
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  async function setRole(member, role) {
+    error = null; busy = member.id
+    try {
+      await workspaces.service.action('setMemberRole', session.workspaceId, { userId: member.userId, role })
+      await load()
+    } catch (e) {
+      // 'Cannot demote the last owner' arrives here. The service refuses it
+      // because a workspace nobody can administer is unrecoverable.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove(member) {
+    error = null; busy = member.id
+    try {
+      await workspaces.service.action('removeMember', session.workspaceId, { userId: member.userId })
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const when = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
+</script>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<article class="alert info">
+  <div class="alert-content">
+    Adding someone needs an existing user id — the only route that creates a user is <code>/auth/register</code>, and it leaves them with no account or workspace. Invitations are not built yet.
+  </div>
+</article>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped">
+      <thead>
+        <tr>
+          <th scope="col">Member</th>
+          <th scope="col">Email</th>
+          <th scope="col">Role</th>
+          <th scope="col">Joined</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="member-rows">
+        {#each members as member}
+          <tr>
+            <td>{member.user?.displayName ?? member.user?.name ?? '—'}</td>
+            <td>{member.user?.email ?? '—'}</td>
+            <td>
+              <label class="visually-hidden" for={`role-${member.id}`}>Role</label>
+              <select class="field" id={`role-${member.id}`} style="--field-inline-size: auto"
+                      disabled={busy === member.id}
+                      on:change={(e) => setRole(member, e.target.value)}>
+                {#each roles as role}
+                  <option value={role} selected={role === member.role}>{role}</option>
+                {/each}
+              </select>
+            </td>
+            <td class="text-sm text-muted">{when(member.acceptedAt ?? member.createdAt)}</td>
+            <td>
+              {#if member.userId !== session.user?.userId}
+                <button class="btn ghost danger" disabled={busy === member.id}
+                        on:click={() => remove(member)}>Remove</button>
+              {:else}
+                <span class="text-sm text-muted">you</span>
+              {/if}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

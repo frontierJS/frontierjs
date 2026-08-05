@@ -134,6 +134,42 @@ const db = await createClient({ plugins: [gate], ... })
 | 8 | `SYSTEM` | `asSystem()` only — never returned by `getLevel` |
 | 9 | `LOCKED` | Impassable — not even `asSystem()` passes |
 
+### The default resolver, and `undefined` vs `null`
+
+A schema declaring any `@@gate` auto-installs `GatePlugin({ getLevel: FrontierGateGetLevel })`
+when the app supplies no GatePlugin — a declared gate that silently does nothing
+is a fail-open default. Supplying your own replaces it; supplying none does not
+disable it.
+
+That resolver reads `verifiedAt` / `activatedAt` / `role` / `isAdmin` /
+`isOwner` / `isSystemAdmin`, and the distinction between an absent field and a
+`null` one is the whole design:
+
+| value | meaning | effect |
+|---|---|---|
+| `undefined` (absent) | the app does not model this stage | **not an objection** |
+| `null` | modelled, and this user has not reached it | grades down |
+
+An app with no verification flow leaves `verifiedAt` unset and its sessions
+grade `USER`; an app that has one sets it to `null` until the user verifies, and
+those sessions grade `VISITOR`. Absence never means "not yet" — otherwise every
+app would have to restate a lifecycle it does not have just to make `@@gate`
+usable.
+
+Explicit standing outranks the lifecycle: `isSystemAdmin` / `isOwner` /
+`isAdmin` are checked first, so an owner who never completed activation is still
+the owner.
+
+> **Fixed 2026-08-04.** This used to test `!user.verifiedAt`, which collapses
+> absent into null — so every session from an app without a verification flow
+> graded `VISITOR(1)`, below the `USER(4)` an ordinary model needs to read, and
+> gates 403'd the whole API. The `role` check also ran ahead of the standing
+> checks, so a system admin with no role string graded `CREATOR(3)`.
+
+Junction's `sessionGateLevel()` is the same function for the same purpose on the
+other side of the dependency boundary (Litestone cannot import Junction). They
+are a hand copy — change one, change both.
+
 ### @@gate syntax
 
 The canonical form is **named**: level names per operation, self-documenting,

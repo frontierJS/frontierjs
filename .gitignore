@@ -55,3 +55,9 @@ temp/
 
 # @frontierjs/css test driver (generated per run; removed unless --keep)
 .fjs-test-run.html
+
+# Audit trails written by litestone's logger driver. Operational data — actor
+# ids, emails, before/after row snapshots. Protected fields are redacted, but
+# the rest is real and belongs on the machine that produced it, not in git.
+**/db/audit/
+*.jsonl

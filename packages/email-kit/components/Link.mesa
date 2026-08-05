@@ -1,0 +1,30 @@
+<script>
+  export let href     = ''
+  export let text     = ''
+  export let color    = '#9fc612'
+  export let target   = '_blank'
+  export let underline = false
+</script>
+
+<!--
+  Link — inline anchor. Use inside Text, Column, or anywhere inline.
+  Not a row component — renders an <a> tag directly.
+
+  <Link href="https://example.com" text="Click here" />
+  <Link href="/dashboard" color="#ee380d">Go to dashboard</Link>
+-->
+
+<a
+  href="{href}"
+  target="{target}"
+  style="
+    color:{color};
+    text-decoration:{underline ? 'underline' : 'none'};
+    font-family:Helvetica,Arial,sans-serif;
+  ">
+  {#if $slots.default}
+    <slot />
+  {:else}
+    {text}
+  {/if}
+</a>

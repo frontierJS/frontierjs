@@ -1,7 +1,269 @@
 # Changes — @frontierjs/junction
 
-Applied during the 2026-07-25/26 FrontierJS pass. Baseline was the archive dated
-2026-07-26 (`_built: 2026-05-27`).
+## 2026-08-04 — the client's transport rule, actually applied
+
+803 tests (was 796).
+
+The documented rule is in this package's README: *"CRUD methods prefer WebSocket
+when connected, fall back to HTTP automatically. File uploads always use HTTP."*
+WebSockets are the default when one is available; HTTP is the fallback. Two
+methods did not follow it, and the fallback had a hole with no bottom.
+
+**`action()` and `restore()` were unconditionally HTTP.** `find`, `get`,
+`create`, `patch` and `remove` all check `_wsReady` first; those two never did,
+which made a custom action the only service call that ignored a live connection.
+The WS handler dispatches any method name generically — it passes `method`
+straight to `bridge.internal` — so there was never a reason for the exception.
+Both now prefer the socket. `action()` also honours the file exception, because
+multipart cannot travel over it.
+
+**The HTTP fallback recursed forever.** `_httpFallback`'s `default` branch
+called `svc.call()`, which is `_wsCall()`, which routes back to `_httpFallback`
+when the socket is down. A custom action with no connection bounced between the
+two indefinitely — asynchronously, so no stack overflow ever pointed at it and
+the call simply never settled. The default branch now calls `action()`, the HTTP
+form of a custom action, and `restore` gained its own case.
+
+Seven tests in `tests/client-transport.test.ts`, half of them on the no-socket
+path. Verified in `example/` over CDP as well: clicking a transition button with
+the socket up sends `orders.pay` as a WS frame and makes **zero** HTTP POSTs.
+
+The README's dispatch-by-header section said what the HTTP form looks like
+without saying it was the fallback; it now says both.
+
+## 2026-08-04 — autoValidate says the sentence the schema declared
+
+796 tests (was 787).
+
+`FieldDef` gains `label` and `messages`, read from JSON Schema `title` and
+`x-messages`. Every generated message in `core/schema.ts` now consults the
+authored wording for the keyword that failed, and builds its fallback from the
+label rather than the column name.
+
+The point is that Sierra's `field-rules.js` does exactly the same thing from
+exactly the same document. If these two disagreed the user would get one
+message before the request and a different one after it — worse than either
+alone. `tests/field-messages.test.ts` and
+`packages/sierra/tests/field-messages.test.js` are deliberately the same
+fixtures and the same expectations.
+
+Presentation is read off the FIELD's own schema, never a `$ref` target:
+Litestone titles every enum `$def` with the type name, so following the ref
+would make `status OrderStatus` report itself as "OrderStatus". `mapProp` is
+now a thin wrapper that attaches label/messages from the raw property around
+the existing resolver.
+
+## 2026-08-04 — the startup banner reports the Data realm
+
+787 tests (was 781). Additive; no behaviour change to any request path.
+
+`createApp()`'s banner covered routes, services, health and docs, and said
+nothing about the database. "Is Litestone actually loaded, and against which
+file?" had no answer short of issuing a request and seeing what came back.
+
+It now prints a second line in the same startup phase:
+
+```
+INFO 🚀 shop v1.0.0     {"url":"…","routes":22,"services":3,"prefix":"/api",…}
+INFO 🗄  litestone       {"models":8,"enums":1,"gated":"7/8",
+                         "databases":"main → ./db/shop.db (sqlite), audit → ./db/audit (logger)"}
+```
+
+Four fields, each earning its place:
+
+- **models / enums** — the shortest honest answer to "did the seed parse".
+- **gated** as `n/total` — a schema reading `0/24` is one whose access control
+  is not declared. Worth seeing daily rather than discovering in an audit.
+- **databases** — name → **resolved** path and driver. This is the one that
+  pays for the line: a schema declaring `database main { path … }` silently
+  overrides `createClient`'s `db:` option, so the file being written is not
+  always the file that was passed. Printing the resolved path makes that
+  visible at boot instead of three confusing test runs later. (Verified in both
+  directions — `example/` declares a path and shows it; `sierra/example` passes
+  `db: ':memory:'` with no declaration and shows `:memory:`.)
+
+`describeDataRealm()` lives in `core/litestone.ts`, beside the rest of the
+Data↔API seam. It is entirely duck-typed and returns `null` — no line — for
+anything that is not a Litestone client, including a raw `bun:sqlite` handle.
+It also catches: `createApp({ db })` accepts Proxy-based clients that *throw*
+on unknown property access (Litestone's own scoped proxy does exactly that),
+and a banner helper that throws would take the app down at the last startup
+phase, after the port is already open. Six tests in
+`tests/describe-data-realm.test.ts`, four of them on that failure path.
+
+Newest first. Everything below the 2026-08-02 block was applied during the
+2026-07-25/26 FrontierJS pass, against the archive dated 2026-07-26
+(`_built: 2026-05-27`).
+
+## 2026-08-02 — the error boundary is extensible
+
+`src/core/errors.ts`. `toFrameworkError()` is the single point where a thrown
+value becomes an HTTP status, and it used to recognise a **closed** world:
+Junction's own `FrameworkError` subclasses plus two Litestone error names by
+string. Every other package's errors fell through to `GeneralError` — a 500 for
+what the thrower had modelled as a 401 or a 404.
+
+That bit `@frontierjs/auth` and `@frontierjs/caravan` independently, and each
+worked around it differently: auth wrapped every one of its own routes in a
+per-route try/catch that re-mapped statuses, caravan just shipped 500s.
+
+Recognition order is now:
+
+1. `instanceof FrameworkError`
+2. a mapper registered with **`registerErrorMapper(fn)`**
+3. a numeric **`status` / `statusCode` / `code` in 400–599** on the error
+4. `err.name` matching a known class name (`NotFound`, `ValidationError`,
+   `AccessDeniedError`, …)
+5. `GeneralError` (500)
+
+**Rule that follows from step 3: if you own the error class, give it a
+`status`.** No registration, no import of Junction — which is how auth and
+caravan now map statuses while depending on nothing here. Use
+`registerErrorMapper` only for errors you cannot modify, e.g. a third-party
+library's.
+
+Consequence elsewhere: auth's per-route wrapper is **gone**, and its errors map
+correctly everywhere rather than only on `/auth/*`. Raw routes (`app.get` /
+`app.post`) can now simply throw.
+
+---
+
+## 2026-08-02 — plugin contract reworked
+
+`src/core/app.ts`. Four changes, each closing a silent failure:
+
+- **`register` is `=> void`, not `=> Promise<void>`.** `configure()` runs it
+  synchronously and never awaited it, so an async `register` had its body run
+  after the app was already assembled — with nothing to say so. Async setup
+  belongs in `boot()`. Returning a promise from `register` now warns at runtime,
+  and its rejection still aborts `start()` rather than becoming an unhandled
+  rejection.
+- **`requires: ['mailer']`** declares ordering. Checked once at startup, before
+  any `boot()`, against both presence *and* `configure()` order.
+- **`app.provide(name, value)`** is the guarded namespace claim. It assigns the
+  real property — so the `AppConduit` / `AppJobs` / `AppNotify` interface
+  augmentations keep resolving — but **throws if the name is taken**, replacing
+  silent last-write-wins.
+- **Startup is ONE named phase list**, `runStartPhases(bindHost)`. There were
+  two hand-maintained sequences numbered 0, 0a, 0b, 0c, 1, 3, 4, 4.5, 4.6, 5, 6,
+  7, with the test path documented as mirroring "phases 1, 4.5, 4.6" — a subset
+  that could drift from the real one without any test noticing. `start()` and
+  `_startForTest()` now run the same list; phases flagged `needsHost`
+  (load-config, autoload-services, listen, ready-hooks, signal-handlers,
+  announce) are skipped by the test path. **Add a phase to the list, never to
+  one caller.**
+
+The plugin protocol is `{ name, register, boot, ready, shutdown, requires }`.
+
+---
+
+## 2026-08-02 — webhook audit: four bugs, one of them a payload leak
+
+`src/plugins/webhooks/index.ts`.
+
+### `findForEvent` pattern-matched on the event name
+
+```sql
+events LIKE ('%"' || ? || '"%')     -- ← the parameter is a caller-supplied event name
+```
+
+SQL `LIKE` metacharacters in the **event name** therefore matched other
+subscriptions. An event named `user_created` was delivered to a hook subscribed
+only to `userXcreated` (`_` matches any character), and an event named `%`
+fanned out to **every registration in the table**.
+
+That is a payload leak: a partner receives correctly-signed data for an event
+they never subscribed to, and the delivery looks entirely normal at both ends.
+
+Matching is now `json_each()` equality. **Don't reintroduce pattern matching on
+a caller-supplied name.**
+
+### `updateDelivery` used `??`, so nullable columns could never be cleared
+
+`updates.error ?? current.error` makes an explicit `null` mean "leave it alone".
+A delivery that failed once and then **succeeded on retry** kept reporting the
+`HTTP 500` it had recovered from, and kept a stale `next_retry_at` — so the
+delivery log said a working webhook was broken.
+
+Use `key in updates ? updates[key] : current`. This is a shape, not a one-off:
+any patch helper written with `??` has the same hole.
+
+---
+
+## 2026-08-02 — router: fixed and dynamic routes no longer share a keyspace
+
+`src/transport/router.ts`. The method cache was one object, with dynamic routes
+stashed under the key `'D'`. A route registered at **`/D`** normalises to
+exactly `'D'` and collided: `build()` threw
+`methodCache.D.push is not a function`, and `lookup()` would have returned the
+bucket array as if it were a route.
+
+The cache is now `{ fixed, dynamic }` — separate fields, no shared keyspace.
+Found by a test probing `hasExactRoute`.
+
+---
+
+## 2026-08-02 — the startup banner advertised a `/health` that might not exist
+
+The endpoint was always fine; the **advertisement** was fiction. The banner
+asked `router.hasRoute('GET', '/health')` — which is a *matching* question:
+"would a request for this path match something". Every app registers
+`GET /{service}`, which matches `/health`. So every app printed a health URL
+whether or not `healthPlugin()` was configured.
+
+**`hasRoute()` is a matching question, not an existence one.** Use
+`hasExactRoute(method, path)` when you mean "is this endpoint mounted", and
+`routePaths(method)` to list where routes actually landed. The banner uses
+`routePaths`, so `healthPlugin({ path: '/internal' })` is advertised at
+`/internal` instead of being claimed at `/health`.
+
+Fixed in the same place: `hasRoute(a) ?? hasRoute(b)` never evaluated `b` — `??`
+only falls through on null/undefined and `hasRoute` returns a boolean.
+
+---
+
+## 2026-08-02 — `/metrics` read service keys that don't exist
+
+`svc.actions` is not a key on a service — custom methods are ordinary
+function-valued properties, and three other places already had a predicate for
+that. `/metrics` reported every service as having zero custom methods, and
+misreported `svc.allowBulk` the same way.
+
+Both now go through `customMethodNames()`, the same predicate manifest and
+OpenAPI use.
+
+---
+
+## 2026-08-02 — `app.conduit` was declared twice, and conduit always lost
+
+Junction typed `conduit?: SomeShape` on `App` while `@frontierjs/conduit`
+declared the same property in a module augmentation. **Declaration merging
+requires identical types**, so the augmentation silently lost and `app.conduit`
+resolved to `{}` at every call site — in the editor and in `tsc`, with the code
+working perfectly at runtime.
+
+Junction now exports an empty `interface AppConduit` and types the field
+`conduit?: AppConduit` (`src/core/app.ts`); conduit augments **that interface**.
+
+**If you add another `app.<thing>` from a plugin package, use this pattern — an
+empty interface exported here, augmented there — not a property redeclaration.**
+Junction's typecheck baseline dropped to **212** as a result; that is the current
+number, not the 214/216/224/226 in older notes.
+
+---
+
+## 2026-08-02 — the dialect trap took 7 "test drift" failures with it
+
+Junction carried 7 long-standing test failures filed as drift. They were not
+drift: Junction was resolving a *registry* Litestone that still spoke
+`Integer/Text/Real/Blob` while the fixtures were written in the current
+`Int/String/Float/Bytes` dialect.
+
+Junction (and auth) now take litestone as a `workspace:*` dev-dependency with a
+`^1.1.0` peer, so in-repo code gets the workspace parser. All 7 pass. See
+`packages/litestone/CHANGES.md` for the registry half.
+
+---
 
 ## createBaseService now carries `name`, `hooks` and custom methods
 

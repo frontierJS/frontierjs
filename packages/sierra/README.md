@@ -15,10 +15,11 @@ db/schema.lite  ──►  Junction (API)  ──►  Sierra (UI)
 Sierra sits at the end of the dependency chain — `Litestone ← Junction ← Sierra` — and
 never the reverse. Mesa is the component substrate underneath it.
 
-**Status:** v0.1.0, pre-1.0. 672 tests across 32 files pass (`bun run test`), typecheck
-clean. The SPA target is solid and verified end-to-end; `static` prerendering works with
-the caveats in [Build targets](#build-targets); `widget` is a config shape with no build
-loop behind it.
+**Status:** v0.1.0, pre-1.0. 702 tests across 34 files pass (`bun run test`), typecheck
+clean. The SPA target is solid and verified end-to-end; `static` prerendering works, and
+as of 2026-08-03 its pages can be **interactive** — see [Islands](#islands--making-a-static-page-interactive),
+verified by clicking a prerendered button in headless Chrome; `widget` is a config shape
+with no build loop behind it.
 
 There is a runnable app in [`example/`](example/) — a real Junction API over real SQLite,
 with a form generated entirely from `db/schema.lite`. The whole app is driven in headless
@@ -53,30 +54,57 @@ hand-rolled exports-map resolver (`src/virtual/virtual-sierra.js`). Install what
 
 ## Quick start
 
+**Sierra owns `web/`, and only `web/`.** A FrontierJS app puts one directory at the root
+per realm — `db/` (Data), `api/` (API), `web/` (UI) — so every Sierra file, `config/` and
+`src/` included, lives under `web/`. That is also why schema auto-detection looks at
+`../db/schema.lite`: the schema is a sibling of `web/`, not something inside it. The full
+layout is in the [root README](../../README.md#project-structure).
+
+Inside `web/`, every sub-project follows the same six-folder shape — `config/` to
+configure it, `src/` to build it, `public/` for static assets, `test/` for tests, `dist/`
+for output, `deploy/` for shipping:
+
 ```
 my-app/
-├── vite.config.js          ← must sit at the Vite root; see the note below
-├── index.html
-├── config/
-│   ├── sierra.config.js
-│   └── routes.js           ← generated, do not edit
-└── src/
-    ├── main.js
-    ├── App.mesa
-    └── routes/
-        ├── _module.mesa
-        ├── index.mesa
-        └── blog/
-            ├── [slug].mesa
-            └── [slug].meta.js
+├── db/
+│   └── schema.lite             ← seeds the API and the UI both
+├── api/                        ← Junction — a peer of web/, not a parent
+└── web/                        ← everything below here is Sierra's; the Vite root
+    ├── index.html
+    ├── config/
+    │   ├── vite.config.js      ← configuration lives in config/
+    │   ├── sierra.config.js
+    │   └── routes.js           ← generated, do not edit
+    ├── public/                 ← static assets, copied verbatim
+    ├── src/
+    │   ├── main.js
+    │   ├── App.mesa
+    │   └── routes/
+    │       ├── _module.mesa
+    │       ├── index.mesa
+    │       └── blog/
+    │           ├── [slug].mesa
+    │           └── [slug].meta.js
+    ├── test/
+    └── dist/                   ← build output
 ```
 
-**`vite.config.js`**
+Vite runs with `web/` as its root and the config named explicitly:
+
+```bash
+cd web && vite -c config/vite.config.js
+cd web && vite build -c config/vite.config.js
+```
+
+Paths in `sierra.config.js` (`routesDir`, `outDir`, `manifest.output`) are relative to
+the Vite root — `web/` — never to `config/` and never to the app root.
+
+**`config/vite.config.js`**
 
 ```js
 import { defineConfig } from 'vite'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
-import sierraConfig from './config/sierra.config.js'
+import sierraConfig from './sierra.config.js'   // sibling — both live in config/
 
 export default defineConfig(createSierraViteConfig(sierraConfig))
 ```
@@ -124,13 +152,22 @@ mount(anchor, App, { root })
 <RouterView />
 ```
 
-Then `vite` for dev and `vite build` for production.
+Then `vite -c config/vite.config.js` for dev and `vite build -c config/vite.config.js`
+for production.
 
-> **`vite.config.js` must live at the Vite root.** Sierra derives the path to
-> `sierra.config.js` by rewriting the resolved Vite config path, so a
-> `config/vite.config.js` resolves to `config/config/sierra.config.js` and the build
-> fails with `Could not resolve …/config/config/sierra.config.js`. If the config must
-> live in a subdirectory, set the escape hatch in `sierra.config.js`:
+> **How `sierra.config.js` is found.** `virtual:sierra` emits a literal
+> `import sierraConfig from '<path>'`, so this has to be exact — a wrong answer is a
+> `Module not found` at build time, not a degraded mode. Sierra looks, in order:
+> beside `vite.config.js`, then in a `config/` folder beneath it, then `config/` under
+> the Vite root, then the Vite root itself (`.js`, `.mjs` and `.ts` at each). Both
+> layouts therefore work — `config/vite.config.js` next to `config/sierra.config.js`,
+> or a root-level `vite.config.js` with the config in `config/`.
+>
+> Until 2026-08-03 this was a string rewrite of the Vite config path that assumed
+> `vite.config.js` sat at the Vite root, so the conventional `config/vite.config.js`
+> derived `config/config/sierra.config.js` and could never build.
+>
+> For a config that lives somewhere neither rule finds, the escape hatch remains:
 >
 > ```js
 > _configPath: new URL('./sierra.config.js', import.meta.url).pathname,
@@ -267,7 +304,7 @@ import {
 | `goto(path, query?, { scroll, replace })` | navigate |
 | `back()` / `forward()` | history |
 | `url(path, query?)` | build a URL with the configured trailing-slash policy |
-| `isActive(path, { exact })` | prefix match by default; reactive if the caller watches `page.route` |
+| `isActive(path, { exact })` | prefix match by default. **Name `page.route` in the expression too** — `aria-current={(page.route, isActive('/leads/')) ? 'page' : null}` — or the call is evaluated once at mount. Mesa reads dependencies out of the expression text, and the route read happens inside `isActive`, where it cannot see it |
 | `setParams(obj)` | replace all query params (`replace: true`, no scroll) |
 | `updateParams(fn)` | merge query params through a function |
 | `getDirection()` | `'next' \| 'prev' \| 'first'` from history indices |
@@ -454,9 +491,10 @@ shape from the schema instead of restating it:
 const blank = leads.make({ status: 'new' })   // defaults from db/schema.lite
 ```
 
-Lookup order is `db/schema.lite`, `../db/schema.lite` (a `web/` folder next to a
-root-level `db/`), then `schema.lite`. Override with `schema: 'path/to/x.lite'`, or
-disable with `schema: false`.
+Lookup order is `db/schema.lite`, `../db/schema.lite`, then `schema.lite` — all relative
+to the Vite root. In the standard layout the second one is the hit: Vite's root is `web/`
+and the schema is at `../db/schema.lite`, its sibling. Override with
+`schema: 'path/to/x.lite'`, or disable with `schema: false`.
 
 Only models become resources. Enums, `type T { … }` declarations and `FileRef` are
 registered too, but as **definitions** — they are what `$ref` points at, not things you
@@ -756,14 +794,77 @@ WebSocket-heavy app keeps every response payload alive for the tab's lifetime.
 otherwise. A static build that produces no pages says so rather than silently emitting an
 SPA.
 
-> Two caveats found while verifying. Prerendering runs the route through Mesa's
-> `renderComponent`, which writes a temporary module inside the Mesa package directory —
-> so under a **linked** workspace (`bun link`, symlinked `node_modules`), a page or layout
-> that imports `@frontierjs/sierra/*` fails to resolve during prerender and that page is
-> skipped. Normal installs resolve fine. Also, `load()` cannot use relative URLs at build
-> time: there is no origin, so `sierraFetch` throws and directs you to `getStaticPaths()`.
-> When a render does fail, the summary still reports "no route declares `render: static`",
-> which is misleading — read the `prerender:` warning above it.
+> ~~Prerendering writes a temporary module inside the Mesa package directory, so under a
+> linked workspace a page or layout importing `@frontierjs/sierra/*` fails to resolve
+> and that page is skipped.~~ **Fixed 2026-08-03.** Mesa's `renderComponent` now takes a
+> `tmpDir`, and Sierra points it at `node_modules/.sierra/render` inside the app — so
+> compiled modules resolve bare imports from the app's own tree.
+>
+> One caveat remains: `load()` cannot use relative URLs at build time — there is no
+> origin, so `sierraFetch` throws and directs you to `getStaticPaths()`. When a render
+> does fail, the summary still reports "no route declares `render: static`", which is
+> misleading — read the `prerender:` warning above it.
+
+### Islands — making a static page interactive
+
+A `target: 'static'` page ships HTML and CSS and **no script**, so on its own it is inert
+forever. Islands are how a piece of one comes alive. Mark a component with a `client:*`
+directive and Sierra does the rest:
+
+```html
+<script>
+  import Counter from '../islands/Counter.mesa'
+</script>
+<main>
+  <h1>prerendered, ships no JS</h1>
+  <Counter client:load start={7} />
+</main>
+```
+
+The prerendered HTML carries the island inside comment markers, and Sierra puts a script
+tag only on pages that have one:
+
+```html
+<main><h1>prerendered, ships no JS</h1>
+<!--mesa-island {"component":"Counter","directive":"load","props":{"start":7}}-->
+<button>count: 7</button>
+<!--/mesa-island--></main>
+<script type="module" src="/assets/islands-C6C54-f9.js"></script>
+```
+
+| Directive | When it mounts |
+|---|---|
+| `client:load` | immediately, as soon as the bundle runs |
+| `client:idle` | on `requestIdleCallback` (a timeout where that is missing) |
+| `client:visible` | when the island's first element scrolls into view |
+| `client:media="(min-width: 600px)"` | when the query matches, then and there or on change |
+| `client:static` | **never** — "no JS even if the component is reactive"; its chunk is not fetched |
+
+Four things worth knowing:
+
+- **Mounting replaces the prerendered markup**; it does not adopt it. Mesa has no
+  hydration, so there is nothing to adopt with. For equal props the markup is identical,
+  so nothing visibly moves.
+- **An island's CSS ships once.** Scope hashes are content-addressed, so the
+  `<style id="mHASH">` in the prerendered page is the same id the island's chunk
+  would inject under — and Mesa's `addStyles` skips an id already in the
+  document. Each component gets its own `<style>` block rather than one blob.
+- **Props must survive JSON.** They are serialized into the marker at render time, so a
+  function prop is dropped with a warning and the island mounts without it.
+- **One chunk per island, fetched when its directive fires.** A `client:visible` island
+  below the fold downloads nothing until it is scrolled to; a `client:media` island whose
+  query never matches is never downloaded at all. Verified against resource timing in a
+  real browser. The shared entry (Mesa runtime + loader) is loaded by any page with an
+  island.
+- **A component name is the key.** The marker carries a name, so two different modules
+  used under the same component name collide; the build warns and mounts the first.
+
+Turn the whole pass off with `islands: false` in `sierra.config.js`.
+
+`tests/fixtures/island-site/` is a runnable app for this, and `verify.mjs` beside it
+proves the claims the only way they can be proved — clicking prerendered buttons in
+headless Chrome, and reading resource timing to confirm which chunks were fetched. It
+covers all five directives, per-island splitting, and CSS scoping. See its README.
 
 **`widget`** — `createSierraViteConfig` accepts it and returns a library-ish Vite config
 with optional shadow-DOM CSS inlining, but there is **no widget build loop, entry
@@ -863,7 +964,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 ## Testing
 
 ```bash
-bun run test        # vitest — 558 tests, 28 files
+bun run test        # vitest — 672 tests, 32 files
 bun run typecheck   # scripts/typecheck.mjs — baseline 0
 ```
 
@@ -874,9 +975,9 @@ runner reports failures that are runner artifacts rather than bugs.
 
 ## Known rough edges
 
-- `vite.config.js` must sit at the Vite root unless `_configPath` is set — see the
-  [Quick start](#quick-start) note. The path is derived by string-rewriting the resolved
-  Vite config path.
+- `sierra.config.js` is found by probing four locations relative to `vite.config.js` and
+  the Vite root — see the [Quick start](#quick-start) note. Somewhere else entirely still
+  needs `_configPath`.
 - Mesa, Junction and Litestone are imported but not declared as dependencies. Resolution
   is hand-rolled against each package's `exports` map.
 - `target: 'widget'` is advertised but not implemented.

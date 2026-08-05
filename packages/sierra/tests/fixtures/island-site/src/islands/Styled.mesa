@@ -1,0 +1,8 @@
+<script>
+  let on = false
+</script>
+<button id="styled" class:active={on} onclick={() => on = !on}>styled: {on ? 'yes' : 'no'}</button>
+<style>
+  button { background: rgb(10, 20, 30); color: rgb(200, 210, 220); }
+  button.active { background: rgb(40, 50, 60); }
+</style>

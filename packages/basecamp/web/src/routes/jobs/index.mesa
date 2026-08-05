@@ -1,0 +1,119 @@
+---
+title: Jobs
+---
+<script>
+  import { session } from '../../session.js'
+  import { jobs } from '../../resources/jobs.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  $: session.workspaceId
+
+  let rows    = []
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows = (await jobs.service.find({}, { limit: 100 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // Same rule as servers: the event is named after the method, and reads are
+  // excluded or the handler answers its own refetch.
+  const READS = new Set(['get', 'find'])
+  const off = jobs.service.on('*', (method, row) => {
+    if (READS.has(method) || !row?.id) return
+    const i = rows.findIndex(r => r.id === row.id)
+    if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
+    else load()
+  })
+  $onDestroy(off)
+
+  async function trigger(job) {
+    error = null; busy = job.id
+    try {
+      // Returns the job row plus `queued: true` — the run itself happens on
+      // Caravan's thread, so what comes back is the job, not the run.
+      const updated = await jobs.service.action('trigger', job.id)
+      const i = rows.findIndex(r => r.id === job.id)
+      if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const TONE = { running: 'info', failed: 'danger', cancelled: 'muted' }
+  const RUN_TONE = { success: 'success', failed: 'danger', timeout: 'warning', running: 'info' }
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
+</script>
+
+<div class="section-header">
+  <h1>Jobs</h1>
+  <span class="text-sm text-muted">scheduled and one-shot work</span>
+</div>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <article class="alert info">
+    <div class="alert-content">
+      No jobs in this workspace. Seed the example fleet with <code>bun run db:seed</code>.
+    </div>
+  </article>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped hover">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Kind</th>
+          <th scope="col">Schedule</th>
+          <th scope="col">Status</th>
+          <th scope="col">Last run</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="job-rows">
+        {#each rows as job}
+          <tr>
+            <td><a href={`/jobs/${job.id}/`}>{job.name}</a></td>
+            <td>{job.kind}</td>
+            <td><code>{job.cronExpression ?? '—'}</code></td>
+            <td><span class="pill {TONE[job.status] ?? ''}">{job.status}</span></td>
+            <td class="text-sm text-muted">
+              {when(job.lastRunAt)}
+              {#if job.lastRunStatus}
+                <span class="badge {RUN_TONE[job.lastRunStatus] ?? 'muted'}">{job.lastRunStatus}</span>
+              {/if}
+            </td>
+            <td>
+              <div class="cluster">
+                <button class="btn ghost" disabled={busy === job.id} on:click={() => trigger(job)}>
+                  {busy === job.id ? 'Queuing…' : 'Run now'}
+                </button>
+                <a class="btn ghost" href={`/jobs/${job.id}/`}>Open</a>
+              </div>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

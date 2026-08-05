@@ -1,0 +1,141 @@
+---
+title: Deployment
+---
+<script>
+  import { page } from '@frontierjs/sierra/router'
+  import { status } from '@frontierjs/sierra/junction'
+  import { deployments } from '../../../resources/deployments.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  $: page.params
+  $: status.connected
+
+  let deployment = null
+  let error      = null
+  let loading    = true
+
+  const TERMINAL = ['success', 'failed', 'cancelled', 'rolled_back']
+
+  async function load() {
+    error = null
+    try {
+      // get() returns the deployment WITH its steps; the channel event does
+      // not carry them, which is why a push triggers a reload here rather than
+      // a merge. One request per step transition, on one open screen, is the
+      // cheapest correct answer.
+      deployment = await deployments.service.get(page.params.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: page.params.id, () => load()
+
+  // The engine pushes on every step transition. This is the screen the channel
+  // exists for: a release advances over ~10 seconds and a person watching it
+  // should not have to reload to find out it finished.
+  const off = deployments.service.on('patched', (row) => {
+    if (row.id === page.params.id) load()
+  })
+  $onDestroy(off)
+
+  async function cancel() {
+    error = null
+    try {
+      // `remove` on this service is a CANCEL, not a delete: deployment history
+      // is the record of what shipped, so it is never erased here.
+      deployment = { ...deployment, ...(await deployments.service.remove(deployment.id)) }
+      load()
+    } catch (e) { error = e.message }
+  }
+
+  const TONE = { success: 'success', failed: 'danger', cancelled: 'muted', rolled_back: 'warning' }
+  const STEP_TONE = { success: 'success', failed: 'danger', running: 'info', skipped: 'muted' }
+
+  const when = (iso) => iso ? new Date(iso).toLocaleTimeString() : '—'
+  const secs = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
+
+  $: steps    = deployment?.steps ?? []
+  $: running  = deployment && !TERMINAL.includes(deployment.status)
+  $: done     = steps.filter(s => s.status === 'success').length
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error && !deployment}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{:else if deployment}
+  <div class="section-header">
+    <h1>{deployment.app?.name ?? 'Deployment'}</h1>
+    <div class="cluster">
+      <span class="pill {TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
+      {#if running}
+        <button class="btn ghost danger" on:click={cancel}>Cancel</button>
+      {/if}
+      <a class="btn ghost" href="/deployments/">All deployments</a>
+    </div>
+  </div>
+
+  {#if error}
+    <article class="alert danger">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if running && !status.connected}
+    <!-- Honest about the mechanism: with no socket this page does not poll, so
+         it will sit on a stale status until it is reloaded. Saying so beats
+         quietly showing an out-of-date release as though it were current. -->
+    <article class="alert warning">
+      <div class="alert-content">
+        This release is still running and the live connection is down — reload to see where it got to.
+      </div>
+    </article>
+  {/if}
+
+  <dl class="facts">
+    <dt>Environment</dt> <dd>{deployment.app?.environment?.name ?? '—'}</dd>
+    <dt>Trigger</dt>     <dd>{deployment.trigger}</dd>
+    <dt>Commit</dt>      <dd><code>{deployment.commitSha ?? '—'}</code> {deployment.commitMessage ?? ''}</dd>
+    <dt>Image</dt>       <dd><code>{deployment.toImage ?? '—'}</code></dd>
+    <dt>Duration</dt>    <dd>{secs(deployment.durationMs)}</dd>
+  </dl>
+
+  <div class="section-header">
+    <h2 class="h4">Steps</h2>
+    <span class="text-sm text-muted" id="step-progress">{done} / {steps.length} complete</span>
+  </div>
+
+  <!--
+    .feed, not .steps. Both are in the design system and only one fits: .steps
+    is a WIZARD — a horizontal indicator of where you are in a flow you are
+    driving — and it draws a connector line straight through its labels when
+    used for anything else. A deployment is a chronological event stream that
+    happens to you, which is what .feed is (css patterns/feed.css). The dot
+    reads --bg-mix, so a tone class colours it and no colour is named here.
+  -->
+  <ol class="feed" id="deploy-steps">
+    {#each steps as step}
+      <li>
+        <article class="feed-item">
+          <span class="feed-dot {STEP_TONE[step.status] ?? ''}" aria-hidden="true"></span>
+          <div class="feed-content">
+            <div class="text-muted text-sm">{when(step.startedAt)} · {secs(step.durationMs)}</div>
+            <div class="cluster">
+              <strong>{step.name}</strong>
+              <span class="pill {STEP_TONE[step.status] ?? ''}">{step.status}</span>
+            </div>
+            {#if step.output}
+              <pre class="text-sm">{step.output}</pre>
+            {/if}
+          </div>
+        </article>
+      </li>
+    {/each}
+  </ol>
+{/if}

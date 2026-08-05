@@ -1,0 +1,29 @@
+{
+  "name": "@frontierjs/example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The kitchen sink \u2014 one shop-ops app exercising as much of FrontierJS as a single app can.",
+  "scripts": {
+    "api": "bun run api/app.ts",
+    "web": "vite -c web/config/vite.config.js",
+    "build": "vite build -c web/config/vite.config.js",
+    "verify": "node web/test/verify.mjs",
+    "preview": "node web/test/preview.mjs",
+    "verify:build": "vite build -c web/config/vite.config.js && node web/test/verify-build.mjs",
+    "reset": "rm -rf db/shop.db db/shop.db-shm db/shop.db-wal db/audit",
+    "verify:ui": "node web/test/verify-ui.mjs"
+  },
+  "dependencies": {
+    "@frontierjs/auth": "workspace:*",
+    "@frontierjs/css": "workspace:*",
+    "@frontierjs/junction": "workspace:*",
+    "@frontierjs/litestone": "workspace:*",
+    "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/sierra": "workspace:*",
+    "@frontierjs/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^8.0.3"
+  }
+}

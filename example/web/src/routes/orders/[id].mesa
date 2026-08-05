@@ -1,0 +1,215 @@
+---
+title: Order
+---
+<script>
+  // One order, in depth. This is where the kit's *behavioural* components
+  // earn their place: a state machine drawn as Steps, an actions menu, a
+  // confirmation dialog for the moves you cannot take back, and a toast for
+  // what the server said.
+  //
+  // As everywhere else in this app, no list of statuses or moves is written
+  // here. The ladder comes from fields.status.enum and the offered moves from
+  // orders.transitions(row, level) — both read out of db/schema.lite.
+  import { orders, customers } from '../../resources/shop.mesa'
+  import { session } from '../../session.js'
+  import { page, goto } from '@frontierjs/sierra/router'
+
+  import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Breadcrumbs    from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import Button         from '@frontierjs/ui/components/forms/Button.mesa'
+  import DropdownItem   from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownMenu   from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import Modal          from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader  from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Skeleton       from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard       from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Steps          from '@frontierjs/ui/components/display/Steps.mesa'
+  import Tab            from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabList        from '@frontierjs/ui/components/layout/TabList.mesa'
+  import TabPanel       from '@frontierjs/ui/components/layout/TabPanel.mesa'
+  import Tabs           from '@frontierjs/ui/components/layout/Tabs.mesa'
+  import Tooltip        from '@frontierjs/ui/components/overlay/Tooltip.mesa'
+  import { toasts }     from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.params, session.level)
+
+  let order    = null
+  let customer = null
+  let error    = null
+  let busy     = null
+  let confirm  = null      // the move awaiting confirmation, or null
+
+  // The lifecycle, as the schema states it. `Steps` wants {id,label}; the enum
+  // is the list, in declaration order, which is also the order it happens in.
+  const lifecycle = orders.fields.status.enum
+    .filter(s => s !== 'cancelled' && s !== 'refunded')
+    .map(s => ({ id: s, label: s }))
+
+  // A move nobody can undo asks first. Which ones those are is not a list
+  // either — it is any move whose target is not further along the lifecycle.
+  const isTerminal = (move) => !lifecycle.some(s => s.id === move.to)
+
+  async function load() {
+    error = null
+    try {
+      order = await orders.service.get(page.params.id)
+      customer = order?.customerId
+        ? await customers.service.get(order.customerId).catch(() => null)
+        : null
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  load()
+
+  async function run(move) {
+    confirm = null
+    busy = move.name
+    try {
+      await orders.service.action(move.name, order.id)
+      await load()
+      toasts.success(`${move.name} → ${order.status}`)
+    } catch (e) {
+      // 403 from a per-move @gate, 409 from a move that is not legal from here.
+      toasts.error(e.message)
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // The menu offers a move whether or not this session may take it, and says
+  // why not — the same permissive contract as everywhere else. The server
+  // regrades on arrival regardless.
+  function ask(move) {
+    if (isTerminal(move)) confirm = move
+    else run(move)
+  }
+</script>
+
+<Breadcrumbs items={[
+  { label: 'Orders', href: '/orders/' },
+  { label: order ? order.reference : 'Loading…' },
+]} />
+
+{#if error && !order}
+  <Alert tone="danger">{error}</Alert>
+{:else if !order}
+  <div class="stack">
+    <Skeleton variant="text" width="40%" />
+    <Skeleton variant="card" />
+  </div>
+{:else}
+  <SectionHeader title={order.reference} level={1} sub={'order #' + order.id}>
+    {#snippet action()}
+      <DropdownMenu>
+        {#snippet trigger()}
+          <Button variant="outlined" id="order-actions">Actions</Button>
+        {/snippet}
+
+        {#each orders.transitions(order, session.level) as move}
+          <DropdownItem
+            tone={isTerminal(move) ? 'danger' : ''}
+            disabled={!move.allowed || busy !== null}
+            kbd={move.allowed ? '' : 'level ' + move.gate}
+            onclick={() => ask(move)}
+          >{move.name}</DropdownItem>
+        {/each}
+      </DropdownMenu>
+    {/snippet}
+  </SectionHeader>
+
+  <!--
+    The state machine, drawn. `currentStep` is the row's own status, so an
+    order that has left the happy path (cancelled, refunded) lands on no step
+    at all — which is exactly what the schema says about it.
+  -->
+  <Steps steps={lifecycle} currentStep={order.status} label="Order lifecycle" />
+
+  <div class="tiles" style="--tile-min: 12rem">
+    <StatCard label="Status" value={order.status} tone={order.status === 'cancelled' ? 'danger' : ''} />
+    <StatCard label="Total"  value={String(order.total)} />
+    <StatCard label="Customer" value={customer ? customer.name : '#' + order.customerId} />
+  </div>
+
+  <Tabs activeId="summary">
+    <TabList label="Order detail">
+      <Tab id="summary">Summary</Tab>
+      <Tab id="moves">Moves</Tab>
+      <Tab id="raw">Raw record</Tab>
+    </TabList>
+
+    <TabPanel id="summary">
+      <dl class="facts">
+        <dt>Reference</dt><dd><code>{order.reference}</code></dd>
+        <dt>Status</dt><dd><Pill>{order.status}</Pill></dd>
+        <dt>Note</dt><dd>{order.note === null ? '—' : order.note}</dd>
+        <dt>Placed</dt><dd>{order.createdAt}</dd>
+      </dl>
+    </TabPanel>
+
+    <TabPanel id="moves">
+      {#if !orders.transitions(order, session.level).length}
+        <p class="text-sm text-muted">
+          Nothing leaves <code>{order.status}</code>. That is the schema's
+          answer, not this page's.
+        </p>
+      {:else}
+        <ul class="stack">
+          {#each orders.transitions(order, session.level) as move}
+            <li class="cluster">
+              <!-- A tooltip is the right home for "why is this disabled" —
+                   it is on the control, not in a paragraph beside it. -->
+              <Tooltip label={move.allowed
+                ? move.from + ' → ' + move.to
+                : 'needs level ' + move.gate + '; this session is ' + session.level}>
+                <Button
+                  variant="ghost"
+                  tone={isTerminal(move) ? 'danger' : ''}
+                  disabled={!move.allowed || busy !== null}
+                  loading={busy === move.name}
+                  onclick={() => ask(move)}
+                >{move.name}</Button>
+              </Tooltip>
+              <span class="text-sm text-muted">{move.from} → {move.to}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </TabPanel>
+
+    <TabPanel id="raw">
+      <pre class="code-block" id="raw-record">{JSON.stringify(order, null, 2)}</pre>
+    </TabPanel>
+  </Tabs>
+{/if}
+
+<!--
+  One modal, driven by which move is pending rather than by a boolean per
+  move. `open` is the whole state: closing it is setting `confirm` to null.
+-->
+<Modal
+  open={confirm !== null}
+  title={confirm ? 'Confirm ' + confirm.name : ''}
+  tone="danger"
+  onclose={() => confirm = null}
+>
+  {#snippet footer()}
+    <div class="cluster">
+      <Button variant="ghost" onclick={() => confirm = null}>Keep it</Button>
+      <Button tone="danger" onclick={() => run(confirm)}>
+        Yes, {confirm ? confirm.name : ''} it
+      </Button>
+    </div>
+  {/snippet}
+
+  {#if confirm}
+    <p>
+      This moves <code>{order.reference}</code> from <code>{confirm.from}</code>
+      to <code>{confirm.to}</code>, and <code>@@transitions</code> declares no
+      way back.
+    </p>
+  {/if}
+</Modal>

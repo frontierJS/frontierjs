@@ -1,0 +1,82 @@
+---
+title: Audit trail
+---
+<script>
+  import { session } from '../../../session.js'
+  import { audit } from '../../../resources/audit.mesa'
+
+  $: session.workspaceId
+
+  let rows    = []
+  let error   = null
+  let loading = true
+  let filter  = ''
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // The service filters; the browser does not. A page-local .filter() would
+      // hide rows that are simply on the next page and call that a result.
+      rows = (await audit.service.find(filter ? { subjectType: filter } : {}, { limit: 50 })).data
+    } catch (e) {
+      // 403 here is the service saying this caller is not an admin — which is
+      // the correct answer, and worth showing rather than hiding the page.
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+</script>
+
+<p class="text-body">
+  Who did what in this workspace. Written by the application after every mutation, and <strong>append-only</strong> — the service answers 405 to anything that would edit it.
+</p>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<form class="cluster" on:submit|preventDefault={load}>
+  <label class="visually-hidden" for="audit-filter">Subject type</label>
+  <input class="field" id="audit-filter" style="--field-inline-size: 14rem"
+         placeholder="subject type, e.g. servers" bind:value={filter} />
+  <button class="btn outlined" type="submit">Filter</button>
+</form>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <article class="alert info">
+    <div class="alert-content">Nothing recorded yet — the trail fills as work happens.</div>
+  </article>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped">
+      <thead>
+        <tr>
+          <th scope="col">When</th>
+          <th scope="col">Action</th>
+          <th scope="col">Subject</th>
+          <th scope="col">Actor</th>
+        </tr>
+      </thead>
+      <tbody id="audit-rows">
+        {#each rows as event}
+          <tr>
+            <td class="text-sm text-muted">{when(event.createdAt)}</td>
+            <td><code>{event.action}</code></td>
+            <td>{event.subjectType} <span class="text-sm text-muted">{event.subjectId?.slice(0, 8)}</span></td>
+            <td class="text-sm">{event.actorType} <span class="text-muted">{event.actorId?.slice(0, 8) ?? 'system'}</span></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

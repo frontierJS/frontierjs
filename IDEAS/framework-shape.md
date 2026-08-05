@@ -81,6 +81,16 @@ beside them.
 
 ### 1. Schema → Resource. By a distance.
 
+> **Corrected 2026-08-02.** `fli admin:generate` (595 lines,
+> `packages/cli/commands/admin/generate.md`) already generates a gate-aware CRUD UI —
+> list, detail, create, edit — from `schema.lite`. So "nothing renders from it" was
+> wrong as written: a codegen path exists. It has drifted badly from the current
+> stack, though — it emits `.svelte` into `web/src/routes/`, generates
+> `_layout.svelte` rather than `_module.mesa`, and documents a lowercase-plural
+> `users` model. Details and the repair-or-retire question in
+> `IDEAS/ecosystem-gaps.md`. The argument below still stands for *derived* (rather
+> than generated) UI, which is the stronger claim.
+
 The payoff of "schema-seeded" is that `model Lead` yields a working, validated,
 gate-aware form and table without writing either. Something like
 `<Form model="Lead" />` that knows `@email` is an email input, `@length(1,200)` is
@@ -138,6 +148,19 @@ Junction's service types agree with them.** A framework whose value is derivatio
 needs the derivation type-checked end to end, or drift is invisible until runtime.
 Junction's `bun run typecheck` baseline of 219 is the only ratchet that exists.
 
+### 6. Nothing runs any of this automatically.
+
+**Added 2026-08-03.** There is no `.github/` directory in the repo — no CI, no hook,
+no scheduled job. The aggregate scripts are real and correct (`bun run test` runs 13
+packages, continues past a failure, exits 1 on jetty's known one), so this is a
+missing file rather than a design problem. But three of sixteen package directories
+are skipped in silence, `packages/basecamp` and `packages/orion` are untracked by git
+entirely, and every landmine in `CLAUDE.md` was found by hand — most of them
+silent-success bugs that compile, render and exit 0.
+
+Testing is also the second named realm (**Suite**) with no package and no primitives,
+alongside Release at item 3. Full treatment in `IDEAS/testing-and-ci.md`.
+
 ---
 
 ## Consolidate rather than add
@@ -169,6 +192,7 @@ slices first (as that document already sequences), and let schema→UI decide wh
 ## See also
 
 - `IDEAS/slices.md` — the packaging half of the same problem
+- `IDEAS/testing-and-ci.md` — item 6 in full: automated CI, and the Suite realm
 - `ARCHITECT.md` §5 — "UI plugin system limited; JSON Schema → UI drives `make()`
   only" is the existing, understated statement of item 1
 - `drift-report.md` — the hand-copy and duck-typing findings

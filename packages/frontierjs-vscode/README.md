@@ -36,7 +36,7 @@ function slug(text: String): String {
   @@expr("lower(replace({text}, ' ', '-'))")
 }
 
-model accounts {
+model Account {
   id        Int  @id
   name      String
   slug      String     @slug(name)

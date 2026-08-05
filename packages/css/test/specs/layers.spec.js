@@ -21,6 +21,7 @@ var EXPECTED_ORDER = [
   'layout',
   'components',
   'patterns',
+  'utilities',
   'a11y',
 ];
 
@@ -80,6 +81,59 @@ test('layers: .bar.center stays a flex bar, not a centring grid', function () {
 
   var plain = el('<div class="center">x</div>');
   assert.equal(style(plain, 'display'), 'grid', '.center is no longer a centring grid');
+});
+
+test('layers: a .text-* utility beats a component that sets its own font-size', function () {
+  /*
+   * The bug the `utilities` layer was added for (v0.10.1). `.btn` declares
+   * `font-size: 0.875rem` and buttons.css is imported after typography.css;
+   * while the size utilities lived in `components` alongside it, the two
+   * tied on specificity and source order settled it — so every one of the
+   * five documented size modifiers rendered at 14px on a button, and the
+   * style guide showed five identical buttons under a caption explaining
+   * how they differ.
+   *
+   * Checked on .btn because that is where it bit, and on .badge because the
+   * fix has to be layer-wide rather than a rule aimed at buttons.
+   */
+  var steps = [
+    ['text-xs', '12px'],
+    ['text-sm', '13px'],
+    ['text-md', '14px'],
+    ['text-lg', '16px'],
+    ['text-xl', '18px'],
+  ];
+
+  steps.forEach(function (step) {
+    var btn = el('<button class="btn ' + step[0] + '">Save</button>');
+    assert.equal(
+      style(btn, 'font-size'),
+      step[1],
+      '.btn.' + step[0] + ' lost to .btn’s own font-size'
+    );
+  });
+
+  var badge = el('<span class="badge text-xl">New</span>');
+  assert.equal(style(badge, 'font-size'), '18px', '.badge.text-xl lost to .badge');
+
+  /* Colour is the other axis, and it has the same problem to avoid. */
+  var delta = el('<div class="tile"><div class="tile-delta text-danger">d</div></div>');
+  assert.sameColor(
+    style(delta.firstChild, 'color'),
+    'rgb(244, 64, 58)',
+    '.text-danger lost to .tile-delta'
+  );
+});
+
+test('layers: utilities still lose to the a11y primitives', function () {
+  /*
+   * `utilities` is late, but not last. `.visually-hidden` has to win over
+   * anything a consumer chains onto it, or an icon-only button's label
+   * becomes visible.
+   */
+  var span = el('<span class="visually-hidden text-xl">Delete invoice</span>');
+  assert.equal(style(span, 'position'), 'absolute', '.visually-hidden was outranked');
+  assert.equal(style(span, 'width'), '1px', '.visually-hidden was outranked');
 });
 
 test('layers: unlayered consumer CSS beats the package without !important', function () {

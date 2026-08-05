@@ -22,13 +22,26 @@ const freshJsonSchema = (context) => {
 }
 
 // ─── scanFiles ────────────────────────────────────────────────────────────────
-// Returns all files in a directory matching one or more extensions.
+// Returns all files under a directory matching one or more extensions.
+// Recursive: an app may group a service in its own folder
+// (api/src/services/apps/apps.service.ts) rather than keeping them flat.
 
 const scanFiles = (dir, ...exts) => {
   if (!existsSync(dir)) return []
-  return readdirSync(dir, { withFileTypes: true })
-    .filter(e => e.isFile() && exts.some(x => e.name.endsWith(x)))
-    .map(e => resolve(dir, e.name))
+  const out = []
+  const walk = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const full = resolve(d, e.name)
+      if (e.isDirectory()) {
+        if (e.name === 'node_modules' || e.name.startsWith('.')) continue
+        walk(full)
+      } else if (e.isFile() && exts.some(x => e.name.endsWith(x))) {
+        out.push(full)
+      }
+    }
+  }
+  walk(dir)
+  return out.sort()
 }
 
 // ─── extractServiceMeta ───────────────────────────────────────────────────────
@@ -85,12 +98,16 @@ const extractServiceMeta = (src, filename) => {
 }
 
 // ─── extractResourceMeta ──────────────────────────────────────────────────────
-// Reads a .mesa or .svelte resource file and extracts model, service, hook names.
+// Reads a resource module and extracts model, service and hook names.
+//
+// The service name is the FIRST POSITIONAL ARGUMENT of createResource() — it is
+// not a `service:` key:  createResource('people', { model: 'Person' }).
 
 const extractResourceMeta = (src, filename) => {
+  const callM    = src.match(/createResource\s*\(\s*['"]([\w-]+)['"]/)
   const modelM   = src.match(/model\s*:\s*['"](\w+)['"]/)
-  const serviceM = src.match(/service\s*:\s*['"](\w+)['"]/)
-  const name     = basename(filename).replace(/\.(mesa|svelte)$/, '')
+  const serviceM = callM ?? src.match(/service\s*:\s*['"](\w+)['"]/)
+  const name     = basename(filename).replace(/\.(mesa|js)$/, '')
 
   // Collect function names referenced inside hooks: { ... } blocks
   const hookFns = []
@@ -160,24 +177,32 @@ const TIER1_PACKAGES = [
 ]
 
 const extractServerMeta = (root) => {
-  // Candidate server entry files — check most specific first
-  const candidates = [
-    resolve(root, 'api/src/server.ts'),
-    resolve(root, 'api/server.ts'),
-    resolve(root, 'api/src/server.js'),
-    resolve(root, 'api/server.js'),
-    resolve(root, 'server.ts'),
-    resolve(root, 'server.js'),
-  ]
+  // Candidate server entry files — check most specific first.
+  // server.* is the scaffolded name; app.* and index.* are what hand-written
+  // apps actually use (example/api/app.ts, basecamp/api/src/index.ts), and
+  // missing them reported "no packages installed" for both.
+  const names = ['server', 'app', 'index']
+  const dirs  = ['api/src', 'api', '.']
+  const candidates = dirs.flatMap(d =>
+    names.flatMap(n => ['ts', 'js'].map(e => resolve(root, d, `${n}.${e}`)))
+  )
 
-  const serverFile = candidates.find(f => existsSync(f))
-  if (!serverFile) return { serverFile: null, packages: [] }
+  const serverFile = candidates.find(f => existsSync(f)) ?? null
 
-  // Also scan auth.ts alongside server.ts — auth signals often live there
-  const authFile = resolve(resolve(serverFile, '..'), 'auth.ts')
+  // Signals live wherever the app is COMPOSED, which is not always the entry:
+  // basecamp's api/src/index.ts only calls buildBasecampApp(), and every
+  // app.configure() sits in api/src/core/app.ts. Reading the entry alone
+  // reported "no packages installed" for an app that configures four of them,
+  // so scan the API tree.
+  const apiDir  = resolve(root, 'api')
+  const sources = existsSync(apiDir)
+    ? scanFiles(apiDir, '.ts', '.js').filter(f => !/[\\/](test|tests|dist)[\\/]/.test(f))
+    : []
+  if (!serverFile && !sources.length) return { serverFile: null, packages: [] }
+
   const src = [
-    readFileSync(serverFile, 'utf8'),
-    existsSync(authFile) ? readFileSync(authFile, 'utf8') : '',
+    serverFile ? readFileSync(serverFile, 'utf8') : '',
+    ...sources.map(f => readFileSync(f, 'utf8')),
   ].join('\n')
 
   const packages = TIER1_PACKAGES.map(pkg => ({
@@ -203,7 +228,9 @@ const extractServerMeta = (root) => {
 const parseMigrationFiles = (migrationsDir) => {
   if (!existsSync(migrationsDir)) return []
   return readdirSync(migrationsDir)
-    .filter(f => /^\d{14}_[\w]+\.sql$/.test(f))
+    // Both naming schemes in the wild: litestone's 14-digit timestamp
+    // (20260804120000_add_orders.sql) and a hand-numbered 001_initial.sql
+    .filter(f => /^\d+[_-][\w.-]*\.sql$/.test(f))
     .sort()
     .map(f => ({
       name: f,

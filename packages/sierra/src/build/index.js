@@ -21,6 +21,7 @@ import { schemaPlugin }  from './schema-plugin.js'
 import { virtualSierraPlugin } from '../virtual/virtual-sierra.js'
 import { runPostBuild } from '../postbuild/index.js'
 import { prerenderRoutes } from './prerender.js'
+import { buildIslandBundle, injectIntoPages } from './island-bundle.js'
 import { autoImportPlugin } from './auto-import-plugin.js'
 
 /**
@@ -47,7 +48,6 @@ import { autoImportPlugin } from './auto-import-plugin.js'
  *
  * @typedef {Object} SierraContext
  * @property {object|null} tree        — current route tree
- * @property {Map} islandMap           — file → island entries from ctx.islands
  * @property {Map} staticMap           — file → ctx.isStatic boolean
  */
 
@@ -72,7 +72,6 @@ export function createSierraViteConfig(config = {}) {
   /** @type {SierraContext} */
   const sierraContext = {
     tree: null,
-    islandMap: new Map(),
     staticMap: new Map(),
     layoutPropMap: new Map(),  // layout file path → Set of export let prop names
     autoImportMap: new Map(),  // ComponentName → absolute file path
@@ -86,7 +85,14 @@ export function createSierraViteConfig(config = {}) {
     sierraPlugins.push(schemaPlugin(config, sierraContext))
     sierraPlugins.push(scannerPlugin(config, sierraContext))
     sierraPlugins.push(virtualSierraPlugin(config, sierraContext))
-    sierraPlugins.push(postBuildPlugin(config, sierraContext))
+    // The island bundle is a second Vite build, so it needs its own plugin
+    // instances — a factory, not the array. Reusing the live instances would
+    // hand the island build plugins that have already run configResolved for a
+    // different config, and including postBuildPlugin itself would recurse:
+    // its closeBundle is what starts the island build.
+    sierraPlugins.push(postBuildPlugin(config, sierraContext, () => [
+      mesaPlugin({ ...mesaOptions, routesDir }, sierraContext),
+    ]))
   }
 
   // Auto-import (all targets — widget components benefit too)
@@ -285,7 +291,7 @@ function deepMerge(a, b) {
  * Post-build pipeline plugin.
  * Runs after vite build via the closeBundle hook.
  */
-function postBuildPlugin(config, sierraContext) {
+function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
   let root = process.cwd()
   let outDir = config.outDir ?? 'dist/client'
   let isBuild = false
@@ -336,12 +342,49 @@ function postBuildPlugin(config, sierraContext) {
           routesDir: config.routesDir ?? 'src/routes',
           outDir,
           renderComponent,
+          // Islands are the only way a `target: 'static'` page can be
+          // interactive — it ships no other script — so the marker pass is on
+          // for this target rather than being another flag to find.
+          islands: config.islands !== false,
+          // Compile temp modules inside the app so a layout's bare imports
+          // resolve from the app's node_modules, not Mesa's (Mesa SSR_SPEC W1).
+          tmpDir: resolve(root, 'node_modules/.sierra/render'),
           warn: (m) => console.warn(`  [Sierra] prerender: ${m}`),
         })
 
         if (pre.written.length > 0) {
           console.log(`\n  [Sierra] Prerendered ${pre.written.length} page(s):`)
           for (const f of pre.written) console.log(`    ✓ ${f}`)
+        }
+
+        // Islands: bundle what the prerendered pages actually used, then put a
+        // script tag on the pages that use them. A page with no island keeps
+        // shipping zero JavaScript.
+        if (pre.islands?.length) {
+          try {
+            const { build: viteBuild } = await import('vite')
+            const bundle = await buildIslandBundle({
+              islands: pre.islands,
+              root, outDir, base: config.base ?? '/',
+              plugins: islandPlugins(),
+              viteBuild,
+            })
+            if (bundle) {
+              const touched = await injectIntoPages(outDir, pre.islandPages, bundle.src)
+              console.log(
+                `\n  [Sierra] Islands: ${pre.islands.length} component(s) → ${bundle.fileName}` +
+                `\n    mounted on ${touched.length} page(s): ${pre.islands.map(i => i.component).join(', ')}`
+              )
+            }
+          } catch (err) {
+            // Loud, and not fatal to the rest of the build: the pages exist and
+            // are correct, they are just inert. Silence here would ship a site
+            // whose buttons do nothing with a green build log.
+            console.error(
+              `\n  [Sierra] Island bundling FAILED — the prerendered pages are correct but ` +
+              `their islands will not mount:\n    ${err.stack ?? err.message}`
+            )
+          }
         }
         // Silence is how the static target failed before — it emitted nothing
         // and said nothing. If a static build produced no pages, say so.

@@ -1,0 +1,5 @@
+<script>
+  import { RouterView } from '@frontierjs/sierra/router'
+</script>
+
+<RouterView />

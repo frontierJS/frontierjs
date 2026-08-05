@@ -32,6 +32,9 @@ import { spawnSync } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = join(here, '..');
+/* The stylesheets live under src/ since v0.11 — the package root now holds
+   only the manifest, the docs, and the tooling directories. */
+const srcDir = join(pkg, 'src');
 
 const argv = process.argv.slice(2);
 const keep = argv.includes('--keep');
@@ -89,6 +92,36 @@ const escapeForInlineScript = (s) => s.replace(/<\/script/gi, '<\\/script');
 
 const harness = readFileSync(join(here, 'harness.js'), 'utf8');
 
+/*
+ * The shipped file list, handed to the page.
+ *
+ * A spec runs in the browser and cannot read the filesystem, so it cannot
+ * tell whether a .css file exists that index.css forgot to import. That is
+ * the failure the v0.11 directory grouping made possible: a file moves into
+ * components/, the @import is not updated, and *nothing breaks* — the rule
+ * simply never loads, and every test still passes because no test asks for
+ * it. `meta: every shipped stylesheet is reachable from index.css` closes it.
+ *
+ * guide/, demo/ and test/ are tooling, not the package; package.json's
+ * "files" list is the same boundary.
+ */
+const SKIP_DIRS = new Set(['guide', 'demo', 'test', 'node_modules', 'dist']);
+
+function collectCss(dir, base = '') {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = base ? `${base}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (!SKIP_DIRS.has(entry.name)) out.push(...collectCss(join(dir, entry.name), rel));
+    } else if (entry.name.endsWith('.css')) {
+      out.push(rel);
+    }
+  }
+  return out;
+}
+
+const shippedCss = collectCss(srcDir).sort();
+
 const specBlocks = specFiles
   .map((f) => {
     const src = readFileSync(join(specDir, f), 'utf8');
@@ -127,6 +160,7 @@ const page = `<!doctype html>
 </style>
 </head>
 <body class="theme-default">
+<script>window.__FJS_SHIPPED_CSS__ = ${JSON.stringify(shippedCss)};</script>
 <script>${escapeForInlineScript(harness)}</script>
 ${specBlocks}
 <script>
@@ -149,10 +183,11 @@ ${specBlocks}
 `;
 
 /*
- * The page must live beside index.css: the stylesheet is linked relatively
- * and every @import inside it resolves against the package root.
+ * The page must live beside index.css — it links the stylesheet relatively
+ * and every @import inside it resolves against that directory — so it is
+ * written into src/, not the package root.
  */
-const pagePath = join(pkg, '.fjs-test-run.html');
+const pagePath = join(srcDir, '.fjs-test-run.html');
 writeFileSync(pagePath, page);
 
 /* ── Run ───────────────────────────────────────────────────────────── */

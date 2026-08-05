@@ -1,0 +1,146 @@
+<script>
+  // Avatar.mesa
+  // User avatar. Tries the image src first, falls back to initials derived
+  // from `name`, falls back to a generic person icon.
+  //
+  // `.avatar` is one class on one element — the <img> or the <span> IS the
+  // avatar, there is no wrapper. Size is the `--avatar-size` token, and the
+  // font scales from it, so one value resizes the whole thing.
+  //
+  // ── The accessibility rule, which is markup and not CSS ──────────────
+  //
+  // The image form carries its name in `alt`. The initials form defaults to
+  // aria-hidden, because nine times out of ten it sits beside the name it
+  // abbreviates and announcing "D O" there is noise. Pass `standalone` when
+  // the avatar IS the only identification — then it gets role="img" and the
+  // real name. Getting this wrong is the common avatar bug in both
+  // directions: a wall of unlabelled images, or a screen reader spelling out
+  // initials after every name it just read.
+  //
+  // Usage:
+  //   <Avatar src={user.avatar} name={user.name} />
+  //   <Avatar name="Alice Zhao" size="lg" />
+  //   <Avatar name="Dana Ortiz" standalone />
+  //   <Avatar src={url} status="online" />
+  //   <Avatar name="Team" shape="square" />
+
+  import { tone as toTone, cx, TONES } from '../../utils.js'
+
+  export let src        = ''     // image URL — empty string = use initials
+  export let name       = ''     // used for initials + alt text
+  export let size       = 'md'   // 'xs'|'sm'|'md'|'lg'|'xl'
+  export let shape      = 'circle'  // 'circle' | 'square'
+  export let status     = ''     // ''|'online'|'offline'|'away'|'busy'
+  export let tone       = ''     // pin the initials fill instead of deriving it
+  export let standalone = false  // this avatar is the only identification
+
+  let imgError = false
+
+  const sizeMap = {
+    xs: '1.5rem', sm: '2rem', md: '2.25rem', lg: '2.75rem', xl: '3.5rem',
+  }
+
+  // Status maps onto the tone vocabulary rather than a second colour list.
+  const statusToneMap = {
+    online:  'success',
+    offline: 'muted',
+    away:    'warning',
+    busy:    'danger',
+  }
+
+  // Derive initials from name — first letter of first two words
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? '')
+    .join('')
+
+  // Deterministic tone from the name, so the same person is always the same
+  // colour. Picking from the 7 tones rather than a private palette means the
+  // fill and the text contrast are both derived by chip.css.
+  const autoTone = TONES[
+    name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % TONES.length
+  ]
+
+  const sz          = sizeMap[size] ?? sizeMap.md
+  const statusTone  = statusToneMap[status] ?? ''
+  const radius      = shape === 'square' ? 'var(--card-radius, 0.5rem)' : '999px'
+  const initialTone = toTone(tone) || autoTone
+
+  const showImage = src && !imgError
+
+  function handleImgError() { imgError = true }
+</script>
+
+<span class="fjs-avatar-wrap" style:inline-size={sz} style:block-size={sz} {class}>
+  {#if showImage}
+    <img
+      class="avatar"
+      src={src}
+      alt={name || ''}
+      style:--avatar-size={sz}
+      style:--avatar-radius={radius}
+      style:object-fit="cover"
+      on:error={handleImgError}
+    />
+  {:else if initials}
+    <span
+      class={cx('avatar', initialTone)}
+      style:--avatar-size={sz}
+      style:--avatar-radius={radius}
+      role={standalone ? 'img' : null}
+      aria-label={standalone ? name : null}
+      aria-hidden={standalone ? null : 'true'}
+    >
+      {initials}
+    </span>
+  {:else}
+    <!-- Generic person icon fallback -->
+    <span
+      class="avatar muted"
+      style:--avatar-size={sz}
+      style:--avatar-radius={radius}
+      role={standalone ? 'img' : null}
+      aria-label={standalone ? (name || 'User') : null}
+      aria-hidden={standalone ? null : 'true'}
+    >
+      <svg viewBox="0 0 24 24" fill="currentColor" style:--icon-size="0.6em">
+        <path d="M7.5 6.5C7.5 8.981 9.519 11 12 11s4.5-2.019 4.5-4.5S14.481 2 12 2 7.5 4.019 7.5 6.5zM20 21h1v-1c0-3.859-3.141-7-7-7h-4c-3.86 0-7 3.141-7 7v1h17z"/>
+      </svg>
+    </span>
+  {/if}
+
+  {#if statusTone}
+    <!--
+      The dot is decorative; the status word goes in a visually-hidden span so
+      it is actually announced. An aria-label on a <span> with no role is
+      ignored by most screen readers, which is what the old markup did.
+    -->
+    <span
+      class={cx('fjs-avatar-status', statusTone)}
+      style:inline-size={`calc(${sz} * 0.28)`}
+      style:block-size={`calc(${sz} * 0.28)`}
+      aria-hidden="true"
+    ></span>
+    <span class="visually-hidden">{status}</span>
+  {/if}
+</span>
+
+<style>
+  /* A positioning context for the status dot — .avatar itself must stay a
+     plain box so chip.css owns its layout. */
+  .fjs-avatar-wrap {
+    position:    relative;
+    display:     inline-flex;
+    flex-shrink: 0;
+  }
+  .fjs-avatar-status {
+    position:      absolute;
+    inset-block-end:  0;
+    inset-inline-end: 0;
+    border-radius: 999px;
+    background:    var(--bg-mix, var(--color-muted));
+    box-shadow:    0 0 0 2px var(--surface);
+  }
+</style>

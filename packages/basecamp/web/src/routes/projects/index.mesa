@@ -1,0 +1,93 @@
+---
+title: Projects
+---
+<script>
+  import { session } from '../../session.js'
+  import { projects } from '../../resources/projects.mesa'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  const { get: rows, unsubscribe } = useStore(projects.store)
+  $onDestroy(unsubscribe)
+
+  $: session.workspaceId
+
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null; loading = true
+    // No workspace filter is passed: the client stamps X-Workspace-Id on every
+    // request. A page that had to remember to filter by workspace would
+    // eventually forget, and that is a tenancy leak rather than a missing where.
+    try { await projects.load() } catch (e) { error = e.message } finally { loading = false }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  async function remove(project) {
+    error = null
+    try {
+      await projects.service.remove(project.id)
+      // The store drops the row on its own — the service publishes `removed`
+      // and useStore is subscribed. load() again would also work and costs a
+      // round trip to learn what we already know.
+    } catch (e) {
+      error = e.message
+    }
+  }
+</script>
+
+<div class="section-header">
+  <h1>Projects</h1>
+  <a class="btn primary" href="/projects/create/">New project</a>
+</div>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows().length}
+  <article class="alert info">
+    <div class="alert-content">
+      No projects in this workspace yet. <a href="/projects/create/">Create one</a>, or seed the example fleet with <code>bun run db:seed</code>.
+    </div>
+  </article>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped hover">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Slug</th>
+          <th scope="col">Status</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="project-rows">
+        {#each rows() as project}
+          <tr>
+            <td><a href={`/projects/${project.id}/`}>{project.name}</a></td>
+            <td><code>{project.slug}</code></td>
+            <td><span class="pill">{project.status}</span></td>
+            <td>
+              <div class="cluster">
+                <a class="btn ghost" href={`/projects/${project.id}/`}>Open</a>
+                <!-- Not disabled by a permission check. The schema declares no
+                     @@gate yet, so the client can only guess — and the server
+                     refuses regardless. A button that lies about what will
+                     happen is worse than one that reports the refusal. -->
+                <button class="btn ghost danger" on:click={() => remove(project)}>Delete</button>
+              </div>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

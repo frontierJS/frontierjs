@@ -161,23 +161,6 @@ Level 3 (`CREATOR`) is intended for "submit but can't manage" patterns: public f
 
 Decision: document the intended use case more clearly rather than removing the level, since removing it would be a breaking change once published.
 
-### Schema-level transitions (@@transitions)
-
-Formal state machine definitions at the schema level:
-
-```prisma
-model Order {
-  status String @default("draft")
-  @@transitions([
-    { name: "submit",  from: ["draft"],     to: "pending" },
-    { name: "approve", from: ["pending"],   to: "approved" },
-    { name: "cancel",  from: ["draft", "pending"], to: "cancelled" },
-  ])
-}
-```
-
-Enforced by the ORM — attempting an illegal transition throws a `TransitionError`. Currently available as manual validation via computed fields.
-
 ### Multi-region read replicas
 
 Route read queries to a geographically closer SQLite replica synced via Litestream. Adds `readReplicas` config option to `createClient`. Low priority — most SQLite use cases are single-region.

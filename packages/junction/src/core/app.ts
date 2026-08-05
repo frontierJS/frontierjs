@@ -8,7 +8,7 @@ import { bridge } from '../transport/bridge.ts'
 import { freezeUser, runWithMeta, type ServiceContext, type ServiceMethod, type CallOptions, type RequestMeta } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { withLitestoneDb } from './litestone.ts'
+import { withLitestoneDb, describeDataRealm } from './litestone.ts'
 import { createEventBus }           from '../events/index.ts'
 import { createMemoryCache }        from '../cache/index.ts'
 import { createScheduler }          from '../scheduler/index.ts'
@@ -1057,6 +1057,19 @@ export function createApp(opts: AppOptions = {}): App {
           docs:     _docsPath   ? `${_base}${_docsPath}`   : undefined,
           mode:     config.debug ? 'debug' : 'production',
         })
+
+        // The banner covered API and UI-facing surface and said nothing about
+        // the Data realm, so "is the schema even loaded?" had no answer short
+        // of issuing a request. It gets its own line rather than more fields on
+        // the one above: this is the other realm, not more detail about this one.
+        //
+        // The DB path here is the RESOLVED one. That matters more than it looks
+        // — a schema declaring `database main { path … }` overrides createClient's
+        // `db:` option silently, so the file you are actually writing to is not
+        // always the file you think you passed. Printing it makes that visible
+        // at boot instead of three confusing test runs later.
+        const _data = describeDataRealm(db)
+        if (_data) logger.info(`🗄  litestone`, _data)
       }},
     ]
 

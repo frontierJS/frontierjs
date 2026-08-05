@@ -1,0 +1,23 @@
+<script>
+  export let height  = 24
+  export let bgcolor = undefined
+</script>
+
+<!--
+  Spacer — adds vertical whitespace between rows.
+  More reliable than margin/padding across email clients.
+
+  <Spacer height={32} />
+  <Spacer height={16} bgcolor="#f4f4f4" />
+-->
+
+<tr style="{bgcolor ? `background-color:${bgcolor};` : ''}">
+  <td
+    colspan="2"
+    style="
+      font-size:0;
+      line-height:0;
+      height:{height}px;
+      {bgcolor ? `background-color:${bgcolor};` : ''}
+    ">&nbsp;</td>
+</tr>

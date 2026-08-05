@@ -772,6 +772,22 @@ export function resolveDefsKey(
   for (const candidate of candidates) {
     if (jsonSchema.$defs[candidate]) return candidate
   }
+  // …then the PascalCase form of the accessor. `$defs` is keyed by MODEL name
+  // (`Lead`) while `model:` is the accessor (`lead`), so without this every
+  // correctly-named model — PascalCase is mandatory — missed its own
+  // definition and silently fell back to the db-derived schema. The models
+  // loop above only covers the callers that pass `parsedSchema`; `createService`
+  // does not.
+  //
+  // Guarded on `type: 'object'` because `$defs` is the whole definition table,
+  // not a model list: an enum `Plan` sits beside model `Plan`, and resolving an
+  // accessor to an enum is the same bug that made sierra's `createResource`
+  // bind to one.
+  for (const candidate of candidates) {
+    const pascal = candidate.charAt(0).toUpperCase() + candidate.slice(1)
+    const def    = jsonSchema.$defs[pascal] as { type?: string } | undefined
+    if (def && def.type === 'object') return pascal
+  }
   return null
 }
 
@@ -1130,7 +1146,31 @@ export function jsonSchemaToJunctionSchema(
   return schema
 }
 
+/**
+ * Presentation travels with the FIELD, not with the type it references.
+ *
+ * `title` is `@label("Customer")` and `x-messages` is the author's wording for
+ * each rule. Both are read off the field's own schema and never off a $ref
+ * target: Litestone titles every enum $def with the type name, so following the
+ * ref would make `status OrderStatus` call itself "OrderStatus" in every message
+ * it appears in. Sierra's field-rules reads them the same way, from the same
+ * document, which is what makes the browser and the server say one sentence.
+ */
 function mapProp(
+  prop:     LiJsonProp,
+  field:    string,
+  required: string[],
+  defs:     Record<string, LitestoneModelDef | LitestoneEnumDef | LitestoneTypeDef | LitestoneFileDef>
+): FieldDef {
+  const def = _mapProp(prop, field, required, defs)
+  const raw = prop as LiJsonProp & { title?: string; 'x-messages'?: Record<string, string> }
+  if (typeof raw.title === 'string') def.label = raw.title
+  const messages = raw['x-messages']
+  if (messages && typeof messages === 'object') def.messages = messages
+  return def
+}
+
+function _mapProp(
   prop:     LiJsonProp,
   field:    string,
   required: string[],
@@ -1139,7 +1179,7 @@ function mapProp(
   if (Array.isArray(prop.type)) {
     const nonNullType = prop.type.find((t) => t !== 'null')
     const synth: LiJsonProp = { ...prop, type: nonNullType }
-    const def = mapProp(synth, field, required, defs)
+    const def = _mapProp(synth, field, required, defs)
     def.nullable = true
     return def
   }
@@ -1238,3 +1278,62 @@ function resolveType(prop: LiJsonProp): FieldDef['type'] {
 // longer existed, and the reserved-key set had no readers. Use
 // ServiceDefinition and SERVICE_OPTION_KEYS from core/service.ts.)
 
+
+/**
+ * A one-line summary of the Data realm, for the startup banner.
+ *
+ * `createApp({ db })` accepts anything table-shaped, so everything here is
+ * duck-typed and any failure means "not a Litestone client" rather than an
+ * error — a raw bun:sqlite handle has no `$schema` and simply gets no line.
+ *
+ * What it reports and why:
+ *
+ *   models      how many the schema actually parsed. The question this whole
+ *               line exists to answer is "did the seed load at all", and a
+ *               count is the shortest honest form of it.
+ *   enums       cheap, and a missing enum is a common cause of a $ref that
+ *               will not resolve in the browser later.
+ *   gated       n/total. A schema where this reads 0/24 is a schema whose
+ *               access control is not declared, which is worth seeing daily.
+ *   databases   name → RESOLVED path (driver). The resolved path is the point:
+ *               a declared `database main { path … }` silently overrides
+ *               createClient's `db:` option, so the file being written is not
+ *               always the file that was passed.
+ */
+export function describeDataRealm(db: unknown): Record<string, unknown> | null {
+  try {
+    const client = db as {
+      $schema?: { models?: unknown[]; enums?: unknown[] }
+      $databases?: Record<string, { driver?: string; path?: string }>
+    }
+    const models = client?.$schema?.models
+    if (!Array.isArray(models) || models.length === 0) return null
+
+    const gated = models.filter(m =>
+      Array.isArray((m as { attributes?: { kind?: string }[] }).attributes) &&
+      (m as { attributes: { kind?: string }[] }).attributes.some(a => a?.kind === 'gate')
+    ).length
+
+    const enums = client?.$schema?.enums
+    const dbs   = client?.$databases ?? {}
+
+    // Absolute paths are correct and unreadable. Anything under the process
+    // CWD prints relative to it — which is also where a logger `path` resolves
+    // from, so the two agree.
+    const cwd = process.cwd()
+    const short = (p?: string) =>
+      !p ? '?' : p.startsWith(cwd + '/') ? '.' + p.slice(cwd.length) : p
+
+    const stores = Object.entries(dbs)
+      .map(([name, d]) => `${name} → ${short(d?.path)} (${d?.driver ?? '?'})`)
+
+    return {
+      models:    models.length,
+      enums:     Array.isArray(enums) && enums.length ? enums.length : undefined,
+      gated:     `${gated}/${models.length}`,
+      databases: stores.length ? stores.join(', ') : undefined,
+    }
+  } catch {
+    return null           // not a Litestone client — say nothing rather than throw
+  }
+}

@@ -8,7 +8,7 @@
 // Usage:
 //   import { sql } from '@frontierjs/litestone'
 //
-//   db.products.findMany({
+//   db.product.findMany({
 //     where: { $raw: sql`price > IF(state = ${state}, ${minPrice}, 100)` }
 //   })
 //

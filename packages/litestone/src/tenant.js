@@ -20,9 +20,9 @@
 //   })
 //
 //   const db = await tenants.get('acme')
-//   await db.posts.findMany()
+//   await db.post.findMany()
 //
-//   await tenants.query(db => db.users.count())
+//   await tenants.query(db => db.user.count())
 //   await tenants.migrate()
 
 import { Database }        from 'bun:sqlite'
@@ -440,18 +440,18 @@ class TenantRegistry {
    * Aggregate a value across all tenants.
    *
    * // Count total users
-   * await tenants.aggregate(db => db.users.count())
+   * await tenants.aggregate(db => db.user.count())
    * // → { total: 1247, byTenant: { acme: 42, globex: 17, ... } }
    *
    * // Custom reduce
    * await tenants.aggregate({
-   *   value:   db => db.invoices.findMany({ where: { paid: true } }),
+   *   value:   db => db.invoice.findMany({ where: { paid: true } }),
    *   reduce:  (acc, rows, id) => acc + rows.reduce((s, r) => s + r.amount, 0),
    *   initial: 0
    * })
    */
   async aggregate(fnOrOpts, queryOpts = {}) {
-    // Simple form: aggregate(db => db.users.count())
+    // Simple form: aggregate(db => db.user.count())
     if (typeof fnOrOpts === 'function') {
       const results = await this.query(fnOrOpts, queryOpts)
       const byTenant = Object.fromEntries(results.map(r => [r.tenantId, r.result]))

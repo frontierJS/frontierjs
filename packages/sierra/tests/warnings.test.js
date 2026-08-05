@@ -53,6 +53,44 @@ describe('warnUnexportedSnippets', () => {
     expect(warnings[0]).toContain('export { sidebar }')
   })
 
+  test('no warning for a snippet passed to a component as a prop', () => {
+    // <Table>{#snippet row(r)}…{/snippet}</Table> is the component's `row`
+    // prop, not something the route hands up to its layout. This warned on
+    // every build of a page using @frontierjs/ui, and the advice it gave —
+    // export it from <script module> — would have been wrong.
+    const source = `
+<script>
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
+  let rows = []
+</script>
+<Table rows={rows}>
+  {#snippet row(r)}
+    <tr><td>{r.name}</td></tr>
+  {/snippet}
+</Table>
+`
+    expect(collectWarnings(source)).toHaveLength(0)
+  })
+
+  test('a handler containing => does not swallow the rest of the template', () => {
+    // The tag scanner has to skip attribute expressions: a naive [^>]* stops
+    // inside the arrow, which used to read <Table> as never closed — and then
+    // a genuinely top-level snippet after it went unreported.
+    const source = `
+<script>
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
+  let rows = []
+</script>
+<Table rows={rows} onclick={() => pick(1)}>
+  {#snippet row(r)}<tr><td>{r.name}</td></tr>{/snippet}
+</Table>
+{#snippet sidebar()}<aside />{/snippet}
+`
+    const warnings = collectWarnings(source)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("Snippet 'sidebar'")
+  })
+
   test('warns for each unexported snippet individually', () => {
     const source = `
 {#snippet sidebar()}

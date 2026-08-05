@@ -1,0 +1,50 @@
+<script>
+  // Badge.mesa
+  // Compact count or label badge. Can float over a parent element (absolute)
+  // or render inline.
+  //
+  // `.badge` is in the chip lineage, so its fill *and* its text colour are
+  // derived from the tone's luminance — that derivation is verified at 0 WCAG
+  // AA failures across all 42 tone × theme combinations, which is why there is
+  // no text-colour choice to make here.
+  //
+  // Usage — inline:
+  //   <Badge>3</Badge>
+  //   <Badge tone="danger">99+</Badge>
+  //
+  // Usage — floating over an icon:
+  //   <span class="tooltip-anchor">
+  //     <IconBell />
+  //     <Badge float tone="danger">4</Badge>
+  //   </span>
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let tone  = ''       // one of the 7 css tones; '' is muted
+  export let color = ''       // legacy alias for `tone`
+  export let size  = ''       // '' | 'xs' | 'md' — '' is the package default
+  export let float = false    // pin to the top-right of a positioned parent
+
+  // .badge is 0.75rem/1rem. Only a departure needs an override.
+  const sizeMap = { xs: '0.625rem', sm: '', md: '0.8125rem' }
+  const fontSize = sizeMap[size] ?? ''
+
+  const t = toTone(color || tone)
+</script>
+
+<!--
+  The float variant needs a positioned ancestor. `.tooltip-anchor` is the
+  package's inline positioning context and is the right wrapper for it.
+-->
+<span
+  class={cx('badge', t)}
+  style:font-size={fontSize || null}
+  style:position={float ? 'absolute' : null}
+  style:top={float ? '-0.375rem' : null}
+  style:right={float ? '-0.375rem' : null}
+  style:z-index={float ? '10' : null}
+  {class}
+  {...$attributes}
+>
+  <slot />
+</span>

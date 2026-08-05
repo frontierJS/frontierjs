@@ -86,6 +86,23 @@ litestone introspect ./existing.db --out schema.lite
 
 Reconstructs column types, FK relations, indexes, `@@softDelete`, and enum CHECK constraints.
 
+### What introspection cannot recover
+
+SQLite does not store these, so `generateLiteSchema()` cannot reconstruct them. Add
+them by hand after reviewing the generated output — the CLI emits a comment saying so.
+
+- `@@allow` / `@@deny` row-level policies
+- `@allow` field-level policies
+- `@secret`, `@encrypted`, `@guarded`
+- `@@log` / `@log`
+- `@@gate`
+- `@@fts`
+- `@@db` (database assignment)
+
+Introspecting a database whose schema used any of the above and pushing the result
+back is **lossy**: the access rules are silently gone, and the tables become readable
+to anyone the gate previously excluded.
+
 ## Pristine diff — no shadow database
 
 Unlike Prisma, Litestone does not create a shadow database. It builds a pristine in-memory database from your schema, introspects both, and diffs. This means:

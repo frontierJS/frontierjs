@@ -1,0 +1,57 @@
+<script>
+  // AvatarGroup.mesa
+  // Stacked overlapping avatars. Shows the first `max` and a "+N" overflow
+  // count when there are more.
+  //
+  // `.avatars` owns the overlap and the ring: `--avatar-overlap` is the knob
+  // (set it to 0 for a plain spaced row) and `--avatar-ring` matches the
+  // surface behind the group. There is deliberately no hover fan-out in the
+  // package — it shifts layout under the pointer.
+  //
+  // USERS shape:
+  //   { name: string, src?: string, status?: string }
+  //
+  // Usage:
+  //   <AvatarGroup users={teamMembers} />
+  //   <AvatarGroup users={members} max={4} size="sm" />
+
+  import Avatar from './Avatar.mesa'
+
+  export let users     = []    // { name, src?, status? }[]
+  export let max       = 5     // max avatars shown before +N
+  export let size      = 'sm'  // 'xs' | 'sm' | 'md' | 'lg'
+  export let showCount = true  // announce the total
+
+  const visible  = users.slice(0, max)
+  const overflow = users.length - visible.length
+
+  const sizeMap = { xs: '1.5rem', sm: '2rem', md: '2.25rem', lg: '2.75rem' }
+  const sz = sizeMap[size] ?? sizeMap.sm
+
+  const total = users.length
+  const countLabel = `${total} member${total === 1 ? '' : 's'}`
+</script>
+
+<div class="avatars" {class}>
+  {#if showCount}
+    <span class="visually-hidden">{countLabel}</span>
+  {/if}
+
+  {#each visible as user, i (i)}
+    <Avatar src={user.src} name={user.name} status={user.status} size={size} />
+  {/each}
+
+  {#if overflow > 0}
+    <!--
+      A real .avatar so it lands in the .avatars > .avatar overlap rule and
+      gets the same ring; the old markup wrapped each avatar in a div, which
+      broke that direct-child selector.
+    -->
+    <span
+      class="avatar muted"
+      style:--avatar-size={sz}
+      role="img"
+      aria-label="{overflow} more"
+    >+{overflow}</span>
+  {/if}
+</div>

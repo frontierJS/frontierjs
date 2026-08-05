@@ -3,53 +3,53 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Mesa \u2014 reactive UI language compiler and runtime",
-  "main": "./compiler.js",
-  "module": "./compiler.js",
+  "main": "./src/compiler.js",
+  "module": "./src/compiler.js",
   "exports": {
     ".": {
-      "import": "./compiler.js"
+      "import": "./src/compiler.js"
     },
     "./runtime.js": {
-      "import": "./runtime.js"
+      "import": "./src/runtime.js"
     },
     "./runtime": {
-      "import": "./runtime.js"
+      "import": "./src/runtime.js"
     },
     "./compiler.js": {
-      "import": "./compiler.js"
+      "import": "./src/compiler.js"
     },
     "./compiler": {
-      "import": "./compiler.js"
+      "import": "./src/compiler.js"
     },
     "./compiler-md.js": {
-      "import": "./compiler-md.js"
+      "import": "./src/compiler-md.js"
     },
     "./compiler-md": {
-      "import": "./compiler-md.js"
+      "import": "./src/compiler-md.js"
     },
     "./render.js": {
-      "import": "./render.js"
+      "import": "./src/render.js"
     },
     "./render": {
-      "import": "./render.js"
+      "import": "./src/render.js"
     },
     "./css-inliner.js": {
-      "import": "./css-inliner.js"
+      "import": "./src/css-inliner.js"
     },
     "./css-inliner": {
-      "import": "./css-inliner.js"
+      "import": "./src/css-inliner.js"
     },
     "./render-component.js": {
-      "import": "./render-component.js"
+      "import": "./src/render-component.js"
     },
     "./render-component": {
-      "import": "./render-component.js"
+      "import": "./src/render-component.js"
     }
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "serve": "npx serve .",
+    "serve": "npx serve ../..",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {

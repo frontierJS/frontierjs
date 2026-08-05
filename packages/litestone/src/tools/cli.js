@@ -2549,7 +2549,7 @@ async function cmdDoctor() {
         fail('SCHEMA', 'schema.lite not found', rel(schemaPath),
           fix ? async () => {
             const { writeFileSync } = await import('fs')
-            writeFileSync(schemaPath, `/// schema.lite\n\nmodel example {\n  id   Int @id\n  name String\n}\n`)
+            writeFileSync(schemaPath, `/// schema.lite\n\nmodel Example {\n  id   Int @id\n  name String\n}\n`)
             return `created ${rel(schemaPath)}`
           } : null
         )

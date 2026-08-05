@@ -32,6 +32,40 @@ test('meta: every @import in index.css resolved', function () {
   });
 });
 
+test('meta: every shipped stylesheet is reachable from index.css', function () {
+  /*
+   * The other direction from the test above. That one catches an @import
+   * pointing at a file that is not there; this one catches a file that is
+   * there and nothing imports — which is what a directory move makes easy,
+   * and which breaks nothing loudly: the rules simply never load.
+   *
+   * The list comes from the runner, which walks the package on disk using
+   * the same boundary as package.json's "files".
+   */
+  var shipped = window.__FJS_SHIPPED_CSS__;
+  assert.ok(shipped && shipped.length, 'the runner injected no file list');
+  assert.atLeast(shipped.length, 30, 'expected the full package');
+
+  var sheet = document.styleSheets[0];
+  var imported = {};
+  for (var i = 0; i < sheet.cssRules.length; i++) {
+    var r = sheet.cssRules[i];
+    if (!(window.CSSImportRule && r instanceof CSSImportRule)) continue;
+    /* href is authored relative: './components/buttons.css' */
+    imported[r.href.replace(/^\.\//, '')] = true;
+  }
+
+  var orphans = shipped.filter(function (f) {
+    return f !== 'index.css' && !imported[f];
+  });
+
+  assert.equal(
+    orphans.length,
+    0,
+    'shipped but never imported by index.css:\n        ' + orphans.join('\n        ')
+  );
+});
+
 test('meta: assertions fail when they should', function () {
   assert.throws(function () { assert.ok(false); }, 'assert.ok accepted false');
   assert.throws(function () { assert.equal(1, 2); }, 'assert.equal accepted a mismatch');

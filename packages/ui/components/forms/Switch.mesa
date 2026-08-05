@@ -1,0 +1,66 @@
+<script>
+  // Switch.mesa
+  // Toggle switch — a real <input type="checkbox" class="switch">.
+  //
+  // ── Why not a <button role="switch"> ─────────────────────────────────
+  //
+  // The previous version was a button with aria-checked and a translated
+  // thumb <span>. A real checkbox participates in forms, is submitted with
+  // the form, restores on back-navigation, and needs no ARIA at all — and
+  // @frontierjs/css paints the track and thumb from `appearance: none`, so
+  // the shape costs nothing either way.
+  //
+  // Note the tone goes on the `.field-check` label, not on the input:
+  // --bg-mix is element-scoped, so the input cannot see a tone set on itself
+  // by an ancestor. The label derives it into --check-accent and passes it
+  // down. (A tone on either element works; the label is the reliable one.)
+  //
+  // Usage:
+  //   <Switch bind:checked={darkMode} label="Dark mode" />
+  //   <Switch bind:checked={enabled} tone="success" />
+
+  import { tone as toTone, cx, uid } from '../../utils.js'
+
+  export let checked     = false
+  export let label       = ''
+  export let description = ''
+  export let disabled    = false
+  export let tone        = ''
+  export let labelSide   = 'right'  // 'left' | 'right'
+  export let onchange    = undefined
+
+  export var id = ''
+  const switchId = id || uid('switch')
+  const descId   = uid('switch-desc')
+
+  const t = toTone(tone)
+
+  function handleChange(e) {
+    checked = e.target.checked
+    onchange?.(checked)
+  }
+</script>
+
+<div class="stack" style:gap="0.25rem" {class}>
+  <label
+    class={cx('field-check', t)}
+    for={switchId}
+    style:flex-direction={labelSide === 'left' ? 'row-reverse' : null}
+  >
+    <input
+      id={switchId}
+      class="switch"
+      type="checkbox"
+      role="switch"
+      checked={checked}
+      disabled={disabled}
+      aria-describedby={description ? descId : null}
+      on:change={handleChange}
+    />
+    {#if label}<span>{label}</span>{/if}
+  </label>
+
+  {#if description}
+    <p class="field-hint" id={descId}>{description}</p>
+  {/if}
+</div>

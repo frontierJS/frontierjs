@@ -5,7 +5,7 @@
 // This is deliberately close to junction/example/fullstack/app.ts: the point of
 // THIS example is not the server, it is what Sierra does with the same
 // db/schema.lite on the other side of the wire. Read that example for the API
-// story; read ../src/resources/leads.js for this one.
+// story; read ../web/src/resources/leads.mesa for this one.
 
 import { readFileSync } from 'node:fs'
 import { join }         from 'node:path'

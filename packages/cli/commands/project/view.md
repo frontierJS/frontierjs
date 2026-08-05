@@ -6,16 +6,17 @@ examples:
   - fli project:view
   - fli project:view --port 4445
   - fli project:view --no-open
+  - fli project:view --project example
 flags:
   port:
     char: p
     type: number
     description: Port to serve the viewer on
     defaultValue: 8501
-  no-open:
+  open:
     type: boolean
-    description: Start the server without opening the browser
-    defaultValue: false
+    description: Open the browser once the server is up (--no-open to skip)
+    defaultValue: true
 ---
 
 <script>
@@ -31,7 +32,7 @@ Press `Ctrl+C` to stop the server.
 
 ```js
 if (!existsSync(resolve(context.paths.db, 'schema.lite'))) {
-  log.error('schema.lite not found — run this from a FJS project root')
+  log.error(`no db/schema.lite under ${context.paths.root} — cd into a FJS app, or point at one with --project <dir>`)
   return
 }
 
@@ -120,7 +121,7 @@ const buildMap = () => {
     : {}
   const services   = scanFiles(servicesDir, '.service.ts')
                        .map(f => extractServiceMeta(readFileSync(f, 'utf8'), f))
-  const resources  = scanFiles(context.paths.webResources, '.mesa', '.svelte')
+  const resources  = scanFiles(context.paths.webResources, '.js', '.mesa')
                        .map(f => extractResourceMeta(readFileSync(f, 'utf8'), f))
   const migrations = parseMigrationFiles(resolve(context.paths.db, 'migrations'))
   const { packages } = extractServerMeta(context.paths.root)
@@ -319,7 +320,9 @@ server.listen(port, () => {
 
 // ── Open browser ───────────────────────────────────────────────────────────────
 
-if (!flag['no-open']) {
+// minimist parses `--no-open` as { open: false }, so the flag is declared as
+// `open` — declared as `no-open` it never bound, and the browser opened anyway.
+if (flag.open) {
   const opener = {
     linux:  `xdg-open ${url}`,
     darwin: `open ${url}`,

@@ -59,7 +59,7 @@ const ALWAYS_EXCLUDE = [
 
 // Excluded unless --deps is passed
 const DEP_DIRS = [
-  'node_modules/*', 'vendor/*', '.turbo/*', '.next/*', '.svelte-kit/*',
+  'node_modules/*', 'vendor/*', '.turbo/*', '.next/*',
   'dist/*', 'build/*', '.cache/*',
 ]
 </script>

@@ -1,0 +1,71 @@
+<script>
+  // SectionHeader.mesa
+  // Title + optional subtitle + optional trailing action area.
+  // Used at the top of pages, settings sections, card groups.
+  //
+  // `.section-header` supplies the split layout; the heading levels and the
+  // .text-* utilities supply the type. Size and colour are separate axes in
+  // @frontierjs/css and chain — `class="text-sm text-muted"` — which is why
+  // the subtitle needs no size map of its own.
+  //
+  // Usage:
+  //   <SectionHeader title="Team members" sub="Manage who has access" />
+  //
+  //   <SectionHeader title="API Keys">
+  //     {#snippet action()}
+  //       <Button size="sm">New key</Button>
+  //     {/snippet}
+  //   </SectionHeader>
+  //
+  //   <SectionHeader title="Billing" level={3} border />
+
+  export let title  = ''
+  export let sub    = ''
+  export let level  = 2       // heading level — 2..6. Pick by document outline.
+  export let border = false   // bottom rule + extra padding
+  export let action = null    // snippet — rendered trailing right
+
+  const hLevel = Math.min(6, Math.max(1, Number(level) || 2))
+</script>
+
+<div
+  class="section-header"
+  style:align-items="flex-start"
+  style:border-block-end={border ? '1px solid var(--rule)' : null}
+  style:padding-block-end={border ? '0.75rem' : null}
+  {class}
+  {...$attributes}
+>
+  <div class="stack" style:gap="0.125rem" style:min-inline-size="0">
+    {#if title}
+      <!--
+        A real heading element, chosen by the caller, because the outline is
+        the caller's document — not a <div> with a font-weight. Spelled out as
+        a ladder because Mesa has no dynamic-element form; a <mesa:element>
+        guess compiled without complaint and emitted empty `<>` tags.
+      -->
+      {#if hLevel === 1}
+        <h1 style:margin="0">{title}</h1>
+      {:else if hLevel === 2}
+        <h2 style:margin="0">{title}</h2>
+      {:else if hLevel === 3}
+        <h3 style:margin="0">{title}</h3>
+      {:else if hLevel === 4}
+        <h4 style:margin="0">{title}</h4>
+      {:else if hLevel === 5}
+        <h5 style:margin="0">{title}</h5>
+      {:else}
+        <h6 style:margin="0">{title}</h6>
+      {/if}
+    {/if}
+    {#if sub}
+      <p class="text-sm text-muted" style:margin="0">{sub}</p>
+    {/if}
+  </div>
+
+  {#if action}
+    <div class="cluster" style:flex-shrink="0">
+      {@render action?.()}
+    </div>
+  {/if}
+</div>

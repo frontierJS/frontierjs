@@ -1,0 +1,65 @@
+<script>
+  // Tooltip.mesa
+  // Informational label attached to a control.
+  //
+  // ── Why this is anchored rather than portaled ────────────────────────
+  //
+  // @frontierjs/css's Tooltip is `.tooltip-anchor` wrapping the trigger and the
+  // `.tooltip` together, shown via :focus-within/:hover. That buys the three
+  // things that make a tooltip accessible, and the previous portal version had
+  // none of them:
+  //
+  //   1. aria-describedby on the trigger, pointing at the tooltip's id. Without
+  //      it the tooltip is a hover style and a screen reader never sees it.
+  //   2. Shows on focus, not only hover — so a keyboard user gets it by tabbing.
+  //   3. Escape dismisses it. That part is behaviour, so it is handled here.
+  //
+  // The trade-off is real: an anchored tooltip is clipped by an ancestor with
+  // overflow:hidden, which a portal escapes. Prefer this; reach for a Popover
+  // when you genuinely need to break out of a scroll container.
+  //
+  // Never put essential information only in a tooltip — touch devices have no
+  // hover at all.
+  //
+  // Usage:
+  //   <Tooltip label="Saved to cloud">
+  //     <Button>Save</Button>
+  //   </Tooltip>
+
+  import { uid } from '../../utils.js'
+
+  export let label = ''      // tooltip text
+  export let id    = ''      // override the generated id
+
+  const tipId = id || uid('tip')
+
+  let dismissed = false
+
+  function onKeydown(e) {
+    if (e.key === 'Escape') dismissed = true
+  }
+  function onEnter() { dismissed = false }
+</script>
+
+<span
+  class="tooltip-anchor"
+  {class}
+  on:keydown={onKeydown}
+  on:mouseenter={onEnter}
+  on:focusin={onEnter}
+>
+  <!--
+    The consumer's trigger. It must carry aria-describedby={tipId} for the
+    tooltip to be announced — pass it through:
+      <Tooltip label="Delete" let:tipId>
+        <button class="btn square" aria-describedby={tipId}>…</button>
+      </Tooltip>
+  -->
+  <slot tipId={tipId} />
+
+  {#if label}
+    <span class="tooltip" role="tooltip" id={tipId} hidden={dismissed || null}>
+      {label}
+    </span>
+  {/if}
+</span>

@@ -1,0 +1,4 @@
+<script>
+  let hits = 0
+</script>
+<button id="wide" onclick={() => hits++}>Wide: {hits}</button>

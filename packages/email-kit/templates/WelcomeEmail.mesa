@@ -1,0 +1,123 @@
+<script module>
+  export const subject = 'Welcome to the platform!'
+</script>
+
+<script>
+  import Email    from '../components/Email.mesa'
+  import Section  from '../components/Section.mesa'
+  import Row      from '../components/Row.mesa'
+  import TwoCol   from '../components/TwoCol.mesa'
+  import Column   from '../components/Column.mesa'
+  import Spacer   from '../components/Spacer.mesa'
+  import Heading  from '../components/Heading.mesa'
+  import Text     from '../components/Text.mesa'
+  import Button   from '../components/Button.mesa'
+  import Image    from '../components/Image.mesa'
+  import Divider  from '../components/Divider.mesa'
+  import Card     from '../components/Card.mesa'
+  import KeyValue from '../components/KeyValue.mesa'
+  import Stars    from '../components/Stars.mesa'
+  import Review   from '../components/Review.mesa'
+  import Footer   from '../components/Footer.mesa'
+
+  export let firstName    = 'Friend'
+  export let planName     = 'Pro'
+  export let amount       = '$49.00'
+  export let nextBilling  = 'May 1, 2025'
+  export let dashboardUrl = 'https://app.example.com/dashboard'
+  export let reviewerName = 'Sarah K.'
+</script>
+
+<Email subject="Welcome to the platform!" preview="Your account is ready — here's everything you need to get started.">
+
+  <!-- Hero -->
+  <Section bgcolor="#9fc612">
+    <Row>
+      <Column align="center" padding="32px 16px">
+        <h1 style="font-family:Helvetica,Arial,sans-serif;font-size:28px;font-weight:800;color:#ffffff;margin:0;padding:0;">
+          Welcome, {firstName}!
+        </h1>
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:16px;color:rgba(255,255,255,0.9);margin:12px 0 0;padding:0;line-height:1.5;">
+          Your {planName} account is ready.
+        </p>
+      </Column>
+    </Row>
+  </Section>
+
+  <!-- CTA -->
+  <Section>
+    <Spacer height={24} />
+    <Row>
+      <Column>
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:16px;color:#444;margin:0;padding:0 16px 16px;line-height:1.6;">
+          We're thrilled to have you on board. Here's a quick summary of your plan.
+        </p>
+      </Column>
+    </Row>
+    <Button href="{dashboardUrl}" text="Go to Dashboard" bgcolor="#9fc612" />
+    <Spacer height={24} />
+  </Section>
+
+  <Divider />
+
+  <!-- Plan card -->
+  <Section>
+    <Spacer height={24} />
+    <Row>
+      <Column>
+        <Card heading="Your Plan">
+          <KeyValue label="Plan"         value="{planName}" />
+          <KeyValue label="Amount"       value="{amount}"   bold={true} />
+          <KeyValue label="Next billing" value="{nextBilling}" />
+          <KeyValue label="Status"       value="Active ✓"  bold={true} />
+        </Card>
+      </Column>
+    </Row>
+  </Section>
+
+  <!-- Two-column features -->
+  <Section bgcolor="#f9f9f9">
+    <Spacer height={24} />
+    <TwoCol>
+      <div slot="left" style="padding:0 16px;text-align:center;">
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:32px;margin:0;padding:0;">📊</p>
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:#222;margin:8px 0 4px;padding:0;">Analytics</p>
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:13px;color:#666;margin:0;padding:0;line-height:1.5;">Real-time dashboards and reports.</p>
+      </div>
+      <div slot="right" style="padding:0 16px;text-align:center;">
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:32px;margin:0;padding:0;">🔔</p>
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:#222;margin:8px 0 4px;padding:0;">Notifications</p>
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:13px;color:#666;margin:0;padding:0;line-height:1.5;">Alerts when it matters most.</p>
+      </div>
+    </TwoCol>
+    <Spacer height={24} />
+  </Section>
+
+  <Divider />
+
+  <!-- Testimonial -->
+  <Section>
+    <Spacer height={24} />
+    <Row>
+      <Column>
+        <Card>
+          <Review name="{reviewerName}" rating={5} avatarBg="#9fc612">
+            Switched from three tools to this one. The time savings alone paid for the annual plan in the first month.
+          </Review>
+        </Card>
+      </Column>
+    </Row>
+    <Spacer height={24} />
+  </Section>
+
+  <!-- Footer -->
+  <Section bgcolor="#f4f4f4">
+    <Footer
+      company="Example Inc."
+      address="123 Main St, Phoenix, AZ 85001"
+      unsubscribe="https://example.com/unsubscribe"
+      privacy="https://example.com/privacy"
+    />
+  </Section>
+
+</Email>

@@ -106,15 +106,38 @@ await db.post.count({ withDeleted: true })                       // all rows
 
 ## Transitions and soft-delete
 
-`remove()` on a model with `@@softDelete` is a SQL `UPDATE`, not `DELETE`. Transition enforcement runs on `remove()` — you can gate soft-delete behind a state machine:
+The two are independent. `@@transitions` is enforced on `update()` and `upsert()` — the operations that write the status column. `remove()` stamps `deletedAt` and **does not** consult the state machine, even on a `@@softDelete` model where it is a SQL `UPDATE` rather than a `DELETE`.
+
+So a state machine cannot, by itself, stop a row being removed:
 
 ```prisma
+enum OrderStatus { pending  cancelled }
+
 model Order {
-  status    String  // 'pending' → 'cancelled' → soft-delete allowed
+  id        Int @id
+  status    OrderStatus @default(pending)
   deletedAt DateTime?
+
   @@softDelete
-  @@transitions([
-    { name: 'cancel', from: ['pending'], to: 'cancelled' },
-  ])
+  @@transitions(status, cancel: pending -> cancelled)
 }
 ```
+
+```js
+await db.order.update({ where: { id: 1 }, data: { status: 'cancelled' } })  // enforced
+await db.order.remove({ where: { id: 1 } })                                  // not enforced
+```
+
+To require a state before deletion, express it as access rather than as a transition. A row-level policy narrows the `WHERE`, and `remove()` does honour it:
+
+```prisma
+@@deny('delete', status != 'cancelled')
+```
+
+```js
+await db.order.remove({ where: { id: 1 } })   // → null while pending; the row is untouched
+```
+
+Note it returns `null` rather than throwing — a policy filters rather than refuses, so "no such deletable row" and "not allowed" are the same answer.
+
+See [schema.md](./schema.md#state-machines) for `@@transitions` itself.

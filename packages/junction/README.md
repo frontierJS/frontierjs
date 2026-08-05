@@ -28,14 +28,46 @@ curl -X POST http://localhost:3000/users \
 Run the test suite:
 
 ```bash
-bun test            # tests/ — 681 tests across 19 files
+bun test            # tests/ — 776 tests across 25 files
 ```
 
 The example app is entirely in-memory — no database, no external services, runs immediately.
 
 ---
 
+## Where Junction lives in an app
+
+A FrontierJS app puts one directory at the root per realm, and Junction owns `api/`:
+
+```
+my-app/
+├── db/                      ← Data realm — schema.lite, migrations
+│   └── schema.lite
+├── api/                     ← Junction. Everything below is yours
+│   ├── index.ts             ← bun --watch entry
+│   ├── config/              ← junction.config.js — autoload paths, plugins
+│   ├── src/
+│   │   ├── app.ts
+│   │   ├── core/            ← env, Litestone client, auth, hooks
+│   │   └── services/        ← *.service.ts — autoloaded at boot
+│   └── test/
+└── web/                     ← UI realm — Sierra + Mesa
+```
+
+Every sub-project uses the same folders — `config/` `src/` `public/` `test/` `dist/`
+`deploy/` — so `api/config/junction.config.js` sits exactly where
+`web/config/sierra.config.js` does.
+
+`api/` and `web/` are peers, and `db/` belongs to neither — the schema is shared, so it
+sits above both. The API points Litestone's `createClient` at that one file, and the UI
+build reads the same one; nothing is copied down into either. The full layout is in the
+[root README](../../README.md#project-structure); `fli create` scaffolds it.
+
+---
+
 ## Structure
+
+The package itself:
 
 ```
 packages/junction/
@@ -96,7 +128,7 @@ packages/junction/
 │
 ├── tools/                ← repl.ts, init.ts, setup.ts, build-app.ts, generators
 ├── example/              ← runnable apps (elegant.ts is the modern demo)
-└── tests/                ← 19 files, 681 tests
+└── tests/                ← 25 files, 776 tests
 ```
 
 ---
@@ -338,9 +370,12 @@ createService({
 })
 ```
 
-**Dispatch is by header, not by path.** A custom method is reached by calling the
-service's own URL with `X-Service-Method`, which keeps the URL space flat and
-stops a method name from colliding with a record id:
+**Dispatch is by header, not by path** — *over HTTP*. A custom method follows the
+same transport rule as CRUD: the browser client sends it over the WebSocket when
+one is connected (a `service_call` frame naming the method, no URL involved), and
+falls back to HTTP otherwise. The HTTP form calls the service's own URL with
+`X-Service-Method`, which keeps the URL space flat and stops a method name from
+colliding with a record id:
 
 ```bash
 curl -X POST http://localhost:3000/servers \
@@ -797,7 +832,7 @@ import { createService, withLitestoneDb } from '@frontierjs/junction'
 import { createClient, generateJsonSchema, GatePlugin, LEVELS } from '@frontierjs/litestone'
 
 const SCHEMA = `
-  model posts {
+  model Post {
     id        Int  @id
     title     String     @length(1, 200) @trim
     body      String
@@ -825,7 +860,8 @@ app.hooks({ around: { all: [withLitestoneDb(db)] } })
 // schema: jsonSchema auto-generates create + patch validators from the Litestone schema.
 app.services.register(createService({
   name:       'posts',
-  model:      'posts',      // defaults to deriveModelName(name) if omitted
+  model:      'post',      // optional — resolved per call from the service name
+                            //   ('posts' → db.post) when omitted
   schema:     jsonSchema,   // optional — enables auto-validation
   softDelete: 'deletedAt',  // optional — soft-delete via a nullable DateTime field
   allowBulk:  false,        // optional — default false, blocks bulk patch/delete
@@ -849,7 +885,7 @@ app.services.register(createService({
 ```typescript
 import { jsonSchemaToJunctionSchema } from '@frontierjs/junction'
 
-const schema = jsonSchemaToJunctionSchema('posts', jsonSchema, 'create')
+const schema = jsonSchemaToJunctionSchema('Post', jsonSchema, 'create')
 // Returns a Junction Schema object — pass to createSchema()
 ```
 

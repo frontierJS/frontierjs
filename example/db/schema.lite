@@ -1,0 +1,136 @@
+/// db/schema.lite — THE SEED.
+///
+/// One shop. Everything below is derived from this file, at build time or at
+/// runtime, and restated nowhere:
+///
+///   the tables                 ← autoMigrate(db)
+///   CRUD + pagination          ← createBaseService({}) reads the model
+///   401 / 403                  ← @@gate, graded by api/gate.ts
+///   400 on bad input           ← the field rules, via junction's autoValidate
+///   which state changes exist  ← @@transitions, enforced at the Data boundary
+///   make() defaults            ← generateJsonSchema → registerSchemas → browser
+///   fields / enum options      ← the same document, $ref resolved client-side
+///   relation pickers           ← x-relations
+///   which buttons to render    ← x-gate / x-transitions
+///
+/// Model names are PascalCase and singular — ALWAYS.
+///
+/// WHAT IS NOT IN THIS FILE: the four auth models (User, Credential, Session,
+/// Verification). api/db.ts appends them from `authSchemaFragments()` at
+/// startup rather than pasting a copy here, so there is one definition of them
+/// in the repo instead of two. The browser never sees them, which is correct —
+/// they are @@gate("8") and no UI is allowed to read them.
+
+
+// ─── Databases ────────────────────────────────────────────────────────────
+//
+// `main` is where everything lands: a model with no @@db goes here, and auth's
+// fragments name it explicitly. NOTE the sharp edge — once a schema declares
+// `database main`, THIS PATH WINS and createClient's `db:` option is ignored
+// entirely. Passing `db: ':memory:'` here would not give you an in-memory
+// database; it would silently write ./db/shop.db and you would not be told.
+
+database main {
+  path env("SHOP_DB_PATH", "./db/shop.db")
+}
+
+// @@log(audit) writes here. `path` resolves against the process CWD, not this
+// file — run the API from the example root or the directory lands elsewhere.
+database audit {
+  path      env("AUDIT_PATH", "./db/audit/")
+  driver    logger
+  retention 90d
+}
+
+
+// ─── Catalogue ────────────────────────────────────────────────────────────
+
+model Product {
+  id     Int    @id
+  name   String @length(1, 80) @unique
+  sku    String @length(3, 20) @unique @upper
+  price  Float  @gte(0)
+
+  /// Nullable AND unique — the pairing that makes `blankToNull` matter on the
+  /// client. An empty text box submits '', SQLite accepts any number of NULLs
+  /// in a UNIQUE column but rejects a second '', so without normalisation the
+  /// second product saved with a blank barcode fails a constraint nobody wrote.
+  barcode String? @unique
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  /// read public, create/update need a user (4), delete needs an admin (5).
+  @@gate("0.4.4.5")
+}
+
+
+// ─── Customers ────────────────────────────────────────────────────────────
+
+model Customer {
+  id    Int    @id
+  name  String @length(1, 80)
+  email String @email @unique @lower
+
+  /// Staff-only. Field-level @allow is the tool for "some callers may read this
+  /// column": the field is stripped from the response for anyone the policy
+  /// rejects, without a line of service code saying so.
+  ///
+  /// NOT @guarded — that is a system-context lock (@guarded / @guarded(all)),
+  /// not a level, and it takes no numeric argument. @guarded(5) does not parse.
+  notes String? @allow('read', auth().role == 'admin')
+
+  orders    Order[]
+  createdAt DateTime @default(now())
+
+  @@gate("0.4.4.5")
+  @@log(audit)
+}
+
+
+// ─── Orders ───────────────────────────────────────────────────────────────
+
+/// No @default on purpose where the form is concerned: a required enum with no
+/// blank member means make() leaves it null and the form has to ask. Order
+/// DOES default to `pending`, because an order's initial state is the shop's
+/// decision and not the user's.
+enum OrderStatus { pending paid shipped refunded cancelled }
+
+model Order {
+  id        Int         @id
+  reference String      @length(3, 20, "A reference is 3 to 20 characters, like ORD-1001") @unique @upper
+  status    OrderStatus @default(pending)
+  total     Float       @default(0) @gte(0)
+  note      String?
+
+  /// belongsTo. `customerId` is emitted as a plain integer, so the browser only
+  /// knows it is a reference because x-relations says so — that is what turns
+  /// it into a picker instead of a number spinner.
+  ///
+  /// @label is what a human calls this field; @required carries the wording for
+  /// the one rule that has nowhere else to live (required-ness is the absence
+  /// of `?`, not an attribute). Both reach the browser AND the server from
+  /// here — the form, the client-side check and the API all say this sentence.
+  customerId Int      @label("Customer")
+                      @required("Please select a customer from the list")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  /// The state machine, declared where every other access rule lives rather
+  /// than in whichever service handler was written first. Litestone enforces
+  /// it at the Data boundary with an optimistic-lock WHERE, and it reaches the
+  /// browser as x-transitions keyed by field — so the UI can render exactly
+  /// the buttons that are legal from the row's current state.
+  ///
+  /// Refund is gated at 5. That gate can only live here, on the model: two
+  /// models sharing OrderStatus are allowed to disagree about who may refund.
+  @@transitions(status,
+    pay:    pending         -> paid,
+    ship:   paid            -> shipped,
+    refund: paid            -> refunded @gate(5),
+    cancel: [pending, paid] -> cancelled)
+
+  @@gate("0.4.4.5")
+  @@log(audit)
+}

@@ -1,0 +1,1210 @@
+<script module>
+  // ── Pure utilities ──────────────────────────────────────────────────────────
+
+  /**
+   * Generate a 6-week calendar grid for a given month.
+   * Returns number[][] — 0 means empty cell (previous/next month overflow).
+   * Ported from github.com/lukeed/calendarize
+   */
+  export function calendarize(target, offset = 0) {
+    const out   = []
+    const date  = new Date(target || new Date())
+    const year  = date.getFullYear()
+    const month = date.getMonth()
+    const days  = new Date(year, month + 1, 0).getDate()
+
+    let first = new Date(year, month, 1 - (offset | 0)).getDay()
+    let i = 0
+
+    while (i < days) {
+      const week = Array(7)
+      for (let j = 0; j < 7; ) {
+        while (j < first) week[j++] = 0
+        week[j++] = ++i > days ? 0 : i
+        first = 0
+      }
+      out.push(week)
+    }
+    return out
+  }
+
+  /**
+   * Returns the last millisecond of the given day.
+   * Replaces: Date.Relative.date({ timestamp, day: (d) => d + 1 }).getTime() - 1
+   */
+  export function makeEndInclusive(timestamp) {
+    const d = new Date(timestamp)
+    d.setDate(d.getDate() + 1)
+    d.setHours(0, 0, 0, 0)
+    return d.getTime() - 1
+  }
+
+  /** Format a Date as YYYY-MM-DD (local time). */
+  export function formatYMD(date) {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+</script>
+
+<script>
+  // DatePicker.mesa
+  //
+  // ITEM SHAPE for presetRanges:
+  //   { value: string, text: string, start?: number, end?: number }
+  //   `start` and `end` are timestamps. If present, clicking the preset applies them directly.
+  //   `value` is passed to `onPresetSelect(value)` if you want to compute ranges externally.
+  //
+  // USAGE — single date:
+  //   <DatePicker bind:startDate={date} />
+  //
+  // USAGE — range:
+  //   <DatePicker isRange bind:startDate bind:endDate onDateChange={handleChange} />
+  //
+  // USAGE — with presets:
+  //   <DatePicker isRange showPresets presetRanges={MY_RANGES} />
+  //
+  // USAGE — inline (always visible):
+  //   <DatePicker alwaysShow isOpen />
+
+  // ── Props ───────────────────────────────────────────────────────────────────
+
+  export let startDate        = undefined
+  export let endDate          = undefined
+  export let startDateTime    = '08:00'
+  export let endDateTime      = '08:00'
+  export let isRange          = false
+  export let isOpen           = false
+  export let inclusiveEnd     = true
+  export let isMultipane      = false
+  export let align            = 'left'    // 'left' | 'right'
+  export let theme            = ''
+  export let disabledDates    = []        // string[] — 'YYYY-MM-DD' or 'YYYY-MM-DD:YYYY-MM-DD' ranges
+  export let enabledDates     = []        // string[] — same format; if set, only these are clickable
+  export let alwaysShow       = false
+  export let showYearControls = true
+  export let showPresets      = false
+  export let showPresetsOnly  = false
+  export let showTimePicker   = false
+  export let enableFutureDates = false
+  export let enablePastDates   = true
+  export let presetRanges     = []        // { value, text, start?, end? }[]
+
+  export let startOfWeek      = 0         // 0=Sun, 1=Mon, …
+  export let dowLabels        = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+  export let monthLabels      = ['January','February','March','April','May','June',
+                                  'July','August','September','October','November','December']
+
+  // Callback props
+  export let onDateChange       = undefined  // ({ startDate, endDate?, rangeDates? }) => void
+  export let onDayClick         = undefined  // (event) => void
+  export let onNavigationChange = undefined  // ({ direction, type, currentPeriod, isPastPeriod }) => void
+
+  // Default "today" can be overridden (e.g. for testing, timezones)
+  export let today = (() => { const d = new Date(); d.setHours(0,0,0,0); return d })()
+
+  // ── Pure date helpers (replace Date.Relative) ───────────────────────────────
+
+  /** Normalize any date/timestamp to midnight (local time). */
+  function toMidnight(d = new Date()) {
+    const r = new Date(typeof d === 'number' ? d : d)
+    r.setHours(0, 0, 0, 0)
+    return r.getTime()
+  }
+
+  function normalizeTimestamp(ts) {
+    if (!ts) return undefined
+    return toMidnight(ts)
+  }
+
+  function getTimestamp(d) {
+    return new Date(d).getTime()
+  }
+
+  /**
+   * Create a timestamp for year/month/day at midnight.
+   */
+  function createTimestamp(year, month, day) {
+    return toMidnight(new Date(year, month, day))
+  }
+
+  /**
+   * Apply a HH:mm time string to a timestamp.
+   * Replaces: Date.Relative.date({timestamp, time: '...'}).getTime()
+   */
+  function updateTime(time, timestamp) {
+    if (!timestamp) return undefined
+    const d = new Date(timestamp)
+    if (showTimePicker && time) {
+      const [h, m] = time.split(':').map(Number)
+      d.setHours(h, m, 0, 0)
+    } else {
+      d.setHours(0, 0, 0, 0)
+    }
+    return d.getTime()
+  }
+
+  function getHoursAndMinutes(timestamp) {
+    if (!timestamp) return '00:00'
+    const d   = new Date(timestamp)
+    const hh  = String(d.getHours()).padStart(2, '0')
+    const mm  = String(d.getMinutes()).padStart(2, '0')
+    return `${hh}:${mm}`
+  }
+
+  /** Expand disabledDates / enabledDates string arrays into timestamp arrays. */
+  function getDatesFromArray(collection) {
+    return collection.reduce((acc, entry) => {
+      if (typeof entry !== 'string') return acc
+      if (entry.includes(':')) {
+        const [a, b] = entry.split(':').map(s => new Date(s))
+        const cur = new Date(a)
+        while (cur <= b) {
+          acc.push(normalizeTimestamp(cur.getTime()))
+          cur.setDate(cur.getDate() + 1)
+        }
+      } else {
+        acc.push(normalizeTimestamp(new Date(entry).getTime()))
+      }
+      return acc
+    }, [])
+  }
+
+  function getDatesInRange(start, end) {
+    if (!start || !end) return []
+    const cur  = toMidnight(start)
+    const stop = toMidnight(end)
+    const out  = []
+    const d    = new Date(cur)
+    while (d.getTime() <= stop) {
+      const s = formatYMD(d)
+      if ((!enabled.length && !disabled.length) ||
+          (enabled.length && enabled.includes(normalizeTimestamp(d.getTime()))) ||
+          !disabled.includes(normalizeTimestamp(d.getTime()))) {
+        out.push(s)
+      }
+      d.setDate(d.getDate() + 1)
+    }
+    return out
+  }
+
+  // ── Internal mutable state ──────────────────────────────────────────────────
+
+  // Normalize incoming prop dates to timestamps
+  // We keep _startDate/_endDate as internal normalized signals
+  // so external props can be Date objects, strings, or timestamps
+  let _startDate = startDate ? getTimestamp(startDate) : null
+  let _endDate   = endDate   ? getTimestamp(endDate)   : null
+
+  // Sync external props → internal state
+  $: startDate, () => { _startDate = startDate ? getTimestamp(startDate) : null }
+  $: endDate,   () => { _endDate   = endDate   ? getTimestamp(endDate)   : null }
+
+  // Calendar navigation
+  let startDateYear  = today.getFullYear()
+  let startDateMonth = today.getMonth()
+
+  // Hover preview for range selection
+  let tempEndDate = null
+
+  // Revert buffers — save before range in-progress to restore on click outside
+  var prevStartDate = null
+  var prevEndDate   = null
+
+  // Time picker initialization flag
+  var initialize = false
+
+  // Click-outside handler reference
+  var _clickOutsideHandler = null
+
+  // Wrapper element reference
+  let wrapperEl
+
+  // ── Derived state ───────────────────────────────────────────────────────────
+
+  // Today parts — derive from `today` prop
+  const todayStr   = formatYMD(today)
+  const _todayParts = todayStr.split('-').map(Number)
+  const todayYear  = _todayParts[0]
+  const todayMonth = _todayParts[1] - 1   // 0-indexed
+  const todayDay   = _todayParts[2]
+
+  // Calendar grids — auto-recompute when month/year navigation changes
+  const prev             = calendarize(new Date(startDateYear, startDateMonth - 1), startOfWeek)
+  const startDateCalendar = calendarize(new Date(startDateYear, startDateMonth), startOfWeek)
+  const next             = calendarize(new Date(startDateYear, startDateMonth + 1), startOfWeek)
+
+  const endDateMonth    = startDateMonth === 11 ? 0 : startDateMonth + 1
+  const endDateYear     = endDateMonth   === 0  ? startDateYear + 1 : startDateYear
+  const endDateCalendar = calendarize(new Date(endDateYear, endDateMonth), startOfWeek)
+
+  // Disabled / enabled lookup sets — recompute when prop arrays change
+  const disabled = getDatesFromArray(disabledDates)
+  const enabled  = getDatesFromArray(enabledDates)
+
+  // ── Watchers ─────────────────────────────────────────────────────────────
+
+  // When isRange turns off, clear end date
+  $: isRange, () => { if (!isRange) _endDate = null }
+
+  // Reset calendar view to selected date when picker opens
+  $: isOpen, () => {
+    if (isOpen && ((!isRange && _startDate) || (isRange && _startDate && _endDate))) {
+      const d    = new Date(_startDate)
+      startDateYear  = d.getFullYear()
+      startDateMonth = d.getMonth()
+    }
+  }
+
+  // Reset to defaultYear/defaultMonth when both dates are cleared
+  $: (_startDate, _endDate), () => {
+    if (!_startDate && !_endDate) {
+      startDateYear  = today.getFullYear()
+      startDateMonth = today.getMonth()
+    }
+  }
+
+  // Initialize time picker fields once when enabled
+  $: showTimePicker, () => {
+    if (showTimePicker && !initialize) {
+      startDateTime = getHoursAndMinutes(_startDate)
+      endDateTime   = getHoursAndMinutes(_endDate)
+      initialize    = true
+    }
+  }
+
+  // ── Click-outside ───────────────────────────────────────────────────────────
+
+  function onClickOutside() {
+    if (alwaysShow) return
+    if (prevStartDate && prevEndDate && _startDate && !_endDate) {
+      _startDate    = prevStartDate
+      _endDate      = prevEndDate
+      startDate     = _startDate
+      endDate       = _endDate
+      prevStartDate = null
+      prevEndDate   = null
+    }
+    isOpen = false
+  }
+
+  $onMount(() => {
+    _clickOutsideHandler = ({ target }) => {
+      if (wrapperEl && !wrapperEl.contains(target)) onClickOutside()
+    }
+    document.addEventListener('click', _clickOutsideHandler, { passive: true, capture: true })
+  })
+
+  $onDestroy(() => {
+    if (_clickOutsideHandler) {
+      document.removeEventListener('click', _clickOutsideHandler, { capture: true })
+    }
+  })
+
+  // ── Navigation ──────────────────────────────────────────────────────────────
+
+  function buildCurrentPeriod() {
+    const calendar = isMultipane ? endDateCalendar : startDateCalendar
+    const lastWeek = calendar[calendar.length - 1].filter(Boolean)
+    const lastDay  = lastWeek[lastWeek.length - 1]
+    let   m        = startDateMonth + 1
+
+    const pad = n => String(n).padStart(2, '0')
+    return {
+      start: `${startDateYear}-${pad(m)}-01`,
+      end:   isMultipane
+        ? `${endDateYear}-${pad(endDateMonth + 1)}-${lastDay}`
+        : `${startDateYear}-${pad(m)}-${lastDay}`,
+    }
+  }
+
+  function emitNavigation(direction, type) {
+    if (!onNavigationChange) return
+    const initial = new Date(today.getFullYear(), today.getMonth())
+    const current = isMultipane
+      ? new Date(endDateYear, endDateMonth)
+      : new Date(startDateYear, startDateMonth)
+    onNavigationChange({
+      direction,
+      type,
+      currentPeriod: buildCurrentPeriod(),
+      isPastPeriod: current < initial,
+    })
+  }
+
+  function toPrev() {
+    if (--startDateMonth < 0) { startDateMonth = 11; startDateYear-- }
+    emitNavigation('previous', 'month')
+  }
+
+  function toNext() {
+    if (++startDateMonth > 11) { startDateMonth = 0; startDateYear++ }
+    emitNavigation('next', 'month')
+  }
+
+  function toPrevYear() { startDateYear--;  emitNavigation('previous', 'year') }
+  function toNextYear() { startDateYear++;  emitNavigation('next', 'year')     }
+
+  // ── Day classification helpers ──────────────────────────────────────────────
+
+  function isToday(day, month, year) {
+    return today && todayMonth === month && todayDay === day && todayYear === year
+  }
+
+  function isDateInRange(start, end, selected) {
+    const s = normalizeTimestamp(start)
+    const e = normalizeTimestamp(end)
+    const c = normalizeTimestamp(selected)
+    return c >= s && c <= e
+  }
+
+  function inRange(day, month, year) {
+    const ts = createTimestamp(year, month, day)
+    if (normalizeTimestamp(_startDate) === ts) return true
+    return isRange
+      ? isDateInRange(_startDate, _endDate, ts)
+      : normalizeTimestamp(_startDate) === ts
+  }
+
+  function isFirstInRange(day, month, year) {
+    const cur      = createTimestamp(year, month, day)
+    const startCmp = normalizeTimestamp(_startDate)
+    const tempCmp  = normalizeTimestamp(tempEndDate)
+    const curCmp   = normalizeTimestamp(cur)
+
+    if ((!isRange && startCmp) || (isRange && !_endDate && tempEndDate)) {
+      return startCmp === curCmp
+    }
+    return isRange ? startCmp === curCmp : tempCmp === curCmp
+  }
+
+  function isLastInRange(day, month, year) {
+    const cur      = createTimestamp(year, month, day)
+    const endCmp   = normalizeTimestamp(_endDate)
+    const startCmp = normalizeTimestamp(_startDate)
+    const curCmp   = normalizeTimestamp(cur)
+    const tempCmp  = normalizeTimestamp(tempEndDate)
+
+    if (isRange && _startDate && !_endDate && tempEndDate) {
+      return tempCmp === startCmp
+    }
+    return isRange ? endCmp === curCmp : startCmp === curCmp
+  }
+
+  function isDisabledDay(day, month, year) {
+    const ts = createTimestamp(year, month, day)
+    if (!enabled.length && !disabled.length) return false
+    if (enabled.length && !enabled.includes(ts)) return true
+    if (disabled.length && disabled.includes(ts)) return true
+    return false
+  }
+
+  function isFutureDate(day, month, year) {
+    if (enableFutureDates) return false
+    return normalizeTimestamp(new Date()) < createTimestamp(year, month, day)
+  }
+
+  function isPastDate(day, month, year) {
+    if (enablePastDates) return false
+    return normalizeTimestamp(new Date()) > createTimestamp(year, month, day)
+  }
+
+  function isFirstDayOfMonth(day) { return day === 1 }
+
+  function isLastDayOfMonth(day, calendar) {
+    return day === Math.max(...calendar.flat(10))
+  }
+
+  function inRangeHover(day, month, year) {
+    if (!isRange || _endDate || !_startDate || !tempEndDate) return false
+    const ts       = createTimestamp(year, month, day)
+    const startCmp = normalizeTimestamp(_startDate)
+    const tempCmp  = normalizeTimestamp(tempEndDate)
+    const curCmp   = normalizeTimestamp(ts)
+    const min = Math.min(startCmp, tempCmp)
+    const max = Math.max(startCmp, tempCmp)
+    return curCmp >= min && curCmp <= max
+  }
+
+  function checkActive(start1, start2, end1, end2) {
+    if (!start1 || !end1) return false
+    return normalizeTimestamp(start1) === normalizeTimestamp(start2) &&
+           normalizeTimestamp(end1)   === normalizeTimestamp(end2)
+  }
+
+  // ── Day interaction ─────────────────────────────────────────────────────────
+
+  function handleSingleDate(timestamp) {
+    _startDate = updateTime(startDateTime, timestamp)
+    startDate  = _startDate
+    if (!alwaysShow) isOpen = false
+  }
+
+  function handleDateRange(timestamp) {
+    if (_startDate === null || (_startDate !== null && _endDate !== null)) {
+      _startDate = updateTime(startDateTime, timestamp)
+      _endDate   = null
+      startDate  = _startDate
+      endDate    = null
+    } else {
+      const rawEnd = updateTime(endDateTime, timestamp)
+      _endDate = (inclusiveEnd && !showTimePicker) ? makeEndInclusive(rawEnd) : rawEnd
+      // Written as a temp swap, not `[a, b] = [b, a]`. Mesa's assignment
+      // rewriter only recognises a bare identifier on the left, so a
+      // destructuring assignment to reactive lets emits
+      // `$runtime.get(sig) = …` — invalid JS, no compile error, throws on
+      // load. See PROJECT_STATE.md.
+      if (_startDate > _endDate) {
+        const _swap = _startDate
+        _startDate  = _endDate
+        _endDate    = _swap
+      }
+      startDate = _startDate
+      endDate   = _endDate
+      if (!alwaysShow) isOpen = false
+    }
+  }
+
+  function onClick(e, day, month, year) {
+    const btn     = e.target?.closest('.date')
+    const classes = btn?.className ?? ''
+    if (classes.includes('future') || classes.includes('past') || classes.includes('disabled')) {
+      e.preventDefault()
+      return
+    }
+
+    const timestamp = createTimestamp(year, month, day)
+
+    if (isRange) {
+      prevStartDate = _startDate
+      prevEndDate   = _endDate
+      handleDateRange(timestamp)
+    } else {
+      handleSingleDate(timestamp)
+    }
+
+    const event = {
+      startDate: _startDate,
+      startDateTime,
+      ...(isRange && {
+        endDate: _endDate,
+        endDateTime,
+        rangeDates: getDatesInRange(_startDate, _endDate),
+      }),
+    }
+
+    onDayClick?.(event)
+    if ((isRange && _startDate && _endDate) || (!isRange && _startDate)) {
+      onDateChange?.(event)
+    }
+  }
+
+  function onMouseEnter(e, day, month, year) {
+    if (_startDate && _endDate) { tempEndDate = null; return }
+    const classes = e.target?.className ?? ''
+    if (classes.includes('future') || classes.includes('past') || classes.includes('disabled')) return
+    tempEndDate = createTimestamp(year, month, day)
+  }
+
+  function onMouseLeave() {
+    if (_startDate && _endDate) { tempEndDate = null; return }
+    tempEndDate = normalizeTimestamp(_startDate)
+  }
+
+  // ── Presets ─────────────────────────────────────────────────────────────────
+
+  function onPresetClick(option) {
+    if (!option.start || !option.end) return
+    _startDate = normalizeTimestamp(new Date(option.start).getTime())
+    _endDate   = inclusiveEnd ? makeEndInclusive(option.end) : normalizeTimestamp(option.end)
+    startDate  = _startDate
+    endDate    = _endDate
+
+    if (isRange && _startDate && _endDate) {
+      onDateChange?.({
+        startDate: _startDate,
+        startDateTime,
+        endDate: _endDate,
+        endDateTime,
+        rangeDates: getDatesInRange(_startDate, _endDate),
+      })
+    }
+    if (!alwaysShow) isOpen = false
+  }
+
+  // Normalize startOfWeek if passed as string
+  if (typeof startOfWeek === 'string') startOfWeek = parseInt(startOfWeek, 10)
+</script>
+
+<div
+  bind:this={wrapperEl}
+  class="datepicker"
+  data-picker-theme={theme}
+>
+  <!-- Trigger slot — whatever the parent puts inside the component -->
+  <slot />
+
+  <div
+    class="calendars-container"
+    class:right={align === 'right'}
+    class:range={isRange && isMultipane}
+    class:presets={isRange && showPresets}
+    class:show={isOpen}
+  >
+    <!-- ── Preset sidebar ── -->
+    {#if isRange && showPresets}
+      <div class="calendar-presets" class:presets-only={showPresetsOnly}>
+        {#each presetRanges as option (option.value)}
+          <button
+            type="button"
+            class:active={checkActive(_startDate, option.start, _endDate, option.end)}
+            on:click|preventDefault={() => onPresetClick(option)}
+          >
+            {option.text}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- ── Primary calendar ── -->
+    <div class="calendar" class:presets-only={isRange && showPresetsOnly}>
+      <header class:timepicker={showTimePicker}>
+        <button
+          type="button"
+          aria-label="Previous month"
+          on:click|preventDefault={toPrev}
+        >
+          <div class="icon-previous-month" aria-label="Previous month"></div>
+        </button>
+
+        <span>
+          <div>{monthLabels[startDateMonth]} {startDateYear}</div>
+          {#if showYearControls}
+            <div class="years">
+              <button type="button" aria-label="Next year"     on:click|preventDefault={toNextYear}><i class="icon-next-year"></i></button>
+              <button type="button" aria-label="Previous year" on:click|preventDefault={toPrevYear}><i class="icon-previous-year"></i></button>
+            </div>
+          {/if}
+        </span>
+
+        <button
+          type="button"
+          aria-label="Next month"
+          class:hide={isRange && isMultipane}
+          on:click|preventDefault={toNext}
+        >
+          <div class="icon-next-month" aria-label="Next month"></div>
+        </button>
+      </header>
+
+      {#if showTimePicker}
+        <div class="timepicker" class:show={isRange && !isMultipane}>
+          <input
+            type="time"
+            bind:value={startDateTime}
+            on:input={() => _startDate = startDate = updateTime(startDateTime, _startDate)}
+          />
+          {#if isRange}
+            <input
+              type="time"
+              class="end-time"
+              bind:value={endDateTime}
+              on:input={() => _endDate = endDate = updateTime(endDateTime, _endDate)}
+            />
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Day-of-week headers -->
+      <div class="month">
+        {#each dowLabels as _, labelIndex (labelIndex)}
+          <span class="dow">{dowLabels[(labelIndex + startOfWeek) % 7]}</span>
+        {/each}
+
+        <!-- Calendar days -->
+        {#each { length: 6 } as _w, weekIndex (weekIndex)}
+          {#if startDateCalendar[weekIndex]}
+            {#each { length: 7 } as _d, dayIndex (dayIndex)}
+              {#if startDateCalendar[weekIndex][dayIndex] !== 0}
+                {@const day = startDateCalendar[weekIndex][dayIndex]}
+                <button
+                  type="button"
+                  class="date"
+                  class:today={isToday(day, startDateMonth, startDateYear)}
+                  class:start={isFirstInRange(day, startDateMonth, startDateYear)}
+                  class:end={isLastInRange(day, startDateMonth, startDateYear)}
+                  class:range={inRange(day, startDateMonth, startDateYear)}
+                  class:rangehover={inRangeHover(day, startDateMonth, startDateYear)}
+                  class:past={isPastDate(day, startDateMonth, startDateYear)}
+                  class:future={isFutureDate(day, startDateMonth, startDateYear)}
+                  class:first={isFirstDayOfMonth(day)}
+                  class:last={isLastDayOfMonth(day, startDateCalendar)}
+                  class:disabled={isDisabledDay(day, startDateMonth, startDateYear)}
+                  class:norange={isRange && tempEndDate === _startDate}
+                  on:mouseenter={(e) => onMouseEnter(e, day, startDateMonth, startDateYear)}
+                  on:mouseleave={onMouseLeave}
+                  on:click|preventDefault={(e) => onClick(e, day, startDateMonth, startDateYear)}
+                >
+                  <span class="date-square">{day}</span>
+                </button>
+              {:else}
+                <div class="date other">&nbsp;</div>
+              {/if}
+            {/each}
+          {/if}
+        {/each}
+      </div>
+    </div>
+
+    <!-- ── Second pane (multipane range) ── -->
+    {#if isRange && isMultipane}
+      <div class="calendar" class:presets-only={showPresetsOnly}>
+        <header class:timepicker={showTimePicker}>
+          <button
+            type="button"
+            aria-label="Previous month"
+            class:hide={true}
+            on:click|preventDefault={toPrev}
+          >
+            <div class="icon-previous-month"></div>
+          </button>
+
+          <span>
+            <div>{monthLabels[endDateMonth]} {endDateYear}</div>
+            {#if showYearControls}
+              <div class="years">
+                <button type="button" aria-label="Next year"     on:click|preventDefault={toNextYear}><i class="icon-next-year"></i></button>
+                <button type="button" aria-label="Previous year" on:click|preventDefault={toPrevYear}><i class="icon-previous-year"></i></button>
+              </div>
+            {/if}
+          </span>
+
+          <button type="button" aria-label="Next month" on:click|preventDefault={toNext}>
+            <div class="icon-next-month"></div>
+          </button>
+        </header>
+
+        {#if showTimePicker}
+          <div class="timepicker">
+            <input
+              type="time"
+              bind:value={endDateTime}
+              on:input={() => _endDate = endDate = updateTime(endDateTime, _endDate)}
+            />
+          </div>
+        {/if}
+
+        <div class="month">
+          {#each dowLabels as _, labelIndex (labelIndex)}
+            <span class="dow">{dowLabels[(labelIndex + startOfWeek) % 7]}</span>
+          {/each}
+
+          {#each { length: 6 } as _w, weekIndex (weekIndex)}
+            {#if endDateCalendar[weekIndex]}
+              {#each { length: 7 } as _d, dayIndex (dayIndex)}
+                {#if endDateCalendar[weekIndex][dayIndex] !== 0}
+                  {@const day = endDateCalendar[weekIndex][dayIndex]}
+                  <button
+                    type="button"
+                    class="date"
+                    class:today={isToday(day, endDateMonth, endDateYear)}
+                    class:range={inRange(day, endDateMonth, endDateYear)}
+                    class:rangehover={inRangeHover(day, endDateMonth, endDateYear)}
+                    class:start={isFirstInRange(day, endDateMonth, endDateYear)}
+                    class:end={isLastInRange(day, endDateMonth, endDateYear)}
+                    class:past={isPastDate(day, endDateMonth, endDateYear)}
+                    class:future={isFutureDate(day, endDateMonth, endDateYear)}
+                    class:first={isFirstDayOfMonth(day)}
+                    class:last={isLastDayOfMonth(day, endDateCalendar)}
+                    class:disabled={isDisabledDay(day, endDateMonth, endDateYear)}
+                    class:norange={isRange && tempEndDate === _startDate}
+                    on:mouseenter={(e) => onMouseEnter(e, day, endDateMonth, endDateYear)}
+                    on:mouseleave={onMouseLeave}
+                    on:click|preventDefault={(e) => onClick(e, day, endDateMonth, endDateYear)}
+                  >
+                    <span>{day}</span>
+                  </button>
+                {:else}
+                  <div class="date other">&nbsp;</div>
+                {/if}
+              {/each}
+            {/if}
+          {/each}
+        </div>
+      </div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  /* ── Design tokens ── override via --datepicker-* on any ancestor ────────── */
+  .datepicker {
+    --datepicker-border-color: var(--rule);
+    --datepicker-border-radius-small: 0.125rem;
+    --datepicker-border-radius-base: 0.25rem;
+    --datepicker-border-radius-large: 0.5rem;
+    --datepicker-border-radius-xlarge: 0.75rem;
+    --datepicker-border-radius-xxlarge: 1rem;
+    --datepicker-border-radius-xxxlarge: 1.125rem;
+    --datepicker-state-active: var(--color-primary);
+    --datepicker-state-hover: var(--rule);
+    --datepicker-color: var(--ink);
+    --datepicker-font-family: sans-serif;
+    --datepicker-font-size-large: 1.125rem;
+    --datepicker-font-size-base: 14px;
+    --datepicker-font-size-medium: 0.89rem;
+    --datepicker-font-size-small: 0.75rem;
+    --datepicker-font-weight-base: 400;
+    --datepicker-font-weight-medium: 500;
+    --datepicker-font-weight-bold: 700;
+    --datepicker-spacing: 6px;
+    --datepicker-margin-xsmall: calc(var(--datepicker-spacing) / 4);
+    --datepicker-margin-small:  calc(var(--datepicker-spacing) / 2);
+    --datepicker-margin-base:   var(--datepicker-spacing);
+    --datepicker-margin-large:  calc(var(--datepicker-spacing) * 2);
+    --datepicker-margin-xlarge: calc(var(--datepicker-spacing) * 3);
+    --datepicker-padding-xsmall: calc(var(--datepicker-spacing) / 4);
+    --datepicker-padding-small:  calc(var(--datepicker-spacing) / 2);
+    --datepicker-padding-base:   var(--datepicker-spacing);
+    --datepicker-padding-large:  calc(var(--datepicker-spacing) * 2);
+    --datepicker-padding-xlarge: calc(var(--datepicker-spacing) * 3);
+
+    /* Container */
+    --datepicker-container-background: var(--surface);
+    --datepicker-container-border: 1px solid var(--rule);
+    --datepicker-container-border-radius: 12px;
+    --datepicker-container-box-shadow: 0 1px 20px var(--shadow-md, 0 4px 12px rgba(0,0,0,0.1));
+    --datepicker-container-left: 0;
+    --datepicker-container-top: 105%;
+    --datepicker-container-position: absolute;
+    --datepicker-container-width: fit-content;
+    --datepicker-container-zindex: 99;
+
+    /* Calendar */
+    --datepicker-calendar-border: 0;
+    --datepicker-calendar-padding: var(--datepicker-padding-base) var(--datepicker-padding-large) var(--datepicker-padding-xlarge);
+    --datepicker-calendar-width: 310px;
+    --datepicker-calendar-split-border: 1px solid var(--datepicker-border-color);
+
+    /* Header */
+    --datepicker-calendar-header-font-size: var(--datepicker-font-size-large);
+    --datepicker-calendar-header-margin: 0 0 var(--datepicker-margin-xlarge) 0;
+    --datepicker-calendar-header-padding: var(--datepicker-padding-large) var(--datepicker-padding-base);
+
+    /* Month nav buttons */
+    --datepicker-calendar-header-month-nav-background: transparent;
+    --datepicker-calendar-header-month-nav-background-hover: var(--surface-sunken);
+    --datepicker-calendar-header-month-nav-border: 0;
+    --datepicker-calendar-header-month-nav-border-radius: 20px;
+    --datepicker-calendar-header-month-nav-height: 32px;
+    --datepicker-calendar-header-month-nav-width: 32px;
+    --datepicker-calendar-header-month-nav-padding: var(--datepicker-padding-small);
+
+    /* Year nav */
+    --datepicker-calendar-header-year-nav-height: 12px;
+    --datepicker-calendar-header-year-nav-width: 12px;
+    --datepicker-calendar-header-year-nav-margin: -2px 0 0 0;
+    --datepicker-calendar-header-year-nav-padding: 0;
+
+    /* Presets */
+    --datepicker-presets-border: 1px solid var(--datepicker-border-color);
+    --datepicker-presets-padding: 16px;
+    --datepicker-presets-minwidth: 180px;
+    --datepicker-presets-maxwidth: 200px;
+    --datepicker-presets-button-background: transparent;
+    --datepicker-presets-button-background-hover: var(--datepicker-state-hover);
+    --datepicker-presets-button-background-active: var(--datepicker-state-active);
+    --datepicker-presets-button-border: 0;
+    --datepicker-presets-button-border-radius: 40px;
+    --datepicker-presets-button-color: var(--datepicker-color);
+    --datepicker-presets-button-color-active: var(--surface);
+    --datepicker-presets-button-font-size: var(--datepicker-font-size-base);
+    --datepicker-presets-button-margin: var(--datepicker-margin-xsmall) 0;
+    --datepicker-presets-button-padding: 0.25rem 0.75rem;
+
+    /* Timepicker */
+    --datepicker-timepicker-input-border: 1px solid var(--datepicker-border-color);
+    --datepicker-timepicker-input-border-radius: var(--datepicker-border-radius-base);
+    --datepicker-timepicker-input-padding: var(--datepicker-padding-small) var(--datepicker-padding-base);
+    --datepicker-timepicker-container-margin-bottom: var(--datepicker-margin-xlarge);
+
+    /* Day of week */
+    --datepicker-calendar-dow-color: var(--ink-soft);
+    --datepicker-calendar-dow-font-size: var(--datepicker-font-size-base);
+    --datepicker-calendar-dow-font-weight: var(--datepicker-font-weight-medium);
+    --datepicker-calendar-dow-margin-bottom: var(--datepicker-margin-large);
+
+    /* Day cells */
+    --datepicker-calendar-day-background-hover: var(--surface-sunken);
+    --datepicker-calendar-day-border: 1px solid transparent;
+    --datepicker-calendar-day-border-radius: 100%;
+    --datepicker-calendar-day-color: var(--ink);
+    --datepicker-calendar-day-color-disabled: var(--ink-mute);
+    --datepicker-calendar-day-height: 40px;
+    --datepicker-calendar-day-width: 40px;
+    --datepicker-calendar-day-font-size: var(--datepicker-font-size-base);
+    --datepicker-calendar-day-margin-bottom: 1px;
+    --datepicker-calendar-day-padding: var(--datepicker-padding-base);
+
+    /* Today */
+    --datepicker-calendar-today-background: transparent;
+    --datepicker-calendar-today-border: 1px solid var(--ink-mute);
+    --datepicker-calendar-today-font-weight: var(--datepicker-font-weight-bold);
+
+    /* Range fill */
+    --datepicker-calendar-range-background: var(--datepicker-state-hover);
+    --datepicker-calendar-range-border-radius: 0;
+    --datepicker-calendar-range-color: var(--datepicker-color);
+    --datepicker-calendar-range-start-box-shadow: inset -20px 0 0 var(--datepicker-state-hover);
+    --datepicker-calendar-range-end-box-shadow: inset 20px 0 0 var(--datepicker-state-hover);
+    --datepicker-calendar-range-start-box-shadow-selected: inset -20px 0 0 var(--rule);
+    --datepicker-calendar-range-end-box-shadow-selected: inset 20px 0 0 var(--rule);
+    --datepicker-calendar-range-start-end-background: var(--color-info);
+    --datepicker-calendar-range-start-end-color: var(--ink);
+    --datepicker-calendar-range-selected-background: var(--datepicker-state-active);
+    --datepicker-calendar-range-selected-border-radius: 20px;
+    --datepicker-calendar-range-selected-color: var(--surface);
+    --datepicker-calendar-range-selected-font-weight: var(--datepicker-font-weight-medium);
+    --datepicker-calendar-range-included-background: var(--rule);
+    --datepicker-calendar-range-included-color: var(--ink);
+    --datepicker-calendar-range-included-font-weight: var(--datepicker-font-weight-base);
+  }
+
+  /* ── Layout ──────────────────────────────────────────────────────────────── */
+
+  .datepicker { font-size: var(--datepicker-font-size-base); position: relative; }
+  .datepicker * { box-sizing: border-box; }
+
+  .datepicker .calendars-container {
+    background: var(--datepicker-container-background);
+    border: var(--datepicker-container-border);
+    border-radius: var(--datepicker-container-border-radius);
+    box-shadow: var(--datepicker-container-box-shadow);
+    display: none;
+    font-family: var(--datepicker-font-family);
+    grid-template-columns: 1fr;
+    left: var(--datepicker-container-left);
+    position: var(--datepicker-container-position);
+    width: var(--datepicker-container-width);
+    z-index: var(--datepicker-container-zindex);
+  }
+  .datepicker .calendars-container.right { left: auto; right: 0; }
+  .datepicker .calendars-container.show  { display: grid; top: var(--datepicker-container-top); }
+  .datepicker .calendars-container.range { grid-template-columns: repeat(2, 1fr); }
+  .datepicker .calendars-container.presets {
+    grid-template-columns: minmax(var(--datepicker-presets-minwidth), var(--datepicker-presets-maxwidth)) 1fr 1fr;
+  }
+  .datepicker .calendars-container.presets:not(.range) {
+    grid-template-columns: minmax(var(--datepicker-presets-minwidth), var(--datepicker-presets-maxwidth)) 1fr;
+  }
+
+  /* ── Presets ─────────────────────────────────────────────────────────────── */
+
+  .datepicker .calendars-container .calendar-presets {
+    border-right: var(--datepicker-presets-border);
+    display: none;
+    flex-direction: column;
+    padding: var(--datepicker-presets-padding);
+  }
+  .datepicker .calendars-container.presets .calendar-presets          { display: flex; }
+  .datepicker .calendars-container.presets .calendar-presets.presets-only { border-right: 0; min-width: 100%; }
+
+  .datepicker .calendars-container .calendar-presets button {
+    appearance: none;
+    background-color: var(--datepicker-presets-button-background);
+    border: var(--datepicker-presets-button-border);
+    border-radius: var(--datepicker-presets-button-border-radius);
+    color: var(--datepicker-presets-button-color);
+    cursor: pointer;
+    font-family: var(--datepicker-font-family);
+    font-size: var(--datepicker-presets-button-font-size);
+    margin: var(--datepicker-presets-button-margin);
+    padding: var(--datepicker-presets-button-padding);
+    text-align: left;
+  }
+  .datepicker .calendars-container .calendar-presets button:hover  { background-color: var(--datepicker-presets-button-background-hover); }
+  .datepicker .calendars-container .calendar-presets button.active {
+    background-color: var(--datepicker-presets-button-background-active);
+    color: var(--datepicker-presets-button-color-active);
+    cursor: default;
+    font-weight: var(--datepicker-font-weight-medium);
+  }
+  .datepicker .calendars-container .calendar-presets button:focus-visible {
+    border-radius: 20px;
+    outline: 5px auto -webkit-focus-ring-color;
+    z-index: 10;
+  }
+
+  /* ── Calendar ────────────────────────────────────────────────────────────── */
+
+  .datepicker .calendars-container .calendar {
+    border: var(--datepicker-calendar-border);
+    padding: var(--datepicker-calendar-padding);
+    position: relative;
+    width: var(--datepicker-calendar-width);
+  }
+  .datepicker .calendars-container .calendar.presets-only           { display: none; }
+  .datepicker .calendars-container .calendar + .calendar            { border-left: var(--datepicker-calendar-split-border); }
+
+  /* ── Header ──────────────────────────────────────────────────────────────── */
+
+  .datepicker .calendars-container .calendar header {
+    align-items: center;
+    color: var(--datepicker-color);
+    display: flex;
+    font-size: var(--datepicker-calendar-header-font-size);
+    justify-content: space-between;
+    margin: var(--datepicker-calendar-header-margin);
+    padding: var(--datepicker-calendar-header-padding);
+    user-select: none;
+  }
+  .datepicker .calendars-container .calendar header.timepicker        { margin-bottom: 0; }
+
+  .datepicker .calendars-container .calendar header button {
+    appearance: none;
+    background: var(--datepicker-calendar-header-month-nav-background);
+    border: var(--datepicker-calendar-header-month-nav-border);
+    border-radius: var(--datepicker-calendar-header-month-nav-border-radius);
+    color: var(--datepicker-color);
+    cursor: pointer;
+    font-size: var(--datepicker-calendar-header-font-size);
+    height: var(--datepicker-calendar-header-month-nav-height);
+    margin-left: -8px;
+    padding: var(--datepicker-calendar-header-month-nav-padding);
+    text-align: center;
+    width: var(--datepicker-calendar-header-month-nav-width);
+  }
+  .datepicker .calendars-container .calendar header button:hover  { background: var(--datepicker-calendar-header-month-nav-background-hover); }
+  .datepicker .calendars-container .calendar header button.hide   { opacity: 0; }
+  .datepicker .calendars-container .calendar header > span + button { margin-left: 0; margin-right: -8px; }
+
+  .datepicker .calendars-container .calendar header > span {
+    align-items: center;
+    color: var(--datepicker-color);
+    display: flex;
+    font-weight: var(--datepicker-font-weight-medium);
+    gap: 8px;
+  }
+  .datepicker .calendars-container .calendar header > span .years {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+  }
+  .datepicker .calendars-container .calendar header > span .years button {
+    display: block;
+    height: var(--datepicker-calendar-header-year-nav-height);
+    margin: var(--datepicker-calendar-header-year-nav-margin);
+    padding: var(--datepicker-calendar-header-year-nav-padding);
+    width: var(--datepicker-calendar-header-year-nav-width);
+  }
+
+  /* ── Timepicker ──────────────────────────────────────────────────────────── */
+
+  .datepicker .calendars-container .calendar .timepicker {
+    align-items: center;
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: var(--datepicker-timepicker-container-margin-bottom);
+  }
+  .datepicker .calendars-container .calendar .timepicker input[type="time"] {
+    border: var(--datepicker-timepicker-input-border);
+    border-radius: var(--datepicker-timepicker-input-border-radius);
+    display: block;
+    font-family: var(--datepicker-font-family);
+    margin: 0 auto;
+    padding: var(--datepicker-timepicker-input-padding);
+  }
+  .datepicker .calendars-container .calendar .timepicker input[type="time"].end-time         { display: none; }
+  .datepicker .calendars-container .calendar .timepicker.show input[type="time"].end-time    { display: block; }
+
+  /* ── Month grid ──────────────────────────────────────────────────────────── */
+
+  .datepicker .calendars-container .calendar .month {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0;
+    width: fit-content;
+  }
+
+  .datepicker .calendars-container .calendar .dow {
+    color: var(--datepicker-calendar-dow-color);
+    font-size: var(--datepicker-calendar-dow-font-size);
+    font-weight: var(--datepicker-calendar-dow-font-weight);
+    margin-bottom: var(--datepicker-calendar-dow-margin-bottom);
+    text-align: center;
+  }
+
+  /* ── Day cells ───────────────────────────────────────────────────────────── */
+
+  .datepicker .calendars-container .calendar .date {
+    appearance: none;
+    background: inherit;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    position: relative;
+    text-align: center;
+  }
+  .datepicker .calendars-container .calendar .date span {
+    align-items: center;
+    border: var(--datepicker-calendar-day-border);
+    border-radius: var(--datepicker-calendar-day-border-radius);
+    color: var(--datepicker-calendar-day-color);
+    cursor: pointer;
+    display: flex;
+    height: var(--datepicker-calendar-day-height);
+    justify-content: center;
+    font-family: var(--datepicker-font-family);
+    font-size: var(--datepicker-calendar-day-font-size);
+    margin-bottom: var(--datepicker-calendar-day-margin-bottom);
+    padding: var(--datepicker-calendar-day-padding);
+    text-align: center;
+    width: var(--datepicker-calendar-day-width);
+  }
+  .datepicker .calendars-container .calendar .date:not(.other):not(.range):not(.future):not(.past):not(.disabled) span:hover {
+    background-color: var(--datepicker-calendar-day-background-hover);
+  }
+  .datepicker .calendars-container .calendar .date:focus-visible,
+  .datepicker .calendars-container .calendar header button:focus-visible {
+    border-radius: 20px;
+    outline: 5px auto -webkit-focus-ring-color;
+    z-index: 10;
+  }
+  .datepicker .calendars-container .calendar .date.disabled span,
+  .datepicker .calendars-container .calendar .date.past span,
+  .datepicker .calendars-container .calendar .date.future span {
+    color: var(--datepicker-calendar-day-color-disabled);
+    cursor: default;
+  }
+  .datepicker .calendars-container .calendar .date.today span {
+    background: var(--datepicker-calendar-today-background);
+    border: var(--datepicker-calendar-today-border);
+    font-weight: var(--datepicker-calendar-today-font-weight);
+  }
+  .datepicker .calendars-container .calendar .date.other {
+    border: 0;
+    box-shadow: none;
+    color: var(--rule-strong);
+  }
+
+  /* ── Range fill ──────────────────────────────────────────────────────────── */
+
+  .datepicker .calendars-container .calendar .date.rangehover span,
+  .datepicker .calendars-container .calendar .date.range span {
+    background: var(--datepicker-calendar-range-background);
+    border: 0;
+    border-radius: var(--datepicker-calendar-range-border-radius);
+    color: var(--datepicker-calendar-range-color);
+    cursor: default;
+  }
+  .datepicker .calendars-container .calendar .date.rangehover.start,
+  .datepicker .calendars-container .calendar .date.range.start {
+    box-shadow: var(--datepicker-calendar-range-start-box-shadow);
+    height: var(--datepicker-calendar-day-height);
+  }
+  .datepicker .calendars-container .calendar .date.rangehover.end,
+  .datepicker .calendars-container .calendar .date.range.end {
+    box-shadow: var(--datepicker-calendar-range-end-box-shadow);
+    height: var(--datepicker-calendar-day-height);
+  }
+  .datepicker .calendars-container .calendar .date.rangehover.start span,
+  .datepicker .calendars-container .calendar .date.range.start span,
+  .datepicker .calendars-container .calendar .date.rangehover.end span,
+  .datepicker .calendars-container .calendar .date.range.end span {
+    background-color: var(--datepicker-calendar-range-selected-background);
+    border-radius: var(--datepicker-calendar-range-selected-border-radius);
+    color: var(--datepicker-calendar-range-selected-color);
+    font-weight: var(--datepicker-calendar-range-selected-font-weight);
+  }
+  .datepicker .calendars-container .calendar .date.rangehover.first span,
+  .datepicker .calendars-container .calendar .date.range.first span,
+  .datepicker .calendars-container .calendar .date.rangehover:nth-last-child(7n):not(.start):not(.end) span,
+  .datepicker .calendars-container .calendar .date.range:nth-last-child(7n):not(.start):not(.end) span {
+    border-bottom-left-radius: 20px;
+    border-top-left-radius: 20px;
+  }
+  .datepicker .calendars-container .calendar .date.rangehover.last span,
+  .datepicker .calendars-container .calendar .date.range.last span,
+  .datepicker .calendars-container .calendar .date.rangehover:nth-child(7n):not(.start):not(.end) span,
+  .datepicker .calendars-container .calendar .date.range:nth-child(7n):not(.start):not(.end) span {
+    border-bottom-right-radius: 20px;
+    border-top-right-radius: 20px;
+  }
+  .datepicker .calendars-container .calendar .date.rangehover.start.end,
+  .datepicker .calendars-container .calendar .date.range.start.end { box-shadow: none; }
+
+  .datepicker .calendars-container .calendar .date:not(.rangehover) + .rangehover:not(.end),
+  .datepicker .calendars-container .calendar .date:not(.rangehover) + .rangehover.start {
+    box-shadow: var(--datepicker-calendar-range-start-box-shadow-selected) !important;
+    height: var(--datepicker-calendar-day-height);
+  }
+  .datepicker .calendars-container .calendar .date:not(.rangehover) + .rangehover span,
+  .datepicker .calendars-container .calendar .date:not(.rangehover) + .rangehover.start span { border-radius: 20px; }
+
+  .datepicker .calendars-container .calendar .date.rangehover span {
+    background-color: var(--datepicker-calendar-range-included-background);
+    color: var(--datepicker-calendar-range-included-color);
+    font-weight: var(--datepicker-calendar-range-included-font-weight);
+  }
+  .datepicker .calendars-container .calendar .date.rangehover:hover {
+    box-shadow: inset 20px 0 0 var(--datepicker-calendar-range-included-background);
+    height: var(--datepicker-calendar-day-height);
+  }
+  .datepicker .calendars-container .calendar .date.rangehover:hover span { border-radius: 20px; font-weight: var(--datepicker-font-weight-medium); }
+  .datepicker .calendars-container .calendar .date.rangehover.first:hover,
+  .datepicker .calendars-container .calendar .date.rangehover.start {
+    box-shadow: var(--datepicker-calendar-range-start-box-shadow-selected);
+    height: var(--datepicker-calendar-day-height);
+  }
+  .datepicker .calendars-container .calendar .date.rangehover:not(.start) + .start,
+  .datepicker .calendars-container .calendar .date.rangehover.end {
+    box-shadow: var(--datepicker-calendar-range-end-box-shadow-selected);
+    height: var(--datepicker-calendar-day-height);
+  }
+  .datepicker .calendars-container .calendar .date.rangehover:not(.start) + .start span { border-radius: 20px; }
+  .datepicker .calendars-container .calendar .date.rangehover.start span,
+  .datepicker .calendars-container .calendar .date.rangehover.end span {
+    background-color: var(--datepicker-calendar-range-start-end-background);
+    color: var(--datepicker-calendar-range-start-end-color);
+  }
+  .datepicker .calendars-container .calendar .date.rangehover.start.norange { box-shadow: none !important; }
+
+  /* ── Nav icons (base64 PNGs, same as original) ───────────────────────────── */
+
+  .icon-next-month {
+    background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAACLSURBVHgB7ZTLCYAwEERHbcASUpIlaAd2YDoxlmIX3ixFEwwYQQL5kCWwD94ph5mwywIMUzmLlYRBe1lXENBrT+oSgktwiepLNJ63EWkl3AOltBMCkHh/kEv5F9SCGN8IzKntEYfAdwQb0kYaHO4uoUJBBIdzOAoiKMMNQ47wDvEceA7Zrp3BMLVyA56LVFYQOkngAAAAAElFTkSuQmCC") no-repeat center;
+    background-size: 16px 16px;
+    height: 16px; width: 16px; margin: auto;
+  }
+  .icon-previous-month {
+    background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAACKSURBVHgB7ZbBDYAgDEW/xgEcgZHcQDYRJ5ER3EhHcAPtAQMHQwIiSNKXvAMH+CUNDQDDVM5kLMJCnsYBmXHDN1IgIxzO4QIZ+Ty8gT9cOuuZ3BHHQa4hGxTszVOpnoJaFMbXAk2OzvpNC+7zojYVewFcBBdRVRE9CqCR4EvWIR4JO5iC5jzD/IoLU/FXPXheCj0AAAAASUVORK5CYII=") no-repeat center;
+    background-size: 16px 16px;
+    height: 16px; width: 16px; margin: auto;
+  }
+  .icon-next-year {
+    background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAABuSURBVHgB7c7BCYAwDIXhBy7gKB2hm9Vx3UJzqCASRWOTHvo+yDG8HyAiGt2Ef7LcLLeigyK31SsIdh4Pj9DGwyKu40u9kAht/OAe8TTuHvFm3C3iy3jziGQYv4vIMMjGcS0iwSjBWN/on4hoADu88UW4KXFVfgAAAABJRU5ErkJggg==") no-repeat center;
+    background-size: 12px 12px;
+    display: block; height: 12px; width: 12px;
+  }
+  .icon-previous-year {
+    background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAB3SURBVHgB7dTRCYAwDATQAxdwlI6QzZpx3UIrKJSC1aS2fngP7kvi3VcBIqK/m26+S8qcssBHWu5Dynokwi5m9wIHyX5gHRGL2wAndYwoyxWN1DDi9XLLiG7lT0Z0L6+NGFZ+NWJoeW2EYjD9svy0PzACIiJqsAHF2EaCcjFGaQAAAABJRU5ErkJggg==") no-repeat center;
+    background-size: 12px 12px;
+    display: block; height: 12px; width: 12px;
+  }
+
+  /* ── Responsive ──────────────────────────────────────────────────────────── */
+
+  @media only screen and (max-width: 800px) {
+    .datepicker .calendars-container.show              { display: flex; flex-direction: column; }
+    .datepicker .calendars-container.presets .calendar-presets { border-right: 0; border-bottom: var(--datepicker-presets-border); }
+    .datepicker .calendars-container .calendar .timepicker { align-items: center; display: flex; }
+    .datepicker .calendars-container .calendar .timepicker input[type="time"].end-time { display: block; }
+    .datepicker .calendars-container .calendar + .calendar { display: none; }
+    .datepicker .calendars-container .calendar header button.hide { opacity: 1; }
+  }
+  @media only screen and (max-width: 600px) {
+    .datepicker .calendars-container.presets .calendar-presets:not(.presets-only) { display: none; }
+  }
+</style>

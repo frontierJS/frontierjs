@@ -1,0 +1,75 @@
+<script>
+  // TabList.mesa
+  // Renders the row of Tab buttons and owns the arrow-key navigation that
+  // tabs.css documents as the app's job.
+  //
+  // Variants are the two modifiers @frontierjs/css ships on .tablist:
+  //   ''         — the underline strip (default)
+  //   'pills'    — a filled strip with no baseline rule
+  //   'stretch'  — tabs share the width equally
+  //
+  // The tone goes on the tablist, not on a Tab: --bg-mix is element-scoped, so
+  // `<TabList tone="danger">` colours the whole strip and a tone on a single
+  // tab would do nothing.
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let variant = ''    // '' | 'pills' | 'stretch'  ('boxed' → stretch)
+  export let tone    = ''
+  export let label   = ''    // aria-label for the strip
+
+  const VARIANTS = { pills: 'pills', stretch: 'stretch', boxed: 'stretch', underline: '' }
+  const v = VARIANTS[variant] ?? ''
+
+  const adjacent = $context.adjacent    // fn(id, delta) → adjacent tab id
+
+  // Capture context accessors at top level — can't use $context inside functions (Rule 25)
+  const getActiveId = $context.activeId    // reactive getter (const tracks provider)
+  const setActive   = $context.setActive
+
+  function handleKeyDown(e) {
+    const isNext = e.key === 'ArrowRight'
+    const isPrev = e.key === 'ArrowLeft'
+    const isHome = e.key === 'Home'
+    const isEnd  = e.key === 'End'
+    if (!isNext && !isPrev && !isHome && !isEnd) return
+
+    const active = typeof getActiveId === 'function' ? getActiveId() : getActiveId
+
+    // Home/End are part of the tablist contract tabs.css spells out, and were
+    // missing — only Left/Right were handled.
+    let next
+    if (isHome || isEnd) {
+      // adjacent() wraps, so stepping one back from the active tab's own
+      // position is not enough; ask for the neighbour of a known end instead.
+      const all = []
+      let cur = active
+      for (let i = 0; i < 999; i++) {
+        all.push(cur)
+        const n = adjacent(cur, 1)
+        if (!n || n === active) break
+        cur = n
+      }
+      next = isHome ? all[0] : all[all.length - 1]
+    } else {
+      next = adjacent(active, isNext ? 1 : -1)
+    }
+    if (!next) return
+
+    e.preventDefault()
+    setActive?.(next)
+    // Focus the newly active tab button — query by data-tab-id attr
+    const nextEl = e.currentTarget.querySelector(`[data-tab-id="${next}"]`)
+    nextEl?.focus()
+  }
+</script>
+
+<div
+  role="tablist"
+  aria-label={label || null}
+  class={cx('tablist', v, toTone(tone))}
+  {class}
+  on:keydown={handleKeyDown}
+>
+  <slot />
+</div>

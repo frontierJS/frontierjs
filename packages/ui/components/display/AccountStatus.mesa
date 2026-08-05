@@ -1,0 +1,37 @@
+<script>
+  // AccountStatus.mesa
+  // Composite: toned Dot + status label.
+  // Covers active/suspended/trial/cancelled account states.
+  //
+  // Usage:
+  //   <AccountStatus status="active" />
+  //   <AccountStatus status="trial" sub="12 days left" />
+  //   <AccountStatus status="suspended" />
+
+  import Dot from './Dot.mesa'
+
+  export let status = 'active'  // 'active'|'trial'|'suspended'|'cancelled'|'pending'
+  export let sub    = ''        // optional secondary line e.g. "12 days left"
+  export let size   = 'sm'      // passed to Dot
+
+  const statusMap = {
+    active:    { tone: 'success', label: 'Active',    pulse: false },
+    trial:     { tone: 'info',    label: 'Trial',     pulse: true  },
+    pending:   { tone: 'warning', label: 'Pending',   pulse: true  },
+    suspended: { tone: 'danger',  label: 'Suspended', pulse: false },
+    cancelled: { tone: 'muted',   label: 'Cancelled', pulse: false },
+  }
+
+  const s = statusMap[status] ?? { tone: 'muted', label: status, pulse: false }
+</script>
+
+<div class="cluster" style:gap="0.5rem" {class}>
+  <!-- The label below is visible text, so the dot stays decorative. -->
+  <Dot tone={s.tone} pulse={s.pulse} size={size} />
+  <div class="stack" style:gap="0.125rem">
+    <span class="text-sm">{s.label}</span>
+    {#if sub}
+      <span class="text-xs text-muted">{sub}</span>
+    {/if}
+  </div>
+</div>

@@ -7,7 +7,7 @@
  * DevTools, responsive testing and a phone on the same network.
  *
  * Serves the package root, not demo/, because index.html links
- * ../index.css — the real stylesheet, not a copy. That is the whole point:
+ * ../src/index.css — the real stylesheet, not a copy. That is the whole point:
  * the demo cannot drift from the package.
  */
 

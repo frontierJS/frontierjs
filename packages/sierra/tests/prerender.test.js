@@ -196,6 +196,12 @@ describe('pathsForRoute', () => {
 describe('prerenderRoutes', () => {
   const ROOT = resolve(__dirname, 'fixtures/static-site')
 
+  // Every test below compiles real .mesa files through Mesa and renders them in
+  // happy-dom, off disk. Vitest's 5s default is not a budget for that: the
+  // suite runs files in parallel, and this one intermittently tipped over it
+  // while passing comfortably in isolation.
+  const REAL_RENDER_TIMEOUT = 30_000
+
   async function run(outDir) {
     const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
     const { scan } = await import('../src/scanner/index.js')
@@ -210,7 +216,7 @@ describe('prerenderRoutes', () => {
     expect(res.written).toContain('blog/hello-world/index.html')
     expect(res.written).toContain('blog/second-post/index.html')
     expect(existsSync(resolve(out, 'blog/hello-world/index.html'))).toBe(true)
-  })
+  }, REAL_RENDER_TIMEOUT)
 
   test('the emitted page carries data from load()', async () => {
     const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
@@ -219,14 +225,14 @@ describe('prerenderRoutes', () => {
 
     expect(html).toContain('Post: hello-world')
     expect(html).toMatch(/^<!DOCTYPE html>/)
-  })
+  }, REAL_RENDER_TIMEOUT)
 
   test('routes without render:static are not emitted', async () => {
     const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
     const res = await run(out)
     // The fixture's '/' route declares no render mode.
     expect(res.written).not.toContain('index.html')
-  })
+  }, REAL_RENDER_TIMEOUT)
 
   test('renders the page INSIDE its layout chain', async () => {
     // The regression this pins: the wrapper composed with the `children` prop
@@ -245,18 +251,18 @@ describe('prerenderRoutes', () => {
     // …and nested in that order, page innermost.
     expect(html.indexOf('site-header')).toBeLessThan(html.indexOf('blog-nav'))
     expect(html.indexOf('blog-nav')).toBeLessThan(html.indexOf('Post: hello-world'))
-  })
+  }, REAL_RENDER_TIMEOUT)
 
   test('renders the page exactly once when both protocols are supplied', async () => {
     const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
     await run(out)
     const html = readFileSync(resolve(out, 'blog/hello-world/index.html'), 'utf8')
     expect(html.match(/Post: hello-world/g)).toHaveLength(1)
-  })
+  }, REAL_RENDER_TIMEOUT)
 
   test('reports what it skipped instead of failing silently', async () => {
     const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
     const res = await run(out)
     expect(res.skipped.some(s => /no paths to emit/.test(s.reason))).toBe(true)
-  })
+  }, REAL_RENDER_TIMEOUT)
 })

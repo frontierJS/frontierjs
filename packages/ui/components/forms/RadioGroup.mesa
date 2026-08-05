@@ -1,0 +1,120 @@
+<script>
+  // RadioGroup.mesa
+  // A group of radio options rendered as selectable cards.
+  //
+  // Each option is a <label class="card field-check"> around a real radio, so
+  // the whole card is the hit target and arrow-key navigation between options
+  // is the platform's — a radio group does not need a roving tabindex the way
+  // a tablist does.
+  //
+  // The selected card is styled from `:has(:checked)` rather than a class,
+  // for the same reason tabs key off aria-selected: the look and the state
+  // cannot drift apart.
+  //
+  // items: { value, label, description?, disabled? }[]
+  //
+  // Usage:
+  //   <RadioGroup
+  //     bind:value={plan}
+  //     label="Billing cycle"
+  //     items={[
+  //       { value: 'monthly', label: 'Monthly', description: '$12/mo' },
+  //       { value: 'yearly',  label: 'Yearly',  description: '$99/yr' },
+  //     ]}
+  //   />
+
+  import Field from './Field.mesa'
+  import { uid } from '../../utils.js'
+
+  export let items    = []
+  export let value    = null
+  export let label    = ''
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let name     = ''
+  export let disabled = false
+  export let layout   = 'stacked'  // 'stacked' | 'inline'
+  export let onchange = undefined
+
+  // `id` was declared and never used: it reached no element, so a caller could
+  // not address the group at all, and Field rendered `<label for="">`.
+  //
+  // It goes on the [role=radiogroup] element, and NOT into Field's `for` — a
+  // <label for> must point at a labelable control, which a group is not. The
+  // group's accessible name is its aria-label.
+  export var id = ''
+  const groupId   = id
+  const groupName = name || uid('radio')
+
+  function handleChange(e) {
+    value = e.target.value
+    onchange?.(value)
+  }
+</script>
+
+{#snippet group()}
+  <!--
+    role="radiogroup" needs an accessible name to be worth anything. When
+    this is inside a Field, the Field's label is it; standalone, pass one.
+  -->
+  <div
+    id={groupId || null}
+    role="radiogroup"
+    aria-label={label || null}
+    class={layout === 'inline' ? 'cluster' : 'stack'}
+    style:gap="0.5rem"
+  >
+    {#each items as item (item.value)}
+      {@const isSelected = value === item.value}
+      {@const isDisabled = disabled || item.disabled}
+      {@const descId = `${groupName}-${item.value}-desc`}
+
+      <label class="card field-check fjs-radio-card">
+        <input
+          type="radio"
+          name={groupName}
+          value={item.value}
+          checked={isSelected}
+          disabled={isDisabled}
+          aria-describedby={item.description ? descId : null}
+          on:change={handleChange}
+        />
+        <span class="stack" style:gap="0.125rem">
+          <span>{item.label}</span>
+          {#if item.description}
+            <span class="field-hint" id={descId}>{item.description}</span>
+          {/if}
+        </span>
+      </label>
+    {/each}
+  </div>
+{/snippet}
+
+{#if label}
+  <Field name={name} label={label} hint={hint} error={error} errors={errors} {class}>
+    {@render group()}
+  </Field>
+{:else}
+  {@render group()}
+{/if}
+
+<style>
+  .fjs-radio-card {
+    display:     flex;
+    align-items: flex-start;
+    gap:         0.75rem;
+    padding:     0.75rem 1rem;
+    cursor:      pointer;
+    transition:  border-color 120ms, background 120ms;
+  }
+  /* Selected state from the checked input, not a class. */
+  .fjs-radio-card:has(input:checked) {
+    border-color: var(--color-primary);
+    background:   color-mix(in srgb, var(--color-primary) 8%, var(--surface));
+  }
+  .fjs-radio-card:has(input:disabled) {
+    opacity: 0.55;
+    cursor:  not-allowed;
+  }
+</style>

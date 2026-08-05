@@ -1,0 +1,61 @@
+<script>
+  export let label      = ''
+  export let value      = ''
+  export let labelColor = '#888888'
+  export let valueColor = '#222222'
+  export let size       = 14
+  export let bold       = false
+  export let padding    = '6px 16px'
+  export let border     = false      // show bottom border
+// override value slot
+</script>
+
+<!--
+  KeyValue — a label/value pair row. The workhorse of transactional data display.
+  Replaces most of the domain-specific data display components.
+
+  <KeyValue label="Order #"    value="12345" />
+  <KeyValue label="Total"      value="$99.00" bold />
+  <KeyValue label="Delivered"  value="March 15, 2025" />
+
+  Inside a Card:
+  <Card heading="Order Summary">
+    <KeyValue label="Item"    value="Pro Plan" />
+    <KeyValue label="Amount"  value="$49/mo" bold />
+    <KeyValue label="Next billing" value="April 1" />
+  </Card>
+-->
+
+<tr>
+  <td style="
+    padding:{padding};
+    font-family:Helvetica,Arial,sans-serif;
+    font-size:{size}px;
+    {border ? 'border-bottom:1px solid #eeeeee;' : ''}
+  ">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+      <tr>
+        <td style="
+          color:{labelColor};
+          font-size:{size}px;
+          white-space:nowrap;
+          padding-right:16px;
+          vertical-align:top;
+        ">{label}</td>
+        <td style="
+          color:{bold ? '#111111' : valueColor};
+          font-weight:{bold ? 700 : 400};
+          font-size:{size}px;
+          text-align:right;
+          vertical-align:top;
+        ">
+          {#if $slots.default}
+            <slot />
+          {:else}
+            {value}
+          {/if}
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>

@@ -11,10 +11,20 @@
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Model names in .lite are conventionally lowercase (users, posts) or PascalCase (User, Post).
-// TypeScript interfaces should always be PascalCase.
+// Model names in .lite are PascalCase singular (User, Post). TypeScript interfaces
+// should always be PascalCase.
 function pascal(name) {
   return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+// The runtime accessor for `model User` is `db.user` — see modelToAccessor in
+// core/ddl.js. The LitestoneClient interface must declare THAT name, not the model
+// name. Under the old lowercase convention the two coincided (`model users` →
+// `db.users`), so emitting `model.name` looked right; under PascalCase it emits
+// `readonly User` for a property that is actually `db.user`, and every typed query
+// fails to compile.
+function accessor(name) {
+  return name.charAt(0).toLowerCase() + name.slice(1)
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -291,7 +301,7 @@ export function generateTypeScript(schema, opts = {}) {
   // One entry per model
   for (const model of schema.models) {
     lines.push(
-      `  readonly ${model.name}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where>`
+      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where>`
     )
   }
 

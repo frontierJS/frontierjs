@@ -1,0 +1,169 @@
+---
+title: Orders
+---
+<script>
+  import { orders } from '../../resources/shop.mesa'
+  import { session } from '../../session.js'
+  import { prefs } from '../../prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  // The columns a Table draws are a UI decision, so they are written here —
+  // but every VALUE below still comes from the schema. Nothing in this list
+  // adds a field the model does not have.
+  const columns = [
+    { key: 'reference',  label: 'Reference' },
+    { key: 'status',     label: 'Status' },
+    { key: 'total',      label: 'Total' },
+    { key: 'customerId', label: 'Customer' },
+    { key: 'note',       label: 'Note' },
+    { key: 'moves',      label: 'Moves' },
+    { key: 'actions',    label: 'Actions' },
+  ]
+
+  const { get: rows, unsubscribe } = useStore(orders.store)
+  $onDestroy(unsubscribe)
+
+  $: (session.level, prefs.dense)
+
+  let error = null
+
+  orders.load().catch(e => { error = e.message })
+
+  // The schema says delete needs level 5. Asking before rendering is the only
+  // reason this button can be disabled rather than 403-ing on click — and it is
+  // still the server that actually refuses.
+  $: canDelete = orders.can('delete', session.level)
+
+  // A transition IS an update, so it answers to the model's @@gate as well as
+  // to its own @gate. transitionsAt() only grades the per-move gate — it is
+  // given a row and a level, not the model's gate table — so without this a
+  // signed-out visitor sees `pay` enabled (it declares no @gate, and unknown
+  // answers are permissive) and learns otherwise from a 403.
+  $: canMove = orders.can('update', session.level)
+
+  // Which tone a status gets is a mapping the design system owns; the STATES
+  // come from the enum in the schema, not from a list written here.
+  const tone = (s) => ({
+    pending:   'warning',
+    paid:      'info',
+    shipped:   'success',
+    refunded:  'muted',
+    cancelled: 'danger',
+  })[s] ?? 'muted'
+
+  async function remove(id) {
+    error = null
+    try { await orders.service.remove(id) } catch (e) { error = e.message }
+  }
+
+  // ── The state machine ────────────────────────────────────────────────────
+  //
+  // No list of moves appears in this file. `orders.transitions(row, level)`
+  // reads x-transitions — the same @@transitions block Litestone enforces with
+  // — and answers with exactly the moves legal FROM THIS ROW'S CURRENT STATE,
+  // each carrying the level it needs. A `shipped` order offers nothing, because
+  // the schema says nothing leaves `shipped`.
+  //
+  // `allowed` is an affordance on the same permissive contract as can(): a move
+  // the caller cannot make comes back with allowed:false rather than vanishing,
+  // so it renders disabled and the reason stays visible. The server refuses
+  // regardless — signed in as a user, refund is a 403 whatever this renders.
+
+  let busy = null
+
+  async function run(name, id) {
+    error = null
+    busy  = id + ':' + name
+    try {
+      // Dispatched as POST /api/orders/{id} with X-Service-Method: {name}.
+      // Nothing in the app registers that route.
+      await orders.service.action(name, id)
+      await orders.load()
+    } catch (e) {
+      // 409 Conflict — the row moved, or the move was never legal from here.
+      // 403 Forbidden — the move is gated above this session.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+</script>
+
+<SectionHeader title="Orders" level={1}>
+  {#snippet action()}
+    <Button href="/orders/create/">New order</Button>
+  {/snippet}
+</SectionHeader>
+
+{#if error}
+  <Alert tone="danger">{error}</Alert>
+{/if}
+
+<!--
+  The kit's Table owns the structure, the wrap, the striping and the empty
+  state; the row snippet stays here because what a cell CONTAINS is this app's
+  business. `rows()` is named inside the prop expression so the store's next
+  value re-renders the body.
+-->
+<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+  {#snippet row(order)}
+    <tr>
+      <td><a href={'/orders/' + order.id + '/'}><code>{order.reference}</code></a></td>
+      <td><Pill tone={tone(order.status)}>{order.status}</Pill></td>
+      <td>{order.total}</td>
+      <td class="text-muted">#{order.customerId}</td>
+      <td class="text-muted">{order.note === null ? '—' : order.note}</td>
+      <td>
+        <!-- `session.level` is named in the expression on purpose: Mesa reads
+             an expression's dependencies from its text, so calling
+             transitions() without mentioning it would compute the moves once
+             at mount and never re-grade them on sign-in. -->
+        <div class="cluster">
+          {#each orders.transitions(order, session.level) as move}
+            <Button
+              variant="ghost"
+              loading={busy === order.id + ':' + move.name}
+              disabled={!move.allowed || !canMove || busy !== null}
+              title={!canMove ? 'sign in to move an order'
+                   : move.allowed ? move.from + ' → ' + move.to
+                   : 'needs level ' + move.gate}
+              onclick={() => run(move.name, order.id)}
+            >{move.name}</Button>
+          {/each}
+          {#if !orders.transitions(order, session.level).length}
+            <span class="text-sm text-muted">—</span>
+          {/if}
+        </div>
+      </td>
+      <td>
+        <Button variant="ghost" tone="danger" onclick={() => remove(order.id)} disabled={!canDelete}>
+          Delete
+        </Button>
+      </td>
+    </tr>
+  {/snippet}
+</Table>
+
+{#if !canDelete}
+  <Alert tone="muted">
+    Delete is disabled because <code>@@gate</code> wants level
+    {orders.gate.delete} and this session is {session.level}. Sign in as admin.
+  </Alert>
+{/if}
+
+<Alert tone="info">
+  The <strong>Moves</strong> column is <code>@@transitions</code> from
+  <code>db/schema.lite</code>, read back through <code>x-transitions</code> — no
+  list of moves exists in this component. A <code>shipped</code> order offers
+  none, because nothing leaves <code>shipped</code>. <code>refund</code> carries
+  <code>@gate(5)</code>, so signed in as <em>sam</em> it renders disabled and
+  signed in as <em>alex</em> it does not — and the server answers 403 either way
+  if you get past the button.
+</Alert>

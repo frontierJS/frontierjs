@@ -10,7 +10,7 @@
  *      depend on a path outside its own directory.
  *   2. Rewrite the one stylesheet href to point at the vendored copy.
  *
- * The source index.html keeps its ../packages/css/index.css link on purpose,
+ * The source index.html keeps its ../packages/css/src/index.css link on purpose,
  * so opening the file straight from the repo renders correctly and the page
  * always authors against the real stylesheet rather than a stale copy. The
  * rewrite happens on the way into dist/ and never touches the source — the
@@ -23,10 +23,11 @@ import { join, normalize, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here    = dirname(fileURLToPath(import.meta.url))
-const cssPkg  = normalize(join(here, '..', 'packages', 'css'))
+/* The stylesheets live under src/ as of @frontierjs/css v0.11. */
+const cssPkg  = normalize(join(here, '..', 'packages', 'css', 'src'))
 const dist    = join(here, 'dist')
 
-const SRC_HREF = '../packages/css/index.css'
+const SRC_HREF = '../packages/css/src/index.css'
 const OUT_HREF = './css/index.css'
 
 const kb = n => `${(n / 1024).toFixed(1)} kB`
@@ -37,20 +38,49 @@ rmSync(dist, { recursive: true, force: true })
 mkdirSync(join(dist, 'css'), { recursive: true })
 
 // ─── 2. Vendor the design system ─────────────────────────────────────────────
-// Every .css file in the package root, flat — index.css @imports its siblings
-// by bare relative path, so the layout has to be preserved exactly.
+// index.css @imports its siblings by relative path, so the tree has to be
+// copied with its shape intact — the package groups its files into
+// foundation/ themes/ components/ patterns/ a11y/ as of v0.11.
+//
+// This used to be a flat readdirSync of the package root. After the grouping
+// that returned index.css and utilities.css and nothing else, and the
+// `includes('index.css')` guard below still passed — so the build would have
+// succeeded and deployed a site whose every @import 404s. Hence the count
+// check: a design system is never two files.
 
-const sheets = readdirSync(cssPkg).filter(f => f.endsWith('.css'))
+function collectCss(dir, base = '') {
+  const out = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = base ? `${base}/${entry.name}` : entry.name
+    if (entry.isDirectory()) {
+      // Skip the package's own tooling — guide/, demo/, test/ are not shipped.
+      if (['guide', 'demo', 'test', 'node_modules'].includes(entry.name)) continue
+      out.push(...collectCss(join(dir, entry.name), rel))
+    } else if (entry.name.endsWith('.css')) {
+      out.push(rel)
+    }
+  }
+  return out
+}
+
+const sheets = collectCss(cssPkg)
 if (!sheets.includes('index.css')) {
   console.error(`\n  ✗ No index.css in ${cssPkg} — is @frontierjs/css still there?\n`)
   process.exit(1)
 }
+if (sheets.length < 20) {
+  console.error(
+    `\n  ✗ Only ${sheets.length} stylesheet(s) found under ${cssPkg}.\n` +
+    `    The package ships 40+. Did its directory layout change?\n`
+  )
+  process.exit(1)
+}
 
 let cssBytes = 0
-for (const name of sheets) {
-  const src = join(cssPkg, name)
+for (const rel of sheets) {
+  const src = join(cssPkg, rel)
   cssBytes += statSync(src).size
-  await write(join(dist, 'css', name), file(src))
+  await write(join(dist, 'css', rel), file(src))
 }
 
 // ─── 3. Rewrite the stylesheet href on every page ────────────────────────────
@@ -98,12 +128,17 @@ for (const name of pages) {
 }
 
 // ─── 3b. Copy shared front-end assets ────────────────────────────────────────
-// Root-level .js/.css the pages load directly. The build tooling itself
-// (build.js, serve.js) is excluded — it never ships.
+// Root-level .js/.css/.json the pages load directly. The build tooling itself
+// (build.js, serve.js) and the workspace manifest never ship.
+//
+// .json is here because landscape.html fetches projects.json at runtime rather
+// than inlining it — one source of truth, edited as data. A page that fetches a
+// file the build does not copy is an empty page in dist/ and a working one in
+// dev, which is the worst way to find out.
 
-const TOOLING = new Set(['build.js', 'serve.js'])
+const TOOLING = new Set(['build.js', 'serve.js', 'package.json'])
 const shared = readdirSync(here)
-  .filter(f => (f.endsWith('.js') || f.endsWith('.css')) && !TOOLING.has(f))
+  .filter(f => (f.endsWith('.js') || f.endsWith('.css') || f.endsWith('.json')) && !TOOLING.has(f))
 
 for (const name of shared) await write(join(dist, name), file(join(here, name)))
 

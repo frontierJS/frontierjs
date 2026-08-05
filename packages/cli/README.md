@@ -263,6 +263,22 @@ await context.stream({ command: `ssh ${host} "docker logs --follow ${container}"
 
 ---
 
+## Project root resolution
+
+`context.paths.*` all hang off one project root, resolved by walking up from cwd:
+
+1. `--project <dir>` / `FLI_PROJECT` — explicit, wins over everything
+2. `.fli.json` — explicit marker, deepest match wins
+3. `db/schema.lite` — an FJS app root, deepest match wins
+4. `.git/` — repo root
+5. `package.json` — fallback for projects not in git
+
+Rule 3 is what makes a monorepo work: `example/` and `packages/basecamp/` are
+each their own app, so running `fli project:map` inside either resolves to that
+app rather than to the repo's `.git` root.
+
+---
+
 ## Project config — `.fli.json`
 
 Drop a `.fli.json` in your project root to override defaults:
@@ -348,6 +364,11 @@ Every command gets these automatically:
 | `--dry` | `-d` | Show what would run without executing |
 | `--test` | `-t` | Sets `NODE_ENV=test` |
 | `--step` | | Re-run a single `_steps/` step by number |
+| `--project <dir>` | | Run against that project root instead of resolving one from cwd |
+
+`--project` (or `FLI_PROJECT=<dir>`) is consumed before the command runs — it
+sets `context.paths.*` and is stripped from the command's own flags. Use it to
+drive an app from outside it: `fli project:view --project packages/basecamp`.
 
 ---
 

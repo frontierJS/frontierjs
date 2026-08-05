@@ -1,0 +1,175 @@
+<script>
+  // DropdownMenu.mesa
+  // Positioned action menu triggered by a button. Portals to <body> so it
+  // escapes overflow:hidden containers. Keyboard navigable via ArrowUp/Down.
+  //
+  // Compound component — compose with DropdownItem, DropdownSeparator, DropdownLabel.
+  //
+  // Usage:
+  //   <DropdownMenu>
+  //     {#snippet trigger()}
+  //       <Button variant="ghost" icon><IconDots /></Button>
+  //     {/snippet}
+  //     <DropdownLabel>Actions</DropdownLabel>
+  //     <DropdownItem onclick={handleEdit}>
+  //       {#snippet icon()}<IconEdit />{/snippet}
+  //       Edit
+  //     </DropdownItem>
+  //     <DropdownSeparator />
+  //     <DropdownItem variant="destructive" onclick={handleDelete}>Delete</DropdownItem>
+  //   </DropdownMenu>
+  //
+  // Placement: 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end'
+  // The panel auto-flips vertically when it would overflow the viewport.
+
+  export let placement = 'bottom-start'
+  export let offset    = 4               // gap between trigger and panel in px
+  export let trigger   = null            // snippet — the button that opens the menu
+
+  let open      = false
+  let x         = 0
+  let y         = 0
+  let triggerEl
+  let panelEl
+
+  // Provide close() so DropdownItem descendants can close the menu after selection.
+  // Arrow function closes over this component's closeMenu — correct scope. ✓
+  $context.close = () => closeMenu()
+
+  const panelAnim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'scale(0.96) translateY(-4px)' },
+       { opacity: 1, transform: 'scale(1) translateY(0)' }],
+      { duration: 130, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.96)' }],
+      { duration: 90, fill: 'forwards' }
+    ).finished,
+  })
+
+  function openMenu() {
+    if (open) { closeMenu(); return }
+    open = true
+    requestAnimationFrame(() => {
+      position()
+      panelEl?.focus()
+    })
+    document.addEventListener('click', onClickAway, { capture: true })
+  }
+
+  function closeMenu() {
+    open = false
+    document.removeEventListener('click', onClickAway, { capture: true })
+    // Restore focus to the trigger element
+    triggerEl?.querySelector('button,a,[tabindex="0"]')?.focus()
+  }
+
+  function position() {
+    if (!triggerEl || !panelEl) return
+    const tr   = triggerEl.getBoundingClientRect()
+    const pr   = panelEl.getBoundingClientRect()
+    const winW = window.innerWidth
+    const winH = window.innerHeight
+
+    // Flip above if not enough room below
+    const goAbove = tr.bottom + pr.height + offset > winH
+    y = goAbove ? tr.top - pr.height - offset : tr.bottom + offset
+
+    if (placement.endsWith('end')) {
+      x = Math.max(8, tr.right - pr.width)
+    } else {
+      x = tr.left
+      if (x + pr.width > winW - 8) x = winW - pr.width - 8
+    }
+  }
+
+  function onClickAway(e) {
+    if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
+    closeMenu()
+  }
+
+  function handleKeydown(e) {
+    if (!open) return
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); return }
+    if (e.key === 'Tab')    { closeMenu(); return }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+
+    e.preventDefault()
+    // Query live items from the DOM rather than a registry — simpler and handles
+    // conditionally rendered items automatically.
+    const items = Array.from(
+      panelEl?.querySelectorAll('[role="menuitem"]:not([disabled]):not([aria-disabled="true"])') ?? []
+    )
+    if (!items.length) return
+    const cur  = items.indexOf(document.activeElement)
+    const next = e.key === 'ArrowDown'
+      ? items[(cur + 1) % items.length]
+      : items[(cur - 1 + items.length) % items.length]
+    next?.focus()
+  }
+
+  $onDestroy(() => {
+    document.removeEventListener('click', onClickAway, { capture: true })
+  })
+
+  // Keep the caller's control in sync with the menu's state.
+  $: open, () => {
+    const control = triggerEl?.querySelector('button, a, [role="button"], [tabindex]') ?? triggerEl
+    if (!control) return
+    control.setAttribute('aria-haspopup', 'menu')
+    control.setAttribute('aria-expanded', open ? 'true' : 'false')
+  }
+</script>
+
+<mesa:window on:keydown={handleKeydown} />
+
+<!--
+  The trigger announces the menu it controls. Without aria-haspopup and
+  aria-expanded a screen reader hears an ordinary button and is never told a
+  menu opened — the component's whole job is the behaviour the stylesheet
+  cannot supply, and this is part of it.
+
+  The attributes are written onto the caller's own control rather than onto
+  this wrapper: the wrapper is not focusable, so state announced there is state
+  nobody hears. The snippet's markup belongs to the caller, so this is the one
+  place the component reaches into the DOM instead of declaring it.
+-->
+<span
+  bind:this={triggerEl}
+  style:display="inline-block"
+  {class}
+  on:click|stopPropagation={openMenu}
+>
+  {@render trigger?.()}
+</span>
+
+{#if open}
+  <mesa:portal to={document.body}>
+    <!--
+      .popover is the surface; .items.menu is the interactive list inside it,
+      which is what gives DropdownItem's `.item` its hover and padding.
+    -->
+    <div
+      bind:this={panelEl}
+      class="popover"
+      style:position="fixed"
+      style:min-inline-size="10rem"
+      style:max-inline-size="16rem"
+      style:padding="0.25rem"
+      style:left="{x}px"
+      style:top="{y}px"
+      {@attach panelAnim}
+    >
+      <!--
+        The items are ordinary children — `<DropdownMenu><DropdownItem/>…` —
+        which in Mesa is the default SLOT, not a `children` prop. This rendered
+        `{@render children?.()}` instead, so every menu opened empty unless the
+        caller wrapped its items in a snippet nobody documents.
+      -->
+      <div class="items menu" role="menu" tabindex="-1">
+        <slot />
+      </div>
+    </div>
+  </mesa:portal>
+{/if}

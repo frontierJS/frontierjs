@@ -38,10 +38,10 @@ const getPackages = (wsRoot) => {
     }).filter(Boolean)
 }
 
-const ARTIFACT_DIRS = ['dist', '.turbo', '.svelte-kit', 'build', '.next', 'out']
+const ARTIFACT_DIRS = ['dist', '.turbo', 'build', '.next', 'out']
 </script>
 
-Removes `dist/`, `.turbo/`, `.svelte-kit/`, and other build artifacts from
+Removes `dist/`, `.turbo/`, `build/` and other build artifacts from
 every package. Pass `--deps` to also wipe `node_modules` (implies `bun install`
 after). Safe to run anytime — just re-run `ws:run build` to rebuild.
 

@@ -39,8 +39,8 @@
 //
 // ─── Schema ───────────────────────────────────────────────────────────────────
 //
-//   model pages {
-//     id      Integer @id
+//   model Page {
+//     id      Int @id
 //     content GitHub?
 //   }
 //
@@ -51,11 +51,11 @@
 //   in config to resolve automatically in onAfterRead.
 //
 //   // Manual resolution
-//   const page = await db.pages.findFirst({ where: { id: 1 } })
-//   const content = await db.pages.resolveRef(page.content)
+//   const page = await db.page.findFirst({ where: { id: 1 } })
+//   const content = await db.page.resolveRef(page.content)
 //
 //   // Auto resolution (config: autoResolve: true)
-//   const page = await db.pages.findFirst({ where: { id: 1 } })
+//   const page = await db.page.findFirst({ where: { id: 1 } })
 //   page.content // → resolved value directly
 
 import { Plugin } from '../core/plugin.js'

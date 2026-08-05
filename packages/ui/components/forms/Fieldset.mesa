@@ -1,0 +1,48 @@
+<script>
+  // Fieldset.mesa
+  // Groups related fields with a semantic <fieldset>/<legend>. The grouping
+  // is the point: a screen reader announces the legend with every control
+  // inside it, which no <div> plus a heading does.
+  //
+  // Usage:
+  //   <Fieldset legend="Shipping address" description="Where to send your order">
+  //     <Input label="Street" name="street" bind:value={street} />
+  //     <Input label="City"   name="city"   bind:value={city} />
+  //   </Fieldset>
+
+  export let legend      = ''
+  export let description = ''
+  export let disabled    = false
+</script>
+
+<!--
+  `disabled` on the <fieldset> disables every control inside it natively, so
+  they are genuinely unfocusable and not submitted — which the old
+  `opacity + pointer-events: none` never achieved (a keyboard user could
+  still tab into every one of them).
+-->
+<fieldset disabled={disabled} class="fjs-fieldset" {class}>
+  {#if legend}
+    <legend class="h4" style:margin="0 0 0.25rem">{legend}</legend>
+  {/if}
+
+  {#if description}
+    <p class="text-sm text-muted" style:margin="0 0 1rem">{description}</p>
+  {/if}
+
+  <div class="stack">
+    <slot />
+  </div>
+</fieldset>
+
+<style>
+  /* A <fieldset> carries a UA border and padding no form layout wants; the
+     grouping semantics are the reason to use the element. */
+  .fjs-fieldset {
+    border:          0;
+    padding:         0;
+    margin:          0;
+    min-inline-size: 0;
+  }
+  .fjs-fieldset:disabled { opacity: 0.6; }
+</style>

@@ -169,6 +169,11 @@ A slice shipping conformance tests that run against the *consuming* app is how
 "I installed only the Service part" gets verified rather than assumed. Nobody in
 the ecosystem does this and it is cheap for us — per-package test runners exist.
 
+*Caveat added 2026-08-03:* cheap, but not free — there is no shared test environment
+for a `suite/` part to run *in*. Four different runners, no way to stand up a seeded
+app across realms, and no CI to run `slice:doctor` from. See
+`IDEAS/testing-and-ci.md`; this part and that idea unblock each other.
+
 ### CLI surface
 
 ```
@@ -227,6 +232,11 @@ conformance-tested — without touching Sierra.
 - Upgrade path for ejected Resources — none, by design. Is that acceptable, or is
   there a middle state (ejected but diff-able against the package version)?
 - Should `suite/` run against the consumer app in CI by default, or on demand?
+- Does a slice get an `upgrade/` part — codemods it ships to move a consumer across
+  its own breaking changes? A slice that renames a model or changes a service key has
+  the framework-upgrade problem in miniature, and the ejected `resource/` part makes
+  it worse: linked parts upgrade through npm, but ejected files are the consumer's
+  and will not. See `IDEAS/ecosystem-gaps.md` tier-2 item 10.
 - Does a Slice declare a Litestone version range in its `package.json` peer-deps?
   Not a blocker — litestone 1.1.0 is published and npm `latest` points at it as of
   2026-08-02 (verified: `npm view` dist-tags, and the published tarball's `SCALARS`
@@ -241,3 +251,4 @@ conformance-tested — without touching Sierra.
 - `ARCHITECT.md` §2 — the realm nouns these folders take their names from
 - `PHILOSOPHY.md` — the "growth happens outward and traces back" axiom this serves
 - `DECISIONS.md` — where a ruling on `Slice` would land
+- `IDEAS/testing-and-ci.md` — the environment the `suite/` part needs to run in

@@ -53,7 +53,7 @@ enum LeadStatus {
   closed
 }
 
-model leads {
+model Lead {
   id        Int    @id
   name      String       @length(1, 200) @trim
   company   String       @trim
@@ -85,9 +85,9 @@ const { apply } = await import('@frontierjs/litestone')
 await apply(db, './smoke-migrations')
 
 // Seed some leads if the table is empty
-const count = await db.asSystem().leads.count()
+const count = await db.asSystem().lead.count()
 if (count === 0) {
-  await db.asSystem().leads.createMany({ data: [
+  await db.asSystem().lead.createMany({ data: [
     { name: 'Acme Corp',    company: 'Acme Corp',    email: 'contact@acme.com',  status: 'new',    value: 12000 },
     { name: 'Globex Inc',   company: 'Globex Inc',   email: 'info@globex.com',   status: 'active', value: 8500  },
     { name: 'Initech',      company: 'Initech',      email: 'hello@initech.com', status: 'closed', value: 3200  },
@@ -178,7 +178,7 @@ app.hooks({
 app.services.register(
   createService({
     name:   'leads',
-    model:  'leads',
+    model:  'lead',
     schema: jsonSchema,
 
     hooks: {

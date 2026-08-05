@@ -1,0 +1,58 @@
+<script>
+  // Pill.mesa
+  // Small readonly label chip. Covers general status labels and plan badges.
+  // For interactive dismissible chips, use Tag.mesa.
+  //
+  // Usage:
+  //   <Pill tone="success">Active</Pill>
+  //   <Pill tone="primary">New</Pill>
+  //   <Pill dot tone="warning">Degraded</Pill>
+  //   <Pill plan="pro" />          ← plan shorthand
+  //   <Pill plan="enterprise" />
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let tone  = ''      // one of the 7 css tones; '' is muted
+  export let color = ''      // legacy alias for `tone`
+  export let size  = ''      // '' | 'xs' | 'md'
+  export let dot   = false   // show a leading status dot
+  export let plan  = ''      // 'free'|'pro'|'business'|'enterprise' — overrides tone + children
+
+  // Plan → tone + label map — static, computed once
+  const planMap = {
+    free:       { tone: 'muted',     label: 'Free'       },
+    pro:        { tone: 'primary',   label: 'Pro'        },
+    business:   { tone: 'secondary', label: 'Business'   },
+    enterprise: { tone: 'info',      label: 'Enterprise' },
+  }
+
+  const resolvedPlan = plan ? planMap[plan] : null
+  const planLabel    = resolvedPlan?.label ?? ''
+  const t            = resolvedPlan?.tone ?? toTone(color || tone)
+
+  const sizeMap = { xs: '0.625rem', sm: '', md: '0.8125rem' }
+  const fontSize = sizeMap[size] ?? ''
+</script>
+
+<span class={cx('pill', t)} style:font-size={fontSize || null} {class} {...$attributes}>
+  {#if dot}
+    <!--
+      currentColor, so it tracks the auto-contrast text colour chip.css
+      derives rather than restating the tone and risking a mismatch.
+    -->
+    <span
+      aria-hidden="true"
+      style:inline-size="0.375rem"
+      style:block-size="0.375rem"
+      style:border-radius="50%"
+      style:background="currentColor"
+      style:opacity="0.7"
+      style:flex-shrink="0"
+    ></span>
+  {/if}
+  {#if planLabel}
+    {planLabel}
+  {:else}
+    <slot />
+  {/if}
+</span>

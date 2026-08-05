@@ -1,0 +1,55 @@
+<script>
+  // Breadcrumbs.mesa
+  // Navigation trail. Last item is the current page and is never a link.
+  // Truncates long middle sections when maxItems is set.
+  //
+  // `.breadcrumb` draws the separators as pseudo-elements on the <li>, so the
+  // markup is just <nav><ol><li>. The current item is marked with
+  // aria-current="page" — which is both what the CSS keys off and what a
+  // screen reader announces, so the two cannot drift.
+  //
+  // ITEMS shape:
+  //   { label: string, href?: string }
+  //   If href is omitted, the item renders as plain text.
+  //
+  // Usage:
+  //   <Breadcrumbs items={[
+  //     { label: 'Home',     href: '/' },
+  //     { label: 'Settings', href: '/settings' },
+  //     { label: 'API Keys' },
+  //   ]} />
+  //
+  //   <Breadcrumbs {items} maxItems={3} />
+
+  export let items    = []    // { label, href? }[]
+  export let maxItems = 0     // 0 = show all; N = show first + … + last N
+  export let label    = 'Breadcrumb'   // landmark name
+
+  // Truncate middle items if maxItems is set, and mark the last one here
+  // rather than in the template: a `{@const}` inside an {#each} calls the
+  // index as a getter (`idx()`), so `idx === visible.length - 1` throws.
+  const visible = (() => {
+    const list = (!maxItems || items.length <= maxItems)
+      ? items
+      : [items[0], { label: '…', href: undefined, _ellipsis: true }, ...items.slice(-(maxItems - 1))]
+    return list.map((item, i) => ({ ...item, _isLast: i === list.length - 1 }))
+  })()
+</script>
+
+<nav class="breadcrumb" aria-label={label} {class}>
+  <ol>
+    {#each visible as item}
+      <li>
+        {#if item._ellipsis}
+          <span class="text-muted" aria-hidden="true">…</span>
+
+        {:else if item._isLast || !item.href}
+          <span aria-current={item._isLast ? 'page' : null}>{item.label}</span>
+
+        {:else}
+          <a class="link" href={item.href}>{item.label}</a>
+        {/if}
+      </li>
+    {/each}
+  </ol>
+</nav>

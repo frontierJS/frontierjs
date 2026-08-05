@@ -1,0 +1,42 @@
+<script>
+  // Spinner.mesa
+  // Accessible loading indicator.
+  //
+  // @frontierjs/css draws `.spinner` in currentColor and sizes it in `em`, so
+  // it matches whatever text it sits beside with no size class — a spinner in
+  // a .btn is button-sized automatically. `size` here is a font-size, not a
+  // width/height pair, which is why <Spinner size="sm" /> inside a label still
+  // lines up with the label.
+  //
+  // Usage:
+  //   <Spinner />
+  //   <Spinner size="lg" label="Saving…" />
+  //   <Spinner tone="muted" />
+  //   <button class="btn primary"><Spinner /> Saving</button>
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let size  = 'md'      // 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+  export let tone  = ''        // '' inherits the surrounding text colour
+  export let color = ''        // legacy alias for `tone`
+  export let label = 'Loading' // announced by the live region below
+
+  // font-size, because .spinner is sized in em.
+  const sizeMap = {
+    xs: '0.75rem',
+    sm: '0.875rem',
+    md: '1.25rem',
+    lg: '1.75rem',
+    xl: '2.5rem',
+  }
+
+  const fontSize = sizeMap[size] ?? sizeMap.md
+  const t        = toTone(color || tone)
+</script>
+
+<!--
+  The ring is decorative; the visually-hidden live region is what announces.
+  Splitting them is the whole accessibility contract for this component.
+-->
+<span class={cx('spinner', t)} style:font-size={fontSize} aria-hidden="true" {class}></span>
+<span class="visually-hidden" role="status">{label}</span>

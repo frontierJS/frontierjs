@@ -1,0 +1,45 @@
+<script>
+  export let name    = ''
+  export let bgcolor = '#9fc612'
+  export let color   = '#ffffff'
+  export let size    = 48
+  export let align   = 'left'
+  export let padding = '8px 16px'
+
+  const initial = name ? name.trim()[0].toUpperCase() : '?'
+  const fontSize = Math.round(size * 0.4)
+  const cx = size / 2
+  const cy = size / 2
+</script>
+
+<!--
+  Avatar — a letter-initial circle. Email-safe (inline SVG, no external image).
+  Used in Review, Contact, and anywhere you'd show a person.
+
+  <Avatar name="Alice Johnson" bgcolor="#ee380d" />
+  <Avatar name="Bob" size={40} />
+-->
+
+<tr>
+  <td align="{align}" style="padding:{padding};">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="{size}"
+      height="{size}"
+      viewBox="0 0 {size} {size}"
+      style="display:inline-block;vertical-align:middle;border-radius:50%;overflow:hidden;"
+    >
+      <circle cx="{cx}" cy="{cy}" r="{cx}" fill="{bgcolor}" />
+      <text
+        x="{cx}"
+        y="{cy}"
+        text-anchor="middle"
+        dominant-baseline="central"
+        fill="{color}"
+        font-family="Helvetica, Arial, sans-serif"
+        font-size="{fontSize}"
+        font-weight="700"
+      >{initial}</text>
+    </svg>
+  </td>
+</tr>

@@ -114,7 +114,7 @@ runtime to make this work:
 The DOM position survives — the parent component never re-renders, props
 flow through unchanged. **Top-level signals are recreated on each update**;
 state that needs to survive HMR belongs in a plain JS module
-(see [`VISION.md` §5](../VISION.md)).
+(see [`VISION.md` §5](../docs/VISION.md)).
 
 `.md` files do not receive HMR — they reload the page on change. They are
 typically rendered once at build time and rarely participate in interactive

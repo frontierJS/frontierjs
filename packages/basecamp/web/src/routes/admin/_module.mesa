@@ -1,0 +1,38 @@
+---
+title: Admin
+---
+<script>
+  // A layout, not a page. Sierra composes the chain, so every /admin/* route
+  // renders inside this and the sub-nav is written once.
+  import { page, isActive } from '@frontierjs/sierra/router'
+
+  $: page.route
+</script>
+
+<div class="section-header">
+  <h1>Administration</h1>
+  <span class="text-sm text-muted">this workspace</span>
+</div>
+
+<!--
+  .navlink, NOT .tabs. `.tabs` in this design system is a real ARIA tab widget:
+  buttons with role="tab", aria-selected, a roving tabindex and panels it
+  controls (css patterns/tabs.css). This is navigation between ROUTES — each
+  one has its own URL and can be linked to — so it is links with
+  aria-current="page", exactly as the topbar does it. Borrowing the tab classes
+  would have announced a widget that does not exist.
+
+  The leading `page.route` read is load-bearing: isActive() reads it
+  internally, but Mesa decides what an expression depends on from the
+  expression's own text, so without it the highlight never moves.
+-->
+<nav class="cluster" aria-label="Administration">
+  <a class="navlink" href="/admin/"
+     aria-current={(page.route, isActive('/admin/', { exact: true })) ? 'page' : null}>Members</a>
+  <a class="navlink" href="/admin/audit/"
+     aria-current={(page.route, isActive('/admin/audit/')) ? 'page' : null}>Audit trail</a>
+  <a class="navlink" href="/admin/adapters/"
+     aria-current={(page.route, isActive('/admin/adapters/')) ? 'page' : null}>Adapters</a>
+</nav>
+
+<slot />

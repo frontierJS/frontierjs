@@ -103,7 +103,11 @@ Run `fli deploy:setup` to check and install what's missing.
 
 The `deploy` block is the single source of truth for all deploy commands:
 
-```js
+<!-- Illustrative config, not command code — a ```js fence is compiled INTO the
+     command body, and an `export default` there is a syntax error. Every other
+     fence in this file is a plain one for the same reason. -->
+
+```
 export default {
   deploy: {
     server: 'myapp.com',

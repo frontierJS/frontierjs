@@ -139,6 +139,49 @@ function adopt(fe: FrameworkError, original: unknown): FrameworkError {
   return fe
 }
 
+// ─── TODO — Litestone state/constraint errors arrive here as 500s ────────────
+//
+// A caller who asks for an illegal state change gets `GeneralError` / 500. It
+// should be a client error, and the machinery to make it one already exists on
+// both sides — nobody has connected them.
+//
+//   PATCH /api/orders/3 {"status":"pending"}   (row is 'shipped')
+//   → 500 {"name":"GeneralError","message":"Cannot transition order.status
+//          from 'shipped' to 'pending' — valid transitions from 'shipped': none"}
+//
+// Why it lands here: `httpStatusOf()` finds no numeric `status`, `BY_NAME` has
+// no entry for the thrown `name`, so the last branch returns GeneralError.
+//
+// The fix is NOT a mapper registered here. Per the bridge index — *if you own
+// the error class, give it a `status`* — it is one line per class in
+// `litestone/src/core/client.js`, where `TransitionGateError` already does
+// exactly this (`this.status = 403`, with a comment saying why). The other
+// three were simply missed:
+//
+//   TransitionViolationError  → 409   conflicts with the row's current state
+//   TransitionConflictError   → 409   optimistic-lock loss; also `retryable: true`
+//   TransitionNotFoundError   → 400   the payload named a transition that
+//                                     does not exist on the model
+//
+// Same class of bug, same fix, one layer down: SQLite's own constraint failures
+// surface as 500s rather than client errors. Neither has a Litestone error class
+// yet, so each needs one before it can carry a status:
+//
+//   UNIQUE constraint failed        → 409   two rows claiming one value
+//   FOREIGN KEY constraint failed   → 422   names a row that does not exist
+//
+// The FK one is reported from a real form. Most causes are now prevented rather
+// than mapped — Sierra's make() defaults a relation key to null instead of 0, so
+// "no customer picked" fails the required check in the browser with the field's
+// name on it. But the genuinely unpreventable case remains and always will: a
+// valid id whose row was deleted between page load and submit. No client-side
+// rule can know that, so the status is the only thing that can carry it, and 500
+// tells the caller to retry something that will never work.
+//
+// Verified 2026-08-04 against `example/` — see its README, "Found by building
+// this". Do not paper over it with `registerErrorMapper()`: that exists for
+// errors you cannot modify, and these are ours.
+
 // Converts any thrown value into a FrameworkError
 export function toFrameworkError(err: unknown): FrameworkError {
   if (err instanceof FrameworkError) return err

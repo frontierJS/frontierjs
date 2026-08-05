@@ -1,0 +1,35 @@
+<script>
+  export let bgcolor  = undefined   // background color for the section
+  export let padding  = undefined   // shorthand: adds spacer rows top and bottom
+  export let align    = 'center'
+</script>
+
+<!--
+  Section — full-width table that stacks vertically.
+  Use inside <Email>. Contains Rows and Columns.
+
+  <Section bgcolor="#f9f9f9">
+    <Row> ... </Row>
+  </Section>
+-->
+
+{#if padding}
+<tr><td style="font-size:0;line-height:0;height:{typeof padding === 'number' ? padding : 24}px;">&nbsp;</td></tr>
+{/if}
+
+<table
+  role="presentation"
+  cellspacing="0"
+  cellpadding="0"
+  border="0"
+  width="100%"
+  align="{align}"
+  style="border-collapse:collapse;{bgcolor ? `background-color:${bgcolor};` : ''}">
+  <tbody>
+    <slot />
+  </tbody>
+</table>
+
+{#if padding}
+<tr><td style="font-size:0;line-height:0;height:{typeof padding === 'number' ? padding : 24}px;">&nbsp;</td></tr>
+{/if}

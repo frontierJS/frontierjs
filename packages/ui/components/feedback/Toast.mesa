@@ -1,0 +1,108 @@
+<script>
+  // Toast.mesa
+  // Individual toast notification. Rendered by Toaster.mesa — not used directly.
+  // Includes a progress bar that drains over `duration` ms, so the reader can
+  // see how long they have.
+  //
+  // `.toast` is a surface, and `.toast-stack > .toast` turns off its own fixed
+  // positioning — which is why this component must be a DIRECT child of the
+  // stack. Toaster used to wrap each one in a positioning div, so that
+  // selector never matched and every toast stayed pinned to the same corner
+  // on top of the others.
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let id        = 0
+  export let message   = ''
+  export let tone      = 'info'
+  export let type      = ''      // legacy alias — 'error' → danger
+  export let duration  = 3500    // ms — drives the drain animation
+  export let ondismiss = undefined
+
+  const iconPathMap = {
+    info:    'M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z',
+    success: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    warning: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z',
+    danger:  'M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z',
+  }
+
+  const t    = toTone(type || tone) || 'info'
+  const path = iconPathMap[t] ?? iconPathMap.info
+
+  const toastAnim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'translateX(110%)' },
+       { opacity: 1, transform: 'translateX(0)' }],
+      { duration: 300, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'translateX(0)',    maxHeight: '200px', marginBottom: '0.5rem' },
+       { opacity: 0, transform: 'translateX(110%)', maxHeight: '0px',   marginBottom: '0rem'  }],
+      { duration: 250, easing: 'ease-in', fill: 'forwards' }
+    ).finished,
+  })
+
+  function dismiss() {
+    ondismiss?.(id)
+  }
+</script>
+
+<div class={cx('toast', t, 'fjs-toast')} role="alert" aria-live="polite" {@attach toastAnim}>
+  <div class="fjs-toast-row">
+    <span class="alert-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d={path} />
+      </svg>
+    </span>
+
+    <p style:flex="1" style:margin="0">{message}</p>
+
+    <button type="button" class="btn ghost square" aria-label="Dismiss notification" on:click={dismiss}>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- Drain bar — a CSS animation driven by the duration prop -->
+  {#if duration > 0}
+    <div class="fjs-toast-drain" aria-hidden="true">
+      <div class="fjs-toast-drain-fill" style:animation="fjs-drain {duration}ms linear forwards"></div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  /* .toast supplies the surface and the tone; this adds the drain-bar layout
+     and cancels its padding so the bar can sit flush at the bottom. */
+  .fjs-toast {
+    display:        flex;
+    flex-direction: column;
+    padding:        0;
+    overflow:       hidden;
+    inline-size:    20rem;
+    max-inline-size: 90vw;
+  }
+  .fjs-toast-row {
+    display:     flex;
+    align-items: flex-start;
+    gap:         0.75rem;
+    padding:     0.75rem 1rem;
+  }
+  .fjs-toast-drain {
+    block-size: 2px;
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+  }
+  .fjs-toast-drain-fill {
+    block-size:       100%;
+    background:       var(--bg-mix, var(--color-primary));
+    transform-origin: left;
+  }
+  @keyframes fjs-drain {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fjs-toast-drain-fill { animation: none !important; }
+  }
+</style>

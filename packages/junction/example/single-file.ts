@@ -101,7 +101,7 @@ import type { ServiceContext } from '../src/transport/bridge.ts'
 const SCHEMA = `
 enum LeadStatus { new active closed }
 
-model leads {
+model Lead {
   id        Int    @id
   name      String       @length(1, 200) @trim
   company   String       @trim
@@ -139,7 +139,7 @@ const db = await createClient({
 })
 
 // Seed a few leads so GET /api/leads returns something interesting.
-await db.asSystem().leads.createMany({
+await db.asSystem().lead.createMany({
   data: [
     { name: 'Acme Corp',    company: 'Acme Corp',    email: 'contact@acme.com',  status: 'new',    value: 12000 },
     { name: 'Globex Inc',   company: 'Globex Inc',   email: 'info@globex.com',   status: 'active', value: 8500  },
@@ -228,7 +228,7 @@ app.configure(healthPlugin({
   checks: {
     database: async () => {
       // Cheap readiness check — confirms the SQLite handle is alive.
-      await db.asSystem().leads.count()
+      await db.asSystem().lead.count()
       return true
     },
   },
@@ -293,7 +293,7 @@ app.hooks({
 app.services.register(
   createService({
     name:   'leads',
-    model:  'leads',
+    model:  'lead',
     schema: jsonSchema,
 
     hooks: {
@@ -318,7 +318,7 @@ app.services.register(
     // STRANGER caller will only see what `0.4.4.5`'s read level allows.
     async getStats(ctx: ServiceContext) {
       const scopedDb = (ctx.params as { db?: typeof db }).db ?? db
-      const all      = await scopedDb.asSystem().leads.findMany()
+      const all      = await scopedDb.asSystem().lead.findMany()
 
       const byStatus = all.reduce<Record<string, number>>((acc, lead) => {
         const k = String(lead.status)
@@ -402,7 +402,7 @@ app.telemetry.on('junction.channel.publish', (ev: unknown) => {
 // a placeholder for "send digest emails", "rotate API keys", etc.
 
 app.scheduler.every('30 seconds', async () => {
-  const count = await db.asSystem().leads.count()
+  const count = await db.asSystem().lead.count()
   log.info(`[heartbeat] ${count} leads in db`)
 })
 

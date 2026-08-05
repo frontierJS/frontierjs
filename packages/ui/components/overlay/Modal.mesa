@@ -1,0 +1,116 @@
+<script>
+  // Modal.mesa
+  // Built on the native <dialog> element, which is what `.dialog` in
+  // @frontierjs/css is designed for.
+  //
+  // ── What that deletes ────────────────────────────────────────────────
+  //
+  // showModal() gives focus trapping, Escape-to-close, the backdrop, the top
+  // layer (so no z-index and no portal), and inertness of the rest of the
+  // page. The previous version hand-rolled the focus trap with a Tab handler
+  // and a querySelectorAll of focusable selectors — the classic version of
+  // that, which misses shadow DOM, `inert`, and anything focusable the list
+  // does not name, and which cannot make the background inert at all.
+  //
+  // Sub-regions own their padding here (`.dialog` has none), so the header,
+  // body and footer are surface anatomy rather than hand-set padding.
+  //
+  // Usage:
+  //   let open = false
+  //
+  //   <Button onclick={() => open = true}>Open</Button>
+  //
+  //   <Modal bind:open title="Confirm deletion" size="sm">
+  //     <p>This action cannot be undone.</p>
+  //     {#snippet footer()}
+  //       <Button tone="danger" onclick={deleteItem}>Delete</Button>
+  //       <Button variant="ghost" onclick={() => open = false}>Cancel</Button>
+  //     {/snippet}
+  //   </Modal>
+
+  import { tone as toTone, cx, uid } from '../../utils.js'
+
+  export let open    = false
+  export let title   = ''
+  export let size    = 'md'   // 'xs'|'sm'|'md'|'lg'|'xl'|'full'
+  export let tone    = ''     // tints the header, not the whole modal
+  export let footer  = null
+  export let onclose = undefined
+  export let dismissible = true   // allow Escape / backdrop click
+
+  const sizeMap = {
+    xs: '20rem', sm: '24rem', md: '30rem', lg: '36rem', xl: '48rem',
+    full: 'calc(100vw - 2rem)',
+  }
+  const maxWidth = sizeMap[size] ?? sizeMap.md
+
+  const titleId = uid('modal-title')
+  const t = toTone(tone)
+
+  let dialogEl
+
+  // Drive the element from `open`. showModal() is what puts the dialog in the
+  // top layer — .show() and the `open` attribute do not, and neither traps
+  // focus or renders a backdrop.
+  $: open, () => {
+    if (!dialogEl) return
+    if (open && !dialogEl.open) dialogEl.showModal()
+    else if (!open && dialogEl.open) dialogEl.close()
+  }
+
+  // The platform closes the dialog on Escape without telling `open`; this is
+  // the one place the two states could drift, so it is wired explicitly.
+  function handleClose() {
+    if (open) {
+      open = false
+      onclose?.()
+    }
+  }
+
+  function handleCancel(e) {
+    if (!dismissible) e.preventDefault()
+  }
+
+  // Clicking the backdrop registers on the dialog itself, since the backdrop
+  // is a pseudo-element and cannot be a separate target.
+  function handleClick(e) {
+    if (!dismissible) return
+    if (e.target === dialogEl) dialogEl.close()
+  }
+
+  function close() {
+    dialogEl?.close()
+  }
+</script>
+
+<dialog
+  bind:this={dialogEl}
+  class={cx('dialog', t)}
+  style:max-width={maxWidth}
+  aria-labelledby={title ? titleId : null}
+  {class}
+  on:close={handleClose}
+  on:cancel={handleCancel}
+  on:click={handleClick}
+>
+  <div class="surface-header">
+    <h2 id={titleId} style:margin="0">{title}</h2>
+    {#if dismissible}
+      <button type="button" class="dialog-close" aria-label="Close" on:click={close}>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z" />
+        </svg>
+      </button>
+    {/if}
+  </div>
+
+  <div class="surface-body" style:overflow-y="auto" style:max-height="70vh">
+    <slot />
+  </div>
+
+  {#if footer}
+    <div class="surface-footer">
+      {@render footer?.()}
+    </div>
+  {/if}
+</dialog>

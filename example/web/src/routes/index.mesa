@@ -1,0 +1,87 @@
+---
+title: Home
+---
+<script>
+  import { session } from '../session.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card          from '@frontierjs/ui/components/layout/Card.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: (session.level, session.role)
+
+  const ladderColumns = [
+    { key: 'session', label: 'Session' },
+    { key: 'level',   label: 'Level' },
+    { key: 'can',     label: 'Can' },
+  ]
+
+  // The ladder is data, and api/gate.ts is what makes it true. Written out
+  // here rather than read from the schema on purpose: it is the one table on
+  // this page that describes the FRAMEWORK rather than the shop.
+  const ladder = [
+    { session: 'signed out',                   level: 0, can: 'read' },
+    { session: 'registered, email unverified', level: 1, can: 'read' },
+    { session: 'registered, email verified',   level: 4, can: 'read, create, update' },
+    { session: 'verified, role admin',         level: 5, can: '+ delete, + refund' },
+  ]
+</script>
+
+<SectionHeader title="Kitchen sink" level={1} sub="one shop, one schema, every realm" />
+
+<!-- Prose stays one sentence per line on purpose: Mesa collapses a wrapped
+     static text node, and a paragraph split across source lines used to weld
+     its words together. Fixed, but the habit still reads better in diffs. -->
+<p class="text-body">
+  One <code>db/schema.lite</code> seeds all three realms. The API derives its tables, its 401s, its 403s and its 400s from it; the browser derives make() defaults, field rules, enum options, relation targets and gate levels from the same file. Neither side restates the other.
+</p>
+
+<div class="tiles" style="--tile-min: 18rem">
+  <Card class="stack">
+    <h2 class="h4">Orders</h2>
+    <p class="text-sm text-muted">
+      A list with a delete button the schema decides whether to offer. <code>@@gate</code> wants level 5, so <code>can('delete', level)</code> is asked before it renders.
+    </p>
+    <div class="cluster"><Button variant="outlined" href="/orders/">Open the list</Button></div>
+  </Card>
+
+  <Card class="stack">
+    <h2 class="h4">New order</h2>
+    <p class="text-sm text-muted">
+      A form generated entirely from the schema — no field list, no types, no enum values and no mention of the customers service in the component.
+    </p>
+    <div class="cluster"><Button variant="outlined" href="/orders/create/">Open the form</Button></div>
+  </Card>
+
+  <Card class="stack">
+    <h2 class="h4">Customers</h2>
+    <p class="text-sm text-muted">
+      The <code>notes</code> column exists only for an admin. Field-level <code>@allow</code> strips it from everyone else's response, with no service code saying so.
+    </p>
+    <div class="cluster"><Button variant="outlined" href="/customers/">Watch a column appear</Button></div>
+  </Card>
+</div>
+
+<SectionHeader title="The gate ladder" level={2} />
+
+<Table columns={ladderColumns} rows={ladder} striped hover={false}>
+  {#snippet row(r)}
+    <tr>
+      <td>{r.session}</td>
+      <td>{r.level}</td>
+      <td>{r.can}</td>
+    </tr>
+  {/snippet}
+</Table>
+
+{#if session.level > 0}
+  <Alert tone="success">
+    Signed in at level {session.level}{session.role ? ' as ' + session.role : ''}. The server graded this, not the browser — see <code>GET /session</code>.
+  </Alert>
+{:else}
+  <Alert tone="info">
+    Signed out. Reads work; writes come back 401 until you sign in from the header.
+  </Alert>
+{/if}

@@ -44,6 +44,7 @@ model ${pascal} {
   @@map("${name.toLowerCase()}s")
 }
 `
+}
 </script>
 
 ```js

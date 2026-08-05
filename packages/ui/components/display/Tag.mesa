@@ -1,0 +1,41 @@
+<script>
+  // Tag.mesa
+  // Interactive dismissible chip. Used in filter bars, tag inputs,
+  // multi-select displays. For readonly labels, use Pill.
+  //
+  // This is `.pill.removable` in @frontierjs/css — the close button is part of
+  // that component's anatomy (`.pill-close`), including its own --icon-size, so
+  // there is nothing to size or colour here.
+  //
+  // Usage:
+  //   <Tag onremove={() => removeTag(t)}>Design</Tag>
+  //   <Tag tone="primary" onremove={fn}>React</Tag>
+  //   <Tag readonly>Archived</Tag>
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let tone     = ''
+  export let color    = ''       // legacy alias for `tone`
+  export let readonly = false    // hide dismiss button
+  export let label    = ''       // accessible name for the dismiss button
+  export let onremove = undefined
+
+  const t = toTone(color || tone)
+</script>
+
+<span class={cx('pill', t, !readonly && 'removable')} {class}>
+  <slot />
+
+  {#if !readonly}
+    <button
+      type="button"
+      class="pill-close"
+      aria-label={label ? `Remove ${label}` : 'Remove'}
+      on:click={onremove}
+    >
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+      </svg>
+    </button>
+  {/if}
+</span>

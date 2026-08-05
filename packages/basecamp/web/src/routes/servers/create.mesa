@@ -1,0 +1,90 @@
+---
+title: Add server
+---
+<script>
+  import { goto } from '@frontierjs/sierra/router'
+  import { servers } from '../../resources/servers.mesa'
+  import { ResourceValidationError } from '@frontierjs/sierra/junction'
+
+  // Importing an existing machine, not provisioning a new one — Basecamp's
+  // provider adapters are stubs until their env vars are set, so a wizard that
+  // promised to create a Hetzner box would be promising something the API
+  // cannot do yet.
+  let draft  = servers.make({ name: '', ipAddress: '', region: '', role: 'general' })
+  let errors = []
+  let failed = null
+  let saving = false
+
+  $: (draft.name, draft.ipAddress, draft.region, draft.role)
+
+  $: roles = servers.fields?.role?.enum ?? ['general']
+
+  const problem = (field) => errors.find(e => e.field === field)?.message
+
+  async function save(e) {
+    e.preventDefault()
+    errors = []; failed = null; saving = true
+    try {
+      // The field is `ipAddress`, camelCase, because the wire contract is the
+      // SCHEMA's field names. `ip_address` would not error: autoValidate strips
+      // unknown keys, the create succeeds, and the column comes back null.
+      const created = await servers.service.create(draft)
+      goto(`/servers/${created.id}/`)
+    } catch (err) {
+      errors = err instanceof ResourceValidationError ? err.errors : []
+      failed = err.message
+    } finally {
+      saving = false
+    }
+  }
+</script>
+
+<div class="section-header">
+  <h1>Add server</h1>
+  <a class="btn ghost" href="/servers/">Back to list</a>
+</div>
+
+<div class="container narrow">
+  <form class="card stack" on:submit={save}>
+    {#if failed}
+      <article class="alert danger">
+        <div class="alert-content">{failed}</div>
+      </article>
+    {/if}
+
+    <div class="field-group">
+      <label for="name"><span>Name</span><span class="text-danger"> *</span></label>
+      <input class="field" id="name" bind:value={draft.name} required />
+      <span class="field-hint">
+        {problem('name') ?? 'The slug is derived from this by the service, and must be unique in the workspace.'}
+      </span>
+    </div>
+
+    <div class="field-group">
+      <label for="role">Role</label>
+      <select class="field" id="role" bind:value={draft.role}>
+        {#each roles as role}
+          <option value={role}>{role}</option>
+        {/each}
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label for="ipAddress">IP address</label>
+      <input class="field" id="ipAddress" bind:value={draft.ipAddress} placeholder="10.0.1.10" />
+      {#if problem('ipAddress')}<span class="field-hint text-danger">{problem('ipAddress')}</span>{/if}
+    </div>
+
+    <div class="field-group">
+      <label for="region">Region</label>
+      <input class="field" id="region" bind:value={draft.region} placeholder="nbg1" />
+    </div>
+
+    <div class="cluster">
+      <button class="btn primary" type="submit" disabled={saving}>
+        {saving ? 'Adding…' : 'Add server'}
+      </button>
+      <a class="btn ghost" href="/servers/">Cancel</a>
+    </div>
+  </form>
+</div>

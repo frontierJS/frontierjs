@@ -225,6 +225,14 @@ export class GatePlugin extends Plugin {
   onInit(schema, ctx) {
     this._accessMap   = buildAccessMap(schema)
     this._relationMap = ctx.relationMap ?? {}
+    // Publish the level resolver onto ctx. GatePlugin owns the 0–7 scale and
+    // the per-request cache; anything else that needs a level (the @@transitions
+    // gate check in client.js) asks here rather than calling getLevel itself,
+    // so one user gets one level per model per request.
+    //
+    // The caller passes its own ctx: asSystem() spreads this ctx into a new
+    // object, and _resolver keys its cache on identity.
+    ctx.levelFor = (model, forCtx) => this._resolver(forCtx ?? ctx)(model)
   }
 
   // ── Resolve level for this request's auth user ──────────────────────────────
@@ -297,33 +305,68 @@ export class GatePlugin extends Plugin {
 }
 
 // ─── FrontierGateGetLevel ──────────────────────────────────────────────────────────
-// Standard getLevel function for FrontierJS apps.
+// Standard getLevel function for FrontierJS apps, and the resolver auto-installed
+// when a schema declares @@gate and the app supplies no GatePlugin of its own.
 //
-// Expects these fields on the auth object (all optional — missing = lower level):
-//   verifiedAt   DateTime   — email verified
-//   activatedAt  DateTime   — account activated (plan chosen, invite accepted, etc.)
-//   role         Text?      — any truthy role string = full user
-//   isAdmin      Boolean?   — app-level admin
-//   isOwner      Boolean?   — account/tenant owner
-//   isSystemAdmin Boolean?  — global system admin
+// Expects these fields on the auth object (all optional):
+//   verifiedAt    DateTime?  — when the user verified (email, phone, …)
+//   activatedAt   DateTime?  — when the account became active
+//   role          String?    — any truthy role string = full user
+//   isAdmin       Boolean?   — app-level admin
+//   isOwner       Boolean?   — account/tenant owner
+//   isSystemAdmin Boolean?   — global system admin
+//
+// ── undefined is not null, and the difference is the whole design ────────────
+//
+//   undefined → the app does not model this stage. NOT an objection.
+//   null      → the app models it and this user has not reached it.
+//
+// So an app with no verification flow leaves verifiedAt unset and its sessions
+// grade USER; an app that has one sets it to null until the user verifies, and
+// those sessions grade VISITOR. Absence never means "not yet" — otherwise every
+// app would have to restate a lifecycle it does not have just to make @@gate
+// usable at all.
+//
+// This used to test `!user.verifiedAt`, which collapses that distinction:
+// undefined is falsy, so EVERY session from an app without a verification flow
+// graded VISITOR(1) — below the USER(4) an ordinary model needs to read. With
+// gates auto-installed, that 403s the entire API of any such app.
+//
+// ── Explicit standing wins over the lifecycle ────────────────────────────────
+//
+// The isSystemAdmin / isOwner / isAdmin checks run BEFORE the role check. They
+// used to run after `if (!user.role) return CREATOR`, so a system admin who
+// carried no role string graded CREATOR(3) — contradicting this function's own
+// documented scale. An owner who never completed an activation step is still
+// the owner.
+//
+// Junction's sessionGateLevel() (packages/junction/src/core/litestone.ts) is the
+// same function for the same purpose; it cannot be imported here because the
+// dependency runs Litestone ← Junction, never the reverse. The two are a HAND
+// COPY — change one, change both.
 //
 // Level scale:
 //   0  STRANGER      — not logged in
-//   1  VISITOR       — logged in, email unverified
-//   2  READER        — verified, not yet activated (read-only)
-//   3  CREATOR       — activated, no role assigned (submit but can't manage)
-//   4  USER          — has a role, full CRUD
+//   1  VISITOR       — modelled as unverified
+//   2  READER        — verified, modelled as not yet activated (read-only)
+//   3  CREATOR       — no role assigned (submit but can't manage)
+//   4  USER          — full CRUD
 //   5  ADMINISTRATOR — isAdmin
 //   6  OWNER         — isOwner (account/tenant owner)
 //   7  SYSADMIN      — isSystemAdmin (real human, global)
 
 export function FrontierGateGetLevel(user) {
-  if (!user)              return LEVELS.STRANGER
-  if (!user.verifiedAt)   return LEVELS.VISITOR
-  if (!user.activatedAt)  return LEVELS.READER
-  if (!user.role)         return LEVELS.CREATOR
+  if (!user) return LEVELS.STRANGER
+
+  // Explicit standing first — it outranks any lifecycle stage.
   if (user.isSystemAdmin) return LEVELS.SYSADMIN
   if (user.isOwner)       return LEVELS.OWNER
   if (user.isAdmin)       return LEVELS.ADMINISTRATOR
+
+  // `=== null` — modelled and not reached. undefined means "not modelled".
+  if (user.verifiedAt  === null) return LEVELS.VISITOR
+  if (user.activatedAt === null) return LEVELS.READER
+
+  if (!user.role) return LEVELS.CREATOR
   return LEVELS.USER
 }

@@ -1,0 +1,345 @@
+<script>
+  // Slider.mesa
+  // Single or dual-handle range slider. Touch + mouse. Keyboard accessible.
+  // Replaces use:draggable Svelte action with {@attach} and native event listeners.
+  //
+  // SINGLE MODE (default):
+  //   <Slider bind:value={price} min={0} max={1000} step={10} />
+  //
+  // RANGE MODE:
+  //   <Slider range bind:start={low} bind:end={high} min={0} max={100} />
+  //
+  // WITH FIELD WRAPPER:
+  //   <Slider label="Price range" name="price" range bind:start bind:end />
+  //
+  // FORMAT FUNCTION:
+  //   <Slider bind:value format={(v) => `$${v.toLocaleString()}`} />
+
+  import Field from './Field.mesa'
+  import { tone as toTone, cx } from '../../utils.js'
+
+  // ── Props ───────────────────────────────────────────────────────────────────
+
+  export let value    = 0            // single mode — bindable
+  export let start    = undefined    // range mode — bindable low handle
+  export let end      = undefined    // range mode — bindable high handle
+  export let min      = 0
+  export let max      = 100
+  export let step     = 1
+  export let range    = false        // dual handle mode
+  export let disabled = false
+  export let format   = undefined    // (value: number) => string — pip label formatter
+  export let showPips = true         // show value labels under handles
+  export let tone     = ''           // one of the 7 css tones; '' is primary
+  export let color    = ''           // legacy alias for `tone`
+
+  // Field integration
+  export let name     = ''
+  export let label    = ''
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let onchange = undefined    // ({ value? } | { start, end }) => void
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  function getPrecision(n) {
+    if (!isFinite(n) || Number.isInteger(n)) return 0
+    return String(n).split('.')[1]?.length ?? 0
+  }
+
+  const precision = getPrecision(step)
+
+  function snap(raw) {
+    const clamped  = Math.max(min, Math.min(max, raw))
+    const snapped  = Math.round((clamped - min) / step) * step + min
+    return parseFloat(snapped.toFixed(precision))
+  }
+
+  function pct(v) {
+    return ((v - min) / (max - min)) * 100
+  }
+
+  function fmt(v) {
+    return format ? format(v) : String(v)
+  }
+
+  // ── State ────────────────────────────────────────────────────────────────────
+
+  // Initialise range handles with sensible defaults
+  if (range && start == null) start = min
+  if (range && end   == null) end   = max
+  if (!range && value == null) value = min
+
+  let sliderEl    // bind:this — track element ref
+  var dragging    = null   // null | 'single' | 'start' | 'end'
+
+  // ── Derived percentages ───────────────────────────────────────────────────────
+
+  const singlePct = pct(value)
+  const startPct  = range ? pct(start) : 0
+  const endPct    = range ? pct(end)   : 0
+
+  // ── Track tone ────────────────────────────────────────────────────────────
+  // One tone class on the root; every part of the control reads --bg-mix, so
+  // the fill, the handle and the focus ring cannot disagree about the colour.
+
+  const t = toTone(color || tone)
+
+  // ── Drag logic ─────────────────────────────────────────────────────────────
+
+  function posToValue(clientX) {
+    if (!sliderEl) return 0
+    const { left, width } = sliderEl.getBoundingClientRect()
+    const pctRaw = Math.max(0, Math.min(1, (clientX - left) / width))
+    return snap(pctRaw * (max - min) + min)
+  }
+
+  function startDrag(which) {
+    return (e) => {
+      if (disabled) return
+      e.preventDefault()
+      dragging = which
+      const moveEvt = e.type === 'touchstart' ? 'touchmove' : 'mousemove'
+      const upEvt   = e.type === 'touchstart' ? 'touchend'  : 'mouseup'
+
+      function onMove(ev) {
+        const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX
+        const v = posToValue(clientX)
+        if (which === 'single') {
+          value = v
+        } else if (which === 'start') {
+          start = Math.min(v, end)
+        } else {
+          end = Math.max(v, start)
+        }
+        emit()
+      }
+
+      function onUp() {
+        dragging = null
+        window.removeEventListener(moveEvt, onMove)
+        window.removeEventListener(upEvt, onUp)
+      }
+
+      window.addEventListener(moveEvt, onMove, { passive: false })
+      window.addEventListener(upEvt, onUp)
+    }
+  }
+
+  // Click on track — jump nearest handle
+  function handleTrackClick(e) {
+    if (disabled || e.target.classList.contains('fjs-slider-handle')) return
+    const v = posToValue(e.clientX)
+    if (!range) {
+      value = v
+    } else {
+      // Move nearest handle
+      if (Math.abs(v - start) <= Math.abs(v - end)) {
+        start = Math.min(v, end)
+      } else {
+        end = Math.max(v, start)
+      }
+    }
+    emit()
+  }
+
+  function handleKeydown(which) {
+    return (e) => {
+      if (disabled) return
+      const delta = (e.shiftKey ? step * 10 : step) * (e.key === 'ArrowLeft' ? -1 : 1)
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      e.preventDefault()
+      if (which === 'single') {
+        value = snap(value + delta)
+      } else if (which === 'start') {
+        start = snap(Math.min(start + delta, end))
+      } else {
+        end = snap(Math.max(end + delta, start))
+      }
+      emit()
+    }
+  }
+
+  function emit() {
+    if (range) {
+      onchange?.({ start, end })
+    } else {
+      onchange?.({ value })
+    }
+  }
+</script>
+
+{#snippet track()}
+  <div class={cx('fjs-slider', t)} style:opacity={disabled ? 0.5 : null} {...$attributes}>
+    <!-- Track + handles -->
+    <div
+      bind:this={sliderEl}
+      class="fjs-slider-track"
+      style:cursor={disabled ? 'not-allowed' : 'pointer'}
+      on:click={handleTrackClick}
+    >
+      <!-- Fill bar -->
+      {#if range}
+        <div
+          class="fjs-slider-fill"
+          style:left="{startPct}%"
+          style:width="{endPct - startPct}%"
+        ></div>
+      {:else}
+        <div class="fjs-slider-fill" style:left="0" style:width="{singlePct}%"></div>
+      {/if}
+
+      <!-- Single handle -->
+      {#if !range}
+        <div
+          class="fjs-slider-handle"
+          style:left="{singlePct}%"
+          style:cursor={disabled ? 'not-allowed' : 'grab'}
+          role="slider"
+          tabindex={disabled ? -1 : 0}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          aria-valuenow={value}
+          aria-valuetext={fmt(value)}
+          aria-label={label || name || 'Value'}
+          aria-disabled={disabled || null}
+          on:mousedown={startDrag('single')}
+          on:touchstart={startDrag('single')}
+          on:keydown={handleKeydown('single')}
+        ></div>
+
+        {#if showPips}
+          <div class="fjs-slider-pip" style:left="{singlePct}%">{fmt(value)}</div>
+        {/if}
+
+      {:else}
+        <!-- Start handle -->
+        <div
+          class="fjs-slider-handle"
+          style:left="{startPct}%"
+          style:cursor={disabled ? 'not-allowed' : 'grab'}
+          role="slider"
+          tabindex={disabled ? -1 : 0}
+          aria-valuemin={min}
+          aria-valuemax={end}
+          aria-valuenow={start}
+          aria-valuetext={fmt(start)}
+          aria-label="Minimum"
+          aria-disabled={disabled || null}
+          on:mousedown={startDrag('start')}
+          on:touchstart={startDrag('start')}
+          on:keydown={handleKeydown('start')}
+        ></div>
+
+        <!-- End handle -->
+        <div
+          class="fjs-slider-handle"
+          style:left="{endPct}%"
+          style:cursor={disabled ? 'not-allowed' : 'grab'}
+          role="slider"
+          tabindex={disabled ? -1 : 0}
+          aria-valuemin={start}
+          aria-valuemax={max}
+          aria-valuenow={end}
+          aria-valuetext={fmt(end)}
+          aria-label="Maximum"
+          aria-disabled={disabled || null}
+          on:mousedown={startDrag('end')}
+          on:touchstart={startDrag('end')}
+          on:keydown={handleKeydown('end')}
+        ></div>
+
+        {#if showPips}
+          <div class="fjs-slider-pip" style:left="{startPct}%">{fmt(start)}</div>
+          <div class="fjs-slider-pip" style:left="{endPct}%">{fmt(end)}</div>
+        {/if}
+      {/if}
+    </div>
+
+    <!-- Min/max labels -->
+    <div class="split fjs-slider-bounds" style:margin-top={showPips ? '0.75rem' : null}>
+      <span class="text-xs text-muted">{fmt(min)}</span>
+      <span class="text-xs text-muted">{fmt(max)}</span>
+    </div>
+  </div>
+{/snippet}
+
+{#if label || name}
+  <Field
+    name={name}
+    label={label || name}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
+    {@render track()}
+  </Field>
+{:else}
+  <!--
+    `{class}` is a standalone attribute, never interpolated into a class
+    string. `class` is a JS reserved word, so `class="pt-2 {class}"` compiled
+    to `${class}` inside a template literal — a syntax error that Mesa
+    reported no error for and that threw the moment the module loaded.
+  -->
+  <div class="fjs-slider-bare" {class}>
+    {@render track()}
+  </div>
+{/if}
+
+<style>
+  /* @frontierjs/css has no Slider term, so this control draws itself — but
+     from the same tokens as everything else, so it themes with the page.
+     --bg-mix is what a tone class sets; the fallback keeps it primary. */
+  .fjs-slider {
+    display:        flex;
+    flex-direction: column;
+    gap:            0.75rem;
+    --slider-accent: var(--bg-mix, var(--color-primary));
+  }
+  .fjs-slider-bare { padding-block: 0.5rem 0.25rem; }
+
+  .fjs-slider-track {
+    position:      relative;
+    block-size:    0.375rem;
+    inline-size:   100%;
+    border-radius: 999px;
+    background:    var(--surface-sunken);
+  }
+  .fjs-slider-fill {
+    position:      absolute;
+    inset-block:   0;
+    border-radius: 999px;
+    background:    var(--slider-accent);
+  }
+  .fjs-slider-handle {
+    position:      absolute;
+    inset-block-start: 50%;
+    inline-size:   1.25rem;
+    block-size:    1.25rem;
+    transform:     translate(-50%, -50%);
+    border-radius: 50%;
+    border:        2px solid var(--surface);
+    background:    var(--slider-accent);
+    box-shadow:    var(--shadow-md);
+    z-index:       1;
+    transition:    transform 120ms;
+  }
+  .fjs-slider-handle:hover  { transform: translate(-50%, -50%) scale(1.1); }
+  .fjs-slider-handle:active { cursor: grabbing; }
+  /* The ring itself comes from focus.css — this only rounds the shape it
+     traces, since outline follows border-radius. */
+  .fjs-slider-pip {
+    position:       absolute;
+    inset-block-start: 1.25rem;
+    transform:      translateX(-50%);
+    font-size:      0.75rem;
+    color:          var(--ink-mute);
+    white-space:    nowrap;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fjs-slider-handle { transition: none; }
+  }
+</style>

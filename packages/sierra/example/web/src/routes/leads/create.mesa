@@ -1,0 +1,168 @@
+---
+title: New lead
+---
+<script>
+  // The whole form is derived. Look for a field list, a type, an enum value, a
+  // required flag or the name of the account resource in this file — none of
+  // them are here, because all of them are in db/schema.lite.
+  import { leads, accounts } from '../../resources/leads.mesa'
+  import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { goto } from '@frontierjs/sierra/router'
+  import { session } from '../../session.js'
+
+  const fields = leads.fields
+
+  // Which fields to render, in schema order, minus the foreign key — that one
+  // gets a picker instead of an input.
+  const fk    = fields.accountId.references          // { model:'Account', field:'id', relation:'account' }
+  const plain = Object.entries(fields).filter(([name]) => name !== 'accountId')
+
+  // The picker's options come from the RELATION, not from a name written here:
+  // leads.relations.account.model is 'Account', and that is a name the registry
+  // resolves — so the related resource can be built from it.
+  const related = createResource(
+    leads.relations.account.model.toLowerCase() + 's',
+    { model: leads.relations.account.model },
+  )
+
+  let draft   = leads.make()      // stage is null: a required enum has no blank member
+  let options = []
+  let errors  = []
+  let saving  = false
+  let failed  = null
+
+  $: session.level
+
+  related.service.getOptions({}, { limit: 100, orderBy: 'name' })
+    .then(res => { options = res.data ?? [] })
+    .catch(() => { options = [] })
+
+  const problem = (name) => errors.find(e => e.field === name)?.message
+
+  async function save() {
+    failed = null
+    // The same rules the server will apply, checked here first. Nothing stops
+    // you submitting anyway — validate: true on the resource does that.
+    // Validate what will actually be SENT, not what the DOM holds: the inputs
+    // give back strings, and coerce() casts them using the schema's types.
+    // Checking the raw draft would report "value must be a number" for a
+    // perfectly good "42".
+    const payload = leads.coerce(draft)
+    errors = leads.validate(payload, 'create')
+    if (errors.length) return
+
+    saving = true
+    try {
+      const created = await leads.service.create(payload)
+      goto('/leads/')
+    } catch (e) {
+      // A ResourceValidationError never left the browser. Anything else is the
+      // server's answer — including the 401 from @@gate when not signed in.
+      errors = e instanceof ResourceValidationError ? e.errors : []
+      failed = e.message
+    } finally {
+      saving = false
+    }
+  }
+</script>
+
+<div class="section-header">
+  <h1>New lead</h1>
+  <a class="btn ghost" href="/leads/">Back to list</a>
+</div>
+
+{#if session.level < leads.gate.create}
+  <article class="alert warning">
+    <div class="alert-content">
+      Not signed in. <code>@@gate</code> wants level {leads.gate.create} to create,
+      so this will come back 401 — which is the point: the button is not disabled,
+      because the server is the thing that decides.
+    </div>
+  </article>
+{/if}
+
+<!--
+  The markup is as derived as the data. `field-group` per control, `field` on
+  the control itself, `field-hint` for the type note, and the same `danger`
+  tone on a hint that a button or a card would take. No sizes, no colours.
+-->
+<form class="card stack" style="max-width: 32rem" on:submit|preventDefault={save}>
+  {#each plain as [name, rule]}
+    <div class="field-group">
+      <!-- The name is wrapped in a <span> deliberately. A bare interpolation
+           immediately followed by a block — `{name}{#if …}` — comes out in the
+           WRONG ORDER in the browser (the block's content lands before the
+           text), though the static renderer emits it correctly. Wrapping the
+           interpolation in an element pins its position. -->
+      <label for={'f-' + name}>
+        <span>{name}</span>{#if rule.required}<span class="text-danger"> *</span>{/if}
+      </label>
+
+      {#if rule.enum}
+        <!-- Options come from fields.stage.enum, which exists only because
+             {"$ref":"#/$defs/Stage"} is resolved against the registry. -->
+        <select class="field" id={'f-' + name} bind:value={draft[name]}>
+          <option value="">—</option>
+          {#each rule.enum as choice}
+            <option value={choice}>{choice}</option>
+          {/each}
+        </select>
+      {:else if rule.type === 'number' || rule.type === 'integer'}
+        <input class="field" id={'f-' + name} type="number" bind:value={draft[name]} min={rule.minimum} max={rule.maximum} />
+      {:else if rule.type === 'boolean'}
+        <label class="field-check">
+          <input type="checkbox" bind:checked={draft[name]} />
+          <span>{name}</span>
+        </label>
+      {:else}
+        <input
+          class="field"
+          id={'f-' + name}
+          type={rule.format === 'email' ? 'email' : 'text'}
+          bind:value={draft[name]}
+          maxlength={rule.maxLength}
+        />
+      {/if}
+
+      {#if problem(name)}
+        <p class="field-hint danger">{problem(name)}</p>
+      {:else}
+        <p class="field-hint">{rule.type}{rule.enum ? ' · enum' : ''}{rule.nullable ? ' · nullable' : ''}</p>
+      {/if}
+    </div>
+  {/each}
+
+  <div class="field-group">
+    <label for="f-accountId">{fk.relation}<span class="text-danger"> *</span></label>
+    <select class="field" id="f-accountId" bind:value={draft.accountId}>
+      <option value="">—</option>
+      {#each options as opt}
+        <option value={opt.id}>{opt.name}</option>
+      {/each}
+    </select>
+    {#if problem('accountId')}
+      <p class="field-hint danger">{problem('accountId')}</p>
+    {:else}
+      <p class="field-hint">→ {fk.model}.{fk.field}</p>
+    {/if}
+  </div>
+
+  <div class="cluster">
+    <button class="btn primary" class:loading={saving} type="submit" disabled={saving}>
+      {saving ? 'Saving…' : 'Create lead'}
+    </button>
+    <a class="btn ghost" href="/leads/">Cancel</a>
+  </div>
+</form>
+
+{#if failed}
+  <article class="alert danger">
+    <div class="alert-content">{failed}</div>
+  </article>
+{/if}
+
+<p class="text-sm text-muted">
+  Leave <code>slug</code> and <code>notes</code> empty and submit twice. Both
+  save: <code>blankToNull</code> writes NULL rather than <code>''</code>, and
+  SQLite allows any number of NULLs in a UNIQUE column.
+</p>

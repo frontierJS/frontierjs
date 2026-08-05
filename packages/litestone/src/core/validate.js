@@ -182,7 +182,11 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors) {
     // Required vs optional
     if (fieldValue == null) {
       if (!field.type.optional) {
-        errors.push({ path: fieldPath, message: 'is required' })
+        // @required("…") carries the wording for this one rule. It does not
+        // create it — the absence of `?` above did — so an @required on an
+        // optional field is a parse error rather than a silently dead message.
+        const custom = field.attributes?.find(a => a.kind === 'required')?.message
+        errors.push({ path: fieldPath, message: custom ?? 'is required' })
       }
       continue
     }

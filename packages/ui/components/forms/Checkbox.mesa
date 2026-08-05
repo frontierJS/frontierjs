@@ -1,0 +1,65 @@
+<script>
+  // Checkbox.mesa
+  // A single checkbox with optional label and description.
+  //
+  // `.field-check` is a <label> wrapping a real checkbox, so clicking the
+  // text toggles the box with no `for`/`id` pairing to keep in sync — and
+  // `accent-color` from the tone means no custom-drawn box to maintain.
+  //
+  // For a toggle-switch aesthetic, use Switch.mesa.
+
+  import { tone as toTone, cx, uid } from '../../utils.js'
+
+  export let checked     = false
+  export let label       = ''
+  export let description = ''  // secondary line under the label
+  export let name        = undefined
+  export let value       = undefined
+  export let disabled    = false
+  export let required    = undefined
+  export let tone        = ''
+  export let error       = ''
+  export let onchange    = undefined
+
+  export var id = ''
+  const checkId = id || uid('check')
+  const descId  = uid('check-desc')
+
+  const t = error ? 'danger' : toTone(tone)
+
+  function handleChange(e) {
+    checked = e.target.checked
+    onchange?.(checked)
+  }
+</script>
+
+<div class="stack" style:gap="0.25rem" {class}>
+  <!--
+    The <label> IS the wrapper, so the whole row is the hit target. The
+    description sits outside it and is wired with aria-describedby instead —
+    inside, it would be read as part of the control's own name.
+  -->
+  <label class={cx('field-check', t)} for={checkId}>
+    <input
+      id={checkId}
+      type="checkbox"
+      name={name}
+      value={value}
+      checked={checked}
+      disabled={disabled}
+      required={required}
+      aria-describedby={description ? descId : null}
+      aria-invalid={error ? 'true' : null}
+      on:change={handleChange}
+    />
+    {#if label}<span>{label}</span>{/if}
+  </label>
+
+  {#if description}
+    <p class="field-hint" id={descId}>{description}</p>
+  {/if}
+
+  {#if error}
+    <p class={cx('field-hint', 'danger')} role="alert">{error}</p>
+  {/if}
+</div>

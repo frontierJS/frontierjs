@@ -1,0 +1,149 @@
+<script>
+  // ConfirmationPopover.mesa
+  // Inline confirmation before a destructive action, anchored to the trigger.
+  // Portaled to body so it works inside overflow:hidden containers.
+  //
+  // `.popover` is a surface; the buttons are `.btn` with a tone. Not a modal
+  // — it is `aria-modal="false"` and does not trap focus, which is right for
+  // a two-button confirmation but means Escape and click-away have to be
+  // wired here.
+  //
+  // Usage:
+  //   <ConfirmationPopover onconfirm={deleteItem}>
+  //     {#snippet trigger()}
+  //       <Btn tone="danger">Delete</Btn>
+  //     {/snippet}
+  //   </ConfirmationPopover>
+  //
+  //   <ConfirmationPopover
+  //     title="Remove member?"
+  //     message="They will lose access immediately."
+  //     confirmLabel="Remove"
+  //     onconfirm={removeMember}
+  //   >
+  //     {#snippet trigger()}<Btn>Remove</Btn>{/snippet}
+  //   </ConfirmationPopover>
+
+  import { tone as toTone, cx, uid } from '../../utils.js'
+
+  export let title        = 'Are you sure?'
+  export let message      = 'This action cannot be undone.'
+  export let confirmLabel = 'Confirm'
+  export let cancelLabel  = 'Cancel'
+  export let tone         = 'danger'   // tone of the confirm button
+  export let variant      = ''         // legacy alias for `tone`
+  export let onconfirm    = undefined
+  export let oncancel     = undefined
+  export let trigger      = null       // snippet
+
+  let open = false
+  let x    = 0
+  let y    = 0
+  let triggerEl
+  let panelEl
+  let confirmEl
+
+  const titleId = uid('confirm-title')
+  const t = toTone(variant || tone) || 'danger'
+
+  const panelAnim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'scale(0.95) translateY(-4px)' },
+       { opacity: 1, transform: 'scale(1) translateY(0)' }],
+      { duration: 140, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.95)' }],
+      { duration: 100, fill: 'forwards' }
+    ).finished,
+  })
+
+  function openPopover() {
+    if (open) return
+    open = true
+    requestAnimationFrame(() => {
+      position()
+      // Move focus into the panel, or a keyboard user is left on the trigger
+      // with a dialog open that they cannot reach.
+      confirmEl?.focus()
+    })
+    document.addEventListener('click', onClickAway, { capture: true })
+  }
+
+  function position() {
+    if (!triggerEl || !panelEl) return
+    const tr   = triggerEl.getBoundingClientRect()
+    const pr   = panelEl.getBoundingClientRect()
+    const winW = window.innerWidth
+    const winH = window.innerHeight
+
+    // Prefer below the trigger, flip above if clipped
+    y = tr.bottom + pr.height + 8 > winH ? tr.top - pr.height - 8 : tr.bottom + 8
+
+    // Prefer left-aligned, flip if clipped
+    x = tr.left + pr.width > winW - 8 ? tr.right - pr.width : tr.left
+  }
+
+  function close() {
+    open = false
+    document.removeEventListener('click', onClickAway, { capture: true })
+    triggerEl?.querySelector('button, a, [tabindex]')?.focus()
+  }
+
+  function onClickAway(e) {
+    if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
+    close()
+  }
+
+  function handleConfirm() {
+    close()
+    onconfirm?.()
+  }
+
+  function handleCancel() {
+    close()
+    oncancel?.()
+  }
+
+  $onDestroy(() => {
+    document.removeEventListener('click', onClickAway, { capture: true })
+  })
+</script>
+
+<mesa:window on:keydown={(e) => { if (e.key === 'Escape' && open) close() }} />
+
+<span bind:this={triggerEl} style:display="inline-block" {class} on:click|stopPropagation={openPopover}>
+  {@render trigger?.()}
+</span>
+
+{#if open}
+  <mesa:portal to={document.body}>
+    <div
+      bind:this={panelEl}
+      class="popover stack"
+      style:position="fixed"
+      style:gap="0.5rem"
+      style:inline-size="16rem"
+      style:max-width="16rem"
+      style:left="{x}px"
+      style:top="{y}px"
+      {@attach panelAnim}
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+    >
+      <strong id={titleId}>{title}</strong>
+      {#if message}
+        <p class="text-sm text-muted" style:margin="0">{message}</p>
+      {/if}
+      <div class="cluster" style:justify-content="flex-end">
+        <button type="button" class="btn ghost" on:click={handleCancel}>
+          {cancelLabel}
+        </button>
+        <button bind:this={confirmEl} type="button" class={cx('btn', t)} on:click={handleConfirm}>
+          {confirmLabel}
+        </button>
+      </div>
+    </div>
+  </mesa:portal>
+{/if}

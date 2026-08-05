@@ -109,12 +109,14 @@ import {
 } from './schema-registry.js'
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
+  buildTransitions, transitionsAt,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
 } from './field-rules.js'
 
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
+  buildTransitions, transitionsAt,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
 }
 
@@ -157,12 +159,19 @@ async function runPhase(hookMap, phase, method, ctx) {
  * @param {string[]} [skip]     — server-managed fields to exclude from make()
  * @param {(ref: string) => object|null} [resolve]
  *        `$ref` resolver, defaulting to the registry the build populates.
+ * @param {string[]} [foreignKeys]
+ *        Columns that are a relation's local key — `x-relations[].fields`. They
+ *        default to null rather than 0; see the note at the check below. The
+ *        property itself carries no marker (a belongsTo is emitted as a plain
+ *        integer), so this cannot be derived from `properties` alone.
  */
 export function createMakeFromSchema(
   properties,
   skip = ['id', 'createdAt', 'updatedAt'],
   resolve = resolveRef,
+  foreignKeys = [],
 ) {
+  const fkFields = new Set(foreignKeys)
   const typeDefaults = {
     string:  '',
     integer: 0,
@@ -196,6 +205,27 @@ export function createMakeFromSchema(
     // '' would be as invalid as null, and picking the first member would invent
     // a choice the user never made — so leave it unset for the form to fill.
     if (Array.isArray(def.enum)) {
+      fieldDefaults[key] = null
+      continue
+    }
+
+    // A foreign key is the same case, and worse. `0` is not "no customer" — it
+    // is customer #0, a claim the user never made. Unlike a bad enum value it
+    // passes every rule the schema can state: it is a perfectly good integer,
+    // so coerce() keeps it and validate() approves it, and the first thing to
+    // object is SQLite:
+    //
+    //   POST /api/orders {"customerId": 0}  →  500 FOREIGN KEY constraint failed
+    //
+    // Reported from the form: not picking a customer produced that instead of
+    // "customer is required". Defaulting to null makes the required check fire
+    // where it should, in the browser, with the field's own name on it.
+    //
+    // Note the deliberate asymmetry with `string: ''` below: a required string
+    // left as '' also fails, but it fails *informatively* — @length(3,20) says
+    // "must be at least 3 characters" — and an empty text box is what the user
+    // actually sees. There is no such honest empty for a numeric key.
+    if (fkFields.has(key)) {
       fieldDefaults[key] = null
       continue
     }
@@ -323,7 +353,7 @@ function mergeHooks(target, incoming) {
  *   createResource({ model, service, optionsQuery, hooks })   — object form
  *
  * Returns { service, store, make, load, fields, relations, gate, can,
- *           validate, normalize, coerce, context, hooks }
+ *           transitions, validate, normalize, coerce, context, hooks }
  *   service  — pass-through of the Junction client: find() gives the list
  *              envelope, single-record methods give the record. See "Return
  *              shapes" in the module header.
@@ -515,16 +545,21 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   let make
   if (schema) {
-    make = createMakeFromSchema(modelDef?.properties ?? modelDef)
+    // x-relations is the ONLY place a relation exists on the client — a
+    // belongsTo's local key is emitted as a plain integer — so the FK columns
+    // have to be handed to make() rather than spotted in `properties`.
+    const fkFields = (modelDef?.['x-relations'] ?? []).flatMap(r => r?.fields ?? [])
+    make = createMakeFromSchema(modelDef?.properties ?? modelDef, undefined, undefined, fkFields)
   } else {
     make = (spec) => Object.assign({}, spec)
   }
 
   // Per-field rules — empty when there is no schema, so a resource without one
   // reports no constraints rather than pretending everything is optional.
-  const fields    = schema ? buildFieldRules(modelDef) : {}
-  const relations = schema ? buildRelations(modelDef)  : {}
-  const gate      = schema ? buildGate(modelDef)       : null
+  const fields    = schema ? buildFieldRules(modelDef)  : {}
+  const relations = schema ? buildRelations(modelDef)   : {}
+  const gate      = schema ? buildGate(modelDef)        : null
+  const stateSpec = schema ? buildTransitions(modelDef) : null
 
   /**
    * Would the given level clear this model's gate for that operation?
@@ -532,6 +567,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    */
   function can(operation, level) {
     return canAtLevel(gate, operation, level)
+  }
+
+  /**
+   * The record's legal next states, each flagged with whether `level` may take
+   * it — the button list, straight off the schema. A UI affordance only; see
+   * transitionsAt. Returns [] when the model declares no `@@transitions`.
+   */
+  function transitions(row, level) {
+    return transitionsAt(stateSpec, row, level)
   }
 
   /**
@@ -623,7 +667,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data);   break
         case 'remove':  ctx.result = await proxy.remove(ctx.id);            break
         case 'restore': ctx.result = await proxy.restore(ctx.id);           break
-        default:        ctx.result = await proxy.call(method, ctx.id, ctx.data); break
+        // A custom service action — anything the server declared that is not
+        // CRUD. action() applies the same transport rule as every other service
+        // call: the socket when one is connected, HTTP when it is not.
+        //
+        // This used to call proxy.call(), the explicit WS escape hatch. That was
+        // WS-or-nothing by name, and with no socket it recursed inside the
+        // client and never settled. `call` is still on the proxy below for a
+        // caller that wants to force the socket.
+        default:        ctx.result = await proxy.action(method, ctx.id, ctx.data); break
       }
 
       // after
@@ -682,6 +734,19 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       params ?? optionsQuery?.params ?? {},
     ),
 
+    /**
+     * Call a custom service action by name — a server method that is not CRUD.
+     *
+     *   orders.service.action('pay', 3)
+     *   → POST /api/orders/3   X-Service-Method: pay
+     *
+     * Runs the resource's hook pipeline like any other call. Coercion,
+     * blank-stripping and validation are deliberately NOT applied: those are
+     * defined against the model's own fields for create/patch payloads, and an
+     * action's body is whatever that action declares.
+     */
+    action: (name, id, data) => _call(name, id, data ?? null, {}),
+
     /** real-time push event subscription */
     on:   (event, fn) => client.service(serviceName).on(event, fn),
 
@@ -704,7 +769,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   return {
     service, store, make, load,
-    fields, relations, gate, can, validate, normalize, coerce,
+    fields, relations, gate, can, transitions, validate, normalize, coerce,
     context, hooks: addHooks,
   }
 }
@@ -724,8 +789,9 @@ function _emptyResource(name) {
     load:    async () => [],
     fields:    {},
     relations: {},
-    gate:      null,
-    can:       () => true,
+    gate:        null,
+    can:         () => true,
+    transitions: () => [],
     validate:  () => [],
     normalize: (data) => data,
     coerce:    (data) => data,

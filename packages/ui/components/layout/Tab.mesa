@@ -1,0 +1,50 @@
+<script>
+  // Tab.mesa
+  // Individual tab trigger button. Must be inside TabList > Tabs.
+  // Registers its id with the Tabs context on mount for arrow-key cycling.
+  //
+  // There is no variant map here: @frontierjs/css styles `.tab` from the
+  // `[aria-selected]` attribute and takes its pills/stretch shape from the
+  // parent `.tablist`. The selected look and the announced state are therefore
+  // the same fact, which is the point.
+  //
+  // Usage:
+  //   <Tab id="general">General</Tab>
+  //   <Tab id="security" disabled>Security</Tab>
+
+  export let id       = ''
+  export let disabled = false
+  // Consume from Tabs context — const always tracks provider (Rule 25a)
+  const activeId  = $context.activeId
+  const setActive = $context.setActive
+
+  const isActive = activeId === id
+
+  // Capture context functions at top level (Rule 25) then use in lifecycle callbacks
+  const registerTab   = $context.registerTab
+  const unregisterTab = $context.unregisterTab
+
+  // Register/unregister for keyboard nav — imperative, not reactive
+  $onMount(() => { registerTab?.(id) })
+  $onDestroy(() => { unregisterTab?.(id) })
+
+  function handleClick() {
+    if (!disabled) setActive(id)
+  }
+</script>
+
+<button
+  type="button"
+  role="tab"
+  id="tab-{id}"
+  aria-selected={isActive}
+  aria-controls="panel-{id}"
+  tabindex={isActive ? 0 : -1}
+  disabled={disabled}
+  data-tab-id={id}
+  class="tab"
+  {class}
+  on:click={handleClick}
+>
+  <slot />
+</button>

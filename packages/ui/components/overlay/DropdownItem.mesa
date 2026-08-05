@@ -1,0 +1,106 @@
+<script>
+  // DropdownItem.mesa
+  // An action row inside DropdownMenu. Closes the menu after selection by
+  // consuming the parent's close() from context.
+  //
+  // `.item` inside an `.items.menu` list is the package's interactive menu
+  // row — hover, padding and radius all come from there, and `.item` is on
+  // icon.css's holder list so a leading <svg> is sized automatically.
+  //
+  // Usage:
+  //   <DropdownItem onclick={edit}>Edit</DropdownItem>
+  //   <DropdownItem tone="danger" onclick={remove}>Delete</DropdownItem>
+  //
+  //   <!-- With icon and keyboard shortcut hint -->
+  //   <DropdownItem kbd="⌘D" onclick={duplicate}>
+  //     {#snippet icon()}<IconCopy />{/snippet}
+  //     Duplicate
+  //   </DropdownItem>
+  //
+  //   <DropdownItem href="/settings">Settings</DropdownItem>
+  //   <DropdownItem disabled>Coming soon</DropdownItem>
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let tone     = ''           // one of the 7 css tones
+  export let variant  = ''           // legacy — 'destructive' → danger
+  export let disabled = false
+  export let kbd      = ''           // keyboard shortcut label shown on the right
+  export let href     = undefined    // renders as <a> when set
+  export let icon     = null         // snippet — leading icon
+  export let onclick  = undefined
+
+  // Consume close() from nearest DropdownMenu ancestor.
+  // const — always tracks provider (Rule 25a). A no-op outside a DropdownMenu.
+  const close = $context.close
+
+  const t = toTone(variant === 'destructive' ? 'danger' : (variant || tone))
+
+  function handleClick(e) {
+    if (disabled) return
+    onclick?.(e)
+    close?.()
+  }
+</script>
+
+{#if href && !disabled}
+  <a
+    href={href}
+    role="menuitem"
+    tabindex="-1"
+    class={cx('item', t)}
+    {class}
+    on:click={handleClick}
+  >
+    {#if icon}
+      {@render icon?.()}
+    {/if}
+    <span style:flex="1">
+      <slot />
+    </span>
+    {#if kbd}
+      <kbd class="kbd">{kbd}</kbd>
+    {/if}
+  </a>
+{:else}
+  <button
+    type="button"
+    role="menuitem"
+    tabindex="-1"
+    disabled={disabled}
+    class={cx('item', t)}
+    {class}
+    on:click={handleClick}
+  >
+    {#if icon}
+      {@render icon?.()}
+    {/if}
+    <span style:flex="1" style:text-align="start">
+      <slot />
+    </span>
+    {#if kbd}
+      <kbd class="kbd">{kbd}</kbd>
+    {/if}
+  </button>
+{/if}
+
+<style>
+  /* .item is a list row in the package; as a <button> or <a> it also needs the
+     control reset and full width. Nothing here restates the row's own look. */
+  .item {
+    display:         flex;
+    align-items:     center;
+    gap:             0.625rem;
+    inline-size:     100%;
+    background:      none;
+    border:          none;
+    font:            inherit;
+    color:           inherit;
+    text-decoration: none;
+    cursor:          pointer;
+  }
+  .item:disabled {
+    opacity: 0.4;
+    cursor:  not-allowed;
+  }
+</style>

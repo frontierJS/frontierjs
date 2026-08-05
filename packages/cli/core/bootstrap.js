@@ -25,7 +25,7 @@ loadEnv(resolve(global.projectRoot, '.env'), { override: true })
 // ─── Internal flags hidden from help/listing ─────────────────────────────────
 // These are added by the runtime (defaultFlags) for cross-cutting behavior;
 // users don't pass them by name in command help so we hide them from listings.
-const INTERNAL_FLAGS = new Set(['dry', 'test', 'step', 'debug', '_spec'])
+const INTERNAL_FLAGS = new Set(['dry', 'test', 'step', 'debug', 'project', '_spec'])
 
 // ─── printSearch() — keyword search across all commands ──────────────────────
 function printSearch(q, all) {
@@ -268,6 +268,13 @@ export async function run(process) {
     line(
       `    ${cyan('fli')} ${dim('list')}                    ${dim(
         'all commands grouped by namespace'
+      )}`
+    )
+    line('')
+    line(`  ${dim('Global flags:')}`)
+    line(
+      `    ${dim('--project <dir>')}            ${dim(
+        'run against that project root instead of cwd'
       )}`
     )
     line('')
@@ -525,9 +532,10 @@ export async function run(process) {
   }
 
   // Strip internal bootstrap flags before passing to the command.
-  // --debug is consumed by bin/fli.js for the clean-error path; stripping it
-  // here avoids it bleeding into commands that don't expect a debug flag.
-  const { help: _help, h: _h, debug: _debug, ...cmdFlag } = flag
+  // --debug is consumed by bin/fli.js for the clean-error path; --project is
+  // consumed there too (it pins global.projectRoot). Stripping them here avoids
+  // them bleeding into commands that don't expect them.
+  const { help: _help, h: _h, debug: _debug, project: _project, ...cmdFlag } = flag
   const command = await Command({ file: entry.filePath, arg: rawArgs, flag: cmdFlag })
   return command()
 }

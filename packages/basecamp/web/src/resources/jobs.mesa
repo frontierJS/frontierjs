@@ -1,0 +1,28 @@
+<script module>
+  // src/resources/jobs.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
+  // No markup: everything is module scope, which is what <script module> means.
+  //
+  // Read this next to db/schema.lite. Nothing here restates anything there —
+  // no field list, no types, no enum values, no required list, no relations.
+  // A resource names a service and turns three flags on:
+  //
+  //   coerce      every DOM control hands back a string; the schema knows which
+  //               fields are Int, Float or Boolean and casts them
+  //   validate    check against the schema before the request, so the first
+  //               "no" arrives without a round trip (the server still validates)
+  //   blankToNull an empty text box submits '', which SQLite does not treat as
+  //               NULL — a second '' collides on a UNIQUE column
+  import { createResource } from '@frontierjs/sierra/junction'
+  import { stampWorkspace } from '../session.js'
+
+  export const jobs = createResource('jobs', {
+    coerce: true, validate: true, blankToNull: true,
+
+    // workspaceId is required by the schema and stamped by the server.
+    // Without this the browser refuses the create before sending it —
+    // see the note on stampWorkspace in session.js.
+    hooks: { before: { create: [stampWorkspace] } },
+  })
+</script>

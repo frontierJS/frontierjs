@@ -1,0 +1,60 @@
+<script>
+  // TabPanel.mesa
+  // Content region for a Tab. `.view` is the vocabulary term for a panel
+  // inside a Pane, which is what a tab panel is.
+  //
+  // Hidden (not destroyed) when inactive unless `unmount` is true, in which
+  // case {#if} removes it from the DOM.
+  //
+  // Default: the `hidden` attribute — the panel stays mounted, and hidden
+  // content is not reachable by assistive tech either way.
+  // unmount=true: DOM removal — use when panels have expensive setup
+  // ($onMount, async, etc.)
+  //
+  // tabindex="0" is deliberate: panel content is often not focusable, and
+  // without it a keyboard user tabs off the strip straight past the content
+  // it controls.
+  //
+  // Usage:
+  //   <TabPanel id="general">
+  //     <GeneralSettings />
+  //   </TabPanel>
+
+  export let id      = ''
+  export let unmount = false   // true = destroy DOM on hide; false = hide only
+  // const — always tracks when Tabs changes activeId (Rule 25a)
+  const activeId = $context.activeId
+  const isActive = activeId === id
+</script>
+
+{#if unmount}
+  {#if isActive}
+    <article
+      id="panel-{id}"
+      role="tabpanel"
+      aria-labelledby="tab-{id}"
+      tabindex="0"
+      class="view"
+      {class}
+    >
+      <slot />
+    </article>
+  {/if}
+{:else}
+  <!--
+    `hidden` alone does the work — the old markup also carried a `hidden`
+    utility class, which is what actually hid it under Uno. Without Uno the
+    class did nothing and the attribute was doing it all along.
+  -->
+  <article
+    id="panel-{id}"
+    role="tabpanel"
+    aria-labelledby="tab-{id}"
+    tabindex="0"
+    hidden={!isActive}
+    class="view"
+    {class}
+  >
+    <slot />
+  </article>
+{/if}

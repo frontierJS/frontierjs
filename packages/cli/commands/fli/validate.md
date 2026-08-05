@@ -17,7 +17,7 @@ flags:
 
 <script>
 import { existsSync, readFileSync, readdirSync } from 'fs'
-import { resolve, extname } from 'path'
+import { resolve, extname, basename } from 'path'
 import { execSync } from 'child_process'
 
 // ─── JSON Schema parser ───────────────────────────────────────────────────────
@@ -37,36 +37,64 @@ function parseJsonSchema(src) {
 // ─── Service parser ───────────────────────────────────────────────────────────
 // Extracts the model name from a Junction service file.
 // Matches:  model: 'leads'  or  model: "leads"
+//
+// A minimal service names no model at all — createBaseService() resolves it from
+// the service name, which the autoloader takes from the FILENAME. So an absent
+// `model:` is not "nothing to check", it is "check the filename instead".
 
 function parseServiceModel(src) {
   const m = src.match(/model\s*:\s*['"](\w+)['"]/)
   return m ? m[1] : null
 }
 
+// ─── Service name → model name ────────────────────────────────────────────────
+// The reverse of Sierra's registry: regular English plurals only.
+//   leads → Lead · companies → Company · statuses → Status
+// Irregulars (people/Person) are not guessable and are not guessed — a miss here
+// is reported as a warning, never an error.
+
+function modelNameFor(service) {
+  const base = service.endsWith('ies') ? service.slice(0, -3) + 'y'
+             : /(s|x|z|ch|sh)es$/.test(service) ? service.slice(0, -2)
+             : service.endsWith('s') ? service.slice(0, -1)
+             : service
+  return base.charAt(0).toUpperCase() + base.slice(1)
+}
+
 // ─── Resource parser ──────────────────────────────────────────────────────────
-// Extracts model and service from a createResource() call.
-// Matches:  createResource({ model: 'Lead', service: 'leads' })
+// Extracts service and model from a createResource() call. The service name is
+// the FIRST POSITIONAL ARGUMENT — it is not a `service:` key:
+//
+//   createResource('leads')                        → service 'leads'
+//   createResource('people', { model: 'Person' })  → service 'people', model 'Person'
+//
+// A file may declare several. Every call is returned, because a resource module
+// that also builds its relation pickers references more than one service.
 
 function parseResourceRefs(src) {
-  const modelM   = src.match(/model\s*:\s*['"](\w+)['"]/)
-  const serviceM = src.match(/service\s*:\s*['"](\w+)['"]/)
-  return {
-    model:   modelM   ? modelM[1]   : null,
-    service: serviceM ? serviceM[1] : null,
+  const refs = []
+  const re = /createResource\s*\(\s*['"]([\w-]+)['"]\s*(?:,\s*\{([^}]*)\})?/g
+  let m
+  while ((m = re.exec(src)) !== null) {
+    const modelM = m[2] ? m[2].match(/model\s*:\s*['"](\w+)['"]/) : null
+    refs.push({ service: m[1], model: modelM ? modelM[1] : null })
   }
+  return refs
 }
 
 // ─── Route parser ─────────────────────────────────────────────────────────────
-// Finds resource imports in route .svelte files.
-// Matches:  import Foo from '@/resources/Foo.svelte'
-//           import { store } from '@/resources/Foo'
+// Finds resource imports in route files. Sierra resolves no `@/` alias, so the
+// import is relative — what matters is the resources/ segment and the basename:
+//
+//   import { leads } from '../../resources/leads.mesa'
+//   import { leads } from '@/resources/leads'          (legacy alias, still read)
 
 function parseRouteResourceImports(src) {
   const imports = []
-  const re = /from\s+['"]@\/resources\/([\w.]+)['"]/g
+  const re = /from\s+['"][^'"]*\bresources\/([\w.-]+)['"]/g
   let m
   while ((m = re.exec(src)) !== null) {
-    imports.push(m[1].replace(/\.svelte$/, '').replace(/\.mesa$/, ''))
+    imports.push(m[1].replace(/\.(mesa|js)$/, ''))
   }
   return imports
 }
@@ -130,9 +158,11 @@ Reads `db/schema.json` (regenerated fresh each run via `litestone jsonschema`)
 so results always reflect the current schema, not a stale snapshot.
 
 **Checks:**
-- Every service references a model that exists in schema.lite
-- Every resource references a model and a service that both exist
-- Every route's `@/resources/` imports resolve to an actual file
+- Every service resolves to a model in schema.lite — by its `model:` when it
+  declares one, otherwise by the filename the autoloader registers it under
+- Every resource names a model that exists and a service file that exists, and
+  states its model rather than leaving an irregular plural to be guessed
+- Every route's `resources/…` import resolves to an actual file
 - `ENCRYPTION_KEY` is set in `.env` if schema.lite contains `@secret` fields
 - Required env vars from `_module.md` `requires:` blocks are present in `.env`
 
@@ -192,15 +222,29 @@ if (!layer || layer === 'services') {
   log.info(`Services  ·  checking ${files.length} file${files.length !== 1 ? 's' : ''}`)
 
   for (const file of files) {
-    const model = parseServiceModel(readFileSync(file, 'utf8'))
+    const declared = parseServiceModel(readFileSync(file, 'utf8'))
 
-    if (!model) {
-      warn('services', file, 'No model: \'...\' found in service — skipping reference check')
+    if (declared) {
+      // An explicit model: is checked against every spelling the accessor
+      // resolver accepts — the declared name, the accessor, or the plural.
+      const hit = [...models].some(m =>
+        m === declared ||
+        m.charAt(0).toLowerCase() + m.slice(1) === declared ||
+        modelNameFor(declared) === m
+      )
+      if (!hit) {
+        err('services', file, `References model '${declared}' which does not exist in schema.lite`)
+      }
       continue
     }
 
-    if (!models.has(model)) {
-      err('services', file, `References model '${model}' which does not exist in schema.lite`)
+    // No model: — the minimal form. The registered service name comes from the
+    // filename, and that is what has to resolve to a model.
+    const service = basename(file).replace(/\.service\.ts$/, '')
+    const guess   = modelNameFor(service)
+
+    if (!models.has(guess)) {
+      warn('services', file, `Names no model, so '${service}' must resolve to one — '${guess}' is not in schema.lite. Add model: '<Name>' if the plural is irregular.`)
     }
   }
 }
@@ -208,35 +252,41 @@ if (!layer || layer === 'services') {
 // ─── Layer: resources ─────────────────────────────────────────────────────────
 
 if (!layer || layer === 'resources') {
-  const files = scanDir(resourcesDir, '.svelte', '.mesa')
+  const files = scanDir(resourcesDir, '.js', '.mesa')
 
   log.info(`Resources  ·  checking ${files.length} file${files.length !== 1 ? 's' : ''}`)
 
   for (const file of files) {
-    const src  = readFileSync(file, 'utf8')
-    const refs = parseResourceRefs(src)
+    const refs = parseResourceRefs(readFileSync(file, 'utf8'))
 
-    if (!refs.model && !refs.service) continue  // not a createResource component
+    if (!refs.length) continue  // no createResource() call in this file
 
-    // model: 'Lead' → schema model name is 'Lead' (PascalCase singular)
-    if (refs.model) {
-      if (!models.has(refs.model)) {
-        err('resources', file, `References model '${refs.model}' which does not exist in schema.lite`)
+    for (const ref of refs) {
+      // model: 'Lead' → schema model name is 'Lead' (PascalCase singular)
+      if (ref.model && !models.has(ref.model)) {
+        err('resources', file, `References model '${ref.model}' which does not exist in schema.lite`)
       }
-    }
 
-    // service: 'leads' → api/src/services/leads.service.ts must exist
-    if (refs.service) {
-      const svcPath = resolve(servicesDir, `${refs.service}.service.ts`)
+      // createResource('leads') → api/src/services/leads.service.ts must exist.
+      // The autoloader derives the registered name from the filename, so that
+      // is the file to look for.
+      const svcPath = resolve(servicesDir, `${ref.service}.service.ts`)
       if (!existsSync(svcPath)) {
-        err('resources', file, `References service '${refs.service}' but ${refs.service}.service.ts does not exist`)
+        err('resources', file, `Calls service '${ref.service}' but ${ref.service}.service.ts does not exist`)
+      }
+
+      // A resource that names no model relies on the registry guessing one from
+      // the service name — which works for regular plurals and silently degrades
+      // to a bare make() for anything else.
+      if (!ref.model) {
+        warn('resources', file, `createResource('${ref.service}') names no model — add { model: '…' } so an irregular plural cannot resolve to nothing`)
       }
     }
   }
 
-  // ── Routes: @/resources/Name imports ────────────────────────────────────
+  // ── Routes: resources/<name> imports ────────────────────────────────────
 
-  const routeFiles = scanDirRecursive(routesDir, '.svelte')
+  const routeFiles = scanDirRecursive(routesDir, '.mesa')
   let routesChecked = 0
 
   for (const file of routeFiles) {
@@ -245,11 +295,11 @@ if (!layer || layer === 'resources') {
     routesChecked++
 
     for (const name of imports) {
-      const exists = ['.svelte', '.mesa', ''].some(ext =>
+      const exists = ['.js', '.mesa', ''].some(ext =>
         existsSync(resolve(resourcesDir, name + ext))
       )
       if (!exists) {
-        err('routes', file, `Imports '@/resources/${name}' but no matching file found in ${resourcesDir}`)
+        err('routes', file, `Imports 'resources/${name}' but no matching file found in ${resourcesDir}`)
       }
     }
   }

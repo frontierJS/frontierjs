@@ -10,18 +10,18 @@ examples:
 args:
   -
     name: model
-    description: Model name (PascalCase)
+    description: Model name (PascalCase and singular)
     required: true
 flags:
   service:
     char: s
     type: boolean
-    description: Also scaffold api/src/services/<model>.service.ts
+    description: Also scaffold api/src/services/<plural>.service.ts
     defaultValue: false
   resource:
     char: r
     type: boolean
-    description: Also scaffold web/src/resources/<Model>.mesa
+    description: Also scaffold web/src/resources/<plural>.mesa
     defaultValue: false
   soft-delete:
     type: boolean
@@ -38,13 +38,25 @@ flags:
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
+// Regular English plurals only, matching Sierra's registry in reverse.
+// Irregulars are not guessed: `fli make:resource Person --service people`.
+const servicePlural = (model) => {
+  const a = model.charAt(0).toLowerCase() + model.slice(1)
+  if (/[^aeiou]y$/.test(a))     return a.slice(0, -1) + 'ies'
+  if (/(s|x|z|ch|sh)$/.test(a)) return a + 'es'
+  return a + 's'
+}
+
+// ─── The stanza ───────────────────────────────────────────────────────────────
+// Litestone's scalars are String, Int, Float, Boolean, DateTime, Bytes, Json and
+// File. `Integer`, `Text`, `Real` and `Blob` were renamed and are rejected
+// outright — a stanza using one does not parse, and nothing downstream runs.
+
 const makeLiteModel = (name, softDelete) => {
-  // Model names in schema.lite are PascalCase singular — e.g. Lead, not leads
-  const pascal = name.charAt(0).toUpperCase() + name.slice(1)
   const lines = [
     '',
-    `model ${pascal} {`,
-    `  id        Integer   @id`,
+    `model ${name} {`,
+    `  id        Int       @id`,
     `  createdAt DateTime  @default(now())`,
     `  updatedAt DateTime  @default(now()) @updatedAt`,
   ]
@@ -53,76 +65,89 @@ const makeLiteModel = (name, softDelete) => {
     lines.push('')
     lines.push(`  @@softDelete`)
   }
-  lines.push(`  @@gate("0.4.4.6")`)
+  lines.push('')
+  lines.push('  /// read.create.update.delete — reads are public, writes need a user.')
+  lines.push('  @@gate("0.4.4.6")')
   lines.push(`}`)
   lines.push('')
   return lines.join('\n')
 }
 
-const makeServiceFile = (name) => {
-  const lower = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural = `${lower}s`
-  return `import { createService, authenticate } from '@frontierjs/junction'
+// ─── The service ──────────────────────────────────────────────────────────────
+// The autoloader looks for a `create*Service` factory export and takes the
+// registered name from the FILENAME. A file exporting something it cannot
+// recognise is skipped with a warning rather than an error.
 
-export default createService({
-  name:   '${plural}',
-  model:  '${lower}',
-  schema: jsonSchema,
+const makeServiceFile = (model, plural) => {
+  const pascalPlural = plural.charAt(0).toUpperCase() + plural.slice(1)
+  const accessor     = model.charAt(0).toLowerCase() + model.slice(1)
+  return `// The whole service. The name comes from this file's name ('${plural}' →
+// /api/${plural} → db.${accessor}), CRUD from the model, 401s from @@gate, and 400s
+// from the field rules. Nothing below restates the schema.
+import { createBaseService } from '@frontierjs/junction'
 
-  // Broadcast mutations to the '${plural}' channel.
-  //
-  // SCOPE THIS BEFORE YOU SHIP. Every connection in the channel receives every
-  // row, and @@allow policies are enforced when a row is READ - a broadcast does
-  // not re-evaluate them per subscriber. For per-tenant delivery:
-  //
-  //   channel: (rows, ctx) => ctx.app.channel(\`workspace:\${ctx.auth.user?.workspaceId}\`)
-  //
-  // Set channel:false to turn broadcasting off for this service.
-  channel: '${plural}',
-
-  hooks: {
-    before: {
-      create: [authenticate],
-      patch:  [authenticate],
-      remove: [authenticate],
-    },
-  }
-})
-`
-}
-
-const makeResourceFile = (name) => {
-  const lower  = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural  = `${lower}s`
-  const sc = '</' + 'script>'
-  return `<script module>
-  import { resource } from '@/core/frontier'
-
-  export const query = {
-    $orderBy: { createdAt: 'desc' },
-    $limit: 100,
-  }
-
-  const _res = resource.createResource({
-    model:   '${name}',
-    service: '${plural}',
+export function create${pascalPlural}Service() {
+  return createBaseService({
+    // Announce every mutation on the '${plural}' channel so a subscribed browser
+    // updates without polling.
+    //
+    // SCOPE THIS BEFORE YOU SHIP. Every connection in the channel receives every
+    // row, and @@allow policies are evaluated when a row is READ — a broadcast
+    // does not re-check them per subscriber. Set it to false to turn it off.
+    channel: '${plural}',
   })
-
-  export const { store, service, load, context } = _res
-
-  export function make(spec) {
-    return _res.make(Object.assign({}, spec))
-  }
-${sc}
+}
 `
 }
+
+// ─── The Resource ─────────────────────────────────────────────────────────────
+// A plain module, not a component. Same template make:resource writes.
+
+const makeResourceFile = (model, plural) => `<script module>
+// src/resources/${plural}.mesa — the Resource layer.
+//
+// A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
+// no markup, everything in <script module>.
+//
+// Read this next to db/schema.lite. Nothing here restates anything there: no
+// field list, no types, no enum values, no required list, no relations.
+
+import { createResource } from '@frontierjs/sierra/junction'
+
+export const ${plural} = createResource('${plural}', {
+  // Stated rather than inferred, so an irregular plural cannot quietly resolve
+  // to nothing.
+  model: '${model}',
+
+  // Every DOM control hands back a string; the schema is what knows the column
+  // is an Int, so it does the casting.
+  coerce: true,
+
+  // '' is not NULL to SQLite — a \`String? @unique\` column takes any number of
+  // NULLs and rejects the second ''.
+  blankToNull: true,
+
+  // Apply the schema's own rules before the request. The server validates
+  // regardless; this only moves the first "no" closer to the user.
+  validate: true,
+})
+</script>
+`
 </script>
 
-```js
-const created = []
-const editor  = process.env.EDITOR || 'vi'
+Appends one model to `db/schema.lite`. `--service` and `--resource` also write
+the two files that hang off it — the Junction service that exposes it and the
+Sierra Resource the UI binds to.
 
-// ─── 1. Append model block to schema.lite ────────────────────────────────────
+For the whole vertical slice, including CRUD routes, use `fli scaffold` instead.
+
+```js
+const created  = []
+const editor   = process.env.EDITOR || 'vi'
+const model    = arg.model.charAt(0).toUpperCase() + arg.model.slice(1)
+const plural   = servicePlural(model)
+
+// ─── 1. Append the model to schema.lite ──────────────────────────────────────
 
 const schemaPath = resolve(context.paths.db, 'schema.lite')
 
@@ -131,28 +156,29 @@ if (!existsSync(schemaPath)) {
   return
 }
 
-const modelBlock = makeLiteModel(arg.model, flag['soft-delete'])
-const modelName  = arg.model.charAt(0).toLowerCase() + arg.model.slice(1) + 's'
-
-// Check if model already exists
 const existing = readFileSync(schemaPath, 'utf8')
-if (existing.includes(`model ${modelName}`)) {
-  log.warn(`model ${modelName} already exists in schema.lite — skipping`)
+
+// Anchored to a declaration. The old check looked for the lowercase plural
+// ('model leads') which the generator never writes, so it never matched and a
+// second run silently appended a duplicate model.
+const declared = new RegExp(`^\\s*model\\s+${model}\\s*\\{`, 'm').test(existing)
+
+if (declared) {
+  log.warn(`model ${model} already exists in schema.lite — skipping`)
 } else if (flag.dry) {
-  log.dry(`Would append model ${modelName} to schema.lite`)
+  log.dry(`Would append model ${model} to schema.lite`)
 } else {
-  writeFileSync(schemaPath, existing + modelBlock, 'utf8')
-  log.success(`Appended model ${modelName} to schema.lite`)
+  writeFileSync(schemaPath, existing + makeLiteModel(model, flag['soft-delete']), 'utf8')
+  log.success(`Appended model ${model} to schema.lite`)
   created.push(schemaPath)
   log.info('Run fli db:push to apply the schema change')
 }
 
-// ─── 2. Service scaffold ──────────────────────────────────────────────────────
+// ─── 2. Service ───────────────────────────────────────────────────────────────
 
 if (flag.service) {
   const servicesDir = resolve(context.paths.api, 'src/services')
-  const serviceName = arg.model.charAt(0).toLowerCase() + arg.model.slice(1)
-  const servicePath = resolve(servicesDir, `${serviceName}.service.ts`)
+  const servicePath = resolve(servicesDir, `${plural}.service.ts`)
 
   if (existsSync(servicePath)) {
     log.warn(`${servicePath} already exists — skipping`)
@@ -160,17 +186,17 @@ if (flag.service) {
     log.dry(`Would create ${servicePath}`)
   } else {
     mkdirSync(servicesDir, { recursive: true })
-    writeFileSync(servicePath, makeServiceFile(arg.model), 'utf8')
+    writeFileSync(servicePath, makeServiceFile(model, plural), 'utf8')
     log.success(`Created ${servicePath}`)
     created.push(servicePath)
   }
 }
 
-// ─── 3. Resource scaffold ─────────────────────────────────────────────────────
+// ─── 3. Resource ──────────────────────────────────────────────────────────────
 
 if (flag.resource) {
   const resourcesDir = resolve(context.paths.web, 'src/resources')
-  const resourcePath = resolve(resourcesDir, `${arg.model}.mesa`)
+  const resourcePath = resolve(resourcesDir, `${plural}.mesa`)
 
   if (existsSync(resourcePath)) {
     log.warn(`${resourcePath} already exists — skipping`)
@@ -178,7 +204,7 @@ if (flag.resource) {
     log.dry(`Would create ${resourcePath}`)
   } else {
     mkdirSync(resourcesDir, { recursive: true })
-    writeFileSync(resourcePath, makeResourceFile(arg.model), 'utf8')
+    writeFileSync(resourcePath, makeResourceFile(model, plural), 'utf8')
     log.success(`Created ${resourcePath}`)
     created.push(resourcePath)
   }

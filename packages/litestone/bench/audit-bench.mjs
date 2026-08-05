@@ -56,7 +56,7 @@ await run('setAuth-rebuild', async () => {
 // ── 2. GatePlugin getLevel call amplification ───────────────────────────────
 await run('gate-getlevel', async () => {
   let calls = 0
-  const schema = `model posts { id Int @id; title String \n @@gate("2.4.4.6") }`
+  const schema = `model Post { id Int @id; title String \n @@gate("2.4.4.6") }`
   const db = await createClient({
     schema, db: ':memory:',
     plugins: [new GatePlugin({ getLevel: async () => { calls++; return 5 } })],
@@ -74,14 +74,14 @@ await run('gate-getlevel', async () => {
 
 // ── 3. PluginRunner no-op hook overhead ─────────────────────────────────────
 await run('plugin-noop', async () => {
-  const schema = `model users { id Int @id; name String }`
+  const schema = `model User { id Int @id; name String }`
   const mk = (plugins) => createClient({ schema, db: ':memory:', plugins })
   const N = 30000
   const bench = async (db) => {
-    await db.users.create({ data: { name: 'a' } })
-    for (let i = 0; i < 500; i++) await db.users.findFirst({ where: { id: 1 } }) // warm
+    await db.user.create({ data: { name: 'a' } })
+    for (let i = 0; i < 500; i++) await db.user.findFirst({ where: { id: 1 } }) // warm
     const t0 = performance.now()
-    for (let i = 0; i < N; i++) await db.users.findFirst({ where: { id: 1 } })
+    for (let i = 0; i < N; i++) await db.user.findFirst({ where: { id: 1 } })
     const t = ms(t0); db.$close(); return t
   }
   const none = await bench(await mk(undefined))
@@ -94,13 +94,13 @@ await run('plugin-noop', async () => {
 // ── 4. @regex validator recompilation ───────────────────────────────────────
 await run('regex-validate', async () => {
   const mk = (attr) => createClient({
-    schema: `model items { id Int @id; slug String ${attr}; n Int }`, db: ':memory:',
+    schema: `model Item { id Int @id; slug String ${attr}; n Int }`, db: ':memory:',
   })
   const N = 20000
   const rows = Array.from({ length: N }, (_, i) => ({ slug: `slug-${i}`, n: i }))
   const bench = async (db) => {
     const t0 = performance.now()
-    await db.items.createMany({ data: rows })
+    await db.item.createMany({ data: rows })
     const t = ms(t0); db.$close(); return t
   }
   const plain = await bench(await mk(''))
@@ -131,21 +131,21 @@ await run('jsonl-scan', async () => {
   const schema = `
 database main { path "/tmp/ls-bench/main.db" }
 database logs { path "${DIR}/logs/"\n driver jsonl }
-model apiRequests { method String; path String; status Int; createdAt DateTime @default(now()) \n @@db(logs) }`
+model ApiRequest { method String; path String; status Int; createdAt DateTime @default(now()) \n @@db(logs) }`
   const db = await createClient({ schema })
   let t0 = performance.now()
-  await db.apiRequests.findFirst({ where: { status: 500 } })
+  await db.apiRequest.findFirst({ where: { status: 500 } })
   report('6. JSONL findFirst on 200k-row file', 'ms', ms(t0).toFixed(0), 'full read+parse per query')
   t0 = performance.now()
-  await db.apiRequests.count({})
+  await db.apiRequest.count({})
   report('6. JSONL count() on 200k-row file', 'ms', ms(t0).toFixed(0))
   t0 = performance.now()
-  await db.apiRequests.findMany({ limit: 50 })
+  await db.apiRequest.findMany({ limit: 50 })
   report('6. JSONL findMany limit 50', 'ms', ms(t0).toFixed(0))
   // append path
   const N = 2000
   t0 = performance.now()
-  for (let i = 0; i < N; i++) await db.apiRequests.create({ data: { method: 'GET', path: '/y', status: 200 } })
+  for (let i = 0; i < N; i++) await db.apiRequest.create({ data: { method: 'GET', path: '/y', status: 200 } })
   report('6. JSONL create() per-row append', 'us/op', (ms(t0) / N * 1000).toFixed(0), 'existsSync+statSync+appendFileSync per row')
   db.$close()
 })
@@ -165,18 +165,18 @@ await run('sigv4', async () => {
 // ── 8. createMany with @sequence ────────────────────────────────────────────
 await run('sequence-createmany', async () => {
   const mk = (seq) => createClient({
-    schema: `model quotes { id Int @id; accountId Int; num Int ${seq} }`, db: `${DIR}/seq-${seq ? 'y' : 'n'}.db`,
+    schema: `model Quote { id Int @id; accountId Int; num Int ${seq} }`, db: `${DIR}/seq-${seq ? 'y' : 'n'}.db`,
   })
   const N = 5000
   const rows = Array.from({ length: N }, (_, i) => ({ accountId: i % 10 }))
   const rowsWithNum = rows.map((r, i) => ({ ...r, num: i }))
   let db = await mk('')
   let t0 = performance.now()
-  await db.quotes.createMany({ data: rowsWithNum })
+  await db.quote.createMany({ data: rowsWithNum })
   const plain = ms(t0); db.$close()
   db = await mk('@sequence(scope: accountId)')
   t0 = performance.now()
-  await db.quotes.createMany({ data: rows })
+  await db.quote.createMany({ data: rows })
   const seq = ms(t0); db.$close()
   report('8. createMany 5k rows (disk), no @sequence', 'ms', plain.toFixed(0))
   report('8. createMany 5k rows (disk), @sequence', 'ms', seq.toFixed(0), '2 auto-commit stmts/row outside the batch tx')
@@ -204,7 +204,7 @@ await run('autocommit-vs-tx', async () => {
 
 // ── 10. upsert read-then-write vs native ON CONFLICT ────────────────────────
 await run('upsert', async () => {
-  const db = await createClient({ schema: `model kv { id Int @id; k String @unique; v String }`, db: ':memory:' })
+  const db = await createClient({ schema: `model Kv { id Int @id; k String @unique; v String }`, db: ':memory:' })
   const N = 5000
   let t0 = performance.now()
   for (let i = 0; i < N; i++)
@@ -222,17 +222,17 @@ await run('upsert', async () => {
 
 // ── 11. Baseline sanity: core read/write throughput ─────────────────────────
 await run('baseline', async () => {
-  const db = await createClient({ schema: `model users { id Int @id; name String; age Int }`, db: ':memory:' })
-  await db.users.createMany({ data: Array.from({ length: 10000 }, (_, i) => ({ name: `u${i}`, age: i % 80 })) })
+  const db = await createClient({ schema: `model User { id Int @id; name String; age Int }`, db: ':memory:' })
+  await db.user.createMany({ data: Array.from({ length: 10000 }, (_, i) => ({ name: `u${i}`, age: i % 80 })) })
   const N = 30000
   let t0 = performance.now()
-  for (let i = 0; i < N; i++) await db.users.findUnique({ where: { id: (i % 10000) + 1 } })
+  for (let i = 0; i < N; i++) await db.user.findUnique({ where: { id: (i % 10000) + 1 } })
   report('11. findUnique by PK (fast path)', 'us/op', (ms(t0) / N * 1000).toFixed(2))
   t0 = performance.now()
-  for (let i = 0; i < 2000; i++) await db.users.findMany({ where: { age: { gte: 40 } }, limit: 100 })
+  for (let i = 0; i < 2000; i++) await db.user.findMany({ where: { age: { gte: 40 } }, limit: 100 })
   report('11. findMany where+limit 100 rows', 'us/op', (ms(t0) / 2000 * 1000).toFixed(1))
   t0 = performance.now()
-  for (let i = 0; i < 10000; i++) await db.users.create({ data: { name: 'x', age: 1 } })
+  for (let i = 0; i < 10000; i++) await db.user.create({ data: { name: 'x', age: 1 } })
   report('11. create() single row (:memory:)', 'us/op', (ms(t0) / 10000 * 1000).toFixed(1))
   db.$close()
 })

@@ -1,0 +1,60 @@
+<script>
+  // Card.mesa
+  // General-purpose content container with optional header and footer snippets.
+  //
+  // `.card` is a surface in @frontierjs/css, so background, border, radius and
+  // the whole tone recipe come from there. `raised` / `outlined` are Treatments
+  // that work on any surface, which is why they are booleans here rather than a
+  // shadow scale — the system has one shadow per treatment on purpose.
+  //
+  // Usage:
+  //   <!-- Simple -->
+  //   <Card>Content here</Card>
+  //
+  //   <!-- Toned + raised -->
+  //   <Card tone="danger" raised>Payment failed</Card>
+  //
+  //   <!-- With header and footer -->
+  //   <Card>
+  //     {#snippet header()}<h3>Title</h3>{/snippet}
+  //     <p>Body</p>
+  //     {#snippet footer()}<Button>Save</Button>{/snippet}
+  //   </Card>
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let tone     = ''      // one of the 7 css tones
+  export let raised   = false   // drop shadow
+  export let outlined = false   // border-only, no fill
+  export let padding  = 'md'    // 'none' | 'sm' | 'md' | 'lg'
+  export let header   = null    // snippet
+  export let footer   = null    // snippet
+
+  // .card ships 1.25rem. Only a non-default value needs an inline override,
+  // and unlayered styles beat every layer in this system, so no !important.
+  const paddingMap = { none: '0', sm: '0.75rem', md: '', lg: '1.75rem' }
+  const pad = paddingMap[padding] ?? ''
+
+  const t = toTone(tone)
+</script>
+
+<!--
+  <article> because a Card is a self-contained unit you could lift out.
+  Header/footer bleed to the card edges via negative margins in cards.css,
+  which is why they are direct children and not wrapped.
+-->
+<article class={cx('card', t, raised && 'raised', outlined && 'outlined')} style:padding={pad || null} {class} {...$attributes}>
+  {#if header}
+    <div class="surface-header">
+      {@render header?.()}
+    </div>
+  {/if}
+
+  <slot />
+
+  {#if footer}
+    <div class="surface-footer">
+      {@render footer?.()}
+    </div>
+  {/if}
+</article>

@@ -1,0 +1,137 @@
+---
+title: Settings
+---
+<script>
+  // The app's own preferences — the one screen in this app that is not backed
+  // by a model, and deliberately so: it is where a Switch, a RadioGroup and a
+  // NumberInput belong, and it stores what it collects in localStorage rather
+  // than inventing a `Preference` table the domain does not have.
+  //
+  // Everything here is a real preference the rest of the app reads, not a
+  // control put on a page to be looked at.
+  import { session } from '../../session.js'
+  import { orders } from '../../resources/shop.mesa'
+  import { prefs, savePrefs, THEMES } from '../../prefs.js'
+
+  import Accordion     from '@frontierjs/ui/components/layout/AccordionItem.mesa'
+  import AccordionRoot from '@frontierjs/ui/components/layout/Accordion.mesa'
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import NumberInput   from '@frontierjs/ui/components/forms/NumberInput.mesa'
+  import Progress      from '@frontierjs/ui/components/feedback/Progress.mesa'
+  import RadioGroup    from '@frontierjs/ui/components/forms/RadioGroup.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Switch        from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.level
+
+  // Edited as local state and written back on save. `bind:` on a COMPONENT
+  // needs a writable top-level `let`, and `prefs.dense` is a member
+  // expression — the compiler says so, and a form bound to one collects
+  // nothing. It also means Cancel is possible: nothing changes until Save.
+  let theme         = prefs.theme
+  let dense         = prefs.dense
+  let perPage       = prefs.perPage
+  let defaultStatus = prefs.defaultStatus
+  let noteTemplate  = prefs.noteTemplate
+
+  // The status choices are the schema's, again — a preference that offered a
+  // status the enum does not have would be a preference the API rejects.
+  const statusChoices = [
+    { value: '', label: 'all' },
+    ...orders.fields.status.enum.map(s => ({ value: s, label: s })),
+  ]
+
+  const themeChoices = THEMES.map(t => ({ value: t, label: t.replace('theme-', '') }))
+
+  // How much of the seeded catalogue this session may act on, as a number
+  // rather than a sentence. Reads the same gate table the buttons do.
+  const REACHABLE = ['read', 'create', 'update', 'delete']
+  const allowed = REACHABLE.filter(op => orders.can(op, session.level)).length
+
+  function save() {
+    savePrefs({ theme, dense, perPage, defaultStatus, noteTemplate })
+    toasts.success('Preferences saved')
+  }
+</script>
+
+<SectionHeader title="Settings" level={1} sub="stored in this browser, read by the rest of the app" />
+
+<Alert tone="info">
+  Nothing here is a model. A preference is a fact about this browser, so it
+  lives in <code>localStorage</code> — putting it in <code>db/schema.lite</code>
+  would make it a fact about the shop.
+</Alert>
+
+<div class="card stack" style="max-width: 40rem">
+  <Progress
+    id="gate-progress"
+    label={'Operations this session may perform (' + allowed + ' of 4)'}
+    showLabel
+    value={allowed}
+    max={4}
+    tone={allowed === 4 ? 'success' : allowed === 0 ? 'danger' : 'warning'}
+  />
+</div>
+
+<AccordionRoot multiple defaultOpen={['appearance']}>
+  <Accordion id="appearance" label="Appearance">
+    <div class="stack">
+      <!-- The theme is one class on <body>; the six are the css package's. -->
+      <RadioGroup
+        id="p-theme"
+        label="Theme"
+        layout="inline"
+        items={themeChoices}
+        bind:value={theme}
+      />
+
+      <Switch
+        id="p-dense"
+        label="Dense tables"
+        description="Applies the .compact modifier to every table in the app."
+        bind:checked={dense}
+      />
+    </div>
+  </Accordion>
+
+  <Accordion id="lists" label="Lists">
+    <div class="stack">
+      <NumberInput
+        id="p-per-page"
+        label="Rows per page"
+        min={1}
+        max={100}
+        step={1}
+        bind:value={perPage}
+        hint="used by the products table"
+      />
+
+      <RadioGroup
+        id="p-status"
+        label="Default order filter"
+        items={statusChoices}
+        bind:value={defaultStatus}
+        hint="the values are OrderStatus, straight from the schema"
+      />
+    </div>
+  </Accordion>
+
+  <Accordion id="notes" label="Order notes">
+    <Textarea
+      id="p-note"
+      label="Note template"
+      rows={3}
+      maxlength={200}
+      bind:value={noteTemplate}
+      hint="prefilled into the note field on a new order"
+    />
+  </Accordion>
+</AccordionRoot>
+
+<div class="cluster">
+  <Button id="p-save" onclick={save}>Save preferences</Button>
+  <span class="text-sm text-muted">theme <code>{theme}</code> · {perPage} rows · note {noteTemplate ? 'set' : 'empty'}</span>
+</div>

@@ -1,0 +1,125 @@
+---
+title: Job
+---
+<script>
+  import { page } from '@frontierjs/sierra/router'
+  import { jobs } from '../../../resources/jobs.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  $: page.params
+
+  let job     = null
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  async function load() {
+    error = null
+    try {
+      // get() returns the job WITH its five most recent runs, so the history
+      // needs no second request.
+      job = await jobs.service.get(page.params.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: page.params.id, () => load()
+
+  const READS = new Set(['get', 'find'])
+  const off = jobs.service.on('*', (method, row) => {
+    if (READS.has(method) || row?.id !== page.params.id) return
+    load()
+  })
+  $onDestroy(off)
+
+  async function act(method) {
+    error = null; busy = method
+    try {
+      await jobs.service.action(method, job.id)
+      // Re-read rather than merge: `trigger` queues work that runs on Caravan's
+      // thread, so the interesting change (a new JobRun) lands after the reply.
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const TONE     = { running: 'info', failed: 'danger', cancelled: 'muted' }
+  const RUN_TONE = { success: 'success', failed: 'danger', timeout: 'warning', running: 'info' }
+  const when     = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+  const secs     = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
+
+  $: runs       = job?.recent_runs ?? []
+  $: cancellable = job && ['pending', 'running'].includes(job.status)
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error && !job}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{:else if job}
+  <div class="section-header">
+    <h1>{job.name}</h1>
+    <div class="cluster">
+      <span class="pill {TONE[job.status] ?? ''}" id="job-status">{job.status}</span>
+      <a class="btn ghost" href="/jobs/">All jobs</a>
+    </div>
+  </div>
+
+  {#if error}
+    <article class="alert danger">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  <div class="cluster" id="job-actions">
+    <button class="btn outlined" disabled={busy === 'trigger'} on:click={() => act('trigger')}>
+      {busy === 'trigger' ? 'Queuing…' : 'Run now'}
+    </button>
+    {#if cancellable}
+      <button class="btn ghost danger" disabled={busy === 'cancel'} on:click={() => act('cancel')}>Cancel</button>
+    {/if}
+  </div>
+
+  <dl class="facts">
+    <dt>Kind</dt>     <dd>{job.kind}</dd>
+    <dt>Command</dt>  <dd><code>{job.command ?? '—'}</code></dd>
+    <dt>Schedule</dt> <dd><code>{job.cronExpression ?? 'on demand'}</code></dd>
+    <dt>Next run</dt> <dd>{when(job.nextRunAt)}</dd>
+    <dt>Timeout</dt>  <dd>{job.timeoutSeconds}s</dd>
+    <dt>Retries</dt>  <dd>{job.retryCount} of {job.retryLimit}</dd>
+  </dl>
+
+  <h2 class="h4">Recent runs</h2>
+  {#if !runs.length}
+    <p class="text-sm text-muted">This job has never run.</p>
+  {:else}
+    <ol class="feed" id="job-runs">
+      {#each runs as run}
+        <li>
+          <article class="feed-item">
+            <span class="feed-dot {RUN_TONE[run.status] ?? ''}" aria-hidden="true"></span>
+            <div class="feed-content">
+              <div class="text-muted text-sm">{when(run.startedAt)} · {secs(run.durationMs)}</div>
+              <div class="cluster">
+                <span class="pill {RUN_TONE[run.status] ?? ''}">{run.status}</span>
+                <span class="text-sm text-muted">exit {run.exitCode ?? '—'} · {run.trigger}</span>
+              </div>
+              {#if run.error}
+                <pre class="text-sm">{run.error}</pre>
+              {/if}
+            </div>
+          </article>
+        </li>
+      {/each}
+    </ol>
+  {/if}
+{/if}

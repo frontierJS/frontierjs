@@ -1,0 +1,18 @@
+<!--
+  DropdownLabel — non-interactive section heading inside a DropdownMenu.
+  Use to group related items.
+
+  `.navlist-label` is the package's class for exactly this: a small uppercase
+  heading over a group of navigation or menu rows.
+
+  Usage:
+    <DropdownLabel>Account</DropdownLabel>
+    <DropdownItem onclick={profile}>Profile</DropdownItem>
+    <DropdownItem onclick={settings}>Settings</DropdownItem>
+    <DropdownSeparator />
+    <DropdownLabel>Danger zone</DropdownLabel>
+    <DropdownItem tone="danger" onclick={signOut}>Sign out</DropdownItem>
+-->
+<div role="presentation" class="navlist-label" {class}>
+  <slot />
+</div>

@@ -1,0 +1,65 @@
+<script>
+  // Progress.mesa
+  // Progress bar for async operations and determinate progress.
+  // Distinct from Bar.mesa (which is resource usage with thresholds).
+  // Progress is "how far through a task are we".
+  //
+  // Built on native <progress> with @frontierjs/css's `.progress`, so
+  // role="progressbar", the value and the max are announced by the platform —
+  // there is no ARIA here to keep in sync. Omitting `value` is what makes the
+  // browser render its own indeterminate state.
+  //
+  // Usage:
+  //   <Progress value={uploadPct} />
+  //   <Progress indeterminate label="Uploading…" />
+  //   <Progress value={3} max={10} tone="success" showLabel />
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let value         = 0
+  export let max           = 100
+  export let indeterminate = false
+  export let label         = ''       // accessible name + optional visible text
+  export let showLabel     = false    // show "42%" beside the bar
+  export let size          = 'md'     // 'xs' | 'sm' | 'md' | 'lg'
+  export let tone          = ''       // '' uses the primary fill
+  export let color         = ''       // legacy alias for `tone`
+
+  const pct = Math.min(100, Math.max(0, (value / max) * 100))
+
+  // block-size override for .progress, which is 0.5rem by default.
+  const sizeMap = { xs: '0.25rem', sm: '0.375rem', md: '0.5rem', lg: '1rem' }
+
+  const height = sizeMap[size] ?? sizeMap.md
+  const t      = toTone(color || tone)
+</script>
+
+<div class="stack" style:gap="0.375rem" {class} {...$attributes}>
+  {#if label || showLabel}
+    <div class="split">
+      {#if label}
+        <span class="text-xs text-muted">{label}</span>
+      {/if}
+      {#if showLabel && !indeterminate}
+        <span class="text-xs text-muted">{Math.round(pct)}%</span>
+      {/if}
+    </div>
+  {/if}
+
+  <!--
+    No `value` attribute at all in the indeterminate case. Passing
+    value={undefined} would still render a determinate bar at 0 in some
+    engines, so the two cases are separate elements.
+  -->
+  {#if indeterminate}
+    <progress class={cx('progress', t)} style:block-size={height} aria-label={label || 'Loading'}></progress>
+  {:else}
+    <progress
+      class={cx('progress', t)}
+      style:block-size={height}
+      value={value}
+      max={max}
+      aria-label={label || 'Progress'}
+    >{Math.round(pct)}%</progress>
+  {/if}
+</div>

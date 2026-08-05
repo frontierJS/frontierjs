@@ -1,0 +1,123 @@
+<script>
+  // Popover.mesa
+  // Click-triggered content panel, positioned from the trigger's bounding rect
+  // and portaled to <body> so it escapes overflow:hidden scroll containers.
+  //
+  // `.popover` is a surface, so background, border, radius, shadow and the
+  // tone recipe come from @frontierjs/css. Positioning is explicitly the
+  // consumer's job in that package — which is what this component is for.
+  //
+  // Usage:
+  //   <Popover>
+  //     {#snippet trigger()}
+  //       <Button>More options</Button>
+  //     {/snippet}
+  //     {#snippet content()}
+  //       <p class="text-sm">Popover body</p>
+  //     {/snippet}
+  //   </Popover>
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let placement = 'bottom-start'  // 'bottom-start'|'bottom-end'|'top-start'|'top-end'
+  export let offset    = 8               // gap between trigger and panel, px
+  export let tone      = ''
+  export let label     = ''              // accessible name for the panel
+  export let trigger   = null            // snippet
+  export let content   = null            // snippet
+
+  let open = false
+  let x    = 0
+  let y    = 0
+  let triggerEl
+  let panelEl
+
+  const t = toTone(tone)
+
+  const panelAnim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'scale(0.96) translateY(-4px)' },
+       { opacity: 1, transform: 'scale(1) translateY(0)' }],
+      { duration: 140, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.96)' }],
+      { duration: 100, fill: 'forwards' }
+    ).finished,
+  })
+
+  function openPopover() {
+    if (open) { closePopover(); return }
+    open = true
+    // Position after mesa renders the panel into the portal
+    requestAnimationFrame(position)
+    document.addEventListener('click', onClickAway, { capture: true })
+  }
+
+  function position() {
+    if (!triggerEl || !panelEl) return
+    const tr   = triggerEl.getBoundingClientRect()
+    const pr   = panelEl.getBoundingClientRect()
+    const winW = window.innerWidth
+    const winH = window.innerHeight
+
+    // Vertical
+    const goAbove = tr.bottom + pr.height + offset > winH
+    y = goAbove ? tr.top - pr.height - offset : tr.bottom + offset
+
+    // Horizontal — start vs end anchoring + overflow guard
+    if (placement.endsWith('end')) {
+      x = tr.right - pr.width
+      if (x < 8) x = 8
+    } else {
+      x = tr.left
+      if (x + pr.width > winW - 8) x = winW - pr.width - 8
+    }
+  }
+
+  function closePopover() {
+    open = false
+    document.removeEventListener('click', onClickAway, { capture: true })
+    // Return focus to the trigger — otherwise a keyboard user is dropped at
+    // the top of the document when the panel unmounts.
+    triggerEl?.querySelector('button, a, [tabindex]')?.focus()
+  }
+
+  function onClickAway(e) {
+    if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
+    closePopover()
+  }
+
+  $onDestroy(() => {
+    document.removeEventListener('click', onClickAway, { capture: true })
+  })
+</script>
+
+<mesa:window on:keydown={(e) => { if (e.key === 'Escape' && open) closePopover() }} />
+
+<!-- Trigger wrapper -->
+<span
+  bind:this={triggerEl}
+  style:display="inline-block"
+  {class}
+  on:click|stopPropagation={openPopover}
+>
+  {@render trigger?.()}
+</span>
+
+{#if open}
+  <mesa:portal to={document.body}>
+    <div
+      bind:this={panelEl}
+      class={cx('popover', t)}
+      role="dialog"
+      aria-label={label || null}
+      style:position="fixed"
+      style:left="{x}px"
+      style:top="{y}px"
+      {@attach panelAnim}
+    >
+      {@render content?.()}
+    </div>
+  </mesa:portal>
+{/if}

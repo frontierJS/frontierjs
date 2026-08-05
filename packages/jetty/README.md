@@ -2,7 +2,8 @@
 
 Browser extension framework for FrontierJS. MV3-first, Mesa-rendered, Junction-connected.
 
-> **Status:** Phases 0–7 complete. Foundational architecture, port protocol,
+> **Status:** Phases 0–8 complete — 423 tests green across 10 suites
+> (`bun run test`, plain `node`; verified 2026-08-02). Foundational architecture, port protocol,
 > Junction adapter, channels, Resources, Islands, dev tooling, Firefox
 > parity, and permission audit + CLI all shipped and tested. v1 feature-complete.
 > See `docs/future-refactors.md` for planned post-launch work.

@@ -164,3 +164,29 @@ await db.user.findUnique({ where: { id: 1 }, withDeleted: true }) // → the row
 ## @sequence gaps on rollback
 
 `@sequence` fields use `_litestone_sequences` to track per-scope counters. The counter increments when the row is created. If the transaction rolls back, the counter does not roll back — the sequence will have a gap. This is standard behavior for sequences (same as PostgreSQL sequences) and is intentional. Sequence values are monotonically increasing but not guaranteed to be gap-free.
+
+---
+
+## @encrypted on a Json field silently destroys the value
+
+**Open bug — route around it.** A `Json @encrypted` column round-trips as the string `"[object Object]"`. The object is stringified with `String(obj)` instead of `JSON.stringify` before it reaches the cipher, so the payload is gone before encryption happens.
+
+Everything around it works, which is what makes it dangerous: the column really is encrypted at rest, `@guarded(all)` read-withholding is enforced, the write returns normally, nothing throws and nothing warns. Only the value is missing, and only on read-back.
+
+Declare the column `String @encrypted` and serialize at the service layer instead:
+
+```prisma
+model Secret {
+  data  String @encrypted   // not Json — parse/stringify in the service
+}
+```
+
+---
+
+## Audit log reads lag writes within a session
+
+The logger driver buffers and flushes on a **~1s timer and on process exit**. Immediately after a write, `auditLogs.findMany()` returns 0 rows and the `.jsonl` file may not exist yet — the next process sees everything. Measured on a fresh database: 1 write → 0 rows, no file; +2s → 1 row; +50 more writes in the same process → still 1 row; next process → 51 rows.
+
+**Nothing is lost.** This is visibility lag, not data loss, and it is why reading the trail immediately after writing (as several examples do) reports an empty log.
+
+Related: the logger `path` resolves against the **process CWD, not the schema file**, so where the trail lands depends on where you launch from.

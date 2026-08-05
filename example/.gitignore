@@ -1,0 +1,8 @@
+node_modules/
+web/dist/
+
+# The database is built by `bun run api` from db/schema.lite — never committed.
+db/*.db
+db/*.db-shm
+db/*.db-wal
+db/audit/

@@ -961,7 +961,7 @@
   padding: 8px 4px;
 }
 .sg-tonal-raw {
-  background: var(--bg-mix) !important;
+  background: var(--sg-ramp) !important;
   color: white !important;
 }
 
@@ -1478,15 +1478,18 @@
   margin-left: auto;
 }
 
-/* Generic text-size utilities (in real apps, Uno provides these) */
-.text-xs   { font-size: 12px; }
-.text-sm   { font-size: 13px; }
-.text-base { font-size: 14px; }
-.text-lg   { font-size: 16px; }
-.text-xl   { font-size: 18px; }
-.text-2xl  { font-size: 22px; }
-.text-3xl  { font-size: 28px; }
-.text-4xl  { font-size: 36px; }
+/*
+ * The .text-* size utilities used to be redefined here, "because in real apps
+ * Uno provides these". That was true in the UnoCSS era and became a liar in
+ * v0.10, when the package started shipping the scale itself: these rules are
+ * unlayered, the package's are in @layer utilities, and unlayered wins — so
+ * every `.text-sm` on every page of this guide was rendering the guide's own
+ * 13px rather than the package's, and the Typography page was demonstrating
+ * its own chrome while claiming to demonstrate the system.
+ *
+ * They are gone. The guide now uses the real utilities, which is the same
+ * rule the stylesheet itself follows: link the source, never copy it.
+ */
 .gap-2   { gap: 8px; }
 .gap-8   { gap: 32px; }
 .h-36    { height: 144px; }

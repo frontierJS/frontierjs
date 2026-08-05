@@ -1,0 +1,225 @@
+---
+title: New order
+---
+<script>
+  // The whole form is derived. Look for a field list, a type, an enum value, a
+  // required flag or the name of the customers resource in this file — none of
+  // them are here, because all of them are in db/schema.lite.
+  import { orders } from '../../resources/shop.mesa'
+  import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { goto } from '@frontierjs/sierra/router'
+  import { session } from '../../session.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Checkbox      from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+
+  const fields = orders.fields
+
+  // Which fields to render, in schema order, minus the foreign key — that one
+  // gets a picker instead of a number spinner.
+  const fk    = fields.customerId.references     // { model:'Customer', field:'id', relation:'customer' }
+  const plain = Object.entries(fields).filter(([name]) => name !== 'customerId')
+
+  // The picker's options come from the RELATION, not from a name written here:
+  // orders.relations.customer.model is 'Customer', and the registry resolves it.
+  const related = createResource(
+    orders.relations.customer.model.toLowerCase() + 's',
+    { model: orders.relations.customer.model },
+  )
+
+  let draft   = orders.make()
+  let options = []
+  let errors  = []      // whole-record result of the last validate()
+  let shown   = []      // fields whose error is allowed on screen
+  let typed   = []      // fields the user has actually put a keystroke into
+  let saving  = false
+  let failed  = null
+
+  $: session.level
+
+  related.service.getOptions({}, { limit: 100, orderBy: 'name' })
+    .then(res => { options = res.data ?? [] })
+    .catch(() => { options = [] })
+
+  // ── Live validation ──────────────────────────────────────────────────────
+  //
+  // One rule: ON INPUT AN ERROR MAY ONLY BE REMOVED, NEVER ADDED.
+  //
+  // The obvious wiring — on:input runs validate() — misbehaves, because
+  // validate() judges the whole record: the first keystroke in `reference`
+  // lights up "status is required" and "customer is required" on fields you
+  // have not reached. Errors are therefore *revealed* by leaving a field or by
+  // submitting, and input only ever re-checks a field that is already showing
+  // one. So a bad value goes red when you leave it and goes quiet again on the
+  // keystroke that fixes it, which is the whole point.
+  //
+  // Validate the COERCED draft, never the raw one: every control hands back a
+  // string, so checking `draft` reports "total must be a number" for "42".
+
+  const check = () => { errors = orders.validate(orders.coerce(draft), 'create') }
+
+  // The kit's controls take a value and hand back an event; they are not bound
+  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
+  // let and a member expression is not one. Replacing the object rather than
+  // mutating it is also what makes the change reactive.
+  function write(name, value) {
+    draft = { ...draft, [name]: value }
+  }
+
+  function onInput(name) {
+    if (!typed.includes(name)) typed = [...typed, name]
+    if (shown.includes(name)) check()          // may clear; cannot reveal
+  }
+
+  // `on:blur` is safe here, though it looks like it should not be: Mesa
+  // delegates events to one root listener and blur does not bubble. It keeps a
+  // NON_DELEGATED_EVENTS set — focus, blur, scroll, resize — and binds those
+  // straight to the element instead, so the handler fires. `on:focusout` works
+  // too, by bubbling; blur is the more direct statement of "this field".
+  function onLeave(name) {
+    if (!typed.includes(name) || shown.includes(name)) return
+    shown = [...shown, name]                   // tabbing through an untouched
+    check()                                    // field stays quiet — submit
+  }                                            // is what reveals those
+
+  // A derived value, not a `problem(name)` helper. Mesa decides what an
+  // expression depends on from the expression's TEXT, so reads hidden inside a
+  // function body are invisible to it and the hint never updates — the same
+  // trap as isActive() in Sierra's example. Naming `errors` and `shown` here
+  // is what makes the whole thing reactive.
+  $: visible = Object.fromEntries(
+    errors.filter(e => shown.includes(e.field)).map(e => [e.field, e.message])
+  )
+
+  async function save() {
+    failed = null
+    // Validate what will actually be SENT, not what the DOM holds: every input
+    // gives back a string and coerce() casts using the schema's types. Checking
+    // the raw draft would report "total must be a number" for a perfectly good
+    // "42".
+    const payload = orders.coerce(draft)
+    errors = orders.validate(payload, 'create')
+    shown  = Object.keys(fields)      // submitting reveals everything
+    if (errors.length) return
+
+    saving = true
+    try {
+      await orders.service.create(payload)
+      goto('/orders/')
+    } catch (e) {
+      // A ResourceValidationError never left the browser. Anything else is the
+      // server's answer — including the 401 from @@gate when signed out.
+      errors = e instanceof ResourceValidationError ? e.errors : []
+      failed = e.message
+    } finally {
+      saving = false
+    }
+  }
+</script>
+
+<SectionHeader title="New order" level={1}>
+  {#snippet action()}
+    <Button variant="ghost" href="/orders/">Back to list</Button>
+  {/snippet}
+</SectionHeader>
+
+{#if session.level < orders.gate.create}
+  <Alert tone="warning">
+    Not signed in at level {orders.gate.create}. <code>@@gate</code> wants that
+    to create, so this will come back 401 — which is the point: the button is
+    NOT disabled, because the server is the thing that decides.
+  </Alert>
+{/if}
+
+<!--
+  The <form> keeps the `card` and `stack` classes: the kit's Card is an
+  <article>, and the element that owns a submit is the form itself.
+  Every control below is a kit component, and none of them is named after a
+  field — the loop is still driven by db/schema.lite.
+-->
+<!--
+  `novalidate` is load-bearing. The kit's controls put a real `required` on the
+  input, so the browser's own constraint validation refuses to fire a submit at
+  all while a required field is empty — silently, in a headless browser, and
+  with "Please fill out this field" in a real one. The message this app shows is
+  the one authored in db/schema.lite; the app owns validation, so it turns the
+  native gate off and keeps the attribute for what it is worth to a screen
+  reader and to `:user-invalid`.
+-->
+<form class="card stack" style="max-width: 32rem" novalidate on:submit|preventDefault={save}>
+  {#each plain as [name, rule]}
+    {#if rule.enum}
+      <!-- Options come from fields.status.enum, which exists only because
+           {"$ref":"#/$defs/OrderStatus"} is resolved against the registry. -->
+      <Select
+        id={'f-' + name}
+        label={name}
+        required={rule.required}
+        placeholder="—"
+        options={rule.enum}
+        value={draft[name]}
+        error={visible[name] ?? ''}
+        hint={rule.type + ' · enum' + (rule.nullable ? ' · nullable' : '')}
+        oninput={(e) => { write(name, e.target.value); onInput(name) }}
+        onblur={() => onLeave(name)}
+      />
+    {:else if rule.type === 'boolean'}
+      <Checkbox
+        id={'f-' + name}
+        label={name}
+        checked={draft[name]}
+        error={visible[name] ?? ''}
+        onchange={(e) => { write(name, e.target.checked); onInput(name); onLeave(name) }}
+      />
+    {:else}
+      <Input
+        id={'f-' + name}
+        label={name}
+        required={rule.required}
+        type={rule.type === 'number' || rule.type === 'integer' ? 'number'
+            : rule.format === 'email' ? 'email' : 'text'}
+        step={rule.type === 'number' || rule.type === 'integer' ? 'any' : undefined}
+        min={rule.minimum}
+        max={rule.maximum}
+        maxlength={rule.maxLength}
+        value={draft[name]}
+        error={visible[name] ?? ''}
+        hint={rule.type + (rule.nullable ? ' · nullable' : '')}
+        oninput={(e) => { write(name, e.target.value); onInput(name) }}
+        onblur={() => onLeave(name)}
+      />
+    {/if}
+  {/each}
+
+  <Select
+    id="f-customerId"
+    label={fk.relation}
+    required={true}
+    placeholder="—"
+    options={options.map(o => ({ value: o.id, label: o.name }))}
+    value={draft.customerId}
+    error={visible.customerId ?? ''}
+    hint={'→ ' + fk.model + '.' + fk.field}
+    oninput={(e) => { write('customerId', e.target.value); onInput('customerId') }}
+    onblur={() => onLeave('customerId')}
+  />
+
+  <div class="cluster">
+    <Button type="submit" loading={saving} disabled={saving}>
+      {saving ? 'Saving…' : 'Create order'}
+    </Button>
+    <Button variant="ghost" href="/orders/">Cancel</Button>
+  </div>
+</form>
+
+{#if failed}
+  <Alert tone="danger">{failed}</Alert>
+{/if}
+
+<p class="text-sm text-muted">
+  <code>reference</code> is <code>@upper</code> in the schema, so type it in lower case and watch what gets stored. Leave <code>note</code> empty and it saves as NULL rather than <code>''</code> — that is <code>blankToNull</code>.
+</p>

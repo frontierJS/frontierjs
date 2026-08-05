@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "test": "bun test",
-    "typecheck": "node ../../scripts/typecheck.mjs --baseline 1"
+    "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "engines": {
     "bun": ">=1.0.0"

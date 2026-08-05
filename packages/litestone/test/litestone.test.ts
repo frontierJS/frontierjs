@@ -58,7 +58,7 @@ describe('parser', () => {
 
   test('parses basic model', () => {
     const r = parse(`
-      model users {
+      model User {
         id    Int  @id
         email String     @unique
         name  String?
@@ -66,14 +66,14 @@ describe('parser', () => {
     `)
     expect(r.valid).toBe(true)
     expect(r.schema.models).toHaveLength(1)
-    expect(r.schema.models[0].name).toBe('users')
+    expect(r.schema.models[0].name).toBe('User')
     expect(r.schema.models[0].fields).toHaveLength(3)
   })
 
   test('parses enums', () => {
     const r = parse(`
       enum Plan { starter  pro  enterprise }
-      model accounts { id Int @id
+      model Account { id Int @id
         plan Plan @default(starter) }
     `)
     expect(r.valid).toBe(true)
@@ -86,7 +86,7 @@ describe('parser', () => {
       function slug(text: String): String {
         @@expr("lower(replace({text}, ' ', '-'))")
       }
-      model posts { id Int @id
+      model Post { id Int @id
         title String
         slug String @slug(title) }
     `)
@@ -98,7 +98,7 @@ describe('parser', () => {
 
   test('parses @generated with {field} syntax', () => {
     const r = parse(`
-      model orders {
+      model Order {
         id    Int @id
         price Int
         tax   Float    @default(0.08)
@@ -114,23 +114,23 @@ describe('parser', () => {
 
   test('validates unknown @relation references', () => {
     const r = parse(`
-      model users {
+      model User {
         id        Int  @id
-        account   accounts @relation(fields: [accountId], references: [id])
+        account   Account @relation(fields: [accountId], references: [id])
         accountId Int
       }
     `)
     expect(r.valid).toBe(false)
-    expect(r.errors.some((e: string) => e.includes('accounts'))).toBe(true)
+    expect(r.errors.some((e: string) => e.includes('Account'))).toBe(true)
   })
 
   test('forward-ref @relation (FK after relation field) is valid', () => {
     const r = parse(`
-      model accounts { id Int @id
+      model Account { id Int @id
         name String }
-      model users {
+      model User {
         id        Int  @id
-        account   accounts @relation(fields: [accountId], references: [id])
+        account   Account @relation(fields: [accountId], references: [id])
         accountId Int
       }
     `)
@@ -139,7 +139,7 @@ describe('parser', () => {
 
   test('validates @funcCall unknown function', () => {
     const r = parse(`
-      model t { id Int @id
+      model T { id Int @id
         val Int
         r Int @missingFn(val) }
     `)
@@ -149,7 +149,7 @@ describe('parser', () => {
   test('validates @funcCall arg count', () => {
     const r = parse(`
       function dbl(x: Int): Int { @@expr("{x} * 2") }
-      model t { id Int @id
+      model T { id Int @id
         val Int
         r Int @dbl(val, extra) }
     `)
@@ -163,7 +163,7 @@ describe('parser', () => {
     writeFileSync(join(dir, 'schema.lite'),   [
       'import "./enums.lite"',
       'import "./functions.lite"',
-      'model users { id Int @id\nrole Role @default(member)\nname String\nslug String @slug(name) }',
+      'model User { id Int @id\nrole Role @default(member)\nname String\nslug String @slug(name) }',
     ].join('\n'))
 
     const r = parseFile(join(dir, 'schema.lite'))
@@ -199,9 +199,9 @@ describe('parser', () => {
   // either tolerate them or fail with an actionable error.
 
   test('strips leading UTF-8 BOM', () => {
-    const r = parse('\uFEFFmodel users { id Int @id }')
+    const r = parse('\uFEFFmodel User { id Int @id }')
     expect(r.valid).toBe(true)
-    expect(r.schema.models[0].name).toBe('users')
+    expect(r.schema.models[0].name).toBe('User')
   })
 
   test('treats non-breaking space as whitespace', () => {
@@ -213,7 +213,7 @@ describe('parser', () => {
   })
 
   test('ignores zero-width characters', () => {
-    const src = `model users { id\u200B Int @id }`
+    const src = `model User { id\u200B Int @id }`
     const r = parse(src)
     expect(r.valid).toBe(true)
     expect(r.schema.models[0].fields[0].name).toBe('id')
@@ -222,7 +222,7 @@ describe('parser', () => {
   test('smart quote produces actionable error with codepoint + hint', () => {
     // U+201C is the left smart double-quote — common when pasting from docs
     let err: any = null
-    try { parse(`model users { id String @default(\u201Chi\u201D) }`) }
+    try { parse(`model User { id String @default(\u201Chi\u201D) }`) }
     catch (e) { err = e }
     expect(err).not.toBeNull()
     expect(err.message).toContain('U+201C')
@@ -233,7 +233,7 @@ describe('parser', () => {
     // Direct check that pickCharHint surfaces a useful message when something
     // genuinely unparseable shows up — uses an em-dash, which we don't accept.
     let err: any = null
-    try { parse(`model users { id \u2014 Int @id }`) }
+    try { parse(`model User { id \u2014 Int @id }`) }
     catch (e) { err = e }
     expect(err).not.toBeNull()
     expect(err.message).toContain('U+2014')
@@ -271,7 +271,7 @@ describe('parser', () => {
     // message is what makes it findable. Drop a smart quote in and check.
     const dir = tmpDir('parse-error-path')
     const path = join(dir, 'broken.lite')
-    writeFileSync(path, `model users { id String @default(\u201Cx\u201D) }`)
+    writeFileSync(path, `model User { id String @default(\u201Cx\u201D) }`)
     let err: any = null
     try { parseFile(path) } catch (e) { err = e }
     expect(err).not.toBeNull()
@@ -286,13 +286,13 @@ describe('parser', () => {
 describe('DDL', () => {
 
   test('STRICT by default', () => {
-    const r = parse(`model t { id Int @id }`)
+    const r = parse(`model T { id Int @id }`)
     expect(isStrict(r.schema.models[0])).toBe(true)
     expect(generateDDL(r.schema)).toContain('STRICT')
   })
 
   test('@@noStrict opts out', () => {
-    const r = parse(`model t { id Int @id
+    const r = parse(`model T { id Int @id
         @@noStrict }`)
     expect(isStrict(r.schema.models[0])).toBe(false)
     expect(generateDDL(r.schema)).not.toContain('STRICT')
@@ -300,11 +300,11 @@ describe('DDL', () => {
 
   test('soft delete detection', () => {
     const r = parse(`
-      model soft { id Int @id
+      model Soft { id Int @id
         deletedAt DateTime?
         @@softDelete }
-      model hard { id Int @id }
-      model cascade { id Int @id
+      model Hard { id Int @id }
+      model Cascade { id Int @id
         deletedAt DateTime?
         @@softDelete(cascade) }
     `)
@@ -319,7 +319,7 @@ describe('DDL', () => {
 
   test('partial indexes on soft-delete tables', () => {
     const r = parse(`
-      model users { id Int @id
+      model User { id Int @id
         email String
         deletedAt DateTime?
         @@softDelete
@@ -327,12 +327,12 @@ describe('DDL', () => {
     `)
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain('WHERE "deletedAt" IS NULL')
-    expect(ddl).toContain('idx_users_deletedAt')
+    expect(ddl).toContain('idx_user_deletedAt')
   })
 
   test('no partial indexes on hard-delete tables', () => {
     const r = parse(`
-      model logs { id Int @id
+      model Log { id Int @id
         action String
         @@index([action]) }
     `)
@@ -343,7 +343,7 @@ describe('DDL', () => {
   test('enum generates CHECK constraint', () => {
     const r = parse(`
       enum Plan { starter  pro  enterprise }
-      model t { id Int @id
+      model T { id Int @id
         plan Plan @default(starter) }
     `)
     const ddl = generateDDL(r.schema)
@@ -352,22 +352,22 @@ describe('DDL', () => {
 
   test('FTS5 virtual table + triggers', () => {
     const r = parse(`
-      model messages { id Int @id
+      model Message { id Int @id
         body String
         title String?
         @@fts([body, title]) }
     `)
     const ddl = generateDDL(r.schema)
-    expect(ddl).toContain('messages_fts')
-    expect(ddl).toContain('messages_fts_insert')
-    expect(ddl).toContain('messages_fts_delete')
-    expect(ddl).toContain('messages_fts_update')
+    expect(ddl).toContain('message_fts')
+    expect(ddl).toContain('message_fts_insert')
+    expect(ddl).toContain('message_fts_delete')
+    expect(ddl).toContain('message_fts_update')
     expect(ddl).toContain('fts5')
   })
 
   test('@generated VIRTUAL (default)', () => {
     const r = parse(`
-      model t { id Int @id
+      model T { id Int @id
         a Int
         b Float @generated("{a} * 2") }
     `)
@@ -377,7 +377,7 @@ describe('DDL', () => {
 
   test('@generated STORED', () => {
     const r = parse(`
-      model t { id Int @id
+      model T { id Int @id
         a Int
         b Int @generated("{a} * 2", stored) }
     `)
@@ -388,7 +388,7 @@ describe('DDL', () => {
 
   test('@generated — self-reference is an error', () => {
     const r = parse(`
-      model t {
+      model T {
         id  Int @id
         a   Int
         val Int @generated("{val} * 2")
@@ -399,7 +399,7 @@ describe('DDL', () => {
 
   test('@generated — circular reference is an error', () => {
     const r = parse(`
-      model t {
+      model T {
         id Int @id
         a  Int @generated("{b} + 1")
         b  Int @generated("{a} + 1")
@@ -410,7 +410,7 @@ describe('DDL', () => {
 
   test('@generated — unknown field reference is an error', () => {
     const r = parse(`
-      model t {
+      model T {
         id  Int @id
         a   Int
         val Int @generated("{ghost} * 2")
@@ -421,7 +421,7 @@ describe('DDL', () => {
 
   test('@generated — forward chain is valid (SQLite handles it)', () => {
     const r = parse(`
-      model t {
+      model T {
         id Int @id
         c  Int @generated("{b} + 1")
         b  Int @generated("{a} + 1")
@@ -433,7 +433,7 @@ describe('DDL', () => {
 
   test('@generated — backward chain is valid', () => {
     const r = parse(`
-      model t {
+      model T {
         id Int @id
         a  Int
         b  Int @generated("{a} + 1")
@@ -445,7 +445,7 @@ describe('DDL', () => {
 
   test('@generated — multi-field expr is valid', () => {
     const r = parse(`
-      model orders {
+      model Order {
         id    Int @id
         price Int
         tax   Float    @default(0.08)
@@ -458,7 +458,7 @@ describe('DDL', () => {
   test('function @funcCall expands to GENERATED ALWAYS AS STORED', () => {
     const r = parse(`
       function slug(text: String): String { @@expr("lower({text})") }
-      model posts { id Int @id
+      model Post { id Int @id
         title String
         slug String @slug(title) }
     `)
@@ -468,10 +468,10 @@ describe('DDL', () => {
 
   test('DDL executes in bun:sqlite', () => {
     const r = parse(`
-      model accounts { id Int @id
+      model Account { id Int @id
         name String
         plan String @default("starter") }
-      model users { id Int @id
+      model User { id Int @id
         accountId Int
         email String @unique
         deletedAt DateTime?
@@ -669,7 +669,7 @@ describe('query helpers', () => {
 describe('@updatedAt parser attribute', () => {
   test('@updatedAt is a recognised field attribute', () => {
     const result = parse(`
-      model posts {
+      model Post {
         id        Int  @id
         title     String
         updatedAt DateTime @default(now()) @updatedAt
@@ -683,7 +683,7 @@ describe('@updatedAt parser attribute', () => {
 
   test('@updatedAt alongside other attributes does not conflict', () => {
     const result = parse(`
-      model items {
+      model Item {
         id        Int  @id
         name      String     @trim @lower
         updatedAt DateTime @default(now()) @updatedAt
@@ -699,19 +699,19 @@ describe('@updatedAt parser attribute', () => {
     // The @updatedAt attribute is documentary — the trigger is generated by DDL
     // based on field name, not the attribute. Verify the trigger works.
     const db = await makeDb(`
-      model entries {
+      model Entry {
         id        Int  @id
         body      String
         updatedAt DateTime @default(now()) @updatedAt
       }
     `, 'updatedat-trigger')
-    const entry = await db.entries.create({ data: { id: 1, body: 'original' } })
+    const entry = await db.entry.create({ data: { id: 1, body: 'original' } })
     const before = entry.updatedAt
 
     // Small delay so timestamp can change
     await new Promise(r => setTimeout(r, 10))
-    await db.entries.update({ where: { id: 1 }, data: { body: 'changed' } })
-    const after = await db.entries.findUnique({ where: { id: 1 } })
+    await db.entry.update({ where: { id: 1 }, data: { body: 'changed' } })
+    const after = await db.entry.findUnique({ where: { id: 1 } })
 
     expect(after.updatedAt).not.toBe(before)
     db.$close()
@@ -723,7 +723,7 @@ describe('@updatedAt parser attribute', () => {
 
 describe('@date field attribute', () => {
   const schema = `
-    model events {
+    model Event {
       id        Int @id
       name      String
       startsOn  String    @date
@@ -741,7 +741,7 @@ describe('@date field attribute', () => {
 
   test('@date accepts a valid YYYY-MM-DD string', async () => {
     const db = await makeDb(schema, 'date-valid')
-    const event = await db.events.create({ data: { id: 1, name: 'Launch', startsOn: '2026-04-06' } })
+    const event = await db.event.create({ data: { id: 1, name: 'Launch', startsOn: '2026-04-06' } })
     expect(event.startsOn).toBe('2026-04-06')
     db.$close()
   })
@@ -749,7 +749,7 @@ describe('@date field attribute', () => {
   test('@date rejects an invalid format', async () => {
     const db = await makeDb(schema, 'date-invalid')
     await expect(
-      db.events.create({ data: { id: 1, name: 'Bad', startsOn: '06/04/2026' } })
+      db.event.create({ data: { id: 1, name: 'Bad', startsOn: '06/04/2026' } })
     ).rejects.toThrow('YYYY-MM-DD')
     db.$close()
   })
@@ -757,39 +757,39 @@ describe('@date field attribute', () => {
   test('@date rejects a full datetime string', async () => {
     const db = await makeDb(schema, 'date-reject-datetime')
     await expect(
-      db.events.create({ data: { id: 1, name: 'Bad', startsOn: '2026-04-06T09:00:00.000Z' } })
+      db.event.create({ data: { id: 1, name: 'Bad', startsOn: '2026-04-06T09:00:00.000Z' } })
     ).rejects.toThrow('YYYY-MM-DD')
     db.$close()
   })
 
   test('@date allows null on optional field', async () => {
     const db = await makeDb(schema, 'date-null')
-    const event = await db.events.create({ data: { id: 1, name: 'TBD', startsOn: '2026-04-06', endsOn: null } })
+    const event = await db.event.create({ data: { id: 1, name: 'TBD', startsOn: '2026-04-06', endsOn: null } })
     expect(event.endsOn).toBeNull()
     db.$close()
   })
 
   test('@date fields sort correctly as strings', async () => {
     const db = await makeDb(schema, 'date-sort')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, name: 'C', startsOn: '2026-06-01' },
       { id: 2, name: 'A', startsOn: '2026-01-15' },
       { id: 3, name: 'B', startsOn: '2026-03-20' },
     ]})
-    const rows = await db.events.findMany({ orderBy: { startsOn: 'asc' } })
+    const rows = await db.event.findMany({ orderBy: { startsOn: 'asc' } })
     expect(rows.map((r: any) => r.name)).toEqual(['A', 'B', 'C'])
     db.$close()
   })
 
   test('@date range queries work correctly', async () => {
     const db = await makeDb(schema, 'date-range')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, name: 'Past',    startsOn: '2025-12-01' },
       { id: 2, name: 'Q1',     startsOn: '2026-01-15' },
       { id: 3, name: 'Q2',     startsOn: '2026-04-06' },
       { id: 4, name: 'Future', startsOn: '2026-09-01' },
     ]})
-    const q2 = await db.events.findMany({
+    const q2 = await db.event.findMany({
       where: { startsOn: { gte: '2026-04-01', lt: '2026-07-01' } }
     })
     expect(q2).toHaveLength(1)
@@ -801,7 +801,7 @@ describe('@date field attribute', () => {
     const { generateJsonSchema } = await import('../src/jsonschema.js')
     const result = parse(schema)
     const jschema = generateJsonSchema(result.schema)
-    const props = jschema['$defs'].events.properties
+    const props = jschema['$defs'].Event.properties
     expect(props.startsOn.format).toBe('date')
   })
 
@@ -809,7 +809,7 @@ describe('@date field attribute', () => {
     const { generateJsonSchema } = await import('../src/jsonschema.js')
     const result = parse(schema)
     const jschema = generateJsonSchema(result.schema)
-    const endsOn = jschema['$defs'].events.properties.endsOn
+    const endsOn = jschema['$defs'].Event.properties.endsOn
     // nullable: anyOf with date string and null
     expect(endsOn.anyOf ?? [endsOn]).toSatisfy((arr: any) =>
       JSON.stringify(arr).includes('date')
@@ -818,20 +818,20 @@ describe('@date field attribute', () => {
 
   test('@date custom error message', async () => {
     const result = parse(`
-      model items {
+      model Item {
         id   Int @id
         due  String    @date("Due date must be YYYY-MM-DD")
       }
     `)
     expect(result.valid).toBe(true)
     const db = await makeDb(`
-      model items {
+      model Item {
         id   Int @id
         due  String    @date("Due date must be YYYY-MM-DD")
       }
     `, 'date-custom-msg')
     await expect(
-      db.items.create({ data: { id: 1, due: 'not-a-date' } })
+      db.item.create({ data: { id: 1, due: 'not-a-date' } })
     ).rejects.toThrow('Due date must be YYYY-MM-DD')
     db.$close()
   })
@@ -956,18 +956,20 @@ describe('@sequence per-scope auto-increment', () => {
 
 // ─── Factory + testing helpers ────────────────────────────────────────────────
 
-import { makeTestClient, Factory, truncate, reset } from '../src/testing.js'
+import { makeTestClient, Factory, truncate, reset, snapshot, restore } from '../src/testing.js'
+import { defineFactory, loadFixture, parseCsv } from '../src/seeder.js'
+import { fakeFor, fakeEmail } from '../src/fake.js'
 import { generateJsonSchema } from '../src/jsonschema.js'
 
 // ── Shared factories ──────────────────────────────────────────────────────────
 
 const FACTORY_SCHEMA = `
-  model accounts {
+  model Account {
     id   Int @id
     name String
     plan String    @default("starter")
   }
-  model users {
+  model User {
     id        Int @id
     accountId Int
     email     String
@@ -975,7 +977,7 @@ const FACTORY_SCHEMA = `
     deletedAt DateTime?
     @@softDelete
   }
-  model posts {
+  model Post {
     id        Int @id
     userId    Int
     title     String
@@ -986,7 +988,7 @@ const FACTORY_SCHEMA = `
 `
 
 class AccountFactory extends Factory {
-  model = 'accounts'
+  model = 'Account'
   traits = {
     pro:        { plan: 'pro' },
     enterprise: { plan: 'enterprise' },
@@ -997,7 +999,7 @@ class AccountFactory extends Factory {
 }
 
 class UserFactory extends Factory {
-  model = 'users'
+  model = 'User'
   traits = {
     admin:   { role: 'admin' },
     member:  { role: 'member' },
@@ -1009,7 +1011,7 @@ class UserFactory extends Factory {
 }
 
 class PostFactory extends Factory {
-  model = 'posts'
+  model = 'Post'
   traits = {
     published: { status: 'published' },
     draft:     { status: 'draft' },
@@ -1024,7 +1026,7 @@ class PostFactory extends Factory {
 
 describe('@markdown', () => {
   const MD_SCHEMA = `
-    model posts {
+    model Post {
       id   Int @id
       body String    @markdown
       note String?   @markdown
@@ -1052,14 +1054,14 @@ describe('@markdown', () => {
   test('JSON Schema emits contentMediaType: text/markdown', () => {
     const { schema } = parse(MD_SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    const posts = js['$defs']?.posts ?? js.posts
+    const posts = js['$defs']?.Post ?? js.Post
     expect(posts.properties.body.contentMediaType).toBe('text/markdown')
   })
 
   test('optional markdown field also gets contentMediaType', () => {
     const { schema } = parse(MD_SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    const posts = js['$defs']?.posts ?? js.posts
+    const posts = js['$defs']?.Post ?? js.Post
     // Optional field is wrapped in anyOf — contentMediaType on the string branch
     const noteSchema = posts.properties.note
     const branch = noteSchema?.anyOf?.[0] ?? noteSchema
@@ -1069,13 +1071,13 @@ describe('@markdown', () => {
   test('plain text field has no contentMediaType', () => {
     const { schema } = parse(MD_SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    const posts = js['$defs']?.posts ?? js.posts
+    const posts = js['$defs']?.Post ?? js.Post
     expect(posts.properties.name.contentMediaType).toBeUndefined()
   })
 
   test('field stores and retrieves String value normally', async () => {
     const { db } = await makeTestClient(MD_SCHEMA)
-    const row = await db.posts.create({ data: { id: 1, body: '# Hello\n**world**', name: 'test' } })
+    const row = await db.post.create({ data: { id: 1, body: '# Hello\n**world**', name: 'test' } })
     expect(row.body).toBe('# Hello\n**world**')
     db.$close()
   })
@@ -1089,7 +1091,7 @@ import { fileUrls } from '../src/storage/index.js'
 describe('File type + @keepVersions parser', () => {
   test('File type is a recognized scalar type', () => {
     const result = parse(`
-      model users {
+      model User {
         id     Int @id
         avatar File?
       }
@@ -1103,7 +1105,7 @@ describe('File type + @keepVersions parser', () => {
 
   test('@keepVersions attribute sets the flag on File fields', () => {
     const result = parse(`
-      model users {
+      model User {
         id     Int @id
         resume File?   @keepVersions
       }
@@ -1118,7 +1120,7 @@ describe('File type + @keepVersions parser', () => {
   test('File type generates TEXT column in DDL', async () => {
     const { generateDDL } = await import('../src/core/ddl.js')
     const result = parse(`
-      model users {
+      model User {
         id     Int @id
         avatar File?
       }
@@ -1129,7 +1131,7 @@ describe('File type + @keepVersions parser', () => {
 
   test('multiple File fields on same model are all valid', () => {
     const result = parse(`
-      model users {
+      model User {
         id     Int @id
         avatar File?
         resume File?   @keepVersions
@@ -1145,7 +1147,7 @@ describe('File type + @keepVersions parser', () => {
 // ─── 33. FileStorage plugin ───────────────────────────────────────────────────
 
 const FILE_SCHEMA = `
-  model users {
+  model User {
     id     Int @id
     name   String
     avatar File?
@@ -1171,17 +1173,17 @@ function makeMockProvider() {
 
 describe('File[] — parser + DDL', () => {
   test('File[] parses without error', () => {
-    const r = parse(`model t { id Int @id; photos File[] }`)
+    const r = parse(`model T { id Int @id; photos File[] }`)
     expect(r.valid).toBe(true)
   })
 
   test('File[]? optional parses without error', () => {
-    const r = parse(`model t { id Int @id; photos File[]? }`)
+    const r = parse(`model T { id Int @id; photos File[]? }`)
     expect(r.valid).toBe(true)
   })
 
   test('File[] stored as TEXT column (JSON array)', async () => {
-    const { db } = await makeTestClient(`model t { id Int @id; photos File[] }`)
+    const { db } = await makeTestClient(`model T { id Int @id; photos File[] }`)
     const cols = db.$db.prepare("PRAGMA table_info('t')").all()
     const photosCol = cols.find((c: any) => c.name === 'photos')
     expect(photosCol?.type).toBe('TEXT')
@@ -1194,19 +1196,19 @@ describe('File[] — parser + DDL', () => {
 
 describe('@accept', () => {
   test('parses @accept("image/*") without error', () => {
-    const r = parse(`model t { id Int @id; avatar File? @accept("image/*") }`)
+    const r = parse(`model T { id Int @id; avatar File? @accept("image/*") }`)
     expect(r.valid).toBe(true)
   })
 
   test('@accept stored on field AST with types', () => {
-    const { schema } = parse(`model t { id Int @id; avatar File? @accept("image/*") }`)
+    const { schema } = parse(`model T { id Int @id; avatar File? @accept("image/*") }`)
     const f = schema.models[0].fields.find((f: any) => f.name === 'avatar')
     const attr = f.attributes.find((a: any) => a.kind === 'accept')
     expect(attr?.types).toBe('image/*')
   })
 
   test('@accept multi-type parses', () => {
-    const r = parse(`model t { id Int @id; f File? @accept("image/jpeg,image/png") }`)
+    const r = parse(`model T { id Int @id; f File? @accept("image/jpeg,image/png") }`)
     expect(r.valid).toBe(true)
     const { schema } = r
     const attr = schema.models[0].fields[1].attributes.find((a: any) => a.kind === 'accept')
@@ -1214,9 +1216,9 @@ describe('@accept', () => {
   })
 
   test('JSON Schema emits x-litestone-accept', () => {
-    const { schema } = parse(`model t { id Int @id; avatar File? @accept("image/*") }`)
+    const { schema } = parse(`model T { id Int @id; avatar File? @accept("image/*") }`)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    const t = js['$defs']?.t ?? js.t
+    const t = js['$defs']?.T ?? js.T
     expect(t.properties.avatar['x-litestone-accept'] ?? 
       t.properties.avatar?.anyOf?.[0]?.['x-litestone-accept']).toBe('image/*')
   })
@@ -1227,29 +1229,29 @@ describe('@accept', () => {
 const JEXT_SCHEMA = `
   enum Plan { starter pro enterprise }
 
-  model accounts {
+  model Account {
     id    Int @id
     name  String
     plan  Plan    @default(starter)
-    users users[]
+    users User[]
     @@gate("2.5.5.6")
   }
 
-  model users {
+  model User {
     id        Int  @id
-    account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+    account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
     accountId Int
     email     String     @email
-    posts     posts[]
+    posts     Post[]
     @@gate("2.4.4.6")
   }
 
-  model posts {
+  model Post {
     id     Int @id
-    author users   @relation(fields: [userId], references: [id])
+    author User   @relation(fields: [userId], references: [id])
     userId Int
     title  String
-    tags   posts[]
+    tags   Post[]
   }
 `
 
@@ -1260,7 +1262,7 @@ const JEXT_SCHEMA = `
 describe('bun:sqlite — WAL + dual connections', () => {
 
   test('WAL mode is set on write connection', async () => {
-    const db  = await makeDb(`model t { id Int @id }`, 'wal')
+    const db  = await makeDb(`model T { id Int @id }`, 'wal')
     const raw = db.$db as Database
     const mode = raw.query('PRAGMA journal_mode').get() as any
     expect(mode.journal_mode).toBe('wal')
@@ -1268,7 +1270,7 @@ describe('bun:sqlite — WAL + dual connections', () => {
   })
 
   test('page_size is 8192', async () => {
-    const db  = await makeDb(`model t { id Int @id }`, 'pagesize')
+    const db  = await makeDb(`model T { id Int @id }`, 'pagesize')
     const raw = db.$db as Database
     const ps  = raw.query('PRAGMA page_size').get() as any
     expect(ps.page_size).toBe(8192)
@@ -1276,7 +1278,7 @@ describe('bun:sqlite — WAL + dual connections', () => {
   })
 
   test('foreign_keys ON', async () => {
-    const db  = await makeDb(`model t { id Int @id }`, 'fk')
+    const db  = await makeDb(`model T { id Int @id }`, 'fk')
     const raw = db.$db as Database
     const fk  = raw.query('PRAGMA foreign_keys').get() as any
     expect(fk.foreign_keys).toBe(1)
@@ -1284,7 +1286,7 @@ describe('bun:sqlite — WAL + dual connections', () => {
   })
 
   test('$cacheSize reports both connections', async () => {
-    const db = await makeDb(`model t { id Int @id }`, 'cache')
+    const db = await makeDb(`model T { id Int @id }`, 'cache')
     await db.t.findMany()
     const cs = db.$cacheSize
     expect(cs).toHaveProperty('read')
@@ -1295,7 +1297,7 @@ describe('bun:sqlite — WAL + dual connections', () => {
 
   test('readonly read connection cannot write', async () => {
     // Structural test — read and write connections are separate, each with their own cache
-    const db = await makeDb(`model t { id Int @id }`, 'readonly')
+    const db = await makeDb(`model T { id Int @id }`, 'readonly')
     await db.t.findMany()
     await db.t.create({ data: { id: 1 } })
     await db.t.findMany()
@@ -1545,7 +1547,7 @@ describe('autoMigrate', () => {
 describe('status() — sql field', () => {
   test('status rows include sql string for applied and pending', async () => {
     const { db } = await makeTestClient(
-      `model t { id Int @id; name String }`,
+      `model T { id Int @id; name String }`,
       { data: async () => {} }
     )
     // Create a temp migrations dir with one file
@@ -1567,7 +1569,7 @@ describe('status() — sql field', () => {
   })
 
   test('orphaned rows have sql: null', async () => {
-    const { db } = await makeTestClient(`model t { id Int @id }`)
+    const { db } = await makeTestClient(`model T { id Int @id }`)
     const { join } = await import('path')
     const { tmpdir } = await import('os')
     const { mkdirSync, writeFileSync, unlinkSync } = await import('fs')
@@ -2068,7 +2070,7 @@ describe('window functions', () => {
 
   beforeAll(async () => {
     ;({ db } = await makeTestClient(`
-      model scores {
+      model Score {
         id        Int @id
         userId    Int
         category  String
@@ -2077,7 +2079,7 @@ describe('window functions', () => {
       }
     `, {
       data: async (db: any) => {
-        await db.scores.createMany({ data: [
+        await db.score.createMany({ data: [
           { id: 1, userId: 1, category: 'math',    value: 90 },
           { id: 2, userId: 2, category: 'math',    value: 75 },
           { id: 3, userId: 3, category: 'math',    value: 85 },
@@ -2092,7 +2094,7 @@ describe('window functions', () => {
   afterAll(() => db.$close())
 
   test('rowNumber — global', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       orderBy: { id: 'asc' },
       window:  { rn: { rowNumber: true, orderBy: { id: 'asc' } } },
     })
@@ -2100,7 +2102,7 @@ describe('window functions', () => {
   })
 
   test('rank — within partition', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       orderBy: [{ category: 'asc' }, { value: 'desc' }],
       window:  {
         rank: { rank: true, partitionBy: 'category', orderBy: { value: 'desc' } }
@@ -2113,7 +2115,7 @@ describe('window functions', () => {
   })
 
   test('denseRank', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       orderBy: { value: 'desc' },
       window:  { dr: { denseRank: true, orderBy: { value: 'desc' } } },
     })
@@ -2123,7 +2125,7 @@ describe('window functions', () => {
   })
 
   test('sum — running total within partition', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       where:   { category: 'math' },
       orderBy: { id: 'asc' },
       window:  {
@@ -2142,7 +2144,7 @@ describe('window functions', () => {
   })
 
   test('avg — moving average (2 preceding + current)', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       where:   { category: 'math' },
       orderBy: { id: 'asc' },
       window:  {
@@ -2159,7 +2161,7 @@ describe('window functions', () => {
   })
 
   test('lag — previous row value', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       where:   { category: 'math' },
       orderBy: { id: 'asc' },
       window:  { prev: { lag: 'value', offset: 1, orderBy: { id: 'asc' } } },
@@ -2170,7 +2172,7 @@ describe('window functions', () => {
   })
 
   test('lead — next row value', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       where:   { category: 'math' },
       orderBy: { id: 'asc' },
       window:  { next: { lead: 'value', offset: 1, orderBy: { id: 'asc' } } },
@@ -2181,7 +2183,7 @@ describe('window functions', () => {
   })
 
   test('count — running count', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       orderBy: { id: 'asc' },
       window:  { n: { count: true, orderBy: { id: 'asc' }, rows: [null, 0] } },
     })
@@ -2190,7 +2192,7 @@ describe('window functions', () => {
   })
 
   test('multiple window functions in one query', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       orderBy: { id: 'asc' },
       window:  {
         rn:   { rowNumber: true, orderBy: { id: 'asc' } },
@@ -2203,7 +2205,7 @@ describe('window functions', () => {
 
   test('window + where + limit', async () => {
     // Limit must apply after window computation
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       orderBy: { value: 'desc' },
       limit:   3,
       window:  { rn: { rowNumber: true, orderBy: { value: 'desc' } } },
@@ -2216,7 +2218,7 @@ describe('window functions', () => {
   })
 
   test('firstValue within partition', async () => {
-    const rows = await db.scores.findMany({
+    const rows = await db.score.findMany({
       orderBy: [{ category: 'asc' }, { value: 'desc' }],
       window:  {
         best: {
@@ -2233,7 +2235,7 @@ describe('window functions', () => {
 
   test('throws on unknown window function', async () => {
     await expect(
-      db.scores.findMany({ window: { x: { unknown: true } as any } })
+      db.score.findMany({ window: { x: { unknown: true } as any } })
     ).rejects.toThrow('unrecognised window function')
   })
 })
@@ -2386,6 +2388,90 @@ describe('client — transactions', () => {
 
   beforeAll(async () => { db = await makeDb(SCHEMA, 'tx') })
   afterAll(() => db.$close())
+
+  // Reads normally go to the readonly WAL connection, which cannot observe the
+  // write connection's uncommitted work. A create() inside a transaction was
+  // invisible to a findMany() on the very next line — the row existed, the reader
+  // held a snapshot from before it.
+  describe('read-your-own-writes', () => {
+    test('findMany sees a row created earlier in the same transaction', async () => {
+      const d = await makeDb(SCHEMA, 'tx-ryow-1')
+      await d.$transaction(async (tx: any) => {
+        await tx.account.create({ data: { id: 1, name: 'Acme', plan: 'pro' } })
+        expect((await tx.account.findMany()).length).toBe(1)
+        expect(await tx.account.count()).toBe(1)
+      })
+      d.$close()
+    })
+
+    test('findUnique sees it too (the pk fast path stands down)', async () => {
+      const d = await makeDb(SCHEMA, 'tx-ryow-2')
+      await d.$transaction(async (tx: any) => {
+        await tx.account.create({ data: { id: 7, name: 'Acme', plan: 'pro' } })
+        expect((await tx.account.findUnique({ where: { id: 7 } }))?.name).toBe('Acme')
+      })
+      d.$close()
+    })
+
+    test('a read-modify-write inside one transaction reads the new value', async () => {
+      const d = await makeDb(SCHEMA, 'tx-ryow-3')
+      await d.account.create({ data: { id: 1, name: 'Acme', plan: 'starter' } })
+      await d.$transaction(async (tx: any) => {
+        await tx.account.update({ where: { id: 1 }, data: { plan: 'pro' } })
+        const current = await tx.account.findUnique({ where: { id: 1 } })
+        expect(current.plan).toBe('pro')
+      })
+      d.$close()
+    })
+
+    test('include/relations resolve against the transaction too', async () => {
+      const d = await makeDb(SCHEMA, 'tx-ryow-4')
+      await d.$transaction(async (tx: any) => {
+        await tx.account.create({ data: { id: 1, name: 'Acme', plan: 'pro' } })
+        await tx.user.create({ data: { id: 1, accountId: 1, email: 'a@acme.com' } })
+        const user = await tx.user.findUnique({ where: { id: 1 }, include: { account: true } })
+        expect(user.account.name).toBe('Acme')
+      })
+      d.$close()
+    })
+
+    test('a rollback still discards everything the reads could see', async () => {
+      const d = await makeDb(SCHEMA, 'tx-ryow-5')
+      await expect(d.$transaction(async (tx: any) => {
+        await tx.account.create({ data: { id: 1, name: 'Acme', plan: 'pro' } })
+        expect((await tx.account.findMany()).length).toBe(1)
+        throw new Error('BOOM')
+      })).rejects.toThrow('BOOM')
+      expect(await d.account.count()).toBe(0)
+      d.$close()
+    })
+
+    test('reads return to the read connection after the transaction ends', async () => {
+      const d = await makeDb(SCHEMA, 'tx-ryow-6')
+      await d.$transaction(async (tx: any) => {
+        await tx.account.create({ data: { id: 1, name: 'Acme', plan: 'pro' } })
+      })
+      expect(await d.account.count()).toBe(1)
+      // …and after a rollback, so a failed transaction cannot strand the routing
+      await expect(d.$transaction(async () => { throw new Error('x') })).rejects.toThrow('x')
+      expect(await d.account.count()).toBe(1)
+      d.$close()
+    })
+
+    test('nested transactions (savepoints) keep reading their own writes', async () => {
+      const d = await makeDb(SCHEMA, 'tx-ryow-7')
+      await d.$transaction(async (outer: any) => {
+        await outer.account.create({ data: { id: 1, name: 'Outer', plan: 'pro' } })
+        await d.$transaction(async (inner: any) => {
+          await inner.account.create({ data: { id: 2, name: 'Inner', plan: 'pro' } })
+          expect((await inner.account.findMany()).length).toBe(2)
+        })
+        expect((await outer.account.findMany()).length).toBe(2)
+      })
+      expect(await d.account.count()).toBe(2)
+      d.$close()
+    })
+  })
 
   test('transaction commits all steps', async () => {
     const result = await db.$transaction(async (tx: any) => {
@@ -2715,7 +2801,7 @@ describe('updatedAt auto-trigger', () => {
 
   test('trigger generated when updatedAt DateTime field exists', () => {
     const r = parse(`
-      model posts {
+      model Post {
         id        Int  @id
         title     String
         createdAt DateTime @default(now())
@@ -2723,26 +2809,26 @@ describe('updatedAt auto-trigger', () => {
       }
     `)
     const ddl = generateDDL(r.schema)
-    expect(ddl).toContain('posts_updatedAt')
+    expect(ddl).toContain('post_updatedAt')
     expect(ddl).toContain('AFTER UPDATE ON')
     expect(ddl).toContain('WHEN NEW."updatedAt" IS OLD."updatedAt"')
   })
 
   test('no trigger on models without updatedAt', () => {
-    const r = parse(`model logs { id Int @id
+    const r = parse(`model Log { id Int @id
         action String }`)
     expect(generateDDL(r.schema)).not.toContain('logs_updatedAt')
   })
 
   test('no trigger on non-DateTime updatedAt field', () => {
-    const r = parse(`model t { id Int @id
+    const r = parse(`model T { id Int @id
         updatedAt String }`)
     expect(generateDDL(r.schema)).not.toContain('t_updatedAt')
   })
 
   test('trigger fires on UPDATE in bun:sqlite', async () => {
     const db = await makeDb(`
-      model posts {
+      model Post {
         id        Int  @id
         title     String
         createdAt DateTime @default(now())
@@ -2750,16 +2836,16 @@ describe('updatedAt auto-trigger', () => {
       }
     `, 'updatedat')
 
-    await db.posts.create({ data: {
+    await db.post.create({ data: {
       id: 1, title: 'Hello',
       createdAt: '2024-01-01T00:00:00.000Z',
       updatedAt: '2024-01-01T00:00:00.000Z',
     }})
 
-    const before = await db.posts.findUnique({ where: { id: 1 } })
+    const before = await db.post.findUnique({ where: { id: 1 } })
     await Bun.sleep(15)
-    await db.posts.update({ where: { id: 1 }, data: { title: 'World' } })
-    const after = await db.posts.findUnique({ where: { id: 1 } })
+    await db.post.update({ where: { id: 1 }, data: { title: 'World' } })
+    const after = await db.post.findUnique({ where: { id: 1 } })
 
     expect(after!.updatedAt).not.toBe(before!.updatedAt)
     expect(after!.createdAt).toBe(before!.createdAt)  // createdAt unchanged
@@ -2768,24 +2854,24 @@ describe('updatedAt auto-trigger', () => {
 
   test('WHEN guard — explicit updatedAt set by user is preserved', async () => {
     const db = await makeDb(`
-      model posts {
+      model Post {
         id        Int  @id
         title     String
         updatedAt DateTime @default(now())
       }
     `, 'updatedat-guard')
 
-    await db.posts.create({ data: { id: 1, title: 'Hello', updatedAt: '2024-01-01T00:00:00.000Z' } })
+    await db.post.create({ data: { id: 1, title: 'Hello', updatedAt: '2024-01-01T00:00:00.000Z' } })
     // Explicitly set updatedAt — trigger should NOT override it
-    await db.posts.update({ where: { id: 1 }, data: { title: 'World', updatedAt: '2099-01-01T00:00:00.000Z' } })
-    const row = await db.posts.findUnique({ where: { id: 1 } })
+    await db.post.update({ where: { id: 1 }, data: { title: 'World', updatedAt: '2099-01-01T00:00:00.000Z' } })
+    const row = await db.post.findUnique({ where: { id: 1 } })
     expect(row!.updatedAt).toBe('2099-01-01T00:00:00.000Z')
     db.$close()
   })
 
   test('trigger fires via raw SQL too (database-level)', async () => {
     const db = await makeDb(`
-      model posts {
+      model Post {
         id        Int  @id
         title     String
         updatedAt DateTime @default(now())
@@ -2793,10 +2879,10 @@ describe('updatedAt auto-trigger', () => {
     `, 'updatedat-raw')
 
     const raw = db.$db as Database
-    raw.run(`INSERT INTO posts (id, title, updatedAt) VALUES (1, 'Hello', '2024-01-01T00:00:00.000Z')`)
+    raw.run(`INSERT INTO post (id, title, updatedAt) VALUES (1, 'Hello', '2024-01-01T00:00:00.000Z')`)
     await Bun.sleep(15)
-    raw.run(`UPDATE posts SET title = 'Direct SQL' WHERE id = 1`)
-    const row = raw.query(`SELECT * FROM posts WHERE id = 1`).get() as any
+    raw.run(`UPDATE post SET title = 'Direct SQL' WHERE id = 1`)
+    const row = raw.query(`SELECT * FROM post WHERE id = 1`).get() as any
     expect(row.updatedAt).not.toBe('2024-01-01T00:00:00.000Z')
     db.$close()
   })
@@ -3108,11 +3194,11 @@ describe('@@softDelete cascade footgun warning', () => {
     const r = parse(`
       model Account {
         id        Int  @id
-        sessions  sessions[]  @hardDelete
+        sessions  Session[]  @hardDelete
         deletedAt DateTime?
         @@softDelete
       }
-      model sessions {
+      model Session {
         id        Int  @id
         accountId Int
         account   Account @relation(fields: [accountId], references: [id])
@@ -3173,7 +3259,7 @@ describe('String[] / Int[] array fields', () => {
 
   beforeAll(async () => {
     db = await makeDb(`
-      model posts {
+      model Post {
         id     Int @id
         title  String
         tags   String[]
@@ -3185,61 +3271,61 @@ describe('String[] / Int[] array fields', () => {
   afterAll(() => db.$close())
 
   test('String[] defaults to []', async () => {
-    await db.posts.create({ data: { id: 1, title: 'Hello', flags: ['featured'] } })
-    const row = await db.posts.findUnique({ where: { id: 1 } })
+    await db.post.create({ data: { id: 1, title: 'Hello', flags: ['featured'] } })
+    const row = await db.post.findUnique({ where: { id: 1 } })
     expect(row.tags).toEqual([])
     expect(row.scores).toEqual([])
   })
 
   test('String[] stores and retrieves array', async () => {
-    await db.posts.create({ data: { id: 2, title: 'World', tags: ['js', 'ts'], flags: ['new'] } })
-    const row = await db.posts.findUnique({ where: { id: 2 } })
+    await db.post.create({ data: { id: 2, title: 'World', tags: ['js', 'ts'], flags: ['new'] } })
+    const row = await db.post.findUnique({ where: { id: 2 } })
     expect(row.tags).toEqual(['js', 'ts'])
   })
 
   test('Int[] stores and retrieves array', async () => {
-    await db.posts.create({ data: { id: 3, title: 'Nums', scores: [10, 20, 30], flags: ['test'] } })
-    const row = await db.posts.findUnique({ where: { id: 3 } })
+    await db.post.create({ data: { id: 3, title: 'Nums', scores: [10, 20, 30], flags: ['test'] } })
+    const row = await db.post.findUnique({ where: { id: 3 } })
     expect(row.scores).toEqual([10, 20, 30])
   })
 
   test('update replaces array', async () => {
-    await db.posts.update({ where: { id: 2 }, data: { tags: ['bun', 'sqlite'] } })
-    const row = await db.posts.findUnique({ where: { id: 2 } })
+    await db.post.update({ where: { id: 2 }, data: { tags: ['bun', 'sqlite'] } })
+    const row = await db.post.findUnique({ where: { id: 2 } })
     expect(row.tags).toEqual(['bun', 'sqlite'])
   })
 
   // WHERE operators
   test('where: { tags: { has: "bun" } }', async () => {
-    const rows = await db.posts.findMany({ where: { tags: { has: 'bun' } } })
+    const rows = await db.post.findMany({ where: { tags: { has: 'bun' } } })
     expect(rows.map((r: any) => r.id)).toContain(2)
     expect(rows.map((r: any) => r.id)).not.toContain(1)
   })
 
   test('where: { tags: { hasSome: ["js","bun"] } }', async () => {
     // post 2 has ['bun','sqlite'], post at id=2 matches 'bun'
-    const rows = await db.posts.findMany({ where: { tags: { hasSome: ['js', 'bun'] } } })
+    const rows = await db.post.findMany({ where: { tags: { hasSome: ['js', 'bun'] } } })
     expect(rows.length).toBeGreaterThan(0)
   })
 
   test('where: { tags: { hasEvery: ["bun","sqlite"] } }', async () => {
-    const rows = await db.posts.findMany({ where: { tags: { hasEvery: ['bun', 'sqlite'] } } })
+    const rows = await db.post.findMany({ where: { tags: { hasEvery: ['bun', 'sqlite'] } } })
     expect(rows.map((r: any) => r.id)).toContain(2)
   })
 
   test('where: { tags: { hasEvery: ["bun","missing"] } } returns empty', async () => {
-    const rows = await db.posts.findMany({ where: { tags: { hasEvery: ['bun', 'missing'] } } })
+    const rows = await db.post.findMany({ where: { tags: { hasEvery: ['bun', 'missing'] } } })
     expect(rows).toHaveLength(0)
   })
 
   test('where: { tags: { isEmpty: true } }', async () => {
-    const rows = await db.posts.findMany({ where: { tags: { isEmpty: true } } })
+    const rows = await db.post.findMany({ where: { tags: { isEmpty: true } } })
     expect(rows.map((r: any) => r.id)).toContain(1)
     expect(rows.map((r: any) => r.id)).not.toContain(2)
   })
 
   test('where: { tags: { isEmpty: false } }', async () => {
-    const rows = await db.posts.findMany({ where: { tags: { isEmpty: false } } })
+    const rows = await db.post.findMany({ where: { tags: { isEmpty: false } } })
     expect(rows.map((r: any) => r.id)).not.toContain(1)
     expect(rows.map((r: any) => r.id)).toContain(2)
   })
@@ -3247,37 +3333,37 @@ describe('String[] / Int[] array fields', () => {
   // Validation
   test('@minItems violation throws ValidationError', async () => {
     await expect(
-      db.posts.create({ data: { id: 99, title: 'Bad', flags: [] } })
+      db.post.create({ data: { id: 99, title: 'Bad', flags: [] } })
     ).rejects.toThrow(ValidationError)
   })
 
   test('@maxItems violation throws ValidationError', async () => {
     await expect(
-      db.posts.create({ data: { id: 99, title: 'Bad', flags: ['a','b','c','d','e','f'] } })
+      db.post.create({ data: { id: 99, title: 'Bad', flags: ['a','b','c','d','e','f'] } })
     ).rejects.toThrow(ValidationError)
   })
 
   test('@uniqueItems violation throws ValidationError', async () => {
     await expect(
-      db.posts.create({ data: { id: 99, title: 'Bad', flags: ['dup','dup'] } })
+      db.post.create({ data: { id: 99, title: 'Bad', flags: ['dup','dup'] } })
     ).rejects.toThrow(ValidationError)
   })
 
   test('String[] rejects non-string items', async () => {
     await expect(
-      db.posts.create({ data: { id: 99, title: 'Bad', tags: [1, 2], flags: ['ok'] } })
+      db.post.create({ data: { id: 99, title: 'Bad', tags: [1, 2], flags: ['ok'] } })
     ).rejects.toThrow(ValidationError)
   })
 
   test('Int[] rejects non-integer items', async () => {
     await expect(
-      db.posts.create({ data: { id: 99, title: 'Bad', scores: ['not','ints'], flags: ['ok'] } })
+      db.post.create({ data: { id: 99, title: 'Bad', scores: ['not','ints'], flags: ['ok'] } })
     ).rejects.toThrow(ValidationError)
   })
 
   test('non-array value throws ValidationError', async () => {
     await expect(
-      db.posts.create({ data: { id: 99, title: 'Bad', tags: 'not-array', flags: ['ok'] } })
+      db.post.create({ data: { id: 99, title: 'Bad', tags: 'not-array', flags: ['ok'] } })
     ).rejects.toThrow(ValidationError)
   })
 })
@@ -3290,46 +3376,46 @@ describe('findFirstOrThrow / findUniqueOrThrow', () => {
 
   beforeAll(async () => {
     db = await makeDb(`
-      model users {
+      model User {
         id    Int @id
         email String    @unique
         name  String
       }
     `, 'throw-ops')
-    await db.users.create({ data: { id: 1, name: 'Alice', email: 'alice@x.com' } })
+    await db.user.create({ data: { id: 1, name: 'Alice', email: 'alice@x.com' } })
   })
   afterAll(() => db.$close())
 
   test('findFirstOrThrow returns row when found', async () => {
-    const row = await db.users.findFirstOrThrow({ where: { id: 1 } })
+    const row = await db.user.findFirstOrThrow({ where: { id: 1 } })
     expect(row.name).toBe('Alice')
   })
 
   test('findFirstOrThrow throws when not found', async () => {
     await expect(
-      db.users.findFirstOrThrow({ where: { id: 999 } })
-    ).rejects.toThrow('users')
+      db.user.findFirstOrThrow({ where: { id: 999 } })
+    ).rejects.toThrow('user')
   })
 
   test('findFirstOrThrow error has NOT_FOUND code', async () => {
-    const err = await db.users.findFirstOrThrow({ where: { id: 999 } }).catch(e => e)
+    const err = await db.user.findFirstOrThrow({ where: { id: 999 } }).catch(e => e)
     expect(err.code).toBe('NOT_FOUND')
-    expect(err.model).toBe('users')
+    expect(err.model).toBe('user')  // NOT_FOUND carries the table name
   })
 
   test('findUniqueOrThrow returns row when found', async () => {
-    const row = await db.users.findUniqueOrThrow({ where: { id: 1 } })
+    const row = await db.user.findUniqueOrThrow({ where: { id: 1 } })
     expect(row.email).toBe('alice@x.com')
   })
 
   test('findUniqueOrThrow throws when not found', async () => {
     await expect(
-      db.users.findUniqueOrThrow({ where: { id: 999 } })
-    ).rejects.toThrow('users')
+      db.user.findUniqueOrThrow({ where: { id: 999 } })
+    ).rejects.toThrow('user')
   })
 
   test('findUniqueOrThrow error has NOT_FOUND code', async () => {
-    const err = await db.users.findUniqueOrThrow({ where: { id: 999 } }).catch(e => e)
+    const err = await db.user.findUniqueOrThrow({ where: { id: 999 } }).catch(e => e)
     expect(err.code).toBe('NOT_FOUND')
   })
 })
@@ -3340,19 +3426,19 @@ describe('findFirstOrThrow / findUniqueOrThrow', () => {
 describe('global query filters', () => {
   test('static filter applied to findMany', async () => {
     const db = await makeDb(`
-      model posts {
+      model Post {
         id     Int @id
         status String
         title  String
       }
     `, 'filter-static', {
-      filters: { posts: { status: 'published' } }
+      filters: { post: { status: 'published' } }
     })
-    await db.posts.create({ data: { id: 1, title: 'Draft',     status: 'draft' } })
-    await db.posts.create({ data: { id: 2, title: 'Published', status: 'published' } })
-    await db.posts.create({ data: { id: 3, title: 'Other pub', status: 'published' } })
+    await db.post.create({ data: { id: 1, title: 'Draft',     status: 'draft' } })
+    await db.post.create({ data: { id: 2, title: 'Published', status: 'published' } })
+    await db.post.create({ data: { id: 3, title: 'Other pub', status: 'published' } })
 
-    const rows = await db.posts.findMany()
+    const rows = await db.post.findMany()
     expect(rows.length).toBe(2)
     expect(rows.every((r: any) => r.status === 'published')).toBe(true)
     db.$close()
@@ -3360,37 +3446,37 @@ describe('global query filters', () => {
 
   test('static filter applied to count', async () => {
     const db = await makeDb(`
-      model items {
+      model Item {
         id     Int @id
         active Boolean @default(true)
       }
     `, 'filter-count', {
-      filters: { items: { active: true } }
+      filters: { item: { active: true } }
     })
-    await db.items.create({ data: { id: 1, active: true } })
-    await db.items.create({ data: { id: 2, active: false } })
-    await db.items.create({ data: { id: 3, active: true } })
+    await db.item.create({ data: { id: 1, active: true } })
+    await db.item.create({ data: { id: 2, active: false } })
+    await db.item.create({ data: { id: 3, active: true } })
 
-    expect(await db.items.count()).toBe(2)
+    expect(await db.item.count()).toBe(2)
     db.$close()
   })
 
   test('filter AND-merged with query where', async () => {
     const db = await makeDb(`
-      model posts {
+      model Post {
         id     Int @id
         status String
         pinned Boolean @default(false)
       }
     `, 'filter-merge', {
-      filters: { posts: { status: 'published' } }
+      filters: { post: { status: 'published' } }
     })
-    await db.posts.create({ data: { id: 1, status: 'published', pinned: true } })
-    await db.posts.create({ data: { id: 2, status: 'published', pinned: false } })
-    await db.posts.create({ data: { id: 3, status: 'draft',     pinned: true } })
+    await db.post.create({ data: { id: 1, status: 'published', pinned: true } })
+    await db.post.create({ data: { id: 2, status: 'published', pinned: false } })
+    await db.post.create({ data: { id: 3, status: 'draft',     pinned: true } })
 
     // Filter: published AND pinned
-    const rows = await db.posts.findMany({ where: { pinned: true } })
+    const rows = await db.post.findMany({ where: { pinned: true } })
     expect(rows.length).toBe(1)
     expect(rows[0].id).toBe(1)
     db.$close()
@@ -3399,7 +3485,7 @@ describe('global query filters', () => {
   test('function filter receives ctx', async () => {
     let called = false
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'filter-fn', {
       filters: {
@@ -3417,8 +3503,8 @@ describe('global query filters', () => {
 
   test('no filter — unaffected tables work normally', async () => {
     const db = await makeDb(`
-      model a { id Int @id }
-      model b { id Int @id }
+      model A { id Int @id }
+      model B { id Int @id }
     `, 'filter-none', {
       filters: { a: { id: { gt: 0 } } }
     })
@@ -3438,13 +3524,13 @@ describe('nested writes', () => {
 
   beforeAll(async () => {
     db = await makeDb(`
-      model accounts {
+      model Account {
         id    Int @id
         name  String
       }
-      model users {
+      model User {
         id        Int  @id
-        account   accounts @relation(fields: [accountId], references: [id])
+        account   Account @relation(fields: [accountId], references: [id])
         accountId Int
         email     String
       }
@@ -3453,22 +3539,22 @@ describe('nested writes', () => {
   afterAll(() => db.$close())
 
   test('create with hasMany create', async () => {
-    const acc = await db.accounts.create({
+    const acc = await db.account.create({
       data: {
         id: 1, name: 'Acme',
-        users: { create: [
+        User: { create: [
           { id: 1, email: 'alice@acme.com' },
           { id: 2, email: 'bob@acme.com' },
         ]}
       }
     })
     expect(acc.id).toBe(1)
-    const users = await db.users.findMany({ where: { accountId: 1 } })
+    const users = await db.user.findMany({ where: { accountId: 1 } })
     expect(users.length).toBe(2)
   })
 
   test('create with belongsTo connect', async () => {
-    const user = await db.users.create({
+    const user = await db.user.create({
       data: {
         id: 3, email: 'carol@acme.com',
         account: { connect: { id: 1 } }
@@ -3478,19 +3564,19 @@ describe('nested writes', () => {
   })
 
   test('create with belongsTo create (nested parent)', async () => {
-    const user = await db.users.create({
+    const user = await db.user.create({
       data: {
         id: 4, email: 'dave@new.com',
         account: { create: { id: 2, name: 'NewCo' } }
       }
     })
     expect(user.accountId).toBe(2)
-    const acc = await db.accounts.findUnique({ where: { id: 2 } })
+    const acc = await db.account.findUnique({ where: { id: 2 } })
     expect(acc?.name).toBe('NewCo')
   })
 
   test('create with belongsTo connectOrCreate — finds existing', async () => {
-    const user = await db.users.create({
+    const user = await db.user.create({
       data: {
         id: 5, email: 'eve@acme.com',
         account: { connectOrCreate: {
@@ -3501,11 +3587,11 @@ describe('nested writes', () => {
     })
     expect(user.accountId).toBe(1)
     // Account 99 should NOT have been created
-    expect(await db.accounts.count()).toBe(2)
+    expect(await db.account.count()).toBe(2)
   })
 
   test('create with belongsTo connectOrCreate — creates when missing', async () => {
-    const user = await db.users.create({
+    const user = await db.user.create({
       data: {
         id: 6, email: 'frank@third.com',
         account: { connectOrCreate: {
@@ -3515,49 +3601,49 @@ describe('nested writes', () => {
       }
     })
     expect(user.accountId).toBe(3)
-    expect(await db.accounts.findUnique({ where: { id: 3 } })).not.toBeNull()
+    expect(await db.account.findUnique({ where: { id: 3 } })).not.toBeNull()
   })
 
   test('update with hasMany create', async () => {
-    await db.accounts.update({
+    await db.account.update({
       where: { id: 1 },
       data: {
         name: 'Acme Corp',
-        users: { create: { id: 10, email: 'new@acme.com' } }
+        User: { create: { id: 10, email: 'new@acme.com' } }
       }
     })
-    const users = await db.users.findMany({ where: { accountId: 1 } })
+    const users = await db.user.findMany({ where: { accountId: 1 } })
     expect(users.some((u: any) => u.email === 'new@acme.com')).toBe(true)
   })
 
   test('update with hasMany connect', async () => {
     // user 10 belongs to account 1 — reconnect to account 2
-    await db.accounts.update({
+    await db.account.update({
       where: { id: 2 },
-      data: { users: { connect: { id: 10 } } }
+      data: { User: { connect: { id: 10 } } }
     })
-    const u = await db.users.findUnique({ where: { id: 10 } })
+    const u = await db.user.findUnique({ where: { id: 10 } })
     expect(u?.accountId).toBe(2)
   })
 
   test('update with hasMany update', async () => {
-    await db.accounts.update({
+    await db.account.update({
       where: { id: 1 },
       data: {
-        users: { update: [{ where: { id: 1 }, data: { email: 'alice-updated@acme.com' } }] }
+        User: { update: [{ where: { id: 1 }, data: { email: 'alice-updated@acme.com' } }] }
       }
     })
-    const u = await db.users.findUnique({ where: { id: 1 } })
+    const u = await db.user.findUnique({ where: { id: 1 } })
     expect(u?.email).toBe('alice-updated@acme.com')
   })
 
   test('scalar + nested fields coexist', async () => {
-    const acc = await db.accounts.update({
+    const acc = await db.account.update({
       where: { id: 1 },
-      data: { name: 'Acme Final', users: { create: { id: 20, email: 'g@acme.com' } } }
+      data: { name: 'Acme Final', User: { create: { id: 20, email: 'g@acme.com' } } }
     })
     expect(acc.name).toBe('Acme Final')
-    const u = await db.users.findUnique({ where: { id: 20 } })
+    const u = await db.user.findUnique({ where: { id: 20 } })
     expect(u?.accountId).toBe(1)
   })
 })
@@ -3567,7 +3653,7 @@ describe('nested writes', () => {
 
 describe('upsertMany', () => {
   const schema = `
-    model products {
+    model Product {
       id    Int @id
       slug  String    @unique @lower @trim
       price Float    @default(0) @gte(0)
@@ -3577,25 +3663,25 @@ describe('upsertMany', () => {
 
   test('inserts new rows', async () => {
     const db = await makeDb(schema, 'upsertmany-insert')
-    const { count } = await db.products.upsertMany({
+    const { count } = await db.product.upsertMany({
       data: [
         { id: 1, slug: 'Widget', price: 9.99, stock: 10 },
         { id: 2, slug: 'Gadget', price: 19.99, stock: 5 },
       ]
     })
     expect(count).toBe(2)
-    const all = await db.products.findMany({})
+    const all = await db.product.findMany({})
     expect(all).toHaveLength(2)
     db.$close()
   })
 
   test('updates on conflict by default (idField)', async () => {
     const db = await makeDb(schema, 'upsertmany-update')
-    await db.products.createMany({ data: [{ id: 1, slug: 'widget', price: 9.99, stock: 10 }] })
-    await db.products.upsertMany({
+    await db.product.createMany({ data: [{ id: 1, slug: 'widget', price: 9.99, stock: 10 }] })
+    await db.product.upsertMany({
       data: [{ id: 1, slug: 'widget', price: 14.99, stock: 20 }]
     })
-    const p = await db.products.findUnique({ where: { id: 1 } })
+    const p = await db.product.findUnique({ where: { id: 1 } })
     expect(p.price).toBe(14.99)
     expect(p.stock).toBe(20)
     db.$close()
@@ -3603,13 +3689,13 @@ describe('upsertMany', () => {
 
   test('custom conflictTarget', async () => {
     const db = await makeDb(schema, 'upsertmany-conflict-target')
-    await db.products.createMany({ data: [{ id: 1, slug: 'widget', price: 9.99, stock: 10 }] })
-    await db.products.upsertMany({
+    await db.product.createMany({ data: [{ id: 1, slug: 'widget', price: 9.99, stock: 10 }] })
+    await db.product.upsertMany({
       data:           [{ id: 1, slug: 'widget', price: 24.99 }],
       conflictTarget: ['slug'],
       update:         ['price'],
     })
-    const p = await db.products.findUnique({ where: { id: 1 } })
+    const p = await db.product.findUnique({ where: { id: 1 } })
     expect(p.price).toBe(24.99)
     expect(p.stock).toBe(10)   // not in update list — unchanged
     db.$close()
@@ -3617,12 +3703,12 @@ describe('upsertMany', () => {
 
   test('update field list limits which columns are updated on conflict', async () => {
     const db = await makeDb(schema, 'upsertmany-update-cols')
-    await db.products.createMany({ data: [{ id: 1, slug: 'widget', price: 9.99, stock: 100 }] })
-    await db.products.upsertMany({
+    await db.product.createMany({ data: [{ id: 1, slug: 'widget', price: 9.99, stock: 100 }] })
+    await db.product.upsertMany({
       data:   [{ id: 1, slug: 'widget', price: 99.99, stock: 1 }],
       update: ['price'],   // only price — stock should stay at 100
     })
-    const p = await db.products.findUnique({ where: { id: 1 } })
+    const p = await db.product.findUnique({ where: { id: 1 } })
     expect(p.price).toBe(99.99)
     expect(p.stock).toBe(100)
     db.$close()
@@ -3630,10 +3716,10 @@ describe('upsertMany', () => {
 
   test('transforms (@lower @trim) fire on every row', async () => {
     const db = await makeDb(schema, 'upsertmany-transforms')
-    await db.products.upsertMany({
+    await db.product.upsertMany({
       data: [{ id: 1, slug: '  WIDGET  ', price: 1 }]
     })
-    const p = await db.products.findUnique({ where: { id: 1 } })
+    const p = await db.product.findUnique({ where: { id: 1 } })
     expect(p.slug).toBe('widget')   // lower + trim applied
     db.$close()
   })
@@ -3641,14 +3727,14 @@ describe('upsertMany', () => {
   test('validation fires on every row — throws on invalid', async () => {
     const db = await makeDb(schema, 'upsertmany-validation')
     await expect(
-      db.products.upsertMany({ data: [{ id: 1, slug: 'widget', price: -5 }] })
+      db.product.upsertMany({ data: [{ id: 1, slug: 'widget', price: -5 }] })
     ).rejects.toThrow()   // @gte(0) violated
     db.$close()
   })
 
   test('returns { count: 0 } for empty data', async () => {
     const db = await makeDb(schema, 'upsertmany-empty')
-    const result = await db.products.upsertMany({ data: [] })
+    const result = await db.product.upsertMany({ data: [] })
     expect(result).toEqual({ count: 0 })
     db.$close()
   })
@@ -3660,7 +3746,7 @@ describe('upsertMany', () => {
       async onBeforeCreate() { fired = true }
     }
     const db = await makeDb(schema, 'upsertmany-plugin', { plugins: [new Spy()] })
-    await db.products.upsertMany({ data: [{ id: 1, slug: 'w', price: 1 }] })
+    await db.product.upsertMany({ data: [{ id: 1, slug: 'w', price: 1 }] })
     expect(fired).toBe(true)
     db.$close()
   })
@@ -3671,7 +3757,7 @@ describe('upsertMany', () => {
 
 describe('optimizeFts', () => {
   const schema = `
-    model docs {
+    model Doc {
       id    Int @id
       body  String
       title String?
@@ -3681,33 +3767,33 @@ describe('optimizeFts', () => {
 
   test('optimizeFts returns { optimized: true, table }', async () => {
     const db = await makeDb(schema, 'optimize-basic')
-    const result = db.docs.optimizeFts()
+    const result = db.doc.optimizeFts()
     expect(result.optimized).toBe(true)
-    expect(result.table).toBe('docs_fts')
+    expect(result.table).toBe('doc_fts')
     db.$close()
   })
 
   test('optimizeFts is a no-op on an empty table (does not throw)', async () => {
     const db = await makeDb(schema, 'optimize-empty')
-    expect(() => db.docs.optimizeFts()).not.toThrow()
+    expect(() => db.doc.optimizeFts()).not.toThrow()
     db.$close()
   })
 
   test('optimizeFts runs after bulk insert without error', async () => {
     const db = await makeDb(schema, 'optimize-after-bulk')
-    await db.docs.createMany({ data: Array.from({ length: 50 }, (_, i) => ({
+    await db.doc.createMany({ data: Array.from({ length: 50 }, (_, i) => ({
       id: i + 1, body: `content ${i}`, title: `doc ${i}`
     }))})
-    expect(() => db.docs.optimizeFts()).not.toThrow()
+    expect(() => db.doc.optimizeFts()).not.toThrow()
     // FTS still works after optimize
-    const results = await db.docs.search('content')
+    const results = await db.doc.search('content')
     expect(results.length).toBeGreaterThan(0)
     db.$close()
   })
 
   test('optimizeFts throws on a model without @@fts', async () => {
     const db = await makeDb(`
-      model plain { id Int @id; name String }
+      model Plain { id Int @id; name String }
     `, 'optimize-no-fts')
     expect(() => db.plain.optimizeFts()).toThrow('not available')
     db.$close()
@@ -3721,9 +3807,9 @@ describe('RETURNING * — write path', () => {
 
   test('create returns correct row without follow-up SELECT', async () => {
     const db = await makeDb(`
-      model users { id Int @id; name String; email String @unique }
+      model User { id Int @id; name String; email String @unique }
     `, 'returning-create')
-    const u = await db.users.create({ data: { name: 'Alice', email: 'alice@test.com' } })
+    const u = await db.user.create({ data: { name: 'Alice', email: 'alice@test.com' } })
     expect(u.id).toBe(1)
     expect(u.name).toBe('Alice')
     expect(u.email).toBe('alice@test.com')
@@ -3732,25 +3818,25 @@ describe('RETURNING * — write path', () => {
 
   test('update returns updated row without follow-up SELECT', async () => {
     const db = await makeDb(`
-      model users { id Int @id; name String }
+      model User { id Int @id; name String }
     `, 'returning-update')
-    await db.users.create({ data: { name: 'Alice' } })
-    const u = await db.users.update({ where: { id: 1 }, data: { name: 'Bob' } })
+    await db.user.create({ data: { name: 'Alice' } })
+    const u = await db.user.update({ where: { id: 1 }, data: { name: 'Bob' } })
     expect(u?.name).toBe('Bob')
     db.$close()
   })
 
   test('soft-delete remove returns deleted row', async () => {
     const db = await makeDb(`
-      model users {
+      model User {
         id        Int   @id
         name      String
         deletedAt DateTime?
         @@softDelete
       }
     `, 'returning-remove')
-    await db.users.create({ data: { name: 'Alice' } })
-    const u = await db.users.remove({ where: { id: 1 } })
+    await db.user.create({ data: { name: 'Alice' } })
+    const u = await db.user.remove({ where: { id: 1 } })
     expect(u?.id).toBe(1)
     expect(u?.deletedAt).toBeTruthy()
     db.$close()
@@ -3758,9 +3844,9 @@ describe('RETURNING * — write path', () => {
 
   test('update returns null when row not found', async () => {
     const db = await makeDb(`
-      model users { id Int @id; name String }
+      model User { id Int @id; name String }
     `, 'returning-update-miss')
-    const u = await db.users.update({ where: { id: 999 }, data: { name: 'Ghost' } })
+    const u = await db.user.update({ where: { id: 999 }, data: { name: 'Ghost' } })
     expect(u).toBeNull()
     db.$close()
   })
@@ -3774,9 +3860,9 @@ describe('$walStatus()', () => {
 
   test('returns WAL frame counts', async () => {
     const db = await makeDb(`
-      model items { id Int @id; val String }
+      model Item { id Int @id; val String }
     `, 'wal-status')
-    await db.items.create({ data: { val: 'x' } })
+    await db.item.create({ data: { val: 'x' } })
     const s: any = db.$walStatus()
     expect(typeof s.busy).toBe('boolean')
     expect(typeof s.frames).toBe('number')
@@ -3792,11 +3878,11 @@ describe('$walStatus()', () => {
 describe('createClient — input forms', () => {
 
   test('{ parsed } form works', async () => {
-    const r = parse(`model users { id Int @id; name String }`)
+    const r = parse(`model User { id Int @id; name String }`)
     const p = join(TMP, `form-parsed-${Date.now()}.db`)
     const db = await createClient({ parsed: r, db: p })
-    await db.users.create({ data: { name: 'Alice' } })
-    const u = await db.users.findFirst({})
+    await db.user.create({ data: { name: 'Alice' } })
+    const u = await db.user.findFirst({})
     expect(u?.name).toBe('Alice')
     db.$close()
   })
@@ -3804,11 +3890,11 @@ describe('createClient — input forms', () => {
   test('{ schema } inline string form works', async () => {
     const p = join(TMP, `form-schema-${Date.now()}.db`)
     const db = await createClient({
-      schema: `model users { id Int @id; name String }`,
+      schema: `model User { id Int @id; name String }`,
       db: p
     })
-    await db.users.create({ data: { name: 'Bob' } })
-    const u = await db.users.findFirst({})
+    await db.user.create({ data: { name: 'Bob' } })
+    const u = await db.user.findFirst({})
     expect(u?.name).toBe('Bob')
     db.$close()
   })
@@ -3900,9 +3986,9 @@ describe("databases: ':memory:'", () => {
 
   test('all SQLite databases open in-memory', async () => {
     const db = await makeDb(`
-      model users { id Int @id; name String }
+      model User { id Int @id; name String }
     `, 'inmem', { databases: ':memory:' })
-    const u = await db.users.create({ data: { name: 'Alice' } })
+    const u = await db.user.create({ data: { name: 'Alice' } })
     expect(u.id).toBe(1)
     // No file on disk
     const { existsSync } = await import('fs')
@@ -4540,7 +4626,7 @@ describe('onLog callback', () => {
     database main  { path env("MAIN_DB", "./main.db") }
     database audit { path "./audit/" driver logger }
 
-    model posts {
+    model Post {
       id        Int  @id
       title     String
       body      String     @log(audit)
@@ -4581,7 +4667,7 @@ describe('onLog callback', () => {
   test('onLog is called on @@log model write', async () => {
     const calls: any[] = []
     const db = await makeLogDb((entry, ctx) => { calls.push({ entry, ctx }) })
-    await db.posts.create({ data: { title: 'Hello', body: 'World' } })
+    await db.post.create({ data: { title: 'Hello', body: 'World' } })
     await flush()
     expect(calls.length).toBeGreaterThan(0)
     db.$close()
@@ -4590,9 +4676,9 @@ describe('onLog callback', () => {
   test('onLog receives correct operation and model', async () => {
     const calls: any[] = []
     const db = await makeLogDb((entry) => { calls.push(entry) })
-    await db.posts.create({ data: { title: 'T', body: 'B' } })
+    await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
-    const modelLog = calls.find(e => e.model === 'posts' && e.field == null)
+    const modelLog = calls.find(e => e.model === 'post' && e.field == null)
     expect(modelLog).toBeDefined()
     expect(modelLog.operation).toBe('create')
     db.$close()
@@ -4601,11 +4687,11 @@ describe('onLog callback', () => {
   test('onLog receives correct field for @log field entry', async () => {
     const calls: any[] = []
     const db = await makeLogDb((entry) => { calls.push(entry) })
-    await db.posts.create({ data: { title: 'T', body: 'B' } })
+    await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
     const fieldLog = calls.find(e => e.field === 'body')
     expect(fieldLog).toBeDefined()
-    expect(fieldLog.model).toBe('posts')
+    expect(fieldLog.model).toBe('post')
     db.$close()
   })
 
@@ -4615,7 +4701,7 @@ describe('onLog callback', () => {
       written.push(entry)
       return { actorId: 999, actorType: 'service' }
     })
-    await db.posts.create({ data: { title: 'T', body: 'B' } })
+    await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
     // Verify the written log rows reflect the overridden actor
     const auditRows = await (db as any).auditLogs.findMany({})
@@ -4627,7 +4713,7 @@ describe('onLog callback', () => {
     const db = await makeLogDb((_entry) => {
       return { meta: { source: 'api', version: 2 } }
     })
-    await db.posts.create({ data: { title: 'T', body: 'B' } })
+    await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
     const auditRows = await (db as any).auditLogs.findMany({})
     const withMeta  = auditRows.find((r: any) => r.meta != null)
@@ -4642,7 +4728,7 @@ describe('onLog callback', () => {
     const ctxCaptures: any[] = []
     const db = await makeLogDb((_entry, ctx) => { ctxCaptures.push(ctx) })
     const authedDb = db.$setAuth({ id: 42, type: 'user' })
-    await authedDb.posts.create({ data: { title: 'T', body: 'B' } })
+    await authedDb.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
     expect(ctxCaptures.some(c => c.auth?.id === 42)).toBe(true)
     db.$close()
@@ -4651,7 +4737,7 @@ describe('onLog callback', () => {
   test('onLog not called when no @log / @@log on model', async () => {
     const PLAIN_SCHEMA = `
       database main { path env("MAIN_DB", "./main.db") }
-      model notes { id Int @id; text String @@db(main) }
+      model Note { id Int @id; text String @@db(main) }
     `
     const r = parse(PLAIN_SCHEMA)
     const dir = join(tmpdir(), `ls-onlog-plain-${Date.now()}`)
@@ -4665,7 +4751,7 @@ describe('onLog callback', () => {
 
     const calls: any[] = []
     const db = await createClient({ parsed: r, databases: { main: { path } }, onLog: (e: any) => { calls.push(e) } })
-    await (db as any).notes.create({ data: { text: 'hi' } })
+    await (db as any).note.create({ data: { text: 'hi' } })
     await flush()
     expect(calls).toHaveLength(0)
     db.$close()
@@ -4673,16 +4759,209 @@ describe('onLog callback', () => {
 
   test('onLog returning null/undefined does not throw', async () => {
     const db = await makeLogDb(() => null)
-    await expect(db.posts.create({ data: { title: 'T', body: 'B' } })).resolves.toBeDefined()
+    await expect(db.post.create({ data: { title: 'T', body: 'B' } })).resolves.toBeDefined()
     await flush()
     db.$close()
   })
 
   test('onLog throwing does not propagate to caller', async () => {
     const db = await makeLogDb(() => { throw new Error('onLog exploded') })
-    await expect(db.posts.create({ data: { title: 'T', body: 'B' } })).resolves.toBeDefined()
+    await expect(db.post.create({ data: { title: 'T', body: 'B' } })).resolves.toBeDefined()
     db.$close()
   })
+})
+
+// ─── 19b-ii. Audit log redaction of protected fields ─────────────────────────
+// The audit trail records THAT a protected field was written — by whom, to
+// which rows, when — never what it holds. Logging the plaintext would defeat
+// the @encrypted it sits beside: the row is ciphertext while the log file next
+// to it is not, and the log has none of the column's read protections.
+//
+// This is load-bearing for @secret in particular, which expands to
+// @encrypted + @guarded(all) + @log(<first logger db>) — so merely DECLARING a
+// logger database is enough to start logging every @secret field.
+
+describe('audit log redaction', () => {
+  const ENC_KEY = 'a'.repeat(64)
+
+  const REDACT_SCHEMA = `
+    database main  { path env("MAIN_DB", "./main.db") }
+    database audit { path "./audit/" driver logger }
+
+    model Vault {
+      id       Int     @id
+      name     String
+      secretF  String? @secret
+      encF     String? @encrypted
+      guardedF String? @guarded(all)
+      plain    String?
+
+      @@db(main)
+      @@log(audit)
+    }
+  `
+
+  async function makeRedactDb(onLog?: (...args: any[]) => any) {
+    const r = parse(REDACT_SCHEMA)
+    if (!r.valid) throw new Error(r.errors.join('\n'))
+    const dir = join(tmpdir(), `ls-redact-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    mkdirSync(dir, { recursive: true })
+    const mainPath  = join(dir, 'main.db')
+    const auditPath = join(dir, 'audit')
+    mkdirSync(auditPath, { recursive: true })
+
+    const raw = new Database(mainPath)
+    raw.run('PRAGMA journal_mode = WAL')
+    for (const s of splitStatements(generateDDL(r.schema)))
+      if (!s.startsWith('PRAGMA')) raw.run(s)
+    raw.close()
+
+    return createClient({
+      parsed:        r,
+      databases:     { main: { path: mainPath }, audit: { path: auditPath } },
+      encryptionKey: ENC_KEY,
+      onLog,
+    })
+  }
+
+  function flush() { return new Promise<void>(res => setTimeout(res, 20)) }
+
+  const SECRETS = ['PLAINTEXT-SECRET', 'PLAINTEXT-ENC', 'PLAINTEXT-GUARDED']
+
+  async function captureCreate() {
+    const calls: any[] = []
+    const db = await makeRedactDb((entry) => { calls.push(entry) })
+    const row = await db.asSystem().vault.create({
+      data: {
+        name: 'k', secretF: SECRETS[0], encF: SECRETS[1],
+        guardedF: SECRETS[2], plain: 'not-a-secret',
+      },
+    })
+    await flush()
+    return { calls, row, db }
+  }
+
+  test('no protected value appears anywhere in any log entry', async () => {
+    const { calls, db } = await captureCreate()
+    const serialized = JSON.stringify(calls)
+    for (const secret of SECRETS) expect(serialized).not.toContain(secret)
+    db.$close()
+  })
+
+  test('model-level snapshot redacts @secret, @encrypted and @guarded fields', async () => {
+    const { calls, db } = await captureCreate()
+    const modelLog = calls.find(e => e.model === 'vault' && e.field == null)
+    const after = JSON.parse(modelLog.after)
+    expect(after.secretF).toBe('[redacted]')
+    expect(after.encF).toBe('[redacted]')
+    expect(after.guardedF).toBe('[redacted]')
+    db.$close()
+  })
+
+  test('unprotected fields are still logged in full — the trail stays useful', async () => {
+    const { calls, db } = await captureCreate()
+    const modelLog = calls.find(e => e.model === 'vault' && e.field == null)
+    const after = JSON.parse(modelLog.after)
+    expect(after.name).toBe('k')
+    expect(after.plain).toBe('not-a-secret')
+    db.$close()
+  })
+
+  test('field-level entry is still emitted — access is documented, value is not', async () => {
+    const { calls, row, db } = await captureCreate()
+    const fieldLog = calls.find(e => e.field === 'secretF')
+    expect(fieldLog).toBeDefined()
+    expect(fieldLog.operation).toBe('create')
+    expect(JSON.parse(fieldLog.records)).toEqual([row.id])
+    expect(JSON.parse(fieldLog.after)).toBe('[redacted]')
+    db.$close()
+  })
+
+  test('redaction does not mutate the row returned to the caller', async () => {
+    const { row, db } = await captureCreate()
+    expect(row.secretF).toBe(SECRETS[0])
+    expect(row.encF).toBe(SECRETS[1])
+    expect(row.guardedF).toBe(SECRETS[2])
+    db.$close()
+  })
+
+  test('null is preserved, not redacted — a null to value transition stays visible', async () => {
+    const calls: any[] = []
+    const db = await makeRedactDb((entry) => { calls.push(entry) })
+    const sys = db.asSystem()
+    const row = await sys.vault.create({ data: { name: 'k', plain: 'p' } })
+    await sys.vault.update({ where: { id: row.id }, data: { secretF: 'NOW-SET' } })
+    await flush()
+
+    const upd = calls.find(e => e.field === 'secretF' && e.operation === 'update')
+    expect(upd.before).toBe(null)                       // was null — nothing to leak
+    expect(JSON.parse(upd.after)).toBe('[redacted]')    // now set — visible as a change
+    expect(JSON.stringify(calls)).not.toContain('NOW-SET')
+    db.$close()
+  })
+
+  test('update and delete snapshots are redacted on both sides', async () => {
+    const calls: any[] = []
+    const db = await makeRedactDb((entry) => { calls.push(entry) })
+    const sys = db.asSystem()
+    const row = await sys.vault.create({ data: { name: 'k', secretF: 'ORIGINAL' } })
+    await sys.vault.update({ where: { id: row.id }, data: { secretF: 'ROTATED' } })
+    await sys.vault.delete({ where: { id: row.id } })
+    await flush()
+
+    const serialized = JSON.stringify(calls)
+    expect(serialized).not.toContain('ORIGINAL')
+    expect(serialized).not.toContain('ROTATED')
+
+    const upd = calls.find(e => e.model === 'vault' && e.field == null && e.operation === 'update')
+    expect(JSON.parse(upd.before).secretF).toBe('[redacted]')
+    expect(JSON.parse(upd.after).secretF).toBe('[redacted]')
+
+    const del = calls.find(e => e.model === 'vault' && e.field == null && e.operation === 'delete')
+    expect(JSON.parse(del.before).secretF).toBe('[redacted]')
+    db.$close()
+  })
+
+  test('a model with no protected fields logs values unchanged', async () => {
+    const calls: any[] = []
+    const db = await makeLogDbForPlain((entry) => { calls.push(entry) })
+    await db.post.create({ data: { title: 'T', body: 'BODY-VISIBLE' } })
+    await flush()
+    expect(JSON.stringify(calls)).toContain('BODY-VISIBLE')
+    db.$close()
+  })
+
+  // Plain schema — no @secret/@encrypted/@guarded anywhere.
+  async function makeLogDbForPlain(onLog: (...args: any[]) => any) {
+    const r = parse(`
+      database main  { path env("MAIN_DB", "./main.db") }
+      database audit { path "./audit/" driver logger }
+
+      model Post {
+        id    Int    @id
+        title String
+        body  String @log(audit)
+
+        @@db(main)
+        @@log(audit)
+      }
+    `)
+    if (!r.valid) throw new Error(r.errors.join('\n'))
+    const dir = join(tmpdir(), `ls-redact-plain-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    mkdirSync(dir, { recursive: true })
+    const mainPath  = join(dir, 'main.db')
+    const auditPath = join(dir, 'audit')
+    mkdirSync(auditPath, { recursive: true })
+    const raw = new Database(mainPath)
+    for (const s of splitStatements(generateDDL(r.schema)))
+      if (!s.startsWith('PRAGMA')) raw.run(s)
+    raw.close()
+    return createClient({
+      parsed:    r,
+      databases: { main: { path: mainPath }, audit: { path: auditPath } },
+      onLog,
+    })
+  }
 })
 
 // ─── 19c. @@allow / @@deny policies ──────────────────────────────────────────
@@ -5409,9 +5688,9 @@ describe('GatePlugin', () => {
 
   test('validateGate rejects non-decreasing levels', async () => {
     const { validateGate } = await import('../src/plugins/gate.js')
-    expect(() => validateGate({ read: 4, create: 2, update: 4, delete: 6 }, 'posts')).toThrow()
-    expect(() => validateGate({ read: 2, create: 4, update: 3, delete: 6 }, 'posts')).toThrow()
-    expect(() => validateGate({ read: 2, create: 4, update: 5, delete: 6 }, 'posts')).not.toThrow()
+    expect(() => validateGate({ read: 4, create: 2, update: 4, delete: 6 }, 'Post')).toThrow()
+    expect(() => validateGate({ read: 2, create: 4, update: 3, delete: 6 }, 'Post')).toThrow()
+    expect(() => validateGate({ read: 2, create: 4, update: 5, delete: 6 }, 'Post')).not.toThrow()
   })
 
   test('LEVELS constants are correct', async () => {
@@ -5475,7 +5754,7 @@ describe('GatePlugin', () => {
         val String
         @@gate("2.4.5.6")
       }
-    `, 'gate-update-deny', (_, model) => model === 'posts' ? 4 : 0)  // level 4 < update(5)
+    `, 'gate-update-deny', (_, model) => model === 'Post' ? 4 : 0)  // level 4 < update(5)
     await db.$db.run("INSERT INTO post VALUES (1, 'x')")
     await expect(db.post.update({ where: { id: 1 }, data: { val: 'y' } })).rejects.toThrow(AccessDeniedError)
     db.$close()
@@ -5499,27 +5778,27 @@ describe('GatePlugin', () => {
   test('LOCKED(8) blocks even highest user level', async () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
-      model audit_logs {
+      model AuditLog {
         id Int @id
         @@gate("5.8.8.9")
       }
     `, 'gate-locked', () => 6)   // level 6 (OWNER) can't beat LOCKED (now 9)
-    await db.$db.run('INSERT INTO audit_logs VALUES (1)')
-    await expect(db.audit_logs.delete({ where: { id: 1 } })).rejects.toThrow('LOCKED')
+    await db.$db.run('INSERT INTO audit_log VALUES (1)')
+    await expect(db.auditLog.delete({ where: { id: 1 } })).rejects.toThrow('LOCKED')
     db.$close()
   })
 
   test('SYSTEM(8) blocks normal users, passes asSystem()', async () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
-      model audit_logs {
+      model AuditLog {
         id Int @id
         @@gate("5.8.8.9")
       }
     `, 'gate-system', () => 6)   // level 6 can't create (SYSTEM=8)
-    await expect(db.audit_logs.create({ data: { id: 1 } })).rejects.toThrow('SYSTEM')
+    await expect(db.auditLog.create({ data: { id: 1 } })).rejects.toThrow('SYSTEM')
     // asSystem() bypasses gate entirely
-    await expect(db.asSystem().audit_logs.create({ data: { id: 1 } })).resolves.toBeDefined()
+    await expect(db.asSystem().auditLog.create({ data: { id: 1 } })).resolves.toBeDefined()
     db.$close()
   })
 
@@ -5634,14 +5913,14 @@ describe('GatePlugin', () => {
       }
     `, 'gate-nested-preflight', {
       plugins: [new GatePlugin({ getLevel: (_u: any, model: string) =>
-        model === 'accounts' ? 6 : 2   // can create accounts but not users
+        model === 'Account' ? 6 : 2   // can create accounts but not users
       })]
     })
     // Trying to create account with nested user create — should fail on users.create
     await expect(db.account.create({
       data: {
         id: 1, name: 'Acme',
-        users: { create: { id: 1, email: 'a@x.com' } }
+        User: { create: { id: 1, email: 'a@x.com' } }
       }
     })).rejects.toThrow(AccessDeniedError)
     db.$close()
@@ -5707,8 +5986,8 @@ describe('GatePlugin', () => {
   test('model without @@gate is open to all', async () => {
     const { GatePlugin } = await import('../src/plugins/gate.js')
     const db = await makeDb(`
-      model open_table { id Int @id }
-      model gated_table {
+      model OpenTable { id Int @id }
+      model GatedTable {
         id Int @id
         @@gate("5")
       }
@@ -5718,11 +5997,11 @@ describe('GatePlugin', () => {
     await db.$db.run('INSERT INTO open_table VALUES (1)')
     await db.$db.run('INSERT INTO gated_table VALUES (1)')
     // open_table has no gate — stranger can read
-    const rows = await db.open_table.findMany()
+    const rows = await db.openTable.findMany()
     expect(rows.length).toBe(1)
     // gated_table requires 5 — stranger (0) denied
     const { AccessDeniedError } = await import('../src/core/plugin.js')
-    await expect(db.gated_table.findMany()).rejects.toThrow(AccessDeniedError)
+    await expect(db.gatedTable.findMany()).rejects.toThrow(AccessDeniedError)
     db.$close()
   })
 
@@ -5768,47 +6047,82 @@ describe('GatePlugin', () => {
 
 
 describe('FrontierGateGetLevel', () => {
+  const G = () => require('../src/plugins/gate.js')
+
+  // ── undefined vs null ────────────────────────────────────────────────────
+  // The contract SessionContext documents: undefined means the app does not
+  // MODEL this stage (not an objection); null means it models it and this user
+  // has not reached it. Two tests here previously asserted the opposite —
+  // `{ id: 1 }` → VISITOR — which is what made every app without a
+  // verification flow grade VISITOR(1) and 403 its own API once @@gate
+  // auto-installed this resolver.
 
   test('null user → STRANGER (0)', () => {
-    const { FrontierGateGetLevel, LEVELS } = require('../src/plugins/gate.js')
+    const { FrontierGateGetLevel, LEVELS } = G()
     expect(FrontierGateGetLevel(null)).toBe(LEVELS.STRANGER)
   })
 
-  test('no verifiedAt → VISITOR (1)', () => {
-    const { FrontierGateGetLevel, LEVELS } = require('../src/plugins/gate.js')
-    expect(FrontierGateGetLevel({ id: 1 })).toBe(LEVELS.VISITOR)
+  test('lifecycle NOT modelled (fields absent) is not an objection', () => {
+    const { FrontierGateGetLevel, LEVELS } = G()
+    // No verifiedAt / activatedAt keys at all — exactly what
+    // @frontierjs/auth's toContext() emits for a verified user.
+    expect(FrontierGateGetLevel({ userId: 'u1', role: 'user' })).toBe(LEVELS.USER)
   })
 
-  test('verifiedAt, no activatedAt → READER (2)', () => {
-    const { FrontierGateGetLevel, LEVELS } = require('../src/plugins/gate.js')
-    expect(FrontierGateGetLevel({ id: 1, verifiedAt: '2024-01-01' })).toBe(LEVELS.READER)
+  test('verifiedAt === null → VISITOR (1)', () => {
+    const { FrontierGateGetLevel, LEVELS } = G()
+    expect(FrontierGateGetLevel({ userId: 'u1', role: 'user', verifiedAt: null })).toBe(LEVELS.VISITOR)
   })
 
-  test('verifiedAt + activatedAt, no role → CREATOR (3)', () => {
-    const { FrontierGateGetLevel, LEVELS } = require('../src/plugins/gate.js')
-    expect(FrontierGateGetLevel({ id: 1, verifiedAt: '2024-01-01', activatedAt: '2024-01-02' })).toBe(LEVELS.CREATOR)
+  test('activatedAt === null → READER (2)', () => {
+    const { FrontierGateGetLevel, LEVELS } = G()
+    expect(FrontierGateGetLevel({ userId: 'u1', role: 'user', verifiedAt: '2024-01-01', activatedAt: null }))
+      .toBe(LEVELS.READER)
+  })
+
+  test('no role → CREATOR (3)', () => {
+    const { FrontierGateGetLevel, LEVELS } = G()
+    expect(FrontierGateGetLevel({ userId: 'u1' })).toBe(LEVELS.CREATOR)
   })
 
   test('has role → USER (4)', () => {
-    const { FrontierGateGetLevel, LEVELS } = require('../src/plugins/gate.js')
-    expect(FrontierGateGetLevel({ id: 1, verifiedAt: '2024-01-01', activatedAt: '2024-01-02', role: 'member' })).toBe(LEVELS.USER)
+    const { FrontierGateGetLevel, LEVELS } = G()
+    expect(FrontierGateGetLevel({ userId: 'u1', role: 'member' })).toBe(LEVELS.USER)
   })
 
+  // ── standing outranks lifecycle ──────────────────────────────────────────
+
   test('isAdmin → ADMINISTRATOR (5)', () => {
-    const { FrontierGateGetLevel, LEVELS } = require('../src/plugins/gate.js')
-    expect(FrontierGateGetLevel({ id: 1, verifiedAt: '2024-01-01', activatedAt: '2024-01-02', role: 'admin', isAdmin: true })).toBe(LEVELS.ADMINISTRATOR)
+    const { FrontierGateGetLevel, LEVELS } = G()
+    expect(FrontierGateGetLevel({ userId: 'u1', role: 'admin', isAdmin: true })).toBe(LEVELS.ADMINISTRATOR)
   })
 
   test('isOwner → OWNER (6)', () => {
-    const { FrontierGateGetLevel, LEVELS } = require('../src/plugins/gate.js')
-    expect(FrontierGateGetLevel({ id: 1, verifiedAt: '2024-01-01', activatedAt: '2024-01-02', role: 'admin', isOwner: true })).toBe(LEVELS.OWNER)
+    const { FrontierGateGetLevel, LEVELS } = G()
+    expect(FrontierGateGetLevel({ userId: 'u1', role: 'admin', isOwner: true })).toBe(LEVELS.OWNER)
   })
 
   test('isSystemAdmin → SYSADMIN (7)', () => {
-    const { FrontierGateGetLevel, LEVELS } = require('../src/plugins/gate.js')
-    expect(FrontierGateGetLevel({ id: 1, verifiedAt: '2024-01-01', activatedAt: '2024-01-02', role: 'admin', isSystemAdmin: true })).toBe(LEVELS.SYSADMIN)
+    const { FrontierGateGetLevel, LEVELS } = G()
+    expect(FrontierGateGetLevel({ userId: 'u1', role: 'admin', isSystemAdmin: true })).toBe(LEVELS.SYSADMIN)
   })
 
+  test('standing wins over an unreached lifecycle stage', () => {
+    const { FrontierGateGetLevel, LEVELS } = G()
+    // An owner who never completed activation is still the owner. The role
+    // check used to run first, so this graded CREATOR(3).
+    expect(FrontierGateGetLevel({ userId: 'u1', isOwner: true, verifiedAt: null })).toBe(LEVELS.OWNER)
+    expect(FrontierGateGetLevel({ userId: 'u1', isSystemAdmin: true })).toBe(LEVELS.SYSADMIN)
+  })
+
+  test('agrees with junction sessionGateLevel on a real auth session', () => {
+    // The two are a hand copy across a dependency boundary Litestone cannot
+    // cross. If they drift, apps grade differently depending on which resolver
+    // is installed — which is exactly what happened.
+    const { FrontierGateGetLevel, LEVELS } = G()
+    const session = { userId: 'u1', userType: 'user', role: 'user', email: 'a@b.co', authMethod: 'session' }
+    expect(FrontierGateGetLevel(session)).toBe(LEVELS.USER)
+  })
 })
 
 
@@ -5832,7 +6146,7 @@ describe('plugin system', () => {
     expect(typeof p.onAfterWrite).toBe('function')
     expect(typeof p.buildReadFilter).toBe('function')
     // No-ops return undefined / null
-    expect(p.buildReadFilter('users', {})).toBeNull()
+    expect(p.buildReadFilter('User', {})).toBeNull()
   })
 
   test('PluginRunner calls hooks in order', async () => {
@@ -5845,7 +6159,7 @@ describe('plugin system', () => {
       async onBeforeRead() { order.push('B') }
     }
     const runner = new PluginRunner([new A(), new B()])
-    await runner.beforeRead('users', {}, {})
+    await runner.beforeRead('User', {}, {})
     expect(order).toEqual(['A', 'B'])
   })
 
@@ -5859,19 +6173,19 @@ describe('plugin system', () => {
     const { Plugin, PluginRunner } = await import('../src/core/plugin.js')
     class F extends Plugin {
       buildReadFilter(model: string) {
-        return model === 'posts' ? { published: true } : null
+        return model === 'Post' ? { published: true } : null
       }
     }
     const runner = new PluginRunner([new F()])
-    expect(runner.getReadFilters('posts', {})).toEqual([{ published: true }])
-    expect(runner.getReadFilters('users', {})).toEqual([])
+    expect(runner.getReadFilters('Post', {})).toEqual([{ published: true }])
+    expect(runner.getReadFilters('User', {})).toEqual([])
   })
 
   test('AccessDeniedError has correct shape', async () => {
     const { AccessDeniedError } = await import('../src/core/plugin.js')
-    const err = new AccessDeniedError('blocked', { model: 'posts', operation: 'read', required: 4, got: 2 })
+    const err = new AccessDeniedError('blocked', { model: 'Post', operation: 'read', required: 4, got: 2 })
     expect(err.code).toBe('ACCESS_DENIED')
-    expect(err.model).toBe('posts')
+    expect(err.model).toBe('Post')
     expect(err.operation).toBe('read')
     expect(err.required).toBe(4)
     expect(err.got).toBe(2)
@@ -5889,7 +6203,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Int @id }
+      model T { id Int @id }
     `, 'plugin-init', { plugins: [new InitPlugin()] })
     expect(receivedSchema).not.toBeNull()
     expect(receivedSchema.models.length).toBeGreaterThan(0)
@@ -5905,7 +6219,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Int @id }
+      model T { id Int @id }
     `, 'plugin-block-read', { plugins: [new BlockAll()] })
     await db.t.create({ data: { id: 1 } })
     await expect(db.t.findMany()).rejects.toThrow('blocked')
@@ -5920,7 +6234,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Int @id }
+      model T { id Int @id }
     `, 'plugin-block-create', { plugins: [new BlockCreate()] })
     await expect(db.t.create({ data: { id: 1 } })).rejects.toThrow('no creates')
     db.$close()
@@ -5934,7 +6248,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'plugin-block-update', { plugins: [new BlockUpdate()] })
     await db.$db.run(`INSERT INTO t VALUES (1, 'x')`)
@@ -5950,7 +6264,7 @@ describe('plugin system', () => {
       }
     }
     const db = await makeDb(`
-      model t { id Int @id }
+      model T { id Int @id }
     `, 'plugin-block-delete', { plugins: [new BlockDelete()] })
     await db.$db.run(`INSERT INTO t VALUES (1)`)
     await expect(db.t.delete({ where: { id: 1 } })).rejects.toThrow('no deletes')
@@ -5964,7 +6278,7 @@ describe('plugin system', () => {
     class B extends Plugin { async onBeforeRead() { log.push('B') } }
     class C extends Plugin { async onBeforeRead() { log.push('C') } }
     const db = await makeDb(`
-      model t { id Int @id }
+      model T { id Int @id }
     `, 'plugin-multi', { plugins: [new A(), new B(), new C()] })
     await db.t.findMany()
     expect(log).toEqual(['A', 'B', 'C'])
@@ -5980,7 +6294,7 @@ describe('plugin system — onAfterDelete', () => {
     const { Plugin } = await import('../src/core/plugin.js')
     const p = new Plugin()
     expect(typeof p.onAfterDelete).toBe('function')
-    await expect(p.onAfterDelete('users', [], {})).resolves.toBeUndefined()
+    await expect(p.onAfterDelete('User', [], {})).resolves.toBeUndefined()
   })
 
   test('PluginRunner.afterDelete calls all plugins in order', async () => {
@@ -5989,7 +6303,7 @@ describe('plugin system — onAfterDelete', () => {
     class A extends Plugin { async onAfterDelete() { calls.push('A') } }
     class B extends Plugin { async onAfterDelete() { calls.push('B') } }
     const runner = new PluginRunner([new A(), new B()])
-    await runner.afterDelete('users', [{ id: 1 }], {})
+    await runner.afterDelete('User', [{ id: 1 }], {})
     expect(calls).toEqual(['A', 'B'])
   })
 
@@ -6001,7 +6315,7 @@ describe('plugin system — onAfterDelete', () => {
     }
     const runner = new PluginRunner([new Spy()])
     const rows = [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }]
-    await runner.afterDelete('users', rows, {})
+    await runner.afterDelete('User', rows, {})
     expect(received).toEqual(rows)
   })
 
@@ -6012,14 +6326,14 @@ describe('plugin system — onAfterDelete', () => {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
-      model users {
+      model User {
         id    Int @id
         name  String
       }
     `, 'after-delete-hard', { plugins: [new Spy()] })
-    await db.users.create({ data: { id: 1, name: 'Alice' } })
-    await db.users.create({ data: { id: 2, name: 'Bob' } })
-    await db.users.delete({ where: { id: 1 } })
+    await db.user.create({ data: { id: 1, name: 'Alice' } })
+    await db.user.create({ data: { id: 2, name: 'Bob' } })
+    await db.user.delete({ where: { id: 1 } })
     expect(deleted).toHaveLength(1)
     expect((deleted[0] as any).id).toBe(1)
     db.$close()
@@ -6032,15 +6346,15 @@ describe('plugin system — onAfterDelete', () => {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
-      model posts {
+      model Post {
         id        Int  @id
         title     String
         deletedAt DateTime?
         @@softDelete
       }
     `, 'after-delete-soft', { plugins: [new Spy()] })
-    await db.posts.create({ data: { id: 1, title: 'Hello' } })
-    await db.posts.delete({ where: { id: 1 } })   // hard delete on soft-delete model
+    await db.post.create({ data: { id: 1, title: 'Hello' } })
+    await db.post.delete({ where: { id: 1 } })   // hard delete on soft-delete model
     expect(deleted).toHaveLength(1)
     expect((deleted[0] as any).id).toBe(1)
     db.$close()
@@ -6053,15 +6367,15 @@ describe('plugin system — onAfterDelete', () => {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
-      model items {
+      model Item {
         id    Int @id
         tag   String
       }
     `, 'after-delete-many', { plugins: [new Spy()] })
-    await db.items.createMany({ data: [
+    await db.item.createMany({ data: [
       { id: 1, tag: 'a' }, { id: 2, tag: 'b' }, { id: 3, tag: 'a' }
     ]})
-    await db.items.deleteMany({ where: { tag: 'a' } })
+    await db.item.deleteMany({ where: { tag: 'a' } })
     expect(deleted).toHaveLength(2)
     expect(deleted.map((r: any) => r.id).sort()).toEqual([1, 3])
     db.$close()
@@ -6074,9 +6388,9 @@ describe('plugin system — onAfterDelete', () => {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
-      model items { id Int @id }
+      model Item { id Int @id }
     `, 'after-delete-nomatch', { plugins: [new Spy()] })
-    await db.items.deleteMany({ where: { id: 99 } })
+    await db.item.deleteMany({ where: { id: 99 } })
     expect(called).toBe(false)
     db.$close()
   })
@@ -6091,16 +6405,16 @@ describe('FileStorage plugin', () => {
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     plugin.onInit(schema, { models: {} })
-    expect(plugin._fileMap.users.avatar.keepVersions).toBe(false)
-    expect(plugin._fileMap.users.resume.keepVersions).toBe(true)
+    expect(plugin._fileMap.User.avatar.keepVersions).toBe(false)
+    expect(plugin._fileMap.User.resume.keepVersions).toBe(true)
   })
 
   test('onInit ignores models with no @file fields', async () => {
     const { FileStorage } = await import('../src/plugins/file.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
-    const schema = parse(`model posts { id Int @id; title String }`).schema
+    const schema = parse(`model Post { id Int @id; title String }`).schema
     plugin.onInit(schema, { models: {} })
-    expect(plugin._fileMap.posts).toBeUndefined()
+    expect(plugin._fileMap.Post).toBeUndefined()
   })
 
   test('onBeforeCreate: Buffer value is uploaded and swapped to JSON ref', async () => {
@@ -6115,7 +6429,7 @@ describe('FileStorage plugin', () => {
     plugin._provider = mock
 
     const data: any = { id: 42, name: 'Alice', avatar: Buffer.from('image bytes') }
-    await plugin.onBeforeCreate('users', { data }, ctx)
+    await plugin.onBeforeCreate('User', { data }, ctx)
 
     // Value swapped to JSON string
     expect(typeof data.avatar).toBe('string')
@@ -6137,7 +6451,7 @@ describe('FileStorage plugin', () => {
     plugin._provider = makeMockProvider()
 
     const data: any = { id: 1, name: 'Bob', avatar: null }
-    await plugin.onBeforeCreate('users', { data }, ctx)
+    await plugin.onBeforeCreate('User', { data }, ctx)
     expect(data.avatar).toBeNull()
     expect(plugin._provider.puts).toHaveLength(0)
   })
@@ -6154,7 +6468,7 @@ describe('FileStorage plugin', () => {
       { id: 1, name: 'Alice', avatar: Buffer.from('img') },
       { id: 2, name: 'Bob',   avatar: null },
     ]
-    await expect(plugin.onBeforeCreate('users', { data }, ctx))
+    await expect(plugin.onBeforeCreate('User', { data }, ctx))
       .rejects.toThrow('createMany does not support raw values')
   })
 
@@ -6167,7 +6481,7 @@ describe('FileStorage plugin', () => {
     plugin._provider = makeMockProvider()
 
     const data = [{ id: 1, name: 'Alice', avatar: null }, { id: 2, name: 'Bob' }]
-    await expect(plugin.onBeforeCreate('users', { data }, ctx)).resolves.toBeUndefined()
+    await expect(plugin.onBeforeCreate('User', { data }, ctx)).resolves.toBeUndefined()
     expect(plugin._provider.puts).toHaveLength(0)
   })
 
@@ -6190,7 +6504,7 @@ describe('FileStorage plugin', () => {
     plugin._provider = mock
 
     const data: any = { avatar: Buffer.from('new image') }
-    await plugin.onBeforeUpdate('users', { where: { id: 1 }, data }, ctx)
+    await plugin.onBeforeUpdate('User', { where: { id: 1 }, data }, ctx)
 
     // New file uploaded and swapped
     expect(typeof data.avatar).toBe('string')
@@ -6199,7 +6513,7 @@ describe('FileStorage plugin', () => {
     expect(mock.puts).toHaveLength(1)
 
     // afterWrite triggers old key deletion (it internally unstashes and deletes)
-    await plugin.onAfterWrite('users', 'update', {}, ctx)
+    await plugin.onAfterWrite('User', 'update', {}, ctx)
     expect(mock.deletes).toContain('users/1/avatar/old.jpg')
   })
 
@@ -6218,17 +6532,17 @@ describe('FileStorage plugin', () => {
     plugin._provider = mock
 
     const data: any = { resume: Buffer.from('new resume') }
-    await plugin.onBeforeUpdate('users', { where: { id: 1 }, data }, ctx)
+    await plugin.onBeforeUpdate('User', { where: { id: 1 }, data }, ctx)
 
     // File uploaded
     expect(mock.puts).toHaveLength(1)
 
     // No stash — keepVersions skips it
-    const stashedKey = plugin._unstash(ctx, 'users', 'resume')
+    const stashedKey = plugin._unstash(ctx, 'User', 'resume')
     expect(stashedKey).toBeUndefined()
 
     // afterWrite should not delete anything
-    await plugin.onAfterWrite('users', 'update', {}, ctx)
+    await plugin.onAfterWrite('User', 'update', {}, ctx)
     expect(mock.deletes).toHaveLength(0)
   })
 
@@ -6242,8 +6556,8 @@ describe('FileStorage plugin', () => {
     plugin._provider = mock
 
     // Manually stash a key to verify it's not deleted on create/delete ops
-    plugin._stash(ctx, 'users', 'avatar', 'some-old-key.jpg')
-    await plugin.onAfterWrite('users', 'create', {}, ctx)
+    plugin._stash(ctx, 'User', 'avatar', 'some-old-key.jpg')
+    await plugin.onAfterWrite('User', 'create', {}, ctx)
     expect(mock.deletes).toHaveLength(0)
   })
 
@@ -6268,7 +6582,7 @@ describe('FileStorage plugin', () => {
         resume: null,
       },
     ]
-    await plugin.onAfterDelete('users', rows, ctx)
+    await plugin.onAfterDelete('User', rows, ctx)
     expect(mock.deletes.sort()).toEqual([
       'users/1/avatar/photo.jpg',
       'users/1/resume/cv.pdf',
@@ -6285,7 +6599,7 @@ describe('FileStorage plugin', () => {
     const mock = makeMockProvider()
     plugin._provider = mock
 
-    await plugin.onAfterDelete('users', [{ id: 1, avatar: null, resume: null }], ctx)
+    await plugin.onAfterDelete('User', [{ id: 1, avatar: null, resume: null }], ctx)
     expect(mock.deletes).toHaveLength(0)
   })
 
@@ -6299,7 +6613,7 @@ describe('FileStorage plugin', () => {
     plugin._provider = mock
 
     // 'posts' is not in the schema — fileMap has no entry
-    await plugin.onAfterDelete('posts', [{ id: 1 }], ctx)
+    await plugin.onAfterDelete('Post', [{ id: 1 }], ctx)
     expect(mock.deletes).toHaveLength(0)
   })
 
@@ -6320,7 +6634,7 @@ describe('FileStorage plugin', () => {
     })
 
     // Seed a row with a pre-stored JSON ref (bypass upload)
-    await db.asSystem().users.create({
+    await db.asSystem().user.create({
       data: {
         id: 1, name: 'Alice',
         avatar: JSON.stringify({ key: 'users/1/avatar/photo.jpg', bucket: 'test' }),
@@ -6328,7 +6642,7 @@ describe('FileStorage plugin', () => {
       }
     })
 
-    await db.asSystem().users.delete({ where: { id: 1 } })
+    await db.asSystem().user.delete({ where: { id: 1 } })
     expect(deleted).toContain('users/1/avatar/photo.jpg')
     db.$close()
   })
@@ -6424,7 +6738,7 @@ describe('fileUrls() helper', () => {
 
 describe('buildReadFilter wired into buildSQL', () => {
   const schema = `
-    model posts {
+    model Post {
       id       Int @id
       authorId Int
       title    String
@@ -6440,7 +6754,7 @@ describe('buildReadFilter wired into buildSQL', () => {
       }
     }
     const db = await makeDb(schema, 'readfilter-findmany', { plugins: [new TenantFilter()] })
-    await db.asSystem().posts.createMany({ data: [
+    await db.asSystem().post.createMany({ data: [
       { id: 1, authorId: 1, title: 'Alice post' },
       { id: 2, authorId: 2, title: 'Bob post' },
       { id: 3, authorId: 1, title: 'Alice post 2' },
@@ -6449,7 +6763,7 @@ describe('buildReadFilter wired into buildSQL', () => {
     // Unscoped — system bypasses all gates but plugin filters still apply
     // For a user-scoped request, use $setAuth with a mock user
     const userDb = db.$setAuth({ userId: 1 })
-    const posts  = await userDb.posts.findMany({})
+    const posts  = await userDb.post.findMany({})
     expect(posts).toHaveLength(2)
     expect(posts.every((p: any) => p.authorId === 1)).toBe(true)
     db.$close()
@@ -6463,16 +6777,16 @@ describe('buildReadFilter wired into buildSQL', () => {
       }
     }
     const db = await makeDb(schema, 'readfilter-findfirst', { plugins: [new OwnerFilter()] })
-    await db.asSystem().posts.createMany({ data: [
+    await db.asSystem().post.createMany({ data: [
       { id: 1, authorId: 1, title: 'Mine' },
       { id: 2, authorId: 2, title: 'Not mine' },
     ]})
 
     const userDb = db.$setAuth({ userId: 2 })
-    const post   = await userDb.posts.findFirst({ where: { title: 'Mine' } })
+    const post   = await userDb.post.findFirst({ where: { title: 'Mine' } })
     expect(post).toBeNull()   // filter excludes it
 
-    const ownPost = await userDb.posts.findFirst({ where: { title: 'Not mine' } })
+    const ownPost = await userDb.post.findFirst({ where: { title: 'Not mine' } })
     expect(ownPost).not.toBeNull()
     db.$close()
   })
@@ -6486,7 +6800,7 @@ describe('buildReadFilter wired into buildSQL', () => {
       buildReadFilter() { return { id: 3 } }
     }
     const db = await makeDb(schema, 'readfilter-multi', { plugins: [new FilterA(), new FilterB()] })
-    await db.asSystem().posts.createMany({ data: [
+    await db.asSystem().post.createMany({ data: [
       { id: 1, authorId: 1, title: 'A' },
       { id: 2, authorId: 1, title: 'B' },
       { id: 3, authorId: 1, title: 'C' },
@@ -6494,7 +6808,7 @@ describe('buildReadFilter wired into buildSQL', () => {
     ]})
 
     // Both filters: authorId=1 AND id=3 → only post 3
-    const posts = await db.posts.findMany({})
+    const posts = await db.post.findMany({})
     expect(posts).toHaveLength(1)
     expect(posts[0].id).toBe(3)
     db.$close()
@@ -6506,11 +6820,11 @@ describe('buildReadFilter wired into buildSQL', () => {
       buildReadFilter() { return null }
     }
     const db = await makeDb(schema, 'readfilter-null', { plugins: [new NoFilter()] })
-    await db.asSystem().posts.createMany({ data: [
+    await db.asSystem().post.createMany({ data: [
       { id: 1, authorId: 1, title: 'A' },
       { id: 2, authorId: 2, title: 'B' },
     ]})
-    const posts = await db.posts.findMany({})
+    const posts = await db.post.findMany({})
     expect(posts).toHaveLength(2)
     db.$close()
   })
@@ -6523,13 +6837,13 @@ describe('buildReadFilter wired into buildSQL', () => {
       }
     }
     const db = await makeDb(schema, 'readfilter-count', { plugins: [new CountFilter()] })
-    await db.asSystem().posts.createMany({ data: [
+    await db.asSystem().post.createMany({ data: [
       { id: 1, authorId: 1, title: 'A' },
       { id: 2, authorId: 1, title: 'B' },
       { id: 3, authorId: 2, title: 'C' },
     ]})
     const userDb = db.$setAuth({ userId: 1 })
-    const n = await userDb.posts.count({})
+    const n = await userDb.post.count({})
     expect(n).toBe(2)
     db.$close()
   })
@@ -6540,7 +6854,7 @@ describe('buildReadFilter wired into buildSQL', () => {
 
 describe('onAfterRead wired into reads', () => {
   const schema = `
-    model articles {
+    model Article {
       id      Int @id
       title   String
       content String
@@ -6554,11 +6868,11 @@ describe('onAfterRead wired into reads', () => {
       async onAfterRead(_model: string, rows: unknown[]) { capturedRows = rows }
     }
     const db = await makeDb(schema, 'afterread-findmany', { plugins: [new Spy()] })
-    await db.articles.createMany({ data: [
+    await db.article.createMany({ data: [
       { id: 1, title: 'A', content: 'a' },
       { id: 2, title: 'B', content: 'b' },
     ]})
-    await db.articles.findMany({})
+    await db.article.findMany({})
     expect(capturedRows).toHaveLength(2)
     db.$close()
   })
@@ -6570,8 +6884,8 @@ describe('onAfterRead wired into reads', () => {
       async onAfterRead(_model: string, rows: unknown[]) { capturedRows = rows }
     }
     const db = await makeDb(schema, 'afterread-findfirst', { plugins: [new Spy()] })
-    await db.articles.create({ data: { id: 1, title: 'Hello', content: 'world' } })
-    await db.articles.findFirst({ where: { id: 1 } })
+    await db.article.create({ data: { id: 1, title: 'Hello', content: 'world' } })
+    await db.article.findFirst({ where: { id: 1 } })
     expect(capturedRows).toHaveLength(1)
     expect((capturedRows[0] as any).id).toBe(1)
     db.$close()
@@ -6585,11 +6899,11 @@ describe('onAfterRead wired into reads', () => {
       }
     }
     const db = await makeDb(schema, 'afterread-mutate', { plugins: [new Redactor()] })
-    await db.articles.createMany({ data: [
+    await db.article.createMany({ data: [
       { id: 1, title: 'A', content: 'secret-a' },
       { id: 2, title: 'B', content: 'secret-b' },
     ]})
-    const rows = await db.articles.findMany({})
+    const rows = await db.article.findMany({})
     expect(rows.every((r: any) => r.content === '[redacted]')).toBe(true)
     db.$close()
   })
@@ -6601,7 +6915,7 @@ describe('onAfterRead wired into reads', () => {
       async onAfterRead(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(schema, 'afterread-empty', { plugins: [new Spy()] })
-    await db.articles.findMany({})
+    await db.article.findMany({})
     expect(called).toBe(false)
     db.$close()
   })
@@ -6613,7 +6927,7 @@ describe('onAfterRead wired into reads', () => {
       async onAfterRead(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(schema, 'afterread-null', { plugins: [new Spy()] })
-    const row = await db.articles.findFirst({ where: { id: 999 } })
+    const row = await db.article.findFirst({ where: { id: 999 } })
     expect(row).toBeNull()
     expect(called).toBe(false)
     db.$close()
@@ -6625,7 +6939,7 @@ describe('onAfterRead wired into reads', () => {
 
 describe('upsert plugin hooks', () => {
   const schema = `
-    model notes {
+    model Note {
       id      Int @id
       content String
     }
@@ -6639,7 +6953,7 @@ describe('upsert plugin hooks', () => {
       async onBeforeUpdate() { ops.push('update') }
     }
     const db = await makeDb(schema, 'upsert-hook-create', { plugins: [new Spy()] })
-    await db.notes.upsert({
+    await db.note.upsert({
       where:  { id: 1 },
       create: { id: 1, content: 'hello' },
       update: { content: 'world' },
@@ -6656,10 +6970,10 @@ describe('upsert plugin hooks', () => {
       async onBeforeUpdate() { ops.push('update') }
     }
     const db = await makeDb(schema, 'upsert-hook-update', { plugins: [new Spy()] })
-    await db.notes.create({ data: { id: 1, content: 'existing' } })
+    await db.note.create({ data: { id: 1, content: 'existing' } })
     ops.length = 0   // clear the create hook from the setup call
 
-    await db.notes.upsert({
+    await db.note.upsert({
       where:  { id: 1 },
       create: { id: 1, content: 'hello' },
       update: { content: 'updated' },
@@ -6675,9 +6989,9 @@ describe('upsert plugin hooks', () => {
       async onBeforeUpdate(_model: string, args: any) { capturedArgs = args }
     }
     const db = await makeDb(schema, 'upsert-hook-args', { plugins: [new Spy()] })
-    await db.notes.create({ data: { id: 5, content: 'existing' } })
+    await db.note.create({ data: { id: 5, content: 'existing' } })
 
-    await db.notes.upsert({
+    await db.note.upsert({
       where:  { id: 5 },
       create: { id: 5, content: 'new' },
       update: { content: 'updated content' },
@@ -6693,7 +7007,7 @@ describe('upsert plugin hooks', () => {
 
 describe('removeMany plugin hooks', () => {
   const schema = `
-    model tasks {
+    model Task {
       id        Int  @id
       status    String     @default("open")
       deletedAt DateTime?
@@ -6708,8 +7022,8 @@ describe('removeMany plugin hooks', () => {
       async onBeforeDelete() { fired = true }
     }
     const db = await makeDb(schema, 'removemany-before-soft', { plugins: [new Spy()] })
-    await db.tasks.createMany({ data: [{ id: 1, status: 'open' }, { id: 2, status: 'open' }] })
-    await db.tasks.removeMany({ where: { status: 'open' } })
+    await db.task.createMany({ data: [{ id: 1, status: 'open' }, { id: 2, status: 'open' }] })
+    await db.task.removeMany({ where: { status: 'open' } })
     expect(fired).toBe(true)
     db.$close()
   })
@@ -6721,8 +7035,8 @@ describe('removeMany plugin hooks', () => {
       async onBeforeDelete(_model: string, args: any) { capturedWhere = args.where }
     }
     const db = await makeDb(schema, 'removemany-before-where', { plugins: [new Spy()] })
-    await db.tasks.createMany({ data: [{ id: 1, status: 'done' }] })
-    await db.tasks.removeMany({ where: { status: 'done' } })
+    await db.task.createMany({ data: [{ id: 1, status: 'done' }] })
+    await db.task.removeMany({ where: { status: 'done' } })
     expect(capturedWhere).toEqual({ status: 'done' })
     db.$close()
   })
@@ -6733,10 +7047,10 @@ describe('removeMany plugin hooks', () => {
       async onBeforeDelete() { throw new Error('removal blocked') }
     }
     const db = await makeDb(schema, 'removemany-before-throws', { plugins: [new Guard()] })
-    await db.tasks.createMany({ data: [{ id: 1, status: 'open' }] })
-    await expect(db.tasks.removeMany({ where: { status: 'open' } })).rejects.toThrow('removal blocked')
+    await db.task.createMany({ data: [{ id: 1, status: 'open' }] })
+    await expect(db.task.removeMany({ where: { status: 'open' } })).rejects.toThrow('removal blocked')
     // Row should still exist
-    const count = await db.tasks.count()
+    const count = await db.task.count()
     expect(count).toBe(1)
     db.$close()
   })
@@ -6749,7 +7063,7 @@ describe('transform hooks (before/after)', () => {
   test('before:setters runs on create — can mutate data', async () => {
     const log: string[] = []
     const db = await makeDb(`
-      model items { id Int @id
+      model Item { id Int @id
         name String
         score Int }
     `, 'hook-before', {
@@ -6763,8 +7077,8 @@ describe('transform hooks (before/after)', () => {
         }
       }
     })
-    await db.items.create({ data: { id: 1, name: 'A', score: '5' } })
-    const row = await db.items.findUnique({ where: { id: 1 } })
+    await db.item.create({ data: { id: 1, name: 'A', score: '5' } })
+    const row = await db.item.findUnique({ where: { id: 1 } })
     expect(row.score).toBe(10)           // '5' → 5 → *2 = 10
     expect(log).toContain('before:create')
     db.$close()
@@ -6773,7 +7087,7 @@ describe('transform hooks (before/after)', () => {
   test('before:update only runs on update', async () => {
     const ops: string[] = []
     const db = await makeDb(`
-      model items { id Int @id
+      model Item { id Int @id
         name String }
     `, 'hook-update', {
       hooks: {
@@ -6782,15 +7096,15 @@ describe('transform hooks (before/after)', () => {
         }
       }
     })
-    await db.items.create({ data: { id: 1, name: 'A' } })
-    await db.items.update({ where: { id: 1 }, data: { name: 'B' } })
+    await db.item.create({ data: { id: 1, name: 'A' } })
+    await db.item.update({ where: { id: 1 }, data: { name: 'B' } })
     expect(ops).toEqual(['update'])     // fired once, only on update
     db.$close()
   })
 
   test('after:getters transforms read result', async () => {
     const db = await makeDb(`
-      model users { id Int @id
+      model User { id Int @id
         first String
         last String }
     `, 'hook-after', {
@@ -6803,11 +7117,11 @@ describe('transform hooks (before/after)', () => {
         }
       }
     })
-    await db.users.create({ data: { id: 1, first: 'Alice', last: 'Smith' } })
-    const rows = await db.users.findMany()
+    await db.user.create({ data: { id: 1, first: 'Alice', last: 'Smith' } })
+    const rows = await db.user.findMany()
     expect(rows[0].fullName).toBe('Alice Smith')
 
-    const one = await db.users.findFirst({ where: { id: 1 } })
+    const one = await db.user.findFirst({ where: { id: 1 } })
     expect(one.fullName).toBe('Alice Smith')
     db.$close()
   })
@@ -6815,7 +7129,7 @@ describe('transform hooks (before/after)', () => {
   test('after:all runs on both reads and writes', async () => {
     const ops: string[] = []
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'hook-all', {
       hooks: {
@@ -6836,7 +7150,7 @@ describe('transform hooks (before/after)', () => {
   test('before hook gets schema (model definition)', async () => {
     let capturedSchema: any = null
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'hook-schema', {
       hooks: {
@@ -6846,14 +7160,14 @@ describe('transform hooks (before/after)', () => {
       }
     })
     await db.t.create({ data: { id: 1, val: 'x' } })
-    expect(capturedSchema?.name).toBe('t')
+    expect(capturedSchema?.name).toBe('T')
     expect(capturedSchema?.fields?.length).toBeGreaterThan(0)
     db.$close()
   })
 
   test('no hooks — normal operation unaffected', async () => {
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'hook-none')
     await db.t.create({ data: { id: 1, val: 'x' } })
@@ -6870,7 +7184,7 @@ describe('event listeners (on.*)', () => {
   test('on.create fires after create', async () => {
     const events: any[] = []
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'evt-create', {
       onEvent: { create: (event: any) => events.push({ op: event.operation, id: event.result?.id }) }
@@ -6886,7 +7200,7 @@ describe('event listeners (on.*)', () => {
   test('on.update fires after update', async () => {
     const events: any[] = []
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'evt-update', {
       onEvent: { update: (event: any) => events.push(event.operation) }
@@ -6901,7 +7215,7 @@ describe('event listeners (on.*)', () => {
   test('on.remove fires after remove', async () => {
     const events: any[] = []
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String
         deletedAt DateTime?
         @@softDelete }
@@ -6918,7 +7232,7 @@ describe('event listeners (on.*)', () => {
   test('on.change fires for all writes', async () => {
     const ops: string[] = []
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'evt-change', {
       onEvent: { change: (event: any) => ops.push(event.operation) }
@@ -6933,7 +7247,7 @@ describe('event listeners (on.*)', () => {
 
   test('event listener errors do not throw to caller', async () => {
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'evt-error', {
       onEvent: { create: () => { throw new Error('listener crash') } }
@@ -6946,7 +7260,7 @@ describe('event listeners (on.*)', () => {
   test('event fires after result is returned to caller', async () => {
     const timeline: string[] = []
     const db = await makeDb(`
-      model t { id Int @id
+      model T { id Int @id
         val String }
     `, 'evt-timing', {
       onEvent: { create: () => timeline.push('event') }
@@ -6997,7 +7311,7 @@ describe('enum transitions — parser', () => {
 
   test('plain enum (no transitions) still valid', () => {
     const r = parse(`enum Color { red green blue }
-model t { id Int @id; c Color }`)
+model T { id Int @id; c Color }`)
     expect(r.valid).toBe(true)
     const en = r.schema.enums[0]
     expect(en.transitions).toBeUndefined()
@@ -7034,43 +7348,302 @@ model t { id Int @id; c Color }`)
 })
 
 
+// ─── @@transitions — the model-level form ─────────────────────────────────────
+// The state machine belongs beside @@gate and @@allow, where every other access
+// declaration lives: a per-transition gate is a model concern, and two models
+// sharing one enum must be able to differ.
+
+import { GatePlugin, LEVELS } from '../src/plugins/gate.js'
+import { TransitionGateError, TransitionViolationError } from '../src/core/client.js'
+
+const GATED_SCHEMA = `
+  enum OrderStatus { pending  paid  shipped  refunded  cancelled }
+
+  model Order {
+    id     Int @id
+    status OrderStatus @default(pending)
+
+    @@transitions(status,
+      pay:    pending         -> paid,
+      ship:   paid            -> shipped,
+      refund: paid            -> refunded @gate(5),
+      cancel: [pending, paid] -> cancelled)
+  }
+`
+
+describe('@@transitions — parser', () => {
+  test('parses named, unnamed, multi-from and gated clauses', () => {
+    const r = parse(GATED_SCHEMA)
+    expect(r.valid).toBe(true)
+    expect(r.errors).toEqual([])
+
+    const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
+    expect(attr.field).toBe('status')
+    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null })
+    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5 })
+    expect(attr.transitions.cancel.from).toEqual(['pending', 'paid'])
+  })
+
+  test('an unnamed clause names itself after the target state', () => {
+    const r = parse(`enum S { pending paid }
+model Order { id Int @id  status S  @@transitions(status, pending -> paid) }`)
+    expect(r.valid).toBe(true)
+    const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
+    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null })
+  })
+
+  test('@gate accepts a level name as well as a number', () => {
+    const r = parse(`enum S { a b }
+model M { id Int @id  s S  @@transitions(s, go: a -> b @gate(ADMINISTRATOR)) }`)
+    expect(r.valid).toBe(true)
+    expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
+      .transitions.go.gate).toBe(5)
+  })
+
+  test.each([
+    ['unknown field',      `@@transitions(nope, a -> b)`,        'no such field'],
+    ['non-enum field',     `@@transitions(n, a -> b)`,           'not an enum'],
+    ['unknown to-value',   `@@transitions(s, a -> zzz)`,         "unknown value 'zzz'"],
+    ['unknown from-value', `@@transitions(s, zzz -> b)`,         "unknown value 'zzz'"],
+    ['self-transition',    `@@transitions(s, a -> a)`,           'self-transition'],
+    ['duplicate name',     `@@transitions(s, go: a -> b, go: b -> a)`, 'duplicate transition name'],
+    ['gate out of range',  `@@transitions(s, a -> b @gate(12))`, 'integer 0–9'],
+    ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'unknown level'],
+    ['no clauses',         `@@transitions(s)`,                   'at least one transition'],
+    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate is supported'],
+  ])('rejects: %s', (_label, attr, fragment) => {
+    const r = parse(`enum S { a b }
+model M { id Int @id  s S  n Int  ${attr} }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain(fragment)
+  })
+
+  test('two @@transitions for the same field is an error', () => {
+    const r = parse(`enum S { a b }
+model M { id Int @id  s S
+  @@transitions(s, go: a -> b)
+  @@transitions(s, back: b -> a) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('two @@transitions')
+  })
+})
+
+
+describe('@@transitions — enum block desugars into it', () => {
+  test('every model using the enum picks up the shared machine', () => {
+    const { schema, valid } = parse(`enum S { draft live archived
+  transitions { publish: draft -> live  archive: live -> archived } }
+model Page    { id Int @id  status S }
+model Article { id Int @id  status S }`)
+    expect(valid).toBe(true)
+    for (const m of schema.models) {
+      const attr = m.attributes.find((a: any) => a.kind === 'transitions')
+      expect(attr.field).toBe('status')
+      expect(attr.fromEnum).toBe('S')
+      expect(Object.keys(attr.transitions)).toEqual(['publish', 'archive'])
+      expect(attr.transitions.publish.gate).toBe(null)
+    }
+  })
+
+  test('an explicit @@transitions overrides rather than merges', () => {
+    const { schema, valid } = parse(`enum S { draft live archived
+  transitions { publish: draft -> live  archive: live -> archived } }
+model Page { id Int @id  status S  @@transitions(status, bin: draft -> archived) }`)
+    expect(valid).toBe(true)
+    const attrs = schema.models[0].attributes.filter((a: any) => a.kind === 'transitions')
+    expect(attrs).toHaveLength(1)
+    expect(Object.keys(attrs[0].transitions)).toEqual(['bin'])
+  })
+
+  test('the same enum can carry different rules on two models', async () => {
+    // The reason the machine lives on the model: an enum block cannot say this.
+    const { db } = await makeTestClient(`enum S { pending approved }
+model Order   { id Int @id  status S @default(pending)  @@transitions(status, approve: pending -> approved) }
+model Expense { id Int @id  status S @default(pending)  @@transitions(status, approve: pending -> approved @gate(5)) }`)
+    // No GatePlugin configured, so the shipped FrontierGateGetLevel resolves —
+    // it grades a bare session at VISITOR(1), well under the gate either way.
+    const user = db.$setAuth({ id: 1 })
+
+    const o = await user.order.create({ data: { id: 1 } })
+    expect((await user.order.transitions(o))[0].allowed).toBe(true)
+
+    const e = await user.expense.create({ data: { id: 1 } })
+    expect((await user.expense.transitions(e))[0].allowed).toBe(false)
+    db.$close()
+  })
+})
+
+
+describe('@@transitions — gates', () => {
+  let db: any
+  beforeEach(async () => {
+    const result = await makeTestClient(GATED_SCHEMA, {
+      plugins: [new GatePlugin({
+        getLevel: (u: any) => u?.role === 'admin' ? LEVELS.ADMINISTRATOR : LEVELS.USER,
+      })],
+    })
+    db = result.db
+    await db.order.create({ data: { id: 1, status: 'paid' } })
+  })
+  afterEach(() => db.$close())
+
+  test('a gated transition is refused below the level', async () => {
+    const user = db.$setAuth({ id: 1, role: 'member' })
+    await expect(user.order.transition(1, 'refund')).rejects.toThrow(TransitionGateError)
+    expect((await db.asSystem().order.findUnique({ where: { id: 1 } })).status).toBe('paid')
+  })
+
+  test('the error carries required, got and a 403 it owns', async () => {
+    const user = db.$setAuth({ id: 1, role: 'member' })
+    try {
+      await user.order.update({ where: { id: 1 }, data: { status: 'refunded' } })
+      throw new Error('should have thrown')
+    } catch (e: any) {
+      expect(e.name).toBe('TransitionGateError')
+      expect(e.required).toBe(5)
+      expect(e.got).toBe(4)
+      expect(e.status).toBe(403)          // junction maps this without registration
+      expect(e.transition).toBe('refund')
+      expect(e.retryable).toBe(false)
+    }
+  })
+
+  test('at or above the level it goes through', async () => {
+    const admin = db.$setAuth({ id: 2, role: 'admin' })
+    expect((await admin.order.transition(1, 'refund')).status).toBe('refunded')
+  })
+
+  test('an ungated transition on the same field is unaffected', async () => {
+    const user = db.$setAuth({ id: 1, role: 'member' })
+    expect((await user.order.transition(1, 'ship')).status).toBe('shipped')
+  })
+
+  test('asSystem() bypasses the gate as it bypasses the machine', async () => {
+    const r = await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'refunded' } })
+    expect(r.status).toBe('refunded')
+  })
+
+  test('an illegal move is still refused for an admin — a gate is not an override', async () => {
+    const admin = db.$setAuth({ id: 2, role: 'admin' })
+    await expect(admin.order.update({ where: { id: 1 }, data: { status: 'pending' } }))
+      .rejects.toThrow(TransitionViolationError)
+  })
+
+  test('a gated transition enforces with no GatePlugin configured', async () => {
+    // A declared gate that silently does nothing is a fail-open default, so
+    // createClient auto-installs a resolver the same way @@gate does.
+    const { db: bare } = await makeTestClient(GATED_SCHEMA)
+    await bare.order.create({ data: { id: 9, status: 'paid' } })
+    const user = bare.$setAuth({ id: 1 })
+    const err  = await user.order.transition(9, 'refund').catch((e: any) => e)
+    expect(err).toBeInstanceOf(TransitionGateError)
+    // A bare `{ id: 1 }` session carries no role, so FrontierGateGetLevel
+    // grades it CREATOR(3) — below the transition's gate, which is the point.
+    //
+    // This asserted 1 (VISITOR) until 2026-08-04, when the resolver stopped
+    // treating an ABSENT verifiedAt as "unverified". Absence means the app does
+    // not model verification; only `null` means modelled-and-not-reached. The
+    // old reading graded every session from every app without a verification
+    // flow at VISITOR(1), below the USER(4) an ordinary model needs to read.
+    expect(err.got).toBe(3)
+    expect((await bare.asSystem().order.findUnique({ where: { id: 9 } })).status).toBe('paid')
+    bare.$close()
+  })
+})
+
+
+describe('@@transitions — transitions() listing', () => {
+  let db: any
+  beforeEach(async () => {
+    const result = await makeTestClient(GATED_SCHEMA, {
+      plugins: [new GatePlugin({
+        getLevel: (u: any) => u?.role === 'admin' ? LEVELS.ADMINISTRATOR : LEVELS.USER,
+      })],
+    })
+    db = result.db
+    await db.order.create({ data: { id: 1, status: 'pending' } })
+    await db.order.create({ data: { id: 2, status: 'paid' } })
+  })
+  afterEach(() => db.$close())
+
+  test('lists only the moves legal from the current state', async () => {
+    const user = db.$setAuth({ id: 1, role: 'member' })
+    const names = (await user.order.transitions(1)).map((t: any) => t.name)
+    expect(names.sort()).toEqual(['cancel', 'pay'])
+  })
+
+  test('a gated move is reported with allowed:false, not hidden', async () => {
+    const user   = db.$setAuth({ id: 1, role: 'member' })
+    const refund = (await user.order.transitions(2)).find((t: any) => t.name === 'refund')
+    expect(refund).toEqual({ name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5, allowed: false })
+  })
+
+  test('the same record reads differently for a higher level', async () => {
+    const admin  = db.$setAuth({ id: 2, role: 'admin' })
+    const refund = (await admin.order.transitions(2)).find((t: any) => t.name === 'refund')
+    expect(refund.allowed).toBe(true)
+  })
+
+  test('accepts a row as well as an id — no round trip', async () => {
+    const user = db.$setAuth({ id: 1, role: 'member' })
+    const row  = await user.order.findUnique({ where: { id: 2 } })
+    expect((await user.order.transitions(row)).map((t: any) => t.name).sort())
+      .toEqual(['cancel', 'refund', 'ship'])
+  })
+
+  test('a terminal state offers nothing', async () => {
+    const admin = db.$setAuth({ id: 2, role: 'admin' })
+    await admin.order.transition(2, 'refund')
+    expect(await admin.order.transitions(2)).toEqual([])
+  })
+
+  test('a missing record and a model with no machine both return []', async () => {
+    expect(await db.order.transitions(999)).toEqual([])
+    const { db: plain } = await makeTestClient(`model T { id Int @id  n Int }`)
+    await plain.t.create({ data: { id: 1, n: 1 } })
+    expect(await plain.t.transitions(1)).toEqual([])
+    plain.$close()
+  })
+})
+
+
 describe('enum transitions — enforcement', () => {
   let db: any
 
   beforeEach(async () => {
     const result = await makeTestClient(TRANSITION_SCHEMA)
     db = result.db
-    await db.orders.create({ data: { id: 1, status: 'pending' } })
-    await db.orders.create({ data: { id: 2, status: 'paid' } })
-    await db.orders.create({ data: { id: 3, status: 'shipped' } })
+    await db.order.create({ data: { id: 1, status: 'pending' } })
+    await db.order.create({ data: { id: 2, status: 'paid' } })
+    await db.order.create({ data: { id: 3, status: 'shipped' } })
   })
   afterEach(() => db.$close())
 
   // ── Valid transitions ────────────────────────────────────────────────────────
 
   test('valid transition via update()', async () => {
-    const r = await db.orders.update({ where: { id: 1 }, data: { status: 'paid' } })
+    const r = await db.order.update({ where: { id: 1 }, data: { status: 'paid' } })
     expect(r.status).toBe('paid')
   })
 
   test('valid multi-from transition: paid -> refunded', async () => {
-    const r = await db.orders.update({ where: { id: 2 }, data: { status: 'refunded' } })
+    const r = await db.order.update({ where: { id: 2 }, data: { status: 'refunded' } })
     expect(r.status).toBe('refunded')
   })
 
   test('valid multi-from transition: shipped -> refunded', async () => {
-    const r = await db.orders.update({ where: { id: 3 }, data: { status: 'refunded' } })
+    const r = await db.order.update({ where: { id: 3 }, data: { status: 'refunded' } })
     expect(r.status).toBe('refunded')
   })
 
   test('non-transition field update unaffected', async () => {
-    const r = await db.orders.update({ where: { id: 1 }, data: { note: 'hello' } })
+    const r = await db.order.update({ where: { id: 1 }, data: { note: 'hello' } })
     expect(r.note).toBe('hello')
     expect(r.status).toBe('pending')
   })
 
   test('no-op update (same value) does not throw', async () => {
-    const r = await db.orders.update({ where: { id: 1 }, data: { status: 'pending' } })
+    const r = await db.order.update({ where: { id: 1 }, data: { status: 'pending' } })
     expect(r.status).toBe('pending')
   })
 
@@ -7078,15 +7651,15 @@ describe('enum transitions — enforcement', () => {
 
   test('invalid transition throws TransitionViolationError', async () => {
     await expect(
-      db.orders.update({ where: { id: 1 }, data: { status: 'shipped' } })
+      db.order.update({ where: { id: 1 }, data: { status: 'shipped' } })
     ).rejects.toBeInstanceOf(TransitionViolationError)
   })
 
   test('TransitionViolationError has correct fields', async () => {
     try {
-      await db.orders.update({ where: { id: 1 }, data: { status: 'shipped' } })
+      await db.order.update({ where: { id: 1 }, data: { status: 'shipped' } })
     } catch (e: any) {
-      expect(e.model).toBe('orders')
+      expect(e.model).toBe('order')  // carries the table name
       expect(e.field).toBe('status')
       expect(e.from).toBe('pending')
       expect(e.to).toBe('shipped')
@@ -7096,46 +7669,46 @@ describe('enum transitions — enforcement', () => {
 
   test('pending -> delivered invalid (no direct transition)', async () => {
     await expect(
-      db.orders.update({ where: { id: 1 }, data: { status: 'delivered' } })
+      db.order.update({ where: { id: 1 }, data: { status: 'delivered' } })
     ).rejects.toBeInstanceOf(TransitionViolationError)
   })
 
   test('pending -> refunded invalid', async () => {
     await expect(
-      db.orders.update({ where: { id: 1 }, data: { status: 'refunded' } })
+      db.order.update({ where: { id: 1 }, data: { status: 'refunded' } })
     ).rejects.toBeInstanceOf(TransitionViolationError)
   })
 
   // ── transition() method ──────────────────────────────────────────────────────
 
   test('transition() resolves name to value', async () => {
-    const r = await db.orders.transition(1, 'pay')
+    const r = await db.order.transition(1, 'pay')
     expect(r.status).toBe('paid')
   })
 
   test('transition() multi-step', async () => {
-    await db.orders.transition(1, 'pay')
-    await db.orders.transition(1, 'ship')
-    const r = await db.orders.findUnique({ where: { id: 1 } })
+    await db.order.transition(1, 'pay')
+    await db.order.transition(1, 'ship')
+    const r = await db.order.findUnique({ where: { id: 1 } })
     expect(r.status).toBe('shipped')
   })
 
   test('transition() throws TransitionNotFoundError for unknown name', async () => {
-    await expect(db.orders.transition(1, 'fly')).rejects.toBeInstanceOf(TransitionNotFoundError)
+    await expect(db.order.transition(1, 'fly')).rejects.toBeInstanceOf(TransitionNotFoundError)
   })
 
   test('TransitionNotFoundError has correct fields', async () => {
     try {
-      await db.orders.transition(1, 'fly')
+      await db.order.transition(1, 'fly')
     } catch (e: any) {
-      expect(e.model).toBe('orders')
+      expect(e.model).toBe('order')  // carries the table name
       expect(e.transition).toBe('fly')
       expect(e.retryable).toBe(false)
     }
   })
 
   test('transition() on model without transitions throws helpful error', async () => {
-    const { db: db2 } = await makeTestClient(`model t { id Int @id; name String }`)
+    const { db: db2 } = await makeTestClient(`model T { id Int @id; name String }`)
     await expect(db2.t.transition(1, 'go')).rejects.toThrow('no transitions block')
     db2.$close()
   })
@@ -7144,13 +7717,13 @@ describe('enum transitions — enforcement', () => {
 
   test('create with @default value: no enforcement', async () => {
     // pending is the default — creating with it should always work
-    const r = await db.orders.create({ data: { id: 10, status: 'pending' } })
+    const r = await db.order.create({ data: { id: 10, status: 'pending' } })
     expect(r.status).toBe('pending')
   })
 
   test('create with non-default value: no enforcement (create is exempt)', async () => {
     // Creating directly with 'paid' skips transition checks — create is always exempt
-    const r = await db.orders.create({ data: { id: 11, status: 'paid' } })
+    const r = await db.order.create({ data: { id: 11, status: 'paid' } })
     expect(r.status).toBe('paid')
   })
 
@@ -7159,7 +7732,7 @@ describe('enum transitions — enforcement', () => {
   test('plain enum field update is unaffected', async () => {
     const { db: db2 } = await makeTestClient(`
       enum Color { red green blue }
-      model t { id Int @id; c Color @default(red) }
+      model T { id Int @id; c Color @default(red) }
     `)
     await db2.t.create({ data: { id: 1, c: 'red' } })
     const r = await db2.t.update({ where: { id: 1 }, data: { c: 'blue' } })
@@ -7171,7 +7744,7 @@ describe('enum transitions — enforcement', () => {
 
   test('asSystem() bypasses transition enforcement', async () => {
     // pending -> shipped would normally be invalid
-    const r = await db.asSystem().orders.update({ where: { id: 1 }, data: { status: 'shipped' } })
+    const r = await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'shipped' } })
     expect(r.status).toBe('shipped')
   })
 
@@ -7180,7 +7753,7 @@ describe('enum transitions — enforcement', () => {
   test('successful transition fires transition event', async () => {
     const events: any[] = []
     const { db: evDb } = await makeTestClient(TRANSITION_SCHEMA, {
-      data: async (db) => { await db.orders.create({ data: { id: 1, status: 'pending' } }) },
+      data: async (db) => { await db.order.create({ data: { id: 1, status: 'pending' } }) },
     })
     // Re-create with event listener
     const evDb2 = await (async () => {
@@ -7201,15 +7774,15 @@ describe('enum transitions — enforcement', () => {
       raw.close()
       return createClient({ parsed: result,  db: path, onEvent: { transition: (e: any) => events.push(e) } })
     })()
-    await evDb2.orders.create({ data: { id: 1, status: 'pending' } })
-    await evDb2.orders.update({ where: { id: 1 }, data: { status: 'paid' } })
+    await evDb2.order.create({ data: { id: 1, status: 'pending' } })
+    await evDb2.order.update({ where: { id: 1 }, data: { status: 'paid' } })
     // Give the setTimeout(0) a tick to fire
     await new Promise(r => setTimeout(r, 10))
     expect(events.length).toBe(1)
     expect(events[0].transition).toBe('pay')
     expect(events[0].from).toBe('pending')
     expect(events[0].to).toBe('paid')
-    expect(events[0].model).toBe('orders')
+    expect(events[0].model).toBe('order')  // carries the table name
     evDb.$close(); evDb2.$close()
   })
 })
@@ -7221,8 +7794,8 @@ describe('enum transitions — conflict and upsert', () => {
   beforeEach(async () => {
     const result = await makeTestClient(TRANSITION_SCHEMA)
     db = result.db
-    await db.orders.create({ data: { id: 1, status: 'pending' } })
-    await db.orders.create({ data: { id: 2, status: 'paid' } })
+    await db.order.create({ data: { id: 1, status: 'pending' } })
+    await db.order.create({ data: { id: 2, status: 'paid' } })
   })
   afterEach(() => db.$close())
 
@@ -7247,7 +7820,7 @@ describe('enum transitions — conflict and upsert', () => {
     let hooked = false
     ;(rawDb as any).prepare = function(sql: string) {
       const stmt = origPrepare(sql)
-      if (!hooked && /UPDATE.*orders.*RETURNING/i.test(sql)) {
+      if (!hooked && /UPDATE.*order.*RETURNING/i.test(sql)) {
         hooked = true
         const origGet = stmt.get.bind(stmt)
         ;(stmt as any).get = (...args: any[]) => {
@@ -7259,7 +7832,7 @@ describe('enum transitions — conflict and upsert', () => {
     }
     try {
       await expect(
-        db.orders.update({ where: { id: 2 }, data: { status: 'shipped' } })
+        db.order.update({ where: { id: 2 }, data: { status: 'shipped' } })
       ).rejects.toBeInstanceOf(TransitionConflictError)
     } finally {
       ;(rawDb as any).prepare = origPrepare
@@ -7271,7 +7844,7 @@ describe('enum transitions — conflict and upsert', () => {
     const originalRun = rawDb.run.bind(rawDb)
     let patched = false
     rawDb.run = function(sql: string, ...args: any[]) {
-      if (!patched && typeof sql === 'string' && sql.includes('UPDATE') && sql.includes('"orders"')) {
+      if (!patched && typeof sql === 'string' && sql.includes('UPDATE') && sql.includes('"order"')) {
         patched = true
         return { changes: 0, lastInsertRowid: 0 }
       }
@@ -7279,10 +7852,10 @@ describe('enum transitions — conflict and upsert', () => {
     }
 
     try {
-      await db.orders.update({ where: { id: 2 }, data: { status: 'shipped' } })
+      await db.order.update({ where: { id: 2 }, data: { status: 'shipped' } })
     } catch (e: any) {
       expect(e).toBeInstanceOf(TransitionConflictError)
-      expect(e.model).toBe('orders')
+      expect(e.model).toBe('order')  // carries the table name
       expect(e.field).toBe('status')
       expect(e.from).toBe('paid')
       expect(e.to).toBe('shipped')
@@ -7293,7 +7866,7 @@ describe('enum transitions — conflict and upsert', () => {
   })
 
   test('ConflictError is marked retryable', async () => {
-    const err = new TransitionConflictError('orders', 'status', 'paid', 'shipped')
+    const err = new TransitionConflictError('Order', 'status', 'paid', 'shipped')
     expect(err.retryable).toBe(true)
     expect(err).toBeInstanceOf(Error)
   })
@@ -7305,7 +7878,7 @@ describe('enum transitions — conflict and upsert', () => {
 
   test('upsert existing row: valid transition enforced', async () => {
     // id=1 exists with status=pending — pay is a valid transition
-    const r = await db.orders.upsert({
+    const r = await db.order.upsert({
       where:  { id: 1 },
       create: { id: 1, status: 'pending' },
       update: { status: 'paid' },
@@ -7315,7 +7888,7 @@ describe('enum transitions — conflict and upsert', () => {
 
   test('upsert existing row: invalid transition throws TransitionViolationError', async () => {
     // id=1 exists with status=pending — ship is NOT valid from pending
-    await expect(db.orders.upsert({
+    await expect(db.order.upsert({
       where:  { id: 1 },
       create: { id: 1, status: 'pending' },
       update: { status: 'shipped' },
@@ -7324,7 +7897,7 @@ describe('enum transitions — conflict and upsert', () => {
 
   test('upsert new row (create path): exempt from enforcement', async () => {
     // id=99 does not exist — create path, always exempt
-    const r = await db.orders.upsert({
+    const r = await db.order.upsert({
       where:  { id: 99 },
       create: { id: 99, status: 'shipped' },   // non-default, would fail if enforced
       update: { status: 'delivered' },
@@ -7335,21 +7908,61 @@ describe('enum transitions — conflict and upsert', () => {
 
 
 describe('enum transitions — JSON Schema', () => {
-  test('x-litestone-transitions emitted on enum with transitions', () => {
+  // The model is the owner: an enum block desugars onto every model that uses
+  // it, and only a model can carry a per-transition @gate. Emitting on both
+  // would give the client two sources to disagree about.
+  test('x-transitions emitted on the model, keyed by field', () => {
+    const { schema } = parse(TRANSITION_SCHEMA)
+    const js = generateJsonSchema(schema)
+    const modelDef = js['$defs']?.['Order'] ?? js['Order']
+    expect(modelDef['x-transitions']).toBeDefined()
+    expect(modelDef['x-transitions'].status.pay).toEqual({ from: ['pending'], to: 'paid', gate: null })
+    expect(modelDef['x-transitions'].status.refund).toEqual({ from: ['paid','shipped'], to: 'refunded', gate: null })
+  })
+
+  test('enum def carries no transitions — the model is the only source', () => {
     const { schema } = parse(TRANSITION_SCHEMA)
     const js = generateJsonSchema(schema)
     const enumDef = js['$defs']?.['OrderStatus'] ?? js['OrderStatus']
-    expect(enumDef['x-litestone-transitions']).toBeDefined()
-    expect(enumDef['x-litestone-transitions'].pay).toEqual({ from: ['pending'], to: 'paid' })
-    expect(enumDef['x-litestone-transitions'].refund).toEqual({ from: ['paid','shipped'], to: 'refunded' })
+    expect(enumDef['x-litestone-transitions']).toBeUndefined()
+    expect(enumDef.enum).toEqual(['pending','paid','shipped','delivered','refunded'])
   })
 
-  test('plain enum has no x-litestone-transitions', () => {
+  test('model without transitions has no x-transitions', () => {
     const { schema } = parse(`enum Color { red green blue }
-model t { id Int @id; c Color }`)
+model T { id Int @id; c Color }`)
     const js = generateJsonSchema(schema)
-    const enumDef = js['$defs']?.['Color'] ?? js['Color']
-    expect(enumDef['x-litestone-transitions']).toBeUndefined()
+    const modelDef = js['$defs']?.['T'] ?? js['T']
+    expect(modelDef['x-transitions']).toBeUndefined()
+  })
+
+  test('@gate on a transition reaches the client schema', () => {
+    const { schema } = parse(`enum S { pending paid refunded }
+model Order {
+  id Int @id
+  status S @default(pending)
+  @@transitions(status, pay: pending -> paid, refund: paid -> refunded @gate(5))
+}`)
+    const js = generateJsonSchema(schema)
+    const t = (js['$defs']?.['Order'] ?? js['Order'])['x-transitions'].status
+    expect(t.pay.gate).toBe(null)
+    expect(t.refund.gate).toBe(5)
+  })
+
+  test('two state fields on one model each get their own entry', () => {
+    const { schema } = parse(`enum A { a1 a2 }
+enum B { b1 b2 }
+model M {
+  id Int @id
+  stage A @default(a1)
+  phase B @default(b1)
+  @@transitions(stage, a1 -> a2)
+  @@transitions(phase, b1 -> b2)
+}`)
+    const js = generateJsonSchema(schema)
+    const t = (js['$defs']?.['M'] ?? js['M'])['x-transitions']
+    expect(Object.keys(t).sort()).toEqual(['phase','stage'])
+    expect(t.stage.a2).toEqual({ from: ['a1'], to: 'a2', gate: null })
   })
 })
 
@@ -7358,7 +7971,7 @@ model t { id Int @id; c Color }`)
 import { LockNotAcquiredError, LockReleasedByOtherError, LockExpiredError }
   from '../src/core/client.js'
 
-const LOCK_SCHEMA = `model things { id Int @id; name String }`
+const LOCK_SCHEMA = `model Thing { id Int @id; name String }`
 
 
 describe('lock primitive — $lock(key, fn)', () => {
@@ -7374,9 +7987,9 @@ describe('lock primitive — $lock(key, fn)', () => {
 
   test('fn can use the db normally', async () => {
     await db.$lock('test-key', async () => {
-      await db.things.create({ data: { id: 1, name: 'inside lock' } })
+      await db.thing.create({ data: { id: 1, name: 'inside lock' } })
     })
-    const n = await db.things.count()
+    const n = await db.thing.count()
     expect(n).toBe(1)
   })
 
@@ -7623,7 +8236,7 @@ describe('lock primitive — _locks table auto-created', () => {
 
 describe('@markdown — generateTypeScript', () => {
   const MD_TS_SCHEMA = `
-    model posts {
+    model Post {
       id    Int @id
       body  String    @markdown
       note  String?   @markdown
@@ -7635,14 +8248,14 @@ describe('@markdown — generateTypeScript', () => {
   test('@markdown field emits string type (not special type)', () => {
     const dts = generateTypeScript(schema)
     // body is String @markdown — should still be string, not a special markdown type
-    const postSection = dts.slice(dts.indexOf('export interface Posts {'), dts.indexOf('export interface PostsCreate {'))
+    const postSection = dts.slice(dts.indexOf('export interface Post {'), dts.indexOf('export interface PostCreate {'))
     expect(postSection).toContain('body:')
     expect(postSection).toContain('string')
   })
 
   test('@markdown optional field emits string | null', () => {
     const dts = generateTypeScript(schema)
-    const postSection = dts.slice(dts.indexOf('export interface Posts {'), dts.indexOf('export interface PostsCreate {'))
+    const postSection = dts.slice(dts.indexOf('export interface Post {'), dts.indexOf('export interface PostCreate {'))
     expect(postSection).toContain('note?:')
     expect(postSection).toContain('string')
   })
@@ -7656,13 +8269,13 @@ describe('@markdown — generateTypeScript', () => {
 
   test('@markdown field included in Create interface', () => {
     const dts = generateTypeScript(schema)
-    const createSection = dts.slice(dts.indexOf('export interface PostsCreate {'), dts.indexOf('export interface PostsUpdate {'))
+    const createSection = dts.slice(dts.indexOf('export interface PostCreate {'), dts.indexOf('export interface PostUpdate {'))
     expect(createSection).toContain('body')
   })
 
   test('@markdown does not affect plain text field in same model', () => {
     const dts = generateTypeScript(schema)
-    const postSection = dts.slice(dts.indexOf('export interface Posts {'), dts.indexOf('export interface PostsCreate {'))
+    const postSection = dts.slice(dts.indexOf('export interface Post {'), dts.indexOf('export interface PostCreate {'))
     expect(postSection).toContain('title')
   })
 })
@@ -7676,10 +8289,10 @@ describe('seeder + factory', () => {
   test('Factory.buildOne returns definition', async () => {
     const { Factory } = await import('../src/seeder.js')
     class UserFactory extends Factory {
-      model = 'users'
+      model = 'User'
       definition(seq: number) { return { id: seq, name: `User ${seq}`, email: `u${seq}@x.com` } }
     }
-    const db = await makeDb(`model users {
+    const db = await makeDb(`model User {
         id    Int @id
         name  String
         email String
@@ -7697,7 +8310,7 @@ describe('seeder + factory', () => {
       model = 't'
       definition(seq: number) { return { id: seq, val: `v${seq}` } }
     }
-    const db = await makeDb(`model t {
+    const db = await makeDb(`model T {
         id  Int @id
         val String
       }`, 'factory-many')
@@ -7713,7 +8326,7 @@ describe('seeder + factory', () => {
       model = 't'
       definition(seq: number) { return { id: seq, val: `v${seq}` } }
     }
-    const db = await makeDb(`model t {
+    const db = await makeDb(`model T {
         id  Int @id
         val String
       }`, 'factory-create')
@@ -7729,7 +8342,7 @@ describe('seeder + factory', () => {
       definition(seq: number) { return { id: seq, role: 'member' } }
       admin() { return this.state({ role: 'admin' }) }
     }
-    const db = await makeDb(`model t {
+    const db = await makeDb(`model T {
         id   Int @id
         role String
       }`, 'factory-state')
@@ -7744,7 +8357,7 @@ describe('seeder + factory', () => {
       model = 't'
       definition(_: number, rng: any) { return { id: _, val: rng.str(6) } }
     }
-    const db = await makeDb(`model t {
+    const db = await makeDb(`model T {
         id  Int @id
         val String
       }`, 'factory-seed')
@@ -7760,7 +8373,7 @@ describe('seeder + factory', () => {
     class A extends Seeder { async run() { order.push('A') } }
     class B extends Seeder { async run() { order.push('B') } }
     class Root extends Seeder { async run(db: any) { await this.call(db, [A, B]) } }
-    const db = await makeDb(`model t { id Int @id }`, 'seeder-call')
+    const db = await makeDb(`model T { id Int @id }`, 'seeder-call')
     await runSeeder(db, Root)
     expect(order).toEqual(['A', 'B'])
     db.$close()
@@ -7858,51 +8471,87 @@ describe('makeTestClient', () => {
   test('creates db and returns client', async () => {
     const { db } = await makeTestClient(FACTORY_SCHEMA)
     expect(db).toBeDefined()
-    expect(typeof db.users.findMany).toBe('function')
+    expect(typeof db.user.findMany).toBe('function')
+    db.$close()
+  })
+
+  // A `database` block wins over the `db:` option, so this helper used to open the
+  // path the schema declared — i.e. the project's REAL database — and write test
+  // rows into it. Every declared path must land inside the throwaway tmpdir.
+  test('a declared database path never escapes the tmpdir', async () => {
+    const { db } = await makeTestClient(`
+      database main  { path "./db/should-not-be-created.db" }
+      database logs  { path "./db/should-not-be-created-logs/" driver jsonl }
+      model Thing { id Int @id @default(autoincrement()); name String }
+      model Hit   { path String; @@db(logs) }
+    `)
+    for (const [, def] of Object.entries(db.$databases as Record<string, any>)) {
+      expect(def.path.startsWith(tmpdir())).toBe(true)
+    }
+    expect(existsSync('./db/should-not-be-created.db')).toBe(false)
+    expect(existsSync('./db/should-not-be-created-logs')).toBe(false)
+    // and it is a working client, not just an isolated one
+    await db.thing.create({ data: { name: 'a' } })
+    expect(await db.thing.count()).toBe(1)
+    db.$close()
+  })
+
+  test('multi-database schema: each db gets only its own tables', async () => {
+    const { db } = await makeTestClient(`
+      database main      { path "./db/nope-main.db" }
+      database analytics { path "./db/nope-analytics.db" }
+      model User { id Int @id @default(autoincrement()); email String }
+      model PageView { id Int @id @default(autoincrement()); path String; @@db(analytics) }
+    `)
+    await db.user.create({ data: { email: 'a@b.com' } })
+    await db.pageView.create({ data: { path: '/home' } })
+    expect(await db.user.count()).toBe(1)
+    expect(await db.pageView.count()).toBe(1)
+    expect((db.$databases as any).main.path).not.toBe((db.$databases as any).analytics.path)
     db.$close()
   })
 
   test('returns bound factory instances', async () => {
     const { db, factories } = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { users: UserFactory, accounts: AccountFactory },
+      factories: { user: UserFactory, account: AccountFactory },
     })
-    expect(factories.users).toBeInstanceOf(UserFactory)
-    expect(factories.accounts).toBeInstanceOf(AccountFactory)
+    expect(factories.user).toBeInstanceOf(UserFactory)
+    expect(factories.account).toBeInstanceOf(AccountFactory)
     db.$close()
   })
 
   test('data seeder fn runs after tables created', async () => {
     const { db } = await makeTestClient(FACTORY_SCHEMA, {
       data: async (db) => {
-        await db.accounts.create({ data: { id: 1, name: 'Seeded' } })
+        await db.account.create({ data: { id: 1, name: 'Seeded' } })
       }
     })
-    const n = await db.accounts.count()
+    const n = await db.account.count()
     expect(n).toBe(1)
     db.$close()
   })
 
   test('seed option makes factories deterministic', async () => {
     const { factories: f1, db: db1 } = await makeTestClient(FACTORY_SCHEMA, {
-      seed: 99, factories: { users: UserFactory }
+      seed: 99, factories: { user: UserFactory }
     })
     const { factories: f2, db: db2 } = await makeTestClient(FACTORY_SCHEMA, {
-      seed: 99, factories: { users: UserFactory }
+      seed: 99, factories: { user: UserFactory }
     })
-    expect(f1.users.buildOne()).toEqual(f2.users.buildOne())
+    expect(f1.user.buildOne()).toEqual(f2.user.buildOne())
     db1.$close(); db2.$close()
   })
 
   test('different seeds produce different data', async () => {
     const { factories: f1, db: db1 } = await makeTestClient(FACTORY_SCHEMA, {
-      seed: 1, factories: { users: UserFactory }
+      seed: 1, factories: { user: UserFactory }
     })
     const { factories: f2, db: db2 } = await makeTestClient(FACTORY_SCHEMA, {
-      seed: 2, factories: { users: UserFactory }
+      seed: 2, factories: { user: UserFactory }
     })
     // seq counter is same (both = 1st call) but rng state differs
-    const a = f1.users.seed(1).buildOne()
-    const b = f2.users.seed(2).buildOne()
+    const a = f1.user.seed(1).buildOne()
+    const b = f2.user.seed(2).buildOne()
     expect(a).not.toEqual(b)
     db1.$close(); db2.$close()
   })
@@ -7911,11 +8560,11 @@ describe('makeTestClient', () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, (_, i) =>
         makeTestClient(FACTORY_SCHEMA, {
-          data: async (db) => { await db.accounts.create({ data: { id: 1, name: `db${i}` } }) }
+          data: async (db) => { await db.account.create({ data: { id: 1, name: `db${i}` } }) }
         })
       )
     )
-    const counts = await Promise.all(results.map(({ db }) => db.accounts.count()))
+    const counts = await Promise.all(results.map(({ db }) => db.account.count()))
     expect(counts).toEqual([1, 1, 1, 1, 1])
     results.forEach(({ db }) => db.$close())
   })
@@ -8033,12 +8682,12 @@ describe('Factory — createOne / createMany', () => {
 
   beforeEach(async () => {
     const result = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { users: UserFactory, accounts: AccountFactory }
+      factories: { user: UserFactory, account: AccountFactory }
     })
     db = result.db
     // ensure accountId=1 exists for FK
-    await db.accounts.create({ data: { id: 1, name: 'Test Co' } })
-    users = result.factories.users as UserFactory
+    await db.account.create({ data: { id: 1, name: 'Test Co' } })
+    users = result.factories.user as UserFactory
   })
   afterEach(() => db.$close())
 
@@ -8046,7 +8695,7 @@ describe('Factory — createOne / createMany', () => {
     const row = await users.createOne()
     expect(row.id).toBe(1)
     expect(row.email).toBe('user1@test.com')
-    const found = await db.users.findUnique({ where: { id: 1 } })
+    const found = await db.user.findUnique({ where: { id: 1 } })
     expect(found?.email).toBe('user1@test.com')
   })
 
@@ -8059,7 +8708,7 @@ describe('Factory — createOne / createMany', () => {
   test('createMany inserts n rows', async () => {
     const rows = await users.createMany(3)
     expect(rows.length).toBe(3)
-    const n = await db.users.count()
+    const n = await db.user.count()
     expect(n).toBe(3)
   })
 
@@ -8073,10 +8722,38 @@ describe('Factory — createOne / createMany', () => {
     expect(row.id).toBe(1)
   })
 
+  // Regression: create(overrides) used to treat the object as a count and return []
+  // — Array.from({ length: {} }) is empty, so nothing threw and no row was written.
+  test('create(overrides) makes ONE row, not zero', async () => {
+    const row: any = await users.create({ role: 'admin', email: 'a@b.com' })
+    expect(Array.isArray(row)).toBe(false)
+    expect(row.role).toBe('admin')
+    expect(await db.user.count()).toBe(1)
+  })
+
+  test('create(n, overrides) applies overrides to every row', async () => {
+    const rows: any = await users.create(3, { role: 'viewer' })
+    expect(rows.length).toBe(3)
+    expect(rows.every((r: any) => r.role === 'viewer')).toBe(true)
+  })
+
+  test('create(fn) treats a function as overrides, not a count', async () => {
+    const row: any = await users.create(() => ({ role: 'admin' }))
+    expect(Array.isArray(row)).toBe(false)
+    expect(row.role).toBe('admin')
+  })
+
+  test('build(overrides) makes ONE row, not zero', () => {
+    const row: any = users.build({ role: 'admin' })
+    expect(Array.isArray(row)).toBe(false)
+    expect(row.role).toBe('admin')
+    expect(users.build(2).length).toBe(2)
+  })
+
   test('trait + createOne', async () => {
     const row = await (users as any).admin().createOne()
     expect(row.role).toBe('admin')
-    const dbRow = await db.users.findUnique({ where: { id: 1 } })
+    const dbRow = await db.user.findUnique({ where: { id: 1 } })
     expect(dbRow?.role).toBe('admin')
   })
 })
@@ -8090,12 +8767,12 @@ describe('Factory — withRelation', () => {
 
   beforeEach(async () => {
     const result = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { accounts: AccountFactory, users: UserFactory, posts: PostFactory }
+      factories: { account: AccountFactory, user: UserFactory, post: PostFactory }
     })
     db = result.db
-    accounts = result.factories.accounts as AccountFactory
-    users    = result.factories.users    as UserFactory
-    posts    = result.factories.posts    as PostFactory
+    accounts = result.factories.account as AccountFactory
+    users    = result.factories.user    as UserFactory
+    posts    = result.factories.post    as PostFactory
   })
   afterEach(() => db.$close())
 
@@ -8104,7 +8781,7 @@ describe('Factory — withRelation', () => {
     const acct = await accounts.createOne()
     const user = await users.withRelation('account', accounts, 'accountId').createOne()
     expect(user.accountId).toBeDefined()
-    const acctExists = await db.accounts.findUnique({ where: { id: user.accountId } })
+    const acctExists = await db.account.findUnique({ where: { id: user.accountId } })
     expect(acctExists).not.toBeNull()
   })
 
@@ -8128,7 +8805,7 @@ describe('Factory — withRelation', () => {
     const ids = userRows.map((u: any) => u.accountId)
     expect(ids.every((id: number) => id === acct.id)).toBe(true)
     // Only one account should exist
-    const n = await db.accounts.count()
+    const n = await db.account.count()
     expect(n).toBe(1)
   })
 })
@@ -8139,15 +8816,15 @@ describe('Factory — afterCreate hook', () => {
     const calls: any[] = []
 
     class HookedFactory extends Factory {
-      model = 'accounts'
+      model = 'Account'
       definition(seq: number) { return { id: seq, name: `Hooked ${seq}` } }
       afterCreate = async (row: any, db: any) => { calls.push(row) }
     }
 
     const { db, factories } = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { accounts: HookedFactory }
+      factories: { account: HookedFactory }
     })
-    await factories.accounts.createOne()
+    await factories.account.createOne()
     expect(calls.length).toBe(1)
     expect(calls[0].name).toBe('Hooked 1')
     db.$close()
@@ -8155,10 +8832,10 @@ describe('Factory — afterCreate hook', () => {
 
   test('afterCreate can create related rows', async () => {
     class AccountWithUserFactory extends Factory {
-      model = 'accounts'
+      model = 'Account'
       definition(seq: number) { return { id: seq, name: `Co ${seq}` } }
       afterCreate = async (row: any, db: any) => {
-        await db.users.create({ data: {
+        await db.user.create({ data: {
           id: row.id * 100, accountId: row.id,
           email: `owner@${row.id}.com`, role: 'admin'
         }})
@@ -8166,25 +8843,439 @@ describe('Factory — afterCreate hook', () => {
     }
 
     const { db, factories } = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { accounts: AccountWithUserFactory }
+      factories: { account: AccountWithUserFactory }
     })
-    await factories.accounts.createOne()
-    const userCount = await db.users.count()
+    await factories.account.createOne()
+    const userCount = await db.user.count()
     expect(userCount).toBe(1)
     db.$close()
   })
 })
 
 
+describe('Factory — relations (has / attach / withParents)', () => {
+  const REL_SCHEMA = `
+    model Author {
+      id    Int    @id @default(autoincrement())
+      name  String
+      posts Post[]
+    }
+    model Post {
+      id       Int    @id @default(autoincrement())
+      title    String
+      authorId Int
+      author   Author @relation(fields: [authorId], references: [id])
+      tags     Tag[]
+    }
+    model Tag {
+      id    Int    @id @default(autoincrement())
+      name  String
+      posts Post[]
+    }
+  `
+
+  let db: any
+  let factories: any
+  beforeEach(async () => {
+    const r = await makeTestClient(REL_SCHEMA, { seed: 5, autoFactories: true })
+    db = r.db; factories = r.factories
+  })
+  afterEach(() => db.$close())
+
+  test('has() creates children with the FK pointed back at the parent', async () => {
+    const author = await factories.author.has('posts', 3).createOne()
+    expect(author.posts.length).toBe(3)
+    for (const p of author.posts) expect(p.authorId).toBe(author.id)
+    expect(await db.post.count({ where: { authorId: author.id } })).toBe(3)
+  })
+
+  test('has() takes overrides for the children', async () => {
+    const author = await factories.author.has('posts', 2, { overrides: { title: 'fixed' } }).createOne()
+    expect(author.posts.every((p: any) => p.title === 'fixed')).toBe(true)
+  })
+
+  test('has() on a field that is not hasMany throws', async () => {
+    await expect(factories.author.has('name', 1).createOne()).rejects.toThrow('no hasMany relation')
+  })
+
+  test('attach() connects implicit m2m rows', async () => {
+    const post = await factories.post.withParents().attach('tags', 2).createOne()
+    const full = await db.post.findUnique({ where: { id: post.id }, include: { tags: true } })
+    expect(full.tags.length).toBe(2)
+  })
+
+  test('attach() accepts existing rows', async () => {
+    const tag  = await factories.tag.createOne()
+    const post = await factories.post.withParents().attach('tags', [tag]).createOne()
+    const full = await db.post.findUnique({ where: { id: post.id }, include: { tags: true } })
+    expect(full.tags.map((t: any) => t.id)).toEqual([tag.id])
+  })
+
+  test('attach() on a field that is not m2m throws', async () => {
+    await expect(factories.post.withParents().attach('title', 1).createOne())
+      .rejects.toThrow('no many-to-many relation')
+  })
+
+  test('withParents() wires every required belongsTo', async () => {
+    const post = await factories.post.withParents().createOne()
+    expect(post.authorId).toBeGreaterThan(0)
+    expect(await db.author.count()).toBe(1)
+  })
+
+  test('withRelation shares one parent; { fresh: true } makes one each', async () => {
+    const shared = await factories.post.withRelation('author', factories.author).createMany(3)
+    expect(new Set(shared.map((r: any) => r.authorId)).size).toBe(1)
+    const fresh = await factories.post
+      .withRelation('author', factories.author, 'authorId', 'id', { fresh: true })
+      .createMany(3)
+    expect(new Set(fresh.map((r: any) => r.authorId)).size).toBe(3)
+  })
+
+  test('withParents() without a schema explains itself', () => {
+    const bare = new Factory(db)
+    bare.model = 'Post'
+    expect(() => bare.withParents()).toThrow('needs the parsed schema')
+  })
+
+  test('has() without a factory for the child explains itself', async () => {
+    const bare: any = new Factory(db)
+    bare.model      = 'Author'
+    bare._schema    = db.$schema
+    bare.definition = () => ({ name: 'x' })
+    await expect(bare.has('posts', 1).createOne()).rejects.toThrow('no factory for "Post"')
+  })
+
+  test('ambiguous back-reference names the candidates', async () => {
+    const r = await makeTestClient(`
+      model User { id Int @id @default(autoincrement()); name String; messages Message[] }
+      model Message {
+        id         Int  @id @default(autoincrement())
+        body       String
+        senderId   Int
+        receiverId Int
+        sender     User @relation(fields: [senderId],   references: [id])
+        receiver   User @relation(fields: [receiverId], references: [id])
+      }
+    `, { autoFactories: true })
+    await expect(r.factories.user.has('messages', 1).createOne())
+      .rejects.toThrow(/more than one relation.*senderId, receiverId/s)
+    // …and it works once told which
+    const u = await r.factories.user.has('messages', 2, { fk: 'senderId', overrides: { receiverId: 1 } }).createOne()
+    expect(u.messages.length).toBe(2)
+    r.db.$close()
+  })
+
+  test('a relation cycle terminates instead of recursing forever', async () => {
+    const r = await makeTestClient(`
+      model Node {
+        id       Int   @id @default(autoincrement())
+        name     String
+        parentId Int?
+        parent   Node? @relation(fields: [parentId], references: [id])
+      }
+    `, { autoFactories: true })
+    const n = await r.factories.node.withParents().createOne()
+    expect(n.id).toBeGreaterThan(0)
+    r.db.$close()
+  })
+
+  test('asSystem() propagates through the whole wired graph', async () => {
+    // A schema with any @@gate auto-installs GatePlugin — an unauthenticated
+    // factory grades STRANGER and cannot create the parent, let alone the child.
+    const r = await makeTestClient(`
+      model Shop  { id Int @id @default(autoincrement()); name String; items Item[]; @@gate("4") }
+      model Item  { id Int @id @default(autoincrement()); label String; shopId Int
+                    shop Shop @relation(fields: [shopId], references: [id]); @@gate("4") }
+    `, { autoFactories: true })
+    await expect(r.factories.item.withParents().createOne()).rejects.toThrow(/requires level/)
+    const item = await r.factories.item.asSystem().withParents().createOne()
+    expect(item.shopId).toBeGreaterThan(0)
+    r.db.$close()
+  })
+})
+
+describe('snapshot / restore', () => {
+  const SNAP_SCHEMA = `
+    model Author {
+      id    Int    @id @default(autoincrement())
+      name  String
+      posts Post[]
+    }
+    model Post {
+      id       Int    @id @default(autoincrement())
+      title    String
+      authorId Int
+      author   Author @relation(fields: [authorId], references: [id])
+    }
+  `
+
+  test('restores the exact rows, and is repeatable', async () => {
+    const { db, factories } = await makeTestClient(SNAP_SCHEMA, { seed: 1, autoFactories: true })
+    await factories.author.has('posts', 2).createOne()
+    const snap   = snapshot(db)
+    const before = await db.post.findMany()
+
+    await factories.author.has('posts', 5).createOne()
+    expect(await db.post.count()).toBe(7)
+
+    restore(db, snap)
+    expect(await db.author.count()).toBe(1)
+    expect(await db.post.findMany()).toEqual(before)
+
+    // …and again from the same snapshot
+    await factories.author.has('posts', 3).createOne()
+    restore(db, snap)
+    expect(await db.post.findMany()).toEqual(before)
+    db.$close()
+  })
+
+  test('an @encrypted column round-trips as the same plaintext', async () => {
+    // Rows are copied through the raw connection, so ciphertext is preserved
+    // byte for byte — a round trip through the ORM would re-encrypt it.
+    const { db } = await makeTestClient(
+      `model S { id Int @id @default(autoincrement()); tok String @encrypted }`,
+      { encryptionKey: 'a'.repeat(64) })
+    await db.s.create({ data: { tok: 'hunter2' } })
+    const snap = snapshot(db)
+    await db.s.create({ data: { tok: 'other' } })
+    restore(db, snap)
+    const rows = await db.asSystem().s.findMany()
+    expect(rows.length).toBe(1)
+    expect(rows[0].tok).toBe('hunter2')
+    db.$close()
+  })
+
+  test('FTS shadow tables are left alone and search still works', async () => {
+    const { db } = await makeTestClient(
+      `model Doc { id Int @id @default(autoincrement()); title String; body String; @@fts([title, body]) }`)
+    await db.doc.create({ data: { title: 'anchor', body: 'harbour ledger' } })
+    const snap = snapshot(db)
+    expect(Object.keys(snap.main)).toEqual(['doc'])   // no doc_data / doc_idx / …
+    await db.doc.create({ data: { title: 'ember', body: 'thicket' } })
+    restore(db, snap)
+    expect(await db.doc.count()).toBe(1)
+    expect((await db.doc.search('harbour')).length).toBe(1)
+    db.$close()
+  })
+
+  test('restore() without a snapshot says so', async () => {
+    const { db } = await makeTestClient(SNAP_SCHEMA)
+    expect(() => restore(db, null as any)).toThrow('pass the value snapshot() returned')
+    db.$close()
+  })
+})
+
+describe('defineFactory', () => {
+  const DF_SCHEMA = `model User { id Int @id @default(autoincrement()); email String @unique; role String }`
+
+  test('model + definition + traits + afterCreate, no subclass', async () => {
+    const seen: any[] = []
+    const UserFactory = defineFactory({
+      model:       'User',
+      definition:  (seq: number) => ({ email: `u${seq}@x.com`, role: 'member' }),
+      traits:      { admin: { role: 'admin' }, viewer: { role: 'viewer' } },
+      afterCreate: (row: any) => { seen.push(row.email) },
+    })
+
+    const { db, factories } = await makeTestClient(DF_SCHEMA, { factories: { user: UserFactory } })
+    expect((await factories.user.createOne()).role).toBe('member')
+    expect((await factories.user.admin().createOne()).role).toBe('admin')
+    expect((await factories.user.viewer({ email: 'v@x.com' }).createOne()).email).toBe('v@x.com')
+    expect((await factories.user.admin().createMany(2)).map((r: any) => r.role)).toEqual(['admin', 'admin'])
+    expect(seen.length).toBe(5)
+    db.$close()
+  })
+
+  test('gets the same relation powers as a generated factory', async () => {
+    const F = defineFactory({ model: 'Post', definition: () => ({ title: 't' }) })
+    const { db, factories } = await makeTestClient(`
+      model Author { id Int @id @default(autoincrement()); name String; posts Post[] }
+      model Post   { id Int @id @default(autoincrement()); title String; authorId Int
+                     author Author @relation(fields: [authorId], references: [id]) }
+    `, { autoFactories: true, factories: { post: F } })
+    const post = await factories.post.withParents().createOne()
+    expect(post.authorId).toBeGreaterThan(0)
+    db.$close()
+  })
+
+  test('missing model or definition is rejected at definition time', () => {
+    expect(() => defineFactory({ definition: () => ({}) } as any)).toThrow('`model` is required')
+    expect(() => defineFactory({ model: 'User' } as any)).toThrow('`definition` is required')
+  })
+})
+
+describe('value catalogue', () => {
+  const PERSON = `
+    model Person {
+      id          Int    @id @default(autoincrement())
+      firstName   String
+      lastName    String
+      email       String @unique @email
+      company     String
+      city        String
+      description String
+      whatever    String
+    }
+  `
+
+  test('seeded rows use the catalogue; unseeded output is unchanged', async () => {
+    const seeded = await makeTestClient(PERSON, { seed: 42, autoFactories: true })
+    const row: any = seeded.factories.person.buildOne()
+    expect(row.firstName).not.toMatch(/^FirstName /)
+    expect(row.city).not.toMatch(/^City /)
+    expect(row.email).toMatch(/^[a-z]+\.[a-z]+\d+@/)
+    // No catalogue entry for this name — falls back to the old shape
+    expect(row.whatever).toMatch(/^Whatever /)
+    seeded.db.$close()
+
+    const plain = await makeTestClient(PERSON, { autoFactories: true })
+    const bare: any = plain.factories.person.buildOne()
+    expect(bare.firstName).toBe('FirstName 1')
+    expect(bare.city).toBe('City 1')
+    expect(bare.email).toBe('Person1@test.com')
+    plain.db.$close()
+  })
+
+  test('same seed, same catalogue values', async () => {
+    const a = await makeTestClient(PERSON, { seed: 7, autoFactories: true })
+    const b = await makeTestClient(PERSON, { seed: 7, autoFactories: true })
+    expect(a.factories.person.seed(7).buildOne()).toEqual(b.factories.person.seed(7).buildOne())
+    a.db.$close(); b.db.$close()
+  })
+
+  test('fakeFor returns null without an rng, and for unknown field names', () => {
+    expect(fakeFor('firstName', null)).toBeNull()
+    const rng = { next: () => 0.5, int: () => 1, pick: (a: any[]) => a[0], bool: () => false, str: () => 'zzzz' }
+    expect(fakeFor('firstName', rng as any)).toBeTruthy()
+    expect(fakeFor('sprocketWidth', rng as any)).toBeNull()
+    expect(fakeEmail(null as any, 1)).toBeNull()
+  })
+
+  test('field name matching ignores case and separators', () => {
+    const rng = { next: () => 0.5, int: () => 1, pick: (a: any[]) => a[0], bool: () => false, str: () => 'zzzz' }
+    for (const name of ['first_name', 'firstName', 'FirstName', 'first-name']) {
+      expect(fakeFor(name, rng as any)).toBe(fakeFor('firstname', rng as any))
+    }
+  })
+
+  test('a @unique catalogue column still cannot collide', async () => {
+    // The city pool is smaller than the row count — the seq token is what saves it.
+    const { db, factories } = await makeTestClient(
+      `model P { id Int @id @default(autoincrement()); city String @unique }`,
+      { seed: 3, autoFactories: true })
+    const rows = await factories.p.createMany(60)
+    expect(new Set(rows.map((r: any) => r.city)).size).toBe(60)
+    db.$close()
+  })
+})
+
+describe('Seeder — dependsOn', () => {
+  test('dependencies run first, and each class runs once', async () => {
+    const { Seeder } = await import('../src/seeder.js')
+    const order: string[] = []
+    class A extends Seeder { async run() { order.push('A') } }
+    class B extends Seeder { static dependsOn = [A]; async run() { order.push('B') } }
+    class C extends Seeder { static dependsOn = [B, A]; async run() { order.push('C') } }
+
+    await new Seeder().call(null as any, [C, B])
+    expect(order).toEqual(['A', 'B', 'C'])
+  })
+
+  test('runSeeder pulls dependencies too', async () => {
+    const { Seeder, runSeeder } = await import('../src/seeder.js')
+    const order: string[] = []
+    class P extends Seeder { async run() { order.push('P') } }
+    class Q extends Seeder { static dependsOn = [P]; async run() { order.push('Q') } }
+    await runSeeder(null as any, Q)
+    expect(order).toEqual(['P', 'Q'])
+  })
+
+  test('a dependency cycle names the classes in it', async () => {
+    const { Seeder, runSeeder } = await import('../src/seeder.js')
+    class X extends Seeder { static dependsOn: any[] = []; async run() {} }
+    class Y extends Seeder { static dependsOn = [X]; async run() {} }
+    X.dependsOn = [Y]
+    await expect(runSeeder(null as any, Y)).rejects.toThrow('Seeder dependency cycle: Y → X → Y')
+  })
+})
+
+describe('loadFixture / parseCsv', () => {
+  const PLAN = `model Plan {
+    id     Int     @id @default(autoincrement())
+    code   String  @unique
+    price  Int
+    active Boolean
+  }`
+
+  test('loads an inline array through the ORM', async () => {
+    const { db } = await makeTestClient(PLAN)
+    const rows = await loadFixture(db, 'Plan', [
+      { code: 'free', price: 0, active: true },
+      { code: 'pro',  price: 20, active: true },
+    ])
+    expect(rows.length).toBe(2)
+    expect(await db.plan.count()).toBe(2)
+    db.$close()
+  })
+
+  test('upsert key makes a fixture re-runnable', async () => {
+    const { db } = await makeTestClient(PLAN)
+    await loadFixture(db, 'Plan', [{ code: 'free', price: 0, active: true }], { upsert: 'code' })
+    await loadFixture(db, 'Plan', [{ code: 'free', price: 9, active: true }], { upsert: 'code' })
+    expect(await db.plan.count()).toBe(1)
+    expect((await db.plan.findFirst({ where: { code: 'free' } })).price).toBe(9)
+    db.$close()
+  })
+
+  test('reads .json and .csv from disk', async () => {
+    const { db } = await makeTestClient(PLAN)
+    const dir = join(tmpdir(), `fixture-${Date.now()}`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'plans.json'), JSON.stringify([{ code: 'j1', price: 1, active: true }]))
+    writeFileSync(join(dir, 'plans.csv'),  'code,price,active\nc1,5,true\nc2,6,false\n')
+
+    await loadFixture(db, 'Plan', join(dir, 'plans.json'))
+    await loadFixture(db, 'Plan', join(dir, 'plans.csv'))
+    expect(await db.plan.count()).toBe(3)
+    expect((await db.plan.findFirst({ where: { code: 'c2' } })).active).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
+    db.$close()
+  })
+
+  test('unknown model / unsupported extension say what is wrong', async () => {
+    const { db } = await makeTestClient(PLAN)
+    // The client proxy already names the tables that exist — let its message through
+    await expect(loadFixture(db, 'Nope', [{ a: 1 }])).rejects.toThrow('not a table in this schema')
+    // Checked before the read, so it is not reported as ENOENT
+    await expect(loadFixture(db, 'Plan', './does-not-exist.yaml')).rejects.toThrow('use .json or .csv')
+    await expect(loadFixture(db, 'Plan', [{ price: 1 }], { upsert: 'code' }))
+      .rejects.toThrow('upsert key "code" missing')
+    db.$close()
+  })
+
+  test('parseCsv handles quotes, embedded commas and "" escapes', () => {
+    const rows = parseCsv('code,note,n\npro,"a, b",2\n"q""x""",plain,3\n')
+    expect(rows).toEqual([
+      { code: 'pro',    note: 'a, b',  n: 2 },
+      { code: 'q"x"',   note: 'plain', n: 3 },
+    ])
+  })
+
+  test('parseCsv coerces unquoted scalars but keeps quoted text', () => {
+    const rows = parseCsv('a,b,c,d\n1,true,,"0123"\n')
+    expect(rows[0]).toEqual({ a: 1, b: true, c: null, d: '0123' })
+  })
+})
+
 describe('Factory — truncate()', () => {
   test('truncate() wipes factory model table', async () => {
     const { db, factories } = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { accounts: AccountFactory }
+      factories: { account: AccountFactory }
     })
-    await factories.accounts.createMany(3)
-    expect(await db.accounts.count()).toBe(3)
-    await factories.accounts.truncate()
-    expect(await db.accounts.count()).toBe(0)
+    await factories.account.createMany(3)
+    expect(await db.account.count()).toBe(3)
+    await factories.account.truncate()
+    expect(await db.account.count()).toBe(0)
     db.$close()
   })
 })
@@ -8193,24 +9284,24 @@ describe('Factory — truncate()', () => {
 describe('truncate() helper', () => {
   test('truncate() hard-deletes all rows in table', async () => {
     const { db, factories } = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { accounts: AccountFactory }
+      factories: { account: AccountFactory }
     })
-    await factories.accounts.createMany(5)
-    await truncate(db, 'accounts')
-    expect(await db.accounts.count()).toBe(0)
+    await factories.account.createMany(5)
+    await truncate(db, 'Account')
+    expect(await db.account.count()).toBe(0)
     db.$close()
   })
 
   test('truncate() bypasses soft-delete', async () => {
     const { db, factories } = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { accounts: AccountFactory, users: UserFactory }
+      factories: { account: AccountFactory, user: UserFactory }
     })
-    const acct = await factories.accounts.createOne()
-    await factories.users.createMany(3, { accountId: acct.id })
-    await db.users.removeMany({})           // soft-delete all
-    expect(await db.users.count()).toBe(0)  // soft-filter shows 0
-    await truncate(db, 'users')             // hard-delete the soft-deleted rows
-    const raw = await db.asSystem().sql`SELECT COUNT(*) as n FROM users`
+    const acct = await factories.account.createOne()
+    await factories.user.createMany(3, { accountId: acct.id })
+    await db.user.removeMany({})           // soft-delete all
+    expect(await db.user.count()).toBe(0)  // soft-filter shows 0
+    await truncate(db, 'User')             // hard-delete the soft-deleted rows
+    const raw = await db.asSystem().sql`SELECT COUNT(*) as n FROM user`
     expect(raw[0].n).toBe(0)
     db.$close()
   })
@@ -8220,24 +9311,24 @@ describe('truncate() helper', () => {
 describe('reset() helper', () => {
   test('reset() wipes all tables', async () => {
     const { db, factories } = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { accounts: AccountFactory, users: UserFactory }
+      factories: { account: AccountFactory, user: UserFactory }
     })
-    const acct = await factories.accounts.create()
-    await factories.users.createMany(3, { accountId: acct.id })
+    const acct = await factories.account.create()
+    await factories.user.createMany(3, { accountId: acct.id })
     await reset(db)
-    expect(await db.accounts.count()).toBe(0)
-    expect(await db.asSystem().users.count({ where: {} })).toBe(0)
+    expect(await db.account.count()).toBe(0)
+    expect(await db.asSystem().user.count({ where: {} })).toBe(0)
     db.$close()
   })
 
   test('reset() leaves schema intact — can insert after reset', async () => {
     const { db, factories } = await makeTestClient(FACTORY_SCHEMA, {
-      factories: { accounts: AccountFactory }
+      factories: { account: AccountFactory }
     })
-    await factories.accounts.createMany(3)
+    await factories.account.createMany(3)
     await reset(db)
-    await factories.accounts.createOne()
-    expect(await db.accounts.count()).toBe(1)
+    await factories.account.createOne()
+    expect(await db.account.count()).toBe(1)
     db.$close()
   })
 })
@@ -8374,20 +9465,20 @@ describe('generateFactory', () => {
   })
 
   test('@default(literal string) used', () => {
-    const { schema: s } = parse(`model t { id Int @id; role String @default("admin") }`)
-    const row = generateFactory(s, 't')(1, null)
+    const { schema: s } = parse(`model T { id Int @id; role String @default("admin") }`)
+    const row = generateFactory(s, 'T')(1, null)
     expect(row.role).toBe('admin')
   })
 
   test('@default(number) used', () => {
-    const { schema: s } = parse(`model t { id Int @id; count Int @default(0) }`)
-    const row = generateFactory(s, 't')(1, null)
+    const { schema: s } = parse(`model T { id Int @id; count Int @default(0) }`)
+    const row = generateFactory(s, 'T')(1, null)
     expect(row.count).toBe(0)
   })
 
   test('@default(boolean) used', () => {
-    const { schema: s } = parse(`model t { id Int @id; active Boolean @default(true) }`)
-    const row = generateFactory(s, 't')(1, null)
+    const { schema: s } = parse(`model T { id Int @id; active Boolean @default(true) }`)
+    const row = generateFactory(s, 'T')(1, null)
     expect(row.active).toBe(true)
   })
 
@@ -8400,9 +9491,9 @@ describe('generateFactory', () => {
   test('Enum type no default → first value', () => {
     const { schema: s } = parse(`
       enum Color { red green blue }
-      model t { id Int @id; color Color }
+      model T { id Int @id; color Color }
     `)
-    const row = generateFactory(s, 't')(1, null)
+    const row = generateFactory(s, 'T')(1, null)
     expect(row.color).toBe('red')
   })
 
@@ -8460,8 +9551,8 @@ describe('generateFactory', () => {
   })
 
   test('Int? optional → null', () => {
-    const { schema: s } = parse(`model t { id Int @id; count Int? }`)
-    const row = generateFactory(s, 't')(1, null)
+    const { schema: s } = parse(`model T { id Int @id; count Int? }`)
+    const row = generateFactory(s, 'T')(1, null)
     expect(row.count).toBeNull()
   })
 
@@ -8471,14 +9562,14 @@ describe('generateFactory', () => {
   })
 
   test('Float with @gte and @lte required → midpoint', () => {
-    const { schema: s } = parse(`model t { id Int @id; score Float @gte(0) @lte(100) }`)
-    const row = generateFactory(s, 't')(1, null)
+    const { schema: s } = parse(`model T { id Int @id; score Float @gte(0) @lte(100) }`)
+    const row = generateFactory(s, 'T')(1, null)
     expect(row.score).toBe(50)
   })
 
   test('Float with @gte only → gte value', () => {
-    const { schema: s } = parse(`model t { id Int @id; n Float @gte(5) }`)
-    expect(generateFactory(s, 't')(1, null).n).toBe(5)
+    const { schema: s } = parse(`model T { id Int @id; n Float @gte(5) }`)
+    expect(generateFactory(s, 'T')(1, null).n).toBe(5)
   })
 
   test('Float no constraint → seq * 1.0', () => {
@@ -8491,27 +9582,136 @@ describe('generateFactory', () => {
     expect(def(1, null).published).toBe(false)
   })
 
-  test('Json → null', () => {
-    const { schema: s } = parse(`model t { id Int @id; meta Json }`)
-    expect(generateFactory(s, 't')(1, null).meta).toBeNull()
+  // Required Json used to generate null, which fails "meta is required" on every
+  // write — autoFactories could not produce a writable row for such a model.
+  test('Json required → {}, Json? optional → null', () => {
+    const { schema: s } = parse(`model T { id Int @id; meta Json; extra Json? }`)
+    const row = generateFactory(s, 'T')(1, null)
+    expect(row.meta).toEqual({})
+    expect(row.extra).toBeNull()
+  })
+
+  test('Bytes required → bytes, Bytes? optional → null', () => {
+    const { schema: s } = parse(`model T { id Int @id; blob Bytes; extra Bytes? }`)
+    const row = generateFactory(s, 'T')(1, null) as any
+    expect(row.blob).toBeInstanceOf(Uint8Array)
+    expect(row.extra).toBeNull()
+  })
+
+  test('@unique @length generates a DISTINCT value per seq', () => {
+    const { schema: s } = parse(`model T { id Int @id; code String @unique @length(4, 12) }`)
+    const def  = generateFactory(s, 'T')
+    const vals = [1, 2, 3].map(n => def(n, null).code as string)
+    expect(new Set(vals).size).toBe(3)
+    for (const v of vals) {
+      expect(v.length).toBeGreaterThanOrEqual(4)
+      expect(v.length).toBeLessThanOrEqual(12)
+    }
+  })
+
+  test('Int honours @gte / @lte', () => {
+    const { schema: s } = parse(`model T { id Int @id; age Int @gte(18) @lte(99) }`)
+    const def = generateFactory(s, 'T')
+    for (const n of [1, 2, 50, 11001]) {
+      const age = def(n, null).age as number
+      expect(age).toBeGreaterThanOrEqual(18)
+      expect(age).toBeLessThanOrEqual(99)
+    }
+  })
+
+  test('Int honours exclusive @gt / @lt', () => {
+    const { schema: s } = parse(`model T { id Int @id; n Int @gt(0) @lt(10) }`)
+    const def = generateFactory(s, 'T')
+    for (const seq of [1, 2, 3, 99]) {
+      const n = def(seq, null).n as number
+      expect(n).toBeGreaterThan(0)
+      expect(n).toBeLessThan(10)
+    }
+  })
+
+  test('Float honours exclusive @gt', () => {
+    const { schema: s } = parse(`model T { id Int @id; n Float @gt(0) }`)
+    expect(generateFactory(s, 'T')(1, null).n as number).toBeGreaterThan(0)
+  })
+
+  test('@phone → a value the @phone validator accepts', () => {
+    const { schema: s } = parse(`model T { id Int @id; phone String @phone }`)
+    const v = generateFactory(s, 'T')(1, null).phone as string
+    expect(v).toMatch(/^\+?[\d\s\-().]{7,20}$/)
+  })
+
+  test('@regex → a value matching the pattern', () => {
+    const { schema: s } = parse(`model T { id Int @id; ref String @regex("^[A-Z]{3}-[0-9]{4}$") }`)
+    const v = generateFactory(s, 'T')(1, null).ref as string
+    expect(v).toMatch(/^[A-Z]{3}-[0-9]{4}$/)
+  })
+
+  test('@regex → \\d \\w escapes, groups and quantifiers', () => {
+    const cases = [
+      '^SKU-\\d{6}$',
+      '^(a|b)-\\w{4}$',
+      '^[a-z]+@[a-z]{2,4}\\.com$',
+      '^v\\d+\\.\\d+$',
+    ]
+    for (const pattern of cases) {
+      const { schema: s } = parse(`model T { id Int @id; v String @regex("${pattern.replace(/\\/g, '\\\\')}") }`)
+      const v = generateFactory(s, 'T')(1, null).v as string
+      expect(new RegExp(pattern).test(v)).toBe(true)
+    }
+  })
+
+  test('@startsWith / @endsWith honoured', () => {
+    const { schema: s } = parse(`model T { id Int @id; v String @startsWith("pre") @endsWith("post") }`)
+    const v = generateFactory(s, 'T')(1, null).v as string
+    expect(v.startsWith('pre')).toBe(true)
+    expect(v.endsWith('post')).toBe(true)
+  })
+
+  test('array honours @minItems', () => {
+    const { schema: s } = parse(`model T { id Int @id; tags String[] @minItems(2) }`)
+    const tags = generateFactory(s, 'T')(1, null).tags as string[]
+    expect(tags.length).toBe(2)
+  })
+
+  test('DateTime is derived from seq, not the wall clock', () => {
+    const { schema: s } = parse(`model T { id Int @id; at DateTime }`)
+    const def = generateFactory(s, 'T')
+    expect(def(1, null).at).toBe(def(1, null).at)
+    expect(def(1, null).at).not.toBe(def(2, null).at)
+  })
+
+  test('@sequence field is skipped — the db owns that counter', () => {
+    const { schema: s } = parse(`model Q { id Int @id; accountId Int; num Int @sequence(scope: accountId) }`)
+    expect('num' in generateFactory(s, 'Q')(1, null)).toBe(false)
+  })
+
+  test('enum varies under a seeded rng, stays stable unseeded', () => {
+    const { schema: s } = parse(`
+      enum Color { red green blue }
+      model T { id Int @id; color Color }
+    `)
+    const def = generateFactory(s, 'T')
+    expect(def(1, null).color).toBe('red')
+    const rng = { next: () => 0.9, int: () => 0, pick: (a: any[]) => a[2], bool: () => false, str: () => 'zzzz' }
+    expect(def(1, rng as any).color).toBe('blue')
   })
 
   test('String[] required → []', () => {
-    const { schema: s } = parse(`model t { id Int @id; tags String[] }`)
-    const row = generateFactory(s, 't')(1, null)
+    const { schema: s } = parse(`model T { id Int @id; tags String[] }`)
+    const row = generateFactory(s, 'T')(1, null)
     expect(row.tags).toEqual([])
   })
 
   test('String[]? optional → null', () => {
-    const { schema: s } = parse(`model t { id Int @id; tags String[]? }`)
-    const row = generateFactory(s, 't')(1, null)
+    const { schema: s } = parse(`model T { id Int @id; tags String[]? }`)
+    const row = generateFactory(s, 'T')(1, null)
     expect(row.tags).toBeNull()
   })
 
   test('@secret included (ORM encrypts on write)', () => {
     const ENC = 'c'.repeat(64)
-    const { schema: s } = parse(`model t { id Int @id; token String @secret }`)
-    const row = generateFactory(s, 't')(1, null)
+    const { schema: s } = parse(`model T { id Int @id; token String @secret }`)
+    const row = generateFactory(s, 'T')(1, null)
     // @secret field is present — value generated like any String field
     expect('token' in row).toBe(true)
     expect(typeof row.token).toBe('string')
@@ -8665,8 +9865,8 @@ describe('generateValidationCases', () => {
   })
 
   test('model with no validators → empty invalid and boundary', () => {
-    const { schema: s } = parse(`model t { id Int @id; name String }`)
-    const { invalid, boundary } = generateValidationCases(s, 't')
+    const { schema: s } = parse(`model T { id Int @id; name String }`)
+    const { invalid, boundary } = generateValidationCases(s, 'T')
     expect(invalid).toEqual([])
     expect(boundary).toEqual([])
   })
@@ -8705,8 +9905,8 @@ describe('generateValidationCases', () => {
   })
 
   test('@length invalid cases (min and max)', () => {
-    const { schema: s } = parse(`model t { id Int @id; code String @length(3, 10) }`)
-    const { invalid, boundary } = generateValidationCases(s, 't')
+    const { schema: s } = parse(`model T { id Int @id; code String @length(3, 10) }`)
+    const { invalid, boundary } = generateValidationCases(s, 'T')
     const tooShort = invalid.find(c => c.value === '')
     const tooLong  = invalid.find(c => typeof c.value === 'string' && c.value.length === 11)
     expect(tooShort).toBeDefined()
@@ -8846,7 +10046,7 @@ import { generateTypeScript } from '../src/tools/typegen.js'
 const TS_SCHEMA = `
   enum Plan { starter pro enterprise }
 
-  model accounts {
+  model Account {
     id        Int  @id
     name      String
     plan      Plan     @default(starter)
@@ -8854,9 +10054,9 @@ const TS_SCHEMA = `
     createdAt DateTime @default(now())
   }
 
-  model users {
+  model User {
     id        Int   @id
-    account   accounts  @relation(fields: [accountId], references: [id])
+    account   Account  @relation(fields: [accountId], references: [id])
     accountId Int
     email     String      @unique @email
     role      String      @default("member")
@@ -8897,8 +10097,8 @@ describe('generateTypeScript', () => {
 
   test('emits row interface', () => {
     const dts = generateTypeScript(schema)
-    expect(dts).toContain('export interface Accounts {')
-    expect(dts).toContain('export interface Users {')
+    expect(dts).toContain('export interface Account {')
+    expect(dts).toContain('export interface User {')
   })
 
   test('row interface has correct field types', () => {
@@ -8928,7 +10128,7 @@ describe('generateTypeScript', () => {
   test('@secret field excluded from client audience', () => {
     const dts = generateTypeScript(schema, { audience: 'client' })
     // apiKey is @secret = @guarded(all) → stripped in client audience
-    const userSection = dts.slice(dts.indexOf('export interface Users {'), dts.indexOf('export interface UsersCreate {'))
+    const userSection = dts.slice(dts.indexOf('export interface User {'), dts.indexOf('export interface UserCreate {'))
     expect(userSection).not.toContain('apiKey')
   })
 
@@ -8939,15 +10139,15 @@ describe('generateTypeScript', () => {
 
   test('emits Create interface', () => {
     const dts = generateTypeScript(schema)
-    expect(dts).toContain('export interface AccountsCreate {')
-    expect(dts).toContain('export interface UsersCreate {')
+    expect(dts).toContain('export interface AccountCreate {')
+    expect(dts).toContain('export interface UserCreate {')
   })
 
   test('Create interface makes @id optional', () => {
     const dts = generateTypeScript(schema)
     const createSection = dts.slice(
-      dts.indexOf('export interface AccountsCreate {'),
-      dts.indexOf('export interface AccountsUpdate {')
+      dts.indexOf('export interface AccountCreate {'),
+      dts.indexOf('export interface AccountUpdate {')
     )
     // id should be optional in create (auto-increment)
     expect(createSection).toContain('id?:')
@@ -8956,8 +10156,8 @@ describe('generateTypeScript', () => {
   test('Create interface excludes createdAt/updatedAt/deletedAt', () => {
     const dts = generateTypeScript(schema)
     const createSection = dts.slice(
-      dts.indexOf('export interface AccountsCreate {'),
-      dts.indexOf('export interface AccountsUpdate {')
+      dts.indexOf('export interface AccountCreate {'),
+      dts.indexOf('export interface AccountUpdate {')
     )
     expect(createSection).not.toContain('createdAt')
     expect(createSection).not.toContain('deletedAt')
@@ -8965,10 +10165,10 @@ describe('generateTypeScript', () => {
 
   test('emits Update interface with all optional fields', () => {
     const dts = generateTypeScript(schema)
-    expect(dts).toContain('export interface AccountsUpdate {')
+    expect(dts).toContain('export interface AccountUpdate {')
     const updateSection = dts.slice(
-      dts.indexOf('export interface AccountsUpdate {'),
-      dts.indexOf('export interface AccountsWhere')
+      dts.indexOf('export interface AccountUpdate {'),
+      dts.indexOf('export interface AccountWhere')
     )
     // All fields in update should be optional (end with ?)
     const fieldLines = updateSection.split('\n').filter(l => l.trim() && !l.includes('{') && !l.includes('}'))
@@ -8980,10 +10180,10 @@ describe('generateTypeScript', () => {
   test('emits Where interface', () => {
     const dts = generateTypeScript(schema)
     // Where interface extends WhereBase to inherit $raw support.
-    expect(dts).toContain('export interface AccountsWhere extends WhereBase {')
-    expect(dts).toContain('AND?: AccountsWhere[]')
-    expect(dts).toContain('OR?:  AccountsWhere[]')
-    expect(dts).toContain('NOT?: AccountsWhere')
+    expect(dts).toContain('export interface AccountWhere extends WhereBase {')
+    expect(dts).toContain('AND?: AccountWhere[]')
+    expect(dts).toContain('OR?:  AccountWhere[]')
+    expect(dts).toContain('NOT?: AccountWhere')
   })
 
   test('Where fields use WhereOp<T>', () => {
@@ -9016,8 +10216,8 @@ describe('generateTypeScript', () => {
   test('emits LitestoneClient with all models', () => {
     const dts = generateTypeScript(schema)
     expect(dts).toContain('export interface LitestoneClient {')
-    expect(dts).toContain('readonly accounts: TableClient<Accounts, AccountsCreate, AccountsUpdate, AccountsWhere>')
-    expect(dts).toContain('readonly users: TableClient<Users, UsersCreate, UsersUpdate, UsersWhere>')
+    expect(dts).toContain('readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere>')
+    expect(dts).toContain('readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>')
     expect(dts).toContain('asSystem(): LitestoneClient')
     expect(dts).toContain('$tapQuery(')
   })
@@ -9031,8 +10231,8 @@ describe('generateTypeScript', () => {
     const dts = generateTypeScript(schema)
     // `account` relation field should not appear in User interfaces
     const userRow = dts.slice(
-      dts.indexOf('export interface Users {'),
-      dts.indexOf('export interface UsersCreate {')
+      dts.indexOf('export interface User {'),
+      dts.indexOf('export interface UserCreate {')
     )
     // 'account' as a standalone property (not accountId) should not appear
     const lines = userRow.split('\n').filter(l => l.trim().startsWith('account:') || l.trim().startsWith('account?:'))
@@ -9067,7 +10267,7 @@ const TRANSITION_SCHEMA = `
     }
   }
 
-  model orders {
+  model Order {
     id     Int     @id
     status OrderStatus @default(pending)
     note   String?
@@ -9080,32 +10280,32 @@ describe('generateJsonSchema — x-gate', () => {
 
   test('x-gate emitted for model with @@gate', () => {
     const js = generateJsonSchema(schema)
-    const accounts = js['$defs']?.accounts
+    const accounts = js['$defs']?.Account
     expect(accounts['x-gate']).toBeDefined()
   })
 
   test('x-gate has correct RCUD values', () => {
     const js = generateJsonSchema(schema)
-    const accounts = js['$defs']?.accounts
+    const accounts = js['$defs']?.Account
     expect(accounts['x-gate']).toEqual({ read: 2, create: 5, update: 5, delete: 6 })
   })
 
   test('x-gate emitted on all modes (create/update/full)', () => {
     for (const mode of ['create','update','full']) {
       const js = generateJsonSchema(schema, { mode })
-      expect(js['$defs']?.accounts['x-gate']).toBeDefined()
+      expect(js['$defs']?.Account['x-gate']).toBeDefined()
     }
   })
 
   test('no x-gate on model without @@gate', () => {
     const js = generateJsonSchema(schema)
-    const posts = js['$defs']?.posts
+    const posts = js['$defs']?.Post
     expect(posts['x-gate']).toBeUndefined()
   })
 
   test('x-gate emitted for users model', () => {
     const js = generateJsonSchema(schema)
-    const users = js['$defs']?.users
+    const users = js['$defs']?.User
     expect(users['x-gate']).toEqual({ read: 2, create: 4, update: 4, delete: 6 })
   })
 })
@@ -9116,22 +10316,22 @@ describe('generateJsonSchema — x-relations', () => {
 
   test('x-relations emitted for model with relations', () => {
     const js = generateJsonSchema(schema)
-    expect(js['$defs']?.users['x-relations']).toBeDefined()
+    expect(js['$defs']?.User['x-relations']).toBeDefined()
   })
 
   test('no x-relations on model with no relations', () => {
-    const { schema: s } = parse(`model t { id Int @id; name String }`)
+    const { schema: s } = parse(`model T { id Int @id; name String }`)
     const js = generateJsonSchema(s)
-    expect(js['$defs']?.t?.['x-relations']).toBeUndefined()
+    expect(js['$defs']?.T?.['x-relations']).toBeUndefined()
   })
 
   test('belongsTo relation has correct shape', () => {
     const js = generateJsonSchema(schema)
-    const rels = js['$defs']?.users['x-relations'] as any[]
+    const rels = js['$defs']?.User['x-relations'] as any[]
     const account = rels?.find((r: any) => r.field === 'account')
     expect(account).toBeDefined()
     expect(account.type).toBe('belongsTo')
-    expect(account.model).toBe('accounts')
+    expect(account.model).toBe('Account')
     expect(account.fields).toEqual(['accountId'])
     expect(account.references).toEqual(['id'])
     expect(account.onDelete).toBe('Cascade')
@@ -9139,25 +10339,25 @@ describe('generateJsonSchema — x-relations', () => {
 
   test('hasMany relation has correct shape', () => {
     const js = generateJsonSchema(schema)
-    const rels = js['$defs']?.users['x-relations'] as any[]
+    const rels = js['$defs']?.User['x-relations'] as any[]
     const posts = rels?.find((r: any) => r.field === 'posts')
     expect(posts).toBeDefined()
     expect(posts.type).toBe('hasMany')
-    expect(posts.model).toBe('posts')
+    expect(posts.model).toBe('Post')
     expect(posts.fields).toEqual([])
   })
 
   test('accounts has hasMany users relation', () => {
     const js = generateJsonSchema(schema)
-    const rels = js['$defs']?.accounts['x-relations'] as any[]
+    const rels = js['$defs']?.Account['x-relations'] as any[]
     const users = rels?.find((r: any) => r.field === 'users')
     expect(users?.type).toBe('hasMany')
-    expect(users?.model).toBe('users')
+    expect(users?.model).toBe('User')
   })
 
   test('x-relations fields are excluded from properties', () => {
     const js = generateJsonSchema(schema)
-    const props = js['$defs']?.users?.properties
+    const props = js['$defs']?.User?.properties
     expect(props?.account).toBeUndefined()   // relation field — not in properties
     expect(props?.accountId).toBeDefined()   // FK column — in properties
   })
@@ -9168,15 +10368,15 @@ describe('generateJsonSchema — x-relations', () => {
 
 describe('implicit many-to-many', () => {
   const m2mSchema = `
-    model posts {
+    model Post {
       id    Int @id
       title String
-      tags  tags[]
+      tags  Tag[]
     }
-    model tags {
+    model Tag {
       id    Int @id
       name  String
-      posts posts[]
+      posts Post[]
     }
   `
 
@@ -9185,20 +10385,20 @@ describe('implicit many-to-many', () => {
   test('parses Model[] fields as implicitM2M kind', () => {
     const r = parse(m2mSchema)
     expect(r.valid).toBe(true)
-    const postsModel = r.schema.models.find((m: any) => m.name === 'posts')
+    const postsModel = r.schema.models.find((m: any) => m.name === 'Post')
     const tagsField  = postsModel?.fields.find((f: any) => f.name === 'tags')
     expect(tagsField?.type.kind).toBe('implicitM2M')
-    expect(tagsField?.type.name).toBe('tags')
+    expect(tagsField?.type.name).toBe('Tag')
     expect(tagsField?.type.array).toBe(true)
   })
 
   test('requires both sides to declare the relation', () => {
     const r = parse(`
-      model posts {
+      model Post {
         id   Int @id
-        tags tags[]
+        tags Tag[]
       }
-      model tags {
+      model Tag {
         id   Int @id
       }
     `)
@@ -9208,7 +10408,7 @@ describe('implicit many-to-many', () => {
 
   test('unknown model in m2m field is an error', () => {
     const r = parse(`
-      model posts {
+      model Post {
         id      Int @id
         missing unknown[]
       }
@@ -9226,28 +10426,28 @@ describe('implicit many-to-many', () => {
   test('m2m field is excluded from properties', () => {
     const r = parse(m2mSchema)
     const js = generateJsonSchema(r.schema)
-    expect(js['$defs']?.posts?.properties?.tags).toBeUndefined()
-    expect(js['$defs']?.tags?.properties?.posts).toBeUndefined()
+    expect(js['$defs']?.Post?.properties?.tags).toBeUndefined()
+    expect(js['$defs']?.Tag?.properties?.posts).toBeUndefined()
   })
 
   test('m2m field is not required', () => {
     const r = parse(m2mSchema)
     const js = generateJsonSchema(r.schema)
-    expect(js['$defs']?.posts?.required ?? []).not.toContain('tags')
+    expect(js['$defs']?.Post?.required ?? []).not.toContain('tags')
   })
 
   test('m2m field is excluded in full mode too', () => {
     const r = parse(m2mSchema)
     const js = generateJsonSchema(r.schema, { mode: 'full' })
-    expect(js['$defs']?.posts?.properties?.tags).toBeUndefined()
+    expect(js['$defs']?.Post?.properties?.tags).toBeUndefined()
   })
 
   test('the relation is still described in x-relations', () => {
     const r = parse(m2mSchema)
     const js = generateJsonSchema(r.schema)
-    const rels = js['$defs']?.posts?.['x-relations'] as any[]
+    const rels = js['$defs']?.Post?.['x-relations'] as any[]
     const tags = rels?.find((x: any) => x.field === 'tags')
-    expect(tags).toEqual({ field: 'tags', model: 'tags', type: 'm2m' })
+    expect(tags).toEqual({ field: 'tags', model: 'Tag', type: 'm2m' })
   })
 
   // ── DDL ─────────────────────────────────────────────────────────────────────
@@ -9257,18 +10457,18 @@ describe('implicit many-to-many', () => {
     const r = parse(m2mSchema)
     const pairs = detectM2MPairs(r.schema)
     expect(pairs.length).toBe(1)
-    expect(pairs[0].modelA).toBe('posts')
-    expect(pairs[0].modelB).toBe('tags')
-    expect(pairs[0].joinTable).toBe('_posts_tags')
-    expect(pairs[0].colA).toBe('postsId')
-    expect(pairs[0].colB).toBe('tagsId')
+    expect(pairs[0].modelA).toBe('Post')
+    expect(pairs[0].modelB).toBe('Tag')
+    expect(pairs[0].joinTable).toBe('_post_tag')
+    expect(pairs[0].colA).toBe('postId')
+    expect(pairs[0].colB).toBe('tagId')
   })
 
   test('DDL includes join table CREATE statement', () => {
     const r = parse(m2mSchema)
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain('CREATE TABLE')
-    expect(ddl).toContain('_posts_tags')
+    expect(ddl).toContain('_post_tag')
     expect(ddl).toContain('ON DELETE CASCADE')
     expect(ddl).toContain('PRIMARY KEY')
   })
@@ -9276,7 +10476,7 @@ describe('implicit many-to-many', () => {
   test('join table actually created in DB', async () => {
     const db = await makeDb(m2mSchema, 'm2m-ddl')
     const tables = db.$db.query(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='_posts_tags'`
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='_post_tag'`
     ).all()
     expect(tables.length).toBe(1)
     db.$close()
@@ -9286,14 +10486,14 @@ describe('implicit many-to-many', () => {
 
   test('include: { tags: true } returns flat tag objects', async () => {
     const db = await makeDb(m2mSchema, 'm2m-include')
-    await db.posts.create({ data: { id: 1, title: 'Hello' } })
-    await db.tags.create({ data: { id: 1, name: 'typescript' } })
-    await db.tags.create({ data: { id: 2, name: 'orm' } })
+    await db.post.create({ data: { id: 1, title: 'Hello' } })
+    await db.tag.create({ data: { id: 1, name: 'typescript' } })
+    await db.tag.create({ data: { id: 2, name: 'orm' } })
     // Manually wire the join rows
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 1)`)
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 2)`)
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 1)`)
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 2)`)
 
-    const post = await db.posts.findUnique({
+    const post = await db.post.findUnique({
       where: { id: 1 },
       include: { tags: true }
     })
@@ -9304,13 +10504,13 @@ describe('implicit many-to-many', () => {
 
   test('include from the other side', async () => {
     const db = await makeDb(m2mSchema, 'm2m-include-other')
-    await db.posts.create({ data: { id: 1, title: 'Post A' } })
-    await db.posts.create({ data: { id: 2, title: 'Post B' } })
-    await db.tags.create({ data: { id: 1, name: 'ts' } })
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 1)`)
-    db.$db.run(`INSERT INTO _posts_tags VALUES (2, 1)`)
+    await db.post.create({ data: { id: 1, title: 'Post A' } })
+    await db.post.create({ data: { id: 2, title: 'Post B' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 1)`)
+    db.$db.run(`INSERT INTO _post_tag VALUES (2, 1)`)
 
-    const tag = await db.tags.findUnique({
+    const tag = await db.tag.findUnique({
       where: { id: 1 },
       include: { posts: true }
     })
@@ -9320,8 +10520,8 @@ describe('implicit many-to-many', () => {
 
   test('row with no related records returns empty array', async () => {
     const db = await makeDb(m2mSchema, 'm2m-empty')
-    await db.posts.create({ data: { id: 1, title: 'Lonely' } })
-    const post = await db.posts.findUnique({
+    await db.post.create({ data: { id: 1, title: 'Lonely' } })
+    const post = await db.post.findUnique({
       where: { id: 1 },
       include: { tags: true }
     })
@@ -9333,15 +10533,15 @@ describe('implicit many-to-many', () => {
 
   test('nested connect adds join row', async () => {
     const db = await makeDb(m2mSchema, 'm2m-connect')
-    await db.posts.create({ data: { id: 1, title: 'Post' } })
-    await db.tags.create({ data: { id: 1, name: 'ts' } })
+    await db.post.create({ data: { id: 1, title: 'Post' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
 
-    await db.posts.update({
+    await db.post.update({
       where: { id: 1 },
       data: { tags: { connect: { id: 1 } } }
     })
 
-    const post = await db.posts.findUnique({ where: { id: 1 }, include: { tags: true } })
+    const post = await db.post.findUnique({ where: { id: 1 }, include: { tags: true } })
     expect(post.tags).toHaveLength(1)
     expect(post.tags[0].name).toBe('ts')
     db.$close()
@@ -9349,16 +10549,16 @@ describe('implicit many-to-many', () => {
 
   test('nested connect multiple', async () => {
     const db = await makeDb(m2mSchema, 'm2m-connect-multi')
-    await db.posts.create({ data: { id: 1, title: 'Post' } })
-    await db.tags.create({ data: { id: 1, name: 'ts' } })
-    await db.tags.create({ data: { id: 2, name: 'orm' } })
+    await db.post.create({ data: { id: 1, title: 'Post' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
+    await db.tag.create({ data: { id: 2, name: 'orm' } })
 
-    await db.posts.update({
+    await db.post.update({
       where: { id: 1 },
       data: { tags: { connect: [{ id: 1 }, { id: 2 }] } }
     })
 
-    const post = await db.posts.findUnique({ where: { id: 1 }, include: { tags: true } })
+    const post = await db.post.findUnique({ where: { id: 1 }, include: { tags: true } })
     expect(post.tags).toHaveLength(2)
     db.$close()
   })
@@ -9367,18 +10567,18 @@ describe('implicit many-to-many', () => {
 
   test('nested disconnect removes join row', async () => {
     const db = await makeDb(m2mSchema, 'm2m-disconnect')
-    await db.posts.create({ data: { id: 1, title: 'Post' } })
-    await db.tags.create({ data: { id: 1, name: 'ts' } })
-    await db.tags.create({ data: { id: 2, name: 'orm' } })
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 1)`)
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 2)`)
+    await db.post.create({ data: { id: 1, title: 'Post' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
+    await db.tag.create({ data: { id: 2, name: 'orm' } })
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 1)`)
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 2)`)
 
-    await db.posts.update({
+    await db.post.update({
       where: { id: 1 },
       data: { tags: { disconnect: { id: 1 } } }
     })
 
-    const post = await db.posts.findUnique({ where: { id: 1 }, include: { tags: true } })
+    const post = await db.post.findUnique({ where: { id: 1 }, include: { tags: true } })
     expect(post.tags).toHaveLength(1)
     expect(post.tags[0].id).toBe(2)
     db.$close()
@@ -9388,17 +10588,17 @@ describe('implicit many-to-many', () => {
 
   test('nested create creates tag and adds join row', async () => {
     const db = await makeDb(m2mSchema, 'm2m-nested-create')
-    await db.posts.create({ data: { id: 1, title: 'Post' } })
+    await db.post.create({ data: { id: 1, title: 'Post' } })
 
-    await db.posts.update({
+    await db.post.update({
       where: { id: 1 },
       data: { tags: { create: { id: 1, name: 'new-tag' } } }
     })
 
-    const tag = await db.tags.findUnique({ where: { id: 1 } })
+    const tag = await db.tag.findUnique({ where: { id: 1 } })
     expect(tag?.name).toBe('new-tag')
 
-    const post = await db.posts.findUnique({ where: { id: 1 }, include: { tags: true } })
+    const post = await db.post.findUnique({ where: { id: 1 }, include: { tags: true } })
     expect(post.tags).toHaveLength(1)
     db.$close()
   })
@@ -9407,20 +10607,20 @@ describe('implicit many-to-many', () => {
 
   test('nested set replaces all relations', async () => {
     const db = await makeDb(m2mSchema, 'm2m-set')
-    await db.posts.create({ data: { id: 1, title: 'Post' } })
-    await db.tags.create({ data: { id: 1, name: 'ts' } })
-    await db.tags.create({ data: { id: 2, name: 'orm' } })
-    await db.tags.create({ data: { id: 3, name: 'bun' } })
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 1)`)
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 2)`)
+    await db.post.create({ data: { id: 1, title: 'Post' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
+    await db.tag.create({ data: { id: 2, name: 'orm' } })
+    await db.tag.create({ data: { id: 3, name: 'bun' } })
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 1)`)
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 2)`)
 
     // Replace with just tag 3
-    await db.posts.update({
+    await db.post.update({
       where: { id: 1 },
       data: { tags: { set: [{ id: 3 }] } }
     })
 
-    const post = await db.posts.findUnique({ where: { id: 1 }, include: { tags: true } })
+    const post = await db.post.findUnique({ where: { id: 1 }, include: { tags: true } })
     expect(post.tags).toHaveLength(1)
     expect(post.tags[0].id).toBe(3)
     db.$close()
@@ -9428,16 +10628,16 @@ describe('implicit many-to-many', () => {
 
   test('nested set with empty array removes all relations', async () => {
     const db = await makeDb(m2mSchema, 'm2m-set-empty')
-    await db.posts.create({ data: { id: 1, title: 'Post' } })
-    await db.tags.create({ data: { id: 1, name: 'ts' } })
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 1)`)
+    await db.post.create({ data: { id: 1, title: 'Post' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 1)`)
 
-    await db.posts.update({
+    await db.post.update({
       where: { id: 1 },
       data: { tags: { set: [] } }
     })
 
-    const post = await db.posts.findUnique({ where: { id: 1 }, include: { tags: true } })
+    const post = await db.post.findUnique({ where: { id: 1 }, include: { tags: true } })
     expect(post.tags).toHaveLength(0)
     db.$close()
   })
@@ -9446,16 +10646,16 @@ describe('implicit many-to-many', () => {
 
   test('deleting a post cascades join rows', async () => {
     const db = await makeDb(m2mSchema, 'm2m-cascade')
-    await db.posts.create({ data: { id: 1, title: 'Post' } })
-    await db.tags.create({ data: { id: 1, name: 'ts' } })
-    db.$db.run(`INSERT INTO _posts_tags VALUES (1, 1)`)
+    await db.post.create({ data: { id: 1, title: 'Post' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
+    db.$db.run(`INSERT INTO _post_tag VALUES (1, 1)`)
 
-    await db.posts.delete({ where: { id: 1 } })
+    await db.post.delete({ where: { id: 1 } })
 
-    const joinRows = db.$db.query(`SELECT * FROM _posts_tags`).all()
+    const joinRows = db.$db.query(`SELECT * FROM _post_tag`).all()
     expect(joinRows.length).toBe(0)
     // Tag still exists — only the join row was removed
-    const tag = await db.tags.findUnique({ where: { id: 1 } })
+    const tag = await db.tag.findUnique({ where: { id: 1 } })
     expect(tag?.name).toBe('ts')
     db.$close()
   })
@@ -9464,17 +10664,17 @@ describe('implicit many-to-many', () => {
 
   test('create with inline tag connect', async () => {
     const db = await makeDb(m2mSchema, 'm2m-create-connect')
-    await db.tags.create({ data: { id: 1, name: 'ts' } })
-    await db.tags.create({ data: { id: 2, name: 'orm' } })
+    await db.tag.create({ data: { id: 1, name: 'ts' } })
+    await db.tag.create({ data: { id: 2, name: 'orm' } })
 
-    await db.posts.create({
+    await db.post.create({
       data: {
         id: 1, title: 'Hello',
         tags: { connect: [{ id: 1 }, { id: 2 }] }
       }
     })
 
-    const post = await db.posts.findUnique({ where: { id: 1 }, include: { tags: true } })
+    const post = await db.post.findUnique({ where: { id: 1 }, include: { tags: true } })
     expect(post.tags).toHaveLength(2)
     db.$close()
   })
@@ -9490,15 +10690,15 @@ describe('onAfterDelete — soft-delete boundary', () => {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
-      model posts {
+      model Post {
         id        Int  @id
         title     String
         deletedAt DateTime?
         @@softDelete
       }
     `, 'after-delete-soft-boundary', { plugins: [new Spy()] })
-    await db.posts.create({ data: { id: 1, title: 'Hello' } })
-    await db.posts.remove({ where: { id: 1 } })   // soft delete — row still in DB
+    await db.post.create({ data: { id: 1, title: 'Hello' } })
+    await db.post.remove({ where: { id: 1 } })   // soft delete — row still in DB
     expect(called).toBe(false)
     db.$close()
   })
@@ -9510,15 +10710,15 @@ describe('onAfterDelete — soft-delete boundary', () => {
       async onAfterDelete(_model: string, rows: unknown[]) { deleted.push(...rows) }
     }
     const db = await makeDb(`
-      model posts {
+      model Post {
         id        Int  @id
         title     String
         deletedAt DateTime?
         @@softDelete
       }
     `, 'after-delete-hard-on-soft', { plugins: [new Spy()] })
-    await db.posts.create({ data: { id: 1, title: 'Hello' } })
-    await db.posts.delete({ where: { id: 1 } })   // @hardDelete path
+    await db.post.create({ data: { id: 1, title: 'Hello' } })
+    await db.post.delete({ where: { id: 1 } })   // @hardDelete path
     expect(deleted).toHaveLength(1)
     expect((deleted[0] as any).id).toBe(1)
     db.$close()
@@ -9531,15 +10731,15 @@ describe('onAfterDelete — soft-delete boundary', () => {
       async onAfterDelete(_model: string, rows: unknown[]) { if (rows.length) called = true }
     }
     const db = await makeDb(`
-      model posts {
+      model Post {
         id        Int  @id
         tag       String
         deletedAt DateTime?
         @@softDelete
       }
     `, 'after-delete-removemany', { plugins: [new Spy()] })
-    await db.posts.createMany({ data: [{ id: 1, tag: 'a' }, { id: 2, tag: 'a' }] })
-    await db.posts.removeMany({ where: { tag: 'a' } })
+    await db.post.createMany({ data: [{ id: 1, tag: 'a' }, { id: 2, tag: 'a' }] })
+    await db.post.removeMany({ where: { tag: 'a' } })
     expect(called).toBe(false)
     db.$close()
   })
@@ -9864,7 +11064,7 @@ describe('@from — WHERE filtering', () => {
 // ─── aggregate() ─────────────────────────────────────────────────────────────
 
 const AGG_SCHEMA = `
-  model orders {
+  model Order {
     id        Int @id
     amount    Float
     status    String
@@ -9882,7 +11082,7 @@ describe('window functions', () => {
   beforeAll(async () => {
     ;({ db } = await makeTestClient(AGG_SCHEMA, {
       data: async (db: any) => {
-        await db.orders.createMany({ data: [
+        await db.order.createMany({ data: [
           { id: 1, amount: 10, status: 'paid',    accountId: 1 },
           { id: 2, amount: 30, status: 'paid',    accountId: 1 },
           { id: 3, amount: 20, status: 'paid',    accountId: 1 },
@@ -9896,7 +11096,7 @@ describe('window functions', () => {
   afterAll(() => db.$close())
 
   test('rowNumber — global ordering', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       orderBy: { id: 'asc' },
       window:  { rn: { rowNumber: true, orderBy: { id: 'asc' } } },
     })
@@ -9904,7 +11104,7 @@ describe('window functions', () => {
   })
 
   test('rowNumber — partitioned by accountId', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       orderBy: { id: 'asc' },
       window:  { rn: { rowNumber: true, partitionBy: 'accountId', orderBy: { id: 'asc' } } },
     })
@@ -9917,7 +11117,7 @@ describe('window functions', () => {
   })
 
   test('rank — ties get same rank, gaps after', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       orderBy: { id: 'asc' },
       window:  { r: { rank: true, partitionBy: 'accountId', orderBy: { amount: 'desc' } } },
     })
@@ -9928,7 +11128,7 @@ describe('window functions', () => {
   })
 
   test('denseRank — no gaps after ties', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       orderBy: { id: 'asc' },
       window:  { dr: { denseRank: true, orderBy: { status: 'asc' } } },
     })
@@ -9938,7 +11138,7 @@ describe('window functions', () => {
   })
 
   test('running sum — cumulative total', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       where:   { accountId: 1 },
       orderBy: { id: 'asc' },
       window:  { runningTotal: { sum: 'amount', orderBy: { id: 'asc' } } },
@@ -9950,7 +11150,7 @@ describe('window functions', () => {
   })
 
   test('running count', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       orderBy: { id: 'asc' },
       window:  { rc: { count: true, orderBy: { id: 'asc' } } },
     })
@@ -9959,7 +11159,7 @@ describe('window functions', () => {
   })
 
   test('moving average with rows frame', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       where:   { accountId: 1 },
       orderBy: { id: 'asc' },
       window:  { ma: { avg: 'amount', orderBy: { id: 'asc' }, rows: [-1, 0] } },
@@ -9973,7 +11173,7 @@ describe('window functions', () => {
   })
 
   test('lag — previous row value', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       where:   { accountId: 1 },
       orderBy: { id: 'asc' },
       window:  { prev: { lag: 'amount', offset: 1, default: 0, orderBy: { id: 'asc' } } },
@@ -9984,7 +11184,7 @@ describe('window functions', () => {
   })
 
   test('lead — next row value', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       where:   { accountId: 1 },
       orderBy: { id: 'asc' },
       window:  { next: { lead: 'amount', offset: 1, default: 0, orderBy: { id: 'asc' } } },
@@ -9995,7 +11195,7 @@ describe('window functions', () => {
   })
 
   test('firstValue and lastValue', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       where:   { accountId: 1 },
       orderBy: { id: 'asc' },
       window:  {
@@ -10009,7 +11209,7 @@ describe('window functions', () => {
   })
 
   test('multiple window functions in one query', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       orderBy: { id: 'asc' },
       window:  {
         rn:    { rowNumber: true, orderBy: { id: 'asc' } },
@@ -10021,7 +11221,7 @@ describe('window functions', () => {
   })
 
   test('window + where + limit', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       where:   { accountId: 1 },
       orderBy: { id: 'asc' },
       limit:   2,
@@ -10035,14 +11235,14 @@ describe('window functions', () => {
   test('window respects @@softDelete', async () => {
     const { db: localDb } = await makeTestClient(AGG_SCHEMA, {
       data: async (d: any) => {
-        await d.orders.createMany({ data: [
+        await d.order.createMany({ data: [
           { id: 10, amount: 5, status: 'paid', accountId: 1 },
           { id: 11, amount: 10, status: 'paid', accountId: 1 },
         ]})
-        await d.orders.remove({ where: { id: 10 } })
+        await d.order.remove({ where: { id: 10 } })
       }
     })
-    const rows = await localDb.orders.findMany({
+    const rows = await localDb.order.findMany({
       window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } },
     })
     expect(rows).toHaveLength(1)   // soft-deleted row excluded
@@ -10052,12 +11252,12 @@ describe('window functions', () => {
 
   test('throws on unknown window function spec', async () => {
     await expect(
-      db.orders.findMany({ window: { x: { unknownFn: true } as any } })
+      db.order.findMany({ window: { x: { unknownFn: true } as any } })
     ).rejects.toThrow('unrecognised window function spec')
   })
 
   test('window FILTER — conditional aggregate window', async () => {
-    const rows = await db.orders.findMany({
+    const rows = await db.order.findMany({
       orderBy: { id: 'asc' },
       window:  {
         paidRunning: {
@@ -10082,7 +11282,7 @@ describe('query() dispatcher', () => {
   beforeAll(async () => {
     ;({ db } = await makeTestClient(AGG_SCHEMA, {
       data: async (db: any) => {
-        await db.orders.createMany({ data: [
+        await db.order.createMany({ data: [
           { id: 1, amount: 10, status: 'paid',    accountId: 1 },
           { id: 2, amount: 20, status: 'paid',    accountId: 1 },
           { id: 3, amount: 30, status: 'refund',  accountId: 2 },
@@ -10095,31 +11295,31 @@ describe('query() dispatcher', () => {
   afterAll(() => db.$close())
 
   test('routes to findMany when no agg keys', async () => {
-    const rows = await db.orders.query({ where: { status: 'paid' }, orderBy: { id: 'asc' } })
+    const rows = await db.order.query({ where: { status: 'paid' }, orderBy: { id: 'asc' } })
     expect(Array.isArray(rows)).toBe(true)
     expect(rows).toHaveLength(2)
     expect(rows[0].amount).toBe(10)   // full row returned
   })
 
   test('routes to aggregate when _count present', async () => {
-    const result = await db.orders.query({ _count: true })
+    const result = await db.order.query({ _count: true })
     expect(result._count).toBe(4)
     expect(Array.isArray(result)).toBe(false)   // single object, not array
   })
 
   test('routes to aggregate when _sum present', async () => {
-    const result = await db.orders.query({ _sum: { amount: true }, _count: true })
+    const result = await db.order.query({ _sum: { amount: true }, _count: true })
     expect(typeof result._count).toBe('number')
     expect(result._sum.amount).toBeCloseTo(100)
   })
 
   test('routes to aggregate with where filter', async () => {
-    const result = await db.orders.query({ _count: true, where: { status: 'paid' } })
+    const result = await db.order.query({ _count: true, where: { status: 'paid' } })
     expect(result._count).toBe(2)
   })
 
   test('routes to groupBy when by present', async () => {
-    const rows = await db.orders.query({ by: ['status'], _count: true, orderBy: { status: 'asc' } })
+    const rows = await db.order.query({ by: ['status'], _count: true, orderBy: { status: 'asc' } })
     expect(Array.isArray(rows)).toBe(true)
     expect(rows[0]).toHaveProperty('status')
     expect(rows[0]).toHaveProperty('_count')
@@ -10127,14 +11327,14 @@ describe('query() dispatcher', () => {
   })
 
   test('routes to groupBy with where', async () => {
-    const rows = await db.orders.query({ by: ['accountId'], _count: true, where: { status: 'paid' } })
+    const rows = await db.order.query({ by: ['accountId'], _count: true, where: { status: 'paid' } })
     expect(rows).toHaveLength(1)
     expect(rows[0].accountId).toBe(1)
     expect(rows[0]._count).toBe(2)
   })
 
   test('routes to findMany with window', async () => {
-    const rows = await db.orders.query({
+    const rows = await db.order.query({
       orderBy: { id: 'asc' },
       window:  { rn: { rowNumber: true, orderBy: { id: 'asc' } } },
     })
@@ -10143,13 +11343,13 @@ describe('query() dispatcher', () => {
   })
 
   test('routes to findMany with limit + offset', async () => {
-    const rows = await db.orders.query({ orderBy: { id: 'asc' }, limit: 2, offset: 1 })
+    const rows = await db.order.query({ orderBy: { id: 'asc' }, limit: 2, offset: 1 })
     expect(rows).toHaveLength(2)
     expect(rows[0].id).toBe(2)
   })
 
   test('named aggregates route to aggregate', async () => {
-    const result = await db.orders.query({
+    const result = await db.order.query({
       _countPaid: { count: true, filter: sql`status = 'paid'` },
     })
     expect(result._countPaid).toBe(2)
@@ -10157,7 +11357,7 @@ describe('query() dispatcher', () => {
   })
 
   test('empty args routes to findMany', async () => {
-    const rows = await db.orders.query()
+    const rows = await db.order.query()
     expect(Array.isArray(rows)).toBe(true)
     expect(rows).toHaveLength(4)
   })
@@ -10167,12 +11367,12 @@ describe('query() dispatcher', () => {
 
 describe('db.query() — multi-model batch', () => {
   const SCHEMA = `
-    model accounts {
+    model Account {
       id   Int @id
       name String
       tier String @default("free")
     }
-    model orders {
+    model Order {
       id        Int @id
       amount    Float
       status    String
@@ -10183,11 +11383,11 @@ describe('db.query() — multi-model batch', () => {
   test('runs many per-table queries and returns named results', async () => {
     const { db } = await makeTestClient(SCHEMA, {
       data: async (db: any) => {
-        await db.accounts.createMany({ data: [
+        await db.account.createMany({ data: [
           { id: 1, name: 'Acme',   tier: 'pro' },
           { id: 2, name: 'Globex', tier: 'free' },
         ]})
-        await db.orders.createMany({ data: [
+        await db.order.createMany({ data: [
           { id: 1, amount: 10, status: 'paid',    accountId: 1 },
           { id: 2, amount: 20, status: 'paid',    accountId: 1 },
           { id: 3, amount: 30, status: 'pending', accountId: 2 },
@@ -10196,8 +11396,8 @@ describe('db.query() — multi-model batch', () => {
     })
 
     const { accounts, orders } = await db.query({
-      accounts: { where: { tier: 'pro' } },
-      orders:   { where: { status: 'paid' }, orderBy: { id: 'asc' } },
+      accounts: { model: 'account', where: { tier: 'pro' } },
+      orders:   { model: 'order', where: { status: 'paid' }, orderBy: { id: 'asc' } },
     })
 
     expect(Array.isArray(accounts)).toBe(true)
@@ -10214,10 +11414,10 @@ describe('db.query() — multi-model batch', () => {
   test('mixes findMany / aggregate / groupBy in one call', async () => {
     const { db } = await makeTestClient(SCHEMA, {
       data: async (db: any) => {
-        await db.accounts.createMany({ data: [
+        await db.account.createMany({ data: [
           { id: 1, name: 'Acme', tier: 'pro' },
         ]})
-        await db.orders.createMany({ data: [
+        await db.order.createMany({ data: [
           { id: 1, amount: 10, status: 'paid',    accountId: 1 },
           { id: 2, amount: 20, status: 'paid',    accountId: 1 },
           { id: 3, amount: 30, status: 'pending', accountId: 1 },
@@ -10226,9 +11426,9 @@ describe('db.query() — multi-model batch', () => {
     })
 
     const { accounts, totals, byStatus } = await db.query({
-      accounts: { where: { tier: 'pro' }, orderBy: { id: 'asc' } },                 // → findMany
-      totals:   { model: 'orders', _count: true, _sum: { amount: true } },          // → aggregate (aliased)
-      byStatus: { model: 'orders', by: ['status'], _count: true, orderBy: { status: 'asc' } }, // → groupBy (aliased)
+      accounts: { model: 'account', where: { tier: 'pro' }, orderBy: { id: 'asc' } }, // → findMany
+      totals:   { model: 'order', _count: true, _sum: { amount: true } },          // → aggregate (aliased)
+      byStatus: { model: 'order', by: ['status'], _count: true, orderBy: { status: 'asc' } }, // → groupBy (aliased)
     } as any)
 
     expect(Array.isArray(accounts)).toBe(true)
@@ -10249,7 +11449,7 @@ describe('db.query() — multi-model batch', () => {
   test('alias form — same model queried twice with different args', async () => {
     const { db } = await makeTestClient(SCHEMA, {
       data: async (db: any) => {
-        await db.orders.createMany({ data: [
+        await db.order.createMany({ data: [
           { id: 1, amount: 10, status: 'paid',    accountId: 1 },
           { id: 2, amount: 20, status: 'paid',    accountId: 1 },
           { id: 3, amount: 30, status: 'pending', accountId: 1 },
@@ -10258,8 +11458,8 @@ describe('db.query() — multi-model batch', () => {
     })
 
     const { paid, pending } = await db.query({
-      paid:    { model: 'orders', where: { status: 'paid' },    orderBy: { id: 'asc' } },
-      pending: { model: 'orders', where: { status: 'pending' }, orderBy: { id: 'asc' } },
+      paid:    { model: 'order', where: { status: 'paid' },    orderBy: { id: 'asc' } },
+      pending: { model: 'order', where: { status: 'pending' }, orderBy: { id: 'asc' } },
     } as any)
 
     expect(paid).toHaveLength(2)
@@ -10273,8 +11473,8 @@ describe('db.query() — multi-model batch', () => {
   test('preserves spec key order in result', async () => {
     const { db } = await makeTestClient(SCHEMA)
     const result = await db.query({
-      orders:   { _count: true },
-      accounts: { _count: true },
+      orders:   { model: 'order', _count: true },
+      accounts: { model: 'account', _count: true },
     } as any)
     expect(Object.keys(result)).toEqual(['orders', 'accounts'])
     db.$close()
@@ -10306,7 +11506,7 @@ describe('db.query() — multi-model batch', () => {
     // First entry succeeds, second is an unknown accessor → whole batch rejects.
     const { db } = await makeTestClient(SCHEMA)
     await expect(db.query({
-      accounts: { _count: true },
+      accounts: { model: 'account', _count: true },
       orderz:   { _count: true },
     } as any)).rejects.toThrow(/orderz/)
     db.$close()
@@ -10319,14 +11519,14 @@ describe('db.query() — multi-model batch', () => {
     // for nesting).
     const { db } = await makeTestClient(SCHEMA, {
       data: async (db: any) => {
-        await db.accounts.create({ data: { id: 1, name: 'Acme', tier: 'pro' } })
-        await db.orders.create({ data: { id: 1, amount: 10, status: 'paid', accountId: 1 } })
+        await db.account.create({ data: { id: 1, name: 'Acme', tier: 'pro' } })
+        await db.order.create({ data: { id: 1, amount: 10, status: 'paid', accountId: 1 } })
       },
     })
     const result = await db.$transaction(async (tx: any) => {
       return tx.query({
-        accounts: { _count: true },
-        orders:   { _count: true },
+        accounts: { model: 'account', _count: true },
+        orders:   { model: 'order', _count: true },
       })
     })
     expect(result.accounts._count).toBe(1)
@@ -10337,7 +11537,7 @@ describe('db.query() — multi-model batch', () => {
   test('asSystem().query() bypasses row policies', async () => {
     // Schema with a deny rule — readable by no one (forces asSystem usage)
     const POLICY = `
-      model widgets {
+      model Widget {
         id   Int @id
         name String
         @@deny('read', true)
@@ -10346,14 +11546,14 @@ describe('db.query() — multi-model batch', () => {
     const { db } = await makeTestClient(POLICY, {
       data: async (db: any) => {
         // asSystem() to seed past the deny rule
-        await db.asSystem().widgets.create({ data: { id: 1, name: 'Wrench' } })
+        await db.asSystem().widget.create({ data: { id: 1, name: 'Wrench' } })
       },
     })
     // Non-system batch returns 0 rows / count due to deny('read')
-    const blocked = await db.query({ widgets: { _count: true } } as any)
+    const blocked = await db.query({ widgets: { model: 'widget', _count: true } } as any)
     expect(blocked.widgets._count).toBe(0)
     // asSystem batch sees the row
-    const seen = await db.asSystem().query({ widgets: { _count: true } } as any)
+    const seen = await db.asSystem().query({ widgets: { model: 'widget', _count: true } } as any)
     expect(seen.widgets._count).toBe(1)
     db.$close()
   })
@@ -10361,7 +11561,7 @@ describe('db.query() — multi-model batch', () => {
   test('$setAuth().query() carries auth into each batched query', async () => {
     // Schema with row policy — only see your own rows
     const POLICY_SCHEMA = `
-      model posts {
+      model Post {
         id      Int @id
         ownerId Int
         title   String
@@ -10370,14 +11570,14 @@ describe('db.query() — multi-model batch', () => {
     `
     const { db } = await makeTestClient(POLICY_SCHEMA, {
       data: async (db: any) => {
-        await db.posts.createMany({ data: [
+        await db.post.createMany({ data: [
           { id: 1, ownerId: 1, title: 'Mine' },
           { id: 2, ownerId: 2, title: 'Yours' },
         ]})
       },
     })
     const alice = db.$setAuth({ id: 1 })
-    const result = await alice.query({ posts: { orderBy: { id: 'asc' } } } as any)
+    const result = await alice.query({ posts: { model: 'post', orderBy: { id: 'asc' } } } as any)
     expect(result.posts).toHaveLength(1)
     expect(result.posts[0].title).toBe('Mine')
     db.$close()
@@ -12127,47 +13327,47 @@ describe('generateJsonSchema with types', () => {
 describe('aggregate()', () => {
   test('_count returns total rows', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-count')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 20, status: 'pending', accountId: 1 },
       { id: 3, amount: 30, status: 'paid', accountId: 2 },
     ]})
-    const r = await db.orders.aggregate({ _count: true })
+    const r = await db.order.aggregate({ _count: true })
     expect(r._count).toBe(3)
     db.$close()
   })
 
   test('_sum aggregates a field', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-sum')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 20, status: 'paid', accountId: 1 },
       { id: 3, amount: 30, status: 'paid', accountId: 2 },
     ]})
-    const r = await db.orders.aggregate({ _sum: { amount: true } })
+    const r = await db.order.aggregate({ _sum: { amount: true } })
     expect(r._sum.amount).toBeCloseTo(60)
     db.$close()
   })
 
   test('_avg aggregates a field', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-avg')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 30, status: 'paid', accountId: 1 },
     ]})
-    const r = await db.orders.aggregate({ _avg: { amount: true } })
+    const r = await db.order.aggregate({ _avg: { amount: true } })
     expect(r._avg.amount).toBeCloseTo(20)
     db.$close()
   })
 
   test('_min and _max', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-minmax')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 5,  status: 'paid', accountId: 1 },
       { id: 2, amount: 50, status: 'paid', accountId: 1 },
       { id: 3, amount: 25, status: 'paid', accountId: 1 },
     ]})
-    const r = await db.orders.aggregate({ _min: { amount: true }, _max: { amount: true } })
+    const r = await db.order.aggregate({ _min: { amount: true }, _max: { amount: true } })
     expect(r._min.amount).toBe(5)
     expect(r._max.amount).toBe(50)
     db.$close()
@@ -12175,11 +13375,11 @@ describe('aggregate()', () => {
 
   test('multiple aggregations in one call', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-multi')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 20, status: 'paid', accountId: 1 },
     ]})
-    const r = await db.orders.aggregate({
+    const r = await db.order.aggregate({
       _count: true,
       _sum: { amount: true },
       _avg: { amount: true },
@@ -12192,24 +13392,24 @@ describe('aggregate()', () => {
 
   test('where: filters before aggregation', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-where')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'pending', accountId: 1 },
       { id: 3, amount: 30, status: 'paid',    accountId: 1 },
     ]})
-    const r = await db.orders.aggregate({ _sum: { amount: true }, where: { status: 'paid' } })
+    const r = await db.order.aggregate({ _sum: { amount: true }, where: { status: 'paid' } })
     expect(r._sum.amount).toBeCloseTo(40)
     db.$close()
   })
 
   test('respects @@softDelete — excludes deleted rows', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-soft')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 20, status: 'paid', accountId: 1 },
     ]})
-    await db.orders.remove({ where: { id: 2 } })
-    const r = await db.orders.aggregate({ _count: true, _sum: { amount: true } })
+    await db.order.remove({ where: { id: 2 } })
+    const r = await db.order.aggregate({ _count: true, _sum: { amount: true } })
     expect(r._count).toBe(1)
     expect(r._sum.amount).toBeCloseTo(10)
     db.$close()
@@ -12217,30 +13417,30 @@ describe('aggregate()', () => {
 
   test('throws without any aggregation', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-throw')
-    await expect(db.orders.aggregate({})).rejects.toThrow('at least one')
+    await expect(db.order.aggregate({})).rejects.toThrow('at least one')
     db.$close()
   })
 
   test('_count distinct', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-distinct')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'paid',    accountId: 1 },  // duplicate accountId
       { id: 3, amount: 30, status: 'pending', accountId: 2 },
     ]})
-    const r = await db.orders.aggregate({ _count: { distinct: 'accountId' } })
+    const r = await db.order.aggregate({ _count: { distinct: 'accountId' } })
     expect(r._count).toBe(2)   // 2 distinct accountIds, not 3 rows
     db.$close()
   })
 
   test('_stringAgg', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-strAgg')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'refund',  accountId: 1 },
       { id: 3, amount: 30, status: 'pending', accountId: 1 },
     ]})
-    const r = await db.orders.aggregate({
+    const r = await db.order.aggregate({
       _stringAgg: { field: 'status', separator: ', ', orderBy: 'status' },
     })
     expect(r._stringAgg.status).toBe('paid, pending, refund')
@@ -12249,13 +13449,13 @@ describe('aggregate()', () => {
 
   test('named aggregate — filtered count', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-nagg-count')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'paid',    accountId: 1 },
       { id: 3, amount: 30, status: 'refund',  accountId: 1 },
       { id: 4, amount: 40, status: 'pending', accountId: 1 },
     ]})
-    const r = await db.orders.aggregate({
+    const r = await db.order.aggregate({
       _count:       true,
       _countPaid:   { count: true, filter: sql`status = 'paid'` },
       _countRefund: { count: true, filter: sql`status = 'refund'` },
@@ -12268,12 +13468,12 @@ describe('aggregate()', () => {
 
   test('named aggregate — filtered sum', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-nagg-sum')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',   accountId: 1 },
       { id: 2, amount: 20, status: 'paid',   accountId: 1 },
       { id: 3, amount: 30, status: 'refund', accountId: 1 },
     ]})
-    const r = await db.orders.aggregate({
+    const r = await db.order.aggregate({
       _sumPaid:   { sum: 'amount', filter: sql`status = 'paid'` },
       _sumRefund: { sum: 'amount', filter: sql`status = 'refund'` },
       _avgPaid:   { avg: 'amount', filter: sql`status = 'paid'` },
@@ -12286,11 +13486,11 @@ describe('aggregate()', () => {
 
   test('named aggregate — no filter (plain named agg)', async () => {
     const db = await makeDb(AGG_SCHEMA, 'agg-nagg-plain')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 20, status: 'paid', accountId: 1 },
     ]})
-    const r = await db.orders.aggregate({
+    const r = await db.order.aggregate({
       _totalAmount: { sum: 'amount' },
       _avgAmount:   { avg: 'amount' },
     })
@@ -12306,12 +13506,12 @@ describe('aggregate()', () => {
 describe('groupBy()', () => {
   test('groups by a single field', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-basic')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'pending', accountId: 1 },
       { id: 3, amount: 30, status: 'paid',    accountId: 2 },
     ]})
-    const rows = await db.orders.groupBy({ by: ['status'], _count: true })
+    const rows = await db.order.groupBy({ by: ['status'], _count: true })
     expect(rows).toHaveLength(2)
     const paid = rows.find((r: any) => r.status === 'paid')
     expect(paid._count).toBe(2)
@@ -12320,12 +13520,12 @@ describe('groupBy()', () => {
 
   test('_sum per group', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-sum')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'paid',    accountId: 1 },
       { id: 3, amount: 5,  status: 'pending', accountId: 1 },
     ]})
-    const rows = await db.orders.groupBy({ by: ['status'], _sum: { amount: true } })
+    const rows = await db.order.groupBy({ by: ['status'], _sum: { amount: true } })
     const paid = rows.find((r: any) => r.status === 'paid')
     expect(paid._sum.amount).toBeCloseTo(30)
     db.$close()
@@ -12333,24 +13533,24 @@ describe('groupBy()', () => {
 
   test('groups by multiple fields', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-multi-by')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 20, status: 'paid', accountId: 2 },
       { id: 3, amount: 30, status: 'paid', accountId: 1 },
     ]})
-    const rows = await db.orders.groupBy({ by: ['status', 'accountId'], _count: true })
+    const rows = await db.order.groupBy({ by: ['status', 'accountId'], _count: true })
     expect(rows).toHaveLength(2)
     db.$close()
   })
 
   test('where: filters before grouping', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-where')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'pending', accountId: 1 },
       { id: 3, amount: 30, status: 'paid',    accountId: 2 },
     ]})
-    const rows = await db.orders.groupBy({
+    const rows = await db.order.groupBy({
       by: ['accountId'], _count: true,
       where: { status: 'paid' }
     })
@@ -12360,12 +13560,12 @@ describe('groupBy()', () => {
 
   test('having: filters groups', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-having')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 20, status: 'paid', accountId: 1 },
       { id: 3, amount: 5,  status: 'paid', accountId: 2 },
     ]})
-    const rows = await db.orders.groupBy({
+    const rows = await db.order.groupBy({
       by: ['accountId'], _count: true,
       having: { _count: { gt: 1 } }
     })
@@ -12376,12 +13576,12 @@ describe('groupBy()', () => {
 
   test('having: _sum filter', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-having-sum')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 100, status: 'paid', accountId: 1 },
       { id: 2, amount: 200, status: 'paid', accountId: 1 },
       { id: 3, amount: 5,   status: 'paid', accountId: 2 },
     ]})
-    const rows = await db.orders.groupBy({
+    const rows = await db.order.groupBy({
       by: ['accountId'],
       _sum: { amount: true },
       having: { _sum: { amount: { gte: 100 } } }
@@ -12393,11 +13593,11 @@ describe('groupBy()', () => {
 
   test('orderBy group field', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-order')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'pending', accountId: 1 },
       { id: 2, amount: 20, status: 'paid',    accountId: 1 },
     ]})
-    const rows = await db.orders.groupBy({
+    const rows = await db.order.groupBy({
       by: ['status'], _count: true,
       orderBy: { status: 'asc' }
     })
@@ -12408,12 +13608,12 @@ describe('groupBy()', () => {
 
   test('orderBy _count desc', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-order-count')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'paid',    accountId: 1 },
       { id: 3, amount: 5,  status: 'pending', accountId: 1 },
     ]})
-    const rows = await db.orders.groupBy({
+    const rows = await db.order.groupBy({
       by: ['status'], _count: true,
       orderBy: { _count: 'desc' }
     })
@@ -12423,25 +13623,25 @@ describe('groupBy()', () => {
 
   test('limit and offset', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-limit')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'a', accountId: 1 },
       { id: 2, amount: 20, status: 'b', accountId: 1 },
       { id: 3, amount: 30, status: 'c', accountId: 1 },
     ]})
-    const rows = await db.orders.groupBy({ by: ['status'], _count: true, orderBy: { status: 'asc' }, limit: 2 })
+    const rows = await db.order.groupBy({ by: ['status'], _count: true, orderBy: { status: 'asc' }, limit: 2 })
     expect(rows).toHaveLength(2)
     db.$close()
   })
 
   test('_count distinct', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-count-distinct')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'paid',    accountId: 1 },  // same accountId
       { id: 3, amount: 30, status: 'paid',    accountId: 2 },
       { id: 4, amount: 40, status: 'pending', accountId: 1 },
     ]})
-    const rows = await db.orders.groupBy({
+    const rows = await db.order.groupBy({
       by: ['status'],
       _count: { distinct: 'accountId' },
       orderBy: { status: 'asc' },
@@ -12455,12 +13655,12 @@ describe('groupBy()', () => {
 
   test('_stringAgg', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-stringagg')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid', accountId: 1 },
       { id: 2, amount: 20, status: 'paid', accountId: 2 },
       { id: 3, amount: 30, status: 'paid', accountId: 3 },
     ]})
-    const rows = await db.orders.groupBy({
+    const rows = await db.order.groupBy({
       by: ['status'],
       _stringAgg: { field: 'status', separator: '|' },
     })
@@ -12470,14 +13670,14 @@ describe('groupBy()', () => {
 
   test('named aggregate — filtered counts per group', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-nagg')
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, amount: 10, status: 'paid',    accountId: 1 },
       { id: 2, amount: 20, status: 'paid',    accountId: 1 },
       { id: 3, amount: 30, status: 'refund',  accountId: 1 },
       { id: 4, amount: 40, status: 'paid',    accountId: 2 },
       { id: 5, amount: 50, status: 'pending', accountId: 2 },
     ]})
-    const rows = await db.orders.groupBy({
+    const rows = await db.order.groupBy({
       by: ['accountId'],
       _count:       true,
       _countPaid:   { count: true, filter: sql`status = 'paid'` },
@@ -12495,7 +13695,7 @@ describe('groupBy()', () => {
 
   test('throws without by', async () => {
     const db = await makeDb(AGG_SCHEMA, 'grp-throw')
-    await expect((db.orders as any).groupBy({})).rejects.toThrow('by')
+    await expect((db.order as any).groupBy({})).rejects.toThrow('by')
     db.$close()
   })
 })
@@ -12504,22 +13704,22 @@ describe('groupBy()', () => {
 // ─── _count in include ────────────────────────────────────────────────────────
 
 const COUNT_SCHEMA = `
-  model accounts {
+  model Account {
     id    Int @id
     name  String
-    users users[]
-    posts posts[]
+    users User[]
+    posts Post[]
   }
-  model users {
+  model User {
     id        Int @id
     accountId Int
-    account   accounts @relation(fields: [accountId], references: [id])
+    account   Account @relation(fields: [accountId], references: [id])
     name      String
   }
-  model posts {
+  model Post {
     id        Int @id
     accountId Int
-    account   accounts @relation(fields: [accountId], references: [id])
+    account   Account @relation(fields: [accountId], references: [id])
     title     String
   }
 `
@@ -12527,25 +13727,25 @@ const COUNT_SCHEMA = `
 describe('_count in include', () => {
   test('counts a single relation', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'inc-count-basic')
-    await db.accounts.create({ data: { id: 1, name: 'Acme' } })
-    await db.users.createMany({ data: [
+    await db.account.create({ data: { id: 1, name: 'Acme' } })
+    await db.user.createMany({ data: [
       { id: 1, accountId: 1, name: 'Alice' },
       { id: 2, accountId: 1, name: 'Bob' },
     ]})
-    const rows = await db.accounts.findMany({ include: { _count: { select: { users: true } } } })
+    const rows = await db.account.findMany({ include: { _count: { select: { users: true } } } })
     expect(rows[0]._count.users).toBe(2)
     db.$close()
   })
 
   test('counts multiple relations', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'inc-count-multi')
-    await db.accounts.create({ data: { id: 1, name: 'Acme' } })
-    await db.users.createMany({ data: [
+    await db.account.create({ data: { id: 1, name: 'Acme' } })
+    await db.user.createMany({ data: [
       { id: 1, accountId: 1, name: 'Alice' },
       { id: 2, accountId: 1, name: 'Bob' },
     ]})
-    await db.posts.create({ data: { id: 1, accountId: 1, title: 'Hello' } })
-    const rows = await db.accounts.findMany({
+    await db.post.create({ data: { id: 1, accountId: 1, title: 'Hello' } })
+    const rows = await db.account.findMany({
       include: { _count: { select: { users: true, posts: true } } }
     })
     expect(rows[0]._count.users).toBe(2)
@@ -12555,21 +13755,21 @@ describe('_count in include', () => {
 
   test('returns 0 when no children', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'inc-count-zero')
-    await db.accounts.create({ data: { id: 1, name: 'Empty' } })
-    const rows = await db.accounts.findMany({ include: { _count: { select: { users: true } } } })
+    await db.account.create({ data: { id: 1, name: 'Empty' } })
+    const rows = await db.account.findMany({ include: { _count: { select: { users: true } } } })
     expect(rows[0]._count.users).toBe(0)
     db.$close()
   })
 
   test('works across multiple parent rows', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'inc-count-multi-rows')
-    await db.accounts.createMany({ data: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] })
-    await db.users.createMany({ data: [
+    await db.account.createMany({ data: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] })
+    await db.user.createMany({ data: [
       { id: 1, accountId: 1, name: 'Alice' },
       { id: 2, accountId: 1, name: 'Bob' },
       { id: 3, accountId: 2, name: 'Carol' },
     ]})
-    const rows = await db.accounts.findMany({ include: { _count: { select: { users: true } } } })
+    const rows = await db.account.findMany({ include: { _count: { select: { users: true } } } })
     const a1 = rows.find((r: any) => r.id === 1)
     const a2 = rows.find((r: any) => r.id === 2)
     expect(a1._count.users).toBe(2)
@@ -12579,12 +13779,12 @@ describe('_count in include', () => {
 
   test('can combine _count with real includes', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'inc-count-combined')
-    await db.accounts.create({ data: { id: 1, name: 'Acme' } })
-    await db.users.createMany({ data: [
+    await db.account.create({ data: { id: 1, name: 'Acme' } })
+    await db.user.createMany({ data: [
       { id: 1, accountId: 1, name: 'Alice' },
       { id: 2, accountId: 1, name: 'Bob' },
     ]})
-    const rows = await db.accounts.findMany({
+    const rows = await db.account.findMany({
       include: { users: true, _count: { select: { users: true } } }
     })
     expect(rows[0].users).toHaveLength(2)
@@ -12596,13 +13796,13 @@ describe('_count in include', () => {
 describe('_count in include — filtered', () => {
   test('where on relation name filters count', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'cnt-filtered-basic')
-    await db.accounts.create({ data: { id: 1, name: 'Acme' } })
-    await db.users.createMany({ data: [
+    await db.account.create({ data: { id: 1, name: 'Acme' } })
+    await db.user.createMany({ data: [
       { id: 1, accountId: 1, name: 'Alice' },
       { id: 2, accountId: 1, name: 'Bob' },
       { id: 3, accountId: 1, name: 'Charlie' },
     ]})
-    const rows = await db.accounts.findMany({
+    const rows = await db.account.findMany({
       include: { _count: { select: {
         users: { where: { name: 'Alice' } }
       }}}
@@ -12613,13 +13813,13 @@ describe('_count in include — filtered', () => {
 
   test('alias allows two filtered counts of the same relation', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'cnt-filtered-alias')
-    await db.accounts.create({ data: { id: 1, name: 'Acme' } })
-    await db.users.createMany({ data: [
+    await db.account.create({ data: { id: 1, name: 'Acme' } })
+    await db.user.createMany({ data: [
       { id: 1, accountId: 1, name: 'Alice' },
       { id: 2, accountId: 1, name: 'Bob' },
       { id: 3, accountId: 1, name: 'Charlie' },
     ]})
-    const rows = await db.accounts.findMany({
+    const rows = await db.account.findMany({
       include: { _count: { select: {
         users: true,
         alice_users: { relation: 'users', where: { name: 'Alice' } },
@@ -12634,9 +13834,9 @@ describe('_count in include — filtered', () => {
 
   test('filtered count returns 0 when no match', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'cnt-filtered-zero')
-    await db.accounts.create({ data: { id: 1, name: 'Acme' } })
-    await db.users.create({ data: { id: 1, accountId: 1, name: 'Alice' } })
-    const rows = await db.accounts.findMany({
+    await db.account.create({ data: { id: 1, name: 'Acme' } })
+    await db.user.create({ data: { id: 1, accountId: 1, name: 'Alice' } })
+    const rows = await db.account.findMany({
       include: { _count: { select: {
         nobody: { relation: 'users', where: { name: 'Nobody' } }
       }}}
@@ -12647,13 +13847,13 @@ describe('_count in include — filtered', () => {
 
   test('filtered count works across multiple parent rows', async () => {
     const db = await makeDb(COUNT_SCHEMA, 'cnt-filtered-multi')
-    await db.accounts.createMany({ data: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] })
-    await db.users.createMany({ data: [
+    await db.account.createMany({ data: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] })
+    await db.user.createMany({ data: [
       { id: 1, accountId: 1, name: 'Alice' },
       { id: 2, accountId: 1, name: 'Bob' },
       { id: 3, accountId: 2, name: 'Alice' },
     ]})
-    const rows = await db.accounts.findMany({
+    const rows = await db.account.findMany({
       include: { _count: { select: {
         alice_count: { relation: 'users', where: { name: 'Alice' } }
       }}}
@@ -12671,7 +13871,7 @@ describe('_count in include — filtered', () => {
 
 describe('findManyAndCount()', () => {
   const SCHEMA = `
-    model posts {
+    model Post {
       id        Int @id
       title     String
       status    String
@@ -12682,12 +13882,12 @@ describe('findManyAndCount()', () => {
 
   test('returns rows and total', async () => {
     const db = await makeDb(SCHEMA, 'fmac-basic')
-    await db.posts.createMany({ data: [
+    await db.post.createMany({ data: [
       { id: 1, title: 'A', status: 'published' },
       { id: 2, title: 'B', status: 'published' },
       { id: 3, title: 'C', status: 'draft' },
     ]})
-    const { rows, total } = await db.posts.findManyAndCount({})
+    const { rows, total } = await db.post.findManyAndCount({})
     expect(rows).toHaveLength(3)
     expect(total).toBe(3)
     db.$close()
@@ -12695,13 +13895,13 @@ describe('findManyAndCount()', () => {
 
   test('total reflects where, not limit', async () => {
     const db = await makeDb(SCHEMA, 'fmac-total')
-    await db.posts.createMany({ data: [
+    await db.post.createMany({ data: [
       { id: 1, title: 'A', status: 'published' },
       { id: 2, title: 'B', status: 'published' },
       { id: 3, title: 'C', status: 'published' },
       { id: 4, title: 'D', status: 'draft' },
     ]})
-    const { rows, total } = await db.posts.findManyAndCount({
+    const { rows, total } = await db.post.findManyAndCount({
       where:  { status: 'published' },
       limit:  2,
       offset: 0,
@@ -12713,11 +13913,11 @@ describe('findManyAndCount()', () => {
 
   test('pagination — page 2 has correct rows and same total', async () => {
     const db = await makeDb(SCHEMA, 'fmac-page2')
-    await db.posts.createMany({ data: Array.from({ length: 10 }, (_, i) => ({
+    await db.post.createMany({ data: Array.from({ length: 10 }, (_, i) => ({
       id: i + 1, title: `Post ${i + 1}`, status: 'published'
     }))})
-    const p1 = await db.posts.findManyAndCount({ limit: 3, offset: 0 })
-    const p2 = await db.posts.findManyAndCount({ limit: 3, offset: 3 })
+    const p1 = await db.post.findManyAndCount({ limit: 3, offset: 0 })
+    const p2 = await db.post.findManyAndCount({ limit: 3, offset: 3 })
     expect(p1.total).toBe(10)
     expect(p2.total).toBe(10)
     expect(p1.rows).toHaveLength(3)
@@ -12731,12 +13931,12 @@ describe('findManyAndCount()', () => {
 
   test('respects @@softDelete', async () => {
     const db = await makeDb(SCHEMA, 'fmac-soft')
-    await db.posts.createMany({ data: [
+    await db.post.createMany({ data: [
       { id: 1, title: 'A', status: 'published' },
       { id: 2, title: 'B', status: 'published' },
     ]})
-    await db.posts.remove({ where: { id: 2 } })
-    const { rows, total } = await db.posts.findManyAndCount({})
+    await db.post.remove({ where: { id: 2 } })
+    const { rows, total } = await db.post.findManyAndCount({})
     expect(rows).toHaveLength(1)
     expect(total).toBe(1)
     db.$close()
@@ -12744,10 +13944,10 @@ describe('findManyAndCount()', () => {
 
   test('total is 0 when nothing matches', async () => {
     const db = await makeDb(SCHEMA, 'fmac-zero')
-    await db.posts.createMany({ data: [
+    await db.post.createMany({ data: [
       { id: 1, title: 'A', status: 'draft' },
     ]})
-    const { rows, total } = await db.posts.findManyAndCount({ where: { status: 'published' } })
+    const { rows, total } = await db.post.findManyAndCount({ where: { status: 'published' } })
     expect(rows).toHaveLength(0)
     expect(total).toBe(0)
     db.$close()
@@ -12755,11 +13955,11 @@ describe('findManyAndCount()', () => {
 
   test('orderBy works on rows', async () => {
     const db = await makeDb(SCHEMA, 'fmac-order')
-    await db.posts.createMany({ data: [
+    await db.post.createMany({ data: [
       { id: 1, title: 'B', status: 'published' },
       { id: 2, title: 'A', status: 'published' },
     ]})
-    const { rows } = await db.posts.findManyAndCount({ orderBy: { title: 'asc' } })
+    const { rows } = await db.post.findManyAndCount({ orderBy: { title: 'asc' } })
     expect(rows[0].title).toBe('A')
     db.$close()
   })
@@ -12784,7 +13984,7 @@ describe('@@external', () => {
   test('@@external model excluded from DDL', () => {
     const { generateDDL } = require('../src/core/ddl.js')
     const { schema } = parse(`
-      model managed { id Int @id; name String }
+      model Managed { id Int @id; name String }
       model external_tbl { id Int @id; data String; @@external }
     `)
     const ddl = generateDDL(schema)
@@ -12795,7 +13995,7 @@ describe('@@external', () => {
   test('@@external model is queryable via ORM', async () => {
     // Create the table manually (simulating external management)
     const { db } = await makeTestClient(`
-      model managed { id Int @id; val String }
+      model Managed { id Int @id; val String }
       model ext_users { id Int @id; name String; @@external }
     `)
     // Manually create the external table
@@ -12829,7 +14029,7 @@ describe('@@external', () => {
     const { parse: p } = require('../src/core/parser.js')
     const { diffSchemas } = require('../src/core/migrate.js')
     const result = p(`
-      model managed { id Int @id }
+      model Managed { id Int @id }
       model ext_calendar { date String @id; @@external }
     `)
     // Use the correct introspect column format (array of column objects)
@@ -12848,7 +14048,7 @@ describe('@@external', () => {
 describe('doc comments — generateTypeScript', () => {
   const SCHEMA = `
     /// Represents a user account in the system
-    model users {
+    model User {
       id    Int @id
       /// The user's full display name
       name  String
@@ -12863,7 +14063,7 @@ describe('doc comments — generateTypeScript', () => {
     const { schema } = parse(SCHEMA)
     const ts = generateTypeScript(schema)
     expect(ts).toContain('* Represents a user account in the system')
-    expect(ts).toContain('export interface Users {')
+    expect(ts).toContain('export interface User {')
   })
 
   test('single-line field doc comment emitted as /** ... */', () => {
@@ -12900,7 +14100,7 @@ describe('doc comments — generateTypeScript', () => {
 describe('doc comments — generateJsonSchema', () => {
   const SCHEMA = `
     /// A product in the catalog
-    model products {
+    model Product {
       id    Int @id
       /// The product's display name shown to customers
       name  String
@@ -12913,18 +14113,18 @@ describe('doc comments — generateJsonSchema', () => {
   test('model doc comment emitted as "description" on schema object', () => {
     const { schema } = parse(SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    expect(js.$defs.products.description).toBe('A product in the catalog')
+    expect(js.$defs.Product.description).toBe('A product in the catalog')
   })
 
   test('field doc comment emitted as "description" on property', () => {
     const { schema } = parse(SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    expect(js.$defs.products.properties.name.description).toBe("The product's display name shown to customers")
+    expect(js.$defs.Product.properties.name.description).toBe("The product's display name shown to customers")
   })
 
   test('multi-line field comment joined with space', () => {
     const MULTI = `
-      model t {
+      model T {
         id  Int @id
         /// First line
         /// Second line
@@ -12933,19 +14133,19 @@ describe('doc comments — generateJsonSchema', () => {
     `
     const { schema } = parse(MULTI)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    expect(js.$defs.t.properties.val.description).toBe('First line Second line')
+    expect(js.$defs.T.properties.val.description).toBe('First line Second line')
   })
 
   test('field without doc comment has no "description"', () => {
     const { schema } = parse(SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    expect(js.$defs.products.properties.notes.description).toBeUndefined()
+    expect(js.$defs.Product.properties.notes.description).toBeUndefined()
   })
 
   test('model without doc comment has no "description"', () => {
-    const { schema } = parse(`model t { id Int @id }`)
+    const { schema } = parse(`model T { id Int @id }`)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    expect(js.$defs.t.description).toBeUndefined()
+    expect(js.$defs.T.description).toBeUndefined()
   })
 })
 
@@ -12953,7 +14153,7 @@ describe('doc comments — generateJsonSchema', () => {
 // ─── groupBy() — interval + fillGaps ─────────────────────────────────────────
 
 const EVENTS_SCHEMA = `
-  model events {
+  model Event {
     id        Int  @id
     type      String
     amount    Float
@@ -12964,12 +14164,12 @@ const EVENTS_SCHEMA = `
 describe('groupBy() — interval', () => {
   test('groups by month interval', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-month')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-15' },
       { id: 2, type: 'sale', amount: 20, createdAt: '2024-01-20' },
       { id: 3, type: 'sale', amount: 30, createdAt: '2024-02-10' },
     ]})
-    const rows = await db.events.groupBy({
+    const rows = await db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'month' },
       fillGaps: false,
@@ -12983,12 +14183,12 @@ describe('groupBy() — interval', () => {
 
   test('groups by day interval', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-day')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-01' },
       { id: 2, type: 'sale', amount: 20, createdAt: '2024-01-01' },
       { id: 3, type: 'sale', amount: 30, createdAt: '2024-01-03' },
     ]})
-    const rows = await db.events.groupBy({
+    const rows = await db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'day' },
       fillGaps: false,
@@ -13001,12 +14201,12 @@ describe('groupBy() — interval', () => {
 
   test('groups by year interval', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-year')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale', amount: 10, createdAt: '2023-06-01' },
       { id: 2, type: 'sale', amount: 20, createdAt: '2024-01-01' },
       { id: 3, type: 'sale', amount: 30, createdAt: '2024-06-01' },
     ]})
-    const rows = await db.events.groupBy({
+    const rows = await db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'year' },
       fillGaps: false,
@@ -13021,12 +14221,12 @@ describe('groupBy() — interval', () => {
 
   test('groups by quarter interval', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-quarter')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-15' },
       { id: 2, type: 'sale', amount: 20, createdAt: '2024-04-15' },
       { id: 3, type: 'sale', amount: 30, createdAt: '2024-04-20' },
     ]})
-    const rows = await db.events.groupBy({
+    const rows = await db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'quarter' },
       fillGaps: false,
@@ -13041,12 +14241,12 @@ describe('groupBy() — interval', () => {
 
   test('interval + another by field', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-interval-multi')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale',   amount: 10, createdAt: '2024-01-15' },
       { id: 2, type: 'refund', amount: 5,  createdAt: '2024-01-20' },
       { id: 3, type: 'sale',   amount: 20, createdAt: '2024-02-10' },
     ]})
-    const rows = await db.events.groupBy({
+    const rows = await db.event.groupBy({
       by: ['type', 'createdAt'],
       interval: { createdAt: 'month' },
       fillGaps: false,
@@ -13059,7 +14259,7 @@ describe('groupBy() — interval', () => {
 
   test('throws on invalid interval unit', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-bad-unit')
-    await expect((db.events as any).groupBy({
+    await expect((db.event as any).groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'fortnight' },
       _count: true,
@@ -13071,12 +14271,12 @@ describe('groupBy() — interval', () => {
 describe('groupBy() — fillGaps', () => {
   test('fillGaps: true fills missing days (inferred from where)', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-fill-infer')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-01' },
       { id: 2, type: 'sale', amount: 20, createdAt: '2024-01-03' },
       // day 2 missing
     ]})
-    const rows = await db.events.groupBy({
+    const rows = await db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'day' },
       where: { createdAt: { gte: '2024-01-01', lte: '2024-01-03' } },
@@ -13090,10 +14290,10 @@ describe('groupBy() — fillGaps', () => {
 
   test('fillGaps with explicit range fills beyond where clause', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-fill-explicit')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-02' },
     ]})
-    const rows = await db.events.groupBy({
+    const rows = await db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'day' },
       fillGaps: { start: '2024-01-01', end: '2024-01-03' },
@@ -13110,11 +14310,11 @@ describe('groupBy() — fillGaps', () => {
 
   test('fillGaps: false disables gap filling even with interval', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-fill-off')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-01' },
       { id: 2, type: 'sale', amount: 20, createdAt: '2024-01-03' },
     ]})
-    const rows = await db.events.groupBy({
+    const rows = await db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'day' },
       where: { createdAt: { gte: '2024-01-01', lte: '2024-01-03' } },
@@ -13128,8 +14328,8 @@ describe('groupBy() — fillGaps', () => {
 
   test('fillGaps: gap rows get _sum: 0 and _avg: null', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-fill-defaults')
-    await db.events.create({ data: { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-01' } })
-    const rows = await db.events.groupBy({
+    await db.event.create({ data: { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-01' } })
+    const rows = await db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'day' },
       fillGaps: { start: '2024-01-01', end: '2024-01-02' },
@@ -13147,12 +14347,12 @@ describe('groupBy() — fillGaps', () => {
 
   test('no range in where + fillGaps: true → sparse results (no throw)', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-fill-norange')
-    await db.events.createMany({ data: [
+    await db.event.createMany({ data: [
       { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-01' },
       { id: 2, type: 'sale', amount: 20, createdAt: '2024-01-03' },
     ]})
     // No where clause — falls back to sparse
-    await expect(db.events.groupBy({
+    await expect(db.event.groupBy({
       by: ['createdAt'],
       interval: { createdAt: 'day' },
       _count: true,
@@ -13166,7 +14366,7 @@ describe('groupBy() — fillGaps', () => {
 
 describe('@default(nanoid())', () => {
   const SCHEMA = `
-    model tokens {
+    model Token {
       id    String    @id @default(nanoid())
       label String
     }
@@ -13179,7 +14379,7 @@ describe('@default(nanoid())', () => {
 
   test('auto-generates a nanoid when id not provided', async () => {
     const db = await makeDb(SCHEMA, 'nanoid-auto')
-    const row = await db.tokens.create({ data: { label: 'test' } })
+    const row = await db.token.create({ data: { label: 'test' } })
     expect(typeof row.id).toBe('string')
     expect(row.id.length).toBe(21)
     db.$close()
@@ -13188,7 +14388,7 @@ describe('@default(nanoid())', () => {
   test('generated nanoid is URL-safe (no special chars)', async () => {
     const db = await makeDb(SCHEMA, 'nanoid-safe')
     const rows = await Promise.all(
-      Array.from({ length: 10 }, () => db.tokens.create({ data: { label: 'x' } }))
+      Array.from({ length: 10 }, () => db.token.create({ data: { label: 'x' } }))
     )
     for (const row of rows) {
       expect(row.id).toMatch(/^[A-Za-z0-9_-]+$/)
@@ -13199,7 +14399,7 @@ describe('@default(nanoid())', () => {
   test('each generated nanoid is unique', async () => {
     const db = await makeDb(SCHEMA, 'nanoid-unique')
     const rows = await Promise.all(
-      Array.from({ length: 20 }, () => db.tokens.create({ data: { label: 'x' } }))
+      Array.from({ length: 20 }, () => db.token.create({ data: { label: 'x' } }))
     )
     const ids = rows.map((r: any) => r.id)
     expect(new Set(ids).size).toBe(20)
@@ -13208,7 +14408,7 @@ describe('@default(nanoid())', () => {
 
   test('explicit id overrides nanoid generation', async () => {
     const db = await makeDb(SCHEMA, 'nanoid-explicit')
-    const row = await db.tokens.create({ data: { id: 'custom-id', label: 'test' } })
+    const row = await db.token.create({ data: { id: 'custom-id', label: 'test' } })
     expect(row.id).toBe('custom-id')
     db.$close()
   })
@@ -13219,7 +14419,7 @@ describe('@default(nanoid())', () => {
 
 describe('@phone validator', () => {
   const SCHEMA = `
-    model contacts {
+    model Contact {
       id    Int @id
       phone String    @phone
       alt   String?   @phone("Alt must be a valid phone number")
@@ -13234,7 +14434,7 @@ describe('@phone validator', () => {
   test('accepts valid international format', async () => {
     const db = await makeDb(SCHEMA, 'phone-intl')
     await expect(
-      db.contacts.create({ data: { id: 1, phone: '+1 (555) 123-4567' } })
+      db.contact.create({ data: { id: 1, phone: '+1 (555) 123-4567' } })
     ).resolves.toBeDefined()
     db.$close()
   })
@@ -13242,7 +14442,7 @@ describe('@phone validator', () => {
   test('accepts E.164 format', async () => {
     const db = await makeDb(SCHEMA, 'phone-e164')
     await expect(
-      db.contacts.create({ data: { id: 1, phone: '+15551234567' } })
+      db.contact.create({ data: { id: 1, phone: '+15551234567' } })
     ).resolves.toBeDefined()
     db.$close()
   })
@@ -13250,7 +14450,7 @@ describe('@phone validator', () => {
   test('rejects clearly invalid value', async () => {
     const db = await makeDb(SCHEMA, 'phone-invalid')
     await expect(
-      db.contacts.create({ data: { id: 1, phone: 'not-a-phone' } })
+      db.contact.create({ data: { id: 1, phone: 'not-a-phone' } })
     ).rejects.toThrow()
     db.$close()
   })
@@ -13258,7 +14458,7 @@ describe('@phone validator', () => {
   test('allows null on optional @phone field', async () => {
     const db = await makeDb(SCHEMA, 'phone-null')
     await expect(
-      db.contacts.create({ data: { id: 1, phone: '+15551234567', alt: null } })
+      db.contact.create({ data: { id: 1, phone: '+15551234567', alt: null } })
     ).resolves.toBeDefined()
     db.$close()
   })
@@ -13266,7 +14466,7 @@ describe('@phone validator', () => {
   test('custom error message surfaced on rejection', async () => {
     const db = await makeDb(SCHEMA, 'phone-msg')
     await expect(
-      db.contacts.create({ data: { id: 1, phone: '+15551234567', alt: 'bad' } })
+      db.contact.create({ data: { id: 1, phone: '+15551234567', alt: 'bad' } })
     ).rejects.toThrow('Alt must be a valid phone number')
     db.$close()
   })
@@ -13274,7 +14474,7 @@ describe('@phone validator', () => {
   test('@phone emits format: phone in JSON Schema', () => {
     const { schema } = parse(SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
-    expect(js.$defs.contacts.properties.phone.format).toBe('phone')
+    expect(js.$defs.Contact.properties.phone.format).toBe('phone')
   })
 })
 
@@ -13284,14 +14484,14 @@ describe('@phone validator', () => {
 describe('custom policy error messages', () => {
   test('@@allow with message — message surfaces on AccessDeniedError', async () => {
     const db = await makeDb(`
-      model posts {
+      model Post {
         id       Int @id
         ownerId  Int
         @@allow('create', auth() != null, "You must be logged in to create posts")
       }
     `, 'policy-msg-allow')
     try {
-      await db.posts.create({ data: { id: 1, ownerId: 1 } })
+      await db.post.create({ data: { id: 1, ownerId: 1 } })
       expect(true).toBe(false) // should not reach
     } catch (e: any) {
       expect(e.message).toBe('You must be logged in to create posts')
@@ -13301,16 +14501,16 @@ describe('custom policy error messages', () => {
 
   test('@@deny with message — message surfaces on AccessDeniedError', async () => {
     const db = await makeDb(`
-      model posts {
+      model Post {
         id      Int @id
         status  String    @default("draft")
         @@allow('all', true)
         @@deny('post-update', status == 'locked', "Cannot edit locked posts")
       }
     `, 'policy-msg-deny')
-    await db.posts.create({ data: { id: 1, status: 'active' } })
+    await db.post.create({ data: { id: 1, status: 'active' } })
     try {
-      await db.posts.update({ where: { id: 1 }, data: { status: 'locked' } })
+      await db.post.update({ where: { id: 1 }, data: { status: 'locked' } })
       expect(true).toBe(false)
     } catch (e: any) {
       expect(e.message).toBe('Cannot edit locked posts')
@@ -13320,13 +14520,13 @@ describe('custom policy error messages', () => {
 
   test('@@allow without message — falls back to default message', async () => {
     const db = await makeDb(`
-      model posts {
+      model Post {
         id      Int @id
         @@allow('create', auth() != null)
       }
     `, 'policy-msg-default')
     try {
-      await db.posts.create({ data: { id: 1 } })
+      await db.post.create({ data: { id: 1 } })
       expect(true).toBe(false)
     } catch (e: any) {
       expect(e.message).toContain('denied')
@@ -13336,7 +14536,7 @@ describe('custom policy error messages', () => {
 
   test('message stored on AST node', () => {
     const { schema } = parse(`
-      model t {
+      model T {
         id Int @id
         @@allow('read', true, "Only readable")
         @@deny('write', true, "Not writable")
@@ -13348,7 +14548,7 @@ describe('custom policy error messages', () => {
   })
 
   test('policy without message has message: null on AST', () => {
-    const { schema } = parse(`model t { id Int @id; @@allow('read', true) }`)
+    const { schema } = parse(`model T { id Int @id; @@allow('read', true) }`)
     const attr = schema.models[0].attributes.find((a: any) => a.kind === 'allow')
     expect(attr?.message).toBeNull()
   })
@@ -13359,35 +14559,35 @@ describe('custom policy error messages', () => {
 
 describe('generateTypeScript --only (model whitelist)', () => {
   const SCHEMA = `
-    model users  { id Int @id; name String }
-    model posts  { id Int @id; title String; userId Int }
-    model orders { id Int @id; amount Float }
+    model User  { id Int @id; name String }
+    model Post  { id Int @id; title String; userId Int }
+    model Order { id Int @id; amount Float }
   `
 
   test('all models emitted without filter', () => {
     const { schema } = parse(SCHEMA)
     const ts = generateTypeScript(schema)
-    expect(ts).toContain('interface Users')
-    expect(ts).toContain('interface Posts')
-    expect(ts).toContain('interface Orders')
+    expect(ts).toContain('interface User')
+    expect(ts).toContain('interface Post')
+    expect(ts).toContain('interface Order')
   })
 
   test('only specified models emitted with filter', () => {
     const { schema } = parse(SCHEMA)
-    const filtered = { ...schema, models: schema.models.filter((m: any) => ['users', 'posts'].includes(m.name)) }
+    const filtered = { ...schema, models: schema.models.filter((m: any) => ['User', 'Post'].includes(m.name)) }
     const ts = generateTypeScript(filtered)
-    expect(ts).toContain('interface Users')
-    expect(ts).toContain('interface Posts')
-    expect(ts).not.toContain('interface Orders')
+    expect(ts).toContain('interface User')
+    expect(ts).toContain('interface Post')
+    expect(ts).not.toContain('interface Order')
   })
 
   test('single model filter', () => {
     const { schema } = parse(SCHEMA)
-    const filtered = { ...schema, models: schema.models.filter((m: any) => m.name === 'orders') }
+    const filtered = { ...schema, models: schema.models.filter((m: any) => m.name === 'Order') }
     const ts = generateTypeScript(filtered)
-    expect(ts).not.toContain('interface Users')
-    expect(ts).not.toContain('interface Posts')
-    expect(ts).toContain('interface Orders')
+    expect(ts).not.toContain('interface User')
+    expect(ts).not.toContain('interface Post')
+    expect(ts).toContain('interface Order')
   })
 })
 
@@ -13396,7 +14596,7 @@ describe('generateTypeScript --only (model whitelist)', () => {
 
 describe('@updatedBy', () => {
   const SCHEMA = `
-    model posts {
+    model Post {
       id          Int  @id
       title       String
       createdById Int? @default(auth().id)
@@ -13421,28 +14621,28 @@ describe('@updatedBy', () => {
   test('@updatedBy stamps auth.id on update', async () => {
     const db = await makeDb(SCHEMA, 'updby-stamp')
     const user = { id: 42 }
-    await db.posts.create({ data: { id: 1, title: 'Hello' } })
-    await db.$setAuth(user).posts.update({ where: { id: 1 }, data: { title: 'Updated' } })
-    const row = await db.posts.findFirst({ where: { id: 1 } })
+    await db.post.create({ data: { id: 1, title: 'Hello' } })
+    await db.$setAuth(user).post.update({ where: { id: 1 }, data: { title: 'Updated' } })
+    const row = await db.post.findFirst({ where: { id: 1 } })
     expect(row?.updatedById).toBe(42)
     db.$close()
   })
 
   test('@updatedBy re-stamps on every update', async () => {
     const db = await makeDb(SCHEMA, 'updby-restamp')
-    await db.posts.create({ data: { id: 1, title: 'Hello' } })
-    await db.$setAuth({ id: 1 }).posts.update({ where: { id: 1 }, data: { title: 'First edit' } })
-    await db.$setAuth({ id: 2 }).posts.update({ where: { id: 1 }, data: { title: 'Second edit' } })
-    const row = await db.posts.findFirst({ where: { id: 1 } })
+    await db.post.create({ data: { id: 1, title: 'Hello' } })
+    await db.$setAuth({ id: 1 }).post.update({ where: { id: 1 }, data: { title: 'First edit' } })
+    await db.$setAuth({ id: 2 }).post.update({ where: { id: 1 }, data: { title: 'Second edit' } })
+    const row = await db.post.findFirst({ where: { id: 1 } })
     expect(row?.updatedById).toBe(2)
     db.$close()
   })
 
   test('@updatedBy skips if ctx.auth is null', async () => {
     const db = await makeDb(SCHEMA, 'updby-noauth')
-    await db.posts.create({ data: { id: 1, title: 'Hello', updatedById: 99 } })
-    await db.posts.update({ where: { id: 1 }, data: { title: 'Changed' } })
-    const row = await db.posts.findFirst({ where: { id: 1 } })
+    await db.post.create({ data: { id: 1, title: 'Hello', updatedById: 99 } })
+    await db.post.update({ where: { id: 1 }, data: { title: 'Changed' } })
+    const row = await db.post.findFirst({ where: { id: 1 } })
     // updatedById should not be overwritten with null — skip silently
     expect(row?.updatedById).toBe(99)
     db.$close()
@@ -13450,7 +14650,7 @@ describe('@updatedBy', () => {
 
   test('@updatedBy does not fire on create', async () => {
     const db = await makeDb(SCHEMA, 'updby-nocreate')
-    const row = await db.$setAuth({ id: 5 }).posts.create({ data: { id: 1, title: 'New' } })
+    const row = await db.$setAuth({ id: 5 }).post.create({ data: { id: 1, title: 'New' } })
     // @default(auth().id) stamps createdById, but @updatedBy should not stamp on create
     expect(row?.createdById).toBe(5)
     expect(row?.updatedById).toBeNull()
@@ -13459,17 +14659,17 @@ describe('@updatedBy', () => {
 
   test('@updatedBy(auth().field) stamps custom auth field', async () => {
     const db = await makeDb(`
-      model docs {
+      model Doc {
         id         Int @id
         title      String
         updatedBy  String?   @updatedBy(auth().email)
       }
     `, 'updby-custom')
-    await db.docs.create({ data: { id: 1, title: 'Doc' } })
-    await db.$setAuth({ id: 1, email: 'alice@x.com' }).docs.update({
+    await db.doc.create({ data: { id: 1, title: 'Doc' } })
+    await db.$setAuth({ id: 1, email: 'alice@x.com' }).doc.update({
       where: { id: 1 }, data: { title: 'Edited' }
     })
-    const row = await db.docs.findFirst({ where: { id: 1 } })
+    const row = await db.doc.findFirst({ where: { id: 1 } })
     expect(row?.updatedBy).toBe('alice@x.com')
     db.$close()
   })
@@ -13478,7 +14678,7 @@ describe('@updatedBy', () => {
     const { schema } = parse(SCHEMA)
     const ts = generateTypeScript(schema)
     // updatedById should NOT appear in PostsCreate interface
-    const createBlock = ts.slice(ts.indexOf('interface PostsCreate'), ts.indexOf('interface PostsUpdate'))
+    const createBlock = ts.slice(ts.indexOf('interface PostCreate'), ts.indexOf('interface PostUpdate'))
     expect(createBlock).not.toContain('updatedById')
   })
 })
@@ -13488,7 +14688,7 @@ describe('@updatedBy', () => {
 
 describe('@slug transformer', () => {
   const SCHEMA = `
-    model posts {
+    model Post {
       id   Int @id
       slug String    @slug
     }
@@ -13501,38 +14701,38 @@ describe('@slug transformer', () => {
 
   test('slugifies on create', async () => {
     const db = await makeDb(SCHEMA, 'slug-basic')
-    const row = await db.posts.create({ data: { id: 1, slug: 'Hello World!' } })
+    const row = await db.post.create({ data: { id: 1, slug: 'Hello World!' } })
     expect(row.slug).toBe('hello-world')
     db.$close()
   })
 
   test('slugifies special characters', async () => {
     const db = await makeDb(SCHEMA, 'slug-special')
-    const row = await db.posts.create({ data: { id: 1, slug: "It's a C++ Thing" } })
+    const row = await db.post.create({ data: { id: 1, slug: "It's a C++ Thing" } })
     expect(row.slug).toBe('its-a-c-thing')
     db.$close()
   })
 
   test('collapses multiple hyphens', async () => {
     const db = await makeDb(SCHEMA, 'slug-hyphens')
-    const row = await db.posts.create({ data: { id: 1, slug: 'foo   bar' } })
+    const row = await db.post.create({ data: { id: 1, slug: 'foo   bar' } })
     expect(row.slug).toBe('foo-bar')
     db.$close()
   })
 
   test('slugifies on update', async () => {
     const db = await makeDb(SCHEMA, 'slug-update')
-    await db.posts.create({ data: { id: 1, slug: 'original' } })
-    const row = await db.posts.update({ where: { id: 1 }, data: { slug: 'New Title Here' } })
+    await db.post.create({ data: { id: 1, slug: 'original' } })
+    const row = await db.post.update({ where: { id: 1 }, data: { slug: 'New Title Here' } })
     expect(row.slug).toBe('new-title-here')
     db.$close()
   })
 
   test('null slug is skipped (not transformed)', async () => {
     const db = await makeDb(`
-      model posts { id Int @id; slug String? @slug }
+      model Post { id Int @id; slug String? @slug }
     `, 'slug-null')
-    const row = await db.posts.create({ data: { id: 1, slug: null } })
+    const row = await db.post.create({ data: { id: 1, slug: null } })
     expect(row.slug).toBeNull()
     db.$close()
   })
@@ -13544,7 +14744,7 @@ describe('@slug transformer', () => {
 describe('@default(fieldName)', () => {
   test('parses @default(fieldName) without error', () => {
     const r = parse(`
-      model posts { id Int @id; title String; slug String @default(title) @slug }
+      model Post { id Int @id; title String; slug String @default(title) @slug }
     `)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'slug')
@@ -13556,7 +14756,7 @@ describe('@default(fieldName)', () => {
   test('@default(enumValue) still works — not broken by fieldRef', () => {
     const r = parse(`
       enum Status { draft published }
-      model posts { id Int @id; status Status @default(draft) }
+      model Post { id Int @id; status Status @default(draft) }
     `)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'status')
@@ -13567,34 +14767,34 @@ describe('@default(fieldName)', () => {
 
   test('copies source field value on create when target not provided', async () => {
     const db = await makeDb(`
-      model posts { id Int @id; title String; slug String @default(title) }
+      model Post { id Int @id; title String; slug String @default(title) }
     `, 'fieldref-basic')
-    const row = await db.posts.create({ data: { id: 1, title: 'Hello World' } })
+    const row = await db.post.create({ data: { id: 1, title: 'Hello World' } })
     expect(row.slug).toBe('Hello World')
     db.$close()
   })
 
   test('explicit value overrides @default(fieldName)', async () => {
     const db = await makeDb(`
-      model posts { id Int @id; title String; slug String @default(title) }
+      model Post { id Int @id; title String; slug String @default(title) }
     `, 'fieldref-override')
-    const row = await db.posts.create({ data: { id: 1, title: 'Hello', slug: 'custom' } })
+    const row = await db.post.create({ data: { id: 1, title: 'Hello', slug: 'custom' } })
     expect(row.slug).toBe('custom')
     db.$close()
   })
 
   test('@default(title) @slug — copies then slugifies', async () => {
     const db = await makeDb(`
-      model posts { id Int @id; title String; slug String @default(title) @slug }
+      model Post { id Int @id; title String; slug String @default(title) @slug }
     `, 'fieldref-slug')
-    const row = await db.posts.create({ data: { id: 1, title: 'Hello World!' } })
+    const row = await db.post.create({ data: { id: 1, title: 'Hello World!' } })
     expect(row.slug).toBe('hello-world')
     db.$close()
   })
 
   test('@default(unknown) is a parse error', () => {
     const r = parse(`
-      model posts { id Int @id; title String; slug String @default(nonexistent) }
+      model Post { id Int @id; title String; slug String @default(nonexistent) }
     `)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('nonexistent'))).toBe(true)
@@ -13605,18 +14805,18 @@ describe('@default(fieldName)', () => {
 // ─── recursive findMany ───────────────────────────────────────────────────────
 
 const TREE_SCHEMA = `
-  model categories {
+  model Category {
     id       Int @id
     name     String
     parentId Int?
-    parent   categories?  @relation(fields: [parentId], references: [id])
-    children categories[]
+    parent   Category?  @relation(fields: [parentId], references: [id])
+    children Category[]
   }
 `
 
 async function makeTree(label: string) {
   const db = await makeDb(TREE_SCHEMA, label)
-  await db.categories.createMany({ data: [
+  await db.category.createMany({ data: [
     { id: 1, name: 'Electronics', parentId: null },
     { id: 2, name: 'Phones',      parentId: 1    },
     { id: 3, name: 'Computers',   parentId: 1    },
@@ -13630,7 +14830,7 @@ async function makeTree(label: string) {
 describe('findMany — recursive', () => {
   test('recursive: true returns all descendants', async () => {
     const db = await makeTree('rec-true')
-    const rows = await db.categories.findMany({ where: { id: 1 }, recursive: true })
+    const rows = await db.category.findMany({ where: { id: 1 }, recursive: true })
     expect(rows.length).toBe(5)
     expect(rows.every((r: any) => r._depth > 0)).toBe(true)
     db.$close()
@@ -13638,14 +14838,14 @@ describe('findMany — recursive', () => {
 
   test('recursive: { direction: descendants } — same as true', async () => {
     const db = await makeTree('rec-desc')
-    const rows = await db.categories.findMany({ where: { id: 1 }, recursive: { direction: 'descendants' } })
+    const rows = await db.category.findMany({ where: { id: 1 }, recursive: { direction: 'descendants' } })
     expect(rows.length).toBe(5)
     db.$close()
   })
 
   test('descendants from mid-tree node', async () => {
     const db = await makeTree('rec-mid')
-    const rows = await db.categories.findMany({ where: { id: 3 }, recursive: true })
+    const rows = await db.category.findMany({ where: { id: 3 }, recursive: true })
     const ids = rows.map((r: any) => r.id).sort()
     expect(ids).toEqual([5, 6])
     expect(rows.every((r: any) => r._depth === 1)).toBe(true)
@@ -13654,7 +14854,7 @@ describe('findMany — recursive', () => {
 
   test('_depth reflects distance from anchor', async () => {
     const db = await makeTree('rec-depth')
-    const rows = await db.categories.findMany({ where: { id: 1 }, recursive: true })
+    const rows = await db.category.findMany({ where: { id: 1 }, recursive: true })
     const byId = Object.fromEntries(rows.map((r: any) => [r.id, r]))
     expect(byId[2]._depth).toBe(1)
     expect(byId[3]._depth).toBe(1)
@@ -13665,7 +14865,7 @@ describe('findMany — recursive', () => {
 
   test('ancestors walks path to root', async () => {
     const db = await makeTree('rec-anc')
-    const rows = await db.categories.findMany({
+    const rows = await db.category.findMany({
       where:     { id: 5 },
       recursive: { direction: 'ancestors' }
     })
@@ -13676,7 +14876,7 @@ describe('findMany — recursive', () => {
 
   test('maxDepth limits traversal', async () => {
     const db = await makeTree('rec-maxdepth')
-    const rows = await db.categories.findMany({
+    const rows = await db.category.findMany({
       where:     { id: 1 },
       recursive: { maxDepth: 1 }
     })
@@ -13687,7 +14887,7 @@ describe('findMany — recursive', () => {
 
   test('nested: true returns tree structure', async () => {
     const db = await makeTree('rec-nested')
-    const roots = await db.categories.findMany({
+    const roots = await db.category.findMany({
       where:     { id: 1 },
       recursive: { nested: true }
     })
@@ -13700,7 +14900,7 @@ describe('findMany — recursive', () => {
 
   test('orderBy works on recursive result', async () => {
     const db = await makeTree('rec-order')
-    const rows = await db.categories.findMany({
+    const rows = await db.category.findMany({
       where:     { id: 1 },
       recursive: true,
       orderBy:   { name: 'asc' }
@@ -13712,15 +14912,15 @@ describe('findMany — recursive', () => {
 
   test('leaf node returns empty descendants', async () => {
     const db = await makeTree('rec-leaf')
-    const rows = await db.categories.findMany({ where: { id: 4 }, recursive: true })
+    const rows = await db.category.findMany({ where: { id: 4 }, recursive: true })
     expect(rows).toHaveLength(0)
     db.$close()
   })
 
   test('throws on model without self-relation', async () => {
-    const db = await makeDb(`model tags { id Int @id; name String }`, 'rec-noself')
+    const db = await makeDb(`model Tag { id Int @id; name String }`, 'rec-noself')
     await expect(
-      (db.tags as any).findMany({ where: { id: 1 }, recursive: true })
+      (db.tag as any).findMany({ where: { id: 1 }, recursive: true })
     ).rejects.toThrow('no self-referential relation')
     db.$close()
   })
@@ -13763,56 +14963,56 @@ describe('ExternalRefPlugin', () => {
 
   test('serialize is called on create — value swapped for JSON ref', async () => {
     const plugin = makePlugin()
-    const schema = parse(`model docs { id Int @id; content TestRef? }`)
+    const schema = parse(`model Doc { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
     const args = { data: { id: 1, content: 'hello world' } }
-    await plugin.onBeforeCreate('docs', args, {} as any)
+    await plugin.onBeforeCreate('Doc', args, {} as any)
     const ref = JSON.parse(args.data.content as any)
     expect(ref.raw).toBe('hello world')
-    expect(ref.model).toBe('docs')
+    expect(ref.model).toBe('Doc')
   })
 
   test('resolve called in onAfterRead when autoResolve: true', async () => {
     const plugin = makePlugin(true)
-    const schema = parse(`model docs { id Int @id; content TestRef? }`)
+    const schema = parse(`model Doc { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
     const rows = [
-      { id: 1, content: JSON.stringify({ raw: 'hello', model: 'docs', field: 'content' }) }
+      { id: 1, content: JSON.stringify({ raw: 'hello', model: 'Doc', field: 'content' }) }
     ]
-    await plugin.onAfterRead('docs', rows, {} as any)
+    await plugin.onAfterRead('Doc', rows, {} as any)
     expect(rows[0].content).toBe('HELLO')
   })
 
   test('resolve NOT called in onAfterRead when autoResolve: false', async () => {
     const plugin = makePlugin(false)
-    const schema = parse(`model docs { id Int @id; content TestRef? }`)
+    const schema = parse(`model Doc { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
-    const rawRef = JSON.stringify({ raw: 'hello', model: 'docs', field: 'content' })
+    const rawRef = JSON.stringify({ raw: 'hello', model: 'Doc', field: 'content' })
     const rows = [{ id: 1, content: rawRef }]
-    await plugin.onAfterRead('docs', rows, {} as any)
+    await plugin.onAfterRead('Doc', rows, {} as any)
     expect(rows[0].content).toBe(rawRef)  // unchanged
   })
 
   test('cleanup called in onAfterDelete', async () => {
     const plugin = makePlugin()
-    const schema = parse(`model docs { id Int @id; content TestRef? }`)
+    const schema = parse(`model Doc { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
-    const ref = { raw: 'hello', model: 'docs', field: 'content' }
+    const ref = { raw: 'hello', model: 'Doc', field: 'content' }
     const rows = [{ id: 1, content: JSON.stringify(ref) }]
-    await plugin.onAfterDelete('docs', rows, {} as any)
+    await plugin.onAfterDelete('Doc', rows, {} as any)
     expect(plugin.cleanedUp).toHaveLength(1)
     expect(plugin.cleanedUp[0].raw).toBe('hello')
   })
 
   test('cacheKey memoizes resolve results', async () => {
     const plugin = makePlugin(true)
-    const schema = parse(`model docs { id Int @id; content TestRef? }`)
+    const schema = parse(`model Doc { id Int @id; content TestRef? }`)
     plugin.onInit(schema.schema, { models: {} } as any)
-    const ref = { raw: 'hello', model: 'docs', field: 'content' }
+    const ref = { raw: 'hello', model: 'Doc', field: 'content' }
     const rows1 = [{ id: 1, content: JSON.stringify(ref) }]
     const rows2 = [{ id: 2, content: JSON.stringify(ref) }]
-    await plugin.onAfterRead('docs', rows1, {} as any)
-    await plugin.onAfterRead('docs', rows2, {} as any)
+    await plugin.onAfterRead('Doc', rows1, {} as any)
+    await plugin.onAfterRead('Doc', rows2, {} as any)
     // Both should resolve to same value from cache
     expect(rows1[0].content).toBe('HELLO')
     expect(rows2[0].content).toBe('HELLO')
@@ -13842,14 +15042,14 @@ describe('ExternalRefPlugin — select resolve: false', () => {
     }
 
     const plugin = new UpperPlugin({ autoResolve: true })
-    const schema = parse(`model docs { id Int @id; title UpperRef? }`).schema
+    const schema = parse(`model Doc { id Int @id; title UpperRef? }`).schema
     plugin.onInit(schema, { models: {} } as any)
 
     const rawRef = JSON.stringify({ raw: 'hello' })
     const rows = [{ id: 1, title: rawRef }]
 
     // With resolve: false — should skip resolution
-    await plugin.onAfterRead('docs', rows, {} as any, {
+    await plugin.onAfterRead('Doc', rows, {} as any, {
       select: { title: { resolve: false } }
     })
     expect(rows[0].title).toBe(rawRef)  // raw JSON string
@@ -13865,12 +15065,12 @@ describe('ExternalRefPlugin — select resolve: false', () => {
     }
 
     const plugin = new UpperPlugin({ autoResolve: true })
-    const schema = parse(`model docs { id Int @id; title UpperRef? }`).schema
+    const schema = parse(`model Doc { id Int @id; title UpperRef? }`).schema
     plugin.onInit(schema, { models: {} } as any)
 
     const rows = [{ id: 1, title: JSON.stringify({ raw: 'hello' }) }]
 
-    await plugin.onAfterRead('docs', rows, {} as any, { select: { title: true } })
+    await plugin.onAfterRead('Doc', rows, {} as any, { select: { title: true } })
     expect(rows[0].title).toBe('HELLO')
   })
 
@@ -13884,11 +15084,11 @@ describe('ExternalRefPlugin — select resolve: false', () => {
     }
 
     const plugin = new UpperPlugin({ autoResolve: true })
-    const schema = parse(`model docs { id Int @id; title UpperRef? }`).schema
+    const schema = parse(`model Doc { id Int @id; title UpperRef? }`).schema
     plugin.onInit(schema, { models: {} } as any)
 
     const rows = [{ id: 1, title: JSON.stringify({ raw: 'hello' }) }]
-    await plugin.onAfterRead('docs', rows, {} as any, {})
+    await plugin.onAfterRead('Doc', rows, {} as any, {})
     expect(rows[0].title).toBe('HELLO')
   })
 })
@@ -13897,7 +15097,7 @@ describe('ExternalRefPlugin — select resolve: false', () => {
 // ─── JS migration API ─────────────────────────────────────────────────────────
 
 describe('JS migration API', () => {
-  const SCHEMA = `model posts { id Int @id; title String; slug String? }`
+  const SCHEMA = `model Post { id Int @id; title String; slug String? }`
 
   test('listMigrationFiles picks up .js files', () => {
     const { listMigrationFiles } = require('../src/core/migrations.js')
@@ -13918,12 +15118,12 @@ describe('JS migration API', () => {
     // Write a JS migration that creates rows via the ORM client
     writeFileSync(join(dir, '20240101000001_seed.js'), `
       export async function up(db) {
-        await db.posts.create({ data: { id: 1, title: 'Hello', slug: 'hello' } })
+        await db.post.create({ data: { id: 1, title: 'Hello', slug: 'hello' } })
       }
     `)
 
     await apply(db.$db, dir, db)
-    const posts = await db.posts.findMany({})
+    const posts = await db.post.findMany({})
     expect(posts).toHaveLength(1)
     expect(posts[0].title).toBe('Hello')
     db.$close()
@@ -13952,14 +15152,14 @@ describe('JS migration API', () => {
     const order: string[] = []
     writeFileSync(join(dir, '20240101000001_first.js'), `
       export async function up(db) {
-        await db.posts.create({ data: { id: 1, title: 'First' } })
+        await db.post.create({ data: { id: 1, title: 'First' } })
       }
     `)
     writeFileSync(join(dir, '20240101000002_second.sql'),
-      `INSERT INTO posts (id, title) VALUES (2, 'Second');`)
+      `INSERT INTO post (id, title) VALUES (2, 'Second');`)
 
     await apply(db.$db, dir, db)
-    const posts = await db.posts.findMany({ orderBy: { id: 'asc' } })
+    const posts = await db.post.findMany({ orderBy: { id: 'asc' } })
     expect(posts).toHaveLength(2)
     expect(posts[0].title).toBe('First')
     expect(posts[1].title).toBe('Second')
@@ -14022,7 +15222,7 @@ describe('@@hasTemplates — parser', () => {
 
   test('parses bare directive and auto-injects isTemplate field', () => {
     const r = parse(`
-      model quotes {
+      model Quote {
         id Int @id
         @@hasTemplates
       }
@@ -14046,7 +15246,7 @@ describe('@@hasTemplates — parser', () => {
 
   test('parses (field: "isPreset") for custom column name', () => {
     const r = parse(`
-      model quotes {
+      model Quote {
         id Int @id
         @@hasTemplates(field: "isPreset")
       }
@@ -14060,7 +15260,7 @@ describe('@@hasTemplates — parser', () => {
 
   test('user-declared field is honored, not duplicated', () => {
     const r = parse(`
-      model quotes {
+      model Quote {
         id          Int @id
         isTemplate  Boolean @default(false)
         @@hasTemplates
@@ -14073,7 +15273,7 @@ describe('@@hasTemplates — parser', () => {
 
   test('rejects user-declared marker field that is not Boolean', () => {
     const r = parse(`
-      model quotes {
+      model Quote {
         id          Int @id
         isTemplate  String
         @@hasTemplates
@@ -14085,7 +15285,7 @@ describe('@@hasTemplates — parser', () => {
 
   test('rejects user-declared marker field that is optional', () => {
     const r = parse(`
-      model quotes {
+      model Quote {
         id          Int @id
         isTemplate  Boolean?
         @@hasTemplates
@@ -14100,7 +15300,7 @@ describe('@@hasTemplates — runtime', () => {
   let db: any
 
   const SCHEMA = `
-    model quotes {
+    model Quote {
       id     Int @id
       number String
       total  Float    @default(0)
@@ -14112,8 +15312,8 @@ describe('@@hasTemplates — runtime', () => {
   afterAll(() => db.$close())
 
   beforeEach(async () => {
-    await db.quotes.delete({ where: { id: { in: [1,2,3,4,5] } } })
-    await db.quotes.createMany({ data: [
+    await db.quote.delete({ where: { id: { in: [1,2,3,4,5] } } })
+    await db.quote.createMany({ data: [
       { id: 1, number: 'INST-1', total: 100, isTemplate: false },
       { id: 2, number: 'INST-2', total: 200, isTemplate: false },
       { id: 3, number: 'INST-3', total: 300, isTemplate: false },
@@ -14123,40 +15323,40 @@ describe('@@hasTemplates — runtime', () => {
   })
 
   test('findMany excludes templates by default', async () => {
-    const rows = await db.quotes.findMany()
+    const rows = await db.quote.findMany()
     expect(rows.length).toBe(3)
     expect(rows.every((r: any) => r.isTemplate === false)).toBe(true)
   })
 
   test('findMany withTemplates: true returns instances + templates', async () => {
-    const rows = await db.quotes.findMany({ withTemplates: true })
+    const rows = await db.quote.findMany({ withTemplates: true })
     expect(rows.length).toBe(5)
   })
 
   test('findMany onlyTemplates: true returns templates only', async () => {
-    const rows = await db.quotes.findMany({ onlyTemplates: true })
+    const rows = await db.quote.findMany({ onlyTemplates: true })
     expect(rows.length).toBe(2)
     expect(rows.every((r: any) => r.isTemplate === true)).toBe(true)
   })
 
   test('count excludes templates by default', async () => {
-    const n = await db.quotes.count()
+    const n = await db.quote.count()
     expect(n).toBe(3)
   })
 
   test('count onlyTemplates returns template count', async () => {
-    const n = await db.quotes.count({ onlyTemplates: true })
+    const n = await db.quote.count({ onlyTemplates: true })
     expect(n).toBe(2)
   })
 
   test('findFirst excludes templates by default', async () => {
-    const row = await db.quotes.findFirst({ orderBy: { id: 'asc' } })
+    const row = await db.quote.findFirst({ orderBy: { id: 'asc' } })
     expect(row.id).toBe(1)
     expect(row.isTemplate).toBe(false)
   })
 
   test('findFirst onlyTemplates returns first template', async () => {
-    const row = await db.quotes.findFirst({ orderBy: { id: 'asc' }, onlyTemplates: true })
+    const row = await db.quote.findFirst({ orderBy: { id: 'asc' }, onlyTemplates: true })
     expect(row.id).toBe(4)
     expect(row.isTemplate).toBe(true)
   })
@@ -14164,65 +15364,65 @@ describe('@@hasTemplates — runtime', () => {
   test('findUnique by id of a template returns null without flag', async () => {
     // Categorical contract: by default the row is invisible. User has to opt in
     // with withTemplates: true. This protects reporting code that uses ids.
-    const row = await db.quotes.findUnique({ where: { id: 4 } })
+    const row = await db.quote.findUnique({ where: { id: 4 } })
     expect(row).toBeNull()
   })
 
   test('findUnique by id of a template works with withTemplates: true', async () => {
-    const row = await db.quotes.findUnique({ where: { id: 4 }, withTemplates: true })
+    const row = await db.quote.findUnique({ where: { id: 4 }, withTemplates: true })
     expect(row).not.toBeNull()
     expect(row.id).toBe(4)
   })
 
   test('exists() respects template filter', async () => {
-    expect(await db.quotes.exists({ where: { id: 4 } })).toBe(false)
-    expect(await db.quotes.exists({ where: { id: 4 }, withTemplates: true })).toBe(true)
-    expect(await db.quotes.exists({ where: { id: 1 } })).toBe(true)
+    expect(await db.quote.exists({ where: { id: 4 } })).toBe(false)
+    expect(await db.quote.exists({ where: { id: 4 }, withTemplates: true })).toBe(true)
+    expect(await db.quote.exists({ where: { id: 1 } })).toBe(true)
   })
 
   test('updateMany targets only instances by default', async () => {
     // Crucial safety: a "bump everyone's totals by 10%" should not also corrupt
     // template totals. Default WHERE excludes templates from updates.
-    const r = await db.quotes.updateMany({ where: {}, data: { total: 999 } })
+    const r = await db.quote.updateMany({ where: {}, data: { total: 999 } })
     expect(r.count).toBe(3)
-    const tpl = await db.quotes.findMany({ onlyTemplates: true })
+    const tpl = await db.quote.findMany({ onlyTemplates: true })
     expect(tpl.every((t: any) => t.total === 0)).toBe(true)
   })
 
   test('removeMany targets only instances by default', async () => {
-    const r = await db.quotes.removeMany({ where: {} })
+    const r = await db.quote.removeMany({ where: {} })
     expect(r.count).toBe(3)
-    const remaining = await db.quotes.findMany({ withTemplates: true })
+    const remaining = await db.quote.findMany({ withTemplates: true })
     expect(remaining.length).toBe(2)
     expect(remaining.every((r: any) => r.isTemplate === true)).toBe(true)
   })
 
   test('aggregate() always operates on instances (parallel to always-live)', async () => {
-    const r = await db.quotes.aggregate({ _sum: { total: true }, _count: true })
+    const r = await db.quote.aggregate({ _sum: { total: true }, _count: true })
     expect(r._count).toBe(3)
     expect(r._sum.total).toBe(600)   // 100 + 200 + 300, no templates
   })
 
   test('templates can be created and edited through normal write API', async () => {
-    const t = await db.quotes.create({ data: { id: 99, number: 'TPL-NEW', total: 0, isTemplate: true } })
+    const t = await db.quote.create({ data: { id: 99, number: 'TPL-NEW', total: 0, isTemplate: true } })
     expect(t.isTemplate).toBe(true)
     // Template is invisible to default reads
-    expect(await db.quotes.findUnique({ where: { id: 99 } })).toBeNull()
+    expect(await db.quote.findUnique({ where: { id: 99 } })).toBeNull()
     // ...but visible with the flag
-    const fetched = await db.quotes.findUnique({ where: { id: 99 }, withTemplates: true })
+    const fetched = await db.quote.findUnique({ where: { id: 99 }, withTemplates: true })
     expect(fetched?.id).toBe(99)
-    await db.quotes.delete({ where: { id: 99 } })
+    await db.quote.delete({ where: { id: 99 } })
   })
 
   test('isTemplate defaults to false when omitted on create', async () => {
     // The auto-injected column has DEFAULT 0 in DDL, so `create` without
     // isTemplate yields an instance — not a template. Critical for
     // backward-compat: existing code creating rows continues to work.
-    const r = await db.quotes.create({ data: { id: 100, number: 'NEW', total: 50 } })
+    const r = await db.quote.create({ data: { id: 100, number: 'NEW', total: 50 } })
     expect(r.isTemplate).toBe(false)
-    const found = await db.quotes.findUnique({ where: { id: 100 } })
+    const found = await db.quote.findUnique({ where: { id: 100 } })
     expect(found).not.toBeNull()
-    await db.quotes.delete({ where: { id: 100 } })
+    await db.quote.delete({ where: { id: 100 } })
   })
 
   test('asSystem() bypasses template filter (parallel to soft-delete bypass)', async () => {
@@ -14230,9 +15430,9 @@ describe('@@hasTemplates — runtime', () => {
     // It DOES NOT bypass the soft-delete filter either. Check current behaviour
     // and document: filters (including hasTemplates) apply uniformly.
     const sys = db.asSystem()
-    const rows = await sys.quotes.findMany()
+    const rows = await sys.quote.findMany()
     expect(rows.length).toBe(3)   // still 3, hasTemplates filter still applied
-    const all = await sys.quotes.findMany({ withTemplates: true })
+    const all = await sys.quote.findMany({ withTemplates: true })
     expect(all.length).toBe(5)
   })
 })
@@ -14241,7 +15441,7 @@ describe('@@hasTemplates + @@softDelete — composition', () => {
   let db: any
 
   const SCHEMA = `
-    model items {
+    model Item {
       id        Int  @id
       name      String
       deletedAt DateTime?
@@ -14254,8 +15454,8 @@ describe('@@hasTemplates + @@softDelete — composition', () => {
   afterAll(() => db.$close())
 
   beforeEach(async () => {
-    await db.items.delete({ where: { id: { in: [1,2,3,4] } } })
-    await db.items.createMany({ data: [
+    await db.item.delete({ where: { id: { in: [1,2,3,4] } } })
+    await db.item.createMany({ data: [
       { id: 1, name: 'I-1', isTemplate: false },
       { id: 2, name: 'I-2', isTemplate: false },
       { id: 3, name: 'T-1', isTemplate: true  },
@@ -14264,25 +15464,25 @@ describe('@@hasTemplates + @@softDelete — composition', () => {
   })
 
   test('default findMany: live + instances', async () => {
-    const rows = await db.items.findMany()
+    const rows = await db.item.findMany()
     expect(rows.length).toBe(2)
     expect(rows.every((r: any) => !r.isTemplate && r.deletedAt === null)).toBe(true)
   })
 
   test('soft-delete an instance: still hidden from default reads', async () => {
-    await db.items.remove({ where: { id: 1 } })
-    expect((await db.items.findMany()).length).toBe(1)
+    await db.item.remove({ where: { id: 1 } })
+    expect((await db.item.findMany()).length).toBe(1)
   })
 
   test('withDeleted + withTemplates returns absolutely all rows', async () => {
-    await db.items.remove({ where: { id: 1 } })
-    const all = await db.items.findMany({ withDeleted: true, withTemplates: true })
+    await db.item.remove({ where: { id: 1 } })
+    const all = await db.item.findMany({ withDeleted: true, withTemplates: true })
     expect(all.length).toBe(4)
   })
 
   test('withDeleted alone: still excludes templates', async () => {
-    await db.items.remove({ where: { id: 1 } })
-    const rows = await db.items.findMany({ withDeleted: true })
+    await db.item.remove({ where: { id: 1 } })
+    const rows = await db.item.findMany({ withDeleted: true })
     expect(rows.length).toBe(2)              // both instances, deleted + live
     expect(rows.every((r: any) => !r.isTemplate)).toBe(true)
   })
@@ -14292,8 +15492,8 @@ describe('@@hasTemplates + @@softDelete — composition', () => {
     // withTemplates *opts out* of the template filter (allowing both
     // template and non-template deleted rows). Since no templates are
     // currently deleted, expect only the soft-deleted instance.
-    await db.items.remove({ where: { id: 1 } })
-    const rows = await db.items.findMany({ onlyDeleted: true, withTemplates: true })
+    await db.item.remove({ where: { id: 1 } })
+    const rows = await db.item.findMany({ onlyDeleted: true, withTemplates: true })
     expect(rows.length).toBe(1)
     expect(rows[0].id).toBe(1)
   })
@@ -14303,16 +15503,16 @@ describe('@@hasTemplates — nested includes', () => {
   let db: any
 
   const SCHEMA = `
-    model accounts {
+    model Account {
       id     Int  @id
       name   String
-      quotes quotes[]
+      quotes Quote[]
     }
-    model quotes {
+    model Quote {
       id        Int  @id
       accountId Int
       number    String
-      account   accounts @relation(fields: [accountId], references: [id])
+      account   Account @relation(fields: [accountId], references: [id])
       @@hasTemplates
     }
   `
@@ -14321,10 +15521,10 @@ describe('@@hasTemplates — nested includes', () => {
   afterAll(() => db.$close())
 
   beforeEach(async () => {
-    await db.quotes.delete({ where: { id: { in: [1,2,3] } } })
-    await db.accounts.delete({ where: { id: 1 } })
-    await db.accounts.create({ data: { id: 1, name: 'Acme' } })
-    await db.quotes.createMany({ data: [
+    await db.quote.delete({ where: { id: { in: [1,2,3] } } })
+    await db.account.delete({ where: { id: 1 } })
+    await db.account.create({ data: { id: 1, name: 'Acme' } })
+    await db.quote.createMany({ data: [
       { id: 1, accountId: 1, number: 'INST-1', isTemplate: false },
       { id: 2, accountId: 1, number: 'INST-2', isTemplate: false },
       { id: 3, accountId: 1, number: 'TPL',    isTemplate: true  },
@@ -14332,13 +15532,13 @@ describe('@@hasTemplates — nested includes', () => {
   })
 
   test('nested hasMany excludes templates by default', async () => {
-    const acc = await db.accounts.findUnique({ where: { id: 1 }, include: { quotes: true } })
+    const acc = await db.account.findUnique({ where: { id: 1 }, include: { quotes: true } })
     expect(acc.quotes.length).toBe(2)
     expect(acc.quotes.every((q: any) => !q.isTemplate)).toBe(true)
   })
 
   test('nested withTemplates includes templates', async () => {
-    const acc = await db.accounts.findUnique({
+    const acc = await db.account.findUnique({
       where: { id: 1 },
       include: { quotes: { withTemplates: true } },
     })
@@ -14346,7 +15546,7 @@ describe('@@hasTemplates — nested includes', () => {
   })
 
   test('nested onlyTemplates returns templates only', async () => {
-    const acc = await db.accounts.findUnique({
+    const acc = await db.account.findUnique({
       where: { id: 1 },
       include: { quotes: { onlyTemplates: true } },
     })
@@ -14359,7 +15559,7 @@ describe('@@hasTemplates — custom field name', () => {
   let db: any
 
   const SCHEMA = `
-    model presets {
+    model Preset {
       id       Int @id
       label    String
       @@hasTemplates(field: "isPreset")
@@ -14370,14 +15570,14 @@ describe('@@hasTemplates — custom field name', () => {
   afterAll(() => db.$close())
 
   test('custom field name applies the filter on the right column', async () => {
-    await db.presets.createMany({ data: [
+    await db.preset.createMany({ data: [
       { id: 1, label: 'A', isPreset: false },
       { id: 2, label: 'B', isPreset: true  },
     ]})
-    const rows = await db.presets.findMany()
+    const rows = await db.preset.findMany()
     expect(rows.length).toBe(1)
     expect(rows[0].id).toBe(1)
-    const all = await db.presets.findMany({ withTemplates: true })
+    const all = await db.preset.findMany({ withTemplates: true })
     expect(all.length).toBe(2)
   })
 })
@@ -14393,16 +15593,16 @@ describe('write payload — unknown fields are silently stripped', () => {
   let db: any
 
   const SCHEMA = `
-    model accounts {
+    model Account {
       id    Int @id
       name  String
-      users users[]
+      users User[]
     }
-    model users {
+    model User {
       id        Int  @id
       accountId Int
       email     String
-      account   accounts @relation(fields: [accountId], references: [id])
+      account   Account @relation(fields: [accountId], references: [id])
     }
   `
 
@@ -14410,12 +15610,12 @@ describe('write payload — unknown fields are silently stripped', () => {
   afterAll(() => db.$close())
 
   beforeEach(async () => {
-    await db.users.delete({ where: { id: { in: [1,2,3,99] } } })
-    await db.accounts.delete({ where: { id: { in: [1,2,3,99] } } })
+    await db.user.delete({ where: { id: { in: [1,2,3,99] } } })
+    await db.account.delete({ where: { id: { in: [1,2,3,99] } } })
   })
 
   test('flat create with bogus field succeeds — key stripped, no SQLite error', async () => {
-    const row = await db.accounts.create({ data: { id: 1, name: 'A', bogusField: 'oops' } })
+    const row = await db.account.create({ data: { id: 1, name: 'A', bogusField: 'oops' } })
     expect(row.name).toBe('A')
     expect('bogusField' in row).toBe(false)
   })
@@ -14423,7 +15623,7 @@ describe('write payload — unknown fields are silently stripped', () => {
   test('typo on a required field still fails loudly — as "required", not as SQL', async () => {
     let err: any = null
     try {
-      await db.users.create({ data: { id: 1, accountId: 1, emial: 'a@x.com' } })
+      await db.user.create({ data: { id: 1, accountId: 1, emial: 'a@x.com' } })
     } catch (e) { err = e }
     expect(err).not.toBeNull()
     // 'emial' is stripped; the pre-flight then reports the real field missing.
@@ -14432,8 +15632,8 @@ describe('write payload — unknown fields are silently stripped', () => {
   })
 
   test('bogus extra key alongside complete data is dropped without complaint', async () => {
-    await db.accounts.create({ data: { id: 1, name: 'A' } })
-    const u = await db.users.create({
+    await db.account.create({ data: { id: 1, name: 'A' } })
+    const u = await db.user.create({
       data: { id: 1, accountId: 1, email: 'a@x.com', somethingTotallyDifferent: 'x' },
     })
     expect(u.email).toBe('a@x.com')
@@ -14441,14 +15641,14 @@ describe('write payload — unknown fields are silently stripped', () => {
   })
 
   test('nested create on hasMany child strips the bogus key on the child model', async () => {
-    await db.accounts.create({ data: { id: 1, name: 'A' } })
-    await db.accounts.create({
+    await db.account.create({ data: { id: 1, name: 'A' } })
+    await db.account.create({
       data: {
         id: 2, name: 'B',
         users: { create: { id: 99, email: 'b@x.com', wrongField: 'oops' } },
       },
     })
-    const child = await db.users.findUnique({ where: { id: 99 } })
+    const child = await db.user.findUnique({ where: { id: 99 } })
     expect(child.email).toBe('b@x.com')
     expect('wrongField' in child).toBe(false)
   })
@@ -14464,36 +15664,36 @@ describe('write payload — unknown fields are silently stripped', () => {
     // Compromise: 'account' is in allowedKeys so we don't catch THIS at the
     // ValidationError stage — but the SQLite error still surfaces and the user
     // can fix it. The next iteration could special-case relation-as-scalar.
-    await db.accounts.create({ data: { id: 1, name: 'A' } })
+    await db.account.create({ data: { id: 1, name: 'A' } })
     let err: any = null
     try {
-      await db.users.create({ data: { id: 1, account: 1, email: 'x@x.com' } })
+      await db.user.create({ data: { id: 1, account: 1, email: 'x@x.com' } })
     } catch (e) { err = e }
     expect(err).not.toBeNull()
     // Either path — ValidationError or SQLite — is acceptable as long as it errors.
   })
 
   test('update with bogus field strips it — target field untouched', async () => {
-    await db.accounts.create({ data: { id: 1, name: 'A' } })
-    const row = await db.accounts.update({ where: { id: 1 }, data: { naem: 'B' } })
+    await db.account.create({ data: { id: 1, name: 'A' } })
+    const row = await db.account.update({ where: { id: 1 }, data: { naem: 'B' } })
     expect(row.name).toBe('A')            // typo'd key dropped, nothing changed
     expect('naem' in row).toBe(false)
   })
 
   test('valid writes still work — known fields, FKs, computed FK', async () => {
-    await db.accounts.create({ data: { id: 1, name: 'A' } })
-    const u = await db.users.create({ data: { id: 1, accountId: 1, email: 'a@x.com' } })
+    await db.account.create({ data: { id: 1, name: 'A' } })
+    const u = await db.user.create({ data: { id: 1, accountId: 1, email: 'a@x.com' } })
     expect(u.id).toBe(1)
     expect(u.accountId).toBe(1)
     expect(u.email).toBe('a@x.com')
   })
 
   test('createMany strips bogus keys per-row', async () => {
-    await db.accounts.createMany({ data: [
+    await db.account.createMany({ data: [
       { id: 1, name: 'A' },
       { id: 2, name: 'B', whatever: 'nope' },
     ]})
-    const rows = await db.accounts.findMany({ where: { id: { in: [1, 2] } } })
+    const rows = await db.account.findMany({ where: { id: { in: [1, 2] } } })
     expect(rows).toHaveLength(2)
     expect(rows.every((r: any) => !('whatever' in r))).toBe(true)
   })
@@ -14511,35 +15711,35 @@ describe('co-FK propagation — nested create', () => {
   // same parents. These are the "co-FK" columns that should propagate
   // parent→child during nested writes.
   const SCHEMA = `
-    model tenants {
+    model Tenant {
       id       Int @id
       name     String
-      accounts accounts[]
+      accounts Account[]
     }
-    model accounts {
+    model Account {
       id       Int @id
       tenantId Int
       name     String
-      tenant   tenants  @relation(fields: [tenantId], references: [id])
-      orders   orders[]
+      tenant   Tenant  @relation(fields: [tenantId], references: [id])
+      orders   Order[]
     }
-    model orders {
+    model Order {
       id        Int @id
       tenantId  Int
       accountId Int
-      tenant    tenants  @relation(fields: [tenantId],  references: [id])
-      account   accounts @relation(fields: [accountId], references: [id])
-      lines     lines[]
+      tenant    Tenant  @relation(fields: [tenantId],  references: [id])
+      account   Account @relation(fields: [accountId], references: [id])
+      lines     Line[]
     }
-    model lines {
+    model Line {
       id        Int @id
       tenantId  Int
       accountId Int
       orderId   Int
       qty       Int @default(1)
-      tenant    tenants  @relation(fields: [tenantId],  references: [id])
-      account   accounts @relation(fields: [accountId], references: [id])
-      order     orders   @relation(fields: [orderId],   references: [id])
+      tenant    Tenant  @relation(fields: [tenantId],  references: [id])
+      account   Account @relation(fields: [accountId], references: [id])
+      order     Order   @relation(fields: [orderId],   references: [id])
     }
   `
 
@@ -14548,49 +15748,49 @@ describe('co-FK propagation — nested create', () => {
 
   beforeEach(async () => {
     // Clean in FK-safe order
-    await db.lines.deleteMany({}).catch(() => {})
-    await db.orders.deleteMany({}).catch(() => {})
-    await db.accounts.deleteMany({}).catch(() => {})
-    await db.tenants.deleteMany({}).catch(() => {})
-    await db.tenants.create({ data: { id: 1, name: 'T1' } })
+    await db.line.deleteMany({}).catch(() => {})
+    await db.order.deleteMany({}).catch(() => {})
+    await db.account.deleteMany({}).catch(() => {})
+    await db.tenant.deleteMany({}).catch(() => {})
+    await db.tenant.create({ data: { id: 1, name: 'T1' } })
   })
 
   test('nested account.create propagates tenantId from parent (1 level)', async () => {
-    const t = await db.tenants.findUnique({ where: { id: 1 } })
+    const t = await db.tenant.findUnique({ where: { id: 1 } })
     // Create an account nested inside tenant — this is a hasMany create from
     // the tenant side. Account must inherit tenantId without us specifying it.
-    await db.tenants.update({
+    await db.tenant.update({
       where: { id: 1 },
       data: { accounts: { create: { id: 10, name: 'A' } } },
     })
-    const a = await db.accounts.findUnique({ where: { id: 10 } })
+    const a = await db.account.findUnique({ where: { id: 10 } })
     expect(a.tenantId).toBe(1)
   })
 
   test('nested order under account inherits accountId AND tenantId', async () => {
-    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
-    await db.accounts.update({
+    await db.account.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.account.update({
       where: { id: 10 },
       data: { orders: { create: { id: 100 } } },
     })
-    const o = await db.orders.findUnique({ where: { id: 100 } })
+    const o = await db.order.findUnique({ where: { id: 100 } })
     expect(o.accountId).toBe(10)   // direct FK
     expect(o.tenantId).toBe(1)     // co-FK propagated from account
   })
 
   test('two-level deep: lines inherit tenantId+accountId from order chain', async () => {
-    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.account.create({ data: { id: 10, tenantId: 1, name: 'A' } })
     // Create an order with nested lines in one shot. Lines should pick up
     // accountId AND tenantId from the order's own values (which themselves
     // came from account during this same write at the next level up — but
     // here we set them directly on order, which is the more common case).
-    await db.orders.create({
+    await db.order.create({
       data: {
         id: 100, accountId: 10, tenantId: 1,
         lines: { create: [{ id: 1000, qty: 5 }, { id: 1001, qty: 3 }] },
       },
     })
-    const lines = await db.lines.findMany({ orderBy: { id: 'asc' } })
+    const lines = await db.line.findMany({ orderBy: { id: 'asc' } })
     expect(lines.length).toBe(2)
     for (const l of lines) {
       expect(l.tenantId).toBe(1)
@@ -14604,13 +15804,13 @@ describe('co-FK propagation — nested create', () => {
     // hasMany FK). Child provides tenantId=2; parent has tenantId=1; strict
     // mode must overwrite to 1. This is the *real* test of co-FK strictness,
     // separate from the always-overridden direct FK behaviour.
-    await db.tenants.create({ data: { id: 2, name: 'T2' } })
-    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
-    await db.accounts.update({
+    await db.tenant.create({ data: { id: 2, name: 'T2' } })
+    await db.account.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.account.update({
       where: { id: 10 },
       data: { orders: { create: { id: 100, tenantId: 2 } } },
     })
-    const o = await db.orders.findUnique({ where: { id: 100 } })
+    const o = await db.order.findUnique({ where: { id: 100 } })
     expect(o.accountId).toBe(10)   // direct FK
     expect(o.tenantId).toBe(1)     // co-FK overwritten — parent wins
   })
@@ -14624,18 +15824,18 @@ describe('co-FK propagation — nested create', () => {
     // Simulate by writing accounts with explicit tenantId then orders without
     // co-FK to verify normal behaviour (this test mainly guards against a
     // nullable-parent bug — we don't have a nullable co-FK in this schema).
-    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
-    await db.orders.create({ data: { id: 100, accountId: 10, tenantId: 1 } })
-    const o = await db.orders.findUnique({ where: { id: 100 } })
+    await db.account.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.order.create({ data: { id: 100, accountId: 10, tenantId: 1 } })
+    const o = await db.order.findUnique({ where: { id: 100 } })
     expect(o.tenantId).toBe(1)
   })
 
   test('flat (non-nested) create is unaffected — co-FK only fires inside nested ops', async () => {
-    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.account.create({ data: { id: 10, tenantId: 1, name: 'A' } })
     // Standalone create with explicit values — no parent context, so no
     // propagation. The test is just that nothing weird happens here.
-    await db.orders.create({ data: { id: 100, accountId: 10, tenantId: 1 } })
-    const o = await db.orders.findUnique({ where: { id: 100 } })
+    await db.order.create({ data: { id: 100, accountId: 10, tenantId: 1 } })
+    const o = await db.order.findUnique({ where: { id: 100 } })
     expect(o.tenantId).toBe(1)
     expect(o.accountId).toBe(10)
   })
@@ -14648,25 +15848,25 @@ describe('co-FK propagation — allowChildFkOverride: true', () => {
   // column as the direct hasMany FK (accountId). Direct FKs are always
   // overridden — that's existing behaviour, separate from this feature.
   const SCHEMA = `
-    model tenants {
+    model Tenant {
       id       Int @id
       name     String
-      accounts accounts[]
-      orders   orders[]
+      accounts Account[]
+      orders   Order[]
     }
-    model accounts {
+    model Account {
       id       Int @id
       tenantId Int
       name     String
-      tenant   tenants @relation(fields: [tenantId], references: [id])
-      orders   orders[]
+      tenant   Tenant @relation(fields: [tenantId], references: [id])
+      orders   Order[]
     }
-    model orders {
+    model Order {
       id        Int @id
       tenantId  Int
       accountId Int
-      tenant    tenants  @relation(fields: [tenantId],  references: [id])
-      account   accounts @relation(fields: [accountId], references: [id])
+      tenant    Tenant  @relation(fields: [tenantId],  references: [id])
+      account   Account @relation(fields: [accountId], references: [id])
     }
   `
 
@@ -14676,12 +15876,12 @@ describe('co-FK propagation — allowChildFkOverride: true', () => {
   afterAll(() => db.$close())
 
   beforeEach(async () => {
-    await db.orders.deleteMany({}).catch(() => {})
-    await db.accounts.deleteMany({}).catch(() => {})
-    await db.tenants.deleteMany({}).catch(() => {})
-    await db.tenants.create({ data: { id: 1, name: 'T1' } })
-    await db.tenants.create({ data: { id: 2, name: 'T2' } })
-    await db.accounts.create({ data: { id: 10, tenantId: 1, name: 'A' } })
+    await db.order.deleteMany({}).catch(() => {})
+    await db.account.deleteMany({}).catch(() => {})
+    await db.tenant.deleteMany({}).catch(() => {})
+    await db.tenant.create({ data: { id: 1, name: 'T1' } })
+    await db.tenant.create({ data: { id: 2, name: 'T2' } })
+    await db.account.create({ data: { id: 10, tenantId: 1, name: 'A' } })
   })
 
   test('child explicit value wins over parent for non-direct co-FK', async () => {
@@ -14689,11 +15889,11 @@ describe('co-FK propagation — allowChildFkOverride: true', () => {
     // the order's own tenantId=2 should be preserved — this is the cross-
     // tenant move use case where you legitimately need the child to differ.
     // accountId is the DIRECT hasMany FK and always gets injected.
-    await db.accounts.update({
+    await db.account.update({
       where: { id: 10 },
       data: { orders: { create: { id: 100, tenantId: 2 } } },
     })
-    const o = await db.orders.findUnique({ where: { id: 100 } })
+    const o = await db.order.findUnique({ where: { id: 100 } })
     expect(o.accountId).toBe(10)   // direct FK still injected
     expect(o.tenantId).toBe(2)     // permissive mode: child's value preserved
   })
@@ -14701,11 +15901,11 @@ describe('co-FK propagation — allowChildFkOverride: true', () => {
   test('missing child value still gets auto-filled from parent', async () => {
     // Order under account 10 (tenantId=1). Child doesn't specify tenantId,
     // so it gets propagated from account.
-    await db.accounts.update({
+    await db.account.update({
       where: { id: 10 },
       data: { orders: { create: { id: 101 } } },
     })
-    const o = await db.orders.findUnique({ where: { id: 101 } })
+    const o = await db.order.findUnique({ where: { id: 101 } })
     expect(o.tenantId).toBe(1)
     expect(o.accountId).toBe(10)
   })
@@ -14722,33 +15922,33 @@ describe('type rename — hard-cut migration', () => {
   // upgrade path instead of a cryptic "unknown enum reference" error.
 
   test('Text emits migration error pointing at String', () => {
-    const r = parse('model t { id Int @id; body Text }')
+    const r = parse('model T { id Int @id; body Text }')
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain("'Text' was renamed to 'String'")
     expect(r.errors.join('\n')).toContain('codemod')
   })
 
   test('Integer → Int', () => {
-    const r = parse('model t { id Integer @id }')
+    const r = parse('model T { id Integer @id }')
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain("'Integer' was renamed to 'Int'")
   })
 
   test('Real → Float', () => {
-    const r = parse('model t { id Int @id; price Real }')
+    const r = parse('model T { id Int @id; price Real }')
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain("'Real' was renamed to 'Float'")
   })
 
   test('Blob → Bytes', () => {
-    const r = parse('model t { id Int @id; data Blob }')
+    const r = parse('model T { id Int @id; data Blob }')
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain("'Blob' was renamed to 'Bytes'")
   })
 
   test('new names work end-to-end', async () => {
     const r = parse(`
-      model items {
+      model Item {
         id     Int     @id
         name   String
         price  Float
@@ -14778,7 +15978,7 @@ describe('@time validator', () => {
   // that don't bother parsing.
 
   test('parses bare @time', () => {
-    const r = parse(`model t { id Int @id; ot String @time }`)
+    const r = parse(`model T { id Int @id; ot String @time }`)
     expect(r.valid).toBe(true)
     const a = r.schema.models[0].fields[1].attributes.find((x: any) => x.kind === 'time')
     expect(a).toBeDefined()
@@ -14786,27 +15986,27 @@ describe('@time validator', () => {
   })
 
   test('parses @time(seconds: true)', () => {
-    const r = parse(`model t { id Int @id; ot String @time(seconds: true) }`)
+    const r = parse(`model T { id Int @id; ot String @time(seconds: true) }`)
     expect(r.valid).toBe(true)
     const a = r.schema.models[0].fields[1].attributes.find((x: any) => x.kind === 'time')
     expect((a as any).seconds).toBe(true)
   })
 
   test('parses @time(message: "...")', () => {
-    const r = parse(`model t { id Int @id; ot String @time(message: "bad") }`)
+    const r = parse(`model T { id Int @id; ot String @time(message: "bad") }`)
     expect(r.valid).toBe(true)
     const a = r.schema.models[0].fields[1].attributes.find((x: any) => x.kind === 'time')
     expect((a as any).message).toBe('bad')
   })
 
   test('rejects non-bool for seconds', () => {
-    const r = parse(`model t { id Int @id; ot String @time(seconds: 1) }`)
+    const r = parse(`model T { id Int @id; ot String @time(seconds: 1) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain('expects true/false')
   })
 
   test('runtime: accepts valid HH:MM', async () => {
-    const db = await makeDb(`model bh { id Int @id; openTime String @time }`, 'time-hm-ok')
+    const db = await makeDb(`model Bh { id Int @id; openTime String @time }`, 'time-hm-ok')
     await db.bh.create({ data: { id: 1, openTime: '09:30' } })
     await db.bh.create({ data: { id: 2, openTime: '00:00' } })
     await db.bh.create({ data: { id: 3, openTime: '23:59' } })
@@ -14815,7 +16015,7 @@ describe('@time validator', () => {
   })
 
   test('runtime: rejects malformed HH:MM', async () => {
-    const db = await makeDb(`model bh { id Int @id; openTime String @time }`, 'time-hm-bad')
+    const db = await makeDb(`model Bh { id Int @id; openTime String @time }`, 'time-hm-bad')
     const bad = ['9:30', '24:00', '12:60', '12:34:00', '1230', '', 'abc']
     for (const v of bad) {
       let err: any = null
@@ -14826,7 +16026,7 @@ describe('@time validator', () => {
   })
 
   test('runtime: seconds: true accepts HH:MM and HH:MM:SS', async () => {
-    const db = await makeDb(`model bh { id Int @id; t String @time(seconds: true) }`, 'time-hms-ok')
+    const db = await makeDb(`model Bh { id Int @id; t String @time(seconds: true) }`, 'time-hms-ok')
     await db.bh.create({ data: { id: 1, t: '12:00' } })
     await db.bh.create({ data: { id: 2, t: '12:00:00' } })
     await db.bh.create({ data: { id: 3, t: '23:59:59' } })
@@ -14835,7 +16035,7 @@ describe('@time validator', () => {
   })
 
   test('runtime: seconds: true rejects out-of-range', async () => {
-    const db = await makeDb(`model bh { id Int @id; t String @time(seconds: true) }`, 'time-hms-bad')
+    const db = await makeDb(`model Bh { id Int @id; t String @time(seconds: true) }`, 'time-hms-bad')
     for (const v of ['12:34:60', '24:00:00', '12:60:00']) {
       let err: any = null
       try { await db.bh.create({ data: { id: 1, t: v } }) } catch (e) { err = e }
@@ -14846,7 +16046,7 @@ describe('@time validator', () => {
 
   test('custom message via @time(message: ...)', async () => {
     const db = await makeDb(
-      `model bh { id Int @id; t String @time(message: "open hours: HH:MM only") }`,
+      `model Bh { id Int @id; t String @time(message: "open hours: HH:MM only") }`,
       'time-msg',
     )
     let err: any = null
@@ -14868,7 +16068,7 @@ describe('view block — schema views', () => {
 
   test('regular view: read-only, recomputed on each query', async () => {
     const db = await makeDb(`
-      model orders {
+      model Order {
         id        Int   @id
         accountId Int
         total     Float
@@ -14876,11 +16076,11 @@ describe('view block — schema views', () => {
       view orderTotals {
         accountId Int
         total     Float
-        @@sql("SELECT accountId, SUM(total) AS total FROM orders GROUP BY accountId")
+        @@sql("SELECT accountId, SUM(total) AS total FROM [order] GROUP BY accountId")
       }
     `, 'view-regular')
 
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, accountId: 1, total: 100 },
       { id: 2, accountId: 1, total: 50 },
       { id: 3, accountId: 2, total: 30 },
@@ -14896,10 +16096,10 @@ describe('view block — schema views', () => {
 
   test('view: write methods throw a clear error', async () => {
     const db = await makeDb(`
-      model orders { id Int @id; total Float }
+      model Order { id Int @id; total Float }
       view dailyTotals {
         total Float
-        @@sql("SELECT SUM(total) AS total FROM orders")
+        @@sql("SELECT SUM(total) AS total FROM [order]")
       }
     `, 'view-write-blocked')
 
@@ -14914,12 +16114,12 @@ describe('view block — schema views', () => {
   })
 
   test('materialized view: refreshes automatically on source writes', async () => {
-    // The @@refreshOn([orders]) declaration installs INSERT/UPDATE/DELETE
+    // The @@refreshOn([Order]) declaration installs INSERT/UPDATE/DELETE
     // triggers on the orders table; each fires a DELETE+INSERT against the
     // materialized table to keep it in sync. Reads hit the materialized
     // table directly — no recomputation per query.
     const db = await makeDb(`
-      model orders {
+      model Order {
         id        Int   @id
         accountId Int
         total     Float
@@ -14928,12 +16128,12 @@ describe('view block — schema views', () => {
         accountId Int
         total     Float
         @@materialized
-        @@sql("SELECT accountId, SUM(total) AS total FROM orders GROUP BY accountId")
-        @@refreshOn([orders])
+        @@sql("SELECT accountId, SUM(total) AS total FROM [order] GROUP BY accountId")
+        @@refreshOn([Order])
       }
     `, 'view-materialized')
 
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, accountId: 1, total: 100 },
       { id: 2, accountId: 2, total: 30 },
     ]})
@@ -14943,12 +16143,12 @@ describe('view block — schema views', () => {
     expect(rows[0].total).toBe(100)
 
     // Insert another order — the view should auto-refresh.
-    await db.orders.create({ data: { id: 3, accountId: 1, total: 25 } })
+    await db.order.create({ data: { id: 3, accountId: 1, total: 25 } })
     rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
     expect(rows[0].total).toBe(125)
 
     // Delete an order — the view should reflect.
-    await db.orders.delete({ where: { id: 2 } })
+    await db.order.delete({ where: { id: 2 } })
     rows = await db.orderTotals.findMany({ orderBy: { accountId: 'asc' } })
     expect(rows.length).toBe(1)
 
@@ -14957,15 +16157,15 @@ describe('view block — schema views', () => {
 
   test('view supports findFirst / findUnique / count / exists', async () => {
     const db = await makeDb(`
-      model orders { id Int @id; accountId Int; total Float }
+      model Order { id Int @id; accountId Int; total Float }
       view orderTotals {
         accountId Int
         total     Float
-        @@sql("SELECT accountId, SUM(total) AS total FROM orders GROUP BY accountId")
+        @@sql("SELECT accountId, SUM(total) AS total FROM [order] GROUP BY accountId")
       }
     `, 'view-read-methods')
 
-    await db.orders.createMany({ data: [
+    await db.order.createMany({ data: [
       { id: 1, accountId: 1, total: 100 },
       { id: 2, accountId: 2, total: 30 },
     ]})
@@ -14995,27 +16195,27 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
   // through the same FTS5 virtual table.
 
   test('parses bare @@fts (default unicode61 tokenizer)', () => {
-    const r = parse(`model p { id Int @id; title String; @@fts([title]) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title]) }`)
     expect(r.valid).toBe(true)
     const a = r.schema.models[0].attributes.find((x: any) => x.kind === 'fts')
     expect((a as any).tokenize).toBe('unicode61')
   })
 
   test('parses @@fts(tokenize: trigram)', () => {
-    const r = parse(`model p { id Int @id; title String; @@fts([title], tokenize: trigram) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: trigram) }`)
     expect(r.valid).toBe(true)
     const a = r.schema.models[0].attributes.find((x: any) => x.kind === 'fts')
     expect((a as any).tokenize).toBe('trigram')
   })
 
   test('parses @@fts(tokenize: porter)', () => {
-    const r = parse(`model p { id Int @id; title String; @@fts([title], tokenize: porter) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: porter) }`)
     expect(r.valid).toBe(true)
     expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'fts').tokenize).toBe('porter')
   })
 
   test('rejects unknown tokenizer with allowed-list hint', () => {
-    const r = parse(`model p { id Int @id; title String; @@fts([title], tokenize: superfuzzy) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: superfuzzy) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain("unknown tokenizer")
     expect(r.errors.join('\n')).toContain('unicode61')
@@ -15023,13 +16223,13 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
   })
 
   test('rejects unknown named argument', () => {
-    const r = parse(`model p { id Int @id; title String; @@fts([title], stem: true) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], stem: true) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain("expected 'tokenize'")
   })
 
   test('DDL: default tokenizer emits no tokenize clause (back-compat)', () => {
-    const r = parse(`model p { id Int @id; title String; @@fts([title]) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title]) }`)
     const ddl = generateDDL(r.schema)
     // Confirm the FTS5 CREATE VIRTUAL TABLE has no `tokenize=` clause —
     // this preserves bit-for-bit DDL parity with pre-Stage-A schemas that
@@ -15039,20 +16239,20 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
   })
 
   test("DDL: non-default tokenizer emits tokenize='...' clause", () => {
-    const r = parse(`model p { id Int @id; title String; @@fts([title], tokenize: trigram) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: trigram) }`)
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain("tokenize='trigram'")
   })
 
   test('runtime: trigram tokenizer matches substrings', async () => {
     const db = await makeDb(`
-      model flavors {
+      model Flavor {
         id   Int    @id
         name String
         @@fts([name], tokenize: trigram)
       }
     `, 'fts-trigram')
-    await db.flavors.createMany({ data: [
+    await db.flavor.createMany({ data: [
       { id: 1, name: 'Apple Pie' },
       { id: 2, name: 'Banana Bread' },
       { id: 3, name: 'Chocolate Mousse' },
@@ -15068,7 +16268,7 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
       ['xyz',    []],
     ]
     for (const [q, ids] of cases) {
-      const rows = await db.flavors.search(q)
+      const rows = await db.flavor.search(q)
       expect(rows.map((r: any) => r.id).sort()).toEqual(ids.slice().sort())
     }
     db.$close()
@@ -15076,23 +16276,23 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
 
   test('runtime: porter tokenizer stems English words', async () => {
     const db = await makeDb(`
-      model articles {
+      model Article {
         id   Int    @id
         body String
         @@fts([body], tokenize: porter)
       }
     `, 'fts-porter')
-    await db.articles.createMany({ data: [
+    await db.article.createMany({ data: [
       { id: 1, body: 'The cat is running fast' },
       { id: 2, body: 'Programmers program programs' },
     ]})
 
     // Porter stems "running" → "run", so all three forms find the same row.
-    expect((await db.articles.search('run')).map((r: any) => r.id)).toEqual([1])
-    expect((await db.articles.search('running')).map((r: any) => r.id)).toEqual([1])
-    expect((await db.articles.search('runs')).map((r: any) => r.id)).toEqual([1])
-    expect((await db.articles.search('program')).map((r: any) => r.id)).toEqual([2])
-    expect((await db.articles.search('programming')).map((r: any) => r.id)).toEqual([2])
+    expect((await db.article.search('run')).map((r: any) => r.id)).toEqual([1])
+    expect((await db.article.search('running')).map((r: any) => r.id)).toEqual([1])
+    expect((await db.article.search('runs')).map((r: any) => r.id)).toEqual([1])
+    expect((await db.article.search('program')).map((r: any) => r.id)).toEqual([2])
+    expect((await db.article.search('programming')).map((r: any) => r.id)).toEqual([2])
     db.$close()
   })
 
@@ -15100,22 +16300,22 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
     // Confirm @@fts without a tokenize: argument behaves exactly like
     // pre-Stage-A: unicode61, word-based, no stemming, no substring matching.
     const db = await makeDb(`
-      model posts {
+      model Post {
         id    Int    @id
         title String
         body  String
         @@fts([title, body])
       }
     `, 'fts-default-tokenizer')
-    await db.posts.createMany({ data: [
+    await db.post.createMany({ data: [
       { id: 1, title: 'Quick brown fox', body: 'jumps over the lazy dog' },
       { id: 2, title: 'Cats and dogs',   body: 'are common pets' },
     ]})
 
-    expect((await db.posts.search('fox')).map((r: any) => r.id)).toEqual([1])
-    expect((await db.posts.search('cats')).map((r: any) => r.id)).toEqual([2])
+    expect((await db.post.search('fox')).map((r: any) => r.id)).toEqual([1])
+    expect((await db.post.search('cats')).map((r: any) => r.id)).toEqual([2])
     // Partial words (not in unicode61) — should NOT match without trigram
-    expect(await db.posts.search('fo')).toEqual([])
+    expect(await db.post.search('fo')).toEqual([])
     db.$close()
   })
 })

@@ -1,0 +1,38 @@
+<script>
+  export let company      = ''
+  export let address      = ''
+  export let unsubscribe  = ''    // unsubscribe URL
+  export let privacy      = ''    // privacy policy URL
+  export let color        = '#aaaaaa'
+  export let size         = 12
+  export let bgcolor      = '#f4f4f4'
+  export let padding      = '24px 16px'
+</script>
+
+<!-- Footer — legal/unsubscribe block at bottom of every email. -->
+
+<tr>
+  <td align="center" bgcolor="{bgcolor}" style="padding:{padding};background-color:{bgcolor};">
+    {#if $slots.default}
+      <slot />
+    {:else}
+      <p style="font-family:Helvetica,Arial,sans-serif;font-size:{size}px;color:{color};text-align:center;margin:0;padding:0;line-height:1.6;">
+        {#if company}{company}{/if}
+        {#if address}<br />{address}{/if}
+      </p>
+      {#if unsubscribe || privacy}
+      <p style="font-family:Helvetica,Arial,sans-serif;font-size:{size}px;color:{color};text-align:center;margin:8px 0 0;padding:0;">
+        {#if unsubscribe}
+        <a href="{unsubscribe}" style="color:{color};text-decoration:underline;">Unsubscribe</a>
+        {/if}
+        {#if unsubscribe && privacy}
+          &nbsp;·&nbsp;
+        {/if}
+        {#if privacy}
+        <a href="{privacy}" style="color:{color};text-decoration:underline;">Privacy Policy</a>
+        {/if}
+      </p>
+      {/if}
+    {/if}
+  </td>
+</tr>

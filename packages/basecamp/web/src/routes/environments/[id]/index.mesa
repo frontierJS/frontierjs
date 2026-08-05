@@ -1,0 +1,273 @@
+---
+title: Environment
+---
+<script>
+  import { page } from '@frontierjs/sierra/router'
+  import { environments } from '../../../resources/environments.mesa'
+  import { apps } from '../../../resources/apps.mesa'
+  import { deployments } from '../../../resources/deployments.mesa'
+  import { goto } from '@frontierjs/sierra/router'
+
+  $: page.params
+
+  let environment = null
+  let appRows     = []
+  let error       = null
+  let loading     = true
+
+  async function load() {
+    error = null; loading = true
+    try {
+      environment = await environments.service.get(page.params.id)
+      appRows     = (await apps.service.find({ environmentId: page.params.id })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: page.params.id, () => load()
+
+  // ── Deploy ────────────────────────────────────────────────────────────
+  // A release starts from the app it releases. Creating the Deployment is the
+  // whole of the user action: the service snapshots the app's source/config,
+  // writes the step list for that app type, and hands off to Caravan — so the
+  // engine is running before this navigation lands.
+  let deploying = null
+
+  async function deploy(app) {
+    error = null; deploying = app.id
+    try {
+      const deployment = await deployments.service.create({ appId: app.id, trigger: 'manual' })
+      goto(`/deployments/${deployment.id}/`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      deploying = null
+    }
+  }
+
+  // ── Apps ──────────────────────────────────────────────────────────────
+  // An App belongs to exactly one environment, so it is created here rather
+  // than on a screen of its own — there is no useful "all apps" form.
+  let newApp  = { name: '', slug: '', type: 'container' }
+  let adding  = false
+
+  $: (newApp.name, newApp.slug, newApp.type)
+
+  // The type list comes from `enum AppType` in db/schema.lite, through the
+  // JSON Schema the build generated. Adding a type to the schema adds it here.
+  $: appTypes = apps.fields?.type?.enum ?? ['container', 'worker', 'cron', 'static']
+
+  async function addApp() {
+    error = null; adding = true
+    try {
+      await apps.service.create({
+        environmentId: environment.id,
+        name:          newApp.name,
+        slug:          newApp.slug || slugify(newApp.name),
+        type:          newApp.type,
+      })
+      newApp  = { name: '', slug: '', type: 'container' }
+      appRows = (await apps.service.find({ environmentId: environment.id })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      adding = false
+    }
+  }
+
+  function slugify(v) {
+    return v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64)
+  }
+
+  // ── Variables ─────────────────────────────────────────────────────────
+  // Variables live in a Json column on the environment, and are edited through
+  // custom methods rather than a PATCH of the whole array: two people editing
+  // different keys at once would otherwise overwrite each other, because the
+  // last full array to arrive wins.
+  //
+  // A custom method dispatches on the X-Service-Method HEADER, not a sub-path.
+  // POST /environments/:id/setVariable is a 404 — resource.service.action()
+  // sends the header for us.
+  let newKey    = ''
+  let newValue  = ''
+  let newSecret = false
+  let busyKey   = null
+
+  async function setVariable(key, value, secret) {
+    error = null; busyKey = key
+    try {
+      environment = await environments.service.action('setVariable', environment.id, { key, value, secret })
+      newKey = ''; newValue = ''; newSecret = false
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyKey = null
+    }
+  }
+
+  async function deleteVariable(key) {
+    error = null; busyKey = key
+    try {
+      environment = await environments.service.action('deleteVariable', environment.id, { key })
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyKey = null
+    }
+  }
+
+  $: variables = environment?.variables ?? []
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error && !environment}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{:else if environment}
+  <div class="section-header">
+    <h1>{environment.name}</h1>
+    <div class="cluster">
+      <span class="pill">{environment.tier}</span>
+      <a class="btn ghost" href={`/projects/${environment.projectId}/`}>Back to project</a>
+    </div>
+  </div>
+
+  {#if error}
+    <article class="alert danger">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if environment.isProtected}
+    <article class="alert warning">
+      <div class="alert-content">
+        This environment is marked protected in the schema. That flag is advisory in the UI — what enforces it is the service.
+      </div>
+    </article>
+  {/if}
+
+  <h2 class="h4">Apps</h2>
+  {#if !appRows.length}
+    <article class="alert info">
+      <div class="alert-content">No apps in this environment yet — add one below.</div>
+    </article>
+  {:else}
+    <div class="table-wrap">
+      <table class="table striped hover">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Type</th>
+            <th scope="col">Status</th>
+            <th scope="col">Domain</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="app-rows">
+          {#each appRows as app}
+            <tr>
+              <td>{app.name}</td>
+              <td><code>{app.type}</code></td>
+              <!-- The tone is derived from the value, not chosen per row: a
+                   status is a fact, and 'error' is the only one that is bad
+                   news. No colour is named here (invariant 13). -->
+              <td>
+                <span class="pill" class:success={app.status === 'running'}
+                                   class:danger={app.status === 'error'}>{app.status}</span>
+              </td>
+              <td>{app.domain ?? '—'}</td>
+              <td>
+                <button class="btn outlined" disabled={deploying === app.id}
+                        on:click={() => deploy(app)}>
+                  {deploying === app.id ? 'Starting…' : 'Deploy'}
+                </button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+
+  <form class="card stack" on:submit|preventDefault={addApp}>
+    <div class="field-row">
+      <div class="field-group">
+        <label for="app-name">App name</label>
+        <input class="field" id="app-name" bind:value={newApp.name} placeholder="web" required />
+      </div>
+      <div class="field-group">
+        <label for="app-type">Type</label>
+        <select class="field" id="app-type" bind:value={newApp.type}>
+          {#each appTypes as type}
+            <option value={type}>{type}</option>
+          {/each}
+        </select>
+      </div>
+    </div>
+    <div class="cluster">
+      <button class="btn primary" type="submit" disabled={adding}>
+        {adding ? 'Adding…' : 'Add app'}
+      </button>
+    </div>
+  </form>
+
+  <h2 class="h4">Variables</h2>
+
+  {#if variables.length}
+    <div class="table-wrap">
+      <table class="table striped">
+        <thead>
+          <tr>
+            <th scope="col">Key</th>
+            <th scope="col">Value</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="variable-rows">
+          {#each variables as variable}
+            <tr>
+              <td><code>{variable.key}</code></td>
+              <!-- `secret: true` is a display decision made by the service's own
+                   data, not a security boundary: the value is in this response.
+                   Anything that must not reach the browser belongs in Secret,
+                   whose data column is @encrypted and system-only. -->
+              <td>{variable.secret ? '••••••••' : variable.value}</td>
+              <td>
+                <button class="btn ghost danger" disabled={busyKey === variable.key}
+                        on:click={() => deleteVariable(variable.key)}>Remove</button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {:else}
+    <p class="text-sm text-muted">No variables set.</p>
+  {/if}
+
+  <form class="card stack" on:submit|preventDefault={() => setVariable(newKey, newValue, newSecret)}>
+    <div class="field-row">
+      <div class="field-group">
+        <label for="var-key">Key</label>
+        <input class="field" id="var-key" bind:value={newKey} placeholder="DATABASE_URL" required />
+      </div>
+      <div class="field-group">
+        <label for="var-value">Value</label>
+        <input class="field" id="var-value" bind:value={newValue} required />
+      </div>
+    </div>
+    <label class="field-check">
+      <input type="checkbox" bind:checked={newSecret} />
+      <span>Mask this value in the UI</span>
+    </label>
+    <div class="cluster">
+      <button class="btn primary" type="submit" disabled={busyKey !== null}>Set variable</button>
+    </div>
+  </form>
+{/if}

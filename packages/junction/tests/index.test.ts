@@ -2691,7 +2691,11 @@ describe('_compiledPipelines', () => {
 
     expect(svc._compiledPipelines).toBeDefined()
     expect(svc._compiledPipelines!['find']).toBeDefined()
-    expect(svc._compiledPipelines!['find'].before.length).toBe(1)
+    // The app hook plus the derived gateAuth every service now carries — a
+    // model-less one included, where it resolves no gate levels and returns.
+    // What this test is pinning is that the pipeline was compiled at all.
+    expect(svc._compiledPipelines!['find'].before.length).toBe(2)
+    expect(svc._compiledPipelines!['find'].before.some(h => h.name === 'gateAuth')).toBe(true)
   })
 
   it('compiled pipelines are used in callService instead of re-merging', async () => {
@@ -2897,14 +2901,20 @@ describe('rateLimit hook', () => {
   it('keys on IP for anonymous requests', async () => {
     const svc = makeService({ max: 1, window: '1 minute' })
 
-    const ip1 = testCtx('items', 'find')
-    ip1.client.ip = '1.2.3.4'
-    const ip2 = testCtx('items', 'find')
-    ip2.client.ip = '5.6.7.8'
+    // A fresh context per call, as the transport builds one per request. The
+    // third call used to reuse `ip1`, which still carried the RESULT of the
+    // first — and the before-pipeline short-circuits on a non-null ctx.result,
+    // so any hook after the first would have been skipped. That passed only
+    // while rateLimit happened to be the very first before hook.
+    const ip = (addr: string) => {
+      const c = testCtx('items', 'find')
+      c.client.ip = addr
+      return c
+    }
 
-    await callService(svc, ip1)
-    await callService(svc, ip2)   // different IP — allowed
-    await expect(callService(svc, ip1)).rejects.toBeInstanceOf(TooManyRequests)
+    await callService(svc, ip('1.2.3.4'))
+    await callService(svc, ip('5.6.7.8'))   // different IP — allowed
+    await expect(callService(svc, ip('1.2.3.4'))).rejects.toBeInstanceOf(TooManyRequests)
   })
 
   it('accepts a custom key function', async () => {
@@ -2914,12 +2924,16 @@ describe('rateLimit hook', () => {
       key: (ctx) => (ctx.data as Record<string, unknown>)?.org as string ?? 'default',
     })
 
-    const orgA = testCtx('items', 'find'); orgA.data = { org: 'acme' }
-    const orgB = testCtx('items', 'find'); orgB.data = { org: 'globex' }
+    // Fresh context per call — see the note in the IP test above.
+    const org = (name: string) => {
+      const c = testCtx('items', 'find')
+      c.data = { org: name }
+      return c
+    }
 
-    await callService(svc, orgA)
-    await callService(svc, orgB)   // different org — allowed
-    await expect(callService(svc, orgA)).rejects.toBeInstanceOf(TooManyRequests)
+    await callService(svc, org('acme'))
+    await callService(svc, org('globex'))   // different org — allowed
+    await expect(callService(svc, org('acme'))).rejects.toBeInstanceOf(TooManyRequests)
   })
 
   it('uses a custom error message', async () => {

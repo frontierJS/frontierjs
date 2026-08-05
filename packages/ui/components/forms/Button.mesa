@@ -1,0 +1,92 @@
+<script>
+  // Button.mesa
+  // Polymorphic button. `.btn` plus a tone and/or a treatment.
+  //
+  // ── Why `variant` splits in two ──────────────────────────────────────
+  //
+  // In @frontierjs/css a tone (primary, danger, …) and a treatment (outlined,
+  // ghost, link, raised) are different kinds of class and compose freely, so
+  // `outlined danger` is a red outline button with no third entry in a table.
+  // The old six-value `variant` conflated them — which is why `outline` and
+  // `danger` were mutually exclusive. Both still work as `variant` values,
+  // and `tone` + `variant` can now be given together.
+  //
+  // Sizes are a font-size: `.btn` is sized in em, so the padding scales.
+  //
+  // Icon-only:
+  //   <Button square aria-label="Delete"><IconTrash /></Button>
+  //
+  // Leading/trailing icons via snippets:
+  //   <Button>
+  //     {#snippet leading()}<IconPlus />{/snippet}
+  //     Add item
+  //   </Button>
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let tone     = ''
+  export let variant  = 'primary'  // tone name OR 'outlined'|'ghost'|'link'|'raised'
+  export let size     = 'md'       // 'xs' | 'sm' | 'md' | 'lg'
+  export let type     = 'button'
+  export let disabled = false
+  export let loading  = false
+  export let square   = false      // icon-only shape (was `icon`, renamed in css v0.10)
+  export let icon     = false      // legacy alias for `square`
+  export let href     = undefined  // renders as <a> when set
+  export let leading  = null       // snippet — icon before label
+  export let trailing = null       // snippet — icon after label
+  export let onclick  = undefined
+
+  const TREATMENTS = { outlined: 'outlined', outline: 'outlined', ghost: 'ghost', link: 'link', raised: 'raised' }
+
+  const treatment = TREATMENTS[variant] ?? ''
+  // A treatment name in `variant` leaves the tone to the `tone` prop;
+  // otherwise `variant` IS the tone, which is how it read before.
+  const t = toTone(tone) || (treatment ? '' : toTone(variant)) || (treatment ? '' : 'primary')
+
+  const sizeMap = { xs: '0.75rem', sm: '0.8125rem', md: '', lg: '1rem' }
+  const fontSize = sizeMap[size] ?? ''
+
+  const isSquare = square || icon
+
+  function handleClick(e) {
+    if (!loading) onclick?.(e)
+  }
+</script>
+
+{#if href && !disabled}
+  <!-- No role="button" on an <a>: it navigates, and telling a screen reader
+       otherwise breaks the user's expectation of where it will go. -->
+  <a
+    href={href}
+    class={cx('btn', t, treatment, isSquare && 'square', loading && 'loading')}
+    style:font-size={fontSize || null}
+    aria-busy={loading || null}
+    {class}
+    {...$attributes}
+  >
+    {#if leading}{@render leading?.()}{/if}
+    <slot />
+    {#if trailing}{@render trailing?.()}{/if}
+  </a>
+{:else}
+  <!--
+    `disabled` while loading, not just pointer-events — a pointer-events-only
+    guard still allows keyboard activation. aria-busy is what announces it;
+    .loading only draws the spinner.
+  -->
+  <button
+    type={type}
+    disabled={disabled || loading}
+    aria-busy={loading || null}
+    class={cx('btn', t, treatment, isSquare && 'square', loading && 'loading')}
+    style:font-size={fontSize || null}
+    {class}
+    {...$attributes}
+    on:click={handleClick}
+  >
+    {#if leading}{@render leading?.()}{/if}
+    <slot />
+    {#if trailing}{@render trailing?.()}{/if}
+  </button>
+{/if}

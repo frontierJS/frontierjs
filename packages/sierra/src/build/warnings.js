@@ -60,7 +60,11 @@ export function warnUnexportedSnippets(source, id, routesDir, emit) {
 
 /**
  * Extract all top-level {#snippet name()} names from Mesa source.
- * "Top-level" means not nested inside a block directive.
+ * "Top-level" means not nested inside a block directive AND not inside a
+ * component tag — a snippet written inside `<Table> … </Table>` is that
+ * component's `row` prop (Mesa VISION §9.5), not something the route meant to
+ * hand up to its layout. Counting only block directives reported every kit
+ * component's snippet as a mistake, on every build.
  *
  * @param {string} source
  * @returns {string[]}
@@ -71,9 +75,9 @@ function extractTopLevelSnippets(source) {
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
 
   const names = []
-  // Track nesting: count opening block directives vs closing {/...}
-  // Only collect snippets at depth 0 (truly top-level in the template)
-  const openRe  = /\{#(?:if|each|await|key)\b/g  // {#snippet handled separately by snippetRe
+  // Track nesting: count opening block directives and component tags against
+  // their closers. Only collect snippets at depth 0.
+  const openRe  = /\{#(?:if|each|await|key|snippet)\b/g
   const closeRe = /\{\/(?:if|each|await|key|snippet)\}/g
   const snippetRe = /\{#snippet\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g
 
@@ -93,8 +97,13 @@ function extractTopLevelSnippets(source) {
   while ((m = snippetRe.exec(withoutScripts)) !== null) {
     events.push({ type: 'snippet', pos: m.index, name: m[1] })
   }
+  events.push(...componentTagEvents(withoutScripts))
 
-  events.sort((a, b) => a.pos - b.pos)
+  // At the same position a `{#snippet name}` is BOTH the name event and an
+  // open: the name is read at the depth it was written at, and everything
+  // after it is one level deeper.
+  const rank = { snippet: 0, close: 1, open: 2 }
+  events.sort((a, b) => a.pos - b.pos || rank[a.type] - rank[b.type])
 
   let depth = 0
   for (const ev of events) {
@@ -104,6 +113,53 @@ function extractTopLevelSnippets(source) {
   }
 
   return names
+}
+
+/**
+ * Open/close events for component tags — `<Table …>` … `</Table>`.
+ *
+ * Attribute values are skipped by brace and quote depth rather than by
+ * scanning to the first `>`: an ordinary handler contains one.
+ * `onclick={() => run(id)}` ends a naive `[^>]*>` match in the middle of the
+ * arrow, and the tag is then read as unclosed.
+ *
+ * @param {string} src — template source, scripts already stripped
+ * @returns {{type: 'open'|'close', pos: number}[]}
+ */
+function componentTagEvents(src) {
+  const events = []
+
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] !== '<') continue
+
+    const close = /^<\/([A-Z][A-Za-z0-9_.]*)\s*>/.exec(src.slice(i))
+    if (close) {
+      events.push({ type: 'close', pos: i })
+      i += close[0].length - 1
+      continue
+    }
+
+    const open = /^<([A-Z][A-Za-z0-9_.]*)/.exec(src.slice(i))
+    if (!open) continue
+
+    let j = i + open[0].length
+    let braces = 0, quote = null, selfClosing = false
+    for (; j < src.length; j++) {
+      const c = src[j]
+      if (quote) { if (c === quote) quote = null; continue }
+      if (c === '"' || c === "'") { quote = c; continue }
+      if (c === '{') { braces++; continue }
+      if (c === '}') { braces = Math.max(0, braces - 1); continue }
+      if (braces > 0) continue
+      if (c === '/' && src[j + 1] === '>') { selfClosing = true; j++; break }
+      if (c === '>') break
+    }
+
+    if (!selfClosing) events.push({ type: 'open', pos: i })
+    i = j
+  }
+
+  return events
 }
 
 /**

@@ -1,0 +1,164 @@
+---
+title: Servers
+---
+<script>
+  import { session } from '../../session.js'
+  import { servers } from '../../resources/servers.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  $: session.workspaceId
+
+  let rows    = []
+  let error   = null
+  let loading = true
+
+  // Filters go to the SERVICE, not to a .filter() here: the list is paginated,
+  // so filtering the page in the browser would hide rows that are simply on
+  // page two and call it a result.
+  // NOT declared in a `$:` watch. A plain `let` is already component state —
+  // the compiler tracks every let and const it compiled (Mesa RULE 44), and a
+  // path watch is for imported objects. Listing one here compiles and then
+  // throws `$$watch_status is not a function` on mount.
+  let status = ''
+  let role   = ''
+  let search = ''
+
+  // Both lists come from the schema's enums, through the JSON Schema the build
+  // generated — adding a status in db/schema.lite adds it to this filter.
+  $: statuses = servers.fields?.status?.enum ?? []
+  $: roles    = servers.fields?.role?.enum   ?? []
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const query = {}
+      if (status) query.status = status
+      if (role)   query.role   = role
+      if (search) query.search = search
+      rows = (await servers.service.find(query, { limit: 100 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // Live. Every mutation on this service publishes to workspace:<id>, and so
+  // does the agent heartbeat — which is the interesting one: a machine
+  // checking in is not a person clicking, and this list should show it without
+  // anyone touching the page.
+  // The published event is named after the METHOD that produced it, so a
+  // heartbeat arrives as `servers heartbeat` and a drain as `servers drain` —
+  // not as `patched`. Listening for 'patched' alone hears CRUD and misses every
+  // custom method, which is most of what this service does.
+  //
+  // Reads are excluded, and that is not tidiness: this service publishes after
+  // EVERY method, `get` and `find` included.
+  const READS = new Set(['get', 'find', 'events'])
+
+  const off = servers.service.on('*', (method, row) => {
+    if (READS.has(method) || !row?.id) return
+    const i = rows.findIndex(r => r.id === row.id)
+    if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
+  })
+  $onDestroy(off)
+
+  // A tone per status, decided once. Only the states that are actually good or
+  // bad news get one — 'pending' and 'provisioning' are neither.
+  const TONE = {
+    online:      'success',
+    ready:       'success',
+    draining:    'warning',
+    unreachable: 'danger',
+    stopped:     'muted',
+    destroyed:   'muted',
+  }
+
+  const ago = (iso) => {
+    if (!iso) return 'never'
+    const mins = Math.round((Date.now() - new Date(iso)) / 60_000)
+    if (mins < 1)  return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    return `${Math.round(mins / 60)}h ago`
+  }
+</script>
+
+<div class="section-header">
+  <h1>Servers</h1>
+  <a class="btn primary" href="/servers/create/">Add server</a>
+</div>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<form class="cluster" on:submit|preventDefault={load}>
+  <label class="visually-hidden" for="filter-status">Status</label>
+  <!-- Reload on change rather than through a reactive effect on the local:
+       an effect's dependency list is for watchable paths, and these are locals. -->
+  <select class="field" id="filter-status" style="--field-inline-size: auto"
+          bind:value={status} on:change={load}>
+    <option value="">All statuses</option>
+    {#each statuses as value}
+      <option value={value}>{value}</option>
+    {/each}
+  </select>
+
+  <label class="visually-hidden" for="filter-role">Role</label>
+  <select class="field" id="filter-role" style="--field-inline-size: auto"
+          bind:value={role} on:change={load}>
+    <option value="">All roles</option>
+    {#each roles as value}
+      <option value={value}>{value}</option>
+    {/each}
+  </select>
+
+  <label class="visually-hidden" for="filter-search">Search</label>
+  <input class="field" id="filter-search" style="--field-inline-size: 12rem"
+         placeholder="name contains…" bind:value={search} />
+  <button class="btn outlined" type="submit">Search</button>
+</form>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <article class="alert info">
+    <div class="alert-content">
+      No servers match. Clear the filters, <a href="/servers/create/">add one</a>, or seed the example fleet with <code>bun run db:seed</code>.
+    </div>
+  </article>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped hover">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Status</th>
+          <th scope="col">Role</th>
+          <th scope="col">Region</th>
+          <th scope="col">Address</th>
+          <th scope="col">Last heartbeat</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="server-rows">
+        {#each rows as server}
+          <tr>
+            <td><a href={`/servers/${server.id}/`}>{server.name}</a></td>
+            <td><span class="pill {TONE[server.status] ?? ''}">{server.status}</span></td>
+            <td>{server.role}</td>
+            <td>{server.region}</td>
+            <td><code>{server.ipAddress ?? '—'}</code></td>
+            <td class="text-sm text-muted">{ago(server.lastHeartbeatAt)}</td>
+            <td><a class="btn ghost" href={`/servers/${server.id}/`}>Open</a></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

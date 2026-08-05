@@ -1,9 +1,226 @@
 # Changes — @frontierjs/sierra
 
-Applied during the 2026-07-25 performance/correctness pass. Baseline was the
-2026-07-25 archive. Requires the matching `@frontierjs/mesa` build (see its
-CHANGES.md — the async-declaration compiler fix is independent but was found via
-this app).
+## 2026-08-04 — compiler errors now fail the transform
+
+742 tests. `mesa-plugin` read `ctx.analysis.warnings` and never
+`ctx.analysis.errors`, so a component the compiler had rejected was served
+anyway. A settings screen with five `bind:` errors in it — every one correctly
+diagnosed as "must be a writable top-level `let`" — rendered, looked right, and
+silently collected nothing. The transform now throws with the list.
+
+
+## 2026-08-04 — the unexported-snippet warning fired on every kit component
+
+742 tests. `warnUnexportedSnippets` measured "top level" by counting block
+directives only, so a snippet written inside a component tag —
+
+```svelte
+<Table {rows}>{#snippet row(r)}<tr>…</tr>{/snippet}</Table>
+```
+
+— read as top level and warned on every build, advising an export that would
+have been wrong: that snippet is the component's `row` prop, not something the
+route hands up to its layout. Component tags now count as nesting.
+
+The tag scanner skips attribute expressions by brace and quote depth rather
+than scanning to the first `>`, because an ordinary handler contains one:
+`onclick={() => run(id)}` ends a `[^>]*>` match inside the arrow, and the tag
+is then read as never closed — which would have suppressed the warning for
+everything after it. Both cases are pinned in `tests/warnings.test.js`.
+
+## 2026-08-04 — resource.service.action(): custom actions over HTTP
+
+A resource could not call a custom service action at all. Junction has shipped
+the whole mechanism for a while — a non-CRUD function on a service definition is
+dispatched as `POST /{service}/{id}` with an `X-Service-Method` header, and the
+browser client has `action(name, id, data)` — and Sierra's service proxy simply
+never exposed it. `orders.service.action('pay', 3)` was a TypeError.
+
+Worse, the pipeline's `default` branch — which handles any method that is not
+CRUD — routed through `proxy.call()`, the *explicit WebSocket* escape hatch. That
+is WS-or-nothing by name, and with no socket it recursed inside Junction's client
+and never settled. The default branch now goes through `action()`, which applies
+the framework's transport rule: the socket when one is connected, HTTP when it is
+not. `call` stays on the proxy for callers that want to force the socket.
+
+(The corresponding Junction fixes — `action()` and `restore()` now prefer the
+socket, and the HTTP fallback no longer recurses — are in that package's
+changelog for the same date.)
+
+`action()` runs the full hook pipeline. Coercion, blank-stripping and validation
+are deliberately skipped: those are defined against the model's fields for
+create/patch payloads, and an action's body is whatever that action declares.
+
+Found the only way this kind of gap is found — by joining the two ends in a real
+app. `@@transitions` was declared in a schema, enforced at the Data boundary and
+reaching the browser as `x-transitions`, with nothing anywhere calling any of it.
+
+## 2026-08-04 — the browser says the sentence the schema declared
+
+740 tests (was 729).
+
+`buildFieldRules` carries `title` (Litestone's `@label`) and `x-messages` onto
+each rule, and `validateAgainstFields` consults the authored wording for the
+keyword that failed before falling back to its generated sentence. The fallback
+is built from a new exported `fieldLabel(name, rule)`:
+
+    @label   →  "Customer is required"
+    relation →  "customer is required"      ← a foreign key borrows its relation's
+                                              name with nothing authored at all
+    neither  →  "customerId is required"
+
+The middle case is the common one, and the one where the raw column under a
+form label reading "customer" looked most like a bug.
+
+`title` is read off the field's OWN schema rather than the deref'd target —
+Litestone titles every enum `$def` with the type name, so `status OrderStatus`
+was introducing itself as "OrderStatus". It has been removed from `_CARRIED`
+for that reason; two existing tests caught it.
+
+The error object still keys on the real field name, so a form can still find
+the control it belongs to.
+
+## 2026-08-04 — a relation key defaults to null, not 0
+
+729 tests (was 724). Reported from a form in `example/`: not picking a customer
+answered `500 FOREIGN KEY constraint failed` instead of "customer is required".
+
+`createMakeFromSchema`'s `typeDefaults` gave every `integer` a `0`, so
+`orders.make()` produced `customerId: 0`. That is not "no customer" — it is
+customer #0, a claim the user never made. It is also the one invented default
+nothing downstream can catch: a bad enum value fails validation with the
+field's name on it, but `0` is a perfectly good integer, so `coerce()` keeps
+it, `validateAgainstFields()` approves it, and the database is the first thing
+to object — from the server, after a round trip, as a 500.
+
+The function three lines above already made this argument for enums: *"picking
+the first member would invent a choice the user never made — so leave it unset
+for the form to fill."* A foreign key is the same case.
+
+`createMakeFromSchema` takes a fourth argument, the FK column names, and
+defaults them to null. It cannot be derived from `properties`: a belongsTo is
+emitted as a plain integer and `x-relations` is the only place the relation
+exists on the client, so `createResource` reads `x-relations[].fields` and
+passes them in.
+
+`string: ''` is deliberately unchanged. A required string left blank also
+fails, but it fails *informatively* — `@length(3,20)` names the field and the
+rule — and an empty text box is what the user actually sees. There is no such
+honest empty for a numeric key.
+
+Five tests in `tests/make-from-schema.test.js`, one of which pins the crux:
+`0` produces no validation error at all, `null` produces "customerId is
+required".
+
+Newest first.
+
+## 2026-08-04 — `resource.transitions(row, level)` — the button list, off the schema
+
+Litestone gained `@@transitions`: a state machine declared on the model and
+enforced at the Data boundary, with an optional `@gate(N)` per move. It reaches
+the browser as `x-transitions` on the model definition, and this is the client
+half.
+
+```js
+const orders = createResource('orders')
+
+orders.transitions(row, level)
+// → [{ name: 'ship',   field: 'status', from: 'paid', to: 'shipped',  gate: null, allowed: true  },
+//    { name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5,    allowed: false }]
+```
+
+The legal next states for that record, so a view renders exactly the right
+controls with no logic of its own. New in `src/junction/field-rules.js` —
+`buildTransitions(modelDef)` and `transitionsAt(spec, row, level)` — which stays
+a leaf module with no Junction-client import, so both are testable in plain Node
+against litestone's own output rather than a copy of it.
+
+Same contract as `canAtLevel()`, and for the same reasons:
+
+- **An affordance, never a boundary.** Litestone re-checks every move and throws
+  `TransitionViolationError` / `TransitionGateError` regardless of what the
+  client drew.
+- **Unknown answers are permissive** — no gate on a move, or no level supplied,
+  means `allowed: true`. A missing button is the quieter, worse failure.
+- **A gated move the caller can't make is returned with `allowed: false`, not
+  dropped.** Rendering it disabled is usually better than making it vanish;
+  filter on `allowed` if you disagree.
+
+A resource whose model declares no machine returns `[]` rather than pretending,
+matching how `fields` and `relations` already degrade.
+
+`tests/resource-transitions.test.js` builds its fixture by running litestone's
+parser and `generateJsonSchema` over a `.lite` source rather than hand-writing
+the defs, so drift between what litestone emits and what the client reads fails
+here instead of in an app. 724 tests green (was 707).
+
+## 2026-08-03 — probing `client:visible` in headless Chrome: a harness trap, not a product bug
+
+Recorded here because it reads exactly like a broken feature and cost a
+debugging cycle: a `client:visible` island that never mounts in a headless
+verification run, while mounting correctly in a real browser.
+
+**Headless Chrome delivers almost no rendering lifecycle after load.** Under
+`--virtual-time-budget` the page gets a frame or two around load and then
+effectively none, so an `IntersectionObserver` set up *after* that window never
+reports — the callback simply does not run, and the island stays inert.
+
+What does not help:
+
+- `--run-all-compositor-stages-before-draw` — no effect on this.
+- awaiting `requestAnimationFrame` — **hangs**; rAF stalls after one or two
+  frames.
+
+The working pattern is in `tests/fixtures/island-site/verify.mjs`: **scroll
+first**, before the observers matter, and do it inside a nested scroll container
+so the rest of the page stays where the other assertions need it.
+
+Applies to anything in this repo driving headless Chrome for verification,
+`@frontierjs/css`'s suite included.
+
+---
+
+## 2026-08-03 — nested islands: the ancestor's mount is authoritative
+
+A `client:*` component inside another one worked by accident and reported itself
+as broken. Mesa's `island()` short-circuits on the client, so a mounted island
+renders its nested children directly — live, in its own delegation root, before
+their directives fire. The loader raced that instead of deferring to it.
+
+Three fixes in `src/islands/loader.js`:
+
+- **A subsumed island resolves nothing.** The scheduled callback checks
+  `open.isConnected` before touching the registry, so a nested island neither
+  downloads a chunk nor reaches `mount()` with a detached anchor. That throw was
+  being caught and logged as `<Inner> failed to load or mount` — a working
+  island announced as broken on every page that nested one.
+- **Mounting clears the LIVE range**, not `island.nodes` from scan time. A
+  descendant that mounted first has already replaced its own markup, so removing
+  the captured list would strand its live nodes beside the ancestor's fresh
+  render — two copies, one of them dead.
+- **A descendant that got there first is disposed**, releasing its delegation
+  root instead of leaking it. (`mount().destroy()` does not dispose effects —
+  Mesa's mount owns no reactive root — so that limit is documented, not hidden.)
+
+`findIslands` now links each island to its `parent`, which is the client's only
+view of nesting: a marker records a component, not a position in a tree.
+`client:static` under a live ancestor warns — the parent renders its children,
+so "no JS" cannot be honoured — while a `client:static` *parent* never mounts and
+therefore does not subsume anything inside it.
+
+Requires the matching Mesa build: the fixture for this uncovered a
+double-dispatch bug in Mesa's event delegation (see its CHANGES.md).
+
+Test status: **707 passing, 34 files**, typecheck clean; the browser fixture is
+20 → 25 assertions and now builds a nested island end to end.
+
+---
+
+## 2026-07-25 — performance/correctness pass
+
+Baseline was the 2026-07-25 archive. Requires the matching `@frontierjs/mesa`
+build (see its CHANGES.md — the async-declaration compiler fix is independent
+but was found via this app).
 
 Test status: **505 passing, 25 files.**
 
@@ -680,6 +897,87 @@ loaded".
 to Litestone, rather than linking it into `sierra/node_modules`. Sierra's own
 tree must stay free of sibling packages or `frontier-resolution.test.js` stops
 testing anything — the contamination lesson from §10 applies here too.
+
+---
+
+## 16. `config/vite.config.js` — the conventional layout could never build
+
+*2026-08-03*
+
+`virtual:sierra` emits a literal `import sierraConfig from '<path>'`, and that path
+was derived by string-rewriting the resolved Vite config path:
+
+```js
+viteConfig.configFile?.replace(/vite\.config\.[jt]s$/, 'config/sierra.config.js')
+```
+
+That assumed `vite.config.js` sat at the Vite root. The FrontierJS layout puts
+configuration in a dedicated `config/` folder, so the normal case —
+`web/config/vite.config.js` beside `web/config/sierra.config.js` — derived
+`web/config/config/sierra.config.js`, and every build failed with `Module not
+found`. Reproduced against `example/` before the fix; it is a hard failure, not a
+warning. The escape hatch (`_configPath`) existed, but nothing that scaffolds an
+app set it — `fli project:new` writes exactly this layout and shipped broken.
+
+`resolveSierraConfigPath()` now **looks instead of assuming**: beside the Vite
+config, then `config/` beneath it, then `config/` under the Vite root, then the
+root — trying `.js`, `.mjs` and `.ts` at each. Both layouts work, `_configPath`
+still wins outright, and when nothing exists the fallback names the conventional
+location rather than a doubled path nobody wrote.
+
+`example/` now models the whole convention rather than describing it. It was flat —
+`index.html`, `config/`, `public/` and `src/` at the package root beside `api/` and
+`db/` — which read as if a Sierra app *were* the app. Those four moved under
+`web/`, and `vite.config.js` moved into `web/config/`, so the tree is
+`db/` + `api/` + `web/` with configuration in `config/`. The UI now finds the
+schema the way a real app does, through `../db/schema.lite`, instead of through
+the `db/schema.lite` branch that only worked because the tree was flat.
+
+Verified after the move, not assumed: `bun run build` emits the same bundle and
+post-build artifacts to `web/dist/client/`, the build resolves the schema at
+`../db/schema.lite`, `virtual:sierra` imports `/config/sierra.config.js` with no
+doubled segment, and a CDP pass signs in as admin, submits the generated form
+(new row reads `42` and a `null` slug) and deletes it — the API agreeing the row
+is gone — with 0 console errors.
+
+`tests/sierra-config-path.test.js` — 9 tests, including one asserting no resolution
+ever contains `config/config`.
+
+---
+
+## 17. The example's sign-in failed silently when the API was down
+
+*2026-08-03* — reported from a real run, not found by a test.
+
+Console showed two of these and nothing else:
+
+```
+[Sierra] unhandledrejection … reason: SyntaxError
+__x00__virtual:sierra:24
+SyntaxError: JSON.parse: unexpected end of data at line 1 column 1
+```
+
+`virtual:sierra:24` is the dev overlay's `unhandledrejection` listener — the
+reporter, not the cause, which is exactly why the trace was useless. The cause was
+`signIn()` in `example/web/src/routes/_module.mesa` doing `await res.json()` with
+no check on the response. `/login` is proxied to the API on :3500; with that
+process not running, Vite answers **502 with an empty body**, and parsing it threw
+inside a promise nobody awaited. Reproduced by stopping the API and clicking sign
+in.
+
+Now it checks `res.ok` first and shows `API not reachable on :3500 — run bun run
+api` in the header. Verified both ways: API down → the message, no console error,
+no rejection; API up → sign-in still returns level 5.
+
+Two notes from the fix itself, both worth knowing:
+
+- **`$:` is for fields of plain objects, not for locals.** Adding the new `let` to
+  the `$:` tuple compiled cleanly and threw `$runtime.get(...) is not a function`
+  on mount (Mesa RULE 43).
+- **A dev-overlay report names the listener, not the throw.** When a
+  `PromiseRejectionEvent` points at `virtual:sierra`, look at the exception's own
+  stack — Chrome gives the real frame (`_module.mesa:39`), the overlay line never
+  will.
 
 ---
 

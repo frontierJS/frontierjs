@@ -1,6 +1,12 @@
 // Node loader hook: intercepts .md imports and compiles them into ESM modules.
-// CLI path uses only string parsing — no Svelte/mdsvex at runtime.
-// compileSvelte() is available for the Web GUI layer when needed.
+// String parsing only — no template compiler at runtime, in either the CLI or
+// the Web GUI. A command file is markdown with a <script> block and ```js
+// bodies, and that is all this reads.
+//
+// NOTE: a command's <script> block runs from its open tag to the LAST closing tag
+// in the file, so a command may freely EMIT script tags — every scaffold that
+// writes a .mesa Resource does. It follows that a command has exactly one script
+// block; a second one would be swallowed into the first.
 
 import { pathToFileURL } from 'url'
 
@@ -69,20 +75,6 @@ export async function run(context) {
   ${mainBody}
   return context
 }${sourceURL}`.trimStart()
-}
-
-// ─── Svelte compiler — Web GUI path only, not used by CLI ─────────────────────
-
-export async function compileSvelte(template) {
-  const { compile: mdcompile } = await import('mdsvex')
-  const { compile: sveltecompile } = await import('svelte/compiler')
-  const { code: svelteCode } = await mdcompile(template, {})
-  const result = sveltecompile(svelteCode, {
-    name: 'FliCommand',
-    modernAst: true,
-    generate: 'server'
-  })
-  return result.js.code
 }
 
 // ─── Frontmatter parser ───────────────────────────────────────────────────────
@@ -181,17 +173,66 @@ function coerceYamlValue(val) {
 
 // ─── Script block helpers ─────────────────────────────────────────────────────
 
-// Extract content inside the first <script>...</script>
-function extractScriptBlock(template) {
-  const body = template.replace(/^---[\s\S]*?---\s*/, '')
-  const match = body.match(/<script[^>]*>([\s\S]*?)<\/script>/)
-  return match ? match[1].trim() : ''
+// Find the <script> block: first open tag to the LAST close tag.
+//
+// This used to be a non-greedy /<script[^>]*>([\s\S]*?)<\/script>/, which stopped
+// at the first close tag anywhere in the block. Every command that GENERATES a
+// file containing a script tag — each scaffold that writes a .mesa Resource — had
+// its script cut off mid-template-literal, and the remainder was handed to
+// transformMarkdown as prose. The result was syntactically broken JavaScript;
+// `make:model`, `make:resource` and nine others shipped in that state.
+//
+// Greedy rather than tag-depth-matched, because the tags are not balanced and
+// cannot be: `make/model.md` mentions `<script module>` inside a comment, which no
+// counter can tell from a real one. A command has exactly one script block, so
+// "first open to last close" is both what a reader sees and what parses.
+//
+// The open tag must START a line. A command that only MENTIONS a script tag
+// mid-sentence — `project/view.md` explains that it "injects a <script> tag" in
+// a comment — is talking about one, not opening one. Without the anchor that
+// mention matched, and since nothing closed it the no-close fallback below ate
+// the rest of the file: `project:view` built its map and exited without ever
+// starting the server, silently.
+//
+// Returns { start, end, inner }, or null when there is no script block.
+function matchScriptBlock(body, from = 0) {
+  const openRe = /^[ \t]*<script[^>]*>/gm
+  openRe.lastIndex = from
+  const open = openRe.exec(body)
+  if (!open) return null
+
+  const contentStart = open.index + open[0].length
+  const closeRe = /<\/script\s*>/g
+  closeRe.lastIndex = contentStart
+
+  let last = null
+  let m
+  while ((m = closeRe.exec(body))) last = m
+
+  // No close tag at all — take everything after the open rather than losing it.
+  if (!last) return { start: open.index, end: body.length, inner: body.slice(contentStart) }
+
+  return { start: open.index, end: last.index + last[0].length, inner: body.slice(contentStart, last.index) }
 }
 
-// Remove all <script>...</script> blocks from template so transformMarkdown
-// never sees their contents (avoids indented lines leaking into run() body)
+function extractScriptBlock(template) {
+  const body  = template.replace(/^---[\s\S]*?---\s*/, '')
+  const block = matchScriptBlock(body)
+  return block ? block.inner.trim() : ''
+}
+
+// Remove the <script>...</script> block from template so transformMarkdown
+// never sees its contents (avoids indented lines leaking into run() body).
+//
+// Exactly ONE block, the same one extractScriptBlock takes — first open to last
+// close. A command has one script block by construction (see matchScriptBlock),
+// so any later open tag is a command EMITTING a script tag: a scaffold writing a
+// .mesa Resource inside a ```js body. Looping here stripped that emitted tag and
+// everything after it, so the command's own code vanished from run().
 function stripScriptBlocks(template) {
-  return template.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')
+  const block = matchScriptBlock(template)
+  if (!block) return template
+  return template.slice(0, block.start) + template.slice(block.end)
 }
 
 // ─── transformMarkdown ────────────────────────────────────────────────────────

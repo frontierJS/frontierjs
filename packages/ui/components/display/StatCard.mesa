@@ -1,0 +1,89 @@
+<script>
+  // StatCard.mesa
+  // Metric tile — a Stat inside a `.tile`, the compact metric unit dashboards
+  // are built from. Put several inside a `.tiles` grid and the column count
+  // responds to the container with no media query and no number to pick.
+  //
+  // Usage:
+  //   <div class="tiles">
+  //     <StatCard label="MRR" value="$12,400" sub="+8% MoM" trend="up" />
+  //     <StatCard label="Churn rate" value="2.4%" tone="danger" trend="down" />
+  //   </div>
+  //
+  //   <StatCard label="Open tickets" value={42} href="/tickets" />
+
+  import Stat from './Stat.mesa'
+
+  // Stat props
+  export let label = ''
+  export let value = ''
+  export let sub   = ''
+  export let trend = ''
+  export let tone  = ''
+  export let color = ''    // legacy alias for `tone`
+
+  // Tile props
+  export let loading = false
+  export let href    = ''         // makes the whole tile a link — preferred
+  export let onclick = undefined  // fallback for non-navigation actions
+  export let icon    = null       // snippet — rendered top-right
+</script>
+
+{#snippet body()}
+  {#if icon}
+    <div class="fjs-tile-icon text-muted" aria-hidden="true">{@render icon?.()}</div>
+  {/if}
+  {#if loading}
+    <div class="stack" style:gap="0.5rem" aria-busy="true">
+      <div class="skeleton text" style:inline-size="6rem"></div>
+      <div class="skeleton" style:inline-size="8rem" style:block-size="1.75rem"></div>
+      <div class="skeleton text" style:inline-size="5rem"></div>
+    </div>
+  {:else}
+    <Stat {label} {value} {sub} {trend} {tone} {color} />
+  {/if}
+{/snippet}
+
+{#if href}
+  <!--
+    A link, not a div with role="button". The old markup was a div with
+    role="button" and a keydown handler — which loses middle-click, open-in-
+    new-tab, and the status bar, all of which an <a> gets for free.
+  -->
+  <a class="tile fjs-tile-link" href={href} {class}>
+    {@render body()}
+  </a>
+{:else if onclick}
+  <!-- A real <button> when the action is not navigation: Enter and Space
+       are then the platform's job, not a hand-rolled keydown handler. -->
+  <button type="button" class="tile fjs-tile-link" {class} on:click={onclick}>
+    {@render body()}
+  </button>
+{:else}
+  <article class="tile" {class}>
+    {@render body()}
+  </article>
+{/if}
+
+<style>
+  .fjs-tile-link {
+    position:        relative;
+    display:         block;
+    inline-size:     100%;
+    text-align:      start;
+    text-decoration: none;
+    color:           inherit;
+    font:            inherit;
+    cursor:          pointer;
+    transition:      box-shadow 150ms, border-color 150ms;
+  }
+  .fjs-tile-link:hover {
+    box-shadow:   var(--shadow-md);
+    border-color: var(--rule-strong);
+  }
+  .fjs-tile-icon {
+    position:         absolute;
+    inset-block-start:  1rem;
+    inset-inline-end:   1rem;
+  }
+</style>

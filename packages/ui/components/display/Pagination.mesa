@@ -1,0 +1,113 @@
+<script>
+  // Pagination.mesa
+  // Page controls for tables and lists. Shows a sliding window of pages
+  // with ellipsis compression. Bindable currentPage.
+  //
+  // `.pagination` is the nav, `.page` is each control (it is in the chip
+  // lineage, so it gets the same auto-contrast as a button), and `.page-gap`
+  // is the ellipsis. Current page comes from aria-current="page".
+  //
+  // Usage:
+  //   <Pagination bind:page={currentPage} total={450} perPage={25} />
+  //
+  //   <Pagination
+  //     page={currentPage}
+  //     total={totalRows}
+  //     perPage={pageSize}
+  //     onchange={(p) => loadPage(p)}
+  //   />
+  //
+  //   <Pagination compact bind:page total={200} perPage={20} />
+
+  export let page     = 1        // bindable — current page (1-indexed)
+  export let total    = 0        // total item count
+  export let perPage  = 25       // items per page
+  export let window   = 5        // max visible page buttons (odd works best)
+  export let compact  = false    // prev/next only with "Page X of Y"
+  export let showInfo = true     // "Showing X–Y of Z"
+  export let onchange = undefined // (page: number) => void
+
+  const pageCount = Math.max(1, Math.ceil(total / perPage))
+
+  const rangeStart = Math.min((page - 1) * perPage + 1, total)
+  const rangeEnd   = Math.min(page * perPage, total)
+
+  // Visible window — numbers plus '...' markers
+  const pages = (() => {
+    if (pageCount <= window) return Array.from({ length: pageCount }, (_, i) => i + 1)
+
+    const half  = Math.floor(window / 2)
+    let start   = Math.max(1, page - half)
+    let end     = Math.min(pageCount, start + window - 1)
+
+    if (end === pageCount) start = Math.max(1, end - window + 1)
+
+    const result = []
+    if (start > 1)       { result.push(1); if (start > 2) result.push('...') }
+    for (let i = start; i <= end; i++) result.push(i)
+    if (end < pageCount) { if (end < pageCount - 1) result.push('...'); result.push(pageCount) }
+    return result
+  })()
+
+  function goTo(p) {
+    if (p < 1 || p > pageCount || p === page) return
+    page = p
+    onchange?.(p)
+  }
+</script>
+
+<div class="split" style:flex-wrap="wrap" {class}>
+  {#if showInfo && total > 0}
+    <p class="text-sm text-muted" style:margin="0">
+      Showing {rangeStart}–{rangeEnd} of {total}
+    </p>
+  {:else}
+    <div></div>
+  {/if}
+
+  <nav class="pagination" aria-label="Pagination">
+    <!-- Previous -->
+    <button
+      type="button"
+      class="page"
+      disabled={page <= 1}
+      aria-label="Previous page"
+      on:click={() => goTo(page - 1)}
+    >
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd"/>
+      </svg>
+    </button>
+
+    {#if compact}
+      <span class="text-sm text-muted">Page {page} of {pageCount}</span>
+    {:else}
+      {#each pages as p (p + '-' + page)}
+        {#if p === '...'}
+          <span class="page-gap" aria-hidden="true">…</span>
+        {:else}
+          <button
+            type="button"
+            class="page"
+            aria-label="Page {p}"
+            aria-current={p === page ? 'page' : null}
+            on:click={() => goTo(p)}
+          >{p}</button>
+        {/if}
+      {/each}
+    {/if}
+
+    <!-- Next -->
+    <button
+      type="button"
+      class="page"
+      disabled={page >= pageCount}
+      aria-label="Next page"
+      on:click={() => goTo(page + 1)}
+    >
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/>
+      </svg>
+    </button>
+  </nav>
+</div>

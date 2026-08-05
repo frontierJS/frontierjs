@@ -1,0 +1,35 @@
+<script>
+  export let text     = ''
+  export let color    = '#38993a'
+  export let bgcolor  = undefined
+  export let size     = 20
+  export let weight   = 800
+  export let padding  = '10px 16px'
+</script>
+
+<!--
+  Heading — a styled header row, typically at the top of a Card or Section.
+
+  <Heading text="Order Summary" />
+  <Heading color="#ee380d" size={24}>Custom heading content</Heading>
+-->
+
+<tr>
+  <td
+    colspan="2"
+    style="
+      font-family:Helvetica,Arial,sans-serif;
+      font-size:{size}px;
+      font-weight:{weight};
+      color:{color};
+      padding:{padding};
+      line-height:1.2;
+      {bgcolor ? `background-color:${bgcolor};` : ''}
+    ">
+    {#if $slots.default}
+      <slot />
+    {:else}
+      {text}
+    {/if}
+  </td>
+</tr>

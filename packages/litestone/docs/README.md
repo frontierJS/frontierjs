@@ -47,6 +47,14 @@
 - [roadmap.md](roadmap.md) — what's coming: Money, Embedding, LatLng, @slug, ExternalSync
 - [gotchas.md](gotchas.md) — production surprises and edge cases
 
+## Audits
+
+Point-in-time reviews. Read them for the reasoning; re-verify before citing a number
+— see [VERIFYING.md](../../../VERIFYING.md).
+
+- [PERFORMANCE_AUDIT.md](PERFORMANCE_AUDIT.md) — query and write-path performance review
+- [STUDIO_REVIEW.md](STUDIO_REVIEW.md) — Studio UI review
+
 ## Guides
 
 Task-oriented walkthroughs for real scenarios:

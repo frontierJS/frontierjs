@@ -1,0 +1,862 @@
+<!doctype html>
+<html lang="en" class="theme-default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FrontierJS — hero explorations, round two</title>
+<meta name="description" content="Nine candidate above-the-fold treatments across three anchor families: the analogy stack, the complete framework, and the assembled stack.">
+
+<!-- Local path so this file renders straight from the repo.
+     Deploy rewrites this to ./css/index.css — see README.md. -->
+<link rel="stylesheet" href="../packages/css/src/index.css">
+
+<!--
+  ══════════════════════════════════════════════════════════════════════════
+  index3.html — NINE HERO CANDIDATES, three per anchor family. Round two of
+  index2.html, which narrowed to five. Not a page to ship as-is.
+
+  The move that survived review: anchor to something the reader already
+  knows, then name the delta. Round two extends it in one direction —
+  a hero does not have to borrow ONE analogy. FrontierJS spans realms, so
+  it can borrow a different well-known thing PER REALM and let the reader
+  assemble the picture:
+
+      "Data like Prisma and ZenStack. API like Feathers with Laravel's
+       batteries. UI like Svelte. — but they were designed as one thing."
+
+  Families:
+    A · The analogy stack   — borrow per realm; the wiring is the new part
+    B · The complete framework — Laravel/Rails, but it crosses the boundary
+    C · The assembled stack — your own package.json, integrated
+
+  ── HONESTY NOTES, read before publishing ──
+  · Every analogy below is to a SHAPE, not a claim of parity. FJS is alpha
+    and these are mature products. The Alpha badge stays on every hero.
+  · Analogies used, and why each is defensible:
+      Prisma      — schema DSL + migrations + typed client (litestone)
+      ZenStack    — access policies declared IN the schema (@@allow/@@gate)
+      Feathers    — service + hook pipeline + channels + result envelope
+      Laravel     — the batteries: queue, cron, mail, cache, webhooks, CLI
+      Svelte      — compiler + signals, single-file components (.mesa)
+      SvelteKit   — file-tree routing (sierra)
+      TanStack Q. — client-side resource binding (createResource)
+      Astro       — static prerender with islands (sierra static target)
+      Sidekiq/Bull— job queue + cron (caravan), on SQLite, no Redis
+      MJML        — table-based email components (email-kit says so itself)
+      Plasmo/WXT  — browser-extension container (jetty)
+      Pico/Bulma  — semantic classes, no build step (@frontierjs/css)
+    Do not add an analogy without being able to name the shared shape.
+  · Package facts from CLAUDE.md (2026-08-03) — re-verify per VERIFYING.md.
+  · README.md publication gate still applies: most packages are unpublished.
+  ══════════════════════════════════════════════════════════════════════════
+-->
+
+<style>
+  /* Page-specific layout only. Everything visual comes from @frontierjs/css tokens. */
+  html { scroll-behavior: smooth; }
+  body { background: var(--surface); color: var(--ink); }
+  .container { max-width: 74rem; margin-inline: auto; padding-inline: 1.25rem; }
+
+  /* ── review scaffolding ────────────────────────────────────────────── */
+  .familybar { background: var(--ink); color: var(--surface); padding: 1.5rem 0; }
+  .familybar .container { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+  .familybar .fam { font-size: 1.1rem; font-weight: 700; letter-spacing: -.01em; }
+  .familybar .sub { opacity: .72; font-size: .88rem; }
+
+  .marker { border-top: 1px solid var(--rule); background: var(--surface-sunken); padding: .8rem 0; font-size: .8rem; color: var(--ink-mute); }
+  .marker .container { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+  .marker .tag { font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--color-primary); font-size: .72rem; }
+  .marker .argues { color: var(--ink-soft); }
+  .marker .risk { margin-left: auto; }
+
+  /* ── hero frame ────────────────────────────────────────────────────── */
+  .heroblock { min-height: 86vh; display: flex; align-items: center; padding: 4rem 0; scroll-margin-top: 3.5rem; }
+
+  .anchor { display: inline-flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; font-size: .78rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  .anchor b { color: var(--ink-soft); font-weight: 600; }
+
+  h1 { font-size: clamp(2rem, 5vw, 3.25rem); line-height: 1.05; letter-spacing: -.03em; margin: .4em 0 .35em; max-width: 22ch; }
+  h1 .but { color: var(--color-primary); }
+  h1 .quiet { color: var(--ink-mute); }
+  h3 { font-size: .95rem; margin: 0 0 .5rem; }
+  .lede { font-size: 1.06rem; color: var(--ink-soft); max-width: 56ch; line-height: 1.6; }
+
+  pre {
+    background: var(--surface-sunken); border: 1px solid var(--rule); border-radius: 10px;
+    padding: .95rem 1.1rem; overflow-x: auto; margin: 0;
+    font-size: .76rem; line-height: 1.6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre b  { color: var(--color-primary); font-weight: 600; }
+  pre i  { color: var(--ink-mute); font-style: normal; }
+  pre em { color: var(--color-success); font-style: normal; }
+
+  .split2 { display: grid; gap: 2.5rem; grid-template-columns: minmax(0,1fr); align-items: center; }
+  @media (min-width: 62rem) { .split2 { grid-template-columns: 1fr 1fr; } }
+  .split2.wide-left { grid-template-columns: minmax(0,1fr); }
+  @media (min-width: 62rem) { .split2.wide-left { grid-template-columns: 1.15fr .85fr; } }
+
+  /* Untoned .btn.outlined paints --color-primary on --surface — below AA in
+     two shipped themes. Take the neutral ink, as .btn.ghost already does. */
+  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+
+  /* ── A1: the analogy stack ─────────────────────────────────────────── */
+  .stackrows { display: grid; gap: 0; }
+  .srow { display: grid; grid-template-columns: 5.5rem 1fr; gap: 1rem; padding: .72rem 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+  .srow:last-child { border-bottom: 0; }
+  .srow .realm { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
+  .srow .like { font-size: 1rem; }
+  .srow .like b { font-weight: 600; }
+  .srow .twist { display: block; font-size: .83rem; color: var(--ink-mute); margin-top: .12rem; }
+  .srow .twist code { font-size: .78rem; }
+
+  /* ── A2: family tree ───────────────────────────────────────────────── */
+  .parents { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .parent { border: 1px solid var(--rule-strong); border-radius: 999px; padding: .3rem .8rem; font-size: .86rem; background: var(--surface-raised); }
+  .parent small { color: var(--ink-mute); font-size: .74rem; }
+  .descend { text-align: center; color: var(--rule-strong); font-size: 1.4rem; line-height: 1; margin: .9rem 0; }
+  .child { border: 1px solid var(--color-primary); border-radius: 12px; padding: 1rem 1.15rem; background: var(--surface-raised); }
+  .child .name { font-weight: 700; font-size: 1.15rem; letter-spacing: -.02em; }
+  .child .name span { color: var(--color-primary); }
+
+  /* ── shared: keep/lose ─────────────────────────────────────────────── */
+  .kl { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; font-size: .89rem; }
+  .kl li { display: flex; gap: .6rem; align-items: flex-start; }
+  .kl li::before { flex: none; font-weight: 700; }
+  .keep li::before { content: "✓"; color: var(--color-success); }
+  .lose li::before { content: "✕"; color: var(--ink-mute); }
+  .lose li { color: var(--ink-mute); }
+
+  /* ── B: mapping table ──────────────────────────────────────────────── */
+  .maprows { display: grid; gap: 0; font-size: .86rem; }
+  .maprow { display: grid; grid-template-columns: 1fr auto 1fr; gap: .7rem; align-items: baseline; padding: .38rem 0; border-bottom: 1px dotted var(--rule); }
+  .maprow:last-child { border-bottom: 0; }
+  .maprow .from { color: var(--ink-mute); }
+  .maprow .to { font-family: ui-monospace, Menlo, monospace; font-size: .8rem; }
+  .maprow .arrow { color: var(--rule-strong); }
+  .maprow.none { padding: .5rem 0; }
+  .maprow.none .from { color: var(--ink-soft); }
+  .maprow.none .to { color: var(--color-primary); font-family: inherit; font-size: .86rem; font-weight: 600; }
+  .maprow.head { border-bottom: 1px solid var(--rule-strong); padding-bottom: .3rem; }
+  .maprow.head span { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
+
+  /* ── B2: two sides of the boundary ─────────────────────────────────── */
+  .sides { display: grid; gap: 0; border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+  @media (min-width: 46rem) { .sides { grid-template-columns: 1fr 1fr; } }
+  .side { padding: 1.05rem 1.15rem; background: var(--surface-raised); }
+  .side + .side { border-top: 1px solid var(--rule); }
+  @media (min-width: 46rem) { .side + .side { border-top: 0; border-left: 1px solid var(--rule); } }
+  .side h3 { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
+  .side ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .38rem; font-size: .85rem; }
+  .side code { font-size: .78rem; }
+  .boundary { text-align: center; font-size: .74rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); padding: .7rem 0; }
+
+  /* ── C: diffs and vocabularies ─────────────────────────────────────── */
+  .diff { display: grid; gap: 1rem; grid-template-columns: minmax(0,1fr); }
+  @media (min-width: 52rem) { .diff { grid-template-columns: 1fr 1fr; } }
+  .diff h3 { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-mute); }
+
+  .vocab { display: grid; gap: .55rem; }
+  .vrow { border: 1px solid var(--rule); border-radius: 10px; padding: .7rem .9rem; background: var(--surface-raised); }
+  .vrow .q { font-size: .82rem; color: var(--ink-mute); margin: 0 0 .4rem; }
+  .vrow .spellings { display: flex; flex-wrap: wrap; gap: .3rem; font-family: ui-monospace, Menlo, monospace; font-size: .76rem; }
+  .vrow .spellings span { border: 1px solid var(--rule); border-radius: 6px; padding: .15rem .45rem; color: var(--ink-mute); background: var(--surface); }
+  .vrow.one { border-color: var(--color-primary); }
+  .vrow.one .spellings span { color: var(--ink); border-color: var(--rule-strong); }
+
+  .thrice { display: grid; gap: .6rem; }
+  .thrice .where { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); margin: 0 0 .25rem; }
+
+  /* ── nav ───────────────────────────────────────────────────────────── */
+  .topbar { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+  .topbar .container { display: flex; align-items: center; gap: 1rem; padding: .6rem 1.25rem; }
+  .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; font-size: .95rem; }
+  .brand span { color: var(--color-primary); }
+  .brand small { display: block; font-weight: 400; font-size: .72rem; color: var(--ink-mute); letter-spacing: 0; }
+  .navset { display: flex; gap: .15rem; flex-wrap: wrap; align-items: baseline; }
+  .navset a { padding: .28rem .5rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .8rem; }
+  .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .navset .sep { color: var(--rule-strong); padding: 0 .2rem; font-size: .8rem; }
+  .swatches { display: flex; gap: .3rem; }
+  .swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 3.5rem; color: var(--ink-mute); font-size: .875rem; }
+</style>
+</head>
+<body>
+
+<a href="#a1" class="visually-hidden">Skip to content</a>
+
+<header class="topbar">
+  <div class="container">
+    <div class="brand">Frontier<span>JS</span><small>hero explorations · round two</small></div>
+    <nav class="navset">
+      <a href="#a1">A1</a><a href="#a2">A2</a><a href="#a3">A3</a>
+      <span class="sep">·</span>
+      <a href="#b1">B1</a><a href="#b2">B2</a><a href="#b3">B3</a>
+      <span class="sep">·</span>
+      <a href="#c1">C1</a><a href="#c2">C2</a><a href="#c3">C3</a>
+      <span class="sep">·</span>
+      <a href="index2.html">round one</a>
+      <a href="index.html">current</a>
+    </nav>
+    <div class="swatches" role="group" aria-label="Theme">
+      <button class="swatch" data-theme="default"  title="Default"  style="background:#0d83dd"></button>
+      <button class="swatch" data-theme="sunset"   title="Sunset"   style="background:#e07a3f"></button>
+      <button class="swatch" data-theme="forest"   title="Forest"   style="background:#2f7d4f"></button>
+      <button class="swatch" data-theme="midnight" title="Midnight" style="background:#3b4a6b"></button>
+      <button class="swatch" data-theme="dark"     title="Dark"     style="background:#1c1b18"></button>
+      <button class="swatch" data-theme="elite"    title="Elite"    style="background:#8b6f2e"></button>
+    </div>
+  </div>
+</header>
+
+
+<!-- ╔═══ FAMILY A ══════════════════════════════════════════════════════╗
+     One analogy per realm. The reader knows every part already, so the
+     only new thing to learn is the wiring — which is also the product.
+     ╚═══════════════════════════════════════════════════════════════════╝ -->
+<div class="familybar">
+  <div class="container">
+    <span class="fam">Family A · The analogy stack</span>
+    <span class="sub">Borrow a known name per realm. The connection is the new part.</span>
+  </div>
+</div>
+
+<!-- ─── A1 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">A1</span>
+    <span class="argues">The straight version — a row per realm, each anchored, each with its twist.</span>
+    <span class="risk">Densest but most informative. Risk: eight rows is a lot for a first screen.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="a1">
+  <div class="container">
+    <div class="split2 wide-left">
+      <div>
+        <p class="anchor">A fullstack framework · alpha</p>
+        <h1>You already know every part. <span class="but">The wiring is the new part.</span></h1>
+        <p class="lede">
+          Nothing here asks you to learn a new paradigm. Each realm is shaped like
+          something you have already used — and all of them read the same
+          <code>db/schema.lite</code>, so a field you add shows up in the migration,
+          the API's validation and the browser's form rules without being written
+          three times.
+        </p>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#code">See the code</a>
+          <span class="badge warning" title="Working, but APIs may still move">Alpha</span>
+        </div>
+      </div>
+
+      <div class="stackrows">
+        <div class="srow">
+          <span class="realm">Data</span>
+          <span class="like">Like <b>Prisma</b> and <b>ZenStack</b> had a baby
+            <span class="twist">Schema DSL, migrations, typed client — with the access rules
+            declared in the model, on a SQLite file you own</span></span>
+        </div>
+        <div class="srow">
+          <span class="realm">API</span>
+          <span class="like">Like <b>Feathers</b>, with <b>Laravel's</b> batteries
+            <span class="twist">Services and a four-phase hook pipeline; queue, cron, mail,
+            cache, webhooks — and the CRUD derived rather than written</span></span>
+        </div>
+        <div class="srow">
+          <span class="realm">UI</span>
+          <span class="like">Like <b>Svelte</b> + <b>SvelteKit</b> + <b>TanStack Query</b>
+            <span class="twist">A compiler and signals, file-tree routing, resource binding —
+            except the resource already knows the field rules and the permissions</span></span>
+        </div>
+        <div class="srow">
+          <span class="realm">Static</span>
+          <span class="like">Like <b>Astro</b>
+            <span class="twist">Prerendered HTML, islands hydrated on visible, idle or media —
+            from the same components as the app</span></span>
+        </div>
+        <div class="srow">
+          <span class="realm">Jobs</span>
+          <span class="like">Like <b>Sidekiq</b> or <b>BullMQ</b>
+            <span class="twist">Queue and cron as <code>app.jobs</code> — on SQLite, so no Redis
+            to run, back up or pay for</span></span>
+        </div>
+        <div class="srow">
+          <span class="realm">Email</span>
+          <span class="like">Like <b>MJML</b>
+            <span class="twist">Table-based components that survive Outlook, with a real
+            plain-text alternative — written in the same language as your pages</span></span>
+        </div>
+        <div class="srow">
+          <span class="realm">Style</span>
+          <span class="like">Like <b>Pico</b> or <b>Bulma</b>
+            <span class="twist">Semantic classes and six themes, no build step, no utility
+            soup — this page is it</span></span>
+        </div>
+        <div class="srow">
+          <span class="realm">Tooling</span>
+          <span class="like">Like <b>Artisan</b> or <b>rails</b>
+            <span class="twist">One CLI from <code>new</code> to <code>deploy</code>, plus a
+            language server for the schema</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── A2 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">A2</span>
+    <span class="argues">Same idea, playful register — a family tree with named parents.</span>
+    <span class="risk">Most shareable, most quotable. Risk: cute can read as unserious.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="a2" style="background:var(--surface-sunken)">
+  <div class="container">
+    <div class="split2">
+      <div>
+        <p class="anchor">Closest thing · <b>several things at once</b></p>
+        <h1>What if they'd all been <span class="but">designed together?</span></h1>
+        <p class="lede">
+          Every part of this stack has a well-known relative. The difference is that
+          they share a parent instead of a package registry: one schema, one hook
+          pipeline, one error boundary, one CLI. You are not integrating six good
+          libraries. You are using one thing that already agrees with itself.
+        </p>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#packages">The whole map</a>
+          <span class="badge warning">Alpha</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="parents">
+          <span class="parent">Prisma <small>· schema</small></span>
+          <span class="parent">ZenStack <small>· policies</small></span>
+          <span class="parent">SQLite <small>· one file</small></span>
+          <span class="parent">Feathers <small>· services + hooks</small></span>
+          <span class="parent">Laravel <small>· batteries</small></span>
+          <span class="parent">Svelte <small>· compiler</small></span>
+          <span class="parent">SvelteKit <small>· routing</small></span>
+          <span class="parent">TanStack <small>· data binding</small></span>
+          <span class="parent">Astro <small>· islands</small></span>
+          <span class="parent">Sidekiq <small>· jobs</small></span>
+          <span class="parent">MJML <small>· email</small></span>
+          <span class="parent">Artisan <small>· CLI</small></span>
+        </div>
+
+        <p class="descend">↓</p>
+
+        <div class="child">
+          <p class="name">Frontier<span>JS</span></p>
+          <p class="text-sm text-muted" style="margin:.35rem 0 .8rem">
+            One schema seeds all of it. Three realms, one vocabulary, fourteen packages
+            that were written to fit.
+          </p>
+          <ul class="kl keep">
+            <li>Write the schema — the API and its rules are derived from it</li>
+            <li>Write a six-line service when the derived one isn't enough</li>
+            <li>Bind the UI to the same schema, rules and permissions included</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── A3 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">A3</span>
+    <span class="argues">Round one's BaaS hero, corrected — the frontend half was missing.</span>
+    <span class="risk">Widest audience. Risk: “BaaS” sets an expectation of a dashboard.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="a3">
+  <div class="container">
+    <div class="split2">
+      <div>
+        <p class="anchor">Closest thing · <b>Supabase, Firebase, PocketBase</b></p>
+        <h1>A backend that derives itself. <span class="quiet">And the frontend that knows it.</span></h1>
+        <p class="lede">
+          A hosted platform gives you the first half: declare your data, get endpoints,
+          auth, realtime and types. Then it hands you a client SDK and the browser
+          starts again from zero — you re-type the validation, re-decide who may see
+          the edit button, and hope the two halves stay in agreement.
+        </p>
+        <p class="lede" style="margin-top:1rem">
+          Here both halves come from the same file. And there is no platform: it is a
+          package in your <code>node_modules</code>, MIT, over a SQLite file you own.
+        </p>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#code">See the code</a>
+          <span class="badge warning">Alpha</span>
+        </div>
+      </div>
+
+      <div style="display:grid; gap:1rem">
+        <div class="card stack">
+          <h3>The half you'd get anywhere</h3>
+          <ul class="kl keep">
+            <li>Schema → REST API, no handler written</li>
+            <li>Validation and <code>400</code>s from the field rules</li>
+            <li>Row permissions compiled into every query</li>
+            <li>Realtime on mutation, migrations, types</li>
+          </ul>
+        </div>
+        <div class="card stack">
+          <h3>The half that usually stops at the SDK</h3>
+          <ul class="kl keep">
+            <li><code>resource.fields</code> — the same rules, client-side</li>
+            <li><code>resource.can()</code> — the model's own permissions, for hiding a button</li>
+            <li><code>make()</code> — a form the schema describes</li>
+            <li>Components that also render to static HTML, email and an extension</li>
+          </ul>
+        </div>
+        <p class="text-sm text-muted" style="margin:0">
+          Client-side permissions are an affordance, never a boundary — the server
+          enforces regardless. That is the point of them living in one place.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ╔═══ FAMILY B ══════════════════════════════════════════════════════╗
+     The complete-framework audience. Everything here turns on one fact:
+     the completeness does not stop at the network boundary.
+     ╚═══════════════════════════════════════════════════════════════════╝ -->
+<div class="familybar">
+  <div class="container">
+    <span class="fam">Family B · The complete framework</span>
+    <span class="sub">Laravel / Rails / Django — but it crosses the boundary they stop at.</span>
+  </div>
+</div>
+
+<!-- ─── B1 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">B1</span>
+    <span class="argues">The concept map, extended — every row familiar until the last two.</span>
+    <span class="risk">Instantly legible to a Laravel dev. Risk: says nothing to anyone else.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="b1" style="background:var(--surface-sunken)">
+  <div class="container">
+    <div class="split2">
+      <div>
+        <p class="anchor">Closest thing · <b>Laravel, Rails, Django</b></p>
+        <h1>That kind of complete. <span class="but">In TypeScript. Past the boundary.</span></h1>
+        <p class="lede">
+          A queue, a scheduler, mail, notifications, policies, migrations, generators,
+          one CLI — the things that make a framework feel finished rather than started.
+          The difference is where they stop. In all three the model layer ends at the
+          network boundary, and the browser starts again from nothing.
+        </p>
+        <p class="lede" style="margin-top:1rem">
+          Here the schema keeps going: the form knows the field rules and the button
+          knows the permission, because both read the file the migration came from.
+        </p>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#packages">The packages</a>
+          <span class="badge warning">Alpha</span>
+        </div>
+      </div>
+
+      <div class="card stack">
+        <div class="maprows">
+          <div class="maprow head"><span>You know</span><span></span><span>Here</span></div>
+          <div class="maprow"><span class="from">Artisan · rails</span><span class="arrow">→</span><span class="to">fli</span></div>
+          <div class="maprow"><span class="from">Eloquent · ActiveRecord</span><span class="arrow">→</span><span class="to">litestone</span></div>
+          <div class="maprow"><span class="from">Migrations</span><span class="arrow">→</span><span class="to">diffed from schema.lite</span></div>
+          <div class="maprow"><span class="from">Policies · Pundit</span><span class="arrow">→</span><span class="to">@@gate · @@allow</span></div>
+          <div class="maprow"><span class="from">Form requests · validation</span><span class="arrow">→</span><span class="to">derived from the fields</span></div>
+          <div class="maprow"><span class="from">Resource controllers</span><span class="arrow">→</span><span class="to">createService({ model })</span></div>
+          <div class="maprow"><span class="from">Middleware</span><span class="arrow">→</span><span class="to">hooks · around/before/after/error</span></div>
+          <div class="maprow"><span class="from">Queues · Scheduler</span><span class="arrow">→</span><span class="to">app.jobs</span></div>
+          <div class="maprow"><span class="from">Mail · Notifications</span><span class="arrow">→</span><span class="to">app.notify</span></div>
+          <div class="maprow"><span class="from">Broadcasting</span><span class="arrow">→</span><span class="to">app.channel</span></div>
+          <div class="maprow"><span class="from">Blade · ERB · Jinja</span><span class="arrow">→</span><span class="to">.mesa</span></div>
+          <div class="maprow"><span class="from">Inertia · Hotwire</span><span class="arrow">→</span><span class="to">sierra</span></div>
+          <div class="maprow none"><span class="from"><em>no equivalent</em> — the validation rules, in the browser</span><span class="arrow">→</span><span class="to">resource.fields</span></div>
+          <div class="maprow none"><span class="from"><em>no equivalent</em> — the model's permissions, in the browser</span><span class="arrow">→</span><span class="to">resource.can()</span></div>
+        </div>
+        <p class="text-sm text-muted" style="margin-top:.5rem">
+          Everything above the line you can already get. The two below it are the argument.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── B2 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">B2</span>
+    <span class="argues">The same claim without naming anyone — the boundary itself is the visual.</span>
+    <span class="risk">Works on a reader with no Laravel background. Risk: less immediate hook.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="b2">
+  <div class="container">
+    <div class="split2">
+      <div>
+        <p class="anchor">Where every other framework stops</p>
+        <h1>Full-stack usually means <span class="quiet">two stacks and a fetch.</span></h1>
+        <p class="lede">
+          The server has a model, validation, policies, a hook pipeline. The browser
+          has none of it, so it gets a second implementation of the same three facts —
+          in a different language, kept in agreement by hand, and discovered to be
+          wrong by a user.
+        </p>
+        <p class="lede" style="margin-top:1rem">
+          FrontierJS puts the same four concepts on both sides of the wire, and the
+          same schema under both.
+        </p>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#extend">The four concepts</a>
+          <span class="badge warning">Alpha</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="sides">
+          <div class="side">
+            <h3>API realm · server</h3>
+            <ul>
+              <li><code>createService({ model })</code></li>
+              <li>hooks — <code>around before after error</code></li>
+              <li>validation from the field rules</li>
+              <li><code>@@gate</code> · <code>@@allow</code>, compiled into SQL</li>
+              <li>the result envelope</li>
+            </ul>
+          </div>
+          <div class="side">
+            <h3>UI realm · browser</h3>
+            <ul>
+              <li><code>createResource('leads')</code></li>
+              <li>hooks — <code>around before after error</code></li>
+              <li><code>resource.fields</code> · <code>resource.validate()</code></li>
+              <li><code>resource.can()</code> — affordance, not boundary</li>
+              <li>the same envelope, unwrapped</li>
+            </ul>
+          </div>
+        </div>
+        <p class="boundary">↑ one schema under both ↑</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── B3 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">B3</span>
+    <span class="argues">Convention over configuration, extended to the whole app layout.</span>
+    <span class="risk">Strong for the Rails crowd. Risk: layout is table stakes, not a differentiator.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="b3" style="background:var(--surface-sunken)">
+  <div class="container">
+    <div class="split2">
+      <div>
+        <p class="anchor">Closest thing · <b>Rails' conventions</b></p>
+        <h1>Convention over configuration. <span class="but">Including the browser.</span></h1>
+        <p class="lede">
+          One layout for the whole application: a directory per realm, the schema above
+          all of them, and the same six folders inside each. You do not decide where
+          config goes, where tests go, or how the frontend finds the API — and because
+          the convention is shared, a generator can write into all three at once.
+        </p>
+        <ul class="kl keep" style="margin-top:1.5rem">
+          <li><code>fli make:resource lead</code> writes the service <em>and</em> the route</li>
+          <li><code>model Lead</code> → service <code>leads</code> → <code>db.lead</code>, checked in three places</li>
+          <li><code>fli project:map</code> prints what exists and what derives from what</li>
+        </ul>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#code">See the code</a>
+          <span class="badge warning">Alpha</span>
+        </div>
+      </div>
+
+      <div>
+        <pre>my-app/
+├── <b>db/</b>              <i>the seed — one schema, above both consumers</i>
+│   └── schema.lite
+├── <b>api/</b>             <i>API realm</i>
+│   ├── config/  src/  public/
+│   └── test/    dist/ deploy/
+└── <b>web/</b>             <i>UI realm</i>
+    ├── config/  src/  public/
+    └── test/    dist/ deploy/
+
+<i># the same six folders in every sub-project,</i>
+<i># so nothing has to be looked up twice</i></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ╔═══ FAMILY C ══════════════════════════════════════════════════════╗
+     The reader's own package.json. Three framings of the same integration
+     tax: dependency count, vocabulary collision, and rule duplication.
+     ╚═══════════════════════════════════════════════════════════════════╝ -->
+<div class="familybar">
+  <div class="container">
+    <span class="fam">Family C · The assembled stack</span>
+    <span class="sub">Your own package.json — the pain is supplied by the reader.</span>
+  </div>
+</div>
+
+<!-- ─── C1 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">C1</span>
+    <span class="argues">The dependency diff — fourteen good libraries that never met.</span>
+    <span class="risk">Most concrete. Risk: “fewer deps” is a weak claim; the copy must fix that.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="c1">
+  <div class="container">
+    <div class="split2">
+      <div>
+        <p class="anchor">Closest thing · <b>the stack you already assembled</b></p>
+        <h1>The same stack. <span class="but">Designed together.</span></h1>
+        <p class="lede">
+          Nothing on the left is a bad choice. They are all good — they just never met.
+          Each brings a config file, an error shape, a notion of a user and its own idea
+          of what your data looks like, and holding them in agreement is the job that
+          never appears on a ticket.
+        </p>
+        <ul class="kl keep" style="margin-top:1.5rem">
+          <li>One schema — the ORM, the API validation and the form rules read one file</li>
+          <li>One hook pipeline — the same four phases in both realms</li>
+          <li>One error boundary — every package's errors become a status the same way</li>
+          <li>One CLI — scaffold, migrate, run, build, deploy</li>
+        </ul>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#idea">Why it works this way</a>
+          <span class="badge warning">Alpha</span>
+        </div>
+      </div>
+
+      <div class="diff">
+        <div>
+          <h3>Today</h3>
+          <pre><i>// package.json</i>
+<em>"prisma"</em>,          <i>// data</i>
+<em>"zod"</em>,             <i>// validation, again</i>
+<em>"casl"</em>,            <i>// authorization, again</i>
+<em>"next-auth"</em>,       <i>// identity</i>
+<em>"express"</em>,         <i>// transport</i>
+<em>"socket.io"</em>,       <i>// realtime</i>
+<em>"bullmq"</em>,          <i>// jobs</i>
+<em>"node-cron"</em>,       <i>// schedule</i>
+<em>"nodemailer"</em>,      <i>// mail</i>
+<em>"react-email"</em>,     <i>// mail, again</i>
+<em>"swagger-jsdoc"</em>,   <i>// the API, described again</i>
+<em>"react"</em>,           <i>// ui</i>
+<em>"react-hook-form"</em>, <i>// the fields, again</i>
+<em>"tailwindcss"</em>      <i>// style</i>
+
+<i>// + the glue between all fourteen</i></pre>
+        </div>
+        <div>
+          <h3>Instead</h3>
+          <pre><i>// package.json</i>
+<em>"@frontierjs/litestone"</em>, <i>// Data</i>
+<em>"@frontierjs/junction"</em>,  <i>// API</i>
+<em>"@frontierjs/sierra"</em>,    <i>// UI</i>
+<em>"@frontierjs/css"</em>        <i>// style</i>
+
+<i>// batteries, when you want them</i>
+<em>"@frontierjs/auth"</em>
+<em>"@frontierjs/caravan"</em>    <i>// jobs + cron</i>
+<em>"@frontierjs/notifications"</em>
+
+<i>// the glue is the framework</i></pre>
+          <p class="text-sm text-muted" style="margin-top:.75rem">
+            Fewer dependencies is not the point. <strong>One vocabulary</strong> is the
+            point — the count is just what that looks like from outside.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── C2 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">C2</span>
+    <span class="argues">The tax restated as vocabulary — the same fact spelled four ways.</span>
+    <span class="risk">The truest description of the pain. Risk: needs a reader who's felt it.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="c2" style="background:var(--surface-sunken)">
+  <div class="container">
+    <div class="split2">
+      <div>
+        <p class="anchor">Closest thing · <b>every stack you've integrated</b></p>
+        <h1>Four libraries. <span class="quiet">Four words for the same thing.</span></h1>
+        <p class="lede">
+          Integration cost is not the install. It is that each library names the same
+          fact differently, so you spend your afternoons translating — and every
+          translation is a place the two can disagree without anything failing loudly.
+        </p>
+        <p class="lede" style="margin-top:1rem">
+          One vocabulary is not a style preference. It is the difference between one
+          fact and four copies of it.
+        </p>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#extend">The vocabulary</a>
+          <span class="badge warning">Alpha</span>
+        </div>
+      </div>
+
+      <div class="vocab">
+        <div class="vrow">
+          <p class="q">Who is asking?</p>
+          <div class="spellings"><span>req.user</span><span>ctx.auth</span><span>session.user</span><span>auth()</span></div>
+        </div>
+        <div class="vrow">
+          <p class="q">What does this record look like?</p>
+          <div class="spellings"><span>schema.prisma</span><span>z.object()</span><span>openapi.yaml</span><span>useForm rules</span></div>
+        </div>
+        <div class="vrow">
+          <p class="q">Who may read it?</p>
+          <div class="spellings"><span>RLS policy</span><span>middleware</span><span>ability rules</span><span>hidden button</span></div>
+        </div>
+        <div class="vrow">
+          <p class="q">What went wrong?</p>
+          <div class="spellings"><span>PrismaError</span><span>ZodError</span><span>HttpException</span><span>{ error: true }</span></div>
+        </div>
+
+        <p class="descend" style="margin:.3rem 0">↓</p>
+
+        <div class="vrow one">
+          <p class="q" style="color:var(--ink)">All four, once</p>
+          <div class="spellings">
+            <span>auth()</span><span>model Lead</span><span>@@allow</span><span>toFrameworkError()</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── C3 ─────────────────────────────────────────────────────────────── -->
+<div class="marker">
+  <div class="container">
+    <span class="tag">C3</span>
+    <span class="argues">One business rule, written three times — then once. The sharpest of the three.</span>
+    <span class="risk">Strongest single argument on the page. Risk: it is a detail, not a category.</span>
+  </div>
+</div>
+
+<section class="heroblock" id="c3">
+  <div class="container">
+    <div class="split2">
+      <div>
+        <p class="anchor">Closest thing · <b>how you do it today</b></p>
+        <h1>One rule. <span class="quiet">Three places.</span> <span class="but">Until one of them forgets.</span></h1>
+        <p class="lede">
+          “Only the owner can read a lead” is one sentence, and most stacks make you say
+          it in three languages: once in the database, once in the handler, once in the
+          component that hides the row. Three chances to be right, and no error when
+          they stop matching.
+        </p>
+        <p class="lede" style="margin-top:1rem">
+          Declare it on the Model and it compiles into every query, under every caller —
+          including the ones written after you left.
+        </p>
+        <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+          <a class="btn primary raised" href="index.html#start">Get started</a>
+          <a class="btn outlined" href="index.html#idea">How it compiles</a>
+          <span class="badge warning">Alpha</span>
+        </div>
+      </div>
+
+      <div class="thrice">
+        <div>
+          <p class="where">Today · database</p>
+          <pre><b>CREATE POLICY</b> lead_owner <b>ON</b> leads
+  <b>FOR SELECT USING</b> (owner_id = current_setting(<em>'app.user'</em>)::int);</pre>
+        </div>
+        <div>
+          <p class="where">Today · API</p>
+          <pre>router.get(<em>'/leads'</em>, requireAuth, <b>async</b> (req, res) =&gt; {
+  <b>const</b> rows = <b>await</b> db.lead.findMany({
+    <b>where</b>: { ownerId: req.user.id },   <i>// don't forget this</i>
+  })
+})</pre>
+        </div>
+        <div>
+          <p class="where">Today · UI</p>
+          <pre>{lead.ownerId === session.user.id &amp;&amp; (
+  &lt;EditButton /&gt;   <i>// a third opinion, in a third language</i>
+)}</pre>
+        </div>
+        <div>
+          <p class="where" style="color:var(--color-primary)">Here · once, on the Model</p>
+          <pre><b>model</b> Lead {
+  <em>@@allow</em>(<em>'read'</em>, ownerId == auth().id)
+}
+
+<i>// the query is filtered, the API returns 403,</i>
+<i>// and resource.can('read', lead) knows in the browser</i></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<footer>
+  <div class="container split">
+    <span>Nine candidates across three anchor families. Not a page to ship as-is.</span>
+    <span>Styled entirely by <code>@frontierjs/css</code>. <a href="index2.html">Round one →</a> · <a href="index.html">Current home page →</a></span>
+  </div>
+</footer>
+
+<script>
+  // Theme switcher — swaps the .theme-* class the design system reads.
+  const root = document.documentElement
+  const saved = localStorage.getItem('fjs-theme')
+  if (saved) root.className = 'theme-' + saved
+
+  for (const b of document.querySelectorAll('.swatch')) {
+    b.addEventListener('click', () => {
+      root.className = 'theme-' + b.dataset.theme
+      localStorage.setItem('fjs-theme', b.dataset.theme)
+    })
+  }
+</script>
+
+</body>
+</html>

@@ -8,5 +8,5 @@
   // types worth enforcing.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "checkJs": false },
-  "include": ["*.js", "src/**/*.js"]
+  "include": ["*.js", "src/**/*.js", "test/**/*.js", "test/**/*.mjs", "example/**/*.js"]
 }

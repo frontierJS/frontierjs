@@ -1,0 +1,2084 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$defs": {
+    "User": {
+      "type": "object",
+      "title": "User",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "default": false
+        },
+        "role": {
+          "type": "string",
+          "default": "user"
+        },
+        "accountId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/UserKind",
+          "default": "human"
+        },
+        "status": {
+          "type": "string",
+          "default": "pending_verification"
+        },
+        "username": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scopes": {
+          "default": "[]"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "email"
+      ],
+      "x-relations": [
+        {
+          "field": "account",
+          "model": "Account",
+          "type": "belongsTo",
+          "fields": [
+            "accountId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": true
+        },
+        {
+          "field": "memberships",
+          "model": "WorkspaceMember",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "deployments",
+          "model": "Deployment",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Credential": {
+      "type": "object",
+      "title": "Credential",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokenExpiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "type"
+      ],
+      "x-relations": [
+        {
+          "field": "user",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "userId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Session": {
+      "type": "object",
+      "title": "Session",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ipAddress": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "userAgent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "expiresAt"
+      ],
+      "x-relations": [
+        {
+          "field": "user",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "userId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Verification": {
+      "type": "object",
+      "title": "Verification",
+      "properties": {
+        "identifier": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "identifier",
+        "expiresAt"
+      ]
+    },
+    "Account": {
+      "type": "object",
+      "title": "Account",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/AccountType",
+          "default": "organization"
+        },
+        "status": {
+          "type": "string",
+          "default": "pending_verification"
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "slug",
+        "displayName"
+      ],
+      "x-relations": [
+        {
+          "field": "users",
+          "model": "User",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "workspaces",
+          "model": "Workspace",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Workspace": {
+      "type": "object",
+      "title": "Workspace",
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "type": {
+          "$ref": "#/$defs/WorkspaceType",
+          "default": "team"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "settings": {
+          "default": "{}"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "name",
+        "slug",
+        "ownerId"
+      ],
+      "x-relations": [
+        {
+          "field": "account",
+          "model": "Account",
+          "type": "belongsTo",
+          "fields": [
+            "accountId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "members",
+          "model": "WorkspaceMember",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "projects",
+          "model": "Project",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "servers",
+          "model": "Server",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "secrets",
+          "model": "Secret",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "jobs",
+          "model": "Job",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "alertRules",
+          "model": "AlertRule",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "auditEvents",
+          "model": "AuditEvent",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "WorkspaceMember": {
+      "type": "object",
+      "title": "WorkspaceMember",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/WorkspaceRole",
+          "default": "viewer"
+        },
+        "invitedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "invitedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acceptedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "userId"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "user",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "userId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Secret": {
+      "type": "object",
+      "title": "Secret",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "kind": {
+          "$ref": "#/$defs/SecretKind",
+          "default": "generic"
+        },
+        "data": {
+          "type": "string",
+          "default": "{}"
+        },
+        "isVerified": {
+          "type": "boolean",
+          "default": false
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Server": {
+      "type": "object",
+      "title": "Server",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ServerStatus",
+          "default": "pending"
+        },
+        "role": {
+          "$ref": "#/$defs/ServerRole",
+          "default": "general"
+        },
+        "providerKind": {
+          "type": "string",
+          "default": "custom"
+        },
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "providerServerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "registerMethod": {
+          "type": "string",
+          "default": "imported"
+        },
+        "region": {
+          "type": "string",
+          "default": "custom"
+        },
+        "ipAddress": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ipv6Address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sshPort": {
+          "type": "integer",
+          "default": 22
+        },
+        "sshUser": {
+          "type": "string",
+          "default": "root"
+        },
+        "sshKeyId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastHeartbeatAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan": {
+          "default": "{}"
+        },
+        "actualSpecs": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "health": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dockerState": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "labels": {
+          "default": "{}"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name",
+        "slug"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "events",
+          "model": "ServerEvent",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "appServers",
+          "model": "AppServer",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "serverNetworks",
+          "model": "ServerNetwork",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "ServerEvent": {
+      "type": "object",
+      "title": "ServerEvent",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "metadata": {
+          "default": "{}"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId",
+        "kind",
+        "message"
+      ],
+      "x-relations": [
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Network": {
+      "type": "object",
+      "title": "Network",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "default": "mesh"
+        },
+        "cidr": {
+          "type": "string",
+          "default": "10.0.0.0/16"
+        },
+        "provider": {
+          "type": "string",
+          "default": "netbird"
+        },
+        "config": {
+          "default": "{}"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name",
+        "slug"
+      ],
+      "x-relations": [
+        {
+          "field": "appNetworks",
+          "model": "AppNetwork",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "serverNetworks",
+          "model": "ServerNetwork",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "ServerNetwork": {
+      "type": "object",
+      "title": "ServerNetwork",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "networkId": {
+          "type": "string"
+        },
+        "ipAddress": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId",
+        "networkId"
+      ],
+      "x-relations": [
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "network",
+          "model": "Network",
+          "type": "belongsTo",
+          "fields": [
+            "networkId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Project": {
+      "type": "object",
+      "title": "Project",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "default": "active"
+        },
+        "tags": {
+          "default": "[]"
+        },
+        "metadata": {
+          "default": "{}"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name",
+        "slug"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "environments",
+          "model": "Environment",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Environment": {
+      "type": "object",
+      "title": "Environment",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "tier": {
+          "$ref": "#/$defs/EnvironmentTier",
+          "default": "development"
+        },
+        "isProtected": {
+          "type": "boolean",
+          "default": false
+        },
+        "variables": {
+          "default": "[]"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "workspaceId",
+        "name",
+        "slug"
+      ],
+      "x-relations": [
+        {
+          "field": "project",
+          "model": "Project",
+          "type": "belongsTo",
+          "fields": [
+            "projectId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "apps",
+          "model": "App",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "deployments",
+          "model": "Deployment",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "jobs",
+          "model": "Job",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "App": {
+      "type": "object",
+      "title": "App",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "environmentId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "type": {
+          "$ref": "#/$defs/AppType",
+          "default": "container"
+        },
+        "status": {
+          "$ref": "#/$defs/AppStatus",
+          "default": "unknown"
+        },
+        "source": {
+          "default": "{}"
+        },
+        "config": {
+          "default": "{}"
+        },
+        "domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "isPublic": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "environmentId",
+        "name",
+        "slug"
+      ],
+      "x-relations": [
+        {
+          "field": "environment",
+          "model": "Environment",
+          "type": "belongsTo",
+          "fields": [
+            "environmentId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "deployments",
+          "model": "Deployment",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "jobs",
+          "model": "Job",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "appServers",
+          "model": "AppServer",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "appNetworks",
+          "model": "AppNetwork",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "AppServer": {
+      "type": "object",
+      "title": "AppServer",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "serverId": {
+          "type": "string"
+        },
+        "replicaIndex": {
+          "type": "integer",
+          "default": 0
+        },
+        "status": {
+          "type": "string",
+          "default": "unknown"
+        },
+        "containerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "assignedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stoppedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "serverId"
+      ],
+      "x-relations": [
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "AppNetwork": {
+      "type": "object",
+      "title": "AppNetwork",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "networkId": {
+          "type": "string"
+        },
+        "ipAddress": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dnsName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "networkId"
+      ],
+      "x-relations": [
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "network",
+          "model": "Network",
+          "type": "belongsTo",
+          "fields": [
+            "networkId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Deployment": {
+      "type": "object",
+      "title": "Deployment",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "environmentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/DeployStatus",
+          "default": "pending"
+        },
+        "trigger": {
+          "type": "string",
+          "default": "manual"
+        },
+        "fromImage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "toImage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commitSha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commitMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "builtImage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "previousDeploymentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "configSnapshot": {
+          "default": "{}"
+        },
+        "triggeredBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "queuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "workspaceId"
+      ],
+      "x-relations": [
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "environment",
+          "model": "Environment",
+          "type": "belongsTo",
+          "fields": [
+            "environmentId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": true
+        },
+        {
+          "field": "triggeredByUser",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "triggeredBy"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": true
+        },
+        {
+          "field": "steps",
+          "model": "DeploymentStep",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "DeploymentStep": {
+      "type": "object",
+      "title": "DeploymentStep",
+      "properties": {
+        "deploymentId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/StepStatus",
+          "default": "pending"
+        },
+        "output": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "deploymentId",
+        "name"
+      ],
+      "x-relations": [
+        {
+          "field": "deployment",
+          "model": "Deployment",
+          "type": "belongsTo",
+          "fields": [
+            "deploymentId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Job": {
+      "type": "object",
+      "title": "Job",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "appId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "environmentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "kind": {
+          "$ref": "#/$defs/JobKind",
+          "default": "one_shot"
+        },
+        "status": {
+          "$ref": "#/$defs/JobStatus",
+          "default": "pending"
+        },
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cronExpression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nextRunAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "string",
+          "default": "manual"
+        },
+        "triggerConfig": {
+          "default": "{}"
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "default": 300
+        },
+        "retryLimit": {
+          "type": "integer",
+          "default": 3
+        },
+        "retryCount": {
+          "type": "integer",
+          "default": 0
+        },
+        "lastRunAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastRunStatus": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": true
+        },
+        {
+          "field": "environment",
+          "model": "Environment",
+          "type": "belongsTo",
+          "fields": [
+            "environmentId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": true
+        },
+        {
+          "field": "runs",
+          "model": "JobRun",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "JobRun": {
+      "type": "object",
+      "title": "JobRun",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/JobRunStatus",
+          "default": "pending"
+        },
+        "trigger": {
+          "type": "string",
+          "default": "manual"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "exitCode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output": {
+          "default": "{}"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "jobId"
+      ],
+      "x-relations": [
+        {
+          "field": "job",
+          "model": "Job",
+          "type": "belongsTo",
+          "fields": [
+            "jobId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "AlertRule": {
+      "type": "object",
+      "title": "AlertRule",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "default": "medium"
+        },
+        "metricName": {
+          "type": "string"
+        },
+        "condition": {
+          "default": "{}"
+        },
+        "channels": {
+          "default": "[]"
+        },
+        "isActive": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name",
+        "metricName"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "events",
+          "model": "AlertEvent",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "AlertEvent": {
+      "type": "object",
+      "title": "AlertEvent",
+      "properties": {
+        "ruleId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "default": "firing"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "valueAtTrigger": {
+          "type": "number",
+          "default": 0
+        },
+        "message": {
+          "type": "string"
+        },
+        "firedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolvedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ruleId",
+        "severity",
+        "subjectType",
+        "subjectId",
+        "message"
+      ],
+      "x-relations": [
+        {
+          "field": "rule",
+          "model": "AlertRule",
+          "type": "belongsTo",
+          "fields": [
+            "ruleId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "AuditEvent": {
+      "type": "object",
+      "title": "AuditEvent",
+      "properties": {
+        "workspaceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actorId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actorType": {
+          "type": "string",
+          "default": "user"
+        },
+        "action": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "diff": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "subjectType",
+        "subjectId"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": true
+        }
+      ]
+    },
+    "AccountType": {
+      "type": "string",
+      "enum": [
+        "individual",
+        "organization"
+      ],
+      "title": "AccountType"
+    },
+    "WorkspaceType": {
+      "type": "string",
+      "enum": [
+        "personal",
+        "team",
+        "enterprise"
+      ],
+      "title": "WorkspaceType"
+    },
+    "WorkspaceRole": {
+      "type": "string",
+      "enum": [
+        "viewer",
+        "billing",
+        "developer",
+        "admin",
+        "owner"
+      ],
+      "title": "WorkspaceRole"
+    },
+    "UserKind": {
+      "type": "string",
+      "enum": [
+        "human",
+        "bot",
+        "ai"
+      ],
+      "title": "UserKind"
+    },
+    "SecretKind": {
+      "type": "string",
+      "enum": [
+        "ssh_key",
+        "provider_key",
+        "registry_auth",
+        "tls_cert",
+        "generic"
+      ],
+      "title": "SecretKind"
+    },
+    "ServerStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "provisioning",
+        "installing",
+        "ready",
+        "online",
+        "unreachable",
+        "draining",
+        "stopped",
+        "destroyed"
+      ],
+      "title": "ServerStatus"
+    },
+    "ServerRole": {
+      "type": "string",
+      "enum": [
+        "general",
+        "build",
+        "database",
+        "gateway",
+        "worker"
+      ],
+      "title": "ServerRole"
+    },
+    "EnvironmentTier": {
+      "type": "string",
+      "enum": [
+        "development",
+        "test",
+        "preview",
+        "staging",
+        "production"
+      ],
+      "title": "EnvironmentTier"
+    },
+    "AppType": {
+      "type": "string",
+      "enum": [
+        "container",
+        "worker",
+        "database",
+        "daemon",
+        "cron",
+        "static",
+        "function"
+      ],
+      "title": "AppType"
+    },
+    "AppStatus": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "stopped",
+        "starting",
+        "running",
+        "stopping",
+        "deploying",
+        "error"
+      ],
+      "title": "AppStatus"
+    },
+    "DeployStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "building",
+        "pushing",
+        "deploying",
+        "success",
+        "failed",
+        "cancelled",
+        "rolled_back"
+      ],
+      "title": "DeployStatus"
+    },
+    "StepStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "success",
+        "failed",
+        "skipped"
+      ],
+      "title": "StepStatus"
+    },
+    "JobKind": {
+      "type": "string",
+      "enum": [
+        "one_shot",
+        "scheduled",
+        "triggered",
+        "workflow"
+      ],
+      "title": "JobKind"
+    },
+    "JobStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "failed",
+        "cancelled"
+      ],
+      "title": "JobStatus"
+    },
+    "JobRunStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "success",
+        "failed",
+        "timeout"
+      ],
+      "title": "JobRunStatus"
+    }
+  }
+}

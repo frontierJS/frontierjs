@@ -1,0 +1,92 @@
+<script>
+  // AlertProvider.mesa
+  // Global floating alert driven by alertStore.js. Mount once near the root.
+  //
+  // The same `.alert` as Alert.mesa, plus `raised`, portaled and pinned to the
+  // top centre. One tone class colours it; there is no second palette for the
+  // floating variant.
+  //
+  // Usage:
+  //   <!-- App.mesa -->
+  //   <AlertProvider />
+  //
+  //   <!-- Anywhere else -->
+  //   import { alert } from '@frontierjs/ui/stores/alertStore'
+  //   alert.success('Changes saved!')
+  //   alert.error('Something went wrong.', 0)  // 0 = persistent
+
+  import { alert } from '../../stores/alertStore.js'
+  import { tone as toTone, cx } from '../../utils.js'
+
+  // Watch alertStore. An imported object is inert in Mesa — a read in the
+  // template compiles to a static value unless a `$:` watch covers it. All
+  // three fields the template reads need one; `message` was missing, so a
+  // second alert.show() while one was already visible swapped the tone and
+  // left the previous text on screen.
+  $: alert.visible
+  $: alert.type
+  $: alert.message
+
+  const iconMap = {
+    info:    'M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z',
+    success: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    warning: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z',
+    danger:  'M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z',
+  }
+
+  // The tone and the icon are NOT computed here — alert.type changes after
+  // init, so they are resolved in the template via {@const} and re-evaluate
+  // each time the {#if alert.visible} block re-renders.
+
+  const anim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'translateY(-0.75rem) scale(0.97)' },
+       { opacity: 1, transform: 'translateY(0) scale(1)' }],
+      { duration: 200, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.97)' }],
+      { duration: 150, fill: 'forwards' }
+    ).finished,
+  })
+</script>
+
+{#if alert.visible}
+  <mesa:portal to={document.body}>
+    {@const t    = toTone(alert.type) || 'info'}
+    {@const path = iconMap[t] ?? iconMap.info}
+    <div
+      class={cx('alert', t, 'raised', 'fjs-global-alert')}
+      role="alert"
+      aria-live="assertive"
+      {@attach anim}
+    >
+      <span class="alert-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d={path} />
+        </svg>
+      </span>
+
+      <span class="alert-content">{alert.message}</span>
+
+      <button type="button" class="btn ghost square" aria-label="Dismiss" on:click={() => alert.hide()}>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z" />
+        </svg>
+      </button>
+    </div>
+  </mesa:portal>
+{/if}
+
+<style>
+  .fjs-global-alert {
+    position:          fixed;
+    inset-block-start: 1.5rem;
+    inset-inline-start: 50%;
+    transform:         translateX(-50%);
+    min-inline-size:   18rem;
+    max-inline-size:   36rem;
+    z-index:           300;
+    align-items:       center;
+  }
+</style>

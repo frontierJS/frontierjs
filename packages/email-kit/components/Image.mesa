@@ -1,0 +1,41 @@
+<script>
+  export let src      = ''
+  export let alt      = ''
+  export let width    = undefined    // explicit pixel width (recommended for Outlook)
+  export let height   = undefined
+  export let align    = 'center'
+  export let fluid    = true         // 100% width on mobile
+  export let padding  = '0'
+  export let display  = true         // set false to hide
+</script>
+
+<!--
+  Image — an email-safe responsive image.
+  Always include alt text. Always specify width for Outlook.
+
+  <Image src="https://example.com/logo.png" alt="Logo" width={600} />
+  <Image src="/hero.jpg" alt="Welcome" width={600} fluid />
+-->
+
+{#if display && src}
+<tr>
+  <td align="{align}" style="padding:{padding};font-size:0;line-height:0;">
+    <img
+      src="{src}"
+      alt="{alt}"
+      width="{width}"
+      height="{height}"
+      class="{fluid ? 'fluid' : ''}"
+      style="
+        display:block;
+        border:0;
+        outline:none;
+        text-decoration:none;
+        -ms-interpolation-mode:bicubic;
+        {width  ? `width:${width}px;`   : 'width:100%;'}
+        {height ? `height:${height}px;` : 'height:auto;'}
+      "
+    />
+  </td>
+</tr>
+{/if}

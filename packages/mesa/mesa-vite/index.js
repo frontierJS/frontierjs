@@ -55,6 +55,7 @@ async function getCompileSource(options, root) {
   candidates.push(
     path.join(root, 'node_modules', '@mesa', 'compiler', 'compiler.js'),
     path.join(root, 'node_modules', 'mesa', 'compiler.js'),
+    path.join(root, 'src', 'compiler.js'),   // mesa's own layout since 2026-08-04
     path.join(root, 'compiler.js')
   )
 

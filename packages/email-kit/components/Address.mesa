@@ -1,0 +1,31 @@
+<script>
+  export let line1   = ''
+  export let line2   = ''
+  export let city    = ''
+  export let state   = ''
+  export let zip     = ''
+  export let maps    = true    // show Google Maps link
+  export let size    = 14
+  export let padding = '6px 16px'
+
+  const fullAddress = [line1, line2, city, state, zip].filter(Boolean).join(', ')
+  const mapsQuery   = encodeURIComponent(fullAddress)
+  const mapsUrl     = `https://maps.google.com/maps?q=${mapsQuery}`
+</script>
+
+{#if line1 || city}
+<tr>
+  <td style="padding:{padding};font-family:Helvetica,Arial,sans-serif;font-size:{size}px;color:#555555;line-height:1.6;">
+    {#if line1}<span style="display:block;">{line1}</span>{/if}
+    {#if line2}<span style="display:block;">{line2}</span>{/if}
+    {#if city || state || zip}
+    <span style="display:block;">{city}{city && state ? ', ' : ''}{state} {zip}</span>
+    {/if}
+    {#if maps && fullAddress}
+    <a href="{mapsUrl}" target="_blank" style="color:#9fc612;font-size:{size}px;text-decoration:none;">
+      View on Google Maps →
+    </a>
+    {/if}
+  </td>
+</tr>
+{/if}

@@ -1,0 +1,226 @@
+---
+title: Server
+---
+<script>
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { servers } from '../../../resources/servers.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  $: page.params
+
+  let server  = null
+  let events  = []
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  async function load() {
+    error = null
+    try {
+      server = await servers.service.get(page.params.id)
+      // `events` is a custom method: POST /servers/:id with
+      // X-Service-Method: events. The sub-path form is a 404.
+      events = rowsOf(await servers.service.action('events', page.params.id))
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: page.params.id, () => load()
+
+  // Live. A drain from another tab, or an agent checking in, changes this page
+  // without anyone touching it.
+  // The event is named after the method — `servers heartbeat`, `servers drain`
+  // — so this listens to all of them and filters out the READS. That filter is
+  // load-bearing: the service publishes after `get` too, and reloading on it
+  // would make this page reload in response to its own reload, forever.
+  const READS = new Set(['get', 'find', 'events'])
+
+  const off = servers.service.on('*', (method, row) => {
+    if (READS.has(method) || row?.id !== page.params.id) return
+    load()
+  })
+  $onDestroy(off)
+
+  // Every action is the same shape: a custom method that transitions status
+  // and writes a ServerEvent. The service decides whether the transition is
+  // legal for the current status — `drain` on an already-draining server is a
+  // 400, and the message says so.
+  async function act(method) {
+    error = null; busy = method
+    try {
+      server = await servers.service.action(method, server.id)
+      events = rowsOf(await servers.service.action('events', server.id))
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove() {
+    error = null; busy = 'remove'
+    try {
+      await servers.service.remove(server.id)
+      goto('/servers/')
+    } catch (e) {
+      // 'Cannot remove an online server — drain it first' arrives here, and is
+      // exactly the sort of refusal the UI should show rather than pre-empt.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const TONE = {
+    online: 'success', ready: 'success', draining: 'warning',
+    unreachable: 'danger', stopped: 'muted', destroyed: 'muted',
+  }
+
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+
+  /**
+   * A custom method that returns a list comes back WRAPPED —
+   * `{ kind: 'list', object: 'servers', data: [...] }` — because the envelope
+   * is applied by method shape, not by method name. find() unwraps it for you;
+   * action() hands back exactly what the server sent.
+   *
+   * Assigning that object straight to `events` is not an error: `.length` is
+   * undefined, so the page renders "No events recorded" over a full trail and
+   * looks like a service that returned nothing.
+   *
+   * (`object` says 'servers' even though these rows are ServerEvents — the
+   * envelope names the service, not the model.)
+   */
+  const rowsOf = (result) => Array.isArray(result) ? result : result?.data ?? []
+
+  // plan / health / dockerState / labels are Json columns. They arrive as
+  // objects — Litestone parses them — so this renders entries rather than
+  // JSON.parse'ing a string, which is what the old raw-SQL services had to do.
+  const entries = (obj) => Object.entries(obj ?? {})
+
+  // Which actions the current status permits. This mirrors the service's own
+  // `from` lists so the page offers what will work — but it is an affordance,
+  // not a boundary: the service checks again and refuses regardless.
+  $: canDrain   = server?.status === 'online'
+  $: canUndrain = server?.status === 'draining'
+  $: canReboot  = server && ['online', 'unreachable'].includes(server.status)
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error && !server}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{:else if server}
+  <div class="section-header">
+    <h1>{server.name}</h1>
+    <div class="cluster">
+      <span class="pill {TONE[server.status] ?? ''}" id="server-status">{server.status}</span>
+      <a class="btn ghost" href="/servers/">All servers</a>
+    </div>
+  </div>
+
+  {#if error}
+    <article class="alert danger">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  <div class="cluster" id="server-actions">
+    {#if canDrain}
+      <button class="btn outlined" disabled={busy === 'drain'} on:click={() => act('drain')}>
+        {busy === 'drain' ? 'Draining…' : 'Drain'}
+      </button>
+    {/if}
+    {#if canUndrain}
+      <button class="btn outlined" disabled={busy === 'undrain'} on:click={() => act('undrain')}>
+        {busy === 'undrain' ? 'Cancelling…' : 'Cancel drain'}
+      </button>
+    {/if}
+    {#if canReboot}
+      <button class="btn outlined" disabled={busy === 'reboot'} on:click={() => act('reboot')}>Reboot</button>
+    {/if}
+    <button class="btn ghost" disabled={busy === 'sync'} on:click={() => act('sync')}>
+      {busy === 'sync' ? 'Syncing…' : 'Sync from provider'}
+    </button>
+    <button class="btn ghost danger" disabled={busy === 'remove'} on:click={remove}>Remove</button>
+  </div>
+
+  <dl class="facts">
+    <dt>Role</dt>          <dd>{server.role}</dd>
+    <dt>Provider</dt>      <dd>{server.providerKind}</dd>
+    <dt>Region</dt>        <dd>{server.region}</dd>
+    <dt>Address</dt>       <dd><code>{server.ipAddress ?? '—'}</code></dd>
+    <dt>SSH</dt>           <dd><code>{server.sshUser}@{server.ipAddress ?? '—'}:{server.sshPort}</code></dd>
+    <dt>Agent</dt>         <dd>{server.agentVersion ?? 'not installed'}</dd>
+    <dt>Last heartbeat</dt><dd id="server-heartbeat">{when(server.lastHeartbeatAt)}</dd>
+  </dl>
+
+  <div class="tiles" style="--tile-min: 18rem">
+    <article class="card stack">
+      <h2 class="h4">Plan</h2>
+      {#if entries(server.plan).length}
+        <dl class="facts">
+          {#each entries(server.plan) as [key, value]}
+            <dt>{key}</dt><dd>{value}</dd>
+          {/each}
+        </dl>
+      {:else}
+        <p class="text-sm text-muted">No plan recorded.</p>
+      {/if}
+    </article>
+
+    <article class="card stack">
+      <h2 class="h4">Health</h2>
+      {#if entries(server.health).length}
+        <dl class="facts">
+          {#each entries(server.health) as [key, value]}
+            <dt>{key}</dt><dd>{value}</dd>
+          {/each}
+        </dl>
+      {:else}
+        <p class="text-sm text-muted">Nothing reported — the agent fills this in on heartbeat.</p>
+      {/if}
+    </article>
+
+    <article class="card stack">
+      <h2 class="h4">Labels</h2>
+      {#if entries(server.labels).length}
+        <div class="cluster">
+          {#each entries(server.labels) as [key, value]}
+            <span class="badge muted">{key}={value}</span>
+          {/each}
+        </div>
+      {:else}
+        <p class="text-sm text-muted">No labels.</p>
+      {/if}
+    </article>
+  </div>
+
+  <h2 class="h4">Events</h2>
+  {#if !events.length}
+    <p class="text-sm text-muted">No events recorded.</p>
+  {:else}
+    <ol class="feed" id="server-events">
+      {#each events as event}
+        <li>
+          <article class="feed-item">
+            <span class="feed-dot" aria-hidden="true"></span>
+            <div class="feed-content">
+              <div class="text-muted text-sm">{when(event.createdAt)}</div>
+              <div class="cluster">
+                <strong>{event.message}</strong>
+                <span class="badge muted">{event.kind}</span>
+              </div>
+            </div>
+          </article>
+        </li>
+      {/each}
+    </ol>
+  {/if}
+{/if}

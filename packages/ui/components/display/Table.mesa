@@ -1,0 +1,151 @@
+<script>
+  // Table.mesa
+  // Semantic data table. Handles sorting state, loading skeleton, and empty
+  // state. Columns are defined as objects; rows render via the `row` snippet.
+  //
+  // `.table` owns the structure and `striped` / `hover` / `compact` are its
+  // scoped modifiers. Tones go on a <tr> — `<tr class="danger">` — because a
+  // tone is free-standing and works on a row like it works on anything else.
+  //
+  // Sorted state is `aria-sort` on the <th>, not a class: it is what a screen
+  // reader announces, so it is also the single source of truth for the arrow.
+  //
+  // COLUMNS shape:
+  //   { key: string, label: string, sortable?: boolean, align?: 'left'|'center'|'right', width?: string }
+  //
+  // USAGE — basic:
+  //   <Table {columns} {rows} {loading}>
+  //     {#snippet row(r)}
+  //       <tr><td>{r.name}</td><td>{r.email}</td></tr>
+  //     {/snippet}
+  //   </Table>
+  //
+  // USAGE — with sort handling:
+  //   <Table {columns} {rows} bind:sortKey bind:sortDir>
+  //     {#snippet row(r)}...{/snippet}
+  //   </Table>
+
+  import { cx } from '../../utils.js'
+
+  export let columns    = []       // { key, label, sortable?, align?, width? }[]
+  export let rows       = []       // any[] — passed to the row snippet
+  export let loading    = false
+  export let emptyText  = 'No results found'
+  export let sortKey    = ''       // bindable — currently sorted column key
+  export let sortDir    = 'asc'    // bindable — 'asc' | 'desc'
+  export let striped    = false    // alternate row shading
+  export let hover      = true     // row hover highlight
+  export let compact    = false    // reduce row padding
+
+  // Snippets
+  export let row     = null        // required — renders each data row
+  export let empty   = null        // optional override for the empty state
+  export let actions = null        // optional toolbar above the table
+
+  // Skeleton row count while loading
+  export var skeletonRows = 5
+
+  function handleSort(col) {
+    if (!col.sortable) return
+    if (sortKey === col.key) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc'
+    } else {
+      sortKey = col.key
+      sortDir = 'asc'
+    }
+  }
+
+  function sortStateOf(col) {
+    if (!col.sortable) return null
+    if (sortKey !== col.key) return 'none'
+    return sortDir === 'asc' ? 'ascending' : 'descending'
+  }
+</script>
+
+<div {class}>
+  {#if actions}
+    <div class="table-actions">
+      {@render actions?.()}
+    </div>
+  {/if}
+
+  <!-- .table-wrap is what makes a wide table scroll instead of the page. -->
+  <div class="table-wrap">
+    <table class={cx('table', striped && 'striped', hover && 'hover', compact && 'compact')}>
+      <thead>
+        <tr>
+          {#each columns as col (col.key)}
+            <th
+              scope="col"
+              aria-sort={sortStateOf(col)}
+              style:width={col.width ?? null}
+              style:text-align={col.align ?? null}
+            >
+              {#if col.sortable}
+                <!--
+                  A real <button>, so the sort control is reachable by keyboard.
+                  The old markup put on:click on the <th> itself, which meant a
+                  keyboard user could not sort at all.
+                -->
+                <button type="button" class="btn link" on:click={() => handleSort(col)}>
+                  {col.label}
+                  {#if sortKey === col.key && sortDir === 'asc'}
+                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M6 3l4 6H2z"/></svg>
+                  {:else if sortKey === col.key && sortDir === 'desc'}
+                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M6 9L2 3h8z"/></svg>
+                  {:else}
+                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true" style:opacity="0.4"><path d="M6 2l3 4H3zm0 8L3 6h6z"/></svg>
+                  {/if}
+                </button>
+              {:else}
+                {col.label}
+              {/if}
+            </th>
+          {/each}
+        </tr>
+      </thead>
+
+      <tbody>
+        {#if loading}
+          <!-- Skeleton rows -->
+          <!-- Array.from, not `{ length: n }` — an each takes a real array;
+               an array-LIKE object reaches the runtime and throws
+               `array.map is not a function`, which is what the loading state
+               did every time it was used. -->
+          {#each Array.from({ length: skeletonRows }) as _, i (i)}
+            <tr aria-busy="true">
+              {#each columns as col (col.key)}
+                <td>
+                  <div
+                    class="skeleton text"
+                    style:inline-size="{50 + ((i * 13 + col.key.length * 7) % 35)}%"
+                  ></div>
+                </td>
+              {/each}
+            </tr>
+          {/each}
+
+        {:else if !rows.length}
+          <!-- Empty state -->
+          {#if empty}
+            {@render empty?.()}
+          {:else}
+            <tr>
+              <td colspan={columns.length}>
+                <div class="empty">
+                  <p class="empty-text">{emptyText}</p>
+                </div>
+              </td>
+            </tr>
+          {/if}
+
+        {:else}
+          <!-- Data rows — the snippet supplies its own <tr>. -->
+          {#each rows as r, i (i)}
+            {@render row?.(r, i)}
+          {/each}
+        {/if}
+      </tbody>
+    </table>
+  </div>
+</div>

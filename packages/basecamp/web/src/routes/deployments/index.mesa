@@ -1,0 +1,101 @@
+---
+title: Deployments
+---
+<script>
+  import { session } from '../../session.js'
+  import { deployments } from '../../resources/deployments.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  $: session.workspaceId
+
+  let rows    = []
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // The service includes app → environment, so a row can name what it
+      // deployed without a second request per row.
+      rows = (await deployments.service.find({}, { limit: 50 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // Live: the engine pushes `deployments patched` to workspace:<id> on every
+  // step transition. Merging the payload beats re-fetching the list — the push
+  // carries the whole row, and a list that re-queries on every step of every
+  // concurrent release is a poll with extra steps.
+  const off = deployments.service.on('patched', (row) => {
+    const i = rows.findIndex(r => r.id === row.id)
+    // Replacement, not mutation: `rows[i] = …` on an array Mesa is watching
+    // notifies nothing (RULE 43).
+    if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
+  })
+  $onDestroy(off)
+
+  // A tone per state, decided once. 'deploying' has no tone on purpose — it is
+  // in progress, which is neither good nor bad news.
+  const TONE = {
+    success:     'success',
+    failed:      'danger',
+    cancelled:   'muted',
+    rolled_back: 'warning',
+  }
+
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+</script>
+
+<div class="section-header">
+  <h1>Deployments</h1>
+  <span class="text-sm text-muted">newest first</span>
+</div>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <article class="alert info">
+    <div class="alert-content">
+      No deployments in this workspace yet. Open an environment and deploy an app, or seed the example fleet with <code>bun run db:seed</code>.
+    </div>
+  </article>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped hover">
+      <thead>
+        <tr>
+          <th scope="col">App</th>
+          <th scope="col">Environment</th>
+          <th scope="col">Status</th>
+          <th scope="col">Commit</th>
+          <th scope="col">Queued</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="deployment-rows">
+        {#each rows as deployment}
+          <tr>
+            <td>{deployment.app?.name ?? '—'}</td>
+            <td>{deployment.app?.environment?.name ?? '—'}</td>
+            <td><span class="pill {TONE[deployment.status] ?? ''}">{deployment.status}</span></td>
+            <td><code>{deployment.commitSha?.slice(0, 7) ?? '—'}</code></td>
+            <td class="text-sm text-muted">{when(deployment.queuedAt)}</td>
+            <td><a class="btn ghost" href={`/deployments/${deployment.id}/`}>Open</a></td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

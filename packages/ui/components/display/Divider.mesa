@@ -1,0 +1,28 @@
+<script>
+  // Divider.mesa
+  // Horizontal separator. Optionally renders a label centred in the rule.
+  //
+  // Two different elements on purpose: a bare rule is an <hr>, which means
+  // "thematic break" and needs no ARIA; a labelled one is `.divider-label`,
+  // whose flanking rules are ::before/::after pseudo-elements rather than
+  // real divs.
+  //
+  // Usage:
+  //   <Divider />
+  //   <Divider label="or continue with" />
+  //   <Divider spacing="lg" />
+
+  export let label   = ''
+  export let spacing = 'md'   // 'sm' | 'md' | 'lg' — vertical margin
+
+  const spacingMap = { sm: '0.75rem', md: '', lg: '2rem' }
+  const sp = spacingMap[spacing] ?? ''
+</script>
+
+{#if label}
+  <div class="divider-label" style:margin-block={sp || null} {class}>
+    <span>{label}</span>
+  </div>
+{:else}
+  <hr class="divider" style:margin-block={sp || null} {class} />
+{/if}

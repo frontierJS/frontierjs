@@ -1,0 +1,124 @@
+<script>
+  // Select.mesa
+  // Native <select> with option normalisation and Field composition.
+  //
+  // `.field` styles a <select> directly, so the chevron is the UA's — the
+  // appearance:none reset and the hand-drawn arrow are gone. That also means
+  // the picker renders natively on mobile rather than as a styled box with
+  // the platform's own list on top of it.
+  //
+  // Options accept either:
+  //   string[]                       → { value: s, label: s }
+  //   { value, label, disabled? }[]  → used as-is
+  //
+  // Groups:
+  //   { group: string, options: [...] }[]  → rendered as <optgroup>
+  //
+  // bind:this exposes: focus()
+
+  import Field from './Field.mesa'
+  import { nameToLabel, uid } from '../../utils.js'
+
+  export let value       = null
+  export let options     = []          // flat or grouped (see above)
+  export let placeholder = 'Select…'   // set to '' to suppress
+  export let disabled    = false
+  export let required    = undefined
+  export let multiple    = false
+
+  // Field integration
+  export let name     = ''
+  export let label    = ''
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let badge    = undefined
+  export let help     = undefined
+
+  export var id = ''
+  const selectId  = id || uid('select')
+  const autoLabel = nameToLabel(name)
+
+  const isGrouped = options.length > 0 && typeof options[0] === 'object' && 'group' in options[0]
+
+  function normalise(opts) {
+    return opts.map(o => typeof o === 'string' ? { value: o, label: o, disabled: false } : o)
+  }
+
+  const flatOptions    = isGrouped ? [] : normalise(options)
+  const groupedOptions = isGrouped ? options.map(g => ({ ...g, options: normalise(g.options) })) : []
+
+  const hasError = !!(error || errors?.[name])
+
+  let el
+  export function focus() { el?.focus() }
+  // Native event callbacks. A <select> fires `input` as well as `change`, and
+  // a caller validating as the user picks wants the same hook it uses on an
+  // <Input> — see Input.mesa.
+  export let oninput  = undefined
+  export let onchange = undefined
+  export let onblur   = undefined
+  export let onfocus  = undefined
+</script>
+
+{#snippet control()}
+  <select
+    bind:this={el}
+    bind:value={value}
+    class="field"
+    id={selectId}
+    name={name || undefined}
+    disabled={disabled}
+    required={required}
+    multiple={multiple}
+    aria-invalid={hasError || null}
+    on:input={oninput}
+    on:change={onchange}
+    on:blur={onblur}
+    on:focus={onfocus}
+  >
+    {#if placeholder && !multiple}
+      <!--
+        `value=""`, not `value={null}`. Mesa drops an attribute whose value is
+        null, and an <option> with no value attribute reports its own TEXT as
+        its value — so the placeholder submitted the string "Select…" and a
+        "nothing picked yet" check against '' never matched.
+      -->
+      <option value="" disabled selected={value === null || value === '' || value === undefined}>{placeholder}</option>
+    {/if}
+
+    {#if isGrouped}
+      {#each groupedOptions as grp (grp.group)}
+        <optgroup label={grp.group}>
+          {#each grp.options as opt (opt.value)}
+            <option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+          {/each}
+        </optgroup>
+      {/each}
+    {:else}
+      {#each flatOptions as opt (opt.value)}
+        <option value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+      {/each}
+    {/if}
+  </select>
+{/snippet}
+
+{#if label || (name && !label && autoLabel)}
+  {@const resolvedLabel = label || autoLabel}
+  <Field
+    id={selectId}
+    name={name}
+    label={resolvedLabel}
+    required={required}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}

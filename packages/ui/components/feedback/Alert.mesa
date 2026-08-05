@@ -1,0 +1,80 @@
+<script>
+  // Alert.mesa
+  // Inline alert banner — sits in document flow, not a toast/overlay.
+  // For the global floating alert driven by alertStore, see AlertProvider.mesa.
+  //
+  // Styling is @frontierjs/css: `.alert` is a surface, and one tone class
+  // colours the whole banner through the shared surface recipe. There is no
+  // colour map here — that is the point of a tone being one free-standing word.
+  //
+  // Usage:
+  //   <Alert tone="danger" title="Save failed">
+  //     Check your connection and try again.
+  //   </Alert>
+  //
+  //   <Alert tone="success">Your changes have been saved.</Alert>
+  //
+  //   <!-- Dismissible -->
+  //   {#if showAlert}
+  //     <Alert tone="warning" dismissible onclose={() => showAlert = false}>
+  //       Session expires in 5 minutes.
+  //     </Alert>
+  //   {/if}
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let tone        = 'info'   // one of the 7 css tones
+  export let type        = ''       // legacy alias — 'error' resolves to 'danger'
+  export let title       = ''
+  export let dismissible = false
+  export let onclose     = undefined
+
+  // Icon paths keyed by tone. Only the four states have a distinct glyph;
+  // the rest fall back to the informational one.
+  const iconMap = {
+    info:    'M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z',
+    success: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    warning: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z',
+    danger:  'M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z',
+  }
+
+  const t    = toTone(type || tone) || 'info'
+  const path = iconMap[t] ?? iconMap.info
+
+  function handleDismiss() {
+    onclose?.()
+  }
+</script>
+
+<div role="alert" class={cx('alert', t)} {class} {...$attributes}>
+  <!-- Icon. Sized by icon.css — .alert-icon is on its holder list. -->
+  <div class="alert-icon">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke-width="1.5"
+      stroke="currentColor"
+      aria-hidden="true"
+    >
+      <path stroke-linecap="round" stroke-linejoin="round" d={path} />
+    </svg>
+  </div>
+
+  <!-- Content -->
+  <div class="alert-content">
+    {#if title}
+      <strong>{title}</strong>
+    {/if}
+    <slot />
+  </div>
+
+  <!-- Dismiss -->
+  {#if dismissible}
+    <button type="button" class="btn ghost square" aria-label="Dismiss" on:click={handleDismiss}>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z" />
+      </svg>
+    </button>
+  {/if}
+</div>

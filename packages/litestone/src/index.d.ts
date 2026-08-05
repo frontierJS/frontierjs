@@ -1,6 +1,6 @@
 // @frontierjs/litestone — package-level type declarations
 // These types cover the static package API.
-// For per-schema types (typed db.users, db.posts, etc.) run:
+// For per-schema types (typed db.user, db.post, etc.) run:
 //   litestone --schema ./db/schema.lite types
 
 // ─── sql tagged template ──────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ export interface RawClause {
  * Tagged template for safe parameterized raw SQL in `where: { $raw: sql\`...\` }`.
  *
  * @example
- * db.products.findMany({
+ * db.product.findMany({
  *   where: { $raw: sql`price > IF(state = ${state}, ${minPrice}, 100)` }
  * })
  */
@@ -283,6 +283,7 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere, TOrderBy> {
   delete(args: { where: TWhere }): Promise<TRow | null>
   deleteMany(args: { where: TWhere }): Promise<{ count: number }>
   transition(id: number | string, name: string): Promise<TRow>
+  transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; allowed: boolean }>>
   optimizeFts(): void
   findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
   aggregate(args: { _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean>; where?: TWhere }): Promise<Record<string, unknown>>
@@ -602,6 +603,16 @@ export declare class TransitionNotFoundError extends Error {
   retryable:  false
 }
 
+export declare class TransitionGateError extends Error {
+  model:      string
+  field:      string
+  transition: string
+  required:   number
+  got:        number
+  status:     403
+  retryable:  false
+}
+
 export declare class LockNotAcquiredError extends Error {
   key:          string
   currentOwner: string | null
@@ -623,27 +634,127 @@ export declare class LockExpiredError extends Error {
 
 // ─── Seeder / Factory ─────────────────────────────────────────────────────────
 
+export interface FactoryRng {
+  next(): number
+  int(min: number, max: number): number
+  pick<T>(arr: T[]): T
+  bool(p?: number): boolean
+  str(len?: number): string
+}
+
+export type FactoryRow       = Record<string, unknown>
+export type FactoryOverrides = FactoryRow | ((seq: number, rng: FactoryRng | null) => FactoryRow)
+
 export declare class Factory {
   constructor(db: LitestoneClient)
+
+  /** Subclass fields. */
   model: string
-  definition(seq: number, rng: { pick<T>(arr: T[]): T; float(): number; int(min: number, max: number): number }): Record<string, unknown>
-  state(overrides: Record<string, unknown>): this
-  for(relatedId: number | string): this
-  withRelation(model: string, id: number | string): this
-  afterCreate(fn: (record: Record<string, unknown>, db: LitestoneClient) => Promise<void>): this
-  buildOne(overrides?: Record<string, unknown>): Record<string, unknown>
-  buildMany(count: number, overrides?: Record<string, unknown>): Record<string, unknown>[]
-  createOne(overrides?: Record<string, unknown>): Promise<Record<string, unknown>>
-  createMany(count: number, overrides?: Record<string, unknown>): Promise<Record<string, unknown>[]>
+  traits?: Record<string, FactoryOverrides>
+  afterCreate?: (row: FactoryRow, db: LitestoneClient) => void | Promise<void>
+  definition(seq: number, rng: FactoryRng | null): FactoryRow
+
+  /** Chain methods — all return a CLONE, never `this`. */
+  state(overrides: FactoryOverrides): this
+  seed(n: number): this
+
+  /** Run against a different client — the whole wired graph follows. */
+  usingDb(db: LitestoneClient): this
+  /** Seed past the Data boundary — required for any schema declaring `@@gate`. */
+  asSystem(): this
+  /** Seed as a specific principal; gates and policies see it. */
+  actingAs(user: unknown): this
+
+  /**
+   * Auto-create a parent row and inject its PK as `fk` (default `<name>Id`).
+   * One parent is shared across a `createMany` unless `{ fresh: true }`.
+   */
+  withRelation(name: string, factory: Factory, fk?: string, pk?: string, opts?: { fresh?: boolean }): this
+  /** Use an existing parent row — no auto-create. */
+  for(name: string, row: FactoryRow, fk?: string, pk?: string): this
+
+  /**
+   * Auto-create a parent for every REQUIRED belongsTo the schema declares,
+   * recursively. Needs the schema + registry from `makeTestClient({ autoFactories: true })`
+   * or `factoryFrom()`. Relation cycles are skipped, not followed.
+   */
+  withParents(opts?: { depth?: number; optional?: boolean; fresh?: boolean }): this
+
+  /** Create hasMany children after the row, FK pointed back at it. */
+  has(name: string, count?: number, opts?: {
+    factory?:   Factory
+    overrides?: FactoryOverrides
+    /** Name the FK when the child declares more than one relation to this model. */
+    fk?:        string
+    pk?:        string
+  }): this
+
+  /** Connect implicit many-to-many rows after the row is created. */
+  attach(name: string, countOrRows?: number | FactoryRow[], opts?: {
+    factory?:   Factory
+    overrides?: FactoryOverrides
+  }): this
+
+  buildOne(overrides?: FactoryOverrides): FactoryRow
+  buildMany(count: number, overrides?: FactoryOverrides): FactoryRow[]
+  createOne(overrides?: FactoryOverrides): Promise<FactoryRow>
+  createMany(count: number, overrides?: FactoryOverrides): Promise<FactoryRow[]>
+
+  /** Overloaded on the first argument: a number is a count, anything else is overrides. */
+  build(overrides?: FactoryOverrides): FactoryRow
+  build(count: number, overrides?: FactoryOverrides): FactoryRow[]
+  create(overrides?: FactoryOverrides): Promise<FactoryRow>
+  create(count: number, overrides?: FactoryOverrides): Promise<FactoryRow[]>
+
   truncate(): Promise<void>
 }
 
+export interface FactorySpec {
+  /** Model name as the schema declares it — PascalCase singular. */
+  model:        string
+  definition:   (seq: number, rng: FactoryRng | null) => FactoryRow
+  traits?:      Record<string, FactoryOverrides>
+  afterCreate?: (row: FactoryRow, db: LitestoneClient) => void | Promise<void>
+  [key: string]: unknown
+}
+
+/**
+ * The Factory without the class ceremony. Returns a CLASS, so it drops straight
+ * into `makeTestClient({ factories: { user: UserFactory } })`.
+ */
+export declare function defineFactory(spec: FactorySpec): new (db: LitestoneClient) => Factory
+
 export declare class Seeder {
   run(db: LitestoneClient): Promise<void>
+  /** Seeders that must run before this one. Each class runs at most once per call(). */
+  static dependsOn?: Array<new () => Seeder>
+  /** Run other seeders, dependencies first. */
+  call(db: LitestoneClient, seederClasses: Array<new () => Seeder>): Promise<void>
   static once(db: LitestoneClient, key: string, fn: () => Promise<void>): Promise<void>
 }
 
 export declare function runSeeder(db: LitestoneClient, SeederClass: new () => Seeder): Promise<void>
+
+export interface LoadFixtureOptions {
+  /** Column to match on — makes the fixture re-runnable (upsert instead of create). */
+  upsert?:   string
+  /** Write past gates and policies. */
+  asSystem?: boolean
+}
+
+/**
+ * Load authored reference data — a `.json` path, a `.csv` path, or an inline array.
+ * Rows go through the ORM, so defaults, validators and hooks all apply.
+ */
+export declare function loadFixture(
+  db:        LitestoneClient,
+  modelName: string,
+  source:    string | FactoryRow[],
+  opts?:     LoadFixtureOptions,
+): Promise<FactoryRow[]>
+
+/** RFC-4180 CSV → rows. Unquoted scalars are coerced; quoted values stay strings. */
+export declare function parseCsv(text: string): Record<string, unknown>[]
 
 // ─── JSON Schema ──────────────────────────────────────────────────────────────
 

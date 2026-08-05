@@ -1,0 +1,74 @@
+<script>
+  // Dot.mesa
+  // Coloured status indicator. Optionally pulses for live/active states.
+  //
+  // `.feed-dot` is the vocabulary's dot: it reads --bg-mix, so every tone
+  // colours it. It carries a margin-top tuned for alignment inside a .feed
+  // item, which a standalone dot does not want — that is the one override
+  // below.
+  //
+  // Usage:
+  //   <Dot tone="success" />
+  //   <Dot tone="warning" pulse />
+  //   <Dot tone="success" label="Active" />   ← names it for a screen reader
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let tone  = ''      // one of the 7 css tones; '' is muted
+  export let color = ''      // legacy alias for `tone`
+  export let size  = 'sm'    // 'xs'|'sm'|'md'|'lg'
+  export let pulse = false   // ping animation for live/active states
+  export let label = ''      // accessible label; without one the dot is decorative
+  export let inFeed = false  // keep .feed-dot's feed alignment margin
+
+  const sizeMap = { xs: '0.375rem', sm: '0.5rem', md: '0.625rem', lg: '0.75rem' }
+  const sz = sizeMap[size] ?? sizeMap.sm
+
+  const t = toTone(color || tone)
+</script>
+
+<span
+  class="fjs-dot-wrap"
+  style:inline-size={sz}
+  style:block-size={sz}
+  style:margin-top={inFeed ? null : '0'}
+  {class}
+>
+  {#if pulse}
+    <span class={cx('feed-dot', t, 'fjs-dot-ping')} aria-hidden="true"></span>
+  {/if}
+  <span
+    class={cx('feed-dot', t)}
+    style:inline-size={sz}
+    style:block-size={sz}
+    style:margin-top="0"
+    aria-hidden="true"
+  ></span>
+  {#if label}
+    <span class="visually-hidden">{label}</span>
+  {/if}
+</span>
+
+<style>
+  .fjs-dot-wrap {
+    position:     relative;
+    display:      inline-flex;
+    flex-shrink:  0;
+  }
+  /* The ping ring sits behind the solid dot and matches its tone. */
+  .fjs-dot-ping {
+    position:    absolute;
+    inset:       0;
+    inline-size: 100%;
+    block-size:  100%;
+    margin-top:  0;
+    opacity:     0.6;
+    animation:   fjs-dot-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  @keyframes fjs-dot-ping {
+    75%, 100% { transform: scale(2); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fjs-dot-ping { animation: none; }
+  }
+</style>

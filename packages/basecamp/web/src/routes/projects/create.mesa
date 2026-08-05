@@ -1,0 +1,99 @@
+---
+title: New project
+---
+<script>
+  import { goto } from '@frontierjs/sierra/router'
+  import { projects } from '../../resources/projects.mesa'
+  import { ResourceValidationError } from '@frontierjs/sierra/junction'
+
+  // make() builds the record from the SCHEMA's defaults — status 'active',
+  // tags [], metadata {} — so this file does not restate them. What it adds is
+  // only what a person types.
+  let draft  = projects.make({ name: '', slug: '', description: '' })
+  let errors = []
+  let failed = null
+  let saving = false
+
+  $: (draft.name, draft.slug, draft.description)
+
+  // A slug is derived until the moment someone edits it. Doing it on every
+  // keystroke instead would silently overwrite a hand-written one.
+  let slugTouched = false
+
+  function onName(e) {
+    draft.name = e.target.value
+    if (!slugTouched) draft.slug = slugify(draft.name)
+  }
+
+  function onSlug(e) {
+    slugTouched = true
+    draft.slug  = e.target.value
+  }
+
+  const problem = (field) => errors.find(e => e.field === field)?.message
+
+  async function save(e) {
+    e.preventDefault()
+    errors = []; failed = null; saving = true
+    try {
+      // workspaceId is NOT sent. The service stamps it from the header, which
+      // is the only way it can be trusted — a client-supplied workspace is a
+      // client choosing its own tenant.
+      const created = await projects.service.create(draft)
+      goto(`/projects/${created.id}/`)
+    } catch (err) {
+      // ResourceValidationError is the schema answering before the request went
+      // out; anything else is the server's answer, including a 409 on a slug
+      // that is already taken in this workspace.
+      errors = err instanceof ResourceValidationError ? err.errors : []
+      failed = err.message
+    } finally {
+      saving = false
+    }
+  }
+
+  function slugify(s) {
+    return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64)
+  }
+</script>
+
+<div class="section-header">
+  <h1>New project</h1>
+  <a class="btn ghost" href="/projects/">Back to list</a>
+</div>
+
+<div class="container narrow">
+  <form class="card stack" on:submit={save}>
+    {#if failed}
+      <article class="alert danger">
+        <div class="alert-content">{failed}</div>
+      </article>
+    {/if}
+
+    <div class="field-group">
+      <label for="name"><span>Name</span><span class="text-danger"> *</span></label>
+      <input class="field" id="name" value={draft.name} on:input={onName} required />
+      {#if problem('name')}<span class="field-hint text-danger">{problem('name')}</span>{/if}
+    </div>
+
+    <div class="field-group">
+      <label for="slug"><span>Slug</span><span class="text-danger"> *</span></label>
+      <input class="field" id="slug" value={draft.slug} on:input={onSlug} required />
+      <span class="field-hint">
+        {problem('slug') ?? 'Unique within the workspace — the API answers 409 if it is taken.'}
+      </span>
+    </div>
+
+    <div class="field-group">
+      <label for="description">Description</label>
+      <input class="field" id="description" bind:value={draft.description} />
+    </div>
+
+    <div class="cluster">
+      <button class="btn primary" type="submit" disabled={saving}>
+        {saving ? 'Creating…' : 'Create project'}
+      </button>
+      <a class="btn ghost" href="/projects/">Cancel</a>
+    </div>
+  </form>
+</div>

@@ -11,6 +11,7 @@
     "./router/internals": "./src/router/internals.js",
     "./analytics": "./src/analytics/index.js",
     "./junction": "./src/junction/index.js",
+    "./islands": "./src/islands/loader.js",
     "./fetch": "./src/fetch/index.js",
     "./theme": "./src/theme/index.js",
     "./postbuild": "./src/postbuild/index.js",

@@ -2,7 +2,7 @@
 
 export { createClient, ValidationError,
          TransitionViolationError, TransitionConflictError,
-         TransitionNotFoundError,
+         TransitionNotFoundError, TransitionGateError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError }                          from './core/client.js'
 export { sql, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
@@ -26,7 +26,8 @@ export { generateTypeScript }                     from './tools/typegen.js'
 export { createTenantRegistry }                  from './tenant.js'
 export { parseDuration, parseSize,
          runSqliteRetention, compactJsonl }       from './tools/retention.js'
-export { Factory, Seeder, runSeeder }           from './seeder.js'
+export { Factory, defineFactory, Seeder, runSeeder,
+         loadFixture, parseCsv }                from './seeder.js'
 export { generateLiteSchema }                    from './tools/introspect.js'
 export { replicate }                             from './tools/replicate.js'
 export { ExternalRefPlugin }                       from './plugins/external-ref.js'

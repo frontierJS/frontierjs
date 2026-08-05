@@ -1,0 +1,65 @@
+---
+title: Customers
+---
+<script>
+  import { customers } from '../../resources/shop.mesa'
+  import { session } from '../../session.js'
+  import { prefs } from '../../prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const { get: rows, unsubscribe } = useStore(customers.store)
+  $onDestroy(unsubscribe)
+
+  $: (session.level, session.role, prefs.dense)
+
+  let error = null
+  const reload = () => customers.load().catch(e => { error = e.message })
+  reload()
+
+  // Whether `notes` came back is a fact about the RESPONSE, not a rule copied
+  // from the schema — the field is simply absent for anyone the policy rejects.
+  $: hasNotes = rows().some(c => 'notes' in c)
+
+  // The column list is derived from the RESPONSE, the same fact the cells are.
+  // A `const` is a memo in Mesa, so naming hasNotes here is what re-draws the
+  // head when an admin's reload brings the column back.
+  const columns = hasNotes
+    ? [{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'notes', label: 'Notes' }]
+    : [{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }]
+</script>
+
+<SectionHeader title="Customers" level={1}>
+  {#snippet action()}
+    <Button variant="outlined" onclick={reload}>Reload</Button>
+  {/snippet}
+</SectionHeader>
+
+{#if error}
+  <Alert tone="danger">{error}</Alert>
+{/if}
+
+<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+  {#snippet row(c)}
+    <tr>
+      <td>{c.name}</td>
+      <td>{c.email}</td>
+      {#if hasNotes}<td class="text-muted">{c.notes}</td>{/if}
+    </tr>
+  {/snippet}
+</Table>
+
+{#if hasNotes}
+  <Alert tone="success">
+    <code>notes</code> is present. <code>@allow('read', auth().role == 'admin')</code> let this response carry it.
+  </Alert>
+{:else}
+  <Alert tone="muted">
+    There is a <code>notes</code> column in the schema and it is <strong>not in this response at all</strong> — not blanked, absent. Sign in as admin and hit Reload.
+  </Alert>
+{/if}

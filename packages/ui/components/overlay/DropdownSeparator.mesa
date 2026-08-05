@@ -1,0 +1,11 @@
+<!--
+  DropdownSeparator — visual divider between groups of items in a DropdownMenu.
+
+  `<hr>` already carries role="separator", so there is none to declare.
+
+  Usage:
+    <DropdownItem onclick={edit}>Edit</DropdownItem>
+    <DropdownSeparator />
+    <DropdownItem tone="danger" onclick={remove}>Delete</DropdownItem>
+-->
+<hr class="divider" style="margin-block: 0.25rem" {class} />

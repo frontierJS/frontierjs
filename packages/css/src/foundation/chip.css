@@ -1,0 +1,96 @@
+/*
+ * chip.css
+ *
+ * The inline visual base — the counterpart to surface.css. Every inline
+ * primitive that wants chip layout gets it from the :where() group below.
+ * Adding a new composite = add its class name to the list.
+ *
+ *   chip
+ *   ├── pill    chip + full radius + xs text
+ *   ├── badge   chip + small radius + xs text + uppercase
+ *   ├── btn     chip + button chrome
+ *   ├── page         chip + pagination link
+ *   ├── tooltip      chip + attached bubble
+ *   ├── avatar       chip + fixed square + initials
+ *   └── step-marker  chip + numbered circle
+ *
+ * step-marker is the odd one — it is an Anatomy class, not an Element. It
+ * is here because "solid tone fill with text on it" is exactly the problem
+ * this base solves, and re-deriving contrast in steps.css produced 14 AA
+ * failures on the first try: it is easy to remember to pick the text color
+ * and forget that the *fill* also has to be capped.
+ *
+ * Layout only. Skin (background, tone, typography) lives in each
+ * composite's own file, exactly as surface.css splits from cards.css.
+ *
+ * :where() keeps this at zero specificity so composites — and consumers —
+ * override it without a specificity fight.
+ */
+
+/*
+ * ── Auto-contrast fill and text ─────────────────────────────────────
+ *
+ * --tone-fill is the requested background (set per component, because the
+ * untoned default differs: btn falls back to primary, pill and badge to
+ * muted). From it we derive --fill, the color actually painted, and
+ * --on-fill, text guaranteed to be readable on it.
+ *
+ * Both derivations read the same number: the fill's relative luminance.
+ * The `y` channel of xyz-d65 is exactly WCAG's L, so no approximation is
+ * involved — `* infinity` snaps a clamp to one end or the other, giving a
+ * branch. (Perceptual lightness, oklch's `l`, mis-branches saturated
+ * blues; it was measured at 3 AA failures where luminance scores 0.)
+ *
+ * Two regimes, split at luminance 0.35:
+ *
+ *   Bright hue (y > 0.35) — yellow, lime, light orange. Keep the color
+ *   exactly and use dark text. Contrast is then at least 8:1, and the
+ *   brand hue survives; darkening these is what turns lime into olive.
+ *
+ *   Everything else (y <= 0.35) — keep white text and scale luminance
+ *   down to at most 0.1783, the point where white reaches 4.5:1. Uniform
+ *   XYZ scaling is a scalar multiply on linear RGB, so it preserves
+ *   chromaticity exactly, stays in gamut, and only moves colors that
+ *   actually need it (#0d83dd -> #0b78cb; most shift imperceptibly).
+ *
+ * The result is AA for any hue a theme can define, not just the ones
+ * shipped today. tones.css used to assert `white` for six of seven tones
+ * regardless of hue, failing 15 of 35 tone x theme combinations, worst
+ * 1.99:1 — the primary button of a real client theme.
+ *
+ * Set --on-bg-mix on a tone or theme to pin the text color instead.
+ * The consumer-side fallbacks keep pre-2024 browsers (no relative color
+ * syntax) on the old behaviour rather than unstyled.
+ */
+:where(.chip, .btn, .pill, .badge, .page, .tooltip, .avatar, .step-marker) {
+  --fill: color(from var(--tone-fill) xyz-d65
+    calc(x * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
+    calc(y * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
+    calc(z * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1))));
+
+  --on-fill: var(--on-bg-mix,
+    color(from var(--tone-fill) xyz-d65
+      calc(clamp(0, (0.35 - y) * infinity, 1) * 0.9505)
+           clamp(0, (0.35 - y) * infinity, 1)
+      calc(clamp(0, (0.35 - y) * infinity, 1) * 1.089)));
+
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             0.375rem;
+  white-space:     nowrap;
+  text-align:      center;
+
+  /*
+   * A chip composite is just as often an <a> as a <button> — "New lead" that
+   * navigates, a .pill that filters, a .page in a pager — and the UA underlines
+   * anchors. Without this, every link-shaped button ships with an underline
+   * through it, which is not a treatment anyone chose. Found by the Sierra
+   * example, the package's first real consumer.
+   *
+   * :where() keeps this at zero specificity, so `.btn.link` (buttons.css) and
+   * `.link:hover` (typography.css) still turn the underline back on — those
+   * are deliberate, this is a default.
+   */
+  text-decoration: none;
+}

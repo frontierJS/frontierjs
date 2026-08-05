@@ -365,10 +365,17 @@ export function afterNavigate(fn) {
  */
 export function isActive(path, options = {}) {
   const { exact = false } = options
-  // Reading page.route through the proxy makes this function reactive — a
-  // template expression calling isActive() re-evaluates whenever the route
-  // changes, because the read subscribes the calling effect to that path.
-  // Requires the caller's component to declare `$: page.route`.
+  // This read subscribes to the route path, but that is NOT enough to make a
+  // call site reactive, and the comment here used to claim it was. Mesa decides
+  // what an expression depends on from the expression's own text, so a template
+  // that only says `isActive('/leads/')` is evaluated once at mount and the
+  // highlight never moves — the read happens inside a function Mesa never
+  // looked into. Name the path in the expression as well:
+  //
+  //   aria-current={(page.route, isActive('/leads/')) ? 'page' : null}
+  //
+  // (and keep the component's `$: page.route` watch, which is what makes that
+  // read a tracked one). Verified by clicking through the example app.
   _w().route
   const current = normalizePath(window.location.pathname, _options.trailingSlash)
   const target = normalizePath(path, _options.trailingSlash)

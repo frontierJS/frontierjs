@@ -238,10 +238,17 @@ describe('junction.hook events', () => {
     const ctx = bridge.internal('items', 'find', null)
     await callService(svc, ctx, undefined, undefined, emitter)
 
+    // Every service carries the derived gateAuth for its method — a model-less
+    // one included, where it resolves no levels and returns. It used to be
+    // absent here only because createService skipped the whole base when
+    // `model` was omitted; createBaseService({}) always installed it. Assert on
+    // the user's hooks by name rather than on the total, which is a framework
+    // detail this test does not own.
     const hooks = hookEvents(captured).filter(e => e.data.phase === 'before')
-    expect(hooks).toHaveLength(2)
-    expect(hooks[0].data.hookName).toBe('validateInput')
-    expect(hooks[1].data.hookName).toBe('stampTimestamp')
+    const userHooks = hooks.filter(e => e.data.hookName !== 'gateAuth')
+    expect(userHooks).toHaveLength(2)
+    expect(userHooks[0].data.hookName).toBe('validateInput')
+    expect(userHooks[1].data.hookName).toBe('stampTimestamp')
   })
 
   it('emits one hook event per after hook', async () => {

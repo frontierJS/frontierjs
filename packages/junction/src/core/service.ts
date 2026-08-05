@@ -819,7 +819,23 @@ function adaptPlainTable(t: Record<string, (...a: unknown[]) => Promise<unknown>
 // Composes base + custom overrides + hooks into a full Service.
 
 export interface ServiceDefinition {
-  name:       string
+  /**
+   * Service name — the URL segment, and the key in the registry.
+   *
+   * OPTIONAL when the service is autoloaded: the loader derives it from the
+   * filename ('leads.service.ts' → 'leads') and assigns it after construction.
+   * Required for a service you register by hand, which has no filename to
+   * derive from.
+   */
+  name?:      string
+
+  /**
+   * Litestone accessor — `'user'` for `model User`.
+   *
+   * OPTIONAL, on the same terms as createBaseService: omitted, it resolves per
+   * call from the service name, so `createService({ name: 'leads' })` reaches
+   * `model Lead` and `createService({})` in leads.service.ts does too.
+   */
   model?:     string
   db?:        () => unknown
   paginate?:  { default: number; max: number }
@@ -916,22 +932,44 @@ export function createService(def: ServiceDefinition): Service {
   // `createBaseService({ model, softDelete: 'deleted_at' })` soft-deleted them.
   // Same option name, same docs, opposite behaviour. Keep this in sync with
   // SERVICE_OPTION_KEYS; nothing here may be dropped on the way through.
-  const base = def.model
-    ? createBaseService({
-        model:      def.model,
-        name:       def.name,
-        db:         def.db,
-        paginate:   def.paginate,
-        allowBulk:  def.allowBulk,
-        idField:    def.idField    as string | undefined,
-        softDelete: def.softDelete as string | undefined,
-        schema:     def.schema     as import('./litestone.ts').LitestoneJsonSchema | undefined,
-        hooks:      def.hooks,
-      })
-    : notImplementedBase()
-  const baseHooks = def.model
-    ? (base as unknown as { hooks?: HookMap }).hooks
-    : undefined
+  //
+  // `model` is OPTIONAL here, exactly as it is on createBaseService: the
+  // accessor resolves per call from `model ?? ctx.service`, and the service
+  // name itself may be assigned by the autoloader AFTER construction. So the
+  // base is built unconditionally.
+  //
+  // This used to read `def.model ? createBaseService(…) : notImplementedBase()`,
+  // which was the same class of bug as the two above: `createBaseService({})`
+  // in leads.service.ts is a complete service, while `createService({})` — or
+  // `createService({ name: 'leads' })` — was a service whose every method threw
+  // 'No model/db configured for this service', despite reporting
+  // `model: def.model ?? def.name` on the way out. Same file, same options,
+  // opposite behaviour.
+  //
+  // A service with no model at all (custom actions only) is unaffected: the
+  // derived hooks no-op when the accessor resolves to nothing (gateAuth reads
+  // null levels, autoValidate finds no definition), and calling the unused CRUD
+  // methods now fails with the base's diagnostic — which names the spellings
+  // tried and what the client actually has — instead of a bare sentence.
+  const base = createBaseService({
+    model:      def.model,
+    name:       def.name,
+    db:         def.db,
+    paginate:   def.paginate,
+    allowBulk:  def.allowBulk,
+    idField:    def.idField    as string | undefined,
+    softDelete: def.softDelete as string | undefined,
+    schema:     def.schema     as import('./litestone.ts').LitestoneJsonSchema | undefined,
+    hooks:      def.hooks,
+  })
+  const baseHooks = (base as unknown as { hooks?: HookMap }).hooks
+
+  // `def.name` is optional in the type because the autoloader assigns it after
+  // construction ('leads.service.ts' → 'leads'). Everything below that needs a
+  // string reads this. A hand-registered service without a name is the one case
+  // this cannot cover — the registry would key it on undefined — so the loader
+  // fills it in before register() is reached.
+  const defName = def.name as string
 
   const hookMaps: HookMap[] = []
 
@@ -942,7 +980,7 @@ export function createService(def: ServiceDefinition): Service {
   //   after  pipeline: [...userAfterHooks, bustCache]    — busts after all transforms
   let cacheHooks: ReturnType<typeof buildCacheHooks> | null = null
   if (def.cache) {
-    cacheHooks = buildCacheHooks(def.name, def.cache)
+    cacheHooks = buildCacheHooks(defName, def.cache)
     // Push before-cache hooks FIRST — checkCache must run before user hooks
     hookMaps.push({
       before: {
@@ -973,8 +1011,9 @@ export function createService(def: ServiceDefinition): Service {
     }
   }
   // base.hooks already contains def.hooks merged with the derived hooks —
-  // push it (not def.hooks) so both layers survive. Model-less services have
-  // no derived layer, so def.hooks is used as-is.
+  // push it (not def.hooks) so both layers survive. The `?? def.hooks` is a
+  // belt-and-braces fallback: createBaseService always returns a hooks map now
+  // that the base is built unconditionally.
   const effectiveHooks = baseHooks ?? def.hooks
   if (effectiveHooks) hookMaps.push(effectiveHooks)
 
@@ -996,7 +1035,7 @@ export function createService(def: ServiceDefinition): Service {
   let pipelines = resolvePipelines(mergedMap)
 
   const service: Service = {
-    name:  def.name,
+    name:  defName,
     model: def.model ?? def.name,
     // Carried through so callService can find it after the pipeline. Reserved
     // in SERVICE_OPTION_KEYS, so a function form never becomes an action.
@@ -1016,13 +1055,13 @@ export function createService(def: ServiceDefinition): Service {
     // ── Hook-bypass methods ────────────────────────────────────────────────────
     // Direct method access — skips the hook pipeline entirely.
     // Emits a lightweight junction.call.end on app.telemetry (no start, no hooks).
-    _find:    makeBypass(def.name, 'find',    def.find    ?? base.find),
-    _get:     makeBypass(def.name, 'get',     def.get     ?? base.get),
-    _create:  makeBypass(def.name, 'create',  def.create  ?? base.create),
-    _update:  makeBypass(def.name, 'update',  def.update  ?? base.update),
-    _patch:   makeBypass(def.name, 'patch',   def.patch   ?? base.patch),
-    _remove:  makeBypass(def.name, 'remove',  def.remove  ?? base.remove),
-    _restore: makeBypass(def.name, 'restore', def.restore ?? base.restore),
+    _find:    makeBypass(defName, 'find',    def.find    ?? base.find),
+    _get:     makeBypass(defName, 'get',     def.get     ?? base.get),
+    _create:  makeBypass(defName, 'create',  def.create  ?? base.create),
+    _update:  makeBypass(defName, 'update',  def.update  ?? base.update),
+    _patch:   makeBypass(defName, 'patch',   def.patch   ?? base.patch),
+    _remove:  makeBypass(defName, 'remove',  def.remove  ?? base.remove),
+    _restore: makeBypass(defName, 'restore', def.restore ?? base.restore),
 
     hooks(map: HookMap): void {
       hookMaps.push(map)
@@ -1150,10 +1189,11 @@ export class ServiceRegistry {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-function notImplementedBase() {
-  const err = () => { throw new Error('No model/db configured for this service') }
-  return { find: err, get: err, create: err, update: err, patch: err, remove: err, restore: undefined }
-}
+// (notImplementedBase removed: createService builds the real base
+// unconditionally, since the accessor resolves per call from
+// `model ?? ctx.service`. Its stand-in methods threw
+// 'No model/db configured for this service' for every service that omitted
+// `model` — including ones whose model was perfectly resolvable from the name.)
 
 // (wrapResult moved to core/envelope.ts — the envelope is built, inspected and
 // unwrapped in one module now. It used to be built here and taken apart in

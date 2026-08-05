@@ -1,0 +1,46 @@
+<script>
+  // AccordionItem.mesa
+  // Must be a direct or indirect child of Accordion.mesa.
+  //
+  // Native <details class="disclosure"> — the caret, the focus ring and the
+  // expanded/collapsed announcement are all the platform's. `open` is driven
+  // from the Accordion's context so exclusive mode works; the click handler
+  // preventDefaults so the browser's own toggle does not fight that state.
+  //
+  // Usage: see Accordion.mesa
+
+  export let id       = ''
+  export let label    = ''
+  export let disabled = false
+  // Consume context from nearest Accordion ancestor
+  // const → always tracks provider (Rule 25a)
+  const openIds = $context.openIds   // reactive — re-derives when Accordion.toggle() runs
+  const toggle  = $context.toggle    // function — static ref, mutates Accordion's openIds signal
+
+  // Derived: is this specific item open?
+  const isOpen = !!openIds[id]
+
+  function handleClick(e) {
+    // The summary is the toggle; let context own the state rather than the
+    // element, or exclusive mode would be fighting the UA on every click.
+    e.preventDefault()
+    if (!disabled) toggle(id)
+  }
+</script>
+
+<details class="disclosure" open={isOpen} {class}>
+  <summary
+    class="disclosure-summary"
+    id="{id}-header"
+    aria-disabled={disabled ? 'true' : null}
+    style:opacity={disabled ? 0.5 : null}
+    style:cursor={disabled ? 'not-allowed' : null}
+    on:click={handleClick}
+  >
+    <span>{label}</span>
+  </summary>
+
+  <div class="disclosure-body" role="region" aria-labelledby="{id}-header">
+    <slot />
+  </div>
+</details>

@@ -133,15 +133,80 @@ td    { background: var(--zebra); }
 No `!important`, no specificity ladder. Layer order:
 
 ```
-tokens → themes → tones → base → layout → components → patterns → a11y
+tokens → themes → tones → base → layout → components → patterns → utilities → a11y
 ```
+
+---
+
+## Using it with UnoCSS
+
+Uno is not required — the component shapes have been plain CSS since v0.6 —
+but the package is built to sit under it, and this is the configuration that
+works. Everything below was measured against UnoCSS 66.7.5 with
+`presetWind3`, not inferred.
+
+**The good part is free.** Uno's output is unlayered and everything here is
+layered, so **every Uno utility beats every component**, with no ordering
+discipline and no `!important`. `class="card p-4"` gets Uno's padding. That
+is the escape hatch working as designed.
+
+**The part that will bite you is the reset.** `@unocss/reset/tailwind.css` is
+also unlayered, so it beats the package's components — and because layer
+priority ignores source order, importing it *first* does not help:
+
+| | package alone | + Tailwind reset, unlayered |
+| --- | --- | --- |
+| `h1` font-size | 36px | **16px** |
+| `.btn` background | the tone | **transparent** |
+| `.btn` padding | `6px 14px` | **0** |
+
+Import the reset **into a layer** and it behaves:
+
+```css
+/* app.css */
+@layer reset, tokens, themes, tones, base, layout,
+       components, patterns, utilities, uno, a11y;
+
+@import '@unocss/reset/tailwind.css'  layer(reset);  /* first: it is a reset */
+@import '@frontierjs/css';
+@import 'uno.css'                     layer(uno);    /* after components … */
+                                                     /* … but before a11y   */
+```
+
+`uno` goes **between `utilities` and `a11y`**, not last: utilities should beat
+components, but nothing should beat `.visually-hidden` — otherwise
+`class="visually-hidden w-full"` makes a screen-reader label visible.
+
+`@unocss/reset/tailwind-compat.css` is the lighter alternative — it exists
+precisely because the button-background reset breaks UI frameworks.
+
+**Three names collide.** Uno owns them as utilities, and a generated utility
+outranks the component of the same name:
+
+| Class | Uno makes it | Fix |
+| --- | --- | --- |
+| `container` | `width:100%` + breakpoint max-widths, so `.container.narrow` stops narrowing | blocklist `container`, or use Uno's |
+| `text-xs…xl` | Uno's scale (14/18px) replaces this package's (13/16px) | pick one — blocklist, or drop this package's steps |
+| `table`, `tab` | `display:table`, `tab-size:4` | harmless — that is what those elements already are |
+
+```ts
+// uno.config.ts
+export default defineConfig({
+  presets: [presetWind3()],
+  blocklist: ['container', /^text-(xs|sm|md|lg|xl)$/],
+})
+```
+
+> `.shell.fixed` was a fourth collision — Uno's `fixed` is `position: fixed`,
+> so installing Uno turned the shell into a fixed-positioned element. It is
+> **`.shell.viewport` as of v0.10.1**. See breaking changes below.
 
 ---
 
 ## What's in the box
 
 **Frame** `app` `shell` `topbar` `sidebar` `screen` `pane` `view`
-&nbsp;&nbsp;— the application grid, with `sidebar-first` and `fixed` variants
+&nbsp;&nbsp;— the application grid, with `sidebar-first` and `viewport` variants
 
 **Inline** `btn` (+ `square`, `outlined`, `ghost`, `raised`, `link`,
 `loading`) · `pill` `badge` `link` `chip` `page` `tooltip` `avatar` `kbd` ·
@@ -301,6 +366,55 @@ Alpha, and honest about it: **zero production consumers so far.** All 29
 vocabulary terms ship CSS and the invariants are covered by a checked-in test
 suite — but nothing has been through the friction of a real build yet.
 
+## Breaking changes
+
+**v0.11**
+
+- **Stylesheets moved to `src/`**, grouped into directories that mirror the
+  cascade layers: `foundation/` `themes/` `components/` `patterns/` `a11y/`,
+  with `index.css` and `utilities.css` at the top of `src/`.
+- **Single-file imports carry the folder now.** `@frontierjs/css/buttons.css`
+  → `@frontierjs/css/components/buttons.css`. `src/` does **not** appear in the
+  public path — the exports map hides it. The one-line
+  `import '@frontierjs/css'` is unchanged, and that is what most apps use.
+
+```css
+@import '@frontierjs/css/foundation/tokens.css';
+@import '@frontierjs/css/themes/elite.css';
+@import '@frontierjs/css/components/buttons.css';
+```
+
+### One file, if you want one
+
+The package still needs no build step. But for a CDN drop-in, a CodePen, or a
+bundler you do not control, `bun run build` emits a single file:
+
+```css
+@import '@frontierjs/css/bundle.css';       /* 72 kB */
+@import '@frontierjs/css/bundle.min.css';   /* 57 kB */
+```
+
+> **If you roll your own bundle, prepend the layer statement.** `bun build`
+> inlines each `@import` as an `@layer name { … }` block but drops the
+> `@layer a, b, c;` line that declares the *order*, so the bundle falls back to
+> first-appearance order. Move one import and `.btn.text-lg` silently goes 16px
+> → 14px in the bundle while the source stays 16px. `build.js` re-reads that
+> statement from `index.css`, prepends it, and refuses to write a bundle
+> without it.
+
+**v0.10.1**
+
+- **`.shell.fixed` → `.shell.viewport`.** `fixed` is a core UnoCSS/Tailwind
+  utility name (`position: fixed`), generated unlayered, so merely having Uno
+  installed re-positioned the shell. See *Using it with UnoCSS*.
+- **The `.text-*` utilities moved to a new `utilities` layer** (their own file,
+  `utilities.css`). No markup change — but they now actually apply. Sharing the
+  `components` layer with `.btn`, which sets its own `font-size`, made all five
+  size steps inert on a button. If you compensated with an inline `font-size`,
+  you can drop it.
+
+**v0.10** — `.btn.icon` → `.btn.square`.
+
 ## Tests
 
 ```bash
@@ -340,6 +454,6 @@ a deliberate measurement: every rule in that file is a gap in this package.
 - **`demo/`** — a realistic app, and the findings from building it
 - **`PROJECT_STATE.md`** — architecture, the two halves, the class taxonomy,
   design decisions, known constraints, and what's worth doing next
-- **`guide/`** — the interactive reference: 45 pages, every component
+- **`guide/`** — the interactive reference: 49 pages, every component
   live, theme switching. Plain HTML + one plain `.js` file, no build step —
   open `guide/index.html`, or `bun run demo` and go to `/guide/`

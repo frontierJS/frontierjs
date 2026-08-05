@@ -1,0 +1,102 @@
+<script>
+  // Drawer.mesa
+  // Slide-in panel from any edge, built on native <dialog> like Modal — so
+  // focus trapping, Escape, the backdrop and the top layer come from the
+  // platform rather than from a portal and a z-index.
+  //
+  // `.drawer` plus one `from-*` edge class is the whole geometry, including
+  // the slide animation, which is why there are no position/radius maps here
+  // any more.
+  //
+  // Usage:
+  //   let drawerOpen = false
+  //   <Button onclick={() => drawerOpen = true}>Open</Button>
+  //   <Drawer bind:open={drawerOpen} title="Settings" side="right">
+  //     <p>Drawer content</p>
+  //   </Drawer>
+
+  import { tone as toTone, cx, uid } from '../../utils.js'
+
+  export let open        = false
+  export let title       = ''
+  export let tone        = ''
+  export let footer      = null   // optional footer snippet
+  export let onclose     = undefined
+  export let dismissible = true
+
+  // side is snapshot at mount — a drawer does not change edge mid-life.
+  export var side = 'right'  // 'left' | 'right' | 'top' | 'bottom'
+
+  const EDGES = { right: 'from-right', left: 'from-left', top: 'from-top', bottom: 'from-bottom' }
+  const edge = EDGES[side] ?? EDGES.right
+
+  const titleId = uid('drawer-title')
+  const t = toTone(tone)
+
+  let dialogEl
+
+  $: open, () => {
+    if (!dialogEl) return
+    if (open && !dialogEl.open) dialogEl.showModal()
+    else if (!open && dialogEl.open) dialogEl.close()
+  }
+
+  function handleClose() {
+    if (open) {
+      open = false
+      onclose?.()
+    }
+  }
+
+  function handleCancel(e) {
+    if (!dismissible) e.preventDefault()
+  }
+
+  function handleClick(e) {
+    if (!dismissible) return
+    if (e.target === dialogEl) dialogEl.close()
+  }
+
+  function close() {
+    dialogEl?.close()
+  }
+</script>
+
+<dialog
+  bind:this={dialogEl}
+  class={cx('drawer', edge, t)}
+  aria-labelledby={title ? titleId : null}
+  {class}
+  on:close={handleClose}
+  on:cancel={handleCancel}
+  on:click={handleClick}
+>
+  <div class="surface-header">
+    <h2 id={titleId} style:margin="0">{title}</h2>
+    {#if dismissible}
+      <button type="button" class="dialog-close" aria-label="Close" on:click={close}>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+        </svg>
+      </button>
+    {/if}
+  </div>
+
+  <div class="surface-body" style:overflow-y="auto" style:flex="1">
+    <slot />
+  </div>
+
+  {#if footer}
+    <div class="surface-footer">
+      {@render footer?.()}
+    </div>
+  {/if}
+</dialog>
+
+<style>
+  /* The drawer is a column so its body can take the remaining height. */
+  .drawer[open] {
+    display:        flex;
+    flex-direction: column;
+  }
+</style>

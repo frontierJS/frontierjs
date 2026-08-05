@@ -1,0 +1,83 @@
+---
+title: First run
+---
+<script>
+  import { goto } from '@frontierjs/sierra/router'
+  import { completeSetup } from '../../session.js'
+
+  let workspace_name = ''
+  let name           = ''
+  let email          = ''
+  let password       = ''
+  let error          = null
+  let busy           = false
+
+  async function submit(e) {
+    e.preventDefault()
+    error = null
+    busy  = true
+    try {
+      await completeSetup({ workspace_name, name, email, password })
+      goto('/')
+    } catch (err) {
+      // 409 means someone else finished setup between the probe and this
+      // submit — a second operator, or a tab left open across a db reset.
+      error = err.status === 409
+        ? 'Basecamp is already set up — sign in instead.'
+        : err.message
+    } finally {
+      busy = false
+    }
+  }
+</script>
+
+<div class="section-header">
+  <h1>Set up Basecamp</h1>
+  <span class="text-sm text-muted">first run</span>
+</div>
+
+<p class="text-body">
+  This creates the account, the first workspace and its owner in one transaction. It is the only unauthenticated write in the app, and it closes behind itself — once an active user exists, <code>/setup</code> answers 409.
+</p>
+
+<!-- .container.narrow caps at --container-narrow: a form stretched to a
+     1280px screen is a wall, not a form. The width is a vocabulary term,
+     not a number chosen here. -->
+<div class="container narrow">
+  <form class="card stack" on:submit={submit}>
+  {#if error}
+    <article class="alert danger">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  <div class="field-group">
+    <label for="workspace">Workspace name</label>
+    <input class="field" id="workspace" bind:value={workspace_name} required />
+    <span class="field-hint">Your organisation. Everything else is scoped inside it.</span>
+  </div>
+
+  <div class="field-group">
+    <label for="name">Your name</label>
+    <input class="field" id="name" autocomplete="name" bind:value={name} required />
+  </div>
+
+  <div class="field-group">
+    <label for="email">Email</label>
+    <input class="field" id="email" type="email" autocomplete="username" bind:value={email} required />
+  </div>
+
+  <div class="field-group">
+    <label for="password">Password</label>
+    <input class="field" id="password" type="password" autocomplete="new-password"
+           bind:value={password} required minlength="8" />
+    <span class="field-hint">At least 8 characters — the API refuses shorter.</span>
+  </div>
+
+  <div class="cluster">
+    <button class="btn primary" type="submit" disabled={busy}>
+      {busy ? 'Creating…' : 'Create workspace'}
+    </button>
+  </div>
+  </form>
+</div>

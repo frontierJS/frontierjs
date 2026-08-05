@@ -1,0 +1,20 @@
+<script>
+  export let logo    = ''        // image URL
+  export let logoAlt = ''
+  export let logoWidth = 160
+  export let bgcolor = '#ffffff'
+  export let padding = '24px 16px'
+</script>
+
+<!-- Header — sits at top of email. Logo or custom content. -->
+
+<tr>
+  <td align="center" bgcolor="{bgcolor}" style="padding:{padding};background-color:{bgcolor};">
+    {#if $slots.default}
+      <slot />
+    {:else if logo}
+      <img src="{logo}" alt="{logoAlt}" width="{logoWidth}"
+        style="display:block;border:0;outline:none;text-decoration:none;width:{logoWidth}px;height:auto;" />
+    {/if}
+  </td>
+</tr>

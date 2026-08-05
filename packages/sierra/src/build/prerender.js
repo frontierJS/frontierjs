@@ -178,12 +178,28 @@ export function composeWrapper(pageFile, layoutChain) {
  * fewer request — these pages ship no JS, so the style block is the only thing
  * standing between HTML and first paint.
  */
-export function wrapDocument(bodyHTML, { title, css, lang = 'en' } = {}) {
+export function wrapDocument(bodyHTML, { title, css, styles, lang = 'en' } = {}) {
   const esc = (v) => String(v ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 
-  const styleTag = css && css.trim() ? `\n  <style>${css.trim()}</style>` : ''
+  // One <style id="mHASH"> per component when the renderer supplies the split,
+  // rather than one anonymous blob.
+  //
+  // The id is the component's CSS scope hash, which Mesa derives from the style
+  // content — so it is the same id the component's own `addStyles(id, …)` call
+  // uses when it mounts on the client. `addStyles` skips a style whose id is
+  // already in the head, so an island's rules are shipped once, in the
+  // prerendered page, instead of again by its chunk under a second hash.
+  //
+  // Falls back to the concatenated blob when `styles` is absent, so an older
+  // renderer (or a caller passing only `css`) keeps working.
+  const styleTag = styles?.length
+    ? '\n' + styles
+        .filter((s) => s?.css?.trim())
+        .map((s) => `  <style id="${esc(s.id)}">${s.css.trim()}</style>`)
+        .join('\n')
+    : (css && css.trim() ? `\n  <style>${css.trim()}</style>` : '')
   return `<!DOCTYPE html>
 <html lang="${esc(lang)}">
 <head>
@@ -212,13 +228,18 @@ export function outputFileFor(urlPath) {
 export async function prerenderRoutes(opts) {
   const {
     tree, root, routesDir = 'src/routes', outDir = 'dist/client',
-    warn = () => {}, renderComponent,
+    warn = () => {}, renderComponent, islands = false, tmpDir = null,
   } = opts
 
   const routesDirAbs = resolve(root, routesDir)
   const outDirAbs    = resolve(root, outDir)
   const written = []
   const skipped = []
+  // Union of every island across every page, keyed by component name. A name is
+  // what a marker carries and what the loader's registry is keyed by, so a name
+  // used for two different modules is a real collision — reported, not merged.
+  const islandsByName = new Map()
+  const islandPages   = new Map()   // output file → component names on it
 
   const staticNodes = flatten(tree).filter(n => n.meta?.render === 'static' && n.file)
 
@@ -268,6 +289,16 @@ export async function prerenderRoutes(opts) {
           data:     { data },
           cwd:      dirname(pageFile),
           filename: join(dirname(pageFile), '__prerender__.mesa'),
+          islands,
+          // The document is assembled here from `rendered.styles`, one
+          // <style id> per component, so Mesa must not also prepend the whole
+          // lot as one anonymous blob — that is the same CSS twice on the page.
+          styleTag: false,
+          // Temp modules land in the app's tree, not Mesa's package root, so a
+          // rendered layout's bare imports resolve from the app's node_modules.
+          // Without this, `import { page } from '@frontierjs/sierra/router'` in
+          // a layout dies with "Cannot find package" (Mesa SSR_SPEC W1).
+          ...(tmpDir ? { tmpDir } : {}),
         })
       } catch (err) {
         skipped.push({ route: urlPath, reason: `render failed: ${err.message}` })
@@ -275,17 +306,47 @@ export async function prerenderRoutes(opts) {
       }
 
       const doc = wrapDocument(rendered.html, {
-        title: node.meta?.title ?? node.meta?.frontmatter?.title,
-        css:   rendered.css,
+        title:  node.meta?.title ?? node.meta?.frontmatter?.title,
+        css:    rendered.css,
+        styles: rendered.styles,
       })
 
       const file = join(outDirAbs, outputFileFor(urlPath))
       await mkdir(dirname(file), { recursive: true })
       await writeFile(file, doc, 'utf8')
-      written.push(relative(outDirAbs, file))
+      const rel = relative(outDirAbs, file)
+      written.push(rel)
+
+      // Record which islands this page carries. Mesa tags each entry with the
+      // file the call site was written in and the import specifier it came
+      // from, which together resolve a marker's component NAME to a module —
+      // the one thing a bundle needs and a marker cannot carry.
+      for (const entry of rendered.islands ?? []) {
+        if (!entry.specifier) {
+          warn(`${urlPath}: <${entry.component} client:${entry.directive}> has no import specifier ` +
+               `— it cannot be bundled and will stay inert. Import it from a .mesa file.`)
+          continue
+        }
+        const module = resolve(dirname(entry.file), entry.specifier)
+        const prev = islandsByName.get(entry.component)
+        if (prev && prev.module !== module) {
+          warn(`two different modules are both used as <${entry.component}>: ` +
+               `${relative(root, prev.module)} and ${relative(root, module)}. ` +
+               `Island markers carry a name, so only the first can be mounted — rename one.`)
+        } else if (!prev) {
+          islandsByName.set(entry.component, { component: entry.component, module })
+        }
+        if (!islandPages.has(rel)) islandPages.set(rel, new Set())
+        islandPages.get(rel).add(entry.component)
+      }
     }
   }
 
   for (const s of skipped) warn(`${s.route}: ${s.reason}`)
-  return { written, skipped }
+  return {
+    written,
+    skipped,
+    islands: [...islandsByName.values()],
+    islandPages,
+  }
 }

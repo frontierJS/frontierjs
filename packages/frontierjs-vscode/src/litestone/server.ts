@@ -175,7 +175,7 @@ function makeDiagnostic(doc: TextDocument, msg: string, severity: DiagnosticSeve
 
 // ─── Completions ──────────────────────────────────────────────────────────────
 
-const SCALAR_TYPES = ['Integer', 'Real', 'Text', 'Boolean', 'DateTime', 'Json', 'Blob', 'File']
+const SCALAR_TYPES = ['Int', 'Float', 'String', 'Boolean', 'DateTime', 'Json', 'Bytes', 'File']
 
 const FIELD_ATTRS = [
   // Identity / constraints
@@ -350,7 +350,7 @@ const ATTR_DOCS: Record<string, string> = {
   // ── Field attributes ────────────────────────────────────────────────────────
 
   '@id':
-    'Marks this field as the primary key. `Integer @id` auto-increments.',
+    'Marks this field as the primary key. `Int @id` auto-increments.',
 
   '@unique':
     'Adds a UNIQUE constraint on this column.',
@@ -362,7 +362,7 @@ const ATTR_DOCS: Record<string, string> = {
     'Defines a foreign key relationship.\n\n```\n@relation(fields: [accountId], references: [id], onDelete: Cascade)\n```',
 
   '@generated':
-    'SQLite `GENERATED ALWAYS AS` column. Use a schema `function` for reusable SQL expressions.\n\n```\ntitle   Text\nslug    Text  @slug(title)   // schema function → STORED generated column\n```',
+    'SQLite `GENERATED ALWAYS AS` column. Use a schema `function` for reusable SQL expressions.\n\n```\ntitle   String\nslug    String  @slug(title)   // schema function → STORED generated column\n```',
 
   '@computed':
     'App-layer derived field — implemented in `computed.js`, not stored in the DB.\n\n```js\n// computed.js\nexport default {\n  users: {\n    fullName: row => [row.firstName, row.lastName].filter(Boolean).join(" "),\n  }\n}\n```',
@@ -374,7 +374,7 @@ const ATTR_DOCS: Record<string, string> = {
     'Automatically stamps `ctx.auth.id` on every `update()` call. Use `@updatedBy(auth().field)` to stamp a different auth field.',
 
   '@sequence':
-    'Per-scope auto-increment. Each unique value of the scope field gets its own counter starting at 1.\n\n```\nmodel quotes {\n  id          Integer @id\n  accountId   Integer\n  quoteNumber Integer @sequence(scope: accountId)\n}\n```\n\nManaged in `_litestone_sequences` table.',
+    'Per-scope auto-increment. Each unique value of the scope field gets its own counter starting at 1.\n\n```\nmodel Quote {\n  id          Int @id\n  accountId   Int\n  quoteNumber Int @sequence(scope: accountId)\n}\n```\n\nManaged in `_litestone_sequences` table.',
 
   '@map':
     'Maps this field to a different column name in the DB.\n\n`@map("column_name")`',
@@ -395,13 +395,13 @@ const ATTR_DOCS: Record<string, string> = {
     'Encrypts the value at rest using AES-256-GCM. Requires `encryptionKey` (64-char hex) in `createClient()`.\n\nImplies `@guarded(all)` — only readable via `asSystem()`.',
 
   '@encrypted(searchable: true)':
-    'Stores an HMAC of the encrypted value alongside the ciphertext, so equality `where` filters work without decrypting.\n\n```\nemail Text @encrypted(searchable: true)\n// WHERE email = \'alice@example.com\'  ✓ works\n```',
+    'Stores an HMAC of the encrypted value alongside the ciphertext, so equality `where` filters work without decrypting.\n\n```\nemail String @encrypted(searchable: true)\n// WHERE email = \'alice@example.com\'  ✓ works\n```',
 
   '@secret':
     'Composite attribute — expands to `@encrypted + @guarded(all) + @log(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit logger database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()`.',
 
   '@log':
-    'Logs reads and writes of this field to a `logger` database.\n\n```\napiKey Text @secret   // @log(audit) is implicit via @secret\nsalary Real @log(audit)\n```\n\nSee also: `@@log` for model-level logging.',
+    'Logs reads and writes of this field to a `logger` database.\n\n```\napiKey String @secret   // @log(audit) is implicit via @secret\nsalary Float @log(audit)\n```\n\nSee also: `@@log` for model-level logging.',
 
   '@keepVersions':
     'On `File?` and `File[]` fields: keeps the old S3/R2 object when the field is updated instead of deleting it. Useful for versioned assets.',
@@ -410,19 +410,19 @@ const ATTR_DOCS: Record<string, string> = {
     'On `File` / `File[]` fields: validates the MIME type before upload. Throws `ValidationError` if the type doesn\'t match.\n\nSupports wildcards and comma-separated lists:\n```\navatar File? @accept("image/*")\ndocs   File[] @accept("application/pdf,application/msword")\n```',
 
   '@markdown':
-    'Semantic annotation — indicates this `Text` field contains Markdown. No runtime validation; used by Studio and tooling to enable rich rendering.',
+    'Semantic annotation — indicates this `String` field contains Markdown. No runtime validation; used by Studio and tooling to enable rich rendering.',
 
   '@hardDelete':
-    'On a relation field in a `@@softDelete(cascade)` model: hard-deletes those children (removes the rows) instead of stamping `deletedAt`.\n\n```\nmodel accounts {\n  sessions sessions[] @hardDelete  // ← rows gone permanently\n  users    users[]                  // ← soft-deleted\n  deletedAt DateTime?\n  @@softDelete(cascade)\n}\n```',
+    'On a relation field in a `@@softDelete(cascade)` model: hard-deletes those children (removes the rows) instead of stamping `deletedAt`.\n\n```\nmodel Account {\n  sessions Session[] @hardDelete  // ← rows gone permanently\n  users    User[]                  // ← soft-deleted\n  deletedAt DateTime?\n  @@softDelete(cascade)\n}\n```',
 
   '@from':
-    'Derived field — computed from a relation at query time, not stored in the DB.\n\n```\nmodel accounts {\n  userCount Integer @from(users, count: true)\n  revenue   Real    @from(orders, sum: amount)\n  lastOrder DateTime @from(orders, last: true)\n  hasOverdue Boolean @from(invoices, exists: true, where: "paid = 0 AND due_at < date(\'now\')")\n}\n```\n\nSupported: `count`, `sum`, `max`, `min`, `first`, `last`, `exists`.',
+    'Derived field — computed from a relation at query time, not stored in the DB.\n\n```\nmodel Account {\n  userCount Int @from(users, count: true)\n  revenue   Float   @from(orders, sum: amount)\n  lastOrder DateTime @from(orders, last: true)\n  hasOverdue Boolean @from(invoices, exists: true, where: "paid = 0 AND due_at < date(\'now\')")\n}\n```\n\nSupported: `count`, `sum`, `max`, `min`, `first`, `last`, `exists`.',
 
   '@phone':
     'Validates the value is a valid phone number (E.164 and common formats) on every write.',
 
   '@slug':
-    'Transforms the string value to a URL-safe slug before writing to the DB (lowercases, replaces spaces with hyphens, strips special characters).\n\nCommonly combined with `@default(fieldName)` to auto-derive from another field:\n```\ntitle Text\nslug  Text  @default(title) @slug\n```',
+    'Transforms the string value to a URL-safe slug before writing to the DB (lowercases, replaces spaces with hyphens, strips special characters).\n\nCommonly combined with `@default(fieldName)` to auto-derive from another field:\n```\ntitle String\nslug  String  @default(title) @slug\n```',
 
   '@email':
     'Validates the value is a valid email address on every write.',
@@ -461,12 +461,12 @@ const ATTR_DOCS: Record<string, string> = {
   '@contains':   'Validates the string contains the given substring.',
 
   '@allow':
-    'Field-level conditional access policy.\n\n```\nsalary Real? @allow(\'read\',  auth().role == \'admin\')\napiKey Text? @allow(\'write\', auth().role == \'admin\')\n```\n\n- `\'read\'` — field silently stripped from results when expr is false\n- `\'write\'` — field silently dropped from write data when expr is false\n- `\'all\'` — both\n\n`asSystem()` always sees and writes all fields. Conflicts with `@guarded` and `@secret`.',
+    'Field-level conditional access policy.\n\n```\nsalary Float? @allow(\'read\',  auth().role == \'admin\')\napiKey String? @allow(\'write\', auth().role == \'admin\')\n```\n\n- `\'read\'` — field silently stripped from results when expr is false\n- `\'write\'` — field silently dropped from write data when expr is false\n- `\'all\'` — both\n\n`asSystem()` always sees and writes all fields. Conflicts with `@guarded` and `@secret`.',
 
   // ── Model attributes ────────────────────────────────────────────────────────
 
   '@@db':
-    'Assigns this model to a named database block. Models without `@@db` go to the default database.\n\n```\nmodel apiRequests {\n  @@db(logs)\n}\n```',
+    'Assigns this model to a named database block. Models without `@@db` go to the default database.\n\n```\nmodel ApiRequest {\n  @@db(logs)\n}\n```',
 
   '@@index':
     'Creates an index on one or more columns.\n\n`@@index([col1, col2])`\n\nOn `@@softDelete` models, automatically adds `WHERE deletedAt IS NULL` (partial index over live rows only).',
@@ -496,10 +496,10 @@ const ATTR_DOCS: Record<string, string> = {
     'Row-level deny policy — always wins over `@@allow`.\n\n```\n@@deny(\'delete\', status == \'published\')\n@@deny(\'update\', status == \'archived\', "Archived posts cannot be edited")\n```\n\nOptional third argument is a custom error message.',
 
   '@@log':
-    'Model-level audit log — fires a log entry for every `create`, `update`, and `delete` on this model.\n\n```\nmodel users {\n  @@log(audit)\n}\n```\n\nRequires a `database` block with `driver logger`.',
+    'Model-level audit log — fires a log entry for every `create`, `update`, and `delete` on this model.\n\n```\nmodel User {\n  @@log(audit)\n}\n```\n\nRequires a `database` block with `driver logger`.',
 
   '@@external':
-    'Marks this model\'s table as managed outside Litestone (e.g. a view, a FTS virtual table, or a table from another tool). Litestone will not emit DDL or run migrations for it, but it is fully queryable.\n\n```\nmodel search_index {\n  id    Integer @id\n  body  Text\n  @@external\n}\n```',
+    'Marks this model\'s table as managed outside Litestone (e.g. a view, a FTS virtual table, or a table from another tool). Litestone will not emit DDL or run migrations for it, but it is fully queryable.\n\n```\nmodel search_index {\n  id    Int @id\n  body  String\n  @@external\n}\n```',
 
   '@@map':
     'Maps this model to a different table name in the DB.\n\n`@@map("table_name")`',
@@ -512,13 +512,13 @@ const ATTR_DOCS: Record<string, string> = {
 }
 
 const TYPE_DOCS: Record<string, string> = {
-  'Integer':  'SQLite `INTEGER` — stored as 64-bit integer. JavaScript `number`.',
-  'Real':     'SQLite `REAL` — stored as 64-bit float. JavaScript `number`.',
-  'Text':     'SQLite `TEXT` — UTF-8 string. JavaScript `string`.',
+  'Int':      'SQLite `INTEGER` — stored as 64-bit integer. JavaScript `number`.',
+  'Float':    'SQLite `REAL` — stored as 64-bit float. JavaScript `number`.',
+  'String':   'SQLite `TEXT` — UTF-8 string. JavaScript `string`.',
   'Boolean':  'SQLite `INTEGER` 0/1 — auto-coerced to `true`/`false` by the client.',
   'DateTime': 'SQLite `TEXT` ISO-8601 — auto-validated on write. JavaScript `string`.',
   'Json':     'SQLite `TEXT` — auto-serialized/deserialized by the client. JavaScript `object` (or `Array`).',
-  'Blob':     'SQLite `BLOB` — raw binary. JavaScript `Buffer`.',
+  'Bytes':    'SQLite `BLOB` — raw binary. JavaScript `Buffer`.',
   'File':     'Stores a JSON reference object in SQLite; actual bytes live in S3/R2/local storage via the `FileStorage` plugin.\n\n```\navatar  File?              // single file\nphotos  File[]             // multiple files\ndocs    File[] @accept("application/pdf")\nresume  File?  @keepVersions  // keep old S3 object on update\n```\n\nResolves to a URL string automatically when `autoResolve: true` (default). Use `fileUrl(row.avatar)` or `fileUrls(row.photos)` to derive URLs manually.',
 }
 

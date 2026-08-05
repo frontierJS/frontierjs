@@ -60,7 +60,7 @@ function _isNullable(raw) {
 const _CARRIED = [
   'format', 'pattern', 'minLength', 'maxLength',
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
-  'minItems', 'maxItems', 'default', 'title', 'description',
+  'minItems', 'maxItems', 'default', 'description',
 ]
 
 /**
@@ -99,6 +99,19 @@ export function buildFieldRules(schema, resolve = resolveRef) {
     const rule = { type: type ?? null, required: required.has(name), nullable }
     if (Array.isArray(def.enum)) rule.enum = def.enum
     for (const k of _CARRIED) if (k in def) rule[k] = def[k]
+
+    // `title` is the FIELD's label (@label) and is read off the field's OWN
+    // schema, never the deref'd target. Litestone titles every enum $def with
+    // the type name, so following the ref would make `status OrderStatus`
+    // introduce itself as "OrderStatus" in every message it appears in.
+    if (typeof raw.title === 'string') rule.title = raw.title
+
+    // Author-supplied wording, keyed by the JSON Schema keyword that failed —
+    // `@length(3, 20, "…")` arrives as { length, minLength, maxLength }. Read
+    // off the RAW schema as well as the deref'd one: a $ref'd field carries its
+    // messages on the reference, beside `title`.
+    const messages = { ...(def['x-messages'] ?? {}), ...(raw['x-messages'] ?? {}) }
+    if (Object.keys(messages).length) rule.messages = messages
 
     out[name] = rule
   }
@@ -232,6 +245,60 @@ export function canAtLevel(gate, operation, level) {
   return level >= need
 }
 
+// ── Transitions ───────────────────────────────────────────────────────────────
+
+/**
+ * The model's declared state machines, or null when it has none.
+ *
+ * Shape is litestone's `x-transitions`: keyed by field, then by transition name.
+ * A model can declare more than one, so the field key is part of the answer, not
+ * an implementation detail.
+ *
+ * @returns {Record<string, Record<string, {from:string[], to:string, gate:number|null}>>|null}
+ */
+export function buildTransitions(schema) {
+  const t = schema?.['x-transitions']
+  if (!t || typeof t !== 'object') return null
+  return t
+}
+
+/**
+ * The legal next states for `row`, each flagged with whether `level` may take it.
+ *
+ * ⚠ A UI AFFORDANCE, NOT A SECURITY BOUNDARY — same contract as canAtLevel().
+ * Litestone enforces every one of these at the Data boundary and throws
+ * TransitionViolationError / TransitionGateError regardless of what the client
+ * decided to render. This exists so the UI can offer the right buttons, not so
+ * it can decide who is allowed.
+ *
+ * Unknown answers are permissive: no gate on a transition, or no level supplied,
+ * means `allowed: true`. A gated move the caller cannot make is still returned
+ * with `allowed: false` rather than dropped — rendering it disabled is usually
+ * better than making it vanish, and the caller can filter if it disagrees.
+ *
+ * Mirrors litestone's `db.<model>.transitions(row)` field for field.
+ *
+ * @param {object|null} spec   from buildTransitions()
+ * @param {object} row         the record to evaluate
+ * @param {number} [level]     the current user's gate level (0–9)
+ */
+export function transitionsAt(spec, row, level) {
+  if (!spec || !row) return []
+
+  const out = []
+  for (const [field, transitions] of Object.entries(spec)) {
+    const current = row[field]
+    if (current == null) continue
+    for (const [name, t] of Object.entries(transitions ?? {})) {
+      if (!Array.isArray(t?.from) || !t.from.includes(current)) continue
+      const gate    = t.gate ?? null
+      const allowed = gate == null || typeof level !== 'number' ? true : level >= gate
+      out.push({ name, field, from: current, to: t.to, gate, allowed })
+    }
+  }
+  return out
+}
+
 // ── Validation ────────────────────────────────────────────────────────────────
 
 /** Thrown by a resource whose `validate` option is on. */
@@ -255,25 +322,25 @@ function _typeOf(value) {
 function _checkType(name, rule, value, errors) {
   switch (rule.type) {
     case 'string':
-      if (typeof value !== 'string') errors.push({ field: name, message: `${name} must be a string` })
+      if (typeof value !== 'string') errors.push({ field: name, message: `${fieldLabel(name, rule)} must be a string` })
       return typeof value === 'string'
     case 'integer':
-      if (!Number.isInteger(value)) errors.push({ field: name, message: `${name} must be an integer` })
+      if (!Number.isInteger(value)) errors.push({ field: name, message: `${fieldLabel(name, rule)} must be an integer` })
       return Number.isInteger(value)
     case 'number':
       if (typeof value !== 'number' || Number.isNaN(value)) {
-        errors.push({ field: name, message: `${name} must be a number` })
+        errors.push({ field: name, message: `${fieldLabel(name, rule)} must be a number` })
         return false
       }
       return true
     case 'boolean':
-      if (typeof value !== 'boolean') errors.push({ field: name, message: `${name} must be a boolean` })
+      if (typeof value !== 'boolean') errors.push({ field: name, message: `${fieldLabel(name, rule)} must be a boolean` })
       return typeof value === 'boolean'
     case 'array':
-      if (!Array.isArray(value)) errors.push({ field: name, message: `${name} must be an array` })
+      if (!Array.isArray(value)) errors.push({ field: name, message: `${fieldLabel(name, rule)} must be an array` })
       return Array.isArray(value)
     case 'object':
-      if (_typeOf(value) !== 'object') errors.push({ field: name, message: `${name} must be an object` })
+      if (_typeOf(value) !== 'object') errors.push({ field: name, message: `${fieldLabel(name, rule)} must be an object` })
       return _typeOf(value) === 'object'
     default:
       // No type constraint — Json columns are emitted as {}. Anything goes.
@@ -281,40 +348,66 @@ function _checkType(name, rule, value, errors) {
   }
 }
 
+/**
+ * What to call a field in a message.
+ *
+ * `title` is `@label("Customer")`. Failing that, a foreign key borrows its
+ * relation's name, so `customerId` reads as "customer" with nothing authored —
+ * which is the common case, and the one where the raw column name under a form
+ * label that says "customer" looks most like a bug.
+ */
+export function fieldLabel(name, rule) {
+  return rule?.title ?? rule?.references?.relation ?? name
+}
+
+/**
+ * The message for a failed rule: whatever the schema declared for it, else the
+ * generated sentence. `keyword` is the JSON Schema keyword that failed, which
+ * is exactly how `x-messages` is keyed — no mapping table on this side.
+ */
+function _say(rule, keyword, fallback) {
+  return rule?.messages?.[keyword] ?? fallback
+}
+
+const _required = (name, rule) =>
+  _say(rule, 'required', `${fieldLabel(name, rule)} is required`)
+
 function _checkConstraints(name, rule, value, errors) {
+  const label = fieldLabel(name, rule)
   const add = (message) => errors.push({ field: name, message })
+  const say = (keyword, fallback) => add(_say(rule, keyword, fallback))
 
   if (rule.enum && !rule.enum.includes(value)) {
-    add(`${name} must be one of: ${rule.enum.join(', ')}`)
+    say('enum', `${label} must be one of: ${rule.enum.join(', ')}`)
   }
 
   if (typeof value === 'string') {
-    if (rule.minLength != null && value.length < rule.minLength) add(`${name} must be at least ${rule.minLength} characters`)
-    if (rule.maxLength != null && value.length > rule.maxLength) add(`${name} must be at most ${rule.maxLength} characters`)
+    if (rule.minLength != null && value.length < rule.minLength) say('minLength', `${label} must be at least ${rule.minLength} characters`)
+    if (rule.maxLength != null && value.length > rule.maxLength) say('maxLength', `${label} must be at most ${rule.maxLength} characters`)
     if (rule.pattern) {
       let re = null
       try { re = new RegExp(rule.pattern) } catch { re = null }
-      if (re && !re.test(value)) add(`${name} is not in the expected format`)
+      if (re && !re.test(value)) say('pattern', `${label} is not in the expected format`)
     }
-    if (rule.format === 'email' && !_EMAIL.test(value)) add(`${name} must be a valid email address`)
+    if (rule.format === 'email' && !_EMAIL.test(value)) say('format', `${label} must be a valid email address`)
     if (rule.format === 'uri') {
-      try { new URL(value) } catch { add(`${name} must be a valid URL`) }
+      try { new URL(value) } catch { say('format', `${label} must be a valid URL`) }
     }
     if (rule.format === 'date-time' && Number.isNaN(Date.parse(value))) {
-      add(`${name} must be a valid date`)
+      say('format', `${label} must be a valid date`)
     }
   }
 
   if (typeof value === 'number') {
-    if (rule.minimum != null && value < rule.minimum) add(`${name} must be at least ${rule.minimum}`)
-    if (rule.maximum != null && value > rule.maximum) add(`${name} must be at most ${rule.maximum}`)
-    if (rule.exclusiveMinimum != null && value <= rule.exclusiveMinimum) add(`${name} must be greater than ${rule.exclusiveMinimum}`)
-    if (rule.exclusiveMaximum != null && value >= rule.exclusiveMaximum) add(`${name} must be less than ${rule.exclusiveMaximum}`)
+    if (rule.minimum != null && value < rule.minimum) say('minimum', `${label} must be at least ${rule.minimum}`)
+    if (rule.maximum != null && value > rule.maximum) say('maximum', `${label} must be at most ${rule.maximum}`)
+    if (rule.exclusiveMinimum != null && value <= rule.exclusiveMinimum) say('exclusiveMinimum', `${label} must be greater than ${rule.exclusiveMinimum}`)
+    if (rule.exclusiveMaximum != null && value >= rule.exclusiveMaximum) say('exclusiveMaximum', `${label} must be less than ${rule.exclusiveMaximum}`)
   }
 
   if (Array.isArray(value)) {
-    if (rule.minItems != null && value.length < rule.minItems) add(`${name} must have at least ${rule.minItems} items`)
-    if (rule.maxItems != null && value.length > rule.maxItems) add(`${name} must have at most ${rule.maxItems} items`)
+    if (rule.minItems != null && value.length < rule.minItems) say('minItems', `${label} must have at least ${rule.minItems} items`)
+    if (rule.maxItems != null && value.length > rule.maxItems) say('maxItems', `${label} must have at most ${rule.maxItems} items`)
   }
 }
 
@@ -349,7 +442,7 @@ export function validateAgainstFields(fields, data, mode = 'create') {
     const present = Object.prototype.hasOwnProperty.call(record, name)
 
     if (!present) {
-      if (!isPatch && rule.required) errors.push({ field: name, message: `${name} is required` })
+      if (!isPatch && rule.required) errors.push({ field: name, message: _required(name, rule) })
       continue
     }
 
@@ -358,7 +451,7 @@ export function validateAgainstFields(fields, data, mode = 'create') {
     if (value == null) {
       // An explicit null on a required field is the enum case: make() leaves a
       // required enum unset because no blank value is a member of it.
-      if (rule.required) errors.push({ field: name, message: `${name} is required` })
+      if (rule.required) errors.push({ field: name, message: _required(name, rule) })
       continue
     }
 

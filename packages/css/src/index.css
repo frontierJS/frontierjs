@@ -1,0 +1,128 @@
+/*
+ * index.css
+ * Single entry point. Import this from your app root.
+ *
+ * Plain CSS, no build step, no UnoCSS.
+ *
+ * ── Layout ──────────────────────────────────────────────────────────
+ *
+ *   index.css        this file — the only thing most apps import
+ *   utilities.css    the escape hatch; late layer, so it beats components
+ *   foundation/      tokens, tones, and the two lineage bases
+ *   themes/          the six shipped themes
+ *   components/      btn, card, field, table, dialog …
+ *   patterns/        the Block tier: bar, list, feed, steps, tabs …
+ *   a11y/            the focus ring and the a11y primitives
+ *
+ * The folders mirror the layer order below, which is the architecture —
+ * so the tree teaches it rather than competing with it. They are NOT a
+ * build input: there is no src/ and no dist/, because the file you read
+ * here is the file that ships.
+ *
+ * Directories were tried once before and are why v0.6 exists: every
+ * @import pointed at a ./themes/ and ./utilities/ that had never been
+ * created, so the entry point resolved nothing and the package did not
+ * load at all. A failed @import is silent — the rule stays in place with
+ * a null styleSheet — so `meta: every @import in index.css resolved` in
+ * the test suite is what makes this layout safe to have at all. If you
+ * move a file, run `bun run test`.
+ *
+ * ── Cascade layers ──────────────────────────────────────────────────
+ *
+ * Later layers win, regardless of selector specificity. That replaces the
+ * old "order matters, don't reshuffle the imports" convention with an
+ * explicit contract:
+ *
+ *   tokens      :root variable defaults
+ *   themes      .theme-* overrides of those tokens
+ *   tones       tone vocabulary (.primary, .danger, …)
+ *   base        the two lineage bases — chip (inline), surface (block)
+ *   layout      composition helpers (stack, cluster, center, split)
+ *   components  btn, pill, badge, card, field, table, dialog, …
+ *   patterns    block-tier layout patterns (bar, list, feed, disclosure)
+ *   utilities   the escape hatch — .text-* size and colour. After
+ *               components on purpose: .btn sets a font-size, so a
+ *               same-layer .text-lg lost to it and every size modifier
+ *               was inert. See utilities.css.
+ *   a11y        visually-hidden, skip link — last, so nothing outranks
+ *               them without a deliberate unlayered override
+ *
+ * Three consequences worth knowing:
+ *
+ * 1. Unlayered CSS beats every layer, so consumer styles override this
+ *    package by default — no !important, no specificity war.
+ *
+ * 2. Specificity still decides *within* a layer, so the :where() bases in
+ *    chip.css and surface.css stay overridable by their own composites.
+ *
+ * 3. `layout` sits before `components`/`patterns` on purpose: it lets
+ *    `.bar` beat `.center` on the `display` property. See layout.css.
+ */
+
+@layer tokens, themes, tones, base, layout, components, patterns, utilities, a11y;
+
+@import './foundation/tokens.css' layer(tokens);
+
+/* Themes */
+@import './themes/default.css'  layer(themes);
+@import './themes/sunset.css'   layer(themes);
+@import './themes/forest.css'   layer(themes);
+@import './themes/midnight.css' layer(themes);
+@import './themes/dark.css'     layer(themes);
+@import './themes/elite.css'    layer(themes);
+
+/* Foundation — the rest of it; tokens.css is imported above */
+@import './foundation/tones.css'   layer(tones);
+@import './foundation/chip.css'    layer(base);
+@import './foundation/surface.css' layer(base);
+@import './foundation/layout.css'  layer(layout);
+
+/* Frame + Page tiers — the app shell and the routed page */
+@import './components/frame.css' layer(components);
+
+/* Components */
+@import './components/typography.css' layer(components);
+@import './components/icon.css'       layer(components);
+@import './components/buttons.css'    layer(components);
+@import './components/pills.css'      layer(components);
+@import './components/badges.css'     layer(components);
+@import './components/cards.css'      layer(components);
+@import './components/tiles.css'      layer(components);
+@import './components/avatar.css'     layer(components);
+@import './components/feedback.css'   layer(components);
+@import './components/alerts.css'     layer(components);
+@import './components/toasts.css'     layer(components);
+@import './components/popovers.css'   layer(components);
+@import './components/tooltips.css'   layer(components);
+@import './components/drawers.css'    layer(components);
+@import './components/form-core.css'  layer(components);
+@import './components/tables.css'     layer(components);
+@import './components/dialogs.css'    layer(components);
+
+/* Block-tier patterns */
+@import './patterns/bars.css'       layer(patterns);
+@import './patterns/lists.css'      layer(patterns);
+@import './patterns/feed.css'       layer(patterns);
+@import './patterns/disclosure.css' layer(patterns);
+@import './patterns/facts.css'      layer(patterns);
+@import './patterns/steps.css'      layer(patterns);
+@import './patterns/tabs.css'       layer(patterns);
+@import './patterns/nav.css'        layer(patterns);
+
+/*
+ * The escape hatch — after every component and pattern, before a11y.
+ * A utility that cannot beat a component is not a utility.
+ */
+@import './utilities.css' layer(utilities);
+
+/*
+ * Accessibility primitives — last layer on purpose.
+ *
+ * focus.css is here rather than with the components because the focus ring
+ * is an accessibility guarantee, not a component detail. In the last layer
+ * a stray `outline: none` in a component file cannot switch it off; that is
+ * exactly how .btn.outlined lost its ring to a `box-shadow: none` before
+ * v0.7. See the header of focus.css.
+ */
+@import './a11y/focus.css' layer(a11y);
+@import './a11y/a11y.css'  layer(a11y);

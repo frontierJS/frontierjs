@@ -1,0 +1,53 @@
+<script>
+  // Stat.mesa
+  // Raw metric display — value, label, optional sub-text, optional trend.
+  // Composes into StatCard for the full bordered tile.
+  //
+  // The label goes FIRST in the DOM so a screen reader hears "Revenue,
+  // $48,290" rather than a number with no subject. If you want the number
+  // visually on top, `order: -1` on .tile-value — the package documents that
+  // as the intended override.
+  //
+  // Usage:
+  //   <Stat label="Total revenue" value="$48,295" sub="+12% from last month" trend="up" />
+  //   <Stat label="Active users" value={count} />
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let label = ''
+  export let value = ''
+  export let sub   = ''
+  export let trend = ''    // 'up' | 'down' | 'flat' | ''
+  export let tone  = ''    // tints the delta
+  export let color = ''    // legacy alias for `tone`
+
+  // A trend has a natural tone, but "up" is not always good — churn going up
+  // is bad. An explicit tone always wins over the default.
+  const trendMap = {
+    up:   { icon: '↑', tone: 'success' },
+    down: { icon: '↓', tone: 'danger'  },
+    flat: { icon: '→', tone: 'muted'   },
+  }
+
+  const t         = trendMap[trend] ?? null
+  const deltaTone = toTone(color || tone) || t?.tone || ''
+</script>
+
+<div class="stack" style:gap="0.25rem" {class}>
+  {#if label}
+    <div class="tile-label">{label}</div>
+  {/if}
+
+  <div class="tile-value">{value}</div>
+
+  {#if t || sub}
+    <div class={cx('tile-delta', deltaTone)}>
+      {#if t}
+        <span aria-hidden="true">{t.icon}</span>
+      {/if}
+      {#if sub}
+        <span>{sub}</span>
+      {/if}
+    </div>
+  {/if}
+</div>

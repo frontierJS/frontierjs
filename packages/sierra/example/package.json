@@ -6,10 +6,11 @@
   "description": "Runnable Sierra app — one db/schema.lite, seeding both halves.",
   "scripts": {
     "api": "bun run api/app.ts",
-    "dev": "vite",
-    "build": "vite build"
+    "dev": "vite -c web/config/vite.config.js",
+    "build": "vite build -c web/config/vite.config.js"
   },
   "dependencies": {
+    "@frontierjs/css": "workspace:*",
     "@frontierjs/junction": "workspace:*",
     "@frontierjs/litestone": "workspace:*",
     "@frontierjs/mesa": "workspace:*",

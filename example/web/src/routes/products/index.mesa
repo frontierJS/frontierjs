@@ -1,0 +1,172 @@
+---
+title: Products
+---
+<script>
+  import { products } from '../../resources/shop.mesa'
+  import { session } from '../../session.js'
+  import { prefs } from '../../prefs.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Combobox      from '@frontierjs/ui/components/forms/Combobox.mesa'
+  import EmptyState    from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import MultiSelect   from '@frontierjs/ui/components/forms/MultiSelect.mesa'
+  import Pagination    from '@frontierjs/ui/components/display/Pagination.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Slider        from '@frontierjs/ui/components/forms/Slider.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const { get: rows, unsubscribe } = useStore(products.store)
+  $onDestroy(unsubscribe)
+
+  $: (session.level, prefs.perPage, prefs.dense)
+
+  let error   = null
+  let loading = true
+  products.load()
+    .then(() => {
+      // The slider cannot know the catalogue's price range before the
+      // catalogue arrives, and a range of 0–0 filters everything out. Widened
+      // once, here, rather than by watching the store: a `$: rows(), handler`
+      // hook would try to replace `rows`, which is a const.
+      high    = ceiling
+      widened = true
+    })
+    .catch(e => { error = e.message })
+    .finally(() => { loading = false })
+
+  const columns = [
+    { key: 'name',    label: 'Name' },
+    { key: 'sku',     label: 'SKU' },
+    { key: 'price',   label: 'Price' },
+    { key: 'barcode', label: 'Barcode' },
+    { key: 'active',  label: 'Active' },
+  ]
+
+  // ── Filters ──────────────────────────────────────────────────────────────
+  //
+  // Client-side on purpose: this is a catalogue of four, and the point here is
+  // the controls, not a query builder. The options each control offers are
+  // read off the rows that arrived — a filter that offers a value no record
+  // has is a filter that lies.
+  let pick     = undefined   // Combobox — one product by name
+  let statuses = []          // MultiSelect — active / retired
+  let low      = 0           // Slider — price floor
+  let high     = 0           // Slider — price ceiling
+  let pageNo   = 1
+  // Page size is a preference, set on /settings/ and read here — the setting
+  // has to change something or it is decoration.
+  const PER_PAGE = prefs.perPage
+
+  const names   = rows().map(p => p.name)
+  const ceiling = Math.max(10, ...rows().map(p => Math.ceil(p.price)))
+
+  // Until the catalogue lands there is no range to filter on, so the price
+  // filter stays off rather than sitting at 0–0, which would hide everything.
+  let widened = false
+
+  const filtered = rows().filter(p =>
+    (!pick || p.name === pick) &&
+    (!statuses.length || statuses.includes(p.active ? 'active' : 'retired')) &&
+    (!widened || (p.price >= low && p.price <= high))
+  )
+
+  const paged = filtered.slice((pageNo - 1) * PER_PAGE, pageNo * PER_PAGE)
+
+  function clearFilters() {
+    pick     = undefined
+    statuses = []
+    low      = 0
+    high     = ceiling
+    pageNo   = 1
+  }
+</script>
+
+<SectionHeader title="Products" level={1} sub="read is public — no sign-in needed" />
+
+{#if error}
+  <Alert tone="danger">{error}</Alert>
+{/if}
+
+<!--
+  A filter bar is where a component kit stops being decoration: a combobox, a
+  multi-select and a range slider are all keyboard, focus and ARIA problems
+  that a stylesheet cannot solve. None of them talks to the API — they narrow
+  what arrived.
+-->
+<div class="card cluster" style="align-items: flex-end; gap: 1rem; flex-wrap: wrap">
+  <Combobox
+    id="f-name"
+    label="Product"
+    placeholder="Any product"
+    options={names}
+    bind:value={pick}
+    hint="one name, or clear it"
+  />
+
+  <MultiSelect
+    id="f-status"
+    label="Status"
+    multiple
+    placeholder="Any status"
+    options={['active', 'retired']}
+    bind:value={statuses}
+    hint="derived from Product.active"
+  />
+
+  <Slider
+    id="f-price"
+    label="Price"
+    range
+    min={0}
+    max={ceiling}
+    step={1}
+    bind:start={low}
+    bind:end={high}
+  />
+
+  <Button variant="ghost" id="f-clear" onclick={clearFilters}>Clear</Button>
+</div>
+
+<Table {columns} rows={paged} {loading} striped hover compact={prefs.dense}>
+  {#snippet row(p)}
+    <tr>
+      <td>{p.name}</td>
+      <td><code>{p.sku}</code></td>
+      <td>{p.price}</td>
+      <td class="text-muted">{p.barcode === null ? 'null' : p.barcode}</td>
+      <td><Pill tone={p.active ? 'success' : 'muted'}>{p.active ? 'active' : 'retired'}</Pill></td>
+    </tr>
+  {/snippet}
+
+  <!-- An empty catalogue and an over-narrow filter are different situations
+       and deserve different words. -->
+  {#snippet empty()}
+    <tr>
+      <td colspan={columns.length}>
+        <EmptyState
+          title={rows().length ? 'No product matches those filters' : 'No products yet'}
+          description={rows().length ? 'Widen the price range or clear the product name.' : 'Seed the database and reload.'}
+        >
+          {#snippet action()}
+            <Button variant="outlined" onclick={clearFilters}>Clear filters</Button>
+          {/snippet}
+        </EmptyState>
+      </td>
+    </tr>
+  {/snippet}
+</Table>
+
+<Pagination
+  page={pageNo}
+  total={filtered.length}
+  perPage={PER_PAGE}
+  onchange={(n) => pageNo = n}
+/>
+
+<p class="text-sm text-muted">
+  The <code>Barcode</code> column prints <code>null</code>, not an empty cell. <code>barcode String? @unique</code> plus <code>blankToNull</code> is what keeps a second blank-barcode product from failing a constraint nobody wrote.
+</p>

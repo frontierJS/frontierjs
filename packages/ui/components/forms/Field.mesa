@@ -1,0 +1,93 @@
+<script>
+  // Field.mesa
+  // The structural wrapper for form controls: `.field-group` composes the
+  // label, the control slot, and the hint/error line.
+  //
+  // ── How errors are toned ─────────────────────────────────────────────
+  //
+  // @frontierjs/css drives field state from `:user-invalid`, which needs no
+  // JS and no class, and matches only after the user has actually interacted
+  // — so client-side validation is already handled with nothing here. What
+  // the stylesheet cannot know about is a *server* error, and that is the
+  // only case this component handles.
+  //
+  // The tone goes on the HINT ITSELF, not on the group. A tone class sets
+  // `--bg-mix`, which tones.css registers with `inherits: false`, so a tone on
+  // the wrapper reaches nothing inside it: the error text rendered in ordinary
+  // muted grey and looked like a hint. `.field-hint` reads `--bg-mix` off its
+  // own element.
+  //
+  // Two usage patterns:
+  //
+  //   Pattern A — explicit Field wrapping a naked input:
+  //     <Field label="Email" name="email" {errors}>
+  //       <Input type="email" bind:value={email} />
+  //     </Field>
+  //
+  //   Pattern B — shorthand label prop on the input itself:
+  //     <Input label="Email" name="email" bind:value={email} {errors} />
+  //
+  // Error resolution order:
+  //   1. Direct `error` string prop
+  //   2. `errors[name]` — server-returned error map (replace, don't mutate)
+  //   3. Nothing shown
+
+  import Label from './Label.mesa'
+  import { nameToLabel } from '../../utils.js'
+
+  export let id       = ''
+  export let name     = ''
+  export let label    = nameToLabel(name)    // auto-derive from name if not set
+  export let required = undefined
+  export let badge    = undefined            // label badge override
+  export let help     = undefined            // label tooltip: string or { text }
+  export let hint     = ''                   // helper text below the control
+  export let error    = ''                   // direct error string
+  export let errors   = undefined            // error map: { [fieldName]: string }
+  export let type     = undefined            // forwarded to Label
+  export let removable   = false             // show × next to the label
+  export let onremovekey = undefined
+
+  // errors is export let (reactive) — re-derives when the object is replaced.
+  const displayError = error || (errors?.[name] ?? '')
+
+  function handleRemove() {
+    onremovekey?.()
+  }
+</script>
+
+<div class="field-group" {class}>
+
+  <!-- Label row: label + optional remove-key × button -->
+  {#if type !== 'hidden' && label}
+    <div class="split">
+      <Label {label} {id} {required} {badge} {help} type={type} />
+
+      {#if removable}
+        <button type="button" class="btn ghost square" aria-label="Remove field" on:click={handleRemove}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+          </svg>
+        </button>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Control slot -->
+  <slot />
+
+  <!-- Hint — shown only when there is no error -->
+  {#if hint && !displayError}
+    <p class="field-hint">{hint}</p>
+  {/if}
+
+  <!--
+    Error — replaces the hint. role="alert" so it is announced when it
+    appears; `danger` sits here because that is the element whose colour
+    derives from it.
+  -->
+  {#if displayError}
+    <p class="field-hint danger" role="alert">{displayError}</p>
+  {/if}
+
+</div>

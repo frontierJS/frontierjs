@@ -22,7 +22,7 @@
 //
 // ─── Schema ────────────────────────────────────────────────────────────────────
 //
-//   model users {
+//   model User {
 //     avatar  File?
 //     resume  File?  @keepVersions
 //     photos  File[]

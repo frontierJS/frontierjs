@@ -1,0 +1,228 @@
+<script>
+  // NumberInput.mesa
+  // Numeric input with ± buttons, min/max/step constraints, keyboard arrow
+  // support, and optional value formatting. Composes Field when label is set.
+  //
+  // Usage — basic:
+  //   <NumberInput bind:value={qty} min={1} max={99} />
+  //
+  // Usage — with Field:
+  //   <NumberInput label="Quantity" name="qty" bind:value={qty} min={1} max={99} {errors} />
+  //
+  // Usage — currency formatted:
+  //   <NumberInput
+  //     label="Price"
+  //     bind:value={price}
+  //     step={0.01} min={0}
+  //     format={(v) => `$${v.toFixed(2)}`}
+  //     parse={(s) => parseFloat(s.replace(/[^0-9.]/g, '')) || 0}
+  //   />
+  //
+  // Keyboard: ArrowUp/Down adjusts by step. Shift+Arrow adjusts by step×10.
+  // bind:this exposes: focus()
+
+  import Field from './Field.mesa'
+  import { nameToLabel, uid } from '../../utils.js'
+
+  // ── Core props ────────────────────────────────────────────────────────────
+
+  export let value       = 0
+  export let min         = undefined
+  export let max         = undefined
+  export let step        = 1
+  export let disabled    = false
+  export let readonly    = false
+  export let placeholder = ''
+
+  // format/parse — for display-only formatting (e.g. currency, percentage).
+  // When format is provided the underlying <input> switches to type="text"
+  // so the formatted string is shown; parse converts typed text back to a number.
+  // If parse is omitted, parseFloat is used (strips non-numeric prefix/suffix).
+  export let format      = undefined   // (n: number) => string
+  export let parse       = undefined   // (s: string) => number
+
+  // ── Field integration ─────────────────────────────────────────────────────
+
+  export let name     = ''
+  export let label    = ''
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let badge    = undefined
+  export let help     = undefined
+  export let onchange = undefined
+
+  export var id = ''
+  const inputId = id || uid('num')
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  function getPrecision(n) {
+    if (!isFinite(n) || Number.isInteger(n)) return 0
+    return String(n).split('.')[1]?.length ?? 0
+  }
+  const precision = getPrecision(step)
+
+  function clamp(v) {
+    let r = parseFloat(v.toFixed(precision))
+    if (min !== undefined && r < min) r = min
+    if (max !== undefined && r > max) r = max
+    return r
+  }
+
+  function toDisplay(v) {
+    return format ? format(v) : String(v)
+  }
+
+  function fromDisplay(s) {
+    const parsed = parse ? parse(s) : parseFloat(s)
+    return isNaN(parsed) ? value : clamp(parsed)
+  }
+
+  // ── State ─────────────────────────────────────────────────────────────────
+
+  // inputValue drives the text shown in the <input>. It stays as the user's
+  // typed string while editing and snaps to canonical form on blur.
+  let inputValue = toDisplay(value)
+
+  // Sync when value prop changes from outside
+  $: value, () => { inputValue = toDisplay(value) }
+
+  // Button disabled states — re-derive when value/min/max change
+  const canDecrement = min === undefined || value > min
+  const canIncrement = max === undefined || value < max
+
+  // Server-error state. Client-side invalidity is `:user-invalid` in
+  // @frontierjs/css and needs nothing here.
+  const hasError = !!(error || errors?.[name])
+
+  let inputEl
+  export function focus() { inputEl?.focus() }
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+
+  function increment(multiplier = 1) {
+    if (disabled || readonly) return
+    value    = clamp(value + step * multiplier)
+    inputValue = toDisplay(value)
+    onchange?.({ value })
+  }
+
+  function decrement(multiplier = 1) {
+    if (disabled || readonly) return
+    value    = clamp(value - step * multiplier)
+    inputValue = toDisplay(value)
+    onchange?.({ value })
+  }
+
+  function handleInput(e) {
+    inputValue = e.target.value
+    const v    = fromDisplay(inputValue)
+    value      = v
+    onchange?.({ value })
+  }
+
+  function handleBlur() {
+    // Snap display to canonical form on blur so e.g. "$1.5" becomes "$1.50"
+    inputValue = toDisplay(value)
+  }
+
+  function handleKeydown(e) {
+    if (e.key === 'ArrowUp')   { e.preventDefault(); increment(e.shiftKey ? 10 : 1) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); decrement(e.shiftKey ? 10 : 1) }
+  }
+</script>
+
+{#snippet control()}
+  <!--
+    .field-row joins a control to the things flanking it — it squares the
+    inner corners and collapses the shared border, which is exactly the
+    stepper shape. The buttons are ordinary .btn, so they get the tone
+    system and the shared focus ring rather than a private hover palette.
+  -->
+  <div class="field-row" style:opacity={disabled ? 0.5 : null}>
+    <!-- Decrement ─────────────────────────────────────────────────────────── -->
+    <button
+      type="button"
+      class="btn outlined square"
+      disabled={disabled || readonly || !canDecrement}
+      aria-label="Decrease"
+      on:click={() => decrement()}
+      on:mousedown={(e) => e.preventDefault()}
+    >
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd"
+          d="M4 10a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H4.75A.75.75 0 0 1 4 10z"
+          clip-rule="evenodd"/>
+      </svg>
+    </button>
+
+    <!-- Input ─────────────────────────────────────────────────────────────── -->
+    <input
+      bind:this={inputEl}
+      class="field fjs-number-input"
+      id={inputId}
+      name={name || undefined}
+      type={format ? 'text' : 'number'}
+      value={inputValue}
+      placeholder={placeholder}
+      disabled={disabled}
+      readonly={readonly}
+      min={format ? undefined : min}
+      max={format ? undefined : max}
+      step={format ? undefined : step}
+      aria-invalid={hasError || null}
+      on:input={handleInput}
+      on:blur={handleBlur}
+      on:keydown={handleKeydown}
+    />
+
+    <!-- Increment ─────────────────────────────────────────────────────────── -->
+    <button
+      type="button"
+      class="btn outlined square"
+      disabled={disabled || readonly || !canIncrement}
+      aria-label="Increase"
+      on:click={() => increment()}
+      on:mousedown={(e) => e.preventDefault()}
+    >
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5z"/>
+      </svg>
+    </button>
+  </div>
+{/snippet}
+
+<style>
+  /* The stepper buttons ARE the increment affordance, so the UA spinners
+     would be a second one sitting on top. */
+  .fjs-number-input {
+    text-align: center;
+    appearance: textfield;
+  }
+  .fjs-number-input::-webkit-outer-spin-button,
+  .fjs-number-input::-webkit-inner-spin-button {
+    appearance: none;
+    margin:     0;
+  }
+</style>
+
+{#if label || name}
+  <Field
+    id={inputId}
+    name={name}
+    label={label || name}
+    hint={hint}
+    error={error}
+    errors={errors}
+    badge={badge}
+    help={help}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  <div {class}>
+    {@render control()}
+  </div>
+{/if}

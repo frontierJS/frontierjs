@@ -1,6 +1,7 @@
 # The style guide
 
-The interactive reference: 45 pages, every component live, six themes.
+The interactive reference: 49 pages, every component live, six themes —
+all 35 vocabulary terms have a page.
 No React, no build step, no bundler — the same bet the package itself makes.
 
 Converted from `style-guide.jsx` on 2026-08-02, which is now retired; the last

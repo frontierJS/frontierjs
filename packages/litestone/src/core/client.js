@@ -41,6 +41,11 @@ export class TransitionViolationError extends Error {
     this.field      = field
     this.from       = from
     this.to         = to
+    // 409: the request conflicts with the row's current state. Junction reads
+    // err.status directly — no mapper, no registration — which is the documented
+    // contract for an error class you own. Without it this surfaced as a 500
+    // GeneralError, telling a caller to retry something that will never work.
+    this.status     = 409
     this.retryable  = false
   }
 }
@@ -53,7 +58,23 @@ export class TransitionConflictError extends Error {
     this.field     = field
     this.expected  = expected
     this.to        = to
+    // 409 as well, but this one IS worth retrying — the row moved under us.
+    this.status    = 409
     this.retryable = true
+  }
+}
+
+export class TransitionGateError extends Error {
+  constructor(model, field, transitionName, required, got) {
+    super(`Transition '${transitionName}' on ${model}.${field} requires level ${required}, user has level ${got}`)
+    this.name       = 'TransitionGateError'
+    this.model      = model
+    this.field      = field
+    this.transition = transitionName
+    this.required   = required
+    this.got        = got
+    this.status     = 403   // own the mapping — junction reads err.status, no registration needed
+    this.retryable  = false
   }
 }
 
@@ -63,6 +84,9 @@ export class TransitionNotFoundError extends Error {
     this.name           = 'TransitionNotFoundError'
     this.model          = model
     this.transition     = transitionName
+    // 400: the payload named a transition this model does not declare. That is
+    // a malformed request, not a state conflict.
+    this.status         = 400
     this.retryable      = false
   }
 }
@@ -654,22 +678,23 @@ function buildBoolMap(schema) {
 // Used for friendly validation before writes hit SQLite's CHECK constraint.
 
 // ─── Transition map ───────────────────────────────────────────────────────────
-// { modelName: { fieldName: { enumName, transitions: { name: { from, to } } } } }
-// Only populated for fields whose enum has a transitions block.
+// { modelName: { fieldName: { enumName, transitions: { name: { from, to, gate } } } } }
+//
+// Reads @@transitions model attributes only. The `enum X { transitions { ... } }`
+// shorthand was already desugared into those attributes by resolveTransitions()
+// in the parser, so there is exactly one representation to enforce against.
 
 function buildTransitionMap(schema) {
-  const enumTransitions = {}
-  for (const e of schema.enums) {
-    if (e.transitions) enumTransitions[e.name] = e.transitions
-  }
   const map = {}
   for (const model of schema.models) {
-    for (const field of model.fields) {
-      if (field.type.kind !== 'scalar' && field.type.kind !== 'enum') continue
-      const enumName = field.type.name
-      if (!enumTransitions[enumName]) continue
+    for (const attr of model.attributes ?? []) {
+      if (attr.kind !== 'transitions') continue
+      const field = model.fields.find(f => f.name === attr.field)
       if (!map[model.name]) map[model.name] = {}
-      map[model.name][field.name] = { enumName, transitions: enumTransitions[enumName] }
+      map[model.name][attr.field] = {
+        enumName:    field?.type?.name ?? null,
+        transitions: attr.transitions,
+      }
     }
   }
   return map
@@ -1087,28 +1112,27 @@ async function loadComputedFields(computedInput) {
 // ─── Transaction manager ──────────────────────────────────────────────────────
 // Uses SAVEPOINTs for nesting so $transaction + createMany compose safely.
 
-function makeTxManager(db) {
-  let depth = 0
+function makeTxManager(db, state = { depth: 0 }) {
   let spCount = 0
 
   function begin() {
     // BEGIN IMMEDIATE (matching the $transaction doc comment): take the write
     // lock up front. A deferred BEGIN upgrades to a write lock mid-transaction,
     // which under concurrency surfaces as avoidable SQLITE_BUSY retries.
-    if (depth === 0) { db.run('BEGIN IMMEDIATE') }
+    if (state.depth === 0) { db.run('BEGIN IMMEDIATE') }
     else { spCount++; db.run(`SAVEPOINT sp_${spCount}`) }
-    depth++
-    return depth === 1 ? null : spCount
+    state.depth++
+    return state.depth === 1 ? null : spCount
   }
 
   function commit(sp) {
-    depth--
+    state.depth--
     if (sp == null) db.run('COMMIT')
     else            db.run(`RELEASE sp_${sp}`)
   }
 
   function rollback(sp) {
-    depth--
+    state.depth--
     if (sp == null) db.run('ROLLBACK')
     else { db.run(`ROLLBACK TO sp_${sp}`); db.run(`RELEASE sp_${sp}`) }
   }
@@ -1119,7 +1143,28 @@ function makeTxManager(db) {
     catch (e) { rollback(sp); throw e }
   }
 
-  return { begin, commit, rollback, wrap }
+  return { begin, commit, rollback, wrap, state }
+}
+
+// ─── Read routing ─────────────────────────────────────────────────────────────
+//
+// Reads normally go to the readonly WAL connection, which is what lets them run
+// concurrently with writes. Inside a transaction that is wrong: the writes are
+// uncommitted on the write connection, and WAL isolation means the read
+// connection cannot see them. A create() followed by a findMany() in the same
+// $transaction returned [] — the row existed, the reader was looking at a
+// snapshot taken before it.
+//
+// While a transaction is open, reads route to the write connection instead, which
+// observes its own uncommitted work. Outside one, nothing changes.
+
+function makeReadRouter(readDb, writeDb, txState) {
+  return {
+    query:  (sql) => (txState.depth > 0 ? writeDb : readDb).query(sql),
+    inTx:   () => txState.depth > 0,
+    get cacheSize()  { return readDb.cacheSize },
+    set cacheSize(v) { readDb.cacheSize = v },
+  }
 }
 
 // ─── Computed fields ──────────────────────────────────────────────────────────
@@ -1911,7 +1956,16 @@ function makeTable(
   //
   const _tableTransitions = ctx.transitionMap?.[modelName] ?? null
 
-  function checkTransitions(data, whereParams, whereSql) {
+  // Resolve the caller's gate level for this model. GatePlugin owns the scale and
+  // the per-request cache (ctx.levelFor). When a transition declares @gate the
+  // plugin is guaranteed present — createClient auto-installs one — so a missing
+  // resolver means something is misconfigured, and refusing is the safe read.
+  async function transitionLevel() {
+    if (typeof ctx.levelFor !== 'function') return 0
+    return await ctx.levelFor(modelName, ctx)
+  }
+
+  async function checkTransitions(data, whereParams, whereSql) {
     if (!_tableTransitions) return null
     if (ctx.isSystem) return null   // SYSTEM always bypasses — logged below
 
@@ -1941,6 +1995,16 @@ function makeTable(
           .filter(t => t.from.includes(currentValue))
           .map(t => t.to)
         throw new TransitionViolationError(tableName, fieldName, currentValue, newValue, validTargets)
+      }
+
+      // The move is legal — is this caller allowed to make it? A transition gate
+      // is a floor on top of @@gate's update level, which has already passed to
+      // get here: shipping an order and refunding one are not the same authority.
+      const required = transitions[matchedName].gate
+      if (required != null) {
+        const level = await transitionLevel()
+        if (level < required)
+          throw new TransitionGateError(tableName, fieldName, matchedName, required, level)
       }
 
       return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue }
@@ -2020,7 +2084,13 @@ function makeTable(
     const dot = key.indexOf('.')
     if (dot === -1) continue
     const model = key.slice(0, dot)
-    if (model !== tableName) continue
+    // buildLogMap keys these `ModelName.fieldName` (see its header), and the
+    // model-level map below is looked up by `modelName` too. Comparing against
+    // tableName only matched while model name == table name — i.e. lowercase
+    // model names. Under the mandatory PascalCase convention `Post` !== `post`,
+    // so every field-level @log was silently dropped and @log(audit) on a field
+    // recorded nothing at all.
+    if (model !== modelName) continue
     const field = key.slice(dot + 1)
     tableFieldLogs.set(field, configs)
   }
@@ -2058,6 +2128,46 @@ function makeTable(
     fireLog(table, buildLogEntry(entry, ctx, ctx.onLog))
   }
 
+  // ── Audit redaction ─────────────────────────────────────────────────────
+  // A protected field's VALUE must never reach a log entry. The audit trail
+  // exists to record THAT a field was written — by whom, to which rows, when —
+  // not what it holds. Logging the plaintext would defeat the @encrypted it
+  // sits next to: the database row is ciphertext while the JSONL beside it is
+  // not, and the log file has none of the column's read protections.
+  //
+  // This matters most for @secret, which expands to
+  // @encrypted + @guarded(all) + @log(<first logger db>) — so declaring a
+  // logger database is on its own enough to start logging every @secret field.
+  // Redaction is what makes that expansion safe.
+  //
+  // null is preserved rather than redacted: it holds nothing to leak, and
+  // keeping it means a null → value transition is still visible in the trail.
+  const REDACTED = '[redacted]'
+  const protectedLogFields = new Set(
+    Object.keys(fieldPolicy).filter(f => fieldPolicy[f].encrypted || fieldPolicy[f].guarded)
+  )
+  const hasProtectedLogFields = protectedLogFields.size > 0
+
+  // Field-level entries: the entry IS about this field, so it stays — only the
+  // value is replaced.
+  function redactValue(field, value) {
+    if (value == null) return null
+    return protectedLogFields.has(field) ? REDACTED : value
+  }
+
+  // Model-level entries: before/after are whole rows. Copy on write — these
+  // objects are the rows handed back to the caller and must not be mutated.
+  function redactSnapshot(row) {
+    if (!row || !hasProtectedLogFields || typeof row !== 'object') return row
+    let out = null
+    for (const f of protectedLogFields) {
+      if (row[f] == null) continue
+      if (!out) out = { ...row }
+      out[f] = REDACTED
+    }
+    return out ?? row
+  }
+
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
@@ -2079,8 +2189,8 @@ function makeTable(
             model:   tableName,
             field,
             records: ids,
-            before:  beforeMap ? (beforeMap[field] ?? null) : null,
-            after:   afterMap  ? (afterMap[field]  ?? null) : null,
+            before:  beforeMap ? redactValue(field, beforeMap[field] ?? null) : null,
+            after:   afterMap  ? redactValue(field, afterMap[field]  ?? null) : null,
           })
         }
       }
@@ -2098,8 +2208,8 @@ function makeTable(
           model:   tableName,
           field:   null,
           records: ids,
-          before:  beforeMap ?? null,
-          after:   afterMap  ?? null,
+          before:  beforeMap ? redactSnapshot(beforeMap) : null,
+          after:   afterMap  ? redactSnapshot(afterMap)  : null,
         })
       }
     }
@@ -2275,7 +2385,14 @@ function makeTable(
           a.kind === 'from'     || a.kind === 'edge')) continue
         // Int @id with no default is SQLite's autoincrementing rowid alias
         if (attrs.some(a => a.kind === 'id') && f.type.name === 'Int') continue
-        if (data?.[f.name] == null) missing.push({ path: [f.name], message: `${f.name} is required` })
+        if (data?.[f.name] == null) {
+          // @required("…") carries the wording; @label("Customer") names the
+          // field when there is none. Neither creates the rule — the absence of
+          // `?` above did.
+          const custom = attrs.find(a => a.kind === 'required')?.message
+          const label  = attrs.find(a => a.kind === 'label')?.text ?? f.name
+          missing.push({ path: [f.name], message: custom ?? `${label} is required` })
+        }
       }
       if (missing.length) throw new ValidationError(missing)
     }
@@ -2302,7 +2419,7 @@ function makeTable(
         const uniqueItems = field.attributes.find(a => a.kind === 'uniqueItems')
         if (uniqueItems && new Set(val.map(String)).size !== val.length)
           throw new ValidationError([{ path: [field.name], message: `${field.name} must have unique items` }])
-        // Type validation: Text[] → all strings, Integer[] → all integers
+        // Type validation: String[] → all strings, Int[] → all integers
         if (field.type.name === 'Int' && !val.every(v => Number.isInteger(v)))
           throw new ValidationError([{ path: [field.name], message: `${field.name} (Integer[]) must contain only integers` }])
         if (field.type.name === 'String' && !val.every(v => typeof v === 'string'))
@@ -2535,6 +2652,11 @@ function makeTable(
   const _fastFindManySql = (softDelete && !hasTemplates && !ctx.hasPolicies && !_staticGlobalFilter && !_dynamicGlobalFilter && !plugins?.hasPlugins)
     ? `${_baseSqlWithFrom} WHERE "deletedAt" IS NULL`
     : null
+
+  // Is a transaction open? The two fast paths below hold statements prepared
+  // against the read connection, which cannot observe uncommitted writes, so both
+  // stand down while one is. `inTx` is absent on plain/read-only connections.
+  const _inTx = () => readDb.inTx?.() === true
 
   // Pre-cache the prepared statement for the most common query pattern.
   // Eliminates Map lookup in wrapDb on every findMany({}) call.
@@ -3038,7 +3160,11 @@ WHERE _tree."${fkField}" IS NOT NULL`
       }
 
       // ── Inline fast path: findMany() / findMany({}) with no plugins/hooks/logging ──
-      if (_fastStmt && !args.where && !args.orderBy && !args.limit && !args.offset && !args.select && !args.include && !args.withDeleted && !args.onlyDeleted && !args.window && !args.distinct && !plugins?.hasPlugins && !hookRunner && !tableHasAnyLog) {
+      // Skipped inside a transaction: this statement was prepared against the
+      // READ connection at table-build time, so it cannot see uncommitted writes.
+      // The normal path goes through readDb.query(), which routes to the write
+      // connection while a transaction is open.
+      if (_fastStmt && !_inTx() && !args.where && !args.orderBy && !args.limit && !args.offset && !args.select && !args.include && !args.withDeleted && !args.onlyDeleted && !args.window && !args.distinct && !plugins?.hasPlugins && !hookRunner && !tableHasAnyLog) {
         const _needsTiming = ctx.onQuery || ctx._queryListeners.size
         const _t0 = _needsTiming ? performance.now() : 0
         const rows = readAll(_fastStmt.all(), { mode: 'list' })
@@ -3097,7 +3223,8 @@ WHERE _tree."${fkField}" IS NOT NULL`
       // ── Ultra-fast path: findUnique({ where: { <pk>: value } }) ──
       // Skip buildSQL, parseArgs, soft-delete filter assembly entirely.
       // Bypass conditions are pre-checked at table-build time (_canFastFindUnique).
-      if (_fastFindUniqueStmt && !_edgeNamespaces.size) {
+      // Same reason as the findMany fast path: prepared against the read connection.
+      if (_fastFindUniqueStmt && !_inTx() && !_edgeNamespaces.size) {
         const w = args.where
         if (w && !args.include && !args.select && !args.withDeleted && !args.onlyDeleted) {
           // Single-key object pointing at the PK with a scalar value
@@ -3197,7 +3324,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
     // Uses SELECT 1 ... LIMIT 1 — SQLite short-circuits on the first matching row,
     // making this faster than count() when you only need a boolean.
     //
-    // db.users.exists({ where: { email: 'alice@example.com' } })
+    // db.user.exists({ where: { email: 'alice@example.com' } })
     // → true | false
     async exists(args = {}) {
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
@@ -3237,7 +3364,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
     // total = count ignoring limit/offset (for pagination UI).
     // Guaranteed consistent: both queries share identical WHERE/policy/filter context.
     //
-    // db.users.findManyAndCount({ where, orderBy, limit, offset, select, include })
+    // db.user.findManyAndCount({ where, orderBy, limit, offset, select, include })
     // → { rows: [...], total: 42 }
     async findManyAndCount(args = {}) {
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
@@ -3295,10 +3422,10 @@ WHERE _tree."${fkField}" IS NOT NULL`
     //   everything else                          → findMany(args)
     //
     // Examples:
-    //   db.orders.query({ where: { status: 'paid' }, limit: 20 })
-    //   db.orders.query({ by: ['status'], _count: true })
-    //   db.orders.query({ _count: true, _sum: { amount: true } })
-    //   db.orders.query({ window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } } })
+    //   db.order.query({ where: { status: 'paid' }, limit: 20 })
+    //   db.order.query({ by: ['status'], _count: true })
+    //   db.order.query({ _count: true, _sum: { amount: true } })
+    //   db.order.query({ window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } } })
     async query(args = {}) {
       if (args.by) {
         return this.groupBy(args)
@@ -3313,7 +3440,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
     },
 
     // ── aggregate ────────────────────────────────────────────────────────────
-    // db.orders.aggregate({ _sum: { amount: true }, _avg: { amount: true }, _count: true, _min: { amount: true }, _max: { amount: true }, where: {...} })
+    // db.order.aggregate({ _sum: { amount: true }, _avg: { amount: true }, _count: true, _min: { amount: true }, _max: { amount: true }, where: {...} })
     // Returns: { _sum: { amount: 1200 }, _avg: { amount: 40 }, _count: 30, _min: { amount: 5 }, _max: { amount: 200 } }
     async aggregate(args = {}) {
       const { where, _count, _sum, _avg, _min, _max, _stringAgg } = args
@@ -3407,7 +3534,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
     },
 
     // ── groupBy ──────────────────────────────────────────────────────────────
-    // db.orders.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: {...}, having: {...}, orderBy: {...}, limit, offset })
+    // db.order.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: {...}, having: {...}, orderBy: {...}, limit, offset })
     // Returns: [{ status: 'paid', _count: 10, _sum: { amount: 500 } }, ...]
     async groupBy(args = {}) {
       const { by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps } = args
@@ -3922,7 +4049,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // ── Transition enforcement ────────────────────────────────────────────
       // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
       // Note: uses whereParams (original, no policy filter) for the current-value SELECT.
-      const _transResult = checkTransitions(row, whereParams, whereSql)
+      const _transResult = await checkTransitions(row, whereParams, whereSql)
       // If transitions apply, narrow WHERE to include AND field = currentValue (optimistic lock)
       const { sql: _txWhereSql, params: _txWhereParams } = _transResult
         ? applyTransitionWhereClause(_transResult, finalWhereSql, finalWhereParams)
@@ -4145,12 +4272,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // All supplied fields are updated on conflict; unspecified fields keep
     // their existing values.
     //
-    //   await db.posts.upsertMany({
+    //   await db.post.upsertMany({
     //     data: [{ id: 1, title: 'A' }, { id: 2, title: 'B' }],
     //   })
     //
     //   // Custom conflict target (e.g. unique slug)
-    //   await db.posts.upsertMany({
+    //   await db.post.upsertMany({
     //     data: [{ slug: 'hello', title: 'Hello' }],
     //     conflictTarget: ['slug'],
     //     update: ['title'],   // only update these fields on conflict
@@ -4405,8 +4532,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   hasMore:     true if there are more rows after this page
     //
     // Usage:
-    //   const p1 = await db.users.findManyCursor({ limit: 50, orderBy: { id: 'asc' } })
-    //   const p2 = await db.users.findManyCursor({ limit: 50, orderBy: { id: 'asc' }, cursor: p1.nextCursor })
+    //   const p1 = await db.user.findManyCursor({ limit: 50, orderBy: { id: 'asc' } })
+    //   const p2 = await db.user.findManyCursor({ limit: 50, orderBy: { id: 'asc' }, cursor: p1.nextCursor })
     //
     // Multi-field ordering is supported:
     //   orderBy: [{ createdAt: 'desc' }, { id: 'asc' }]
@@ -4736,6 +4863,43 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
 
       return this.update({ where: { [idField]: id }, data: { [targetField]: targetValue } })
+    },
+
+    // ── transitions ─────────────────────────────────────────────────────────
+    // The legal next states for this record at this caller's level — the thing
+    // a UI needs to render exactly the right buttons and nothing else.
+    //
+    // Accepts a row (no round trip) or an id (one read). Returns every move
+    // legal from the record's current value, each flagged with `allowed`:
+    // a gated move the caller can't make is reported, not hidden, because a
+    // greyed-out button is usually better UI than a missing one. Callers that
+    // want only the usable ones filter on `allowed`.
+    //
+    // Mirrored on the client by sierra's resource.transitions(row, level),
+    // which reads the same shape out of the JSON Schema's x-transitions.
+    async transitions(idOrRow) {
+      if (!_tableTransitions) return []
+
+      let row = idOrRow
+      if (row == null || typeof row !== 'object')
+        row = await this.findUnique({ where: { [idField]: idOrRow } })
+      if (!row) return []
+
+      // Only resolve a level if some reachable transition actually gates.
+      let level = null
+      const levelFor = async () => (level ??= ctx.isSystem ? 8 : await transitionLevel())
+
+      const out = []
+      for (const [fieldName, spec] of Object.entries(_tableTransitions)) {
+        const currentValue = row[fieldName]
+        if (currentValue == null) continue
+        for (const [name, { from, to, gate }] of Object.entries(spec.transitions)) {
+          if (!from.includes(currentValue)) continue
+          const allowed = gate == null ? true : (await levelFor()) >= gate
+          out.push({ name, field: fieldName, from: currentValue, to, gate: gate ?? null, allowed })
+        }
+      }
+      return out
     },
 
     // ── optimizeFts ─────────────────────────────────────────────────────────
@@ -5102,7 +5266,7 @@ export async function createClient({
   // Resolution order: parsed > schema (inline string) > path (file)
   //
   //   createClient({ path: './db/schema.lite' })
-  //   createClient({ schema: `model users { id Integer @id }`, db: ':memory:' })
+  //   createClient({ schema: `model User { id Int @id }`, db: ':memory:' })
   //   createClient({ parsed: parseFile('./db/schema.lite') })
   const parseResult = (() => {
     if (schemaPreParsed) return schemaPreParsed
@@ -5181,6 +5345,18 @@ export async function createClient({
 
   const dbRegistry  = buildDbRegistry(schema, resolvedDbPath, resolvedOverrides, resolveAccessConfig(accessConfig, readOnly, schema), inMemory)
   const modelDbMap  = buildModelDbMap(schema)
+
+  // Shared with the transaction manager below. Every read connection is wrapped
+  // BEFORE anything destructures the registry, so tables, views, includes and
+  // cache reporting all get the routing version.
+  const txState = { depth: 0 }
+  for (const conn of Object.values(dbRegistry)) {
+    // Read-only clients keep the plain connection: their writeDb is a throwing
+    // stub, and they can never open a transaction to route into it.
+    if (conn.driver === 'jsonl' || conn.driver === 'logger') continue
+    if (!conn.readDb || !conn.rawWriteDb) continue
+    conn.readDb = makeReadRouter(conn.readDb, conn.writeDb, txState)
+  }
 
 
 // ─── Lock primitive ───────────────────────────────────────────────────────────
@@ -5546,8 +5722,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     }
   }
 
-  // Transaction manager operates on the write connection
-  const tx = makeTxManager(writeDb)
+  // Transaction manager operates on the write connection. It shares `txState`
+  // with the read routers above, so an open transaction pulls reads onto this
+  // same connection — otherwise they cannot see its uncommitted writes.
+  const tx = makeTxManager(writeDb, txState)
 
   // Normalise global filters: { tableName: whereObject | (ctx) => whereObject }
   const globalFilters = filters ?? {}
@@ -5559,8 +5737,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // FrontierGateGetLevel resolver is the default; installing your own
   // GatePlugin({ getLevel }) replaces it entirely. Models without @@gate are
   // untouched: no gate declared, no gate enforced.
+  //
+  // A @@transitions clause carrying @gate(N) needs a level resolver for the
+  // same reason, so it triggers the same auto-install.
   let effectivePlugins = plugins ?? []
-  const _anyGates = schema.models.some(m => m.attributes?.some(a => a.kind === 'gate'))
+  const _anyGates = schema.models.some(m => m.attributes?.some(a =>
+    a.kind === 'gate' ||
+    (a.kind === 'transitions' && Object.values(a.transitions).some(t => t.gate != null))
+  ))
   if (_anyGates && !effectivePlugins.some(p => p instanceof GatePlugin)) {
     effectivePlugins = [...effectivePlugins, new GatePlugin({ getLevel: FrontierGateGetLevel })]
   }

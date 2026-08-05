@@ -59,6 +59,38 @@ model User {
 
 `before`/`after` snapshots are only included for single-row `update()` calls — not `updateMany()`.
 
+## Protected fields are redacted
+
+The audit trail records **that** a protected field was written — by whom, to which rows, when — never what it holds. Any field carrying `@encrypted`, `@guarded`, or `@secret` (which implies both) has its value replaced with `'[redacted]'` in every log entry, in both the field-level entry and the model-level `before`/`after` snapshot:
+
+```prisma
+model Vault {
+  id      Int     @id
+  name    String
+  apiKey  String? @secret
+  @@log(audit)
+}
+```
+
+```js
+{ operation: 'update', model: 'vault', field: 'apiKey',
+  records: [7], before: '[redacted]', after: '[redacted]', actorId: 'user_abc', ... }
+
+// model-level snapshot — name is logged, apiKey is not
+{ operation: 'update', model: 'vault', field: null, records: [7],
+  before: { id: 7, name: 'prod', apiKey: '[redacted]' },
+  after:  { id: 7, name: 'prod', apiKey: '[redacted]' }, ... }
+```
+
+This is what makes `@secret`'s expansion safe. `@secret` is `@encrypted + @guarded(all) + @log(<first logger db>)`, so **declaring a logger database is on its own enough to start logging every `@secret` field in the schema** — without redaction that would write plaintext to a file sitting next to a correctly-encrypted database row, with none of the column's read protections.
+
+Two details worth knowing:
+
+- **`null` is preserved, not redacted.** It holds nothing to leak, and keeping it means a `null → value` transition stays visible: `before: null, after: '[redacted]'` tells you a secret was set without telling you what it is.
+- **Unprotected fields on the same model are logged in full.** Redaction is per-field, not per-model, so the trail stays useful.
+
+The value returned to the caller is never affected — redaction happens on the way to the log, on a copy.
+
 ## onLog — enrich log entries
 
 The `onLog` callback on `createClient` adds actor attribution and custom metadata:

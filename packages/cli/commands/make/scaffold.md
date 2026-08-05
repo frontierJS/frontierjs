@@ -8,16 +8,16 @@ examples:
   - fli scaffold Product --fields "name:string price:float active:boolean" --no-routes
   - fli scaffold Note --fields "title:string body:text" --no-resource
   - fli scaffold User --skip-schema
-  - fli scaffold Contact --fields "name:string email:email phone:string" --dry
+  - fli scaffold Contact --fields "name:string email:email phone:phone" --dry
 args:
   -
     name: model
-    description: Model name in PascalCase (e.g. Lead, Invoice, BlogPost)
+    description: Model name in PascalCase and singular (e.g. Lead, Invoice, BlogPost)
     required: true
 flags:
   fields:
     type: string
-    description: "Space-separated field specs: name:type (string email text url secret integer float boolean date)"
+    description: "Space-separated field specs: name:type (string text email url phone secret slug int float boolean date json)"
     defaultValue: ''
   no-routes:
     type: boolean
@@ -50,6 +50,11 @@ flags:
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 
+// A literal closing script tag ends this block — core/compiler.js extracts it
+// with a non-greedy match and does not care that the tag is inside a string.
+// Every generated Mesa file needs one, so it is assembled from two halves.
+const SC = '<' + '/script>'
+
 // ─── Field parser ─────────────────────────────────────────────────────────────
 // Parses "name:string email:email total:float" into structured field objects.
 
@@ -62,65 +67,52 @@ function parseFields(str) {
 }
 
 // ─── Type maps ────────────────────────────────────────────────────────────────
+// Litestone's scalars are String, Int, Float, Boolean, DateTime, Bytes, Json
+// and File — and only those. `Integer`, `Text`, `Real` and `Blob` were renamed
+// and are rejected outright ("no aliases are accepted"), so a stanza written
+// with an old name does not parse and everything downstream of it fails.
 
 const SCHEMA_TYPE = {
   string:   'String',
+  text:     'String',
   email:    'String    @email',
-  text:     'String    @textarea',
   url:      'String    @url',
+  phone:    'String    @phone',
   secret:   'String    @secret',
-  int:      'Integer',
-  integer:  'Integer',
+  slug:     'String    @unique',
+  int:      'Int',
+  integer:  'Int',
   float:    'Float',
   boolean:  'Boolean',
   bool:     'Boolean',
   date:     'DateTime',
   datetime: 'DateTime',
-  enum:     'String',
-}
-
-const INPUT_TYPE = {
-  string:   'text',
-  email:    'email',
-  text:     'textarea',
-  url:      'url',
-  secret:   'password',
-  int:      'number',
-  integer:  'number',
-  float:    'number',
-  boolean:  'checkbox',
-  bool:     'checkbox',
-  date:     'date',
-  datetime: 'datetime-local',
-  enum:     'text',
+  json:     'Json',
 }
 
 // ─── Label helper ─────────────────────────────────────────────────────────────
 
 function toLabel(name) {
   return name
-    .replace(/([A-Z])/g, ' $1')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[_-]/g, ' ')
-    .replace(/^\s/, '')
     .replace(/\b\w/g, c => c.toUpperCase())
+    .trim()
 }
 
 // ─── Template: schema.lite stanza ────────────────────────────────────────────
 
 function makeSchemaStanza(name, fields, softDelete) {
-  // Model names in schema.lite are PascalCase singular — e.g. Lead, not leads
-  const pascal = name.charAt(0).toUpperCase() + name.slice(1)
   const col = 10  // column width for field names
 
   const lines = [
     '',
-    `model ${pascal} {`,
-    `  ${'id'.padEnd(col)}Integer   @id`,
+    `model ${name} {`,
+    `  ${'id'.padEnd(col)}Int       @id`,
   ]
 
   for (const f of fields) {
-    const schType = SCHEMA_TYPE[f.type] || 'String'
-    lines.push(`  ${f.name.padEnd(col)}${schType}`)
+    lines.push(`  ${f.name.padEnd(col)}${SCHEMA_TYPE[f.type] || 'String'}`)
   }
 
   lines.push(`  ${'createdAt'.padEnd(col)}DateTime  @default(now())`)
@@ -132,6 +124,11 @@ function makeSchemaStanza(name, fields, softDelete) {
     lines.push('  @@softDelete')
   }
 
+  lines.push('')
+  lines.push('  /// read.create.update.delete — reads are public, writes need a user.')
+  lines.push('  /// The only place those four answers are written down: the service')
+  lines.push('  /// derives its 401s from this, and the UI reads it back as')
+  lines.push('  /// resource.gate to decide which buttons to offer.')
   lines.push('  @@gate("0.4.4.6")')
   lines.push('}')
   lines.push('')
@@ -140,208 +137,387 @@ function makeSchemaStanza(name, fields, softDelete) {
 }
 
 // ─── Template: service ────────────────────────────────────────────────────────
+// The autoloader looks for a `create*Service` factory export and takes the
+// registered name from the FILENAME — leads.service.ts becomes 'leads'. A file
+// exporting something it cannot recognise is skipped with a warning rather than
+// an error, so the app starts and the route 404s later.
 
-function makeServiceFile(name) {
-  const lower  = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural = lower + 's'
-  return `import { createService, authenticate } from '@frontierjs/junction'
+function makeServiceFile(model, plural, pascalPlural) {
+  const accessor = model.charAt(0).toLowerCase() + model.slice(1)
+  return `// The whole service. The name comes from this file's name ('${plural}' →
+// /api/${plural} → db.${accessor}), CRUD from the model, 401s from @@gate, and 400s
+// from the field rules. Nothing below restates the schema.
+import { createBaseService } from '@frontierjs/junction'
 
-export default createService({
-  name:   '${plural}',
-  model:  '${lower}',
-  schema: jsonSchema,
-
-  // Broadcast mutations to the '${plural}' channel.
-  //
-  // SCOPE THIS BEFORE YOU SHIP. Every connection in the channel receives every
-  // row, and @@allow policies are enforced when a row is READ - a broadcast does
-  // not re-evaluate them per subscriber. For per-tenant delivery:
-  //
-  //   channel: (rows, ctx) => ctx.app.channel(\`workspace:\${ctx.auth.user?.workspaceId}\`)
-  //
-  // Set channel:false to turn broadcasting off for this service.
-  channel: '${plural}',
-
-  hooks: {
-    before: {
-      create: [authenticate],
-      patch:  [authenticate],
-      remove: [authenticate],
-    },
-  }
-})
+export function create${pascalPlural}Service() {
+  return createBaseService({
+    // Announce every mutation on the '${plural}' channel so a subscribed browser
+    // updates without polling.
+    //
+    // SCOPE THIS BEFORE YOU SHIP. Every connection in the channel receives every
+    // row, and @@allow policies are evaluated when a row is READ — a broadcast
+    // does not re-check them per subscriber. For per-tenant delivery make
+    // \`channel\` a function of the context; set it to false to turn it off.
+    channel: '${plural}',
+  })
+}
 `
 }
 
-// ─── Template: resource component ────────────────────────────────────────────
+// ─── Template: the Resource ───────────────────────────────────────────────────
+// A plain module, not a component. The Resource is the UI's half of the API
+// boundary; forms are built FROM it and are not it.
 
-function makeResourceFile(name, fields) {
-  const lower   = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural  = lower + 's'
-  const idField = lower + 'Id'
-  const sc      = '</' + 'script>'
-
-  const inputs = fields.map(f => {
-    const itype = INPUT_TYPE[f.type] || 'text'
-    const label = toLabel(f.name)
-    if (itype === 'textarea') {
-      return `    <label>${label}<textarea bind:value={${lower}.${f.name}} name="${f.name}"></textarea></label>`
-    }
-    if (itype === 'checkbox') {
-      return `    <label><input type="checkbox" bind:checked={${lower}.${f.name}} name="${f.name}" /> ${label}</label>`
-    }
-    return `    <Input bind:value={${lower}.${f.name}} name="${f.name}" type="${itype}" label="${label}" />`
-  }).join('\n')
-
+function makeResourceFile(model, plural) {
   return `<script module>
-  import { resource } from '@/core/frontier'
+// src/resources/${plural}.mesa — the Resource layer.
+//
+// A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
+// no markup, everything in <script module>.
+//
+// Read this next to db/schema.lite. Nothing here restates anything there: no
+// field list, no types, no enum values, no required list, no relations. A
+// resource names a service and turns three flags on.
 
-  export const query = {
-    $orderBy: { createdAt: 'desc' },
-    $limit: 100,
-  }
+import { createResource } from '@frontierjs/sierra/junction'
 
-  const _res = resource.createResource({
-    model:   '${name}',
-    service: '${plural}',
-  })
+export const ${plural} = createResource('${plural}', {
+  // Stated rather than inferred, so an irregular plural cannot quietly resolve
+  // to nothing.
+  model: '${model}',
 
-  export const { store, service, load, context } = _res
+  // Every DOM control hands back a string — \`<input type="number">\` and
+  // \`<select>\` included. The schema is the only thing that knows the column is
+  // an Int, so it does the casting.
+  coerce: true,
 
-  export function make(spec) {
-    return _res.make(Object.assign({}, spec))
-  }
-${sc}
+  // An empty text box submits '', which SQLite does not agree is NULL: a
+  // \`String? @unique\` column takes any number of NULLs and rejects the second
+  // ''. Rewrite blanks on nullable fields on the way out.
+  blankToNull: true,
 
-<script>
-  import { setContext } from 'svelte'
-  import Input from '@/components/Forms/Input.mesa'
-  import { useForm } from '@/components/Forms/Form.mesa'
-  import { back, goto } from '@/core/router'
-
-  export let ${lower} = make()
-  setContext('resource', ${lower})
-
-  let { form, status, errors } = useForm({
-    submit: async () => { await service.upsert(${lower}); $goto('/${plural}/[${idField}]', { ${idField}: ${lower}.id }) },
-    reset:  () => $back(),
-    afterChange: () => ($errors = {}),
-  })
-${sc}
-
-<form id="${lower}-form" use:form={${lower}}>
-  <fieldset class="space-y-4">
-${inputs || `    <Input bind:value={${lower}.id} name="id" label="Id" />`}
-  </fieldset>
-  <footer>
-    <button class="btn" type="submit">{$status || 'Save'}</button>
-    <button type="reset" class="btn secondary">Back</button>
-  </footer>
-</form>
+  // Check the record against the schema before the request rather than
+  // round-tripping to be told the same thing. The server validates regardless.
+  validate: true,
+})
+</script>
 `
 }
 
 // ─── Template: route — index (list) ──────────────────────────────────────────
+// Columns are named here rather than derived: which five of twenty fields
+// belong in a table is a judgement, and this is the file to make it in.
 
-function makeIndexRoute(name, fields) {
-  const lower  = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural = lower + 's'
-  const sc     = '</' + 'script>'
-  const displayFields = fields.length ? fields : [{ name: 'id' }]
-  const ths    = displayFields.map(f => `      <th>${toLabel(f.name)}</th>`).join('\n')
-  const tds    = displayFields.map(f => `        <td>{${lower}.${f.name}}</td>`).join('\n')
+function makeIndexRoute(model, plural, fields) {
+  const cols = fields.length ? fields.map(f => f.name) : ['id']
+  const ths  = cols.map(c => `      <th>${toLabel(c)}</th>`).join('\n')
+  const tds  = cols.map(c => `        <td>{row.${c}}</td>`).join('\n')
 
-  return `<script>
-  import { store, load } from '@/resources/${name}.mesa'
-  import { goto } from '@/core/router'
-  import { title } from '@/core/app'
+  return `---
+title: ${toLabel(plural)}
+---
+<script>
+  import { ${plural} } from '../../resources/${plural}.mesa'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
-  $title = '${name}s'
-  export const preload = load
-${sc}
+  const { get: rows, unsubscribe } = useStore(${plural}.store)
+  $onDestroy(unsubscribe)
 
-<div class="page">
-  <header>
-    <h1>${name}s</h1>
-    <a href="/${plural}/create" class="btn">New ${name}</a>
-  </header>
+  let error = null
 
-  <table>
-    <thead>
-      <tr>
+  ${plural}.load().catch(e => { error = e.message })
+${SC}
+
+<header class="head">
+  <h1>${toLabel(plural)}</h1>
+  <a class="btn" href="/${plural}/create/">New ${toLabel(model)}</a>
+</header>
+
+{#if error}<p class="err">{error}</p>{/if}
+
+<table>
+  <thead>
+    <tr>
 ${ths}
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each $store as ${lower}}
-        <tr>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {#each rows() as row}
+      <tr>
 ${tds}
-          <td>
-            <a href="/${plural}/{${lower}.id}/">Edit</a>
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-</div>
+        <td><a href={'/${plural}/' + row.id + '/'}>Open</a></td>
+      </tr>
+    {/each}
+  </tbody>
+</table>
+
+{#if !rows().length && !error}
+  <p class="muted">Nothing here yet.</p>
+{/if}
+
+<style>
+  .head { display: flex; align-items: center; gap: 16px }
+  .head h1 { margin: 0; font-size: 22px }
+  .btn { margin-left: auto; border: 1px solid #d1d5db; border-radius: 6px; padding: 5px 12px; text-decoration: none; color: #111; font-size: 14px }
+  table { border-collapse: collapse; width: 100%; margin-top: 16px }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 14px }
+  th { color: #6b7280; font-weight: 500 }
+  .muted { color: #6b7280; font-size: 13px }
+  .err { color: #b91c1c }
+</style>
 `
 }
+
+// ─── The derived form ─────────────────────────────────────────────────────────
+// Shared by create.mesa and [id].mesa. Which fields exist, their types, their
+// enum members, which are required and which are references are all read off
+// `resource.fields` at runtime — which is why a column added to schema.lite
+// later shows up on these pages without regenerating them.
+
+function formScript(plural, indent) {
+  const i = indent
+  return [
+    `${i}// The registered document is the CREATE-mode schema, so @id and the`,
+    `${i}// columns the server assigns (@default(now()), @updatedAt) are not in it`,
+    `${i}// and cannot be rendered as inputs.`,
+    `${i}const entries = Object.entries(${plural}.fields).filter(([n]) => n !== 'id')`,
+    ``,
+    `${i}// A foreign key is emitted as a plain integer; x-relations is the only`,
+    `${i}// place it is knowable as a reference, and that is what makes it a picker`,
+    `${i}// instead of a number spinner. Regular English plurals only — for an`,
+    `${i}// irregular, import that resource and use it here instead.`,
+    `${i}const pickers = entries`,
+    `${i}  .filter(([, rule]) => rule.references)`,
+    `${i}  .map(([name, rule]) => {`,
+    `${i}    const target = rule.references.model`,
+    `${i}    const res    = createResource(`,
+    `${i}      target.charAt(0).toLowerCase() + target.slice(1) + 's',`,
+    `${i}      { model: target },`,
+    `${i}    )`,
+    `${i}    const label = Object.keys(res.fields).find(f => res.fields[f].type === 'string')`,
+    `${i}    return { name, res, label: label ?? 'id' }`,
+    `${i}  })`,
+    ``,
+    `${i}// Replaced wholesale rather than mutated: replacement is the reactive`,
+    `${i}// operation (Mesa RULE 43).`,
+    `${i}let options = {}`,
+    ``,
+    `${i}Promise.all(pickers.map(p =>`,
+    `${i}  p.res.service.getOptions({}, { limit: 200, orderBy: p.label })`,
+    `${i}    .then(r => [p.name, (r.data ?? r ?? []).map(row => ({`,
+    `${i}      value: row.id, label: String(row[p.label] ?? row.id),`,
+    `${i}    }))])`,
+    `${i}    .catch(() => [p.name, []])`,
+    `${i})).then(pairs => { options = Object.fromEntries(pairs) })`,
+    ``,
+    `${i}const problem = (name) => errors.find(e => e.field === name)?.message`,
+  ].join('\n')
+}
+
+function formMarkup() {
+  return `  {#each entries as [name, rule]}
+    <label>
+      <span class="lbl">
+        <b>{name}</b>
+        {#if rule.required}<i class="req">*</i>{/if}
+      </span>
+
+      {#if rule.references}
+        <select bind:value={draft[name]}>
+          <option value="">—</option>
+          {#each (options[name] ?? []) as opt}
+            <option value={opt.value}>{opt.label}</option>
+          {/each}
+        </select>
+      {:else if rule.enum}
+        <select bind:value={draft[name]}>
+          <option value="">—</option>
+          {#each rule.enum as choice}
+            <option value={choice}>{choice}</option>
+          {/each}
+        </select>
+      {:else if rule.type === 'boolean'}
+        <input type="checkbox" bind:checked={draft[name]} />
+      {:else if rule.type === 'integer' || rule.type === 'number'}
+        <input type="number" bind:value={draft[name]} min={rule.minimum} max={rule.maximum} />
+      {:else if rule.format === 'date-time'}
+        <input type="datetime-local" bind:value={draft[name]} />
+      {:else}
+        <input
+          type={rule.format === 'email' ? 'email' : rule.format === 'uri' ? 'url' : 'text'}
+          bind:value={draft[name]}
+          maxlength={rule.maxLength}
+        />
+      {/if}
+
+      {#if problem(name)}<span class="err">{problem(name)}</span>{/if}
+    </label>
+  {/each}`
+}
+
+const FORM_STYLE = `<style>
+  form { display: grid; gap: 14px; max-width: 520px; margin-top: 16px }
+  label { display: grid; gap: 4px }
+  .lbl { font-size: 13px; color: #374151 }
+  .req { color: #b91c1c; font-style: normal }
+  input, select { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit }
+  .row { display: flex; gap: 10px; align-items: center }
+  button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit }
+  button[disabled] { opacity: .45; cursor: not-allowed }
+  button.danger { color: #b91c1c; border-color: #fca5a5 }
+  a.cancel { color: #6b7280; text-decoration: none; font-size: 14px }
+  .err { color: #b91c1c; font-size: 12px }
+  .muted { color: #6b7280; font-size: 13px }
+</style>`
 
 // ─── Template: route — create ─────────────────────────────────────────────────
 
-function makeCreateRoute(name) {
-  const lower  = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural = lower + 's'
-  const sc     = '</' + 'script>'
-  return `<script>
-  import ${name}Resource from '@/resources/${name}.mesa'
-  import { make } from '@/resources/${name}.mesa'
-  import { title } from '@/core/app'
+function makeCreateRoute(model, plural) {
+  return `---
+title: New ${toLabel(model)}
+---
+<script>
+  import { ${plural} } from '../../resources/${plural}.mesa'
+  import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { goto } from '@frontierjs/sierra/router'
 
-  $title = 'New ${name}'
-  let ${lower} = make()
-${sc}
+  let draft  = ${plural}.make()
+  let errors = []
+  let failed = null
+  let saving = false
 
-<div class="page">
-  <header><h1>New ${name}</h1></header>
-  <${name}Resource bind:${lower} />
-</div>
+${formScript(plural, '  ')}
+
+  async function save() {
+    failed = null
+
+    // Validate what will actually be SENT, not what the DOM holds: the inputs
+    // give back strings and coerce() casts them using the schema's types.
+    // Checking the raw draft reports "must be a number" for a good "42".
+    const payload = ${plural}.coerce(draft)
+    errors = ${plural}.validate(payload, 'create')
+    if (errors.length) return
+
+    saving = true
+    try {
+      const created = await ${plural}.service.create(payload)
+      goto('/${plural}/' + created.id + '/')
+    } catch (e) {
+      // A ResourceValidationError never left the browser. Anything else is the
+      // server's answer — including @@gate's 401.
+      errors = e instanceof ResourceValidationError ? e.errors : []
+      failed = e.message
+    } finally {
+      saving = false
+    }
+  }
+${SC}
+
+<h1>New ${toLabel(model)}</h1>
+
+<form on:submit|preventDefault={save}>
+${formMarkup()}
+
+  <div class="row">
+    <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Create'}</button>
+    <a class="cancel" href="/${plural}/">Cancel</a>
+  </div>
+</form>
+
+{#if failed}<p class="err">{failed}</p>{/if}
+
+${FORM_STYLE}
 `
 }
 
-// ─── Template: route — edit (also serves as detail) ──────────────────────────
+// ─── Template: route — detail and edit, one page ─────────────────────────────
 
-function makeEditRoute(name) {
-  const lower  = name.charAt(0).toLowerCase() + name.slice(1)
-  const plural = lower + 's'
-  const sc     = '</' + 'script>'
-  return `<script>
-  import ${name}Resource from '@/resources/${name}.mesa'
-  import { service, make } from '@/resources/${name}.mesa'
-  import { title } from '@/core/app'
+function makeEditRoute(model, plural) {
+  return `---
+title: ${toLabel(model)}
+---
+<script>
+  import { ${plural} } from '../../resources/${plural}.mesa'
+  import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { page, goto } from '@frontierjs/sierra/router'
 
-  export let ${lower}Id
-  let ${lower} = make()
-  $title = 'Edit ${name}'
+  // Read once at setup: navigating to a different id remounts the component.
+  const id = page.params.id
 
-  $: service.get(${lower}Id).then(r => { ${lower} = r })
-${sc}
+  let draft    = ${plural}.make()
+  let loaded   = false
+  let errors   = []
+  let failed   = null
+  let saving   = false
+  let deleting = false
 
-<div class="page">
-  <header>
-    <h1>Edit ${name}</h1>
-    <a href="/${plural}" class="btn">← Back</a>
-  </header>
-  <${name}Resource bind:${lower} />
-</div>
+${formScript(plural, '  ')}
+
+  ${plural}.service.get(id)
+    .then(record => { draft = record; loaded = true })
+    .catch(e => { failed = e.message })
+
+  async function save() {
+    failed = null
+    const payload = ${plural}.coerce(draft)
+    // 'patch' mode: an absent field means "leave it alone", so required is not
+    // re-asserted on fields this form did not touch.
+    errors = ${plural}.validate(payload, 'patch')
+    if (errors.length) return
+
+    saving = true
+    try { draft = await ${plural}.service.patch(id, payload) }
+    catch (e) {
+      errors = e instanceof ResourceValidationError ? e.errors : []
+      failed = e.message
+    } finally { saving = false }
+  }
+
+  async function remove() {
+    if (!confirm('Delete ${model} ' + id + '?')) return
+    failed = null
+    deleting = true
+    try {
+      await ${plural}.service.remove(id)
+      goto('/${plural}/')
+    } catch (e) {
+      failed = e.message
+      deleting = false
+    }
+  }
+${SC}
+
+<header class="row">
+  <h1>${toLabel(model)} {id}</h1>
+  <a class="cancel" href="/${plural}/">← All ${toLabel(plural).toLowerCase()}</a>
+</header>
+
+{#if !loaded && !failed}<p class="muted">Loading…</p>{/if}
+
+{#if loaded}
+  <form on:submit|preventDefault={save}>
+${formMarkup()}
+
+    <div class="row">
+      <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+      <button type="button" class="danger" on:click={remove} disabled={deleting}>Delete</button>
+    </div>
+  </form>
+{/if}
+
+{#if failed}<p class="err">{failed}</p>{/if}
+
+${FORM_STYLE}
 `
 }
 </script>
 
-Generates a complete vertical slice from a single model name. Each layer is wired to
-the others — schema feeds the service, the resource wraps the service, the routes use
-the resource. Run `fli db:push` after to apply the schema change.
+Generates a complete vertical slice from a single model name — one stanza in
+`db/schema.lite`, one Junction service, one Sierra Resource, and three Mesa
+routes. Each layer is wired to the next, and every one of them traces back to
+the schema. Run `fli db:push` afterwards to apply the schema change.
 
 Use `--fields` to seed real fields across all layers from the start:
 
@@ -349,8 +525,14 @@ Use `--fields` to seed real fields across all layers from the start:
 fli scaffold Lead --fields "name:string email:email status:string"
 ```
 
-Supported field types: `string` `email` `text` `url` `secret` `integer` `float`
-`boolean` `date` `datetime`. Defaults to `string` if type is omitted.
+Supported field types: `string` `text` `email` `url` `phone` `secret` `slug`
+`int` `float` `boolean` `date` `datetime` `json`. Defaults to `string` when the
+type is omitted.
+
+The **list** route names its columns, because which fields belong in a table is
+a judgement call and that file is where to make it. The **create and edit**
+routes name nothing: they read `resource.fields` at runtime, so a column added
+to `schema.lite` later appears on the next reload without regenerating.
 
 Without `--fields` a minimal stub is generated — id + timestamps only — ready to
 extend in `schema.lite`.
@@ -358,11 +540,20 @@ extend in `schema.lite`.
 ```js
 const modelName  = arg.model.charAt(0).toUpperCase() + arg.model.slice(1)
 const lower      = modelName.charAt(0).toLowerCase() + modelName.slice(1)
-const plural     = lower + 's'
 const fields     = parseFields(flag.fields)
 const skipRoutes = flag['no-routes'] || flag['no-resource']
 const editor     = process.env.EDITOR || 'vi'
 const created    = []
+
+// Model → service name. Regular English plurals only — the same three rules
+// Sierra's schema registry applies in the other direction. Irregulars are not
+// guessed anywhere in this framework; the resource states `model` explicitly so
+// a miss cannot break resolution.
+const plural = /[^aeiou]y$/.test(lower)     ? lower.slice(0, -1) + 'ies'
+             : /(s|x|z|ch|sh)$/.test(lower) ? lower + 'es'
+             : lower + 's'
+
+const pascalPlural = plural.charAt(0).toUpperCase() + plural.slice(1)
 
 const write = (path, content, label) => {
   if (existsSync(path) && !flag.force) {
@@ -375,7 +566,7 @@ const write = (path, content, label) => {
   }
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content, 'utf8')
-  log.success(`Created ${label.padEnd(10)}  ${path}`)
+  log.success(`Created ${label.padEnd(12)}  ${path}`)
   created.push(path)
   return true
 }
@@ -393,28 +584,40 @@ if (flag['skip-schema']) {
   }
 
   const existing = readFileSync(schemaPath, 'utf8')
-  if (existing.includes(`model ${modelName}`) && !flag.force) {
+
+  // Anchored to a model declaration: a plain includes() also matched the name
+  // where it appears as a relation type in some other model.
+  const declared = new RegExp(`^\\s*model\\s+${modelName}\\s*\\{`, 'm').test(existing)
+
+  if (declared && !flag.force) {
     log.warn(`model ${modelName} already exists in schema.lite — skipping (use --force to overwrite, or --skip-schema to silence)`)
   } else if (flag.dry) {
     log.dry(`Would append model ${modelName} to schema.lite`)
   } else {
-    const stanza = makeSchemaStanza(modelName, fields, flag['soft-delete'])
-    writeFileSync(schemaPath, existing + stanza, 'utf8')
+    writeFileSync(schemaPath, existing + makeSchemaStanza(modelName, fields, flag['soft-delete']), 'utf8')
     log.success(`Appended model        schema.lite`)
     created.push(schemaPath)
   }
 }
 
 // ─── 2. Service ───────────────────────────────────────────────────────────────
+// Named for the service, not the model: the autoloader derives the registered
+// name from the filename, so leads.service.ts is what makes /api/leads exist.
 
-const servicePath = resolve(context.paths.api, `src/services/${lower}.service.ts`)
-write(servicePath, makeServiceFile(modelName), 'service')
+write(
+  resolve(context.paths.api, `src/services/${plural}.service.ts`),
+  makeServiceFile(modelName, plural, pascalPlural),
+  'service'
+)
 
 // ─── 3. Resource ──────────────────────────────────────────────────────────────
 
 if (!flag['no-resource']) {
-  const resourcePath = resolve(context.paths.web, `src/resources/${modelName}.mesa`)
-  write(resourcePath, makeResourceFile(modelName, fields), 'resource')
+  write(
+    resolve(context.paths.webResources, `${plural}.mesa`),
+    makeResourceFile(modelName, plural),
+    'resource'
+  )
 }
 
 // ─── 4. Routes ────────────────────────────────────────────────────────────────
@@ -422,9 +625,9 @@ if (!flag['no-resource']) {
 if (!skipRoutes) {
   const routesBase = resolve(context.paths.webPages, plural)
 
-  write(resolve(routesBase, 'index.mesa'),         makeIndexRoute(modelName, fields), 'route/list')
-  write(resolve(routesBase, 'create.mesa'),        makeCreateRoute(modelName),        'route/create')
-  write(resolve(routesBase, `[${lower}Id].mesa`),  makeEditRoute(modelName),          'route/edit')
+  write(resolve(routesBase, 'index.mesa'),  makeIndexRoute(modelName, plural, fields), 'route/list')
+  write(resolve(routesBase, 'create.mesa'), makeCreateRoute(modelName, plural),        'route/create')
+  write(resolve(routesBase, '[id].mesa'),   makeEditRoute(modelName, plural),          'route/edit')
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
@@ -437,8 +640,8 @@ if (!flag.dry && created.length) {
     echo('  Next: fli db:push to apply the schema change')
   }
   if (!skipRoutes) {
-    echo(`  Routes: /${plural}  /${plural}/create  /${plural}/[${lower}Id]`)
-    echo(`  Add a nav link to your layout pointing to /${plural}`)
+    echo(`  Routes: /${plural}/  ·  /${plural}/create/  ·  /${plural}/[id]/`)
+    echo(`  Add a nav link to your layout pointing at /${plural}/`)
   }
   echo('')
 }

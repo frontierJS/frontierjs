@@ -22,6 +22,7 @@ import { createJunctionClient } from '@frontierjs/junction/client'
 export {
   createResource, createStore, createMakeFromSchema,
   buildFieldRules, buildRelations, buildGate, canAtLevel,
+  buildTransitions, transitionsAt,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
 } from './resource.js'
 

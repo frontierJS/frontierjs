@@ -7,19 +7,23 @@ is valid JavaScript AST. The compiler does the heavy lifting; the runtime is
 minimal.
 
 For the language specification, see
-[`VISION.md`](./VISION.md).
+[`docs/VISION.md`](./docs/VISION.md).
 
 ---
 
 ## Ecosystem
 
-| Package | Purpose |
-|---|---|
-| `@frontierjs/mesa` | Core compiler, runtime, REPL, render pipeline (this package) |
-| `@frontierjs/mesa-vite` | Vite plugin — transform, HMR, error overlay, scoped CSS, DevTools |
-| `@frontierjs/mesa-email` | Email component kit — 22 production-ready components |
-| `@frontierjs/mesa-ui` | UI component kit — 58 components (forms, layout, overlay, feedback) |
-| `@frontierjs/sierra` | Meta-framework built on Mesa (separate repo) |
+| Package                 | Where it lives                        | Purpose                                                                                                         |
+| ----------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `@frontierjs/mesa`      | this package                          | Core compiler, runtime, REPL, render pipeline                                                                   |
+| `@frontierjs/mesa-vite` | [`mesa-vite/`](./mesa-vite/)          | Vite plugin — transform, HMR, error overlay, scoped CSS, DevTools                                               |
+| `@frontierjs/ui`        | [`packages/ui`](../ui/)               | Component kit over `@frontierjs/css` — 63 `.mesa` components. **Moved out of here 2026-08-03**; it was `ui-v2/` |
+| `@frontierjs/sierra`    | [`packages/sierra`](../sierra/)       | Meta-framework built on Mesa — **in this monorepo**, not a separate repo                                        |
+| `@frontierjs/email-kit` | [`packages/email-kit`](../email-kit/) | Email component kit — table-based, CSS-inlined, Outlook-safe.                                                   |
+
+> `mesa-vite/` and `mesa-bench/` are nested *inside* `packages/mesa`, so the workspace
+> glob (`packages/*`) does not see them — they are not installed as workspace members,
+> get no tests and no typecheck.
 
 ---
 
@@ -27,9 +31,15 @@ For the language specification, see
 
 ```bash
 npm install         # install acorn, astring, unified, remark, rehype, vitest
-npm run serve       # open index.html in the browser — live REPL
+npm run serve       # then open /packages/mesa/example/ — the live REPL
 npm test            # run full test suite (compiler + runtime + render + css)
 ```
+
+`serve` roots at the **monorepo root**, not this package, so the REPL can reach
+two siblings: `@ui/…` imports resolve to `packages/ui` (the UI Library example
+mounts the real components) and `packages/css/dist/frontier.css` is the design
+system they are written in. Everything else in the REPL works from any root —
+those two degrade to a console warning and unstyled components.
 
 For a real project, install the Vite plugin in your app and write `.mesa`
 or `.md` files alongside your other source. See [Vite plugin](#vite-plugin).
@@ -40,22 +50,17 @@ or `.md` files alongside your other source. See [Vite plugin](#vite-plugin).
 
 | File | Purpose |
 |---|---|
-| `compiler.js` | Mesa → JS compiler. `compile(src, opts)` → `ctx` |
-| `compiler-md.js` | Markdown + frontmatter compiler. `compileMd(src, opts)` → `ctx` |
-| `runtime.js` | Signals, effects, DOM helpers, event delegation, mount, blocks |
-| `render.js` | `renderToHTML(component, props, opts)` / `renderAll` / `wrapPage` — happy-dom static rendering. See `STATIC_RENDERING.md` |
-| `render-component.js` | Source-in pipeline: `renderComponent` / `renderFile` for HTML, email, fragment, JS |
-| `css-inliner.js` | CSS-to-`style=""` inliner with custom-property resolution |
-| `index.html` | Browser REPL — `npm run serve`. Mounts previews via `mount()`; see `repl.test.js` |
-| `examples.js` | All REPL examples — 66 across 22 groups |
-| `compiler_test.js` | Compiler tests (406) |
-| `runtime.test.js` | Runtime tests (286) |
-| `render-component.test.js` | Render pipeline tests (29) |
-| `render-ssr.test.js` | Static renderer + server↔client agreement (30) |
-| `repl.test.js` | REPL module graph, example compile + coverage, preview interactivity (9) |
-| `emission.test.js` | Compiler must emit parseable JS — component `bind:`, multi-line attrs (7) |
-| `css-inliner.test.js` | CSS inliner tests (36) |
-| `email-kit.test.js` | Email kit integration (27, skipped — requires `@frontierjs/mesa-email`) |
+| `src/compiler.js` | Mesa → JS compiler. `compile(src, opts)` → `ctx` |
+| `src/compiler-md.js` | Markdown + frontmatter compiler. `compileMd(src, opts)` → `ctx` |
+| `src/runtime.js` | Signals, effects, DOM helpers, event delegation, mount, blocks |
+| `src/render.js` | `renderToHTML(component, props, opts)` / `renderAll` / `wrapPage` — happy-dom static rendering. See `docs/STATIC_RENDERING.md` |
+| `src/render-component.js` | Source-in pipeline: `renderComponent` / `renderFile` for HTML, email, fragment, JS |
+| `src/css-inliner.js` | CSS-to-`style=""` inliner with custom-property resolution |
+| `src/glow.js` | Syntax highlighter used by `compiler-md.js` for fenced code blocks |
+| `example/index.html` | Browser REPL — `npm run serve`, then open `/packages/mesa/example/`. Mounts previews via `mount()`; see `test/repl.test.js` |
+| `example/examples.js` | All REPL examples — 66 across 22 groups |
+| `example/README.md` | What the REPL is, how to run it, how to add an example |
+| `test/` | Every suite, plus `spec-check.mjs`. See the table below |
 | `mesa-vite/` | Vite plugin |
 | `mesa-bench/` | Benchmark component |
 
@@ -131,7 +136,7 @@ const cities = await getCities(selectedState)
 
 For the full spec — `var` semantics, `$:` patterns, context, `<mesa:*>`
 elements, `bind:value|mask`, `$inspect`, the render pipeline — see
-[`VISION.md`](./VISION.md).
+[`docs/VISION.md`](./docs/VISION.md).
 
 ---
 
@@ -191,7 +196,8 @@ const ctx = await compileFile('./src/Counter.mesa')
 ctx.result           // compiled JS string
 ctx.analysis.errors  // []
 ctx.analysis.warnings
-ctx.css?.result      // scoped CSS (if css: true)
+ctx.css?.result      // scoped CSS — populated only when css: FALSE (see below)
+ctx.css?.id          // the content-addressed scope class on every element
 ctx.frontmatter      // parsed frontmatter object (.md files only)
 ctx.isStatic         // true if component has no JS at runtime
 ```
@@ -202,7 +208,8 @@ Useful options:
 |---|---|
 | `dev: true` | Emit `$runtime.__dev?.r(...)` registration calls — required for DevTools |
 | `debug: false` | Strip `$inspect` calls entirely |
-| `css: true` | Scope styles and emit `ctx.css.result` |
+| `css: true` (default) | Scope styles and emit a `$runtime.addStyles(id, css)` call into `ctx.result` — the compiler injects them for you |
+| `css: false` | Scope styles and hand them back on **`ctx.css.result`**, emitting nothing. **The caller must inject them.** Styles are silently absent if you don't — every element still carries the scope class, so the markup looks right and matches no rule |
 | `filename` | Used in dev component labels and source maps |
 | `remarkPlugins` | Array passed through to the markdown processor (`.md` only) |
 | `rehypePlugins` | Same, for the HTML AST stage |
@@ -375,11 +382,11 @@ markers, then `mount(openComment, Comp, { props })`. Use `mount`, not a bare
 nothing — a direct call registers no delegation root.
 
 The loader itself, per-island bundling, and name→module resolution belong to the
-meta-framework; `SSR_SPEC.md` W3 has the full rationale, including why the
+meta-framework; `docs/SSR_SPEC.md` W3 has the full rationale, including why the
 markers are comments rather than a `<mesa-island>` element and two traps waiting
 for whoever writes the loader.
 
-**[`STATIC_RENDERING.md`](./STATIC_RENDERING.md)** has the full model — server
+**[`docs/STATIC_RENDERING.md`](./docs/STATIC_RENDERING.md)** has the full model — server
 semantics, the page shell, concurrency, lifetimes, and what is and isn't wired
 up to Sierra's `static` target yet.
 
@@ -414,7 +421,7 @@ place — without losing the parent's component tree. The plugin:
 
 Top-level signals are recreated on each HMR update — long-lived state
 (persisted forms, in-flight requests) belongs in a plain JS module per
-[`VISION.md` §5](./VISION.md), where it survives module
+[`docs/VISION.md` §5](./docs/VISION.md), where it survives module
 reloads naturally.
 
 ### Mesa DevTools
@@ -464,18 +471,29 @@ DevTools server hooks — no separate import needed.
 npm test
 ```
 
-| Suite | Tests |
-|---|---|
-| `compiler_test.js` | 399 |
-| `runtime.test.js` | 236 |
-| `render-component.test.js` | 25 |
-| `css-inliner.test.js` | 36 |
-| `email-kit.test.js` | 27 (requires `@frontierjs/mesa-email` fixtures) |
-| **Total** | **723** |
+Every suite lives in `test/`. Counts measured 2026-08-04.
 
-The email kit suite expects `/tmp/mesa/email/*.mesa` fixtures from the
-`@frontierjs/mesa-email` package. Skip with
-`--exclude='**/email-kit.test.js'` for core-only runs.
+| Suite | Tests | Covers |
+|---|---|---|
+| `test/compiler.test.js` | 415 | The compiler — analysis, emission, `$:` semantics, blocks, CSS scoping |
+| `test/runtime.test.js` | 287 | Signals, effects, DOM bindings, blocks, delegation, SSR guards |
+| `test/render-ssr.test.js` | 55 | Static renderer + server↔client agreement, islands |
+| `test/css-inliner.test.js` | 36 | CSS inliner |
+| `test/render-component.test.js` | 33 | `renderComponent` / `renderFile` pipeline |
+| `test/external-reactivity.test.js` | 26 | The `externalSignals` diagnostic |
+| `test/inert-block.test.js` | 23 | `$: { }` blocks that do nothing |
+| `test/emission.test.js` | 20 | The compiler must emit **parseable** JS |
+| `test/watch-handler-defer.test.js` | 13 | Deferred `$: dep, handler` effects |
+| `test/repl.test.js` | 9 | REPL module graph, example compile + coverage, interactivity |
+| `test/watch-proxy-staleness.test.js` | 8 | `watchProxy` / `watchPath` staleness |
+| `test/async-decl-scope.test.js` | 7 | Async declaration scoping |
+| `test/whitespace-collapse.test.js` | 7 | Text-node whitespace collapse |
+| `test/block-teardown-compiled.test.js` | 6 | Block teardown through compiled output |
+| `test/effect-phase.test.js` | 5 | Effect phase ordering |
+| **Total** | **955** | |
+
+`test/spec-check.mjs` is separate — a plain `node test/spec-check.mjs` script that
+checks every claim VISION §4 makes against the compiler. It is not part of `npm test`.
 
 ---
 
@@ -484,4 +502,4 @@ The email kit suite expects `/tmp/mesa/email/*.mesa` fixtures from the
 The language specification — `let`/`const`/`var` semantics, the full `$:`
 pattern reference, context, slots, block directives, `<mesa:*>` elements,
 SSR, and the complete rules reference — lives in
-[`VISION.md`](./VISION.md).
+[`docs/VISION.md`](./docs/VISION.md).

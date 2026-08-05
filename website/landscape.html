@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en" class="theme-default">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FrontierJS — the landscape</title>
+<meta name="description" content="The projects FrontierJS descends from, argues with, and learned from — sized by how close they are, how much was taken, or how near the thesis.">
+
+<!-- Local path so this file renders straight from the repo.
+     Deploy rewrites this to ./css/index.css — see README.md. -->
+<link rel="stylesheet" href="../packages/css/src/index.css">
+
+<!--
+  ══════════════════════════════════════════════════════════════════════════
+  landscape.html — reads projects.json at runtime and renders it twice:
+  once as a word cloud (the attractor) and once as a ranked table (the truth).
+
+  ── WHY BOTH ──
+  A word cloud encodes magnitude badly on purpose-built terms: font size reads
+  as area, and area is the hardest channel to compare. It is here because it
+  is the right *invitation* — you can see the shape of the landscape at a
+  glance. Every number it implies is stated exactly in the table below it, and
+  the two are driven by the same control, so they can never disagree. Do not
+  remove the table to save space; it is what makes the cloud honest.
+
+  ── COLOR ──
+  Tier is ORDINAL (1 nearest the thesis → 3 furthest), so it takes a
+  single-hue sequential ramp, not categorical hues — light→dark, one hue.
+  Steps are from the design-system blue ramp and were validated, not chosen:
+
+    light  #104281 / #256abf / #5598e7   on #ffffff  — ALL CHECKS PASS
+    dark   #b7d3f6 / #6da7ec / #3987e5   on #1a1a1a  — ALL CHECKS PASS
+    (monotone L, adjacent ΔL ≥ .06, light end clears the surface, hue spread ≤3°)
+
+  Re-run before changing any of them:
+    node scripts/validate_palette.js "#104281,#256abf,#5598e7" \
+      --mode light --surface "#ffffff" --ordinal
+
+  Realm is NOT colour — six realms cannot clear all-pairs separation, and a
+  word cloud is an all-pairs surface (any two words can end up adjacent). It
+  is a text label in the detail card and the table instead.
+
+  Only .theme-dark repaints: every other shipped theme keeps --surface #ffffff.
+
+  ── DATA ──
+  projects.json is the single source. `bun run build` copies it to dist/ (see
+  build.js, "shared front-end assets"). Opening this file over file:// will
+  fail the fetch — the page says so rather than rendering empty.
+
+  The numbers are self-assessed by the author and the file says so itself
+  ($comment: "inspiration … guessed, edit manually"). The page repeats that
+  in the open. Do not present them as measured.
+  ══════════════════════════════════════════════════════════════════════════
+-->
+
+<style>
+  html { scroll-behavior: smooth; }
+  body { background: var(--surface); color: var(--ink); }
+  .container { max-width: 76rem; margin-inline: auto; padding-inline: 1.25rem; }
+  section { padding: 3.5rem 0; border-top: 1px solid var(--rule); scroll-margin-top: 4rem; }
+  section:first-of-type { border-top: 0; }
+
+  h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; letter-spacing: -.03em; margin: .35em 0 .3em; }
+  h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.02em; margin: 0 0 .35em; }
+  h3 { font-size: .95rem; margin: 0 0 .4rem; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  .lede { font-size: 1.05rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+
+  /* ── the ordinal tier ramp — validated, see the note above ─────────── */
+  :root {
+    --tier-1: #104281;
+    --tier-2: #256abf;
+    --tier-3: #5598e7;
+    --cloud-hover: color-mix(in srgb, var(--tier-1) 12%, transparent);
+  }
+  .theme-dark {
+    --tier-1: #b7d3f6;
+    --tier-2: #6da7ec;
+    --tier-3: #3987e5;
+  }
+
+  /* ── controls ──────────────────────────────────────────────────────── */
+  .controls { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; margin: 1.5rem 0 1rem; }
+  .segmented { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: 8px; overflow: hidden; }
+  .segmented button {
+    appearance: none; border: 0; background: var(--surface); color: var(--ink-soft);
+    font: inherit; font-size: .85rem; padding: .4rem .85rem; cursor: pointer;
+  }
+  .segmented button + button { border-left: 1px solid var(--rule); }
+  .segmented button[aria-pressed="true"] { background: var(--surface-sunken); color: var(--ink); font-weight: 600; }
+  .controls .what { font-size: .82rem; color: var(--ink-mute); }
+
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-left: auto; font-size: .8rem; color: var(--ink-soft); }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .legend i { width: .8rem; height: .8rem; border-radius: 3px; display: inline-block; }
+
+  /* ── the cloud ─────────────────────────────────────────────────────── */
+  .cloud {
+    position: relative;
+    height: clamp(22rem, 58vh, 34rem);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    background: var(--surface-raised);
+    overflow: hidden;
+  }
+  .cloud a {
+    position: absolute; white-space: nowrap; text-decoration: none;
+    font-weight: 700; letter-spacing: -.02em; line-height: 1;
+    padding: .12em .2em; border-radius: 6px;
+    transition: background-color .12s ease, transform .12s ease;
+  }
+  .cloud a:hover, .cloud a:focus-visible { background: var(--cloud-hover); transform: scale(1.04); }
+  .cloud a:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .cloud[data-state="loading"]::after,
+  .cloud[data-state="error"]::after {
+    content: attr(data-message);
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--ink-mute); font-size: .9rem; padding: 2rem; text-align: center;
+  }
+
+  /* ── detail card ───────────────────────────────────────────────────── */
+  .detail {
+    margin-top: 1rem; border: 1px solid var(--rule); border-left: 4px solid var(--tier-1);
+    border-radius: 10px; background: var(--surface-raised); padding: 1rem 1.15rem;
+    min-height: 8.5rem;
+  }
+  .detail .head { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+  .detail .name { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
+  .detail .meta { font-size: .78rem; color: var(--ink-mute); }
+  .detail p { margin: .5rem 0 0; font-size: .9rem; color: var(--ink-soft); line-height: 1.55; max-width: 78ch; }
+  .detail p .k { color: var(--ink-mute); font-size: .76rem; letter-spacing: .1em; text-transform: uppercase; margin-right: .45rem; }
+  .detail .hint { color: var(--ink-mute); font-size: .85rem; }
+  /* Same pill as the register's, inline in the prose line. */
+  .detail .stance {
+    font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+    border: 1px solid var(--rule-strong); border-radius: 999px;
+    padding: .1rem .5rem; color: var(--ink-soft); margin-right: .35rem;
+    white-space: nowrap;
+  }
+
+  /* ── register ──────────────────────────────────────────────────────── */
+  .filters { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin: 1.25rem 0 .25rem; }
+  .filters .k { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin-right: .3rem; }
+  .chip {
+    font: inherit; font-size: .78rem; line-height: 1.3;
+    border: 1px solid var(--rule-strong); border-radius: 999px;
+    background: var(--surface); color: var(--ink-soft);
+    padding: .25rem .7rem; cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .chip .n { opacity: .6; font-variant-numeric: tabular-nums; margin-left: .3rem; }
+
+  .entries { display: grid; gap: .75rem; margin-top: 1rem; }
+  .entry {
+    border: 1px solid var(--rule); border-radius: 12px;
+    background: var(--surface-raised); padding: .9rem 1.05rem;
+  }
+  .entry.on { border-color: var(--rule-strong); background: var(--surface-sunken); }
+  .entry > header { display: flex; gap: .65rem; align-items: baseline; flex-wrap: wrap; margin-bottom: .7rem; }
+  .entry .name { font-weight: 700; font-size: 1rem; letter-spacing: -.01em; }
+  .entry .name a { color: inherit; text-decoration: none; }
+  .entry .name a:hover { text-decoration: underline; }
+  .entry .realm { font-size: .78rem; color: var(--ink-mute); }
+  /* Stance is a LABEL, never a colour — six of them cannot clear all-pairs
+     separation, and the word is unambiguous where a hue would not be. */
+  .entry .stance {
+    font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+    border: 1px solid var(--rule-strong); border-radius: 999px;
+    padding: .12rem .55rem; color: var(--ink-soft);
+  }
+  .entry .metrics { display: flex; gap: 1rem; margin-left: auto; flex-wrap: wrap; }
+  .entry .metrics .m { display: flex; align-items: center; gap: .4rem; font-size: .74rem; color: var(--ink-mute); }
+
+  .entry .cols { display: grid; gap: .9rem; grid-template-columns: minmax(0,1fr); }
+  @media (min-width: 60rem) { .entry .cols { grid-template-columns: 1fr 1fr 1.25fr; gap: 1.4rem; } }
+  .entry .cols .k { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0 0 .25rem; }
+  .entry .cols p.t { margin: 0; font-size: .86rem; line-height: 1.55; color: var(--ink-soft); }
+  /* The reflection is the payload — it gets the emphasis and the tier colour. */
+  .entry .cols .way { border-left: 3px solid var(--tier-1); padding-left: .85rem; }
+  .entry .cols .way p.t { color: var(--ink); }
+
+  /* Thin marks, 4px rounded ends, 2px surface gap — magnitude read exactly. */
+  .bar { display: flex; align-items: center; gap: .45rem; }
+  .bar .track { width: 4.5rem; height: 6px; border-radius: 999px; background: var(--surface-sunken); overflow: hidden; flex: none; }
+  .bar .fill { height: 100%; border-radius: 999px; display: block; }
+  .bar .val { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: .8rem; }
+
+  .tierdot { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; vertical-align: -1px; margin-right: .35rem; }
+
+  /* ── nav ───────────────────────────────────────────────────────────── */
+  .topbar { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+  .topbar .container { display: flex; align-items: center; gap: 1rem; padding: .6rem 1.25rem; }
+  .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; font-size: .95rem; }
+  .brand span { color: var(--color-primary); }
+  .brand small { display: block; font-weight: 400; font-size: .72rem; color: var(--ink-mute); letter-spacing: 0; }
+  .navset { display: flex; gap: .15rem; flex-wrap: wrap; }
+  .navset a { padding: .28rem .5rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .8rem; }
+  .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .swatches { display: flex; gap: .3rem; }
+  .swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule-strong); cursor: pointer; padding: 0; }
+
+  footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 3.5rem; color: var(--ink-mute); font-size: .875rem; }
+</style>
+</head>
+<body>
+
+<a href="#cloud-section" class="visually-hidden">Skip to content</a>
+
+<header class="topbar">
+  <div class="container">
+    <div class="brand">Frontier<span>JS</span><small>the landscape</small></div>
+    <nav class="navset">
+      <a href="#cloud-section">The cloud</a>
+      <a href="#register">The register</a>
+      <a href="vs-laravel.html">vs Laravel</a>
+      <a href="index.html">Home</a>
+    </nav>
+    <div class="swatches" role="group" aria-label="Theme">
+      <button class="swatch" data-theme="default"  title="Default"  style="background:#0d83dd"></button>
+      <button class="swatch" data-theme="sunset"   title="Sunset"   style="background:#e07a3f"></button>
+      <button class="swatch" data-theme="forest"   title="Forest"   style="background:#2f7d4f"></button>
+      <button class="swatch" data-theme="midnight" title="Midnight" style="background:#3b4a6b"></button>
+      <button class="swatch" data-theme="dark"     title="Dark"     style="background:#1c1b18"></button>
+      <button class="swatch" data-theme="elite"    title="Elite"    style="background:#8b6f2e"></button>
+    </div>
+  </div>
+</header>
+
+<!-- ─── Hero ────────────────────────────────────────────────────────── -->
+<section id="top" style="padding-bottom:1rem">
+  <div class="container">
+    <p class="eyebrow">The landscape</p>
+    <h1>Nothing here was invented.</h1>
+    <p class="lede">
+      FrontierJS is an argument assembled out of other people's work — a hook pipeline
+      from one, a policy language from another, a routing convention from a third, and
+      a couple of cautionary tales about what happens when the seams are closed too
+      tightly. This is the register of what it came from, and where each one stops.
+    </p>
+    <p class="lede" style="margin-top:.9rem; font-size:.92rem; color:var(--ink-mute)">
+      The two numbers are <strong>self-assessed by the author</strong>, not measured:
+      <em>closeness</em> is how literally similar the code and vocabulary are,
+      <em>influence</em> is how much was actually taken. Treat them as a stated opinion
+      with its reasoning attached — which is what the last two columns are for.
+    </p>
+  </div>
+</section>
+
+<!-- ─── The cloud ───────────────────────────────────────────────────── -->
+<section id="cloud-section">
+  <div class="container">
+    <h2>Sized by <span id="factor-label">how close it is</span></h2>
+    <p class="lede">
+      Bigger means more of whatever you pick. A cloud is a good way to see the shape of
+      a field and a poor way to compare two numbers — so every value it hints at is
+      printed exactly in <a href="#register">the register below</a>, driven by this
+      same control.
+    </p>
+
+    <div class="controls">
+      <div class="segmented" role="group" aria-label="Size the cloud by">
+        <button data-factor="closeness"   aria-pressed="true">Closeness</button>
+        <button data-factor="inspiration" aria-pressed="false">Influence</button>
+        <button data-factor="proximity"   aria-pressed="false">Thesis proximity</button>
+      </div>
+      <span class="what" id="factor-help">How literally similar the code and vocabulary are.</span>
+
+      <div class="legend" aria-label="Tier">
+        <span><i style="background:var(--tier-1)"></i> Tier 1 · direct lineage</span>
+        <span><i style="background:var(--tier-2)"></i> Tier 2 · partial overlap</span>
+        <span><i style="background:var(--tier-3)"></i> Tier 3 · ancestors</span>
+      </div>
+    </div>
+
+    <div class="cloud" id="cloud" data-state="loading" data-message="Loading projects.json…"></div>
+
+    <div class="detail" id="detail">
+      <p class="hint">Hover or tab through a name to read what was taken from it — and where it stops.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ─── The register ────────────────────────────────────────────────── -->
+<section id="register">
+  <div class="container">
+    <h2>The register</h2>
+    <p class="lede">
+      The same data, exactly — every value the cloud implies, printed. Sorted by the
+      factor selected above. The third column is the one that matters: not what the
+      project does, but what was <em>done with it</em> here.
+    </p>
+
+    <div class="filters" id="filters" role="group" aria-label="Filter by stance"></div>
+
+    <div class="entries" id="rows">
+      <p style="color:var(--ink-mute)">Loading…</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container split">
+    <span>Source: <code>projects.json</code>. Self-assessed, and dated — re-read it before quoting it.</span>
+    <span>Styled entirely by <code>@frontierjs/css</code>. <a href="index.html">Home →</a></span>
+  </div>
+</footer>
+
+<script>
+  // ── Theme switcher — swaps the .theme-* class the design system reads. ──
+  const root = document.documentElement
+  const saved = localStorage.getItem('fjs-theme')
+  if (saved) root.className = 'theme-' + saved
+
+  for (const b of document.querySelectorAll('.swatch')) {
+    b.addEventListener('click', () => {
+      root.className = 'theme-' + b.dataset.theme
+      localStorage.setItem('fjs-theme', b.dataset.theme)
+      layout()   // ramp colours differ per mode; re-read them
+    })
+  }
+
+  // ── State ───────────────────────────────────────────────────────────────
+  const cloud  = document.getElementById('cloud')
+  const rows   = document.getElementById('rows')
+  const detail = document.getElementById('detail')
+
+  const FACTORS = {
+    closeness:   { label: 'how close it is',    help: 'How literally similar the code and vocabulary are.',       get: p => p.closeness },
+    inspiration: { label: 'how much was taken', help: 'How much of it actually ended up in FrontierJS.',          get: p => p.inspiration },
+    // Tier is 1 (nearest) → 3 (furthest), so invert it into a 0-100 magnitude.
+    proximity:   { label: 'how near the thesis', help: 'Tier — 1 is the same argument, 3 is a mental-model ancestor.', get: p => ({ 1: 100, 2: 60, 3: 25 })[p.tier] ?? 25 },
+  }
+
+  // Type scale for the cloud. CURVE > 1 is convex — the gap between a 90 and a
+  // 60 opens up while everything below the middle closes toward MIN_PX.
+  const MIN_PX = 13
+  const MAX_PX = 78
+  const CURVE  = 2.1
+  const FLOOR_PX = 9   // never shrink a word below this, whatever the box does
+
+  let projects = []
+  let stances  = {}       // from the file's own scales block — never hardcoded here
+
+  // ?factor=inspiration&stance=warning deep-links a view, so a link can point at
+  // the reading it is making rather than at the default one.
+  const params = new URLSearchParams(location.search)
+  const wanted = params.get('factor')
+  let factor   = Object.hasOwn(FACTORS, wanted ?? '') ? wanted : 'closeness'
+  // Validated against the file's scale once it loads, not against a list here.
+  let stance   = params.get('stance') ?? 'all'
+
+  // "Taken as it is — same shape, same vocabulary" → chip label + its tooltip.
+  const stanceLabel = k => (stances[k] ?? k).split('—')[0].trim()
+  const stanceHelp  = k => (stances[k] ?? '').split('—').slice(1).join('—').trim()
+  const shown       = () => stance === 'all' ? projects : projects.filter(p => p.stance === stance)
+
+  // ── Load ────────────────────────────────────────────────────────────────
+  fetch('projects.json')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json() })
+    .then(data => {
+      projects = data.projects ?? []
+      stances  = data.scales?.stance ?? {}
+      // A ?stance= naming something the file does not define shows everything,
+      // rather than an empty page with no explanation.
+      if (stance !== 'all' && !Object.hasOwn(stances, stance)) stance = 'all'
+      cloud.dataset.state = 'ready'
+      buildFilters()
+      render()
+    })
+    .catch(err => {
+      // file:// blocks the fetch. Say so instead of rendering an empty box.
+      cloud.dataset.state   = 'error'
+      cloud.dataset.message =
+        location.protocol === 'file:'
+          ? 'projects.json cannot be read over file:// — run `bun run dev` and open http://localhost:3400/landscape.html'
+          : 'Could not load projects.json (' + err.message + ')'
+      rows.innerHTML = '<tr><td colspan="7" style="color:var(--ink-mute)">No data.</td></tr>'
+    })
+
+  // ── Controls ────────────────────────────────────────────────────────────
+  function selectFactor(next, { push = true } = {}) {
+    factor = next
+    for (const o of document.querySelectorAll('.segmented button')) {
+      o.setAttribute('aria-pressed', String(o.dataset.factor === factor))
+    }
+    document.getElementById('factor-label').textContent = FACTORS[factor].label
+    document.getElementById('factor-help').textContent  = FACTORS[factor].help
+    if (push) {
+      const url = new URL(location.href)
+      url.searchParams.set('factor', factor)
+      history.replaceState(null, '', url)
+    }
+    render()
+  }
+
+  for (const b of document.querySelectorAll('.segmented button')) {
+    b.addEventListener('click', () => selectFactor(b.dataset.factor))
+  }
+
+  // Reflect a deep-linked factor in the controls before any data arrives.
+  selectFactorLabelsOnly()
+  function selectFactorLabelsOnly() {
+    for (const o of document.querySelectorAll('.segmented button')) {
+      o.setAttribute('aria-pressed', String(o.dataset.factor === factor))
+    }
+    document.getElementById('factor-label').textContent = FACTORS[factor].label
+    document.getElementById('factor-help').textContent  = FACTORS[factor].help
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────
+  function tierColor(tier) {
+    return getComputedStyle(root).getPropertyValue('--tier-' + tier).trim()
+  }
+
+  function render() {
+    // The register must exist before the detail card highlights a row in it,
+    // so the lead project is chosen here rather than inside buildCloud().
+    const lead = buildCloud()
+    buildRegister()
+    if (lead) showDetail(lead)
+  }
+
+  // ── Stance filter — drives the cloud and the register together ──────────
+  function buildFilters() {
+    const counts = {}
+    for (const p of projects) counts[p.stance] = (counts[p.stance] ?? 0) + 1
+
+    const box = document.getElementById('filters')
+    box.innerHTML = '<span class="k">What was done with it</span>'
+
+    const mk = (key, label, help, n) => {
+      const b = document.createElement('button')
+      b.className = 'chip'
+      b.type = 'button'
+      b.setAttribute('aria-pressed', String(stance === key))
+      b.innerHTML = `${esc(label)}<span class="n">${n}</span>`
+      if (help) b.title = help
+      b.addEventListener('click', () => {
+        stance = stance === key ? 'all' : key      // click again to clear
+        for (const o of box.querySelectorAll('.chip')) {
+          o.setAttribute('aria-pressed', String(o.dataset.key === stance))
+        }
+        const url = new URL(location.href)
+        if (stance === 'all') url.searchParams.delete('stance')
+        else url.searchParams.set('stance', stance)
+        history.replaceState(null, '', url)
+        render()
+      })
+      b.dataset.key = key
+      box.appendChild(b)
+    }
+
+    mk('all', 'All', '', projects.length)
+    // Fixed order — the file's own scale order, so the row never reshuffles.
+    for (const key of Object.keys(stances)) {
+      if (counts[key]) mk(key, stanceLabel(key), stanceHelp(key), counts[key])
+    }
+  }
+
+  function buildCloud() {
+    cloud.querySelectorAll('a').forEach(el => el.remove())
+
+    const list = shown()
+    if (!list.length) return
+
+    const get = FACTORS[factor].get
+    const vals = list.map(get)
+    const lo = Math.min(...vals), hi = Math.max(...vals)
+
+    // Biggest first — the packer places what it cannot shrink around.
+    const items = list
+      .map(p => ({ p, v: get(p) }))
+      .sort((a, b) => b.v - a.v)
+      .map(({ p, v }) => {
+        // Deliberately convex: t² pushes the top of the range up and collapses
+        // the bottom, so the cloud reads as a hierarchy rather than a paragraph
+        // of similar-sized words. It also exaggerates — font size is read as
+        // area, and squaring the input squares it again on the way to the eye.
+        // That is a choice about legibility of SHAPE, and it is why the register
+        // below prints the actual numbers instead of leaving them to be judged
+        // from the picture.
+        const t  = hi === lo ? 1 : (v - lo) / (hi - lo)
+        const px = MIN_PX + Math.pow(t, CURVE) * (MAX_PX - MIN_PX)
+        const el = document.createElement('a')
+        el.href        = p.url
+        el.target      = '_blank'
+        el.rel         = 'noopener'
+        el.textContent = p.name
+        el.style.fontSize = px.toFixed(1) + 'px'
+        el.style.color    = tierColor(p.tier)
+        el.dataset.rank   = p.rank
+        el.setAttribute('aria-label', `${p.name} — tier ${p.tier}, closeness ${p.closeness}, influence ${p.inspiration}`)
+        el.addEventListener('mouseenter', () => showDetail(p))
+        el.addEventListener('focus',      () => showDetail(p))
+        cloud.appendChild(el)
+        return { el, p, px }
+      })
+
+    place(items)
+    return items.length ? items[0].p : null   // the largest word — render() leads with it
+  }
+
+  // Archimedean-spiral packing with bounding-box collision. Deterministic —
+  // no jitter, so the same data lays out the same way every reload.
+  function place(items) {
+    const W = cloud.clientWidth, H = cloud.clientHeight
+    if (!W || !H) return
+
+    for (const it of items) {
+      it.w = it.el.offsetWidth
+      it.h = it.el.offsetHeight
+    }
+
+    // Shrink everything together until the whole set fits, rather than
+    // dropping the words that lost the race.
+    for (let attempt = 0; attempt < 14; attempt++) {
+      const scale = Math.pow(0.93, attempt)
+      if (attempt > 0) {
+        for (const it of items) {
+          it.el.style.fontSize = Math.max(FLOOR_PX, it.px * scale).toFixed(1) + 'px'
+          it.w = it.el.offsetWidth
+          it.h = it.el.offsetHeight
+        }
+      }
+      if (spiral(items, W, H)) return
+    }
+
+    // Nothing fits (a very short viewport) — fall back to a plain flow.
+    for (const it of items) {
+      it.el.style.position = 'static'
+      it.el.style.display  = 'inline-block'
+    }
+  }
+
+  function spiral(items, W, H) {
+    const placed = []
+    const cx = W / 2, cy = H / 2
+    // Air between words. With a convex type scale most words are small, so a
+    // tight pad collapses them into a dense knot in the middle of a large box —
+    // this spreads the cluster to the box's width without changing any size.
+    const PAD = 9
+
+    for (const it of items) {
+      let ok = false
+      for (let s = 0; s < 5000; s++) {
+        const t = 0.20 * s
+        const r = 2.4 * t
+        // 1.45 stretches the spiral into an ellipse wider than it is tall,
+        // which is the shape of the box. Higher and the blob leaves dead space
+        // above and below; lower and long names run out of horizontal room.
+        const x = cx + r * Math.cos(t) * 1.45 - it.w / 2
+        const y = cy + r * Math.sin(t) - it.h / 2
+
+        if (x < 2 || y < 2 || x + it.w > W - 2 || y + it.h > H - 2) {
+          if (r > Math.max(W, H)) break   // spiralled clear of the box
+          continue
+        }
+        if (!hits(x, y, it.w, it.h, placed, PAD)) {
+          it.el.style.left = x.toFixed(1) + 'px'
+          it.el.style.top  = y.toFixed(1) + 'px'
+          placed.push({ x, y, w: it.w, h: it.h })
+          ok = true
+          break
+        }
+      }
+      if (!ok) return false
+    }
+    return true
+  }
+
+  function hits(x, y, w, h, placed, pad) {
+    for (const b of placed) {
+      if (x < b.x + b.w + pad && x + w + pad > b.x &&
+          y < b.y + b.h + pad && y + h + pad > b.y) return true
+    }
+    return false
+  }
+
+  function showDetail(p) {
+    detail.style.borderLeftColor = tierColor(p.tier)
+    detail.innerHTML = `
+      <div class="head">
+        <span class="name">${esc(p.name)}</span>
+        <span class="meta">${esc(p.realm)} · tier ${p.tier} · closeness ${p.closeness} · influence ${p.inspiration}</span>
+        <a class="meta" href="${esc(p.url)}" target="_blank" rel="noopener" style="margin-left:auto">${esc(hostOf(p.url))} ↗</a>
+      </div>
+      <p><span class="k">Taken</span>${esc(p.relation)}</p>
+      <p><span class="k">Stops at</span>${esc(p.gap)}</p>
+      <p><span class="k">The FrontierJS way</span><span class="stance" title="${esc(stanceHelp(p.stance))}"
+        >${esc(stanceLabel(p.stance))}</span> ${esc(p.fjsWay)}</p>`
+    for (const el of rows.querySelectorAll('.entry')) {
+      el.classList.toggle('on', el.dataset.rank === String(p.rank))
+    }
+  }
+
+  function buildRegister() {
+    const get = FACTORS[factor].get
+    const list = [...shown()].sort((a, b) => get(b) - get(a) || a.rank - b.rank)
+
+    if (!list.length) {
+      rows.innerHTML = '<p style="color:var(--ink-mute)">Nothing under that stance.</p>'
+      return
+    }
+
+    rows.innerHTML = list.map(p => `
+      <article class="entry" data-rank="${p.rank}">
+        <header>
+          <span class="tierdot" style="background:${tierColor(p.tier)}" title="Tier ${p.tier}"></span>
+          <span class="name"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a></span>
+          <span class="realm">${esc(p.realm)}</span>
+          <span class="stance" title="${esc(stanceHelp(p.stance))}">${esc(stanceLabel(p.stance))}</span>
+          <span class="metrics">
+            <span class="m">closeness ${bar(p.closeness, p.tier)}</span>
+            <span class="m">influence ${bar(p.inspiration, p.tier)}</span>
+          </span>
+        </header>
+        <div class="cols">
+          <div><p class="k">What was taken</p><p class="t">${esc(p.relation)}</p></div>
+          <div><p class="k">Where it stops</p><p class="t">${esc(p.gap)}</p></div>
+          <div class="way" style="border-left-color:${tierColor(p.tier)}">
+            <p class="k">The FrontierJS way</p><p class="t">${esc(p.fjsWay)}</p>
+          </div>
+        </div>
+      </article>`).join('')
+
+    for (const el of rows.querySelectorAll('.entry')) {
+      el.addEventListener('mouseenter', () => {
+        const p = projects.find(x => String(x.rank) === el.dataset.rank)
+        if (p) showDetail(p)
+      })
+    }
+  }
+
+  function bar(v, tier) {
+    return `<div class="bar">
+      <span class="track"><span class="fill" style="width:${v}%;background:${tierColor(tier)}"></span></span>
+      <span class="val">${v}</span>
+    </div>`
+  }
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ))
+  const hostOf = u => { try { return new URL(u).host.replace(/^www\./, '') } catch { return u } }
+
+  // Re-pack on resize — the spiral is measured against the live box.
+  let t = null
+  addEventListener('resize', () => { clearTimeout(t); t = setTimeout(render, 160) })
+  function layout() { if (projects.length) render() }
+</script>
+
+</body>
+</html>

@@ -184,6 +184,174 @@ the line is in front of the developer who has to narrow it.
 *Lives in:* `packages/cli/commands/make/model.md`, `make/scaffold.md`;
 rationale in `publishToChannels()`.
 
+## UI substrate (Mesa)
+
+**2026-08-05 · A component's composition API is snippet props, and a snippet's
+arguments are getters.**
+`{#snippet row(r)}` written inside a component tag is passed as the same-name
+prop (VISION §9.5, implemented 2026-08-04), and `{@render row(order)}` hands
+`() => order` rather than the value.
+
+Why: a named slot cannot take a parameter, so a snippet prop is the only
+parameterised composition the language has — a table that draws rows, a
+component with a trailing icon per item, a list with a per-row action. And a
+snippet's DOM is built once, so an argument read as a value is frozen at that
+moment: the first version of this shipped a kit `Table` that drew its first
+page of rows and then ignored the store. Reading through a getter keeps the
+fine-grained model — the read happens inside each binding's own effect.
+
+Consequence: a snippet held in a variable and invoked from ordinary JavaScript
+takes `(anchor, ...getters)`.
+
+**2026-08-05 · `$attributes` is the REST of the props, and a portal is a
+delegation root.**
+`$attributes` excludes everything the component declared, plus `class` (which
+arrives as `$class` and is *merged* by `bindClassPassthrough`, never replaced).
+`<mesa:portal>` registers its target as a delegation root for as long as it is
+open, reference-counted.
+
+Why both: a component kit cannot enumerate every attribute a caller might need
+— `id`, `aria-label`, `title`, `data-*` — so forwarding has to be possible;
+before this, `$attributes` was every prop unfiltered and spreading it wrote
+`tone="danger" variant="ghost"` onto the DOM node. And delegated handlers are
+found by walking from the event target up to a registered root: portalled
+content is appended to `document.body`, outside the app's container, so every
+menu item, command-palette row and toast dismiss button in `@frontierjs/ui` was
+inert — correct markup, correct ARIA, no error, and a click that did nothing.
+Reference counting is what stops the first of two open portals from taking
+`document.body`'s listener away from the second.
+
+**2026-08-05 · A compiler error fails the build.**
+`analysis.errors` is not advisory: Sierra's `mesa-plugin` throws rather than
+serving the module.
+
+Why: a settings screen with five `bind:` errors in it — each one correctly
+diagnosed as "must be a writable top-level `let`" — rendered, looked right, and
+silently collected nothing, because the plugin forwarded `warnings` and never
+looked at `errors`. A diagnosis nobody sees is the same as no diagnosis, and
+this repo's recurring failure mode is exactly that: the compiler knew.
+
+
+**2026-08-04 · `x = x` forces a notify — the same idiom for local state and for
+watched imports.**
+Self-assignment on a reactive binding compiles to a write that skips the
+equality guard, so `user.score += 10; user = user` re-renders. It reads as a
+no-op and deliberately is not one: it is how you say *"I mutated this in place,
+notify anyway"*.
+
+Why: the idiom already existed and already meant exactly this — for an
+**imported** proxy root, `themeNew = themeNew` compiles to `$$fire_themeNew()`
+(ES module bindings are read-only, so the assignment could never have been
+literal). For a **local** `let` it compiled to an ordinary `$$set_user(user)`,
+and signals write through `Object.is`, so the identical reference was skipped and
+nothing happened. One idiom, two behaviours, no diagnostic — and the natural
+guess for anyone arriving from Svelte, where `x = x` is the standard nudge.
+
+**The force is per-write, never per-signal.** `track()` has carried an unused
+`_alwaysNotify` flag that would have made a binding always notify; that is the
+wrong shape, because it discards the equality optimisation for every ordinary
+write to that binding. `createSignal`'s `write(next, force)` and
+`set(tracked, value, force)` take the flag per call instead, and only the
+self-assignment call site passes it. RULE 43 is unchanged: a bare mutation with
+no assignment is still inert.
+*Lives in:* `packages/mesa/src/compiler.js` (`rewriteAssignments`, beside the
+imported-proxy case it mirrors), `packages/mesa/src/runtime.js`
+(`createSignal`, `set`), VISION **RULE 43**; pinned by three tests in
+`test/compiler.test.js`, one of which asserts an ordinary equal write is still
+skipped.
+
+
+**2026-08-03 · Scoped CSS binds to the selector's SUBJECT, not to an ancestor.**
+A component's `<style>` rules are emitted by appending the component hash to the
+**rightmost compound selector** (`button` → `button.mHASH`), and every element in
+a styled component carries that hash. Two things follow, and both reverse the
+previous behaviour: a component **can** style its own root element, and it
+**cannot** reach the markup of a child component. Cross a component boundary with
+`:global(...)`.
+
+Why: the previous form emitted `.mHASH button` — an ancestor selector — while
+putting the hash *on* the element, and those cannot both be true. `.mHASH button`
+matches a button *inside* a `.mHASH` element, never the `<button class="mHASH">`
+carrying it, so any rule targeting the component's own root silently did nothing
+in every environment. It went unnoticed because a second bug cancelled it: the
+prerenderer de-scoped CSS before shipping it, which made component styles apply —
+globally, to the whole page. `addStyles` was well covered as a *mechanism* (19
+assertions) and nothing had ever asserted that the selector matches the markup.
+
+This is a **breaking change** for any component that styled a child's internals.
+*Lives in:* `packages/mesa/src/compiler.js` (`_appendScope`, `_scopeSelector`, the
+element writer), VISION **RULE 55**, `packages/mesa/CHANGES.md`;
+computed-style proof in `packages/sierra/tests/fixtures/island-site/verify.mjs`.
+
+**2026-08-03 · CSS scope ids are content-addressed, never generated.**
+The component hash is `cssHash(styleContent)` — a pure function of the `<style>`
+content, so the same component yields the same id in any process, any build, and
+any compiler. It replaced `genId()` (clock + counter), whose one caller this was.
+
+Why: three separate things needed it. Reproducible builds — output could not be
+diffed or content-hashed, and checking a compiler change for byte-identity
+reported 13 false differences that were all scope ids. Cross-compiler identity —
+a prerendered island is compiled by Mesa's renderer *and* by Vite for its chunk,
+and two ids meant the same rules shipped twice under two hashes with the markup
+swapping class on mount. And debuggability — a class that changes every build
+cannot be searched for.
+
+**Hash the style content and nothing else.** Including the filename would break
+cross-compiler identity the moment the two disagree about a path (absolute vs
+relative, a Vite id with a query, a symlinked workspace) and would do it
+silently. Two components with byte-identical CSS therefore share an id; that is
+harmless, because their rules are the same rules.
+*Lives in:* `packages/mesa/src/compiler.js` (`cssHash`, `processCSS`);
+`genId()` remains exported and non-deterministic with no caller.
+
+**2026-08-03 · A page assembles its own styles; the renderer offers both shapes.**
+`renderComponent` returns `.styles` — `[{ id, css }]` per component in tree order
+— alongside the concatenated `.css`, and `styleTag: false` suppresses the blob it
+otherwise prepends to `.html`. A caller emitting `<style id="mHASH">` per
+component gets dedupe for free: the id is the scope hash, so the runtime's
+`addStyles` treats the block as already present. Sierra's prerenderer does this,
+taking an island's CSS on a static page from three copies to one.
+*Lives in:* `packages/mesa/src/render-component.js`,
+`packages/sierra/src/build/prerender.js` (`wrapDocument`).
+
+**2026-08-03 · The NEAREST delegation root owns an event; ancestors stay out.**
+`_makeDelegatedHandler` now scans the composed path first and returns if any
+registered root sits between the target and its own root. Before, each root
+walked the path independently, so a handler ran **once per ancestor root above
+it** — one click, two increments.
+
+Roots nest whenever two mounted trees sit at different depths, and `mount()`
+registers the anchor's parent element, so this is the ordinary shape for Sierra
+islands: one island directly in `<main>` and another inside a `<div>` in that
+`<main>` is enough. It went unseen because the fixture happened to put every
+island in the same parent.
+*Lives in:* `packages/mesa/src/runtime.js` (`_makeDelegatedHandler`), pinned in
+`runtime.test.js` ("a handler fires ONCE when delegation roots nest").
+
+**2026-08-03 · An ancestor island's mount is authoritative; `client:static`
+under a live parent cannot be honoured.**
+Mesa's `island()` short-circuits on the client, so a mounted island renders its
+nested `client:*` children **directly** — live, in its own delegation root,
+before their directives fire. Sierra's loader therefore defers to the ancestor
+rather than racing it: a subsumed island resolves nothing and downloads nothing,
+mounting clears the range as it stands *now* (not the scan-time list) and
+disposes any descendant that mounted first. `client:static` inside a live island
+is the one case with no correct answer — the parent renders its children — so it
+warns instead of being silently reinterpreted. A `client:static` **parent** never
+mounts, so it does not subsume anything inside it.
+*Lives in:* `packages/sierra/src/islands/loader.js`, pinned in
+`packages/sierra/tests/islands.test.js` and end-to-end in
+`tests/fixtures/island-site/` (`Outer.mesa` / `Inner.mesa`).
+
+**2026-08-03 · A prerendered page's CSS keeps its scoping; only the inlining
+targets flatten it.** `renderComponent`'s `email` and `fragment` targets push
+declarations into `style=""` attributes, so their selectors are consumed and
+flattening them is harmless. The `html` target ships a `<style>` block, where the
+hash is the only thing keeping one component's rules off another's markup.
+*Lives in:* `packages/mesa/src/render-component.js` (`compileTree`, `opts.descope`).
+
+---
+
 ## Design system (`@frontierjs/css`)
 
 **2026-08-02 · An alias token declared in `:root` is always wrong.**
@@ -242,6 +410,13 @@ adding `.active` / `.current` / `.selected` fails to fake it. The one documented
 exception is a completed Step — there is no ARIA token for "done", so the markup
 owes assistive tech a `.visually-hidden` word.
 *Lives in:* `tabs.css`, `nav.css`, `steps.css`, `form-core.css`.
+
+*(A 2026-08-04 ruling that Basecamp declare no `@@gate` was withdrawn the same
+day. It rested on the premise that no `getLevel` could grade a `@frontierjs/auth`
+session past `VISITOR(1)`; `example/` disproved that by running it —
+`sessionGateLevel()` plus a one-line role wrapper grades a verified user 4 and a
+verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstanding
+work, not a decision.)*
 
 ## Open (discussed, not yet ruled)
 

@@ -144,6 +144,53 @@ function _pickExport(exports, subPath) {
   return null
 }
 
+/** Filenames `sierra.config` may carry, in preference order. */
+const SIERRA_CONFIG_NAMES = ['sierra.config.js', 'sierra.config.mjs', 'sierra.config.ts']
+
+/**
+ * Locate `sierra.config.js` on disk.
+ *
+ * `virtual:sierra` emits a literal `import sierraConfig from '<path>'`, so a wrong
+ * answer here is a hard build failure — `Module not found` — not a degraded mode.
+ *
+ * This used to be a string rewrite of the resolved Vite config path
+ * (`…/vite.config.js` → `…/config/sierra.config.js`), which assumed `vite.config.js`
+ * sat at the Vite root. The convention is a dedicated `config/` folder, so the
+ * common case — `config/vite.config.js` next to `config/sierra.config.js` — derived
+ * `config/config/sierra.config.js` and could never build. Both layouts are supported
+ * now, by looking rather than by assuming: the sibling of the Vite config first,
+ * then `config/` beneath it, then the same two against the Vite root.
+ *
+ * `_configPath` still wins outright, for a config that lives somewhere else entirely.
+ *
+ * @param {object} opts
+ * @param {string} [opts.explicit]   — config._configPath
+ * @param {string} [opts.configFile] — viteConfig.configFile, absolute
+ * @param {string} opts.root         — the Vite root
+ * @returns {string} absolute path; the best guess when nothing exists yet
+ */
+export function resolveSierraConfigPath({ explicit, configFile, root }) {
+  if (explicit) return explicit
+
+  const dirs = []
+  if (configFile) {
+    const configDir = dirname(configFile)
+    dirs.push(configDir, resolve(configDir, 'config'))
+  }
+  dirs.push(resolve(root, 'config'), root)
+
+  for (const dir of dirs) {
+    for (const name of SIERRA_CONFIG_NAMES) {
+      const abs = resolve(dir, name)
+      if (existsSync(abs)) return abs
+    }
+  }
+
+  // Nothing on disk. Point at the conventional location so the failure names the
+  // place the file belongs, instead of a doubled path nobody wrote.
+  return resolve(root, 'config', SIERRA_CONFIG_NAMES[0])
+}
+
 /**
  * @param {import('./index.js').SierraConfig} config
  * @param {object} sierraContext
@@ -160,10 +207,11 @@ export function virtualSierraPlugin(config, sierraContext) {
 
     configResolved(viteConfig) {
       root = viteConfig.root ?? process.cwd()
-      // Resolve the sierra config path from the vite config root
-      sierraConfigPath = config._configPath
-        ?? viteConfig.configFile?.replace(/vite\.config\.[jt]s$/, 'config/sierra.config.js')
-        ?? `${root}/config/sierra.config.js`
+      sierraConfigPath = resolveSierraConfigPath({
+        explicit:   config._configPath,
+        configFile: viteConfig.configFile,
+        root,
+      })
     },
 
     resolveId(id, importer) {

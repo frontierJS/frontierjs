@@ -1,0 +1,35 @@
+<script>
+  export let color    = '#444444'
+  export let size     = 16
+  export let weight   = 400
+  export let align    = 'left'
+  export let padding  = '6px 16px'
+  export let bold     = false
+  export let muted    = false
+</script>
+
+<!--
+  Text — a styled paragraph row.
+  Renders as a <tr><td><p> structure for email safety.
+
+  <Text>Hello world</Text>
+  <Text bold color="#222">Important note</Text>
+  <Text muted size={14}>Fine print here</Text>
+-->
+
+<tr>
+  <td style="padding:{padding};">
+    <p style="
+      font-family:Helvetica,Arial,sans-serif;
+      font-size:{size}px;
+      font-weight:{bold ? 700 : weight};
+      color:{muted ? '#888888' : color};
+      text-align:{align};
+      line-height:1.6;
+      margin:0;
+      padding:0;
+    ">
+      <slot />
+    </p>
+  </td>
+</tr>

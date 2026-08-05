@@ -1,0 +1,70 @@
+/*
+ * utilities.css
+ * The escape hatch: single-purpose classes that must beat any component.
+ *
+ * ── Why these are not in typography.css ───────────────────────────────
+ *
+ * They were, until v0.10.1, and every one of them was dead on a component
+ * that set the same property. `.btn` declares `font-size: 0.875rem`;
+ * buttons.css is imported after typography.css and both landed in the
+ * `components` layer, so the two rules tied on specificity and source order
+ * settled it. The result:
+ *
+ *   btn · btn text-xs · text-sm · text-md · text-lg · text-xl
+ *   → every one of them 14px
+ *
+ * Five documented size modifiers, all silently inert, on the class the
+ * package demonstrates first. The style guide's Buttons page showed five
+ * identical buttons under a caption explaining how they differ.
+ *
+ * A later layer fixes it for every component at once, which is the point of
+ * having layers: no re-ordering of imports, no `!important`, and no need to
+ * remember that buttons happen to set a font size. It is also what the
+ * system already claims — "Utilities are the escape hatch" — made true.
+ *
+ * `utilities` sits after `patterns` and before `a11y`, so a utility beats
+ * every component and pattern, and `.visually-hidden` still beats it.
+ *
+ * ── The Uno overlap ───────────────────────────────────────────────────
+ *
+ * If you also run UnoCSS, its `text-sm`/`text-lg`/… are unlayered and will
+ * beat these — with a different scale (14/18px on a 4px grid) than the one
+ * below (13/16px, tuned to the package's 14px body). Pick one: blocklist
+ * the names in `uno.config.ts`, or drop this file's size steps. See the
+ * "Using it with UnoCSS" section of README.md.
+ */
+
+/*
+ * ── Text size ─────────────────────────────────────────────────────────
+ *
+ * Principle 3 says heading levels carry structure, not size — outline via
+ * <h1>–<h6>, visual size via utility classes. `.h1`–`.h6` in typography.css
+ * are half of that promise; this is the other half, and it was missing
+ * until v0.10.
+ *
+ * The demo app wrote `style="font-size: .8125rem"` fourteen times in five
+ * screens before anyone noticed, which is what a missing utility looks
+ * like from the outside.
+ *
+ * The scale is deliberately shallow. `.text-md` is the package's own body
+ * size, so the useful range is two steps down and two up — a caption, a
+ * meta line, body, a lead paragraph, a subhead. Anything louder than
+ * `.text-xl` is a heading and should say so with an <h*>.
+ *
+ * These set size only. Colour is the `.text-*` colour utilities below,
+ * and they chain: `class="text-sm text-muted"`.
+ */
+.text-xs { font-size: 0.75rem;   line-height: 1.45; }
+.text-sm { font-size: 0.8125rem; line-height: 1.5;  }
+.text-md { font-size: 0.875rem;  line-height: 1.55; }
+.text-lg { font-size: 1rem;      line-height: 1.6;  }
+.text-xl { font-size: 1.125rem;  line-height: 1.6;  }
+
+/* ── Text color ───────────────────────────────────────────────────── */
+.text-body    { color: var(--ink); }
+.text-muted   { color: var(--ink-mute); }
+.text-primary { color: var(--color-primary); }
+.text-info    { color: var(--color-info); }
+.text-success { color: var(--color-success); }
+.text-warning { color: var(--color-warning); }
+.text-danger  { color: var(--color-danger); }

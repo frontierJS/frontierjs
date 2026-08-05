@@ -1,0 +1,65 @@
+<script>
+  export let heading       = ''
+  export let headingColor  = '#38993a'
+  export let headingSize   = 18
+  export let bgcolor       = '#ffffff'
+  export let border        = '#eeeeee'
+  export let borderWidth   = 2
+  export let radius        = 8
+  export let padding       = 16
+</script>
+
+<!--
+  Card — a bordered container with an optional heading.
+  Creates visual grouping for related content (contact info, order details, etc.)
+
+  <Card heading="Order Details">
+    <KeyValue label="Order #" value="12345" />
+    <KeyValue label="Total"   value="$99.00" />
+  </Card>
+-->
+
+<tr>
+  <td style="padding:{padding}px;">
+    <table
+      role="presentation"
+      cellspacing="0"
+      cellpadding="0"
+      border="0"
+      width="100%"
+      style="
+        border-collapse:collapse;
+        border-radius:{radius}px;
+        border:{borderWidth}px solid {border};
+        background-color:{bgcolor};
+        overflow:hidden;
+      ">
+      {#if heading}
+      <!-- Card heading row -->
+      <tr>
+        <td style="
+          padding:10px 16px;
+          font-family:Helvetica,Arial,sans-serif;
+          font-size:{headingSize}px;
+          font-weight:800;
+          color:{headingColor};
+          border-bottom:{borderWidth}px solid {border};
+          border-radius:{radius}px {radius}px 0 0;
+        ">
+          {heading}
+        </td>
+      </tr>
+      {/if}
+      <!-- Card body -->
+      <tr>
+        <td>
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+            <tbody>
+              <slot />
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>

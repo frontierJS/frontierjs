@@ -77,7 +77,12 @@ fli dev
 
 The CLI starts all sub-projects in development mode. API runs on `:3000`, web on `:5173`.
 
-For a full walkthrough — from blank project to deployed CRM — see the [Developer Guide](./docs/guide.md).
+> **Alpha.** The published `@frontierjs/cli` is `0.0.0-beta.0` and lags this repo.
+> Only Litestone and the CLI are on npm at all — see [Publishing status](#publishing-status).
+> To work against current code, clone this repo and `bun install`.
+
+For a working walkthrough, start with the [Junction example ladder](./packages/junction/example/README.md)
+and its UI counterpart in [Sierra's example app](./packages/sierra/example/README.md).
 
 ---
 
@@ -164,74 +169,134 @@ One schema. One service declaration. One resource binding. Any component that im
 
 ## Documentation
 
-| Document                                          | Description                                        |
-| ------------------------------------------------- | -------------------------------------------------- |
-| [Philosophy](./docs/philosophy.md)                | Why FrontierJS exists and the principles behind it |
-| [The FJS World](./docs/fjs-world.md)              | The eight domains and the decision framework       |
-| [Architecture Overview](./docs/architecture.md)   | How the three realms connect                       |
-| [Developer Guide](./docs/guide.md)                | Building with FrontierJS end-to-end                |
-| [QuickStart](./docs/quickstart.md)                | Get a project running in minutes                   |
-| [Terms & Definitions](./docs/terms.md)            | Vocabulary reference                               |
-| [Code Examples](./docs/code-examples.md)          | Minimal working code for all three realms          |
-| [Realm Bridge Reference](./docs/realm-bridges.md) | The seven integration points between realms        |
+| Document                                                                              | Description                                                                     |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [Philosophy](./PHILOSOPHY.md)                                                         | Why FrontierJS exists — the axioms and decision tests above the architecture     |
+| [Architecture & Vocabulary](./ARCHITECT.md)                                           | The mental model (§1), the mandatory vocabulary (§2), the eight domains (§4)     |
+| [Decisions](./DECISIONS.md)                                                           | Dated rulings — read before relitigating any semantics                           |
+| [Verifying](./VERIFYING.md)                                                           | How to know something here is true: run it, probe failure paths, don't trust docs |
+| [Realm Bridge Reference](./CLAUDE.md#bridge-index--the-named-cross-package-handoffs)  | The named cross-package handoffs, and the file each one lives in                 |
+| [Handoff](./HANDOFF.md)                                                               | Current state and the numbered open-issue ledger                                 |
+
+### Runnable examples
+
+Every example below is verified end-to-end, not sketched. A broken one is a bug.
+
+| Example                                                            | What it shows                                                          |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [Junction ladder](./packages/junction/example/README.md)           | `minimal/` → `elegant.ts` → `fullstack/` → `single-file.ts` — the API realm |
+| [Sierra example app](./packages/sierra/example/README.md)          | The UI half — a real Junction API over SQLite, driven in headless Chrome |
+| [Litestone guides](./packages/litestone/docs/README.md)             | Getting started, schema, querying, migrations, multi-tenancy            |
 
 ---
 
 ## Package Documentation
 
-| Package                            | README                                               |
-| ---------------------------------- | ---------------------------------------------------- |
-| Litestone — Data realm ORM         | [packages/litestone](./packages/litestone/README.md) |
-| Junction — API realm framework     | [packages/junction](./packages/junction/README.md)   |
-| Sierra — UI meta-framework         | [packages/sierra](./packages/sierra/README.md)       |
-| Mesa — Reactive component language | [packages/mesa](./packages/mesa/README.md)           |
-| CLI — `fli`                        | [packages/cli](./packages/cli/README.md)             |
+| Package                                            | README                                                               |
+| ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| Litestone — Data realm ORM                         | [packages/litestone](./packages/litestone/README.md)                 |
+| Junction — API realm framework                     | [packages/junction](./packages/junction/README.md)                   |
+| Sierra — UI meta-framework                         | [packages/sierra](./packages/sierra/README.md)                       |
+| Mesa — Reactive component language                 | [packages/mesa](./packages/mesa/README.md)                           |
+| CLI — `fli`                                        | [packages/cli](./packages/cli/README.md)                             |
+| Auth — identity, sessions, gate enforcement        | [packages/auth](./packages/auth/README.md)                           |
+| Caravan — SQLite job queue + cron                  | [packages/caravan](./packages/caravan/README.md)                     |
+| Conduit — outbound boundary (`app.conduit.send()`) | [packages/conduit](./packages/conduit/README.md)                     |
+| Notifications — in-app + email fan-out             | [packages/notifications](./packages/notifications/README.md)         |
+| CSS — semantics-first design system                | [packages/css](./packages/css/README.md)                             |
+| Jetty — browser-extension app container            | [packages/jetty](./packages/jetty/README.md)                         |
+| VS Code — Litestone + Mesa language support        | [packages/frontierjs-vscode](./packages/frontierjs-vscode/README.md) |
 
 ---
 
 ## Project Structure
 
-A FrontierJS project separates concerns across sub-projects, all orbiting the shared schema:
+**This is the layout. It is not a suggestion** — `fli create` scaffolds it, every package
+README assumes it, and Sierra's schema auto-detection (`../db/schema.lite`) only finds the
+schema because the UI sits one level down in `web/`.
+
+Three directories at the app root, one per realm, all orbiting the shared schema:
 
 ```
 my-app/
-  frontier.config.js    ← environment config
+  frontier.config.js         ← environment config
 
-  db/
-    schema.lite         ← single source of truth
+  db/                        ← Data realm — Litestone
+    schema.lite              ← single source of truth
     migrations/
     backups/
 
-  api/                  ← Junction API server
+  api/                       ← API realm — Junction
+    index.ts                 ← bun --watch entry
+    config/
+      junction.config.js
     src/
-      services/
-      middleware/
-      jobs/
-      automations/
+      app.ts
+      core/                  ← env, db client, auth, hooks
+      services/              ← *.service.ts, autoloaded at boot
+    test/
 
-  web/                  ← Sierra frontend
+  web/                       ← UI realm — Sierra + Mesa (the Vite root)
+    index.html
+    config/
+      vite.config.js         ← configuration lives in config/, not at the root
+      sierra.config.js
+      routes.js              ← generated, do not edit
+    public/                  ← static assets, copied verbatim
     src/
-      routes/
-      resources/
+      main.js
+      App.mesa
+      routes/                ← file-system routes (.mesa / .md)
+      resources/             ← createResource() bindings to Junction services
       components/
+    test/
+    dist/                    ← build output
 
-  tests/                ← cross-project integration tests
-  wiki/                 ← project documentation
+  deploy/                    ← everything about shipping — Dockerfile, deploy steps
+  tests/                     ← cross-project integration tests
+  wiki/                      ← project documentation
 ```
 
-The database lives at the root — shared by all sub-projects, owned by none of them.
+**The database lives at the root** — shared by all sub-projects, owned by none of them.
+`api/` and `web/` are peers; neither contains the other, and neither contains `db/`.
+
+**Every sub-project has the same six folders**, so knowing one means knowing all of them:
+
+| Folder | Holds |
+| --- | --- |
+| `config/` | configure your settings — `vite.config.js`, `sierra.config.js`, `junction.config.js` |
+| `src/` | develop your project |
+| `public/` | static assets, served or copied as-is |
+| `test/` | test your code |
+| `dist/` | build output, ready for distribution |
+| `deploy/` | everything related to shipping the app |
+
+**All Sierra code lives under `web/`** — `config/` and `src/` belong to the UI realm, not
+to the app root. `web/` is the Vite root: `index.html` and the dev server's working
+directory are there, and the build runs as `cd web && vite -c config/vite.config.js`.
+Sierra locates `sierra.config.js` by looking beside `vite.config.js` first, so the
+`config/` pair needs no extra wiring.
 
 ---
 
-## Packages
+## Publishing status
 
-| Package                 | Version                                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `@frontierjs/litestone` | [![npm](https://img.shields.io/npm/v/@frontierjs/litestone)](https://www.npmjs.com/package/@frontierjs/litestone) |
-| `@frontierjs/junction`  | [![npm](https://img.shields.io/npm/v/@frontierjs/junction)](https://www.npmjs.com/package/@frontierjs/junction)   |
-| `@frontierjs/sierra`    | [![npm](https://img.shields.io/npm/v/@frontierjs/sierra)](https://www.npmjs.com/package/@frontierjs/sierra)       |
-| `@frontierjs/mesa`      | [![npm](https://img.shields.io/npm/v/@frontierjs/mesa)](https://www.npmjs.com/package/@frontierjs/mesa)           |
-| `@frontierjs/cli`       | [![npm](https://img.shields.io/npm/v/@frontierjs/cli)](https://www.npmjs.com/package/@frontierjs/cli)             |
+**FrontierJS is alpha.** Only two packages are on npm today; everything else is
+workspace-only and is consumed through `workspace:*`, not the registry.
+
+| Package                     | On npm                                                                                                             | Notes                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `@frontierjs/litestone`     | [![npm](https://img.shields.io/npm/v/@frontierjs/litestone)](https://www.npmjs.com/package/@frontierjs/litestone) | `latest` is 1.1.0. Pin `^1.1.0` — never `latest` or `*`           |
+| `@frontierjs/cli`           | [![npm](https://img.shields.io/npm/v/@frontierjs/cli)](https://www.npmjs.com/package/@frontierjs/cli)             | Published as `0.0.0-beta.0`; the in-repo version is ahead of it    |
+| `@frontierjs/junction`      | not yet published                                                                                                  | workspace only                                                    |
+| `@frontierjs/sierra`        | not yet published                                                                                                  | workspace only                                                    |
+| `@frontierjs/mesa`          | not yet published                                                                                                  | workspace only                                                    |
+| `@frontierjs/auth`          | not yet published                                                                                                  | relative `../junction/*` imports block publishing                 |
+| `@frontierjs/caravan`       | not yet published                                                                                                  | workspace only                                                    |
+| `@frontierjs/conduit`       | not yet published                                                                                                  | workspace only                                                    |
+| `@frontierjs/notifications` | not yet published                                                                                                  | workspace only                                                    |
+| `@frontierjs/css`           | not yet published                                                                                                  | workspace only                                                    |
+| `@frontierjs/jetty`         | not yet published                                                                                                  | workspace only                                                    |
 
 ---
 

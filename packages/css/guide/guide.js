@@ -85,7 +85,9 @@ const NAV = [
       { id: "inputs", label: "Inputs" },
       { id: "formcontrols", label: "Form controls" },
       { id: "tags", label: "Tags & Pills" },
+      { id: "avatar", label: "Avatar" },
       { id: "icons", label: "Icons" },
+      { id: "code", label: "Code & Kbd" },
     ],
   },
   {
@@ -98,6 +100,8 @@ const NAV = [
       { id: "items", label: "Items" },
       { id: "rows", label: "Rows" },
       { id: "feed", label: "Feed" },
+      { id: "facts", label: "Facts" },
+      { id: "steps", label: "Steps" },
       { id: "disclosure", label: "Disclosure" },
       { id: "tabs", label: "Tabs" },
       { id: "nav", label: "Navigation" },
@@ -400,13 +404,15 @@ function installPage() {
         <div class="alert info">
           <div class="alert-icon" aria-hidden="true">&#9432;</div>
           <div class="alert-content">
-            <strong>UnoCSS is no longer required.</strong>
+            <strong>UnoCSS is no longer required — but it is not neutral either.</strong>
             <p>
               Through v0.5 the component shapes lived in <code>uno.config.ts</code>
               as shortcuts, so the package needed a build step to render anything.
               As of v0.6 that all moved into plain CSS and the config was deleted.
-              Bring Uno if you want atomic utilities in your own markup — the
-              system no longer cares either way.
+              Bring Uno if you want atomic utilities in your own markup — but read
+              <strong>Running it with UnoCSS</strong> below first. This page used to
+              say the system "no longer cares either way", which was measurably
+              false in four places.
             </p>
           </div>
         </div>`,
@@ -435,11 +441,16 @@ import '@frontierjs/css'
 // or, without a bundler
 <link rel="stylesheet" href="/styles/index.css">`)}
         <p class="sg-prose">
-          Want just a slice? Every file is individually importable —
-          <code>@frontierjs/css/tokens.css</code>,
-          <code>@frontierjs/css/buttons.css</code>. Import
-          <code>tokens.css</code> and at least one theme first, or nothing will
-          have colors.
+          Want just a slice? Every file is individually importable, at the path
+          it lives at — the folders mirror the cascade layers:
+        </p>
+        ${code(`@import '@frontierjs/css/foundation/tokens.css';
+@import '@frontierjs/css/themes/default.css';
+@import '@frontierjs/css/components/buttons.css';`)}
+        <p class="sg-prose">
+          Import <code>foundation/tokens.css</code> and at least one theme
+          first, or nothing will have colors. <strong>Changed in v0.11</strong>
+          — these were flat (<code>@frontierjs/css/buttons.css</code>) before.
         </p>`,
       )}
 
@@ -502,6 +513,106 @@ import '@frontierjs/css'
         ${code(`/* your app.css — plain and unlayered, so it wins */
 .btn { border-radius: 2px; }
 td    { background: var(--zebra); }`)}`,
+      )}
+
+      ${section(
+        "Running it with UnoCSS",
+        `
+        <p class="sg-prose">
+          Uno is optional, and the two compose well — but there are three things
+          to know. All of this was measured against UnoCSS 66.7.5 with
+          <code>presetWind3</code>, not inferred.
+        </p>
+
+        <p class="sg-prose">
+          <strong>1. The good part is free.</strong> Uno's output is unlayered
+          and everything here is layered, so every Uno utility beats every
+          component with no ordering discipline and no <code>!important</code>.
+          <code>${esc('class="card p-4"')}</code> gets Uno's padding.
+        </p>
+
+        <p class="sg-prose">
+          <strong>2. The reset will flatten the package.</strong>
+          <code>@unocss/reset/tailwind.css</code> is unlayered too, so it beats
+          the components — and because layer priority ignores source order,
+          importing it first does not save you.
+        </p>
+        <table class="table striped compact">
+          <thead>
+            <tr>
+              <th>Measured</th>
+              <th style="width: 22%">package alone</th>
+              <th style="width: 26%">+ reset, unlayered</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>h1</code> font-size</td><td>36px</td><td><strong>16px</strong></td></tr>
+            <tr><td><code>.btn</code> background</td><td>the tone</td><td><strong>transparent</strong></td></tr>
+            <tr><td><code>.btn</code> padding</td><td>6px 14px</td><td><strong>0</strong></td></tr>
+          </tbody>
+        </table>
+        <p class="sg-prose">
+          Import the reset into a layer and it behaves. <code>uno</code> goes
+          between <code>utilities</code> and <code>a11y</code> — utilities should
+          beat components, but nothing should beat
+          <code>.visually-hidden</code>.
+        </p>
+        ${code(`/* app.css */
+@layer reset, tokens, themes, tones, base, layout,
+       components, patterns, utilities, uno, a11y;
+
+@import '@unocss/reset/tailwind.css'  layer(reset);
+@import '@frontierjs/css';
+@import 'uno.css'                     layer(uno);`)}
+
+        <p class="sg-prose">
+          <strong>3. Two names collide.</strong> Uno owns them as utilities, and
+          a generated utility outranks the component of the same name.
+          <code>table</code> and <code>tab</code> also collide but are harmless —
+          <code>display: table</code> and <code>tab-size: 4</code> are what those
+          elements already are.
+        </p>
+        <table class="table striped compact">
+          <thead>
+            <tr>
+              <th style="width: 20%">Class</th>
+              <th>What Uno makes it</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>container</code></td>
+              <td>
+                <code>width:100%</code> plus breakpoint max-widths, so
+                <code>.container.narrow</code> stops narrowing
+              </td>
+            </tr>
+            <tr>
+              <td><code>text-xs…xl</code></td>
+              <td>
+                Uno's scale (14/18px) instead of this package's (13/16px)
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        ${code(`// uno.config.ts
+export default defineConfig({
+  presets: [presetWind3()],
+  blocklist: ['container', /^text-(xs|sm|md|lg|xl)$/],
+})`)}
+        <div class="alert info">
+          <div class="alert-icon" aria-hidden="true">&#9432;</div>
+          <div class="alert-content">
+            <strong><code>.shell.fixed</code> was a third collision.</strong>
+            <p>
+              Uno's <code>fixed</code> is <code>position: fixed</code>, so
+              installing Uno turned the app shell into a fixed-positioned
+              element. It is <code>.shell.viewport</code> as of v0.10.1 — the
+              package should not squat on a core utility name while advertising
+              Uno compatibility.
+            </p>
+          </div>
+        </div>`,
       )}
 
       ${section(
@@ -1015,12 +1126,18 @@ function variablesPage() {
 }
 
 function buttonsPage() {
+  /*
+   * The real scale is xs/sm/md/lg/xl. This list used to read
+   * sm/base/lg/xl/2xl — `text-base` and `text-2xl` have never existed in the
+   * package, and until v0.10.1 the other three were inert on a button anyway,
+   * so all five rendered identically.
+   */
   const sizes = [
+    ["text-xs", "XS"],
     ["text-sm", "Small"],
-    ["text-base", "Base"],
+    ["text-md", "Body"],
     ["text-lg", "Large"],
     ["text-xl", "XL"],
-    ["text-2xl", "2XL"],
   ];
 
   return `
@@ -1192,8 +1309,9 @@ function tonalPage() {
         <p class="sg-prose">
           A tone class sets <code>--bg-mix</code>. That is the entire tone. It
           used to set a second variable, <code>--on-bg-mix</code>, asserting the
-          text color — that assertion is what failed WCAG on 15 of 35 tone × theme
-          combinations, so it is now derived instead.
+          text color — that assertion is what failed WCAG on 15 tone × theme
+          combinations (worst 1.99:1, on the primary button of a real client
+          theme), so it is now derived instead.
         </p>
         ${code(`/* tones.css — the whole file, essentially */
 .primary   { --bg-mix: var(--color-primary);   }
@@ -1329,10 +1447,14 @@ function tonalPage() {
           </div>`,
         )}
         <p class="sg-prose">
-          Verified across all 35 tone × theme combinations: <strong>0 AA
-          failures, worst 4.58:1</strong>, with 25 of 35 brand colors completely
-          untouched. Because it is derived rather than tabulated, it holds for
-          hues no theme has defined yet — a new theme cannot reintroduce the bug.
+          <code>bun run test</code> checks all <strong>42</strong> tone × theme
+          combinations — seven tones × six themes — on each of
+          <code>.btn</code>, <code>.pill</code> and <code>.badge</code>, and
+          they clear AA. Because it is derived rather than tabulated it holds
+          for hues no theme has defined yet, so the suite also throws
+          <strong>eight invented hues</strong> at it — pure yellow, navy, mid
+          grey, the light lime near Elite's brand — chosen to straddle the
+          branch. A new theme cannot reintroduce the bug.
         </p>
         ${code(`/* chip.css — override per tone or theme if you want a specific text color */
 .theme-x .warning { --on-bg-mix: #1f2937; }`)}`,
@@ -1370,16 +1492,16 @@ ${Object.entries(theme.tokens)
 }`;
 
   const ramp = [
-    ["80", "color-mix(in srgb, var(--bg-mix) 80%, white)", "var(--ink)"],
-    ["60", "color-mix(in srgb, var(--bg-mix) 60%, white)", "var(--ink)"],
-    ["40", "color-mix(in srgb, var(--bg-mix) 40%, white)", "var(--ink)"],
-    ["20", "color-mix(in srgb, var(--bg-mix) 20%, white)", "var(--ink)"],
+    ["80", "color-mix(in srgb, var(--sg-ramp) 80%, white)", "var(--ink)"],
+    ["60", "color-mix(in srgb, var(--sg-ramp) 60%, white)", "var(--ink)"],
+    ["40", "color-mix(in srgb, var(--sg-ramp) 40%, white)", "var(--ink)"],
+    ["20", "color-mix(in srgb, var(--sg-ramp) 20%, white)", "var(--ink)"],
   ];
   const rampDark = [
-    ["−20", "color-mix(in srgb, var(--bg-mix) 20%, black)", "white"],
-    ["−40", "color-mix(in srgb, var(--bg-mix) 40%, black)", "white"],
-    ["−60", "color-mix(in srgb, var(--bg-mix) 60%, black)", "white"],
-    ["−80", "color-mix(in srgb, var(--bg-mix) 80%, black)", "white"],
+    ["−20", "color-mix(in srgb, var(--sg-ramp) 20%, black)", "white"],
+    ["−40", "color-mix(in srgb, var(--sg-ramp) 40%, black)", "white"],
+    ["−60", "color-mix(in srgb, var(--sg-ramp) 60%, black)", "white"],
+    ["−80", "color-mix(in srgb, var(--sg-ramp) 80%, black)", "white"],
   ];
 
   return `
@@ -1441,7 +1563,7 @@ ${Object.entries(theme.tokens)
 
           <div class="sg-theme-block">
             <div class="sg-theme-label">Tonal ramp</div>
-            <div class="sg-theme-ramp" style="--bg-mix: var(--color-primary); --color: var(--ink)">
+            <div class="sg-theme-ramp" style="--sg-ramp: var(--color-primary); --color: var(--ink)">
               ${ramp
                 .map(
                   ([n, bg, fg]) =>
@@ -1588,7 +1710,7 @@ function colorsPage() {
           ${tones
             .map(
               (t) => `
-          <div class="sg-color-ramp" style="--bg-mix: var(--color-${t.name}); --color: var(--ink)">
+          <div class="sg-color-ramp" style="--sg-ramp: var(--color-${t.name}); --color: var(--ink)">
             <div class="sg-color-ramp-meta">
               <code class="sg-color-ramp-name">${t.name}</code>
               <span class="sg-color-ramp-role">${t.role}</span>
@@ -1597,14 +1719,14 @@ function colorsPage() {
               ${lightSteps
                 .map(
                   (n) =>
-                    `<div class="tonal" style="background: color-mix(in srgb, var(--bg-mix) ${n}%, white); color: var(--ink)">${n}</div>`,
+                    `<div class="tonal" style="background: color-mix(in srgb, var(--sg-ramp) ${n}%, white); color: var(--ink)">${n}</div>`,
                 )
                 .join("")}
               <div class="tonal sg-tonal-raw">raw</div>
               ${darkSteps
                 .map(
                   (n) =>
-                    `<div class="tonal" style="background: color-mix(in srgb, var(--bg-mix) ${n}%, black); color: white">−${n}</div>`,
+                    `<div class="tonal" style="background: color-mix(in srgb, var(--sg-ramp) ${n}%, black); color: white">−${n}</div>`,
                 )
                 .join("")}
             </div>
@@ -3409,15 +3531,18 @@ function spacingPage() {
 }
 
 function typographyPage() {
+  /*
+   * The five steps the package actually ships, in utilities.css. This table
+   * used to list eight Tailwind-shaped tokens (text-base, text-2xl … up to
+   * text-4xl) at Tailwind's pixel values — a leftover from the UnoCSS era.
+   * Five of the eight had no rule behind them at all.
+   */
   const typeScale = [
-    { token: "text-xs", size: 12, usage: "Fine print, captions" },
-    { token: "text-sm", size: 14, usage: "Body text (compact)" },
-    { token: "text-base", size: 16, usage: "Body text (default)" },
-    { token: "text-lg", size: 18, usage: "Emphasized body, lead" },
-    { token: "text-xl", size: 20, usage: "Subheadings" },
-    { token: "text-2xl", size: 24, usage: "Section headings" },
-    { token: "text-3xl", size: 30, usage: "Page headings" },
-    { token: "text-4xl", size: 36, usage: "Display" },
+    { token: "text-xs", size: 12, rem: "0.75rem", usage: "Fine print, captions" },
+    { token: "text-sm", size: 13, rem: "0.8125rem", usage: "Meta lines, dense UI" },
+    { token: "text-md", size: 14, rem: "0.875rem", usage: "Body — the package default" },
+    { token: "text-lg", size: 16, rem: "1rem", usage: "Lead paragraph" },
+    { token: "text-xl", size: 18, rem: "1.125rem", usage: "Subhead" },
   ];
 
   const weights = [
@@ -3449,8 +3574,10 @@ function typographyPage() {
         "Type scale",
         `
         <p class="sg-prose">
-          Geometric scale. Step up for emphasis, step down for de-emphasis —
-          never inline a custom pixel value.
+          Five steps, deliberately shallow. <code>text-md</code> is the
+          package's own body size, so the useful range is two down and two up.
+          Anything louder than <code>text-xl</code> is a heading and should say
+          so with an <code>&lt;h*&gt;</code>.
         </p>
         <div class="sg-typescale">
           ${typeScale
@@ -3458,14 +3585,19 @@ function typographyPage() {
               (t) => `
           <div class="sg-typescale-row">
             <code class="sg-typescale-token">${t.token}</code>
-            <div class="sg-typescale-sample" style="font-size: ${t.size}px">
+            <div class="sg-typescale-sample ${t.token}">
               The quick brown fox
             </div>
-            <code class="sg-typescale-meta">${t.size}px · ${t.usage}</code>
+            <code class="sg-typescale-meta">${t.rem} · ${t.size}px · ${t.usage}</code>
           </div>`,
             )
             .join("")}
-        </div>`,
+        </div>
+        <p class="sg-prose">
+          The samples above carry the real class, not an inline
+          <code>font-size</code> — so if the utility stops working, this page
+          shows it.
+        </p>`,
       )}
 
       ${section(
@@ -3525,8 +3657,9 @@ function typographyPage() {
         "Line height &amp; tracking",
         `
         <p class="sg-prose">
-          Four leading steps and three tracking steps. Use them sparingly —
-          most text is fine at default.
+          Four leading steps and three tracking steps — <strong>from UnoCSS,
+          not from this package</strong>. See the note below the samples. Use
+          them sparingly; most text is fine at default.
         </p>
         ${code(`/* leading */
 leading-tight   /* 1.2  */
@@ -3541,10 +3674,20 @@ tracking-wide   /* 0.05em  — uppercase labels, badges */`)}`,
       )}
 
       ${section(
-        "Alignment",
-        code(`<p class="text-left">...</p>
-<p class="text-center">...</p>
-<p class="text-right">...</p>`),
+        "Alignment, leading and tracking are not shipped",
+        `
+        <p class="sg-prose">
+          The three code samples above are Uno's, not the package's. There is no
+          <code>.text-center</code>, <code>.leading-snug</code> or
+          <code>.tracking-wide</code> rule in any file here — they were Uno
+          shortcuts through v0.5 and were not replaced when the config was
+          deleted. The package ships size and colour only.
+        </p>
+        <p class="sg-prose">
+          Bring Uno for the rest (see <strong>Install</strong>), or write the two
+          declarations. Documenting a class the package does not define is the
+          exact failure this guide exists to prevent.
+        </p>`,
       )}
 
       ${section(
@@ -3642,11 +3785,11 @@ function cheatSheetPage() {
   ];
 
   const sizes = [
+    ["text-xs", "XS"],
     ["text-sm", "Small"],
-    ["text-base", "Base"],
+    ["text-md", "Body"],
     ["text-lg", "Large"],
     ["text-xl", "XL"],
-    ["text-2xl", "2XL"],
   ];
 
   const varGroups = [
@@ -3902,18 +4045,18 @@ function cheatSheetPage() {
           <code>.darken-N</code> classes were removed in v0.6 — they wrote
           variables nothing read.)
         </p>
-        <div class="sg-cheat-tonal-strip" style="--bg-mix: var(--color-primary); --color: var(--ink)">
+        <div class="sg-cheat-tonal-strip" style="--sg-ramp: var(--color-primary); --color: var(--ink)">
           ${lightSteps
             .map(
               (n) =>
-                `<div class="tonal" style="background: color-mix(in srgb, var(--bg-mix) ${n}%, white); color: var(--ink)">${n}</div>`,
+                `<div class="tonal" style="background: color-mix(in srgb, var(--sg-ramp) ${n}%, white); color: var(--ink)">${n}</div>`,
             )
             .join("")}
           <div class="tonal sg-tonal-raw">raw</div>
           ${darkSteps
             .map(
               (n) =>
-                `<div class="tonal" style="background: color-mix(in srgb, var(--bg-mix) ${n}%, black); color: white">−${n}</div>`,
+                `<div class="tonal" style="background: color-mix(in srgb, var(--sg-ramp) ${n}%, black); color: white">−${n}</div>`,
             )
             .join("")}
         </div>`,
@@ -4168,6 +4311,7 @@ const VOCAB = [
       ["Section", "<section> / <article>", "<article> when nested inside a Section (Principle 2)"],
       ["Group", "<div>", "A visual cluster with no semantic identity"],
       ["Bar", "<div>", "A horizontal strip of controls"],
+      ["Divider", "<hr>", "A labelled or plain break between groups"],
     ],
   ],
   [
@@ -4180,6 +4324,9 @@ const VOCAB = [
       ["Row", "<li> / <tr>", "A record entry with trailing actions"],
       ["Feed", "<ol> + <li><article>", "A chronological stream"],
       ["Alert", "<article>", "An inline notification"],
+      ["Steps", "<ol> + <li>", "A multi-stage flow indicator"],
+      ["Facts", "<dl> + <dt>/<dd>", "A label/value list"],
+      ["Code", "<pre> + <code>", "A block of code"],
     ],
   ],
   [
@@ -4194,6 +4341,8 @@ const VOCAB = [
       ["Heading", "<h1>–<h6>", "Outline structure (Principle 3)"],
       ["Text", "<p> / <span>", "Prose"],
       ["Icon", "<span aria-hidden>", "A decorative glyph"],
+      ["Avatar", "<img> / <span>", "A person, org or bot marker"],
+      ["Kbd", "<kbd>", "A key the user is meant to press"],
     ],
   ],
   [
@@ -4284,10 +4433,10 @@ function vocabularyPage() {
           <div class="alert-content">
             <strong>Coverage is complete.</strong>
             <p>
-              Every one of the 29 terms ships CSS. Tile landed in tiles.css and
-              Tooltip in tooltips.css, closing the last two. The vocabulary is no
-              longer a promissory note — if a term is in the table, there is a
-              class for it.
+              Every one of the 35 terms ships CSS. v0.8 added the last six —
+              Steps, Facts, Divider, Avatar, Kbd and Code — each with a rule and
+              a test. The vocabulary is no longer a promissory note: if a term is
+              in the table, there is a class for it, and a page in this guide.
             </p>
           </div>
         </div>`,
@@ -5038,6 +5187,69 @@ function tabsPage() {
       )}
 
       ${section(
+        "Vertical",
+        `
+        <p class="sg-prose">
+          <code>.tabs.vertical</code> puts the strip beside the panel instead of
+          above it. Good for settings screens and anything with more tabs than
+          fit across.
+        </p>
+        ${preview(`
+          <div class="tabs vertical" style="width: 100%" data-tabs>
+            <div class="tablist" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="tab" role="tab" id="sg-vt-1" aria-selected="true" aria-controls="sg-vp-1">Profile</button>
+              <button class="tab" role="tab" id="sg-vt-2" aria-selected="false" aria-controls="sg-vp-2" tabindex="-1">Notifications</button>
+              <button class="tab" role="tab" id="sg-vt-3" aria-selected="false" aria-controls="sg-vp-3" tabindex="-1">Billing</button>
+              <button class="tab" role="tab" id="sg-vt-4" aria-selected="false" aria-controls="sg-vp-4" tabindex="-1">API keys</button>
+            </div>
+            <article class="view" role="tabpanel" id="sg-vp-1" aria-labelledby="sg-vt-1" tabindex="0">
+              The <strong>Profile</strong> panel. Arrow keys move the selection —
+              Up/Down here, not Left/Right.
+            </article>
+            <article class="view" role="tabpanel" id="sg-vp-2" aria-labelledby="sg-vt-2" tabindex="0" hidden>
+              The <strong>Notifications</strong> panel.
+            </article>
+            <article class="view" role="tabpanel" id="sg-vp-3" aria-labelledby="sg-vt-3" tabindex="0" hidden>
+              The <strong>Billing</strong> panel.
+            </article>
+            <article class="view" role="tabpanel" id="sg-vp-4" aria-labelledby="sg-vt-4" tabindex="0" hidden>
+              The <strong>API keys</strong> panel.
+            </article>
+          </div>`)}
+        ${code(`<div class="tabs vertical">
+  <div class="tablist" role="tablist" aria-orientation="vertical"
+       aria-label="Settings sections">
+    <button class="tab" role="tab" …>Profile</button>
+  </div>
+  <article class="view" role="tabpanel" …> … </article>
+</div>`)}
+        <div class="alert info">
+          <div class="alert-icon" aria-hidden="true">&#9432;</div>
+          <div class="alert-content">
+            <strong><code>aria-orientation="vertical"</code> is not decorative.</strong>
+            <p>
+              It tells assistive tech which arrow keys move between tabs. Get it
+              wrong and a screen reader user is told to press the keys that do
+              nothing — the CSS turned the strip, and only the attribute turns
+              the contract with it.
+            </p>
+          </div>
+        </div>
+        ${preview(`
+          <div class="tabs vertical" style="width: 100%" data-tabs>
+            <div class="tablist pills" role="tablist" aria-orientation="vertical" aria-label="Vertical pills">
+              <button class="tab" role="tab" aria-selected="true">All <span class="pill muted">24</span></button>
+              <button class="tab" role="tab" aria-selected="false" tabindex="-1">Open <span class="pill muted">7</span></button>
+              <button class="tab" role="tab" aria-selected="false" tabindex="-1">Closed <span class="pill muted">17</span></button>
+            </div>
+          </div>`)}
+        <p class="sg-prose">
+          A vertical pills strip has no side rule to hang the indicator on, so
+          the selected tab fills instead.
+        </p>`,
+      )}
+
+      ${section(
         "What the class does not do",
         `
         <div class="alert warning">
@@ -5492,11 +5704,15 @@ function framePage() {
   "sidebar screen";`)}
           </article>
           <article class="card">
-            <strong><code>.shell.fixed</code></strong>
+            <strong><code>.shell.viewport</code></strong>
             <p class="sg-prose">
               The shell is exactly one viewport and the Screen scrolls inside it,
               instead of the document scrolling. The app-like mode — it costs you
               document-level scroll restoration, so it is opt-in.
+            </p>
+            <p class="sg-prose">
+              <strong>Renamed in v0.10.1</strong> — it was <code>.shell.fixed</code>,
+              which is a name UnoCSS already owns. See <strong>Install</strong>.
             </p>
           </article>
         </div>`,
@@ -5718,6 +5934,8 @@ const LAYERS = [
   ["layout", "composition helpers: stack, cluster, center, split"],
   ["components", "btn, pill, badge, card, field, table, dialog …"],
   ["patterns", "the Block tier: bar, list, feed, disclosure"],
+  ["utilities", "the escape hatch: .text-* size and colour"],
+  ["a11y", "the focus ring, .visually-hidden, .skip-link — last on purpose"],
 ];
 
 function layersPage() {
@@ -5731,12 +5949,24 @@ function layersPage() {
       ${section(
         "The order",
         `
-        ${code(`@layer tokens, themes, tones, base, layout, components, patterns;
+        ${code(`@layer tokens, themes, tones, base, layout,
+       components, patterns, utilities, a11y;
 
-@import './tokens.css' layer(tokens);
-@import './tones.css'  layer(tones);
-@import './chip.css'   layer(base);
-...`)}
+@import './foundation/tokens.css' layer(tokens);
+@import './themes/elite.css'      layer(themes);
+@import './foundation/chip.css'   layer(base);
+@import './components/buttons.css' layer(components);
+@import './patterns/tabs.css'      layer(patterns);
+@import './utilities.css'          layer(utilities);
+@import './a11y/focus.css'         layer(a11y);`)}
+        <p class="sg-prose">
+          The folders mirror the layers — <code>foundation/</code>,
+          <code>themes/</code>, <code>components/</code>,
+          <code>patterns/</code>, <code>a11y/</code> — so the tree teaches the
+          order rather than competing with it. They are not a build input:
+          there is no <code>src/</code> and no <code>dist/</code>, because the
+          file you read is the file that ships.
+        </p>
         <table class="table striped compact">
           <thead>
             <tr>
@@ -5798,25 +6028,103 @@ function iconsPage() {
       ${pageHeader({
         eyebrow: "Components",
         title: "Icons",
-        lead: "The package sizes icons. It does not ship them.",
+        lead: "The package sizes icons. It does not ship them. One rule, one token — replacing three hand-copied restatements that had drifted to three different sizes.",
       })}
 
       ${section(
-        "Who supplies the glyphs",
+        "It sizes, it does not supply",
         `
-        <div class="alert info">
-          <div class="alert-icon" aria-hidden="true">&#9432;</div>
+        <p class="sg-prose">
+          Bring your own glyphs — Iconify, Uno's <code>preset-icons</code>,
+          inline <code>&lt;svg&gt;</code>, an <code>&lt;img&gt;</code>. The
+          recognised shapes are an <code>&lt;svg&gt;</code>, an
+          <code>&lt;img&gt;</code>, or any element whose class starts
+          <code>i-heroicons</code>, which is what Uno's preset produces.
+        </p>
+        <div class="alert danger">
+          <div class="alert-icon" aria-hidden="true">!</div>
           <div class="alert-content">
-            <strong>Supplying icons is the consumer's job as of v0.6.</strong>
+            <strong>This is not cosmetic.</strong>
             <p>
-              The package dropped its UnoCSS dependency, so it no longer ships the
-              heroicons preset. It only <em>sizes</em> what it finds: a child
-              <code>&lt;svg&gt;</code> or any class starting
-              <code>i-heroicons</code> inside <code>.btn.square</code> gets
-              <code>1.15em</code>. Use Uno's preset-icons, Iconify, or inline SVG.
+              An unsized <code>&lt;svg&gt;</code> defaults to
+              <strong>300&times;150</strong>. An icon the package does not size
+              does not look slightly wrong — it destroys the layout it is in.
             </p>
           </div>
         </div>`,
+      )}
+
+      ${section(
+        "Two ways to get sized",
+        `
+        <p class="sg-prose">
+          <strong>1. Sit inside a component the package owns.</strong> A bare
+          <code>&lt;svg&gt;</code> in a <code>.btn</code>, a
+          <code>.navlink</code>, an <code>.alert-icon</code> and about twenty
+          others is sized automatically, so existing markup needs no new class.
+        </p>
+        <p class="sg-prose">
+          <strong>2. Carry <code>.icon</code>.</strong> That works anywhere,
+          including places the package has never heard of, and is the Icon
+          vocabulary term proper.
+        </p>
+        ${code(`<svg class="icon" aria-hidden="true">…</svg>
+<span class="icon i-heroicons:check" aria-hidden="true"></span>`)}
+        ${preview(`
+          <div class="cluster">
+            <span class="badge info">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              in a badge
+            </span>
+            <span>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v5" stroke-linecap="round" />
+              </svg>
+              loose in a sentence, via .icon
+            </span>
+          </div>`)}`,
+      )}
+
+      ${section(
+        "Size is a token, in em",
+        `
+        <p class="sg-prose">
+          <code>--icon-size</code> defaults to <code>1.15em</code>, so an icon
+          tracks the text beside it rather than needing a size per context.
+          Components that want a different ratio set the token instead of
+          restating the rule — <code>.pill-close</code> uses
+          <code>0.85em</code>, <code>.empty-icon</code> uses <code>1em</code>.
+        </p>
+        ${preview(`
+          <div class="cluster" style="align-items: center">
+            ${[
+              ["text-xs", "xs"],
+              ["text-sm", "sm"],
+              ["text-md", "md"],
+              ["text-lg", "lg"],
+              ["text-xl", "xl"],
+            ]
+              .map(
+                ([cls, label]) => `
+            <span class="${cls}">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+              </svg>
+              ${label}
+            </span>`,
+              )
+              .join("")}
+            <span style="--icon-size: 2rem">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+              </svg>
+              token override
+            </span>
+          </div>`)}
+        ${code(`.pill-close { --icon-size: 0.85em; }`)}`,
       )}
 
       ${section(
@@ -5826,8 +6134,22 @@ function iconsPage() {
           <code>.btn.square</code> makes the button square via
           <code>aspect-ratio</code> with equal padding, so it scales with
           font-size. An icon-only button <strong>must</strong> carry an
-          <code>aria-label</code> — there is no text for a screen reader to read.
+          <code>aria-label</code> — there is no text for a screen reader to
+          read.
         </p>
+        <div class="alert warning">
+          <div class="alert-icon" aria-hidden="true">!</div>
+          <div class="alert-content">
+            <strong>It was <code>.btn.icon</code> until v0.10.</strong>
+            <p>
+              The class shapes the <em>button</em>, and <code>.icon</code> now
+              means "this element is an icon" — two different jobs on one name.
+              A stale <code>.btn.icon</code> fails quietly outside this repo: it
+              floors at 30&times;30 and looks roughly right while losing its
+              <code>aspect-ratio</code> and padding.
+            </p>
+          </div>
+        </div>
         ${preview(`
           <div class="cluster">
             <button class="btn square" aria-label="Add item">
@@ -5846,6 +6168,11 @@ function iconsPage() {
                 <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round" />
               </svg>
             </button>
+            <button class="btn square ghost text-xl" aria-label="More">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />
+              </svg>
+            </button>
           </div>`)}
         ${code(`<button class="btn square" aria-label="Add item">
   <span class="i-heroicons:plus" aria-hidden="true"></span>
@@ -5856,20 +6183,21 @@ function iconsPage() {
         "Decorative icons are hidden",
         `
         <p class="sg-prose">
-          An icon next to a text label adds nothing for a screen reader, so it gets
-          <code>aria-hidden="true"</code>. The label already says what the button
-          does.
+          An icon next to a text label adds nothing for a screen reader, so it
+          gets <code>aria-hidden="true"</code>. The label already says what the
+          button does. An icon-only control puts the name on the
+          <em>control</em>, not on the icon.
         </p>
         ${preview(`
           <div class="cluster">
             <button class="btn success">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width: 1.1em; height: 1.1em">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               Approve
             </button>
             <button class="btn outlined">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width: 1.1em; height: 1.1em">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M21 12a9 9 0 11-6.2-8.6" stroke-linecap="round" />
               </svg>
               Retry
@@ -5878,7 +6206,55 @@ function iconsPage() {
         ${code(`<button class="btn success">
   <span class="i-heroicons:check" aria-hidden="true"></span>
   Approve
-</button>`)}`,
+</button>`)}
+        <p class="sg-prose">
+          There is no CSS for any of that — it is markup, and it is the half of
+          the system that does not ship as a stylesheet.
+        </p>`,
+      )}
+
+      ${section(
+        "Why this is one rule now",
+        `
+        <p class="sg-prose">
+          Icon sizing used to live in the package three times, hand-copied and
+          drifted:
+        </p>
+        <table class="table striped compact">
+          <thead>
+            <tr>
+              <th style="width: 26%">File</th>
+              <th style="width: 30%">Selector</th>
+              <th>Size</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>buttons.css</code></td><td><code>.btn.icon &gt; svg</code> + 2 more</td><td>1.15em, <code>width/height</code></td></tr>
+            <tr><td><code>pills.css</code></td><td><code>.pill-close &gt; …</code></td><td>0.85em, <code>width/height</code></td></tr>
+            <tr><td><code>feedback.css</code></td><td><code>.empty-icon &gt; …</code> — only <strong>two</strong> of the three shapes</td><td>1em, <code>inline-size</code></td></tr>
+          </tbody>
+        </table>
+        <p class="sg-prose">
+          Three restatements of one rule, three different sizes, two different
+          property spellings — and the missing branch meant an icon written
+          <code>class="shrink-0 i-heroicons:inbox"</code> silently had no size
+          inside an empty state. That is the four-focus-recipes problem in
+          miniature, and it is why the size is a token now.
+        </p>
+        ${code(`:where(.btn, .square, .pill-close, .empty-icon, .alert-icon, .navlink, …)
+  > :where(svg, img, [class^="i-heroicons"], [class*=" i-heroicons"]),
+.icon {
+  inline-size: var(--icon-size, 1.15em);
+  block-size:  var(--icon-size, 1.15em);
+  flex-shrink: 0;   /* an icon must never be what gives way in a flex row */
+}`)}
+        <p class="sg-prose">
+          <code>:where()</code> on both halves keeps the whole thing at zero
+          specificity, so a component's own <code>--icon-size</code> wins, and
+          so does anything you write. Adding a component that holds icons means
+          adding its name to that list — the same explicit cost the surface and
+          chip groups have.
+        </p>`,
       )}`;
 }
 /* ══════════════════════════════════════════════════════════════════════
@@ -6531,6 +6907,486 @@ function accessibilityPage() {
         </p>`,
       )}`;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   3. Pages — the v0.8 terms
+   ══════════════════════════════════════════════════════════════════════ */
+
+function avatarPage() {
+  return `
+      ${pageHeader({
+        eyebrow: "Components",
+        title: "Avatar",
+        lead: "The person — or org, or bot — marker. Two forms, one token for size, and an accessibility decision that goes wrong in both directions.",
+      })}
+
+      ${section(
+        "Two forms",
+        `
+        <p class="sg-prose">
+          An image carries its own name in <code>alt</code> and needs nothing
+          else. Initials are a fill with text on top, so
+          <code>.avatar</code> is in the <strong>chip lineage</strong> — it
+          inherits the same auto-contrast machinery as <code>.btn</code>, which
+          means initials clear AA on any hue a theme can define.
+        </p>
+        ${preview(`
+          <div class="cluster">
+            <span class="avatar" aria-hidden="true">DO</span>
+            <span class="avatar primary" aria-hidden="true">SR</span>
+            <span class="avatar success" aria-hidden="true">AC</span>
+            <span class="avatar warning" aria-hidden="true">JL</span>
+            <span class="avatar danger" aria-hidden="true">MK</span>
+          </div>`)}
+        ${code(`<img class="avatar" src="/u/12.jpg" alt="Dana Ortiz">
+
+<span class="avatar primary" aria-hidden="true">DO</span>`)}`,
+      )}
+
+      ${section(
+        "The accessibility decision",
+        `
+        <p class="sg-prose">
+          Nine times out of ten an initials avatar is a fallback rendering of a
+          name that is <em>already on screen</em> — beside the name in a list
+          row, inside a cell whose row is labelled. Announcing "D O" there is
+          noise, so the default is <code>aria-hidden</code>.
+        </p>
+        <p class="sg-prose">
+          When the avatar stands alone and <em>is</em> the only identification,
+          give it the real name instead:
+        </p>
+        ${code(`<span class="avatar" role="img" aria-label="Dana Ortiz">DO</span>`)}
+        <div class="alert warning">
+          <div class="alert-icon" aria-hidden="true">!</div>
+          <div class="alert-content">
+            <strong>This is the common avatar bug, in both directions.</strong>
+            <p>
+              A wall of unlabelled images, or a screen reader spelling out
+              initials after every name it just read. Neither is visible on
+              screen, which is why the rule is written down rather than left to
+              taste.
+            </p>
+          </div>
+        </div>`,
+      )}
+
+      ${section(
+        "Size is one token, not a size class",
+        `
+        <p class="sg-prose">
+          <code>--avatar-size</code> drives the box and the font size together,
+          so one value resizes the whole thing. There is deliberately no
+          <code>.sm</code>/<code>.lg</code> — those would be scoped modifiers
+          with maximally generic names, the exact liability the
+          <strong>Kinds of class</strong> page flags, and each would need a
+          matching font size anyway.
+        </p>
+        ${preview(`
+          <div class="cluster" style="align-items: center">
+            <span class="avatar" style="--avatar-size: 1.25rem" aria-hidden="true">XS</span>
+            <span class="avatar" style="--avatar-size: 1.75rem" aria-hidden="true">SM</span>
+            <span class="avatar" aria-hidden="true">MD</span>
+            <span class="avatar" style="--avatar-size: 3rem" aria-hidden="true">LG</span>
+            <span class="avatar" style="--avatar-size: 4rem" aria-hidden="true">XL</span>
+            <span class="avatar primary" style="--avatar-size: 3rem; --avatar-radius: 8px" aria-hidden="true">SQ</span>
+          </div>`)}
+        ${code(`<span class="avatar" style="--avatar-size: 1.5rem">DO</span>
+
+.comment-avatar { --avatar-size: 1.5rem; }
+
+/* --avatar-radius squares it off; a theme can do that globally */`)}`,
+      )}
+
+      ${section(
+        "Avatars — the overlapping group",
+        `
+        ${preview(`
+          <div class="avatars" role="group" aria-label="Assignees">
+            <span class="avatar primary" aria-hidden="true">DO</span>
+            <span class="avatar success" aria-hidden="true">SR</span>
+            <span class="avatar warning" aria-hidden="true">AC</span>
+            <span class="avatar muted" role="img" aria-label="3 more">+3</span>
+          </div>`)}
+        ${code(`<div class="avatars" role="group" aria-label="Assignees">
+  <img class="avatar" src="/u/12.jpg" alt="Dana Ortiz">
+  <img class="avatar" src="/u/48.jpg" alt="Sam Ruiz">
+  <span class="avatar" role="img" aria-label="3 more">+3</span>
+</div>`)}
+        <p class="sg-prose">
+          The separating ring is an inset <code>box-shadow</code>, not a border
+          — a border would eat into <code>--avatar-size</code> and make a
+          grouped avatar smaller than a lone one at the same token value. It is
+          <code>--surface</code> coloured; on a tinted surface set
+          <code>--avatar-ring</code> to match.
+        </p>
+        ${preview(`
+          <div class="cluster" style="align-items: center; gap: 2rem">
+            <div class="avatars" style="--avatar-overlap: 0">
+              <span class="avatar" aria-hidden="true">A</span>
+              <span class="avatar" aria-hidden="true">B</span>
+              <span class="avatar" aria-hidden="true">C</span>
+            </div>
+            <div class="avatars" style="--avatar-overlap: 1rem">
+              <span class="avatar info" aria-hidden="true">A</span>
+              <span class="avatar info" aria-hidden="true">B</span>
+              <span class="avatar info" aria-hidden="true">C</span>
+            </div>
+          </div>`)}
+        <p class="sg-prose">
+          <code>--avatar-overlap: 0</code> gives a plain spaced row. There is no
+          hover fan-out on purpose: it shifts layout under the pointer, and the
+          group usually sits inside a row that is itself a click target.
+        </p>`,
+      )}`;
+}
+
+function factsPage() {
+  return `
+      ${pageHeader({
+        eyebrow: "Patterns",
+        title: "Facts",
+        lead: "The label/value list a detail screen is mostly made of. A real &lt;dl&gt;, with no Anatomy classes at all.",
+      })}
+
+      ${section(
+        "Structure",
+        `
+        ${preview(`
+          <dl class="facts" style="width: 100%">
+            <dt>Customer</dt>
+            <dd>Acme Corp</dd>
+            <dt>Invoice</dt>
+            <dd>INV-1042</dd>
+            <dt>Status</dt>
+            <dd><span class="badge success">Paid</span></dd>
+            <dt>Owner</dt>
+            <dd class="cluster">
+              <span class="avatar primary" style="--avatar-size: 1.25rem" aria-hidden="true">DO</span>
+              Dana Ortiz
+            </dd>
+            <dt>A deliberately long label that has to wrap</dt>
+            <dd>The column caps at 40% rather than growing to fit.</dd>
+          </dl>`)}
+        ${code(`<dl class="facts">
+  <dt>Customer</dt>
+  <dd>Acme Corp</dd>
+
+  <dt>Status</dt>
+  <dd><span class="badge success">Paid</span></dd>
+</dl>`)}
+        <p class="sg-prose">
+          <code>&lt;dl&gt;</code> is the whole point. A pile of divs with a bold
+          span makes the pairing visual only; a description list announces
+          "Customer, Acme Corp" as an associated pair and lets a screen reader
+          user move between terms. It is one of the few elements left that does
+          semantic work no ARIA pattern replaces.
+        </p>`,
+      )}
+
+      ${section(
+        "No Anatomy classes, on purpose",
+        `
+        <p class="sg-prose">
+          There is no <code>.fact-label</code> or <code>.fact-value</code>:
+          <code>&lt;dt&gt;</code> and <code>&lt;dd&gt;</code> already name those
+          positions. Adding classes would be Principle 1 violated for no gain,
+          and would let markup drift from meaning the moment someone put
+          <code>.fact-label</code> on something that is not a
+          <code>&lt;dt&gt;</code>.
+        </p>
+        <div class="alert info">
+          <div class="alert-icon" aria-hidden="true">&#9432;</div>
+          <div class="alert-content">
+            <strong>The cost: no wrapper per pair.</strong>
+            <p>
+              The grid targets direct children, so a <code>&lt;div&gt;</code>
+              around each <code>dt</code>/<code>dd</code> breaks the layout.
+              That is deliberate — the <code>&lt;dl&gt;</code> is the wrapper.
+            </p>
+          </div>
+        </div>`,
+      )}
+
+      ${section(
+        "Divided",
+        `
+        <p class="sg-prose">
+          Same modifier name and meaning as <code>.rows.divided</code>. Long
+          lists on a detail pane read much better ruled.
+        </p>
+        ${preview(`
+          <dl class="facts divided" style="width: 100%">
+            <dt>Created</dt>
+            <dd>12 Mar 2026</dd>
+            <dt>Due</dt>
+            <dd>26 Mar 2026</dd>
+            <dt>Terms</dt>
+            <dd>Net 14</dd>
+            <dt>Amount</dt>
+            <dd><strong>$4,200.00</strong></dd>
+          </dl>`)}
+        ${code(`<dl class="facts divided"> … </dl>`)}
+        <p class="sg-prose">
+          The column gap has to go for this, and the label carries it as padding
+          instead: <strong>a border cannot span a grid gap</strong>, so with one
+          the rule comes out as two disconnected segments with a hole between
+          the columns — obvious on screen, and invisible to a test that only
+          asks whether a border exists.
+        </p>`,
+      )}
+
+      ${section(
+        "Below 640px it stacks",
+        `
+        <p class="sg-prose">
+          Two columns stop being worth it on a phone — the label column is
+          either too narrow to read or too wide to leave room for the value. It
+          stacks, and the pair spacing tightens so a stacked pair still reads as
+          one unit rather than two rows. Narrow this window to see it.
+        </p>
+        ${code(`--fact-label-max: 40%;   /* how wide the label column may grow */`)}
+        <p class="sg-prose">
+          That cap is <code>fit-content(40%)</code>, which is the track function
+          that means "size to content, but stop there". The obvious-looking
+          <code>min(max-content, 40%)</code> does not work and
+          <strong>fails silently</strong>: <code>min()</code> takes a
+          length-percentage, <code>max-content</code> is not one, so the whole
+          declaration is invalid and the grid quietly collapses to one column.
+        </p>`,
+      )}`;
+}
+
+function stepsPage() {
+  return `
+      ${pageHeader({
+        eyebrow: "Patterns",
+        title: "Steps",
+        lead: "The multi-stage flow indicator — onboarding, checkout, a wizard, an approval chain. An &lt;ol&gt;, because the sequence is the meaning.",
+      })}
+
+      ${section(
+        "Structure",
+        `
+        ${preview(`
+          <ol class="steps" aria-label="Checkout progress" style="width: 100%">
+            <li class="step complete">
+              <span class="step-marker"></span>
+              <span class="step-label">Cart<span class="visually-hidden"> — completed</span></span>
+            </li>
+            <li class="step" aria-current="step">
+              <span class="step-marker"></span>
+              <span class="step-label">Shipping</span>
+              <span class="step-hint">Address &amp; delivery</span>
+            </li>
+            <li class="step">
+              <span class="step-marker"></span>
+              <span class="step-label">Payment</span>
+            </li>
+          </ol>`)}
+        ${code(`<ol class="steps" aria-label="Checkout progress">
+  <li class="step complete">
+    <span class="step-marker"></span>
+    <span class="step-label">Cart<span class="visually-hidden"> — completed</span></span>
+  </li>
+  <li class="step" aria-current="step">
+    <span class="step-marker"></span>
+    <span class="step-label">Shipping</span>
+    <span class="step-hint">Address & delivery</span>
+  </li>
+  <li class="step">
+    <span class="step-marker"></span>
+    <span class="step-label">Payment</span>
+  </li>
+</ol>`)}
+        <p class="sg-prose">
+          <code>&lt;ol&gt;</code> because a screen reader announcing "list of 3
+          items" and a position is most of what a stepper communicates.
+          <code>&lt;li&gt;</code> per step, so each is a Row in the vocabulary's
+          sense, not a Card.
+        </p>`,
+      )}
+
+      ${section(
+        "The current step comes from ARIA — completion does not",
+        `
+        <p class="sg-prose">
+          <code>aria-current="step"</code> is a real ARIA token and exactly this
+          case, so it drives the styling — the same rule tabs, breadcrumbs and
+          pagination follow.
+        </p>
+        <div class="alert danger">
+          <div class="alert-icon" aria-hidden="true">!</div>
+          <div class="alert-content">
+            <strong>There is no ARIA token for "done".</strong>
+            <p>
+              <code>.complete</code> is a styling hook with nothing behind it,
+              which means the checkmark is <em>invisible to a screen reader</em>:
+              a sighted user sees three states, a screen reader user hears two.
+              This is the one place in the package where the visual state cannot
+              be derived from the markup, so it is the one place the markup has
+              to say it twice.
+            </p>
+          </div>
+        </div>
+        ${code(`<span class="step-label">Cart<span class="visually-hidden"> — completed</span></span>`)}`,
+      )}
+
+      ${section(
+        "Markers number themselves",
+        `
+        <p class="sg-prose">
+          An empty <code>.step-marker</code> numbers itself with a CSS counter,
+          so the markup does not carry indices that go stale the moment a step
+          is inserted. Put anything inside — a checkmark, an icon — and that
+          wins instead. The marker is decorative either way; the label is what
+          is read.
+        </p>
+        ${preview(`
+          <ol class="steps success" aria-label="Tone demo" style="width: 100%">
+            <li class="step complete">
+              <span class="step-marker">✓</span>
+              <span class="step-label">Own glyph<span class="visually-hidden"> — completed</span></span>
+            </li>
+            <li class="step" aria-current="step">
+              <span class="step-marker"></span>
+              <span class="step-label">Self-numbered</span>
+            </li>
+            <li class="step">
+              <span class="step-marker"></span>
+              <span class="step-label">Also self-numbered</span>
+            </li>
+          </ol>`)}
+        <p class="sg-prose">
+          A tone on <code>.steps</code> travels down as
+          <code>--step-accent</code>, the same inheriting-property trick tabs
+          and tables use — <code>--bg-mix</code> is element-scoped and would not
+          reach the markers.
+        </p>`,
+      )}
+
+      ${section(
+        "Vertical",
+        `
+        <p class="sg-prose">
+          <code>.steps.vertical</code> turns the connectors 90°. Good for a
+          sidebar, an approval chain, or any flow with hints long enough that
+          the horizontal form runs out of room.
+        </p>
+        ${preview(`
+          <ol class="steps vertical" aria-label="Approval chain" style="width: 100%; max-width: 24rem">
+            <li class="step complete">
+              <span class="step-marker"></span>
+              <span class="step-label">Submitted<span class="visually-hidden"> — completed</span></span>
+              <span class="step-hint">by Dana Ortiz, 12 Mar</span>
+            </li>
+            <li class="step complete">
+              <span class="step-marker"></span>
+              <span class="step-label">Manager review<span class="visually-hidden"> — completed</span></span>
+              <span class="step-hint">Approved 13 Mar</span>
+            </li>
+            <li class="step" aria-current="step">
+              <span class="step-marker"></span>
+              <span class="step-label">Finance</span>
+              <span class="step-hint">Waiting — usually 2 business days</span>
+            </li>
+            <li class="step">
+              <span class="step-marker"></span>
+              <span class="step-label">Payment scheduled</span>
+            </li>
+          </ol>`)}
+        ${code(`<ol class="steps vertical" aria-label="Approval chain"> … </ol>`)}`,
+      )}`;
+}
+
+function codePage() {
+  return `
+      ${pageHeader({
+        eyebrow: "Components",
+        title: "Code & Kbd",
+        lead: "Two Inline-tier terms that are mostly element selectors: a &lt;kbd&gt; is a key, and a code block is a &lt;pre&gt; holding a &lt;code&gt;.",
+      })}
+
+      ${section(
+        "Inline code",
+        `
+        <p class="sg-prose">
+          Styled on the element as well as the class, because
+          <code>&lt;code&gt;</code> already means exactly this. Sized in
+          <code>em</code>, so it shrinks with whatever it sits in.
+        </p>
+        ${preview(`
+          <p style="margin: 0">
+            Run <code>bun run test</code> to check it, or set
+            <code class="code-inline">--icon-size</code> on the component.
+          </p>`)}
+        ${code(`an inline <code>identifier</code>
+<span class="code-inline">for markup that cannot use the element</span>`)}`,
+      )}
+
+      ${section(
+        "Code block",
+        `
+        ${preview(`
+          <pre class="code" style="width: 100%"><code>bun add @frontierjs/css
+bun run demo
+
+# a deliberately long line, to show that it scrolls in its own box rather than taking the page sideways with it</code></pre>`)}
+        ${code(`<pre class="code"><code>bun run test</code></pre>`)}
+        <p class="sg-prose">
+          <code>&lt;pre&gt;</code> is what preserves the whitespace; the class
+          only dresses it. The nested <code>&lt;code&gt;</code> is not optional
+          decoration either — it is what says "this is code" rather than "this
+          is preformatted text", and screen readers and search engines both use
+          the distinction.
+        </p>
+        <div class="alert danger">
+          <div class="alert-icon" aria-hidden="true">!</div>
+          <div class="alert-content">
+            <strong>A code block must scroll in its own box.</strong>
+            <p>
+              Without <code>overflow-x</code>, one long line pushes its grid
+              track wider than the viewport and takes the whole page sideways —
+              the same failure <code>.table-wrap</code> exists to prevent, and
+              the reason <code>.screen</code> sets
+              <code>min-inline-size: 0</code>. Long lines scroll here; they do
+              not silently wrap and renumber themselves.
+            </p>
+          </div>
+        </div>
+        <p class="sg-prose">
+          Inside a block, the inline treatment would double the background, so
+          <code>.code &gt; code</code> resets it.
+        </p>`,
+      )}
+
+      ${section(
+        "Kbd",
+        `
+        ${preview(`
+          <p style="margin: 0">
+            Press <kbd>⌘</kbd><kbd>K</kbd> to search, <kbd>Esc</kbd> to dismiss,
+            or <kbd class="kbd">Shift</kbd> + <kbd class="kbd">?</kbd> for help.
+          </p>`)}
+        ${code(`Press <kbd>⌘</kbd><kbd>K</kbd> to search
+<kbd class="kbd">Esc</kbd>`)}
+        <p class="sg-prose">
+          The heavier bottom border is the whole keycap effect. A
+          <code>box-shadow</code> would be more literal but would not survive a
+          dark theme, where the shadow disappears and the cap flattens — switch
+          to Dark in the topbar and the border is still there.
+        </p>
+        <p class="sg-prose">
+          Sized in <code>em</code> too, so a <code>kbd</code> inside small print
+          shrinks with it.
+        </p>
+        ${preview(`
+          <p class="text-xs" style="margin: 0">
+            Fine print with a <kbd>⌘</kbd><kbd>K</kbd> inside it.
+          </p>`)}`,
+      )}`;
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    4. Shell + router
    ══════════════════════════════════════════════════════════════════════ */
@@ -6576,7 +7432,9 @@ const PAGES = {
   inputs: inputsPage,
   formcontrols: formsPage,
   tags: tagsPage,
+  avatar: avatarPage,
   icons: iconsPage,
+  code: codePage,
   // Patterns (Block tier)
   bar: barPage,
   sectionheader: sectionHeaderPage,
@@ -6584,6 +7442,8 @@ const PAGES = {
   items: itemsPage,
   rows: rowsPage,
   feed: feedPage,
+  facts: factsPage,
+  steps: stepsPage,
   disclosure: disclosurePage,
   tabs: tabsPage,
   nav: navPage,
@@ -6638,7 +7498,7 @@ function topbar() {
             <span class="sg-config-glyph">{ }</span>
             index.css
           </button>
-          <span class="sg-version">v0.6</span>
+          <span class="sg-version">v0.10.1</span>
         </div>
       </div>
     </header>`;
@@ -6667,49 +7527,141 @@ function sidebar() {
     </aside>`;
 }
 
-const INDEX_CSS = `/* index.css — the single entry point.
- * Plain CSS. No build step, no UnoCSS, no config file.
+/*
+ * A copy of the real index.css, embedded so the modal works over file://.
+ * It is refreshed from ../index.css whenever the guide is served over http
+ * (see openConfig), because a hand-maintained copy of a file whose whole job
+ * is to declare the layer order is exactly the drift this package keeps
+ * designing out. Re-paste it when index.css changes.
+ */
+const INDEX_CSS = `/*
+ * index.css
+ * Single entry point. Import this from your app root.
  *
- * Layer order beats specificity, so this list is the contract:
- * anything later wins, and your own unlayered CSS beats all of it. */
+ * Plain CSS, no build step, no UnoCSS.
+ *
+ * ── Layout ──────────────────────────────────────────────────────────
+ *
+ *   index.css        this file — the only thing most apps import
+ *   utilities.css    the escape hatch; late layer, so it beats components
+ *   foundation/      tokens, tones, and the two lineage bases
+ *   themes/          the six shipped themes
+ *   components/      btn, card, field, table, dialog …
+ *   patterns/        the Block tier: bar, list, feed, steps, tabs …
+ *   a11y/            the focus ring and the a11y primitives
+ *
+ * The folders mirror the layer order below, which is the architecture —
+ * so the tree teaches it rather than competing with it. They are NOT a
+ * build input: there is no src/ and no dist/, because the file you read
+ * here is the file that ships.
+ *
+ * Directories were tried once before and are why v0.6 exists: every
+ * @import pointed at a ./themes/ and ./utilities/ that had never been
+ * created, so the entry point resolved nothing and the package did not
+ * load at all. A failed @import is silent — the rule stays in place with
+ * a null styleSheet — so \`meta: every @import in index.css resolved\` in
+ * the test suite is what makes this layout safe to have at all. If you
+ * move a file, run \`bun run test\`.
+ *
+ * ── Cascade layers ──────────────────────────────────────────────────
+ *
+ * Later layers win, regardless of selector specificity. That replaces the
+ * old "order matters, don't reshuffle the imports" convention with an
+ * explicit contract:
+ *
+ *   tokens      :root variable defaults
+ *   themes      .theme-* overrides of those tokens
+ *   tones       tone vocabulary (.primary, .danger, …)
+ *   base        the two lineage bases — chip (inline), surface (block)
+ *   layout      composition helpers (stack, cluster, center, split)
+ *   components  btn, pill, badge, card, field, table, dialog, …
+ *   patterns    block-tier layout patterns (bar, list, feed, disclosure)
+ *   utilities   the escape hatch — .text-* size and colour. After
+ *               components on purpose: .btn sets a font-size, so a
+ *               same-layer .text-lg lost to it and every size modifier
+ *               was inert. See utilities.css.
+ *   a11y        visually-hidden, skip link — last, so nothing outranks
+ *               them without a deliberate unlayered override
+ *
+ * Three consequences worth knowing:
+ *
+ * 1. Unlayered CSS beats every layer, so consumer styles override this
+ *    package by default — no !important, no specificity war.
+ *
+ * 2. Specificity still decides *within* a layer, so the :where() bases in
+ *    chip.css and surface.css stay overridable by their own composites.
+ *
+ * 3. \`layout\` sits before \`components\`/\`patterns\` on purpose: it lets
+ *    \`.bar\` beat \`.center\` on the \`display\` property. See layout.css.
+ */
 
-@layer tokens, themes, tones, base, layout, components, patterns;
+@layer tokens, themes, tones, base, layout, components, patterns, utilities, a11y;
 
-@import './tokens.css' layer(tokens);
+@import './foundation/tokens.css' layer(tokens);
 
 /* Themes */
-@import './default.css'  layer(themes);
-@import './sunset.css'   layer(themes);
-@import './forest.css'   layer(themes);
-@import './midnight.css' layer(themes);
-@import './dark.css'     layer(themes);
-@import './elite.css'    layer(themes);
+@import './themes/default.css'  layer(themes);
+@import './themes/sunset.css'   layer(themes);
+@import './themes/forest.css'   layer(themes);
+@import './themes/midnight.css' layer(themes);
+@import './themes/dark.css'     layer(themes);
+@import './themes/elite.css'    layer(themes);
 
-/* Foundation */
-@import './tones.css'   layer(tones);
-@import './chip.css'    layer(base);     /* inline lineage: btn, pill, badge */
-@import './surface.css' layer(base);     /* block lineage: card, alert, ... */
-@import './layout.css'  layer(layout);   /* stack, cluster, center, split   */
+/* Foundation — the rest of it; tokens.css is imported above */
+@import './foundation/tones.css'   layer(tones);
+@import './foundation/chip.css'    layer(base);
+@import './foundation/surface.css' layer(base);
+@import './foundation/layout.css'  layer(layout);
+
+/* Frame + Page tiers — the app shell and the routed page */
+@import './components/frame.css' layer(components);
 
 /* Components */
-@import './typography.css' layer(components);
-@import './buttons.css'    layer(components);
-@import './pills.css'      layer(components);
-@import './badges.css'     layer(components);
-@import './cards.css'      layer(components);
-@import './alerts.css'     layer(components);
-@import './toasts.css'     layer(components);
-@import './popovers.css'   layer(components);
-@import './drawers.css'    layer(components);
-@import './form-core.css'  layer(components);
-@import './tables.css'     layer(components);
-@import './dialogs.css'    layer(components);
+@import './components/typography.css' layer(components);
+@import './components/icon.css'       layer(components);
+@import './components/buttons.css'    layer(components);
+@import './components/pills.css'      layer(components);
+@import './components/badges.css'     layer(components);
+@import './components/cards.css'      layer(components);
+@import './components/tiles.css'      layer(components);
+@import './components/avatar.css'     layer(components);
+@import './components/feedback.css'   layer(components);
+@import './components/alerts.css'     layer(components);
+@import './components/toasts.css'     layer(components);
+@import './components/popovers.css'   layer(components);
+@import './components/tooltips.css'   layer(components);
+@import './components/drawers.css'    layer(components);
+@import './components/form-core.css'  layer(components);
+@import './components/tables.css'     layer(components);
+@import './components/dialogs.css'    layer(components);
 
 /* Block-tier patterns */
-@import './bars.css'       layer(patterns);
-@import './lists.css'      layer(patterns);
-@import './feed.css'       layer(patterns);
-@import './disclosure.css' layer(patterns);
+@import './patterns/bars.css'       layer(patterns);
+@import './patterns/lists.css'      layer(patterns);
+@import './patterns/feed.css'       layer(patterns);
+@import './patterns/disclosure.css' layer(patterns);
+@import './patterns/facts.css'      layer(patterns);
+@import './patterns/steps.css'      layer(patterns);
+@import './patterns/tabs.css'       layer(patterns);
+@import './patterns/nav.css'        layer(patterns);
+
+/*
+ * The escape hatch — after every component and pattern, before a11y.
+ * A utility that cannot beat a component is not a utility.
+ */
+@import './utilities.css' layer(utilities);
+
+/*
+ * Accessibility primitives — last layer on purpose.
+ *
+ * focus.css is here rather than with the components because the focus ring
+ * is an accessibility guarantee, not a component detail. In the last layer
+ * a stray \`outline: none\` in a component file cannot switch it off; that is
+ * exactly how .btn.outlined lost its ring to a \`box-shadow: none\` before
+ * v0.7. See the header of focus.css.
+ */
+@import './a11y/focus.css' layer(a11y);
+@import './a11y/a11y.css'  layer(a11y);
 `;
 
 function configModal() {
@@ -6719,7 +7671,7 @@ function configModal() {
         <header class="sg-modal-header">
           <div class="sg-modal-title">
             <span class="sg-modal-glyph">{ }</span>
-            uno.config.js
+            index.css
           </div>
           <div class="sg-modal-actions">
             <button type="button" class="sg-modal-btn" data-copy>Copy</button>
@@ -6782,6 +7734,22 @@ function openConfig() {
   app.insertAdjacentHTML("beforeend", configModal());
   const modal = $("[data-modal]", app);
 
+  /*
+   * Show the file, not our copy of it. Over http (bun run demo) this replaces
+   * the embedded text with whatever ../index.css actually says right now; over
+   * file:// the fetch is blocked by CORS and the copy stands. The guide has
+   * been two versions behind before, and it was always a copy that did it.
+   */
+  fetch("../src/index.css")
+    .then((r) => (r.ok ? r.text() : null))
+    .then((text) => {
+      if (!text) return;
+      const pre = $("code", modal);
+      if (pre) pre.textContent = text;
+      modal.dataset.source = "live";
+    })
+    .catch(() => {});
+
   modal.addEventListener("click", (e) => {
     /* Backdrop only — a click inside the panel must not close it. */
     if (e.target === modal || e.target.closest("[data-modal-close]")) {
@@ -6791,7 +7759,9 @@ function openConfig() {
 
     if (e.target.closest("[data-copy]") && navigator.clipboard) {
       const btn = e.target.closest("[data-copy]");
-      navigator.clipboard.writeText(INDEX_CSS).then(() => {
+      /* Read the panel, not the constant — the fetch above may have
+       * replaced it with the live file. */
+      navigator.clipboard.writeText($("code", modal).textContent).then(() => {
         btn.textContent = "Copied";
         setTimeout(() => (btn.textContent = "Copy"), 1500);
       });
