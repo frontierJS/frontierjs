@@ -200,13 +200,17 @@ export function generateTypeScript(schema, opts = {}) {
     lines.push(`}`)
     lines.push(``)
 
-    // ── Update type (all optional) ───────────────────────────────────────────
+    // ── Update type (all optional — except @version) ─────────────────────────
+    // Patch semantics make every field optional, but a @version column is a
+    // precondition rather than a value: update() throws VersionRequiredError
+    // without it. Marking it required is the type saying what the runtime does.
     lines.push(`export interface ${pascal(model.name)}Update {`)
     for (const field of model.fields) {
       if (field.type.kind === 'relation') continue
       const spec = fieldUpdateSpec(field, schema, audience, modelNames)
       if (!spec) continue
-      lines.push(`  ${spec.name}?: ${spec.tsType}`)
+      const required = field.attributes.some(a => a.kind === 'version')
+      lines.push(`  ${spec.name}${required ? '' : '?'}: ${spec.tsType}`)
     }
     lines.push(`}`)
     lines.push(``)
@@ -390,6 +394,8 @@ function fieldRowSpec(field, schema, audience, modelNames) {
   const commentParts = []
   if (attributes.some(a => a.kind === 'guarded'))  commentParts.push('@guarded')
   if (attributes.some(a => a.kind === 'updatedBy')) commentParts.push('@updatedBy')
+  if (attributes.some(a => a.kind === 'createdBy')) commentParts.push('@createdBy')
+  if (attributes.some(a => a.kind === 'version'))   commentParts.push('@version')
   if (attributes.some(a => a.kind === 'encrypted')) commentParts.push('@encrypted')
   if (attributes.some(a => a.kind === 'secret'))    commentParts.push('@secret')
   if (attributes.some(a => a.kind === 'computed'))  commentParts.push('@computed')
@@ -412,9 +418,12 @@ function fieldCreateSpec(field, schema, audience, modelNames) {
                     || attributes.some(a => a.kind === 'secret')
   if (isGuardedAll && audience === 'client') return null
 
-  // Skip auto-managed timestamps and @updatedBy (stamped automatically on update)
+  // Skip auto-managed timestamps, @updatedBy and @createdBy — all stamped from
+  // ctx.auth, and a value in the payload loses to the principal anyway
   if (name === 'createdAt' || name === 'updatedAt' || name === 'deletedAt') return null
-  if (attributes.some(a => a.kind === 'updatedBy')) return null
+  if (attributes.some(a => a.kind === 'updatedBy' || a.kind === 'createdBy')) return null
+  // @version is always 1 on create — supplying it is ignored
+  if (attributes.some(a => a.kind === 'version')) return null
 
   const isId      = attributes.some(a => a.kind === 'id')
   const hasDefault = attributes.some(a => a.kind === 'default')

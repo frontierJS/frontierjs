@@ -33,7 +33,7 @@ tests/fixtures/jobs/              committed *.job.ts fixtures for autoload
 
 | | |
 |---|---|
-| Tests | **67 pass, 0 fail**, 3 files (`bun run test`) — verified |
+| Tests | **79 pass, 0 fail**, 3 files (`bun run test`) — verified. See `CHANGES.md` 2026-08-06 for the three defects `example/` found |
 | Typecheck | **clean, 0 errors, no baseline** (`bun run typecheck`) — verified |
 | Public exports | `createCaravan`, `defineJob`, plus types — verified |
 | Plugin seam | `register()` attaches `app.jobs`, wires `app._metricsProviders.set('jobs', …)`, and optionally mounts admin routes — all three now asserted against a real app |
@@ -164,6 +164,11 @@ was identical: fake-app plugin tests passed while the real endpoint 404'd.
 ---
 
 ## Known limitation: the `junction.config.js` caravan section is partial
+
+
+*Tracked as **`FJS-048`** in `../../ISSUES.md`, with **`FJS-039`** (autoload
+scoping, admin guard ctx shape, `cancel()` revert race) still `stale?` and
+unprobed. Add a new item there, not here.*
 
 Junction publishes `JunctionCaravanConfig` with `db`, `jobsDir`, `pollInterval`,
 `cleanupAfter`, `queues`, and `admin` (`src/config/index.ts`). Caravan's

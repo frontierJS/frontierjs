@@ -64,6 +64,42 @@ export class TransitionConflictError extends Error {
   }
 }
 
+// ─── @version — optimistic concurrency ────────────────────────────────────────
+// The same compare-and-swap @@transitions already runs, with the column
+// unfrozen: an update narrows its WHERE by the version the caller read, and no
+// rows changed against a row that still exists means somebody else got there
+// first. Both 409s, and the distinction between them is the useful part —
+// one says "you did not tell me which row you read", the other says "you did,
+// and it moved".
+
+export class VersionRequiredError extends Error {
+  constructor(model, field) {
+    super(`${model}.${field} is @version — an update must carry the version it read (data.${field}). Use asSystem() for a write that is not a concurrent editor.`)
+    this.name      = 'VersionRequiredError'
+    this.model     = model
+    this.field     = field
+    // 400, not 409: nothing conflicted. The caller left out a required input,
+    // and retrying the identical request will fail the identical way.
+    this.status    = 400
+    this.retryable = false
+  }
+}
+
+export class VersionConflictError extends Error {
+  constructor(model, field, expected, actual) {
+    super(`Version conflict on ${model}: expected ${field} ${expected}, row is at ${actual} — it was modified after you read it`)
+    this.name      = 'VersionConflictError'
+    this.model     = model
+    this.field     = field
+    this.expected  = expected
+    this.actual    = actual
+    // 409 + retryable, exactly like TransitionConflictError: re-read and re-apply
+    // is a real strategy here, which is what tells a caller to do it.
+    this.status    = 409
+    this.retryable = true
+  }
+}
+
 export class TransitionGateError extends Error {
   constructor(model, field, transitionName, required, got) {
     super(`Transition '${transitionName}' on ${model}.${field} requires level ${required}, user has level ${got}`)
@@ -332,6 +368,72 @@ function buildUpdatedByMap(schema) {
   }
   return map
 }
+
+// ─── @createdBy map ───────────────────────────────────────────────────────────
+// { modelName: [{ field, authField }] }
+// @createdBy               → stamps ctx.auth.id on create
+// @createdBy(auth().field) → stamps ctx.auth[field] on create
+//
+// A STAMP, not a default — unlike @default(auth().id) the principal wins over a
+// caller-supplied value, so an authenticated caller cannot forge authorship by
+// putting the column in the payload. Skipped entirely when ctx.auth is null,
+// which is what lets asSystem() seeders and backfills carry authorship in.
+
+// ─── @version map ─────────────────────────────────────────────────────────────
+// { modelName: fieldName } — at most one per model, enforced in the parser.
+
+function buildVersionMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    const field = model.fields.find(f => f.attributes.some(a => a.kind === 'version'))
+    if (field) map[model.name] = field.name
+  }
+  return map
+}
+
+function buildCreatedByMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const attr = field.attributes.find(a => a.kind === 'createdBy')
+      if (!attr) continue
+      if (!map[model.name]) map[model.name] = []
+      map[model.name].push({ field: field.name, authField: attr.authField ?? 'id' })
+    }
+  }
+  return map
+}
+
+// ─── ctx.auth → columns ───────────────────────────────────────────────────────
+// The two ways a write picks up the principal, and the one place each lives.
+// Both take a { field, authField }[] and return `data` untouched when there is
+// nothing to do, so a model with neither allocates nothing.
+//
+// The distinction is the whole reason @createdBy is not @default(auth().id):
+//
+//   stampFromAuth     — the principal WINS. @createdBy / @updatedBy. A caller
+//                       cannot forge authorship by putting the column in the payload.
+//   applyAuthDefaults — the payload WINS. @default(auth().field), which is a
+//                       default and documented as one.
+//
+// Neither fires without ctx.auth, which is what lets asSystem() seeders,
+// imports and backfills carry an explicit author in.
+
+function stampFromAuth(data, list, auth) {
+  if (!list?.length || !auth) return data
+  const stamps = {}
+  for (const { field, authField } of list)
+    if (auth[authField] != null) stamps[field] = auth[authField]
+  return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
+}
+
+function applyAuthDefaults(data, list, auth) {
+  if (!list?.length || !auth) return data
+  const stamps = {}
+  for (const { field, authField } of list)
+    if (data?.[field] == null && auth[authField] != null) stamps[field] = auth[authField]
+  return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
+}
 // { modelName: [{ field, scope }] }
 // field: the field that gets the auto-incremented value
 // scope: the field whose value defines the partition (e.g. accountId)
@@ -483,6 +585,71 @@ function normaliseKey(raw) {
 //
 // @encrypted implies guarded: 'all'
 
+// ─── Does this schema declare anything raw SQL would bypass? ─────────────────
+//
+// FJS-005. `sql` goes straight to the read connection: no @@gate, no @@allow,
+// no @guarded, no @scoped, no @@softDelete. For a deliberate escape hatch that
+// is defensible. What was not defensible is that it was the SAME function on
+// every proxy — `db.$setAuth(user).sql` closed over the user and never read it,
+// so a caller who had done everything right got every row in the table.
+//
+// Measured on one model with @@allow + @guarded + @@softDelete:
+//
+//   $setAuth({id:1}).invoice.findMany()   → 1 row,  ssn absent
+//   $setAuth({id:1}).sql`SELECT * ...`    → 3 rows, ssn in plaintext, incl.
+//                                            another owner's and a deleted one
+//
+// The unscoped client is the wider gap, not the narrower one: an unauthenticated
+// `db.invoice.findMany()` returns **0** rows, because the policy evaluates with
+// auth() == null and matches nothing, while `db.sql` returns all 3. So this is
+// not "the scoped proxy drops its scope" — it is that `sql` ignores the schema
+// on every path and the ORM never does.
+//
+// The rule: when a schema declares access rules, raw SQL is available through
+// asSystem() only. Coarse on purpose — deciding per statement means parsing the
+// statement, and a hand-written SQL validator that is subtly wrong grants a
+// FALSE guarantee, which is worse than an honest raw hatch. (SQLite's own
+// authorizer would be the right mechanism; bun:sqlite does not expose it.)
+//
+// Scoped raw SQL as a real capability — a per-identity view set — is designed in
+// IDEAS/scoped-sql.md and deliberately not built: it is a feature, this is the
+// defect, and the consumer that made it urgent does not exist yet.
+
+/** Model-level attributes the ORM enforces and raw SQL does not. */
+const ACCESS_MODEL_ATTRS = new Set(['gate', 'allow', 'deny'])
+
+/**
+ * Field-level ones. `@omit` and `@@softDelete` are deliberately NOT here: they
+ * shape what a read returns rather than who may read it, and refusing raw SQL
+ * for a soft-delete column would fire on most schemas for a lifecycle rule
+ * rather than an access one.
+ */
+const ACCESS_FIELD_ATTRS = new Set(['guarded', 'encrypted', 'secret', 'fieldAllow', 'scoped'])
+
+function schemaDeclaresAccessRules(schema) {
+  for (const model of schema.models ?? []) {
+    if ((model.attributes ?? []).some(a => ACCESS_MODEL_ATTRS.has(a.kind))) return true
+    for (const field of model.fields ?? [])
+      if ((field.attributes ?? []).some(a => ACCESS_FIELD_ATTRS.has(a.kind))) return true
+  }
+  return false
+}
+
+function rawSqlRefusal(surface) {
+  return new Error(
+    `${surface} — this schema declares access rules, and raw SQL applies none of them.\n\n` +
+    `A raw statement reads the base table: @@gate, @@allow/@@deny, @guarded, @scoped and\n` +
+    `@@softDelete are all enforced above SQLite, so none of them survive the trip. The ORM\n` +
+    `filters rows and withholds columns; \`sql\` does not.\n\n` +
+    `If you mean to bypass them, say so — that is what asSystem() is for:\n\n` +
+    `    db.asSystem().sql\`SELECT ...\`\n\n` +
+    `If you want the rules applied, stay on the ORM. For an expression the query builder\n` +
+    `cannot express, \`where: { $raw: sql\`...\` }\` keeps every policy:\n\n` +
+    `    db.invoice.findMany({ where: { $raw: sql\`json_extract(meta,'$.tier') = \${3}\` } })\n\n` +
+    `Scoped raw SQL is designed (IDEAS/scoped-sql.md) and not built.`
+  )
+}
+
 function buildFieldPolicyMap(schema) {
   const map = {}
   for (const model of schema.models) {
@@ -508,6 +675,14 @@ function buildFieldPolicyMap(schema) {
                    : guardedAttr?.level ?? null,
         encrypted: encryptedAttr ? { searchable: encryptedAttr.searchable ?? false } : null,
         allow,    // null if no @allow on this field
+        // Whether the DECLARED type is Json. Captured here, beside the other
+        // per-field facts, because the encrypt/decrypt steps both need it and
+        // neither has the schema in scope. Without it `@encrypted` on a Json
+        // field silently destroyed the value: encryptField does
+        // String(plaintext), an object stringifies to '[object Object]', and
+        // what got encrypted was a faithful ciphertext of that — unrecoverable,
+        // with nothing thrown.
+        json:      field.type?.name === 'Json',
       }
     }
   }
@@ -2259,6 +2434,19 @@ function makeTable(
       if (encrypted && fieldName in out && out[fieldName] != null) {
         try {
           out[fieldName] = decryptField(out[fieldName], ctx.encKey)
+
+          // Mirror of the write step: a Json field was serialized before it was
+          // encrypted, so it is parsed after it is decrypted.
+          //
+          // The parse gets its OWN try/catch rather than riding the outer one,
+          // which sets the field to null. A row written before this was fixed
+          // decrypts to the literal string '[object Object]' — real data that is
+          // already lost. Surfacing that beats blanking it: null reads as "this
+          // was empty", the string reads as "something went wrong here", and
+          // only the second sends anyone looking.
+          if (policy.json && typeof out[fieldName] === 'string') {
+            try { out[fieldName] = JSON.parse(out[fieldName]) } catch {}
+          }
         } catch {
           out[fieldName] = null
         }
@@ -2435,9 +2623,19 @@ function makeTable(
         const val = transformed[fieldName]
         if (val == null) continue
         if (isCiphertext(val)) continue  // already encrypted (e.g. re-save)
+
+        // A Json field is serialized to text BEFORE encryption, because
+        // encryptField's String(plaintext) turns an object into
+        // '[object Object]' and encrypts that — destroying the value with
+        // nothing thrown. serializeRow() runs AFTER this block and stringifies
+        // the ciphertext again, and read() mirrors it exactly (JSON.parse then
+        // decrypt), so the round trip is symmetric and the stored column is
+        // still a JSON string as the column type says.
+        const plain = policy.json ? JSON.stringify(val) : val
+
         transformed[fieldName] = policy.encrypted.searchable
-          ? encryptSearchable(val, ctx.encKey)
-          : encryptField(val, ctx.encKey)
+          ? encryptSearchable(plain, ctx.encKey)
+          : encryptField(plain, ctx.encKey)
       }
     }
 
@@ -3867,17 +4065,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (autoId && (data == null || data[autoId.field] == null)) {
         data = { ...(data ?? {}), [autoId.field]: autoId.generate() }
       }
-      // Stamp @default(auth().field) values from ctx.auth if not already provided
-      const authDefaults = ctx.authDefaultMap?.[modelName]
-      if (authDefaults?.length && ctx.auth) {
-        const stamps = {}
-        for (const { field, authField } of authDefaults) {
-          if ((data == null || data[field] == null) && ctx.auth[authField] != null) {
-            stamps[field] = ctx.auth[authField]
-          }
-        }
-        if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
-      }
+      data = applyAuthDefaults(data, ctx.authDefaultMap?.[modelName], ctx.auth)
+      data = stampFromAuth(data, ctx.createdByMap?.[modelName], ctx.auth)
+      // A new row is version 1, whatever the payload says. Honouring a supplied
+      // version would let a client start a row at 500 and make the first real
+      // editor's read look stale.
+      if (ctx.versionMap?.[modelName]) data = { ...(data ?? {}), [ctx.versionMap[modelName]]: 1 }
       // Apply @default(fieldName) — copy value from sibling field if not already provided
       // Must run BEFORE writeData/applyTransforms so @slug and other transforms see the value
       const fieldRefDefaults = ctx.fieldRefDefaultMap?.[modelName]
@@ -3956,7 +4149,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // all fire consistently, same as single create().
       const autoId      = ctx.autoIdMap?.[modelName]
       const authDefaults = ctx.authDefaultMap?.[modelName]
-      let rows, _cmSql
+      const createdByStamps = ctx.createdByMap?.[modelName]
+      const versionField    = ctx.versionMap?.[modelName]
+      let rows, _cmSql, _cmInserted = null
       let count = 0
       const _nt = needsTiming()
       const _cmT0 = _nt ? performance.now() : 0
@@ -3969,16 +4164,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           let d = item
           if (autoId && (d == null || d[autoId.field] == null))
             d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
-          // Stamp @default(auth().field) values from ctx.auth if not already provided
-          if (authDefaults?.length && ctx.auth) {
-            const stamps = {}
-            for (const { field, authField } of authDefaults) {
-              if ((d == null || d[field] == null) && ctx.auth[authField] != null) {
-                stamps[field] = ctx.auth[authField]
-              }
-            }
-            if (Object.keys(stamps).length) d = { ...(d ?? {}), ...stamps }
-          }
+          d = applyAuthDefaults(d, authDefaults, ctx.auth)
+          d = stampFromAuth(d, createdByStamps, ctx.auth)
+          if (versionField) d = { ...(d ?? {}), [versionField]: 1 }
           // Apply @sequence per row — each row gets its own counter increment
           d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
           return writeData(d, { requireAll: true })
@@ -3987,14 +4175,20 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // Derive column list from the first processed row (post-transforms)
         const cols = Object.keys(rows[0])
         _cmSql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+              + (tableHasAnyLog ? ` RETURNING *` : '')
         const stmt = writeDb.prepare(_cmSql)
+        // RETURNING on a logged model: an @id @default(autoincrement()) row has no
+        // id until SQLite assigns one, and a log entry naming no rows is not a trail.
+        if (tableHasAnyLog) _cmInserted = []
         for (const row of rows) {
-          stmt.run(...cols.map(c => row[c] ?? null))
+          const args = cols.map(c => row[c] ?? null)
+          if (tableHasAnyLog) { const r = stmt.get(...args); if (r) _cmInserted.push(r) }
+          else stmt.run(...args)
           count++
         }
       })
       fireQuery({ operation: 'createMany', args: { data }, sql: _cmSql, params: null, duration: _nt ? performance.now() - _cmT0 : 0, rowCount: count })
-      if (tableHasAnyLog && rows.length > 0) emitLogs('create', rows)
+      if (_cmInserted?.length) emitLogs('create', _cmInserted)
       return { count }
     },
 
@@ -4005,20 +4199,28 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   • A post-update policy rollback was triggered
     // Callers that need to distinguish can check count() before/after,
     // or enable policyDebug to see which policy blocked.
-    async update({ where, data, include, select, scopedBy } = {}) {
+    async update({ where, data, include, select, scopedBy, _bypassVersion } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select }, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'update', args: { where, data, include, select }, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('update')) { hookRunner.runBefore(hctx, ctx); where = hctx.args.where; data = hctx.args.data }
-      // Stamp @updatedBy fields from ctx.auth
-      const _updatedBy = ctx.updatedByMap?.[modelName]
-      if (_updatedBy?.length && ctx.auth) {
-        const stamps = {}
-        for (const { field, authField } of _updatedBy) {
-          const val = ctx.auth[authField]
-          if (val != null) stamps[field] = val
+      data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth)
+
+      // ── @version — take the caller's expected version off the payload ───────
+      // It is a precondition, not a value to write: the column is bumped by SQL
+      // below, never SET to what arrived. asSystem() skips the check for the
+      // same reason it skips gates — a migration or a job is not a second editor.
+      const _versionField = ctx.versionMap?.[modelName]
+      let   _expectVersion = null
+      if (_versionField) {
+        const supplied = data?.[_versionField]
+        if (!ctx.isSystem && !_bypassVersion) {
+          if (!Number.isInteger(supplied))
+            throw new VersionRequiredError(modelName, _versionField)
+          _expectVersion = supplied
         }
-        if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
+        if (data && _versionField in data) { data = { ...data }; delete data[_versionField] }
       }
+
       const { scalar, nested } = extractNestedWrites(data)
       const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
       const extraFKs = await processBelongsToNested(nested)
@@ -4055,8 +4257,29 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         ? applyTransitionWhereClause(_transResult, finalWhereSql, finalWhereParams)
         : { sql: finalWhereSql, params: finalWhereParams }
 
+      // ── @version — the compare half of the swap ─────────────────────────────
+      // Same shape as applyTransitionWhereClause above: narrow the WHERE by the
+      // value the caller read, so a row that moved simply does not match. The
+      // bump rides the SET clause, which also means a versioned update always
+      // has a column to write even when `data` was otherwise empty.
+      const _vWhereSql    = _expectVersion == null ? _txWhereSql : `(${_txWhereSql}) AND "${_versionField}" = ?`
+      const _vWhereParams = _expectVersion == null ? _txWhereParams : [..._txWhereParams, _expectVersion]
+      const _setColsV     = !_versionField ? setCols
+        : [setCols, `"${_versionField}" = "${_versionField}" + 1`].filter(Boolean).join(', ')
+
+      // No rows changed can mean three different things. Not-found and
+      // policy-blocked both return null (the documented contract); a row that is
+      // still there at a different version is the one worth raising, because the
+      // caller can re-read and re-apply.
+      const throwIfVersionMoved = () => {
+        if (_expectVersion == null) return
+        const cur = readDb.query(`SELECT "${_versionField}" AS v FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
+        if (cur && cur.v !== _expectVersion)
+          throw new VersionConflictError(modelName, _versionField, _expectVersion, cur.v)
+      }
+
       let updated = null
-      if (setCols) {
+      if (_setColsV) {
         // select: false + no post-update side-effects → use run(), skip RETURNING entirely
         // Note: tableHasAnyLog forces RETURNING even with select: false — the log needs
         // before/after snapshots. select: false has no perf benefit on @@log models.
@@ -4066,14 +4289,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           && !nested.length
           && !edgeWrites.length
         if (_canSkipReturn) {
-          const _upSql = `UPDATE "${tableName}" SET ${setCols} WHERE ${_txWhereSql}`
-          const _upParams = [...setParams, ..._txWhereParams]
+          const _upSql = `UPDATE "${tableName}" SET ${_setColsV} WHERE ${_vWhereSql}`
+          const _upParams = [...setParams, ..._vWhereParams]
           const _nt = needsTiming()
           const _upT0 = _nt ? performance.now() : 0
           const result = writeDb.run(_upSql, ..._upParams)
           fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: result.changes })
           if (!result.changes) {
             if (_transResult) throw new TransitionConflictError(tableName, _transResult.field, _transResult.from, _transResult.to)
+            throwIfVersionMoved()
             return null
           }
           if (hctx) { hctx.result = null; if (hookRunner?.hasAfter('update')) hookRunner.runAfter(hctx, ctx) }
@@ -4081,8 +4305,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', null, ctx)
           return null
         }
-        const _upSql = `UPDATE "${tableName}" SET ${setCols} WHERE ${_txWhereSql} RETURNING *`
-        const _upParams = [...setParams, ..._txWhereParams]
+        const _upSql = `UPDATE "${tableName}" SET ${_setColsV} WHERE ${_vWhereSql} RETURNING *`
+        const _upParams = [...setParams, ..._vWhereParams]
         const _nt = needsTiming()
         const _upT0 = _nt ? performance.now() : 0
         // RETURNING * gives the updated row directly — no follow-up SELECT needed.
@@ -4091,6 +4315,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: updated ? 1 : 0 })
         if (!updated) {
           if (_transResult) throw new TransitionConflictError(tableName, _transResult.field, _transResult.from, _transResult.to)
+          throwIfVersionMoved()
           return null
         }
       } else {
@@ -4140,11 +4365,23 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // ── updateMany ──────────────────────────────────────────────────────────
     async updateMany({ where, data } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data }, ctx)
+      // Same stamp update() runs. Missing it here was worse than missing it
+      // anywhere else: @updatedAt is a SQL trigger, so the timestamp moved while
+      // the identity beside it stayed at whoever wrote last through update() —
+      // a row reading "just edited by Bob" when Ann edited it.
+      data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth)
+      // @version bumps here but is never required: a where clause matching many
+      // rows matches many versions, so there is no single value to compare
+      // against. Bumping is the part that matters — without it a bulk write
+      // would leave every open editor's version looking current.
+      const _umVersion = ctx.versionMap?.[modelName]
+      if (_umVersion && data && _umVersion in data) { data = { ...data }; delete data[_umVersion] }
       const row      = writeData(data)
       const params   = []
-      const setCols  = Object.keys(row)
-        .map(c => { params.push(row[c] ?? null); return `"${c}" = ?` })
-        .join(', ')
+      const setCols  = [
+        ...Object.keys(row).map(c => { params.push(row[c] ?? null); return `"${c}" = ?` }),
+        ...(_umVersion ? [`"${_umVersion}" = "${_umVersion}" + 1`] : []),
+      ].join(', ')
       const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
       const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
@@ -4152,12 +4389,18 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (updateManyPolicy) params.push(...updateManyPolicy.params)
       const finalWhere = whereSql && updateManyPolicy ? `(${whereSql}) AND (${updateManyPolicy.sql})`
                        : whereSql || updateManyPolicy?.sql || null
+      // A logged model takes RETURNING so the trail can name the rows it changed.
+      // Still one statement — bulk ops record WHICH rows and WHAT operation, never
+      // their contents (same shape as createMany; see emitLogs).
       const _umSql = `UPDATE "${tableName}" SET ${setCols}${finalWhere ? ` WHERE ${finalWhere}` : ''}`
+                   + (tableHasAnyLog ? ` RETURNING *` : '')
       const _nt = needsTiming()
       const _umT0 = _nt ? performance.now() : 0
-      const result   = writeDb.run(_umSql, ...params)
-      fireQuery({ operation: 'updateMany', args: { where, data }, sql: _umSql, params, duration: _nt ? performance.now() - _umT0 : 0, rowCount: result.changes })
-      return { count: result.changes }
+      const _umRows = tableHasAnyLog ? writeDb.query(_umSql).all(...params) : null
+      const count = _umRows ? _umRows.length : writeDb.run(_umSql, ...params).changes
+      fireQuery({ operation: 'updateMany', args: { where, data }, sql: _umSql, params, duration: _nt ? performance.now() - _umT0 : 0, rowCount: count })
+      if (_umRows?.length) emitLogs('update', _umRows)
+      return { count }
     },
 
     // ── upsert ──────────────────────────────────────────────────────────────
@@ -4176,6 +4419,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         !softDelete && !hasTemplates && !hasFieldPolicy && !_rawFilter &&
         !ctx.sequenceMap?.[modelName]?.length &&
         !ctx.updatedByMap?.[modelName]?.length &&
+        !ctx.versionMap?.[modelName] &&
         include === undefined && select === undefined &&
         where && createData && updateData && Object.keys(updateData).length
       ) {
@@ -4194,14 +4438,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const _fpAutoId = ctx.autoIdMap?.[modelName]
         if (_fpAutoId && cData[_fpAutoId.field] == null)
           cData = { ...cData, [_fpAutoId.field]: _fpAutoId.generate() }
-        const _fpAuthDefaults = ctx.authDefaultMap?.[modelName]
-        if (_fpAuthDefaults?.length && ctx.auth) {
-          const stamps = {}
-          for (const { field, authField } of _fpAuthDefaults) {
-            if (cData[field] == null && ctx.auth[authField] != null) stamps[field] = ctx.auth[authField]
-          }
-          if (Object.keys(stamps).length) cData = { ...cData, ...stamps }
-        }
+        cData = applyAuthDefaults(cData, ctx.authDefaultMap?.[modelName], ctx.auth)
+        cData = stampFromAuth(cData, ctx.createdByMap?.[modelName], ctx.auth)
         const _fpFieldRefs = ctx.fieldRefDefaultMap?.[modelName]
         if (_fpFieldRefs?.length) {
           const stamps = {}
@@ -4246,9 +4484,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // The window for this race is tiny under SQLite's single-writer guarantee,
       // but it can happen with async code that yields between findFirst and create.
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, { where }, ctx)
+      // _bypassVersion: an upsert is "make this row look like X", reached by
+      // natural key from a sync or an import. The caller does not know whether
+      // the row exists, so it cannot have read a version to assert. It still
+      // BUMPS — an editor holding version 3 must lose to an upsert that landed
+      // after them. Concurrent editing is what update() is for.
       const existing = await this.findFirst({ where })
       if (existing) {
-        return this.update({ where, data: updateData, include, select })
+        return this.update({ where, data: updateData, include, select, _bypassVersion: true })
       }
       // Attempt create; if unique constraint fires (race), fall back to update
       try {
@@ -4256,7 +4499,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       } catch (e) {
         if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE' || e?.errno === 2067 ||
             (e?.message && e.message.includes('UNIQUE constraint failed'))) {
-          return this.update({ where, data: updateData, include, select })
+          return this.update({ where, data: updateData, include, select, _bypassVersion: true })
         }
         throw e
       }
@@ -4287,9 +4530,30 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (!data?.length) return { count: 0 }
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
 
-      const autoId = ctx.autoIdMap?.[modelName]
+      const autoId       = ctx.autoIdMap?.[modelName]
+      const authDefaults = ctx.authDefaultMap?.[modelName]
+      const createdBys   = ctx.createdByMap?.[modelName]
+      const updatedBys   = ctx.updatedByMap?.[modelName]
+      const usVersion    = ctx.versionMap?.[modelName]
+
+      // Which author columns WE are about to fill. An upsert is an insert for
+      // some rows and an update for others, and a create-time column must not
+      // ride the ON CONFLICT SET clause — a conflict is an update, and an update
+      // may not rewrite who created the row. Columns the CALLER supplied are not
+      // in this set: naming one is an explicit request, and excluding it would
+      // change behaviour that predates the stamps.
+      const supplied = new Set()
+      for (const item of data) for (const k of Object.keys(item ?? {})) supplied.add(k)
+      const authorCols = new Set(
+        [...(createdBys ?? []), ...(authDefaults ?? [])]
+          .map(s => s.field).filter(f => !supplied.has(f)))
+
       let sql
       let count = 0
+      // Split for the audit trail — an upsert is a create for some rows and an
+      // update for others, and the log entry says which. Only computed on a
+      // logged model: it costs one SELECT over the batch's conflict keys.
+      let _usCreated = null, _usUpdated = null
       const _nt = needsTiming()
       const _usT0 = _nt ? performance.now() : 0
       // Whole batch (incl. @sequence bumps) inside one transaction — see createMany.
@@ -4298,6 +4562,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           let d = item
           if (autoId && (d == null || d[autoId.field] == null))
             d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
+          d = applyAuthDefaults(d, authDefaults, ctx.auth)
+          d = stampFromAuth(d, createdBys, ctx.auth)
+          d = stampFromAuth(d, updatedBys, ctx.auth)
+          if (usVersion) d = { ...(d ?? {}), [usVersion]: 1 }
           d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
           return writeData(d, { requireAll: true })
         })
@@ -4308,27 +4576,62 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           : [idField]
 
         // Build UPDATE SET clause — only the fields that aren't in the conflict target
+        // An explicit `update:` list still wins outright — naming an author
+        // column there is a deliberate request to move it on conflict.
         const updateCols = updateFields
           ? (Array.isArray(updateFields) ? updateFields : [updateFields]).filter(c => cols.includes(c))
-          : cols.filter(c => !target.includes(c))
+          : cols.filter(c => !target.includes(c) && !authorCols.has(c))
 
         sql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
 
-        if (updateCols.length) {
+        // @version rides the INSERT at 1 and is BUMPED on conflict, never taken
+        // from `excluded` — that would reset an existing row to 1 and make every
+        // stale editor's version look current again.
+        const setPairs = updateCols
+          .filter(c => c !== usVersion)
+          .map(c => `"${c}" = excluded."${c}"`)
+        if (usVersion) setPairs.push(`"${usVersion}" = "${tableName}"."${usVersion}" + 1`)
+
+        if (setPairs.length) {
           const conflictSql = target.map(c => `"${c}"`).join(', ')
-          const setSql      = updateCols.map(c => `"${c}" = excluded."${c}"`).join(', ')
-          sql += ` ON CONFLICT(${conflictSql}) DO UPDATE SET ${setSql}`
+          sql += ` ON CONFLICT(${conflictSql}) DO UPDATE SET ${setPairs.join(', ')}`
         } else {
           sql += ` ON CONFLICT DO NOTHING`
         }
 
+        // Which conflict keys already exist — read BEFORE the writes, or every
+        // row would look like an update.
+        let present = null
+        const keyOf = row => JSON.stringify(target.map(c => row[c] ?? null))
+        if (tableHasAnyLog) {
+          const clause = target.map(c => `"${c}" = ?`).join(' AND ')
+          const lookup = writeDb.prepare(`SELECT 1 FROM "${tableName}" WHERE ${clause} LIMIT 1`)
+          present = new Set()
+          for (const row of rows) {
+            if (lookup.get(...target.map(c => row[c] ?? null))) present.add(keyOf(row))
+          }
+          _usCreated = []
+          _usUpdated = []
+        }
+
+        // RETURNING on a logged model, so the entry names rows by their real id —
+        // see createMany. ON CONFLICT DO NOTHING returns nothing for a skipped row.
+        if (tableHasAnyLog) sql += ` RETURNING *`
         const stmt = writeDb.prepare(sql)
         for (const row of rows) {
-          stmt.run(...cols.map(c => row[c] ?? null))
+          const args = cols.map(c => row[c] ?? null)
+          if (tableHasAnyLog) {
+            const written = stmt.get(...args)
+            if (written) (present.has(keyOf(row)) ? _usUpdated : _usCreated).push(written)
+          } else {
+            stmt.run(...args)
+          }
           count++
         }
       })
       fireQuery({ operation: 'upsertMany', args: { data, conflictTarget, update: updateFields }, sql, params: null, duration: _nt ? performance.now() - _usT0 : 0, rowCount: count })
+      if (_usCreated?.length) emitLogs('create', _usCreated)
+      if (_usUpdated?.length) emitLogs('update', _usUpdated)
       return { count }
     },
 
@@ -4463,21 +4766,26 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           }
         }
 
-        const result = writeDb.run(
-          `UPDATE "${tableName}" SET "deletedAt" = ?${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`,
-          ts, ...params
-        )
-        return { count: result.changes }
+        // RETURNING only on a logged model — see updateMany.
+        const _rmsSql = `UPDATE "${tableName}" SET "deletedAt" = ?${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
+                      + (tableHasAnyLog ? ` RETURNING *` : '')
+        const _rmsRows = tableHasAnyLog ? writeDb.query(_rmsSql).all(ts, ...params) : null
+        const softCount = _rmsRows ? _rmsRows.length : writeDb.run(_rmsSql, ts, ...params).changes
+        if (_rmsRows?.length) emitLogs('delete', _rmsRows)
+        return { count: softCount }
       }
 
       const _rmnSql = `DELETE FROM "${tableName}"${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
+                    + (tableHasAnyLog ? ` RETURNING *` : '')
       const _nt = needsTiming()
       const _rmnT0 = _nt ? performance.now() : 0
-      const result = writeDb.run(_rmnSql, ...params)
-      fireQuery({ operation: 'removeMany', args: { where }, sql: _rmnSql, params, duration: _nt ? performance.now() - _rmnT0 : 0, rowCount: result.changes })
+      const _rmnRows = tableHasAnyLog ? writeDb.query(_rmnSql).all(...params) : null
+      const count = _rmnRows ? _rmnRows.length : writeDb.run(_rmnSql, ...params).changes
+      fireQuery({ operation: 'removeMany', args: { where }, sql: _rmnSql, params, duration: _nt ? performance.now() - _rmnT0 : 0, rowCount: count })
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
-      return { count: result.changes }
+      if (_rmnRows?.length) emitLogs('delete', _rmnRows)
+      return { count }
     },
 
     // ── restore ─────────────────────────────────────────────────────────────
@@ -4518,6 +4826,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _rsT0 = _nt ? performance.now() : 0
       const restored = writeDb.query(_rsSql).all(...params)
       fireQuery({ operation: 'restore', args: { where }, sql: _rsSql, params, duration: _nt ? performance.now() - _rsT0 : 0, rowCount: restored.length })
+      // Un-deleting is a write and belongs in the trail. It logs as 'update' —
+      // the entry vocabulary is create|update|delete|read, and a restored row is
+      // a row that changed state, not one that was created.
+      if (tableHasAnyLog && restored.length) emitLogs('update', restored)
       return { count: restored.length }
     },
 
@@ -4826,12 +5138,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         : []
 
       const _dmnSql = `DELETE FROM "${tableName}"${dmFinalSql ? ` WHERE ${dmFinalSql}` : ''}`
+                    + (tableHasAnyLog ? ` RETURNING *` : '')
       const _nt = needsTiming()
       const _dmnT0 = _nt ? performance.now() : 0
-      const result = writeDb.run(_dmnSql, ...params)
+      const _dmnRows = tableHasAnyLog ? writeDb.query(_dmnSql).all(...params) : null
+      const result = { changes: _dmnRows ? _dmnRows.length : writeDb.run(_dmnSql, ...params).changes }
       fireQuery({ operation: 'deleteMany', args: { where }, sql: _dmnSql, params, duration: _nt ? performance.now() - _dmnT0 : 0, rowCount: result.changes })
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
+      if (_dmnRows?.length) emitLogs('delete', _dmnRows)
       return { count: result.changes }
     },
 
@@ -5139,7 +5454,13 @@ function makeLoggerAutoModel(dbName) {
       f('records',    'Json'),
       f('before',     'Json',     true),
       f('after',      'Json',     true),
-      f('actorId',    'Int',  true),
+      // NOT Int. The actor is whatever the host app's users are keyed by, and
+      // @frontierjs/auth issues `id String @id @default(uuid())` — so an Int
+      // column threw SQLITE_CONSTRAINT_DATATYPE on the first audited write with
+      // a known actor, taking the request with it. `Any` is a real SQLite STRICT
+      // column type; the jsonl driver maps it, and the .jsonl itself was always
+      // untyped JSON.
+      f('actorId',    'Any',  true),
       f('actorType',  'String',     true),
       f('meta',       'Json',     true),
       { name: 'createdAt', type: { kind: 'scalar', name: 'DateTime', optional: false, array: false },
@@ -5624,6 +5945,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const authDefaultMap     = buildAuthDefaultMap(schema)
   const fieldRefDefaultMap = buildFieldRefDefaultMap(schema)
   const updatedByMap       = buildUpdatedByMap(schema)
+  const createdByMap       = buildCreatedByMap(schema)
+  const versionMap         = buildVersionMap(schema)
   const selfRelationMap    = buildSelfRelationMap(schema)
   const sequenceMap    = buildSequenceMap(schema)
   const enumMap        = buildEnumMap(schema)
@@ -5755,7 +6078,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Shared context threaded through include resolution + table ops
   const ctx = {
     relationMap, jsonMap, edgeMap, computedSets,
-    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, selfRelationMap, sequenceMap, computedFns, tx,
+    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // Default: parent values silently overwrite any child-supplied co-FK
     // values during nested writes — this is the safe choice that prevents
@@ -6364,13 +6687,23 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     })
   }
 
-  async function sql(strings, ...values) {
+  // Computed once. A schema with no access declarations has nothing for raw SQL
+  // to bypass, so `db.sql` there is unchanged.
+  const _hasAccessRules = schemaDeclaresAccessRules(schema)
+
+  /** The one raw runner. There were three byte-identical copies of this. */
+  function _runRawSql(strings, values) {
     let query = ''
     for (let i = 0; i < strings.length; i++) {
       query += strings[i]
       if (i < values.length) query += '?'
     }
     return readDb.query(query.trim()).all(...values)
+  }
+
+  async function sql(strings, ...values) {
+    if (_hasAccessRules) throw rawSqlRefusal('db.sql')
+    return _runRawSql(strings, values)
   }
 
 
@@ -6605,13 +6938,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // Apply scopes — system ctx is fixed for the lifetime of asSystem(), so the
     // ctxResolver returns sysCtx directly.
     const sysTables = installScopes(rawSysTables, () => sysCtx)
+    // No guard: asSystem() IS the documented bypass, and refusing here would
+    // leave no way to run a raw statement at all.
     async function sysSql(strings, ...values) {
-      let query = ''
-      for (let i = 0; i < strings.length; i++) {
-        query += strings[i]
-        if (i < values.length) query += '?'
-      }
-      return readDb.query(query.trim()).all(...values)
+      return _runRawSql(strings, values)
     }
     const sys$lock = async (key, fn, opts = {}) => fn()
     sys$lock.acquire   = lockPrimitive.acquire ?? lockPrimitive.$locks?.acquire
@@ -6685,13 +7015,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // ctxResolver returns authCtx directly. Dynamic where(ctx) sees user.
     const authTables = installScopesLazy(rawAuthTables, () => authCtx)
 
+    // The reported hole. This closed over `user` and never read it, so it was
+    // byte-identical to the unscoped `sql` — while `authQuery` directly below
+    // goes to real trouble to keep the same auth context alive through
+    // $transaction. Same proxy, same closure: one preserved the scope, one
+    // silently dropped it.
     async function authSql(strings, ...values) {
-      let query = ''
-      for (let i = 0; i < strings.length; i++) {
-        query += strings[i]
-        if (i < values.length) query += '?'
-      }
-      return readDb.query(query.trim()).all(...values)
+      if (_hasAccessRules) throw rawSqlRefusal('db.$setAuth(user).sql')
+      return _runRawSql(strings, values)
     }
 
     // Auth-scoped multi-model query — runs in $transaction but uses the

@@ -4260,7 +4260,11 @@ describe('@encrypted field policy', () => {
     expect(row.email.startsWith('v1s.')).toBe(true)
   })
   test('@encrypted: stored as ciphertext in DB', async () => {
-    const raw = await db.sql`SELECT ssn, email FROM user WHERE id = 1`
+    // asSystem(), not db.sql: this schema declares @encrypted, so raw SQL is
+    // available through the documented bypass only (FJS-005). Peeking at the
+    // stored column IS a deliberate bypass, so saying so is right — this test
+    // was the first caller the refusal caught.
+    const raw = await db.asSystem().sql`SELECT ssn, email FROM user WHERE id = 1`
     expect(raw[0].ssn.startsWith('v1.')).toBe(true)
     expect(raw[0].email.startsWith('v1s.')).toBe(true)
   })
@@ -4401,6 +4405,252 @@ describe('@encrypted field policy', () => {
     await expect(createClient({ parsed: r,  db: p, encryptionKey: 'tooshort' })).rejects.toThrow('32 bytes')
   })
 })
+
+
+describe('raw SQL and the access rules it cannot enforce', () => {
+  // FJS-005. `sql` goes straight to the read connection — no @@gate, no
+  // @@allow, no @guarded, no @scoped, no @@softDelete. For a deliberate escape
+  // hatch that is defensible. What was not is that it was the SAME function on
+  // every proxy: `db.$setAuth(user).sql` closed over the user and never read
+  // it, so a caller who had done everything right got every row in the table,
+  // silently. Measured before the fix, on the model below:
+  //
+  //   $setAuth({id:1}).invoice.findMany()  → 1 row,  ssn absent
+  //   $setAuth({id:1}).sql`SELECT * ...`   → 3 rows, ssn plaintext
+  //
+  // The unscoped client is the WIDER gap: an unauthenticated findMany() returns
+  // 0 rows (the policy evaluates with auth() == null and matches nothing) while
+  // db.sql returned all 3. So the rule is not "the scoped proxy must scope" —
+  // it is that raw SQL is available through asSystem() only, on any schema that
+  // declares access rules.
+  const GATED = `
+    model Invoice {
+      id        Int      @id
+      ownerId   Int
+      total     Float
+      ssn       String   @guarded
+      deletedAt DateTime?
+      @@softDelete
+      @@allow('read', ownerId == auth().id)
+    }`
+
+  let db: any
+  beforeAll(async () => {
+    db = await makeDb(GATED, 'raw-sql-access')
+    await db.asSystem().invoice.create({ data: { id: 1, ownerId: 1, total: 10, ssn: 'AAA' } })
+    await db.asSystem().invoice.create({ data: { id: 2, ownerId: 2, total: 20, ssn: 'BBB' } })
+  })
+  afterAll(() => db.$close())
+
+  test('db.sql is refused when the schema declares access rules', async () => {
+    let err: any = null
+    try { await db.sql`SELECT id FROM invoice` } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(String(err.message)).toContain('asSystem()')
+  })
+
+  test('db.$setAuth(user).sql is refused — the reported hole', async () => {
+    let err: any = null
+    try { await db.$setAuth({ id: 1 }).sql`SELECT id FROM invoice` } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(String(err.message)).toContain('$setAuth')
+  })
+
+  test('db.asSystem().sql still works — it IS the documented bypass', async () => {
+    const rows = await db.asSystem().sql`SELECT id FROM invoice`
+    expect(rows.length).toBe(2)
+  })
+
+  test('the refusal names the fix, not just the problem', async () => {
+    let msg = ''
+    try { await db.sql`SELECT 1` } catch (e: any) { msg = e.message }
+    expect(msg).toContain('asSystem()')
+    expect(msg).toContain('$raw')
+  })
+
+  test('the ORM is unchanged — the policy still filters and @guarded still withholds', async () => {
+    // The refusal must not be the only thing standing between a caller and the
+    // data; the path it points at has to actually work.
+    const rows = await db.$setAuth({ id: 1 }).invoice.findMany()
+    expect(rows.length).toBe(1)
+    expect(rows[0].id).toBe(1)
+    expect('ssn' in rows[0]).toBe(false)
+  })
+
+  test('`where: { $raw }` keeps every policy — the escape hatch the error names', async () => {
+    // The error tells people to use this instead. If it did not preserve the
+    // policy the advice would be worse than the bug.
+    const rows = await db.$setAuth({ id: 1 }).invoice.findMany({
+      where: { $raw: sql`total > ${0}` },
+    })
+    expect(rows.length).toBe(1)
+    expect(rows[0].ownerId).toBe(1)
+    expect('ssn' in rows[0]).toBe(false)
+  })
+
+  test('a schema with NO access rules is unchanged', async () => {
+    // The rule keys off declarations, not off having a database. An app that
+    // declares nothing has nothing for raw SQL to bypass.
+    const open = await makeDb(`model Note { id Int @id  body String }`, 'raw-sql-open')
+    await open.asSystem().note.create({ data: { id: 1, body: 'x' } })
+    expect((await open.sql`SELECT id FROM note`).length).toBe(1)
+    expect((await open.$setAuth({ id: 1 }).sql`SELECT id FROM note`).length).toBe(1)
+    open.$close()
+  })
+
+  test('@guarded alone is enough to trigger it', async () => {
+    // Each declaration family is its own reason. A schema whose only rule is a
+    // withheld column still must not hand that column over raw.
+    const g = await makeDb(`model P { id Int @id  secret String @guarded }`, 'raw-sql-guarded')
+    let err: any = null
+    try { await g.sql`SELECT secret FROM p` } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    g.$close()
+  })
+
+  test('a JS migration still runs — a migration is a system operation', async () => {
+    // The regression this refusal introduced, caught by running one. JS
+    // migrations were handed the unscoped client, whose `sql` is now guarded,
+    // so the first migration on a gated schema failed with advice ("use
+    // asSystem()") that a migration cannot act on. A migration is schema
+    // surgery by an operator, outside any request and usually before the rows
+    // it touches have an owner, so it runs as the system by construction.
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import('fs')
+    const { tmpdir } = await import('os')
+    const { resolve: rp } = await import('path')
+
+    const d = mkdtempSync(rp(tmpdir(), 'lite-mig-gate-'))
+    const sp = rp(d, 's.lite')
+    writeFileSync(sp, `model Inv { id Int @id  ownerId Int  ssn String @guarded  @@gate("4") }`)
+    const c = await createClient({ schema: sp, db: rp(d, 'a.db') })
+    const { autoMigrate: am } = await import('../src/core/migrations.js')
+    am(c)
+
+    const mdir = rp(d, 'migrations')
+    mkdirSync(mdir, { recursive: true })
+    writeFileSync(rp(mdir, '20260806000000_view.js'),
+      'export async function up(tx) {\n' +
+      '  await tx.sql`CREATE VIEW IF NOT EXISTS v_inv AS SELECT id FROM inv`\n' +
+      '}\n')
+
+    const res: any = await apply(c.$rawDbs.main, mdir, c)
+    expect(res.applied[0].ok).toBe(true)
+    c.$close()
+  })
+
+  test('@@gate alone is enough to trigger it', async () => {
+    const g = await makeDb(`model Q { id Int @id  x String  @@gate("4") }`, 'raw-sql-gate')
+    let err: any = null
+    try { await g.sql`SELECT x FROM q` } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    g.$close()
+  })
+})
+
+describe('@encrypted on a Json field', () => {
+  // FJS-006. `@encrypted` on a Json field DESTROYED the value: encryptField
+  // does String(plaintext), an object stringifies to '[object Object]', and
+  // what got written was a faithful ciphertext of that literal string. Nothing
+  // threw, the row looked encrypted, and the original was unrecoverable — the
+  // worst shape a data bug can have. `CLAUDE.md` carried a hazard note telling
+  // people to use `String @encrypted` and serialize by hand instead.
+  //
+  // A Json field is now serialized before it is encrypted and parsed after it
+  // is decrypted, mirroring the pipeline either side: the write path encrypts
+  // then serializes, the read path parses then decrypts.
+  const ENC_KEY = Buffer.alloc(32).fill(0xcd).toString('hex')
+
+  let db: any
+  beforeAll(async () => {
+    db = await makeDb(`
+      model Vault {
+        id   Int   @id
+        blob Json? @encrypted
+        open Json?
+      }
+    `, 'encrypted-json', { encryptionKey: ENC_KEY })
+  })
+  afterAll(() => db.$close())
+
+  test('an object round-trips instead of becoming "[object Object]"', async () => {
+    await db.asSystem().vault.create({ data: { id: 1, blob: { secret: 'hunter2', n: 42 }, open: {} } })
+    const row = await db.asSystem().vault.findUnique({ where: { id: 1 } })
+    expect(row.blob).toEqual({ secret: 'hunter2', n: 42 })
+  })
+
+  test('nested structure survives', async () => {
+    const val = { a: { b: [1, 2, { c: 'deep' }] } }
+    await db.asSystem().vault.create({ data: { id: 2, blob: val, open: {} } })
+    expect((await db.asSystem().vault.findUnique({ where: { id: 2 } })).blob).toEqual(val)
+  })
+
+  test('an array survives', async () => {
+    const val = [1, 'two', { three: 3 }]
+    await db.asSystem().vault.create({ data: { id: 3, blob: val, open: {} } })
+    expect((await db.asSystem().vault.findUnique({ where: { id: 3 } })).blob).toEqual(val)
+  })
+
+  test('a JSON scalar survives — string, number, boolean', async () => {
+    // These are the cases String(plaintext) happened to get RIGHT, so a fix
+    // that only handled objects would pass the tests above and quietly break
+    // these by double-encoding them.
+    await db.asSystem().vault.create({ data: { id: 4, blob: 'plain-string', open: {} } })
+    await db.asSystem().vault.create({ data: { id: 5, blob: 42, open: {} } })
+    await db.asSystem().vault.create({ data: { id: 6, blob: true, open: {} } })
+    const sys = db.asSystem()
+    expect((await sys.vault.findUnique({ where: { id: 4 } })).blob).toBe('plain-string')
+    expect((await sys.vault.findUnique({ where: { id: 5 } })).blob).toBe(42)
+    expect((await sys.vault.findUnique({ where: { id: 6 } })).blob).toBe(true)
+  })
+
+  test('null stays null', async () => {
+    // The field is Json? — a non-optional Json @encrypted field correctly
+    // refuses null at the required check, which is the validator doing its job
+    // and not this feature's business.
+    await db.asSystem().vault.create({ data: { id: 7, blob: null, open: {} } })
+    expect((await db.asSystem().vault.findUnique({ where: { id: 7 } })).blob).toBeNull()
+  })
+
+  test('the stored column is ciphertext, not the value', async () => {
+    // The point of the feature. A round-trip test alone would also pass if the
+    // field were simply not encrypted at all.
+    const raw = db.$rawDbs.main.query('SELECT blob FROM vault WHERE id = 1').get() as any
+    expect(String(raw.blob).replace(/^"/, '').startsWith('v1.')).toBe(true)
+    expect(String(raw.blob)).not.toContain('hunter2')
+    expect(String(raw.blob)).not.toContain('[object Object]')
+  })
+
+  test('an unencrypted Json field on the same model is untouched', async () => {
+    await db.asSystem().vault.create({ data: { id: 8, blob: { a: 1 }, open: { b: 2 } } })
+    const row = await db.asSystem().vault.findUnique({ where: { id: 8 } })
+    expect(row.open).toEqual({ b: 2 })
+    const raw = db.$rawDbs.main.query('SELECT open FROM vault WHERE id = 8').get() as any
+    expect(String(raw.open)).toContain('"b"')
+  })
+
+  test('@encrypted still implies @guarded(all) for a Json field', async () => {
+    // The fix must not have made the field readable to a non-system caller.
+    const row = await db.vault.findUnique({ where: { id: 1 } })
+    expect('blob' in row).toBe(false)
+  })
+
+  test('a row written before the fix reads as the broken string, not null', async () => {
+    // Legacy data is already lost — that cannot be undone. But blanking it to
+    // null reads as "this was empty", while the literal '[object Object]'
+    // reads as "something went wrong here", and only the second sends anyone
+    // looking. So a parse failure leaves the decrypted value alone.
+    const legacy = db.$rawDbs.main
+    const enc = await (async () => {
+      // Encrypt the literal string the old code produced, the same way it did.
+      await db.asSystem().vault.create({ data: { id: 9, blob: '[object Object]', open: {} } })
+      return (legacy.query('SELECT blob FROM vault WHERE id = 9').get() as any).blob
+    })()
+    legacy.run('UPDATE vault SET blob = ? WHERE id = 9', [enc])
+    const row = await db.asSystem().vault.findUnique({ where: { id: 9 } })
+    expect(row.blob).toBe('[object Object]')
+  })
+})
+
 
 // ─── 19b. @secret ─────────────────────────────────────────────────────────────
 
@@ -4709,6 +4959,93 @@ describe('onLog callback', () => {
     db.$close()
   })
 
+  // A uuid actor. @frontierjs/auth issues `id String @id @default(uuid())`, so
+  // this is what an ordinary FrontierJS app writes — and the audit index's
+  // `actorId` column was declared Int, making it
+  //   SQLiteError: cannot store TEXT value in INTEGER column auditLogs_idx.actorId
+  // on the first audited write with a known actor. It took the request with it.
+  //
+  // Invisible until 2026-08-06 because Junction handed the Data boundary a
+  // principal with no `id` at all, so actorId was always null — and NULL fits
+  // an INTEGER column. Two defects, one masking the other.
+  test('a String actorId is stored, not a datatype error', async () => {
+    const uuid = '624d6956-4d3f-47bc-b423-87afaebefc64'
+    const db = await makeLogDb(() => ({ actorId: uuid, actorType: 'user' }))
+    await db.post.create({ data: { title: 'T', body: 'B' } })
+    await flush()
+    const auditRows = await (db as any).auditLogs.findMany({})
+    expect(auditRows.some((r: any) => r.actorId === uuid)).toBe(true)
+    db.$close()
+  })
+
+  test('Int and String actors coexist in one log', async () => {
+    // ANY is what makes this legal, and it is the honest column type: the
+    // audit trail records whoever the host app keys its users by.
+    let actor: unknown = 42
+    const db = await makeLogDb(() => ({ actorId: actor }))
+    await db.post.create({ data: { title: 'A', body: 'B' } })
+    await flush()
+    actor = 'usr_abc'
+    await db.post.create({ data: { title: 'C', body: 'D' } })
+    await flush()
+
+    const rows = await (db as any).auditLogs.findMany({})
+    expect(rows.some((r: any) => r.actorId === 42)).toBe(true)
+    expect(rows.some((r: any) => r.actorId === 'usr_abc')).toBe(true)
+    db.$close()
+  })
+
+  // The .jsonl is the source of truth and the index db is a cache of it, so a
+  // column-type change must rebuild rather than fail — `CREATE TABLE IF NOT
+  // EXISTS` does nothing to a table that already exists, and an index left in
+  // the old shape makes every write throw against a column the schema no longer
+  // describes. Rebuilding it while LOSING the old rows would be worse than the
+  // error: an audit trail that silently looks shorter.
+  test('an index built with the old column type is rebuilt, history and all', async () => {
+    const { makeJsonlTable } = await import('../src/drivers/jsonl.js')
+
+    const dir  = join(tmpdir(), `ls-idx-drift-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, 'auditLogs.jsonl')
+
+    const model: any = {
+      name: 'auditLogs',
+      fields: [
+        { name: 'id',      type: { kind: 'scalar', name: 'Int',    optional: false }, attributes: [{ kind: 'id' }] },
+        { name: 'actorId', type: { kind: 'scalar', name: 'Any',    optional: true  }, attributes: [] },
+        { name: 'model',   type: { kind: 'scalar', name: 'String', optional: true  }, attributes: [] },
+      ],
+      attributes: [{ kind: 'index', fields: ['actorId'] }],
+    }
+
+    // Two entries already logged, and an index in the pre-fix shape.
+    writeFileSync(file,
+      JSON.stringify({ id: 1, actorId: 7, model: 'post' }) + '\n' +
+      JSON.stringify({ id: 2, actorId: 9, model: 'post' }) + '\n')
+
+    const old = new Database(file + '.index.db')
+    old.run(`CREATE TABLE "auditLogs_idx" ("id" INTEGER, "actorId" INTEGER, "_offset" INTEGER NOT NULL, PRIMARY KEY ("id")) STRICT;`)
+    old.run(`INSERT INTO "auditLogs_idx" VALUES (1, 7, 0), (2, 9, 40)`)
+    old.close()
+
+    const table: any = makeJsonlTable(file, model, { models: [model], enums: [], types: [] })
+
+    // The write that used to throw SQLITE_CONSTRAINT_DATATYPE.
+    await table.create({ data: { id: 3, actorId: 'usr_abc', model: 'post' } })
+
+    // History survived the rebuild AND is still reachable through the index.
+    expect((await table.findMany({ where: { actorId: 7 } })).length).toBe(1)
+    expect((await table.findMany({ where: { actorId: 'usr_abc' } })).length).toBe(1)
+    expect((await table.findMany({})).length).toBe(3)
+
+    const check = new Database(file + '.index.db')
+    expect((check.query(`SELECT type FROM pragma_table_info('auditLogs_idx') WHERE name='actorId'`).get() as any).type)
+      .toBe('ANY')
+    check.close()
+
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('onLog return value merges meta into entry', async () => {
     const db = await makeLogDb((_entry) => {
       return { meta: { source: 'api', version: 2 } }
@@ -4962,6 +5299,172 @@ describe('audit log redaction', () => {
       onLog,
     })
   }
+})
+
+// ─── 19b2. Bulk writes reach the audit trail ─────────────────────────────────
+//
+// updateMany / deleteMany / removeMany / restore / upsertMany used to write NO
+// audit entry at all on an @@log model — not an entry without snapshots, no
+// entry. A bulk delete of audited rows left a trail saying nothing happened,
+// and createMany's entry named no rows because an autoincrement id does not
+// exist until SQLite assigns it. A trail that omits the most destructive
+// operation in the API is worse than none, because it is trusted.
+//
+// The contract these pin: a bulk write records WHICH rows and WHAT operation.
+// Content snapshots (before/after) stay single-row-only, as documented.
+
+describe('audit trail covers bulk writes', () => {
+
+  const BULK_SCHEMA = `
+    database main  { path env("MAIN_DB", "./main.db") }
+    database audit { path "./audit/" driver logger }
+
+    model Widget {
+      id        Int    @id @default(autoincrement())
+      code      String @unique
+      name      String
+      state     String @default("draft")
+      deletedAt DateTime?
+
+      @@db(main)
+      @@softDelete
+      @@log(audit)
+    }
+  `
+
+  const PLAIN_SCHEMA = `
+    database main  { path env("MAIN_DB", "./main.db") }
+    database audit { path "./audit/" driver logger }
+
+    model Note {
+      id   Int    @id @default(autoincrement())
+      text String
+
+      @@db(main)
+    }
+  `
+
+  async function makeBulkDb(schemaText = BULK_SCHEMA) {
+    const r = parse(schemaText)
+    if (!r.valid) throw new Error(r.errors.join('\n'))
+    const dir = join(tmpdir(), `ls-bulklog-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    mkdirSync(dir, { recursive: true })
+    const mainPath  = join(dir, 'main.db')
+    const auditPath = join(dir, 'audit')
+    mkdirSync(auditPath, { recursive: true })
+    const raw = new Database(mainPath)
+    for (const s of splitStatements(generateDDL(r.schema)))
+      if (!s.startsWith('PRAGMA')) raw.run(s)
+    raw.close()
+    return createClient({ parsed: r, databases: { main: { path: mainPath }, audit: { path: auditPath } } })
+  }
+
+  function flush() { return new Promise<void>(res => setTimeout(res, 20)) }
+
+  // Model-level entries only — a @log field would double every row below.
+  async function entries(db: any) {
+    await flush()
+    const rows = await db.auditLogs.findMany({})
+    return rows.map((r: any) => ({
+      operation: r.operation,
+      records:   typeof r.records === 'string' ? JSON.parse(r.records) : r.records,
+    }))
+  }
+
+  async function seed(db: any) {
+    await db.widget.createMany({ data: [
+      { code: 'a', name: 'A' }, { code: 'b', name: 'B' }, { code: 'c', name: 'C' },
+    ] })
+  }
+
+  test('createMany names rows by their assigned ids', async () => {
+    const db = await makeBulkDb()
+    await seed(db)
+    const [e] = await entries(db)
+    expect(e.operation).toBe('create')
+    expect(e.records).toEqual([1, 2, 3])
+    db.$close()
+  })
+
+  test('updateMany writes one entry naming every changed row', async () => {
+    const db = await makeBulkDb()
+    await seed(db)
+    const res = await db.widget.updateMany({ where: { state: 'draft' }, data: { state: 'live' } })
+    expect(res.count).toBe(3)
+    const log = (await entries(db)).find((e: any) => e.operation === 'update')
+    expect(log).toBeDefined()
+    expect(log!.records).toEqual([1, 2, 3])
+    db.$close()
+  })
+
+  test('updateMany count is unaffected by the RETURNING path', async () => {
+    const db = await makeBulkDb()
+    await seed(db)
+    expect((await db.widget.updateMany({ where: { code: 'a' }, data: { name: 'A2' } })).count).toBe(1)
+    expect((await db.widget.updateMany({ where: { code: 'zz' }, data: { name: 'X' } })).count).toBe(0)
+    db.$close()
+  })
+
+  test('deleteMany writes a delete entry naming the rows', async () => {
+    const db = await makeBulkDb()
+    await seed(db)
+    const res = await db.widget.deleteMany({ where: { state: 'draft' } })
+    expect(res.count).toBe(3)
+    const log = (await entries(db)).find((e: any) => e.operation === 'delete')
+    expect(log).toBeDefined()
+    expect(log!.records).toEqual([1, 2, 3])
+    db.$close()
+  })
+
+  test('removeMany (soft delete) writes a delete entry', async () => {
+    const db = await makeBulkDb()
+    await seed(db)
+    const res = await db.widget.removeMany({ where: { code: 'b' } })
+    expect(res.count).toBe(1)
+    const log = (await entries(db)).find((e: any) => e.operation === 'delete')
+    expect(log!.records).toEqual([2])
+    // The row is soft-deleted, not gone
+    expect(await db.widget.count({})).toBe(2)
+    db.$close()
+  })
+
+  test('restore writes an update entry — un-deleting is a write', async () => {
+    const db = await makeBulkDb()
+    await seed(db)
+    await db.widget.removeMany({ where: { code: 'c' } })
+    const res = await db.widget.restore({ where: { code: 'c' } })
+    expect(res.count).toBe(1)
+    const log = (await entries(db)).filter((e: any) => e.operation === 'update')
+    expect(log.length).toBe(1)
+    expect(log[0].records).toEqual([3])
+    db.$close()
+  })
+
+  test('upsertMany splits created rows from updated ones', async () => {
+    const db = await makeBulkDb()
+    await seed(db)
+    const res = await db.widget.upsertMany({
+      data:           [{ code: 'b', name: 'B2' }, { code: 'd', name: 'D' }],
+      conflictTarget: ['code'],
+      update:         ['name'],
+    })
+    expect(res.count).toBe(2)
+    const all = await entries(db)
+    expect(all.filter((e: any) => e.operation === 'create').map((e: any) => e.records))
+      .toEqual([[1, 2, 3], [4]])          // the seed, then the one new row
+    expect(all.filter((e: any) => e.operation === 'update')[0].records).toEqual([2])
+    expect((await db.widget.findUnique({ where: { code: 'b' } }))!.name).toBe('B2')
+    db.$close()
+  })
+
+  test('a model with no @@log logs nothing and still returns the right counts', async () => {
+    const db = await makeBulkDb(PLAIN_SCHEMA)
+    await db.note.createMany({ data: [{ text: 'x' }, { text: 'y' }] })
+    expect((await db.note.updateMany({ where: { text: 'x' }, data: { text: 'z' } })).count).toBe(1)
+    expect((await db.note.deleteMany({ where: {} })).count).toBe(2)
+    expect(await (db as any).auditLogs.findMany({})).toEqual([])
+    db.$close()
+  })
 })
 
 // ─── 19c. @@allow / @@deny policies ──────────────────────────────────────────
@@ -16742,5 +17245,479 @@ ${plan.model}`
     expect(await db.projectTask.findMany({})).toEqual([{ projectId: p.id, taskId: t.id, isImportant: true }])
     db.$close()
     rmSync(path, { force: true }); rmSync(path + '-wal', { force: true }); rmSync(path + '-shm', { force: true })
+  })
+})
+
+// ─── @createdBy / @@createdBy / @@updatedBy ───────────────────────────────────
+
+describe('@createdBy — field attribute', () => {
+  const SCHEMA = `
+    model Post {
+      id          Int  @id
+      title       String
+      createdById Int? @createdBy
+    }
+  `
+
+  test('parses, defaulting to authField: id', () => {
+    const r = parse(SCHEMA)
+    expect(r.valid).toBe(true)
+    const f = r.schema.models[0].fields.find((f: any) => f.name === 'createdById')
+    expect(f?.attributes.find((a: any) => a.kind === 'createdBy')?.authField).toBe('id')
+  })
+
+  test('@createdBy(auth().field) reads a custom auth field', async () => {
+    const db = await makeDb(`
+      model Post { id Int @id  title String  createdByEmail String? @createdBy(auth().email) }
+    `, 'cby-field')
+    await db.$setAuth({ id: 1, email: 'ann@x.com' }).post.create({ data: { id: 1, title: 'A' } })
+    expect((await db.post.findFirst({ where: { id: 1 } }))?.createdByEmail).toBe('ann@x.com')
+    db.$close()
+  })
+
+  test('stamps auth.id on create', async () => {
+    const db = await makeDb(SCHEMA, 'cby-stamp')
+    await db.$setAuth({ id: 42 }).post.create({ data: { id: 1, title: 'A' } })
+    expect((await db.post.findFirst({ where: { id: 1 } }))?.createdById).toBe(42)
+    db.$close()
+  })
+
+  // The whole reason @createdBy is not just @default(auth().id): a default
+  // loses to a caller-supplied value, so authorship would be forgeable.
+  test('the principal beats a caller-supplied value', async () => {
+    const db = await makeDb(SCHEMA, 'cby-forge')
+    await db.$setAuth({ id: 1 }).post.create({ data: { id: 1, title: 'A', createdById: 999 } })
+    expect((await db.post.findFirst({ where: { id: 1 } }))?.createdById).toBe(1)
+    db.$close()
+  })
+
+  test('createMany stamps every row, overriding supplied values', async () => {
+    const db = await makeDb(SCHEMA, 'cby-many')
+    await db.$setAuth({ id: 7 }).post.createMany({
+      data: [{ id: 1, title: 'A', createdById: 999 }, { id: 2, title: 'B' }],
+    })
+    expect((await db.post.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.createdById)).toEqual([7, 7])
+    db.$close()
+  })
+
+  test('upsert stamps the insert branch and leaves the author alone on conflict', async () => {
+    const db = await makeDb(`
+      model Post { id Int @id  title String @unique  createdById Int? @createdBy }
+    `, 'cby-upsert')
+    await db.$setAuth({ id: 1 }).post.upsert({ where: { title: 'A' }, create: { id: 1, title: 'A' }, update: { title: 'A' } })
+    await db.$setAuth({ id: 2 }).post.upsert({ where: { title: 'A' }, create: { id: 1, title: 'A' }, update: { title: 'A' } })
+    expect((await db.post.findFirst({ where: { title: 'A' } }))?.createdById).toBe(1)
+    db.$close()
+  })
+
+  // No principal, no stamp — this is what lets seeders, imports and backfills
+  // carry authorship in explicitly.
+  test('an unauthenticated write honours an explicit value', async () => {
+    const db = await makeDb(SCHEMA, 'cby-anon')
+    await db.post.create({ data: { id: 1, title: 'A', createdById: 5 } })
+    await db.asSystem().post.create({ data: { id: 2, title: 'B', createdById: 6 } })
+    expect((await db.post.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.createdById)).toEqual([5, 6])
+    db.$close()
+  })
+
+  test('never re-stamps on update', async () => {
+    const db = await makeDb(SCHEMA, 'cby-update')
+    await db.$setAuth({ id: 1 }).post.create({ data: { id: 1, title: 'A' } })
+    await db.$setAuth({ id: 2 }).post.update({ where: { id: 1 }, data: { title: 'B' } })
+    expect((await db.post.findFirst({ where: { id: 1 } }))?.createdById).toBe(1)
+    db.$close()
+  })
+})
+
+describe('@@createdBy / @@updatedBy — model sugar', () => {
+  const SCHEMA = `
+    model User { id Int @id  name String  @@auth }
+    model Doc  { id Int @id  title String  @@createdBy  @@updatedBy }
+  `
+
+  test('injects the FK + relation pair for each', () => {
+    const r = parse(SCHEMA)
+    expect(r.valid).toBe(true)
+    const doc = r.schema.models[1]
+    expect(doc.fields.map((f: any) => f.name)).toEqual(
+      ['id', 'title', 'createdById', 'createdBy', 'updatedById', 'updatedBy'])
+    const fk = doc.fields.find((f: any) => f.name === 'createdById')
+    expect(fk.type).toMatchObject({ name: 'Int', optional: true })
+    expect(fk.attributes.some((a: any) => a.kind === 'createdBy')).toBe(true)
+    const rel = doc.fields.find((f: any) => f.name === 'createdBy')
+    expect(rel.type.kind).toBe('relation')
+    expect(rel.attributes.find((a: any) => a.kind === 'relation')).toMatchObject({
+      name: 'Doc_createdBy', fields: ['createdById'], references: ['id'],
+    })
+  })
+
+  test('the FK type follows the @@auth model @id', () => {
+    const { schema } = parse(`
+      model Account { id String @id @default(uuid())  name String  @@auth }
+      model Doc { id Int @id  title String  @@createdBy }
+    `)
+    expect(schema.models[1].fields.find((f: any) => f.name === 'createdById').type.name).toBe('String')
+  })
+
+  test('emits both foreign keys in the DDL', () => {
+    const ddl = generateDDL(parse(SCHEMA).schema)
+    expect(ddl).toContain('FOREIGN KEY ("createdById") REFERENCES "user" ("id")')
+    expect(ddl).toContain('FOREIGN KEY ("updatedById") REFERENCES "user" ("id")')
+  })
+
+  test('an argument renames the pair', () => {
+    const { schema } = parse(`
+      model User { id Int @id  @@auth }
+      model Doc { id Int @id  @@createdBy(owner)  @@updatedBy(as: "editor") }
+    `)
+    expect(schema.models[1].fields.map((f: any) => f.name))
+      .toEqual(['id', 'ownerId', 'owner', 'editorId', 'editor'])
+  })
+
+  test('a name that is not an identifier is a parse error', () => {
+    const r = parse(`model User { id Int @id  @@auth }
+                     model Doc { id Int @id  @@createdBy("9bad") }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors[0]).toContain('must be a valid identifier')
+  })
+
+  test('a field the host already declares wins', () => {
+    const { schema } = parse(`
+      model User { id Int @id  @@auth }
+      model Doc { id Int @id  createdById String? @createdBy @omit  @@createdBy }
+    `)
+    const fk = schema.models[1].fields.find((f: any) => f.name === 'createdById')
+    expect(fk.type.name).toBe('String')
+    expect(fk.attributes.some((a: any) => a.kind === 'omit')).toBe(true)
+    // …and the relation is still injected around it
+    expect(schema.models[1].fields.some((f: any) => f.name === 'createdBy')).toBe(true)
+  })
+
+  test('errors without a model marked @@auth', () => {
+    const r = parse(`model Doc { id Int @id  title String  @@createdBy }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.some(e => e.includes("@@createdBy requires a model marked @@auth"))).toBe(true)
+  })
+
+  test('the @@auth model can author itself', () => {
+    const r = parse(`model User { id Int @id  name String  @@auth  @@createdBy }`)
+    expect(r.valid).toBe(true)
+    expect(r.schema.models[0].fields.find((f: any) => f.name === 'createdBy').type.name).toBe('User')
+  })
+
+  test('stamps and resolves both relations end to end', async () => {
+    const db = await makeDb(SCHEMA, 'authorship-e2e')
+    const ann = await db.user.create({ data: { id: 1, name: 'Ann' } })
+    const bob = await db.user.create({ data: { id: 2, name: 'Bob' } })
+
+    await db.$setAuth(ann).doc.create({ data: { id: 1, title: 'A' } })
+    let row = await db.doc.findUnique({ where: { id: 1 } })
+    expect(row).toMatchObject({ createdById: 1, updatedById: null })
+
+    await db.$setAuth(bob).doc.update({ where: { id: 1 }, data: { title: 'B' } })
+    row = await db.doc.findUnique({ where: { id: 1 }, include: { createdBy: true, updatedBy: true } })
+    expect(row.createdBy.name).toBe('Ann')
+    expect(row.updatedBy.name).toBe('Bob')
+    db.$close()
+  })
+})
+
+// ─── FJS-092 — the bulk write paths run the ctx.auth stamps ───────────────────
+
+describe('bulk writes — ctx.auth stamps (FJS-092)', () => {
+  const SCHEMA = `
+    model User { id Int @id  name String  @@auth }
+    model Doc {
+      id      Int    @id
+      title   String @unique
+      ownerId Int?   @default(auth().id)
+      @@createdBy
+      @@updatedBy
+    }
+  `
+
+  // @@createdBy is a real FK — the principals have to exist as rows.
+  async function makeDocs(name: string) {
+    const db = await makeDb(SCHEMA, name)
+    await db.user.createMany({ data: [1, 2, 5, 6, 7, 9].map(id => ({ id, name: `u${id}` })) })
+    return db
+  }
+
+  // The gap that wrote a WRONG name rather than none: @updatedAt is a SQL
+  // trigger, so the timestamp kept moving while the identity beside it did not.
+  test('updateMany stamps @updatedBy', async () => {
+    const db = await makeDocs('bulk-um')
+    await db.$setAuth({ id: 1 }).doc.create({ data: { id: 1, title: 'A' } })
+    await db.$setAuth({ id: 2 }).doc.update({ where: { id: 1 }, data: { title: 'A' } })
+    await db.$setAuth({ id: 1 }).doc.updateMany({ where: { id: 1 }, data: { title: 'A' } })
+    expect((await db.doc.findUnique({ where: { id: 1 } }))?.updatedById).toBe(1)
+    db.$close()
+  })
+
+  test('updateMany skips the stamp with no principal', async () => {
+    const db = await makeDocs('bulk-um-anon')
+    await db.$setAuth({ id: 1 }).doc.create({ data: { id: 1, title: 'A' } })
+    await db.$setAuth({ id: 2 }).doc.update({ where: { id: 1 }, data: { title: 'A' } })
+    await db.doc.updateMany({ where: { id: 1 }, data: { title: 'A' } })
+    expect((await db.doc.findUnique({ where: { id: 1 } }))?.updatedById).toBe(2)
+    db.$close()
+  })
+
+  test('upsertMany stamps a row it inserts', async () => {
+    const db = await makeDocs('bulk-usm-insert')
+    await db.$setAuth({ id: 7 }).doc.upsertMany({ data: [{ id: 1, title: 'A' }] })
+    expect(await db.doc.findUnique({ where: { id: 1 } }))
+      .toMatchObject({ ownerId: 7, createdById: 7, updatedById: 7 })
+    db.$close()
+  })
+
+  // A conflict is an update. It moves @updatedBy and leaves the create-time
+  // columns exactly where they were.
+  test('upsertMany moves @updatedBy on conflict and never rewrites the author', async () => {
+    const db = await makeDocs('bulk-usm-conflict')
+    await db.$setAuth({ id: 1 }).doc.create({ data: { id: 1, title: 'A' } })
+    await db.$setAuth({ id: 2 }).doc.upsertMany({ data: [{ id: 1, title: 'A2' }, { id: 2, title: 'B' }] })
+    const [one, two] = await db.doc.findMany({ orderBy: { id: 'asc' } })
+    expect(one).toMatchObject({ title: 'A2', ownerId: 1, createdById: 1, updatedById: 2 })
+    expect(two).toMatchObject({ title: 'B',  ownerId: 2, createdById: 2, updatedById: 2 })
+    db.$close()
+  })
+
+  test('an explicit update: list naming the author column still moves it', async () => {
+    const db = await makeDocs('bulk-usm-explicit')
+    await db.$setAuth({ id: 1 }).doc.create({ data: { id: 1, title: 'A' } })
+    await db.$setAuth({ id: 2 }).doc.upsertMany({
+      data: [{ id: 1, title: 'A2' }], update: ['title', 'createdById'],
+    })
+    expect((await db.doc.findUnique({ where: { id: 1 } }))?.createdById).toBe(2)
+    db.$close()
+  })
+
+  // Excluding a column the caller named would have changed behaviour that
+  // predates the stamps, so the exclusion covers only what we filled in.
+  test('a caller-supplied auth-default column still rides the conflict update', async () => {
+    const db = await makeDocs('bulk-usm-supplied')
+    await db.$setAuth({ id: 1 }).doc.create({ data: { id: 1, title: 'A' } })
+    await db.$setAuth({ id: 2 }).doc.upsertMany({ data: [{ id: 1, title: 'A2', ownerId: 9 }] })
+    expect((await db.doc.findUnique({ where: { id: 1 } }))?.ownerId).toBe(9)
+    db.$close()
+  })
+
+  test('upsertMany honours explicit values with no principal', async () => {
+    const db = await makeDocs('bulk-usm-anon')
+    await db.doc.upsertMany({ data: [{ id: 1, title: 'A', createdById: 5, ownerId: 6 }] })
+    expect(await db.doc.findUnique({ where: { id: 1 } }))
+      .toMatchObject({ createdById: 5, ownerId: 6, updatedById: null })
+    db.$close()
+  })
+})
+
+// ─── @version — optimistic concurrency ────────────────────────────────────────
+
+describe('@version — parser + DDL', () => {
+  test('parses onto an Int field', () => {
+    const r = parse(`model Order { id Int @id  version Int @version }`)
+    expect(r.valid).toBe(true)
+    const f = r.schema.models[0].fields.find((f: any) => f.name === 'version')
+    expect(f.attributes.some((a: any) => a.kind === 'version')).toBe(true)
+  })
+
+  test('implies DEFAULT 1 so a raw INSERT works', () => {
+    const ddl = generateDDL(parse(`model Order { id Int @id  version Int @version }`).schema)
+    expect(ddl).toContain(`"version" INTEGER NOT NULL DEFAULT 1`)
+  })
+
+  test('refuses a non-Int field', () => {
+    const r = parse(`model Order { id Int @id  version String @version }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.some(e => e.includes('@version requires an Int field'))).toBe(true)
+  })
+
+  // A nullable version is a row that cannot be compared — a hole in the guarantee.
+  test('refuses an optional field', () => {
+    const r = parse(`model Order { id Int @id  version Int? @version }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.some(e => e.includes('cannot be optional'))).toBe(true)
+  })
+
+  test('refuses two on one model', () => {
+    const r = parse(`model Order { id Int @id  a Int @version  b Int @version }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.some(e => e.includes('at most one version field'))).toBe(true)
+  })
+
+  test('refuses the @id', () => {
+    const r = parse(`model Order { id Int @id @version }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.some(e => e.includes('cannot be the @id'))).toBe(true)
+  })
+})
+
+describe('@version — runtime', () => {
+  const SCHEMA = `
+    model Order {
+      id      Int    @id
+      title   String @unique
+      status  String @default("draft")
+      version Int    @version
+    }
+  `
+
+  test('a new row is version 1, whatever the payload says', async () => {
+    const db = await makeDb(SCHEMA, 'ver-create')
+    expect((await db.order.create({ data: { id: 1, title: 'A', version: 500 } })).version).toBe(1)
+    db.$close()
+  })
+
+  test('every update bumps it', async () => {
+    const db = await makeDb(SCHEMA, 'ver-bump')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    expect((await db.order.update({ where: { id: 1 }, data: { status: 'a', version: 1 } })).version).toBe(2)
+    expect((await db.order.update({ where: { id: 1 }, data: { status: 'b', version: 2 } })).version).toBe(3)
+    db.$close()
+  })
+
+  // The whole point: the lost update the idea file names.
+  test('a stale write is refused instead of erasing the winner', async () => {
+    const db = await makeDb(SCHEMA, 'ver-lost-update')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    const alice = await db.order.findUnique({ where: { id: 1 } })
+    const bob   = await db.order.findUnique({ where: { id: 1 } })
+
+    await db.order.update({ where: { id: 1 }, data: { status: 'alice', version: alice.version } })
+
+    let err: any = null
+    try { await db.order.update({ where: { id: 1 }, data: { status: 'bob', version: bob.version } }) }
+    catch (e) { err = e }
+
+    expect(err?.name).toBe('VersionConflictError')
+    expect(err.status).toBe(409)
+    expect(err.retryable).toBe(true)
+    expect(err.expected).toBe(1)
+    expect(err.actual).toBe(2)
+    // Alice's write survived
+    expect((await db.order.findUnique({ where: { id: 1 } }))?.status).toBe('alice')
+    db.$close()
+  })
+
+  test('re-read and retry succeeds', async () => {
+    const db = await makeDb(SCHEMA, 'ver-retry')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    await db.order.update({ where: { id: 1 }, data: { status: 'alice', version: 1 } })
+    const fresh = await db.order.findUnique({ where: { id: 1 } })
+    const out = await db.order.update({ where: { id: 1 }, data: { status: 'bob', version: fresh.version } })
+    expect(out).toMatchObject({ status: 'bob', version: 3 })
+    db.$close()
+  })
+
+  test('an update carrying no version is refused', async () => {
+    const db = await makeDb(SCHEMA, 'ver-required')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    let err: any = null
+    try { await db.order.update({ where: { id: 1 }, data: { status: 'x' } }) } catch (e) { err = e }
+    expect(err?.name).toBe('VersionRequiredError')
+    expect(err.status).toBe(400)
+    expect(err.retryable).toBe(false)
+    db.$close()
+  })
+
+  test('asSystem() skips the check and still bumps', async () => {
+    const db = await makeDb(SCHEMA, 'ver-system')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    const out = await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'sys' } })
+    expect(out).toMatchObject({ status: 'sys', version: 2 })
+    db.$close()
+  })
+
+  // Not-found must stay null — the documented contract — and not become a 409.
+  test('a missing row is still null, not a conflict', async () => {
+    const db = await makeDb(SCHEMA, 'ver-missing')
+    expect(await db.order.update({ where: { id: 99 }, data: { status: 'x', version: 1 } })).toBeNull()
+    db.$close()
+  })
+
+  test('the expected version is never written literally', async () => {
+    const db = await makeDb(SCHEMA, 'ver-not-literal')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    // version 1 is correct, so this succeeds — and must land on 2, not on 1
+    expect((await db.order.update({ where: { id: 1 }, data: { version: 1 } })).version).toBe(2)
+    db.$close()
+  })
+
+  test('select: false takes the same check', async () => {
+    const db = await makeDb(SCHEMA, 'ver-select-false')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    await db.order.update({ where: { id: 1 }, data: { status: 'a', version: 1 } })
+    let err: any = null
+    try { await db.order.update({ where: { id: 1 }, data: { status: 'b', version: 1 }, select: false }) }
+    catch (e) { err = e }
+    expect(err?.name).toBe('VersionConflictError')
+    db.$close()
+  })
+
+  // A bulk where clause matches many rows and therefore many versions — there is
+  // no single value to compare. Bumping is the half that still matters.
+  test('updateMany bumps without requiring', async () => {
+    const db = await makeDb(SCHEMA, 'ver-updatemany')
+    await db.order.createMany({ data: [{ id: 1, title: 'A' }, { id: 2, title: 'B' }] })
+    await db.order.updateMany({ where: {}, data: { status: 'bulk' } })
+    expect((await db.order.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.version)).toEqual([2, 2])
+    db.$close()
+  })
+
+  test('a bulk write makes an open editor stale', async () => {
+    const db = await makeDb(SCHEMA, 'ver-bulk-stale')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    const editor = await db.order.findUnique({ where: { id: 1 } })
+    await db.order.updateMany({ where: { id: 1 }, data: { status: 'bulk' } })
+    let err: any = null
+    try { await db.order.update({ where: { id: 1 }, data: { status: 'editor', version: editor.version } }) }
+    catch (e) { err = e }
+    expect(err?.name).toBe('VersionConflictError')
+    db.$close()
+  })
+
+  test('upsert bumps on conflict and starts at 1 on insert', async () => {
+    const db = await makeDb(SCHEMA, 'ver-upsert')
+    const made = await db.order.upsert({ where: { title: 'A' }, create: { id: 1, title: 'A' }, update: { status: 'u' } })
+    expect(made.version).toBe(1)
+    const again = await db.order.upsert({ where: { title: 'A' }, create: { id: 1, title: 'A' }, update: { status: 'u2' } })
+    expect(again).toMatchObject({ status: 'u2', version: 2 })
+    db.$close()
+  })
+
+  // The trap: taking the version from `excluded` would reset a live row to 1
+  // and make every stale editor look current again.
+  test('upsertMany bumps on conflict rather than resetting to 1', async () => {
+    const db = await makeDb(SCHEMA, 'ver-upsertmany')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    await db.order.update({ where: { id: 1 }, data: { status: 'x', version: 1 } })   // now at 2
+    await db.order.upsertMany({ data: [{ id: 1, title: 'A', status: 'um' }, { id: 2, title: 'B', status: 'new' }] })
+    const [one, two] = await db.order.findMany({ orderBy: { id: 'asc' } })
+    expect(one).toMatchObject({ status: 'um',  version: 3 })
+    expect(two).toMatchObject({ status: 'new', version: 1 })
+    db.$close()
+  })
+})
+
+describe('@version — schema output', () => {
+  const { schema } = parse(`model Order { id Int @id  title String  version Int @version }`)
+
+  test('absent from create, readOnly and named in update', () => {
+    const create = generateJsonSchema(schema, { mode: 'create' }).$defs.Order
+    expect(Object.keys(create.properties)).not.toContain('version')
+    expect(create.required ?? []).not.toContain('version')
+
+    const update = generateJsonSchema(schema, { mode: 'update' }).$defs.Order
+    expect(update.properties.version).toMatchObject({ readOnly: true, 'x-litestone-kind': 'version' })
+    expect(update['x-version']).toBe('version')
+  })
+
+  test('typegen drops it from Create and requires it in Update', () => {
+    const ts = generateTypeScript(schema)
+    const block = (name: string) => ts.slice(ts.indexOf(`interface ${name} {`)).split('}')[0]
+    expect(block('OrderCreate')).not.toContain('version')
+    expect(block('OrderUpdate')).toContain('version: number')
+    expect(block('OrderUpdate')).not.toContain('version?')
   })
 })

@@ -327,6 +327,42 @@ that target set a public name and API is mostly labeling work over code that
 already runs — and it is the load-bearing claim for the entire unified-interface
 vision. This is the highest ratio of vision-value to effort in the repo.
 
+### The target set's missing member: adopting DOM that already exists
+
+**Added 2026-08-05.** Every target above *produces* markup. None of them *adopts*
+it. There is no hydration in Mesa at all — `render.js:113` says so in a comment,
+`runtime.js:4411` carries a `pop()` no-op reserved for the day there is, and Sierra's
+islands **replace** the prerendered range rather than adopting it
+(`mesa/docs/SSR_SPEC.md`, `sierra/src/build/island-bundle.js`). That is the right v1
+and it is why a static page's interactive parts visibly re-render on mount.
+
+It is worth writing down what the substrate would already support, because it is
+unusually strong and it is not a plan:
+
+- The compiler emits a template clone plus an explicit `child()` / `sibling()` walk
+  to each node it will ever touch (`runtime.js:4409-4410`). So for every component
+  there is already a compile-time path from the template root to each **reactive
+  edge** — a text run, an attribute, a block anchor — and everything not on that
+  list is provably inert for the life of the page.
+- That is the input node-granular adoption needs. Not "hydrate this component", but
+  "attach these seven bindings to these seven nodes and ship no code for the rest of
+  the subtree". Stronger than Astro's component-boundary islands and needing no
+  replay, unlike Qwik's resumability, because the live set is known at compile time
+  rather than reconstructed at runtime.
+
+**And it is still not near-term work.** It is not "islands taken further" — it is
+hydration, which does not exist, plus a narrowing of it. Sequence is: adopt at all
+→ adopt per component → adopt per edge, and only the first is on any list. The
+payoff is also mis-weighted against this repo's balance (`IDEAS/overview.md`
+§ Where the balance currently sits): it buys render performance, where the
+framework's `only` column is authorization-from-the-seed. An island chunk is already
+component-sized, and the `static` target already ships mostly-inert HTML, so the
+delta is smaller than the idea sounds.
+
+Recorded here rather than as a wave item so that whoever *does* build hydration
+knows the per-edge form is available for the asking, and does not design a
+component-granular protocol that forecloses it.
+
 ---
 
 ## 6. The Quasar reframe: one target axis

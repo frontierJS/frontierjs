@@ -69,9 +69,18 @@ export interface DispatchOptions {
   /** Higher = picked up sooner within same queue. Default: 0 */
   priority?: number
   /**
-   * Deduplication key. If a pending job with this key already exists,
-   * the new dispatch is a no-op and returns the existing job's ID.
-   * Useful for "only one of these should be queued at a time" patterns.
+   * Deduplication key — a lock on work IN FLIGHT.
+   *
+   * If a job with this key is pending or running, the dispatch is a no-op and
+   * returns that job's id. Once it finishes the key is free again, so the same
+   * work can be queued a second time later. Terminal jobs keep their key for
+   * inspection.
+   *
+   * "Only one of these at a time" is what this expresses. It is NOT an
+   * idempotency key: it will not stop the same work being done twice on two
+   * separate occasions, and a key derived from a row id must not be treated as
+   * one — SQLite reuses ids, so `book-courier:4` can name two different orders
+   * months apart.
    */
   unique?:   string
 }

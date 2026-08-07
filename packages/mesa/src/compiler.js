@@ -1592,6 +1592,50 @@ function collectRefs(node) {
   return refs
 }
 
+// Every source string in a template subtree that can carry an expression:
+// `{expr}` interpolations (which live inside `value` on text nodes too), block
+// headers (`#each cities as c`), `@const`, snippet args, and attribute values.
+//
+// Deliberately over-collects, and deliberately skips `content` / `openTag` —
+// those carry raw source from the node's start to the end of the file, which
+// would make every subtree look like it reads everything.
+function templateSource(node, out = []) {
+  if (Array.isArray(node)) { for (const n of node) templateSource(n, out); return out }
+  if (!node || typeof node !== 'object') return out
+  for (const k of Object.keys(node)) {
+    if (k === 'content' || k === 'openTag' || k === 'type' || k === 'name') continue
+    const v = node[k]
+    if (typeof v === 'string') out.push(v)
+    else if (v && typeof v === 'object') templateSource(v, out)
+  }
+  return out
+}
+
+// Which async-derived values a <mesa:boundary> body actually depends on.
+//
+// A boundary used to watch EVERY async value in the component, so one slow or
+// hanging `await` held content that never referenced it, and two boundaries in
+// one component always showed and hid together. The watch set is now the async
+// values the body reads.
+//
+// Two deliberate fallbacks to the old union, because under-watching is the
+// dangerous direction — it shows content before its data arrived:
+//   • the body renders a snippet defined elsewhere (`@render`), whose reads are
+//     not in this subtree
+//   • the body reads no async value at all, which is how you say "gate this
+//     region on everything" and is the only way to say it
+function boundaryWatchSet(asyncVars, body) {
+  if (asyncVars.length < 2) return asyncVars
+  const scanned = (body || []).filter(
+    nd => !(nd.type === 'snippet' && (nd.name === 'pending' || nd.name === 'failed'))
+  )
+  const src = templateSource(scanned).join('\n')
+  if (src.includes('@render')) return asyncVars
+  const names = new Set(src.match(/[A-Za-z_$][\w$]*/g) || [])
+  const read  = asyncVars.filter(v => names.has(v.name))
+  return read.length ? read : asyncVars
+}
+
 function memberPath(node) {
   if (!node) return null
   if (node.type === 'Identifier') return node.name
@@ -3076,8 +3120,11 @@ export function buildBlock(data, option = {}) {
           if (n.elArg === 'boundary') {
             if (isRoot) requireFragment = true
 
-            // Get all async-derived vars — boundary watches all $async state objects
-            const asyncVars = Object.values(ctx.analysis.vars || {}).filter(v => v.isAsync)
+            // Watch the async-derived values this boundary's body reads — not
+            // every one in the component. See boundaryWatchSet for the two cases
+            // that keep the old whole-component union.
+            const allAsyncVars = Object.values(ctx.analysis.vars || {}).filter(v => v.isAsync)
+            const asyncVars = boundaryWatchSet(allAsyncVars, n.body)
             if (!asyncVars.length) {
               ctx.analysis.warnings.push('<mesa:boundary> has no async-derived variables to watch. Content will show immediately.')
             }
@@ -4803,7 +4850,16 @@ export function inspectProp(prop) {
   // declared. Two failures, both silent at compile time: a ReferenceError on
   // mount, or — when a local of that name happens to exist — the prop quietly
   // taking that local's value instead of true.
-  if (!value) return { name, value: 'true', static: true, mod: {} }
+  //
+  // The test is `undefined`, not falsy. parseAttributes already distinguishes
+  // the two forms — a valueless attribute is `{ value: undefined, type:
+  // 'attribute' }` while `prop=""` is `{ value: '', type: 'text' }` — and a
+  // falsy test threw that distinction away, so an EXPLICIT empty string became
+  // boolean true. `<Select placeholder="">`, which is how every kit component
+  // documents "suppress this", rendered a placeholder whose text was the word
+  // `true`. Silent: the compiler was happy and the component was passed a
+  // perfectly valid prop of the wrong type.
+  if (value === undefined) return { name, value: 'true', static: true, mod: {} }
   if (type === 'exp') {
     const rawExp = unwrapExp(prop.raw)
     this.detectDependency(rawExp)
@@ -6481,7 +6537,43 @@ function _domHasInteractivity(node) {
   return false
 }
 
+/**
+ * Frontmatter in a .mesa file is METADATA, not template text.
+ *
+ * A `---` block at the top of a component is how a meta-framework states a
+ * route's title, its render mode, its redirect. Mesa does not read those keys —
+ * but it must not render them either, and it must not treat their presence as
+ * "this file is Markdown" (compileSource used to, see the note there).
+ *
+ * The block is replaced by the same number of blank lines rather than deleted,
+ * so every line number in a warning still points at the line the author wrote.
+ *
+ * @returns {{ body: string, frontmatter: object|undefined }}
+ */
+function stripFrontmatter(source) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/.exec(source)
+  if (!match) return { body: source, frontmatter: undefined }
+
+  const fm = {}
+  for (const line of match[1].split(/\r?\n/)) {
+    const colon = line.indexOf(':')
+    if (colon === -1) continue
+    const key = line.slice(0, colon).trim()
+    if (key) fm[key] = line.slice(colon + 1).trim()
+  }
+
+  const blanks = match[0].split('\n').length - 1
+  return { body: '\n'.repeat(blanks) + source.slice(match[0].length), frontmatter: fm }
+}
+
 export async function compile(source, config = {}) {
+  // Strip before anything reads `source`: the parser would otherwise emit the
+  // block as a static text node — `--- title: Catalog render: static ---`
+  // rendered at the top of the page — which is what a prerendered Sierra route
+  // did before this existed.
+  const _fm = stripFrontmatter(source)
+  source = _fm.body
+
   config = Object.assign(
     {
       compact: true,
@@ -6503,6 +6595,10 @@ export async function compile(source, config = {}) {
     config,
     uniqIndex: 0,
     warning: config.warning,
+    // Present only when the file carried a `---` block. A caller that keeps its
+    // own frontmatter parser (Sierra's scanner does) is unaffected; a caller
+    // that has only the compiled ctx can now see what the file declared.
+    frontmatter: _fm.frontmatter,
 
     buildBlock: function (...a) {
       return buildBlock.call(this, ...a)
@@ -6996,9 +7092,25 @@ async function _getCompileMd() {
  */
 export async function compileSource(source, config = {}) {
   const filename = config.filename ?? config.path ?? ''
-  const isMd = filename.endsWith('.md')
-  const hasFrontmatter = source.startsWith('---\n') || source.startsWith('---\r\n')
-  if (isMd || hasFrontmatter) {
+
+  // THE EXTENSION DECIDES THE LANGUAGE — nothing about the content does.
+  //
+  // This used to route any source beginning with `---` to the Markdown
+  // compiler, whatever its extension. A frontmatter block is how every Sierra
+  // route states its title and its render mode, so that heuristic said "this
+  // .mesa component is Markdown" about most route files in existence — and
+  // Markdown escapes what it does not recognise. `<CatalogList client:load
+  // products={…} />` came out as a PARAGRAPH OF ESCAPED TEXT with the props
+  // stringified into it, silently, while `<LiveStock />` beside it compiled as
+  // a component.
+  //
+  // It stayed hidden because it only bites callers who hand the compiler a raw
+  // file: Sierra's Vite path strips frontmatter before calling compile(), so
+  // dev and the SPA build were right and only the prerenderer — which imports
+  // the .mesa off disk through renderComponent — was wrong. One file, two
+  // languages, depending on which build read it. VISION §"File types" always
+  // said `.md` is the Markdown one.
+  if (filename.endsWith('.md')) {
     const compileMd = await _getCompileMd()
     return compileMd(source, config)
   }

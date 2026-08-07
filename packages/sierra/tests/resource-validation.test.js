@@ -29,7 +29,7 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 
 const {
   createResource, buildFieldRules, validateAgainstFields, normalizeBlanks,
-  coerceToSchema, ResourceValidationError,
+  coerceToSchema, ResourceValidationError, toFieldErrors,
 } = await import('../src/junction/resource.js')
 const { registerSchemas } = await import('../src/junction/schema-registry.js')
 
@@ -186,12 +186,25 @@ describe('resource.fields / resource.validate', () => {
   })
 })
 
-describe('validate: true — automatic enforcement', () => {
+describe('validate — automatic enforcement, on by default', () => {
 
-  test('is off by default: an invalid create still reaches the server', async () => {
+  test('is ON by default: an invalid create never reaches the server', async () => {
     const r = createResource('leads')
+    await expect(r.service.create({ name: 'Ada' })).rejects.toThrow(ResourceValidationError)
+    expect(_created).toHaveLength(0)
+  })
+
+  test('validate: false opts out — the invalid create reaches the server', async () => {
+    const r = createResource('leads', { validate: false })
     await r.service.create({ name: 'Ada' })
     expect(_created).toHaveLength(1)
+  })
+
+  test('an explicit undefined is "not stated", so the default still applies', async () => {
+    // A component threading a prop it was never given must not silently
+    // disable the check — `!== false`, not `?? true`.
+    const r = createResource('leads', { validate: undefined })
+    await expect(r.service.create({ name: 'Ada' })).rejects.toThrow(ResourceValidationError)
   })
 
   test('blocks an invalid create before the request', async () => {
@@ -328,8 +341,14 @@ describe('normalizeBlanks', () => {
 
 describe('blankToNull: true — automatic normalisation', () => {
 
-  test('is off by default: the empty string reaches the server', async () => {
+  test('is ON by default: the empty string is stored as null', async () => {
     const r = createResource('leads')
+    await r.service.create({ name: 'Ada', email: 'a@b.co', plan: 'pro', notes: '' })
+    expect(_created[0].notes).toBeNull()
+  })
+
+  test('blankToNull: false opts out — the empty string reaches the server', async () => {
+    const r = createResource('leads', { blankToNull: false })
     await r.service.create({ name: 'Ada', email: 'a@b.co', plan: 'pro', notes: '' })
     expect(_created[0].notes).toBe('')
   })
@@ -444,8 +463,14 @@ describe('coerceToSchema — the DOM only ever produces strings', () => {
 
 describe('coerce: true — automatic, and ordered before the rest', () => {
 
-  test('is off by default: the string reaches the server', async () => {
+  test('is ON by default: the string is cast before it is sent', async () => {
     const r = createResource('leads')
+    await r.service.create({ name: 'A', email: 'a@b.co', plan: 'pro', score: '42' })
+    expect(_created[0].score).toBe(42)
+  })
+
+  test('coerce: false opts out — the string reaches the server', async () => {
+    const r = createResource('leads', { coerce: false, validate: false })
     await r.service.create({ name: 'A', email: 'a@b.co', plan: 'pro', score: '42' })
     expect(_created[0].score).toBe('42')
   })
@@ -465,12 +490,14 @@ describe('coerce: true — automatic, and ordered before the rest', () => {
   test('a form payload passes validation only once coerced', async () => {
     // This is the exact failure the example hit: every DOM control hands back a
     // string, so a number field arrived as "42" and validate() rejected it.
+    // The pair is why the two options default on TOGETHER — validate without
+    // coerce rejects payloads the app never had a way to produce correctly.
     const draft = { name: 'A', email: 'a@b.co', plan: 'pro', score: '42' }
 
-    const strict = createResource('leads', { validate: true })
+    const strict = createResource('leads', { coerce: false })
     await expect(strict.service.create(draft)).rejects.toThrow(ResourceValidationError)
 
-    const both = createResource('leads', { validate: true, coerce: true })
+    const both = createResource('leads')
     await both.service.create(draft)
     expect(_created[0].score).toBe(42)
   })
@@ -484,5 +511,88 @@ describe('coerce: true — automatic, and ordered before the rest', () => {
 
   test('resource.coerce() is available without the flag', () => {
     expect(createResource('leads').coerce({ score: '3' })).toEqual({ score: 3 })
+  })
+})
+
+describe('toFieldErrors — a thrown value becomes a form\'s error map', () => {
+
+  test('unwraps a ResourceValidationError (the browser said no)', () => {
+    const err = new ResourceValidationError('leads', [
+      { field: 'name',  message: 'Name is required' },
+      { field: 'email', message: 'Email must be a valid email address' },
+    ])
+    expect(toFieldErrors(err)).toEqual({
+      fields: { name: 'Name is required', email: 'Email must be a valid email address' },
+      message: '',
+    })
+  })
+
+  test('unwraps a server 400 as the browser client throws it', () => {
+    // Junction's validator throws BadRequest(joined, list); toJSON() puts the
+    // list on `data`; the client assigns the whole parsed body to `.data`.
+    // Two `data`s deep, and it has to stay that way for both transports.
+    const body = {
+      name: 'BadRequest',
+      message: 'email: Email must be a valid email address',
+      code: 400,
+      data: [{ field: 'email', message: 'Email must be a valid email address' }],
+    }
+    const err = Object.assign(new Error(body.message), { code: 400, data: body })
+
+    expect(toFieldErrors(err)).toEqual({
+      fields: { email: 'Email must be a valid email address' },
+      message: '',
+    })
+  })
+
+  test('unwraps the list one wrapper shallower', () => {
+    const err = Object.assign(new Error('nope'), {
+      data: [{ field: 'plan', message: 'Plan is required' }],
+    })
+    expect(toFieldErrors(err).fields).toEqual({ plan: 'Plan is required' })
+  })
+
+  test('a failure with no field information becomes a form-level message', () => {
+    const err = Object.assign(new Error('Service Unavailable'), { code: 503 })
+    expect(toFieldErrors(err)).toEqual({ fields: {}, message: 'Service Unavailable' })
+  })
+
+  test("the validator's whole-payload failure is form-level, not a field called _", () => {
+    const err = Object.assign(new Error('bad'), {
+      data: { data: [{ field: '_', message: 'Expected an object' }] },
+    })
+    expect(toFieldErrors(err)).toEqual({ fields: {}, message: 'Expected an object' })
+  })
+
+  test('first message per field wins — one control, one line', () => {
+    const err = new ResourceValidationError('leads', [
+      { field: 'name', message: 'Name must be at least 1 characters' },
+      { field: 'name', message: 'Name must be a string' },
+    ])
+    expect(toFieldErrors(err).fields.name).toBe('Name must be at least 1 characters')
+  })
+
+  test('per-field messages suppress the form-level line', () => {
+    // The Error's own message is the joined list. Showing it above a form that
+    // already renders each line under its own control says everything twice.
+    const err = new ResourceValidationError('leads', [{ field: 'name', message: 'Name is required' }])
+    expect(err.message).toContain('Name is required')
+    expect(toFieldErrors(err).message).toBe('')
+  })
+
+  test('survives a thrown non-Error', () => {
+    expect(toFieldErrors('boom')).toEqual({ fields: {}, message: 'boom' })
+    // A thrown null has no message to relay, so it gets a true generic one
+    // rather than the string "null" under the submit button.
+    expect(toFieldErrors(null)).toEqual({ fields: {}, message: 'Request failed' })
+  })
+
+  test('resource.fieldErrors is the same function, reachable from the record', async () => {
+    const r = createResource('leads')
+    const err = await r.service.create({ name: 'Ada' }).catch(e => e)
+    const { fields, message } = r.fieldErrors(err)
+    expect(message).toBe('')
+    // A create missing two required columns names both, keyed for <Field>.
+    expect(Object.keys(fields).sort()).toEqual(['email', 'plan'])
   })
 })

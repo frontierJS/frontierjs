@@ -17,14 +17,24 @@
   // Shorthand (Field implicit):
   //   <Input label="Email" name="email" type="email" bind:value={email} {errors} />
   //
+  // Inside <Form>, name is enough — everything else comes from the schema:
+  //   <Form {resource}>
+  //     <Input name="email" bind:value={record.email} />
+  //   </Form>
+  //
+  // `email` there gets its label, `required`, `maxlength`/`minlength` and
+  // `type="email"` from db/schema.lite, and its server error from the form.
+  // Any prop stated here wins over the schema — including `required={false}`,
+  // which is why the resolution uses `stated()` and not `||`.
+  //
   // bind:this exposes: focus(), select()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated } from '../../utils.js'
 
   // Core input props
   export let value       = ''
-  export let type        = 'text'
+  export let type        = undefined   // falls back to the schema's format, then 'text'
   export let placeholder = ''
   export let disabled    = false
   export let required    = undefined
@@ -71,9 +81,37 @@
 
   const inputId   = id || uid('input')
   const listId    = datalist ? `${inputId}-list` : undefined
-  const autoLabel = nameToLabel(name)
 
-  const hasError = !!(error || errors?.[name])
+  // The enclosing <Form>, and this field's rule from db/schema.lite. Both are
+  // undefined standing alone, and every resolution below falls through to what
+  // the component did before.
+  const form = $context.form
+  const rule = resolveRule(form, name)
+
+  // The control type the schema implies. Only the cases where the mapping is
+  // exact: a `format` that names a real input type, and a numeric column.
+  //
+  // `date-time` is deliberately NOT mapped. Litestone stores ISO-8601 with a
+  // zone; `<input type="datetime-local">` accepts and emits a value without
+  // one, so the round trip silently shifts the time. That needs a real date
+  // control (DatePicker), not a type attribute.
+  const FORMAT_TYPES = { email: 'email', uri: 'url', url: 'url' }
+  const schemaType =
+    FORMAT_TYPES[rule?.format] ??
+    (rule?.type === 'integer' || rule?.type === 'number' ? 'number' : undefined)
+
+  const resolvedType = stated(type, schemaType, 'text')
+  const displayError = resolveError(form, name, error, errors)
+  const hasError     = !!displayError
+
+  // Constraint attributes. These are what assistive tech announces, so they
+  // are worth emitting even with novalidate on the form suppressing the
+  // browser's own bubbles.
+  const resolvedRequired  = stated(required,  rule?.required)
+  const resolvedMaxlength = stated(maxlength, rule?.maxLength)
+  const resolvedMinlength = stated(minlength, rule?.minLength)
+  const resolvedMin       = stated(min,       rule?.minimum)
+  const resolvedMax       = stated(max,       rule?.maximum)
 
   // Exported methods — exposed via bind:this on this component
   let inputEl
@@ -83,7 +121,7 @@
   function handleInput(e) {
     // An empty number field is empty, not zero: Number('') is 0, which silently
     // turned "the user cleared the box" into a real value the schema accepts.
-    value = type === 'number'
+    value = resolvedType === 'number'
       ? (e.target.value === '' ? '' : Number(e.target.value))
       : e.target.value
     oninput?.(e)
@@ -96,18 +134,18 @@
     class="field"
     id={inputId}
     name={name || undefined}
-    type={type}
+    type={resolvedType}
     value={value}
     placeholder={placeholder}
     disabled={disabled}
-    required={required}
+    required={resolvedRequired}
     readonly={readonly}
     pattern={pattern}
-    min={min}
-    max={max}
+    min={resolvedMin}
+    max={resolvedMax}
     step={step}
-    maxlength={maxlength}
-    minlength={minlength}
+    maxlength={resolvedMaxlength}
+    minlength={resolvedMinlength}
     autocomplete={autocomplete}
     list={listId}
     aria-invalid={hasError || null}
@@ -134,18 +172,24 @@
 {/snippet}
 
 {#if label || name}
-  {@const resolvedLabel = label || autoLabel}
+  <!--
+    label/required/type go through UNRESOLVED where the caller stated nothing:
+    Field reads the same rule off the same form and resolves them once. Two
+    components resolving the same fact from the same source is how they drift.
+    `|| undefined` because '' is a real answer here — it suppresses the label —
+    and only `undefined` means "not stated".
+  -->
   <Field
     id={inputId}
     name={name}
-    label={resolvedLabel}
-    required={required}
+    label={label || undefined}
+    required={resolvedRequired}
     badge={badge}
     help={help}
     hint={hint}
     error={error}
     errors={errors}
-    type={type}
+    type={resolvedType}
     removable={removable}
     onremovekey={onremovekey}
     {class}

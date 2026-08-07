@@ -171,6 +171,42 @@ describe('renderToHTML — server semantics (RULE 19)', () => {
   })
 })
 
+describe('renderToHTML — no attribute the author did not write', () => {
+  // happy-dom's cloneNode re-derives an <input>'s attributes from its default
+  // PROPERTIES, so a cloned template gained formaction="<the page URL>" and
+  // formmethod="" on every input, and absolutised an authored relative
+  // formaction. `formaction` overrides the form's action, so a prerendered
+  // form posted to whatever machine built it — with that machine's localhost
+  // URL shipped in a public file. template() parses per instance on the server
+  // for this reason.
+  it('does not invent formaction/formmethod on an input', async () => {
+    const Comp = await build(`<form action="/search"><input type="search" name="q" /></form>`)
+    const html = await renderToHTML(Comp)
+    expect(html).not.toMatch(/formaction/)
+    expect(html).not.toMatch(/formmethod/)
+    expect(unscope(html)).toBe('<form action="/search"><input type="search" name="q"></form>')
+  })
+
+  it('leaves an authored relative formaction relative', async () => {
+    const Comp = await build(`<form action="/a"><input type="submit" formaction="/b" /></form>`)
+    const html = await renderToHTML(Comp)
+    expect(html).toMatch(/formaction="\/b"/)
+    expect(html).not.toMatch(/http:\/\//)
+  })
+
+  it('repeats a template without accumulating anything', async () => {
+    // One template, three instances: the per-instance parse must produce the
+    // same markup each time, not diverge from the first.
+    const Comp = await build(`<script>
+  let rows = [1, 2, 3]
+</script>
+<ul>{#each rows as r}<li><input value={r} /></li>{/each}</ul>`)
+    const html = unscope(await renderToHTML(Comp))
+    expect(html.match(/<input/g)).toHaveLength(3)
+    expect(html).not.toMatch(/formaction/)
+  })
+})
+
 describe('renderToHTML — failure modes', () => {
   it('names the cause when the component throws', async () => {
     const boom = () => { throw new Error('kaboom') }

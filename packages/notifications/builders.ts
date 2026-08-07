@@ -98,6 +98,8 @@ class MailBuilder {
   private _subject: string = ''
   private _lines:   MailLine[] = []
   private _to?:     string
+  private _html?:   string
+  private _text?:   string
 
   /**
    * Email subject line.
@@ -140,6 +142,25 @@ class MailBuilder {
   }
 
   /**
+   * A rendered HTML body — from `@frontierjs/email-kit`, or from anywhere.
+   *
+   * Replaces what `lines` would have produced for the HTML part only. Pair it
+   * with `.text()`, or leave the text alone and the builder's lines still write
+   * the plain-text alternative — which is a real use, since a table-based
+   * receipt has an obvious three-line text form and no obvious HTML one.
+   */
+  html(markup: string): this {
+    this._html = markup
+    return this
+  }
+
+  /** A rendered plain-text body. Same rule as `.html()`. */
+  text(body: string): this {
+    this._text = body
+    return this
+  }
+
+  /**
    * Build the final MailMessage. Call this at the end of the chain.
    *
    * notify() also calls it for you if a builder reaches it un-built — without
@@ -150,6 +171,8 @@ class MailBuilder {
       subject: this._subject,
       lines:   this._lines,
       to:      this._to,
+      ...(this._html !== undefined ? { html: this._html } : {}),
+      ...(this._text !== undefined ? { text: this._text } : {}),
     }
   }
 }

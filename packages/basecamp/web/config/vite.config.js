@@ -8,6 +8,9 @@ import sierraConfig from './sierra.config.js'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
 const API  = 'http://localhost:3001'
+const UI   = resolve(HERE, '../../../ui')
+
+const sierra = createSierraViteConfig(sierraConfig)
 
 // Basecamp mounts services at /{service} with no prefix, so an API path and a
 // UI path are the SAME URL: GET /projects is both the service and the page.
@@ -26,6 +29,7 @@ const API_PATHS = [
   '/auth', '/setup', '/health', '/metrics', '/conduit-targets',
   '/workspaces', '/projects', '/environments', '/apps',
   '/servers', '/deployments', '/jobs', '/portal',
+  '/alerts', '/networks', '/secrets',
 ]
 
 const proxy = Object.fromEntries(API_PATHS.map(path => [path, {
@@ -43,7 +47,28 @@ const proxy = Object.fromEntries(API_PATHS.map(path => [path, {
 proxy['/ws'] = { target: API, ws: true }
 
 export default defineConfig({
-  ...createSierraViteConfig(sierraConfig),
+  ...sierra,
+
+  // @frontierjs/ui is aliased to the WORKSPACE SOURCE, not to the copy under
+  // node_modules. `bun install` resolves a workspace dep by COPYING it
+  // (CLAUDE.md § Live hazards), so without this a fix to a component needs a
+  // reinstall before this app can see it — and a stale copy looks exactly like
+  // a component that does not work. There is a hand-made symlink at
+  // node_modules/@frontierjs/ui today; it will not survive a reinstall, and
+  // this alias is what makes that not matter. Merged into Sierra's aliases
+  // rather than replacing them.
+  resolve: {
+    ...sierra.resolve,
+    alias: { ...sierra.resolve?.alias, '@frontierjs/ui': UI },
+  },
+
+  // The alias turns the bare specifier into a path inside the repo, so Vite
+  // treats the components as project source; this keeps esbuild's dep pre-scan
+  // off them regardless, since it cannot parse .mesa.
+  optimizeDeps: {
+    ...sierra.optimizeDeps,
+    exclude: [...(sierra.optimizeDeps?.exclude ?? []), '@frontierjs/ui'],
+  },
 
   // The Vite root is web/, not config/. Everything Sierra resolves is relative
   // to it: routesDir, the manifest it writes, and ../db/schema.lite — the same

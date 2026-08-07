@@ -275,18 +275,54 @@ describe('cookieAuth mode', () => {
     expect(res.headers['set-cookie']).toContain('session=')
   })
 
-  // Known gap, asserted so it is not mistaken for working: Junction's
-  // extractToken() (transport/http.ts) reads only `authorization` and
-  // `x-api-key`, never cookies — so ctx.user is never resolved from the
-  // cookie and cookie-only auth cannot reach a protected route. Fixing that
-  // is a Junction change. See PROJECT_STATE.md finding 2.
-  test('KNOWN GAP: a cookie alone does not authenticate a request', async () => {
+  // Was a KNOWN GAP asserting 401, closed 2026-08-06 (FJS-002). Junction's
+  // extractToken() read only `authorization` and `x-api-key`, so ctx.user was
+  // never resolved from the cookie and `cookieAuth: true` handed you a session
+  // you could not use. The plugin now calls http.setAuthCookie('session') from
+  // its register(), so cookie mode is one switch rather than two.
+  test('a cookie alone authenticates a request', async () => {
     const login = await request(cookieApp).post('/auth/login')
       .send({ email: email('cookie'), password: 'pw-1' })
     const value = login.headers['set-cookie'].split(';')[0].split('=')[1]
 
     const me = await request(cookieApp).get('/auth/me').set('cookie', `session=${value}`)
-    expect(me.status).toBe(401)   // ← flip to 200 when Junction learns cookies
+    expect(me.status).toBe(200)
+    expect((me.body as any).email).toBe(email('cookie'))
+  })
+
+  test('no cookie is still 401', async () => {
+    // The other half: turning cookies on must not authenticate a request that
+    // carries no credential at all.
+    expect((await request(cookieApp).get('/auth/me')).status).toBe(401)
+  })
+
+  test('a garbage cookie is 401, not a crash', async () => {
+    const me = await request(cookieApp).get('/auth/me').set('cookie', 'session=not-a-token')
+    expect(me.status).toBe(401)
+  })
+
+  test('an emptied cookie does not authenticate — this is what logout leaves', async () => {
+    // clearCookie() sets `session=` with Max-Age=0. If '' counted as a token
+    // every post-logout request would carry a guaranteed-failing verifySession.
+    const me = await request(cookieApp).get('/auth/me').set('cookie', 'session=')
+    expect(me.status).toBe(401)
+  })
+
+  test('a Bearer token still wins over the cookie', async () => {
+    // Explicit beats ambient, so "act as someone else for this one call" stays
+    // possible from a browser that is also holding a session cookie.
+    const a = await request(cookieApp).post('/auth/login')
+      .send({ email: email('cookie'), password: 'pw-1' })
+    const cookieValue = a.headers['set-cookie'].split(';')[0].split('=')[1]
+
+    await request(cookieApp).post('/auth/register').send({ email: email('bearer-wins'), password: 'pw-1' })
+    const other = await scoped.auth.login(email('bearer-wins'), 'pw-1')
+
+    const me = await request(cookieApp).get('/auth/me')
+      .set('cookie', `session=${cookieValue}`)
+      .set('authorization', `Bearer ${other.token}`)
+    expect(me.status).toBe(200)
+    expect((me.body as any).email).toBe(email('bearer-wins'))
   })
 
   test('logout accepts the session cookie', async () => {

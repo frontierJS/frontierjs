@@ -37,7 +37,7 @@ code, not by reading it.
 Run: `npx vitest run`
 
 **The 27 failures are pre-existing and unrelated.** `email-kit.test.js` needs
-`@frontierjs/mesa-email`, which is not installed in this checkout. They failed
+`@frontierjs/email-kit`, which is not installed in this checkout. They failed
 identically before this pass. Do not chase them; install the dep or ignore.
 
 Sierra was used as the downstream regression check throughout —

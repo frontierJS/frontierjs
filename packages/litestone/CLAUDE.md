@@ -128,6 +128,17 @@ Type?      — optional (nullable)
 @updatedAt                       auto-set to now() on every UPDATE
 @updatedBy                       stamp ctx.auth.id on every UPDATE
 @updatedBy(auth().field)         stamp custom auth field on every UPDATE
+@createdBy                       stamp ctx.auth.id on CREATE — a stamp, not a
+                                 default, so the principal beats a caller-supplied
+                                 value; skipped entirely when ctx.auth is null
+@createdBy(auth().field)         stamp custom auth field on CREATE
+@version                         optimistic concurrency. Int, non-optional, one per
+                                 model. Bumped on every write; `update()` REQUIRES
+                                 the version it read in `data` and throws
+                                 VersionConflictError (409, retryable) if it moved,
+                                 VersionRequiredError (400) if absent. updateMany /
+                                 upsert / upsertMany bump but do not require.
+                                 asSystem() skips the check
 @sequence(scope: fieldName)      per-scope auto-increment (e.g. per-tenant doc numbers)
 @omit                            excluded from findMany/findFirst results
 @omit(all)                       excluded everywhere
@@ -181,6 +192,10 @@ declared. One authored string, all three realms.
 @@gate("R.C.U.D")                level-based access control (see GatePlugin)
 @@transitions(field, ...)        state machine on an enum field; `name:` optional, `@gate(N)` per move
 @@auth                           marks model as the auth subject
+@@createdBy                      sugar: adds createdById @createdBy + a createdBy
+                                 relation to the @@auth model
+@@updatedBy                      sugar: adds updatedById @updatedBy + an updatedBy relation
+@@createdBy(owner)               same pair, renamed → ownerId + owner
 @@map("table_name")              custom DB table name
 @@external                       table managed outside Litestone (skip DDL/migrations)
 @@allow('read'|'create'|'update'|'delete'|'write'|'all', expr)
@@ -389,6 +404,11 @@ db.$rawDbs                 // { main: Database, ... } raw write connections
 db.$databases              // { main: { driver, path }, ... }
 db.$close()
 db.sql`SELECT * FROM user WHERE id = ${1}`
+                           // raw read. On a schema declaring access rules
+                           // (@@gate/@@allow/@guarded/@scoped) this THROWS —
+                           // raw SQL enforces none of them. Use
+                           // db.asSystem().sql`...` to bypass deliberately, or
+                           // where: { $raw: sql`...` } to keep the policies.
 ```
 
 ---

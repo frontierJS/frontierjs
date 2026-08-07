@@ -91,3 +91,72 @@ describe('email driver — body rendering', () => {
     expect(renderHtml([])).toContain('<div')
   })
 })
+
+// ─── A rendered body, from a template kit ────────────────────────────────────
+//
+// `lines` is a small authoring vocabulary — greeting, paragraph, button — and it
+// is the right one for most system mail. It cannot express a receipt with a
+// table of items, and it could not use `@frontierjs/email-kit` at all: that
+// renders a `.mesa` template to Outlook-safe table HTML and there was nowhere in
+// a MailMessage to put the result. So a notification and the email component kit
+// in the same repo could not be used together.
+
+describe('mail().html() / .text() — a rendered body', () => {
+  const TABLE = '<table role="presentation"><tr><td>Receipt</td></tr></table>'
+
+  it('html() replaces what lines would have rendered', async () => {
+    const { sent, app } = stubApp()
+    const msg = mail().subject('Receipt').line('ignored for html').html(TABLE).build()
+
+    await sendEmail({ id: 1, email: 'a@b.co' }, msg, app)
+
+    expect(sent[0]!.html).toBe(TABLE)
+    expect(sent[0]!.html).not.toContain('ignored for html')
+  })
+
+  it('per FIELD, not per message — lines still write the text alternative', async () => {
+    // The point of the split: a table receipt has an obvious three-line text
+    // form and no obvious HTML one, so a template supplies the HTML and the
+    // builder keeps writing the plain text.
+    const { sent, app } = stubApp()
+    const msg = mail()
+      .subject('Receipt')
+      .greeting('Hi Sarah')
+      .line('Your order is confirmed.')
+      .html(TABLE)
+      .build()
+
+    await sendEmail({ id: 1, email: 'a@b.co' }, msg, app)
+
+    expect(sent[0]!.html).toBe(TABLE)
+    expect(sent[0]!.text).toContain('Your order is confirmed.')
+  })
+
+  it('text() alone leaves the HTML to the lines', async () => {
+    const { sent, app } = stubApp()
+    const msg = mail().subject('Receipt').line('Body line').text('plain only').build()
+
+    await sendEmail({ id: 1, email: 'a@b.co' }, msg, app)
+
+    expect(sent[0]!.text).toBe('plain only')
+    expect(sent[0]!.html).toContain('Body line')
+  })
+
+  it('a message with no lines at all is fine when both are rendered', async () => {
+    const { sent, app } = stubApp()
+    const msg = mail().subject('Receipt').html(TABLE).text('Receipt').build()
+
+    await sendEmail({ id: 1, email: 'a@b.co' }, msg, app)
+
+    expect(sent[0]).toEqual({ to: 'a@b.co', subject: 'Receipt', html: TABLE, text: 'Receipt' })
+  })
+
+  it('an unset body is absent, not an empty string', () => {
+    // `?? ` is the driver's rule, so a builder that never called .html() must
+    // leave the key undefined rather than '' — an empty string would win the
+    // coalesce and deliver a blank body.
+    const msg = mail().subject('x').line('y').build()
+    expect('html' in msg).toBe(false)
+    expect('text' in msg).toBe(false)
+  })
+})

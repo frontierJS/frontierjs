@@ -8,32 +8,25 @@
   //
   // Read this file next to db/schema.lite. Nothing here restates anything there:
   // no field list, no types, no enum values, no required list, no relations, no
-  // gate levels. A resource names a model and turns three flags on.
+  // gate levels. A resource names a model. That is the whole file.
+  //
+  // It used to name a model and turn on three flags — coerce, validate,
+  // blankToNull — with a paragraph each explaining why you would want them.
+  // Every resource in this app set all three, and so did eight of the nine in
+  // packages/basecamp, because each one answers something the DOM does that the
+  // schema has already said no to: every control hands back a string when
+  // `total` is a Float, and an untouched text box submits '' when SQLite will
+  // not treat that as the NULL a nullable column wants. A flag that every app
+  // turns on is a default, so as of 2026-08-06 they are on and the reasoning
+  // lives once, in createResource's own header.
 
   import { createResource } from '@frontierjs/sierra/junction'
 
-  const derived = {
-    // Every DOM control hands back a string — <input type="number"> and <select>
-    // included. The schema is the only thing that knows `total` is a Float and
-    // `customerId` an Int, so it does the casting.
-    coerce: true,
-
-    // Check the record against the schema before the request, and throw
-    // ResourceValidationError rather than round-trip to be told the same thing.
-    // The server still validates — this only moves the first `no` closer to you.
-    validate: true,
-
-    // An empty text box submits '', which is not NULL to SQLite: `barcode String?
-    // @unique` accepts any number of NULLs but rejects a second ''. Rewrite blanks
-    // on nullable fields on the way out.
-    blankToNull: true,
-  }
-
-  export const orders   = createResource('orders',   derived)
-  export const products = createResource('products', derived)
+  export const orders   = createResource('orders')
+  export const products = createResource('products')
 
   // Populates the picker for Order.customerId. Which resource that is is not
   // written down here either — see orders/create.mesa deriving it from
   // orders.relations.customer.model.
-  export const customers = createResource('customers', derived)
+  export const customers = createResource('customers')
 </script>

@@ -219,7 +219,80 @@ describe('`channel` as an option does not steal `publish` as an action name', ()
     await callService(s, c, undefined, h.events)
 
     expect(called).toBe(true)
-    // A custom action is not in AUTO_EVENT_MAP, so it announces nothing.
+    // An action IS a write, so it announces under its own name (see below).
+    expect(h.bus).toHaveLength(1)
+    expect(h.bus[0]!.event).toBe('posts:publish')
+  })
+})
+
+describe('a custom action announces too', () => {
+  // Until 2026-08-06 only AUTO_EVENT_MAP counted, so an action changed a row
+  // and told nobody. Proved against `example/`: a watcher tab saw `orders
+  // created` and `orders removed` cross the socket and never saw the `pay` in
+  // between, while the row it was looking at silently became stale. The browser
+  // client had listened for action events since it was written — its '*'
+  // handler upserts any non-CRUD event — so only the server half was missing.
+
+  const acting = (over: Record<string, unknown> = {}) => svc({
+    channel: 'posts',
+    archive: async () => ({ id: 1, archived: true }),
+    ...over,
+  })
+
+  test('announces on both, under its own name, no past tense invented', async () => {
+    const h = harness()
+    await callService(acting(), ctx(h, 'archive'), undefined, h.events)
+
+    expect(h.bus).toHaveLength(1)
+    expect(h.channels).toHaveLength(1)
+    expect(h.bus[0]!.event).toBe('posts:archive')
+    expect(h.channels[0]!.event).toBe('posts archive')
+    // The record, so the client's '*' handler can upsert it.
+    expect(h.channels[0]!.data).toEqual({ id: 1, archived: true })
+    expect(h.bus[0]!.data).toEqual(h.channels[0]!.data)
+  })
+
+  test('`ctx.dispatch = false` is how a read-shaped action opts out', async () => {
+    // search/stats/export return rows they did not write. One switch, the same
+    // one that suppresses any other broadcast — and it suppresses BOTH
+    // consumers, which is the whole point of one origin.
+    const h = harness()
+    await callService(acting(), ctx(h, 'archive', { dispatch: false }), undefined, h.events)
+
     expect(h.bus).toHaveLength(0)
+    expect(h.channels).toHaveLength(0)
+  })
+
+  test('`ctx.dispatch = value` reshapes an action payload as it does a write', async () => {
+    const h = harness()
+    await callService(acting(), ctx(h, 'archive', { dispatch: { id: 1 } }), undefined, h.events)
+
+    expect(h.channels[0]!.data).toEqual({ id: 1 })
+  })
+
+  test('a failed action announces nothing', async () => {
+    const h = harness()
+    const boom = acting({ archive: async () => { throw new Error('nope') } })
+    await callService(boom, ctx(h, 'archive'), undefined, h.events).catch(() => {})
+
+    expect(h.bus).toHaveLength(0)
+    expect(h.channels).toHaveLength(0)
+  })
+
+  test('a read still announces nothing — find and get are excluded by name', async () => {
+    const h = harness()
+    await callService(acting(), ctx(h, 'find'), undefined, h.events)
+    await callService(acting(), ctx(h, 'get'),  undefined, h.events)
+
+    expect(h.bus).toHaveLength(0)
+    expect(h.channels).toHaveLength(0)
+  })
+
+  test('no `channel:` still means no broadcast, action or not', async () => {
+    const h = harness()
+    await callService(acting({ channel: undefined }), ctx(h, 'archive'), undefined, h.events)
+
+    expect(h.channels).toHaveLength(0)
+    expect(h.bus).toHaveLength(1)      // server-side reactions still work
   })
 })

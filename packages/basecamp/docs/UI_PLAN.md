@@ -377,6 +377,14 @@ actually was". Three consecutive clean runs since.
 the session and the two framework-level findings are in the root `HANDOFF.md`,
 and the Junction ones in `packages/junction/PROJECT_STATE.md` §Open.
 
+### Phase 8 — shell chrome ✅ done 2026-08-06
+
+The first phase of the rebuild against the mock rather than of the original
+build-out, so the write-up lives with the inventory: **`SCREENS.md` § Phase 1**.
+⌘K, toasts, and the mock's attention system (`NoticeBar` + `ActionQueue` over
+`src/notices.js`) — **verify is 98 checks, up from 90**, and it found a Mesa
+compiler defect (`prop=""` compiled to `prop={true}`, `FJS-102`).
+
 ---
 
 ## Decisions taken
@@ -385,7 +393,7 @@ and the Junction ones in `packages/junction/PROJECT_STATE.md` §Open.
 |---|---|
 | **Target** | SPA. An ops dashboard behind auth gains nothing from prerender |
 | **Components** | `@frontierjs/ui` — never opened in a browser, so expect to fix it on the way. That is the dogfooding value |
-| **The mock** | Reference only, moved out of the Vite root. Not ported |
+| **The mock** | Reference only, moved out of the Vite root. Not ported — **`SCREENS.md` (2026-08-06) is the inventory of what that leaves out: 12 of 41 views built** |
 | **Gates** | No permission UI. `resource.can()` answers permissively while the schema declares no `@@gate` |
 | **Auth** | Bearer tokens only. No OAuth; cookies cannot work because Junction reads none |
 

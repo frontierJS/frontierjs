@@ -206,13 +206,11 @@ public API, but no consumer sees a wrong type.
 - **The WS push really is optional** — with no `channels()` plugin,
   `app.channel?.()` is undefined and the row still persists without error.
 
-## Still unconfirmed
+## Still unconfirmed — see `ISSUES.md`
 
-- Whether `app.notify` is reachable from a service hook via `ctx.app.notify` as
-  `plugin.ts`'s doc comment claims. Not probed; `ctx.app` was never exercised.
-- Whether the in-app record shape matches what any UI expects — still no
-  consumer of this package in the repo.
-- `plugin.ts` still implements only `register()`. There is no `boot()`, so the
-  "mailerPlugin must be configured first" requirement is still discovered at
-  first send rather than at startup, and no `shutdown()` releases driver
-  resources. Both are unchanged by this pass and worth a decision.
+**`FJS-049`** no `boot()`/`shutdown()` in `plugin.ts` · **`FJS-050`** `ctx.app.notify`
+from a service hook is unprobed, and no consumer of the in-app record shape
+exists in the repo · **`FJS-072`** the inherited "empty email bodies" diagnosis is
+**contested** — this file records it fixed.
+
+Add a new item to `../../ISSUES.md`, not here.

@@ -11,7 +11,7 @@
  */
 
 var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite'];
+var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp'];
 
 var STEPS =
   '<ol class="steps" aria-label="Progress">' +

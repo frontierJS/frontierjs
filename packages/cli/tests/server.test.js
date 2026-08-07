@@ -259,15 +259,16 @@ describe('GET /api/commands/:name — _source blocks', () => {
   })
 
   test('_source.script is null when no <script> block', async () => {
-    // utils:killnode has no <script> block
-    const res  = await fetch(`${base}/api/commands/utils:killnode`)
+    // git:stash is frontmatter + one js block — no <script>, no prose.
+    // If it ever grows either, repoint this and the next test at another
+    // bare command rather than relaxing the assertion.
+    const res  = await fetch(`${base}/api/commands/git:stash`)
     const meta = await res.json()
     expect(meta._source.script).toBeNull()
   })
 
   test('_source.segments contains no prose entries when command has no prose', async () => {
-    // utils:killnode is just a single js block, no prose
-    const res  = await fetch(`${base}/api/commands/utils:killnode`)
+    const res  = await fetch(`${base}/api/commands/git:stash`)
     const meta = await res.json()
     const proseSegments = meta._source.segments.filter(s => s.type === 'prose')
     expect(proseSegments).toHaveLength(0)

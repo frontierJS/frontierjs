@@ -57,6 +57,10 @@ import { resolve, dirname, join, relative } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { pathToFileURL } from 'url'
+import {
+  installSchemas, createReadRecorder, checkRoute,
+  declaredPublishLevel, formatReport,
+} from './static-safety.js'
 
 /** Walk a route tree into a flat list. */
 function flatten(node) {
@@ -178,7 +182,9 @@ export function composeWrapper(pageFile, layoutChain) {
  * fewer request — these pages ship no JS, so the style block is the only thing
  * standing between HTML and first paint.
  */
-export function wrapDocument(bodyHTML, { title, css, styles, lang = 'en' } = {}) {
+export function wrapDocument(bodyHTML, {
+  title, css, styles, lang = 'en', stylesheets = [], bodyClass = '',
+} = {}) {
   const esc = (v) => String(v ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
@@ -200,14 +206,26 @@ export function wrapDocument(bodyHTML, { title, css, styles, lang = 'en' } = {})
         .map((s) => `  <style id="${esc(s.id)}">${s.css.trim()}</style>`)
         .join('\n')
     : (css && css.trim() ? `\n  <style>${css.trim()}</style>` : '')
+
+  // The app's stylesheets come FIRST, so a component's own scoped rules — which
+  // are the more specific statement — are not overridden by the design system.
+  // These are the assets the main build emitted; without them a prerendered page
+  // carries every class name the app uses and not one rule behind them.
+  const linkTags = stylesheets
+    .filter(Boolean)
+    .map((href) => `\n  <link rel="stylesheet" href="${esc(href)}">`)
+    .join('')
+
+  const bodyAttr = bodyClass ? ` class="${esc(bodyClass)}"` : ''
+
   return `<!DOCTYPE html>
 <html lang="${esc(lang)}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(title ?? '')}</title>${styleTag}
+  <title>${esc(title ?? '')}</title>${linkTags}${styleTag}
 </head>
-<body>
+<body${bodyAttr}>
 ${bodyHTML}
 </body>
 </html>
@@ -229,12 +247,27 @@ export async function prerenderRoutes(opts) {
   const {
     tree, root, routesDir = 'src/routes', outDir = 'dist/client',
     warn = () => {}, renderComponent, islands = false, tmpDir = null,
+    // The document around every page this run emits: the app's own stylesheets
+    // (asset URLs from the main build) and the <body> class its index.html
+    // carries. Both are per-BUILD, not per-route.
+    stylesheets = [], bodyClass = '', lang = 'en',
+    // ── Static-safety inputs (FJS-081) ────────────────────────────────
+    // `schemaDefs`/`schemaModels` come from schema-plugin, which has already
+    // run in this build. `db` is a Litestone client the build can tap to see
+    // what a route's load() actually reads. No schema means no gates, so the
+    // whole check stands down — a Sierra app with no database is unaffected.
+    schemaDefs = null, schemaModels = null, db = null,
   } = opts
 
   const routesDirAbs = resolve(root, routesDir)
   const outDirAbs    = resolve(root, outDir)
   const written = []
   const skipped = []
+
+  const safetyOn = !!schemaDefs
+  if (safetyOn) installSchemas(schemaDefs, schemaModels)
+  const violations = []
+  const safetyRows = []
   // Union of every island across every page, keyed by component name. A name is
   // what a marker carries and what the loader's registry is keyed by, so a name
   // used for two different modules is a real collision — reported, not merged.
@@ -249,6 +282,21 @@ export async function prerenderRoutes(opts) {
       skipped.push({ route: node.id, reason: 'route file not found' })
       continue
     }
+
+    // One recorder per ROUTE, opened before getStaticPaths() and closed after
+    // the last page it contributes. The read set is a property of the route,
+    // not of one emitted URL: a `[slug]` route that reads a gated model does so
+    // for every slug, and reporting it once is what makes the message useful.
+    //
+    // try/finally rather than a stop() before each `continue` — there are five
+    // exits from this body and a missed one leaks a tap onto the next route,
+    // which would attribute one route's reads to another and fail the wrong
+    // build.
+    const recorder = safetyOn ? createReadRecorder(db) : null
+    // Hoisted so the finally can read it — a `continue` from any of the exits
+    // below still has to produce a verdict for this route.
+    let _readsData = false
+    try {
 
     let targets
     try {
@@ -266,6 +314,23 @@ export async function prerenderRoutes(opts) {
     const wrapper  = composeWrapper(pageFile, chain)
     const companion = node.companion ? resolve(root, node.companion) : null
     const mod      = await importCompanion(companion)
+
+    // Does this route pull data at all? A page with no companion has no way to
+    // read a model at build time, so it has nothing to prove and is never asked
+    // for a declaration. That keeps the check off the pages it cannot help.
+    //
+    // The `?? companionExists` half is load-bearing and was a fail-OPEN hole in
+    // the first version of this check. `importCompanion` swallows an import
+    // error and returns null, so a `.meta.js` that throws on import — one that
+    // imports the app's db client under a runtime that cannot load it, say —
+    // looked identical to a route with no companion at all, and was waved
+    // through as "reads nothing". A companion that exists but could not be
+    // read is UNKNOWN, and unknown is the case this whole check exists to
+    // refuse. Found by running it in `example/`, not by reading it.
+    const companionExists = !!companion && existsSync(companion)
+    _readsData = mod
+      ? (typeof mod.load === 'function' || typeof mod.getStaticPaths === 'function')
+      : companionExists
 
     for (const { path: urlPath, params } of targets) {
       let data = null
@@ -309,6 +374,9 @@ export async function prerenderRoutes(opts) {
         title:  node.meta?.title ?? node.meta?.frontmatter?.title,
         css:    rendered.css,
         styles: rendered.styles,
+        stylesheets,
+        bodyClass,
+        lang:   node.meta?.lang ?? lang,
       })
 
       const file = join(outDirAbs, outputFileFor(urlPath))
@@ -340,6 +408,39 @@ export async function prerenderRoutes(opts) {
         islandPages.get(rel).add(entry.component)
       }
     }
+
+    } finally {
+      if (recorder) {
+        recorder.stop()
+        const verdict = checkRoute({
+          routeId:   node.file ? relative(root, resolve(root, node.file)) : node.id,
+          meta:      node.meta,
+          models:    recorder.models,
+          tapped:    recorder.tapped,
+          readsData: _readsData,
+        })
+        if (!verdict.ok) violations.push(verdict.message)
+        safetyRows.push({
+          route:     node.path ?? node.id,
+          allowed:   declaredPublishLevel(node.meta).level,
+          published: verdict.published,
+        })
+      }
+    }
+  }
+
+  // ── The static-safety gate (FJS-081) ──────────────────────────────────
+  // Thrown, not warned. A warning scrolls past in CI and the file is written
+  // anyway — and once a public artifact exists it has been served, cached and
+  // indexed, so there is no recovering from "we saw the warning later".
+  if (violations.length) {
+    throw new Error(
+      `[Sierra] ${violations.length} route${violations.length > 1 ? 's' : ''} ` +
+      `cannot be published as static HTML:\n\n` +
+      violations.join('\n') +
+      `\n   Why this is refused rather than warned: a prerendered file is public the\n` +
+      `   moment it ships, and cannot be recalled from a CDN or a search index.\n`
+    )
   }
 
   for (const s of skipped) warn(`${s.route}: ${s.reason}`)
@@ -348,5 +449,9 @@ export async function prerenderRoutes(opts) {
     skipped,
     islands: [...islandsByName.values()],
     islandPages,
+    // What the check PROVED, not only what it rejected. A check nobody has seen
+    // run is a rule nobody trusts, and this table is also the per-route
+    // classification `IDEAS/static-safety.md` wants to build on.
+    safety: safetyOn ? { rows: safetyRows, report: formatReport(safetyRows) } : null,
   }
 }

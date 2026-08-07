@@ -17,7 +17,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid } from '../../utils.js'
+  import { nameToLabel, uid, resolveError } from '../../utils.js'
 
   export let value       = null
   export let options     = []          // flat or grouped (see above)
@@ -48,7 +48,8 @@
   const flatOptions    = isGrouped ? [] : normalise(options)
   const groupedOptions = isGrouped ? options.map(g => ({ ...g, options: normalise(g.options) })) : []
 
-  const hasError = !!(error || errors?.[name])
+  const form     = $context.form
+  const hasError = !!resolveError(form, name, error, errors)
 
   let el
   export function focus() { el?.focus() }
@@ -83,8 +84,17 @@
         null, and an <option> with no value attribute reports its own TEXT as
         its value — so the placeholder submitted the string "Select…" and a
         "nothing picked yet" check against '' never matched.
+
+        NOT `disabled`, though it reads like it should be. A disabled option
+        cannot hold the selection, so a select whose options arrive late — a
+        relation picker, which is every one of them — lost the placeholder the
+        moment the list repopulated and silently landed on the first real row.
+        An unpicked "customer" became customer #1, and the form then filed the
+        order against them with nothing on screen having said so. That is worse
+        than letting someone choose the blank back, which `required` and the
+        schema check both catch anyway.
       -->
-      <option value="" disabled selected={value === null || value === '' || value === undefined}>{placeholder}</option>
+      <option value="" selected={value === null || value === '' || value === undefined}>{placeholder}</option>
     {/if}
 
     {#if isGrouped}
@@ -103,12 +113,19 @@
   </select>
 {/snippet}
 
-{#if label || (name && !label && autoLabel)}
-  {@const resolvedLabel = label || autoLabel}
+{#if label || (name && autoLabel)}
+  <!--
+    label and required go down UNRESOLVED where the caller stated nothing:
+    Field reads the same rule off the same <Form> and resolves them once. This
+    used to pass `label || autoLabel`, which meant the title-cased column name
+    always arrived as an explicit label and a schema `@label("Customer")` could
+    never be seen — the control shadowed the very thing it was meant to show.
+    `|| undefined` because '' is a real answer here: it suppresses the label.
+  -->
   <Field
     id={selectId}
     name={name}
-    label={resolvedLabel}
+    label={label || undefined}
     required={required}
     badge={badge}
     help={help}

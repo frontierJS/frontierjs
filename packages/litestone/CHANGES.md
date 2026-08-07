@@ -1,5 +1,377 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-06 — `@version`: the lost update is now a 409
+
+1437 tests (was 1416). `IDEAS/declared-semantics.md` item 1, shipped.
+
+Nothing in litestone carried a row version, so two people editing one order both
+`PATCH`, both succeed, and the second silently erases the first — the oldest
+silent-wrong-data bug there is.
+
+```js
+const alice = await db.order.findUnique({ where: { id: 1 } })   // version 1
+const bob   = await db.order.findUnique({ where: { id: 1 } })   // version 1
+
+await db.order.update({ where: {id:1}, data: { status: 'paid', version: alice.version } })
+// → { status: 'paid', version: 2 }
+await db.order.update({ where: {id:1}, data: { status: 'void', version: bob.version } })
+// → VersionConflictError: expected 1, row is at 2
+```
+
+### The mechanism already existed
+
+`@@transitions` has run a compare-and-swap since 2026-08-04:
+`applyTransitionWhereClause` narrows the `WHERE` by the value it read, and no
+rows changed means somebody got there first. `@version` is that with the column
+unfrozen — the same *generalise the mechanism rather than add a second one* move
+`cascading-fields.md` argues for `@@softDelete(cascade)`. The bump rides the
+`SET`, which also means a versioned update always has a column to write.
+
+### Where it applies, and where insisting would be wrong
+
+| Path | Requires | Bumps |
+| --- | --- | --- |
+| `create` / `createMany` | — | starts at **1**, whatever the payload says |
+| `update` | **yes** | ✓ |
+| `updateMany` | no | ✓ |
+| `upsert` / `upsertMany` | no | ✓ |
+
+`update` is the concurrent-editor path. A bulk `where` matches many rows and so
+many versions — there is no single value to compare — and an upsert is reached by
+natural key from a sync or an import, which cannot have read one. **Both still
+bump**, which is the half that matters: without it a bulk write would leave every
+open editor's version looking current. Pinned by a test.
+
+The `upsertMany` trap was worth catching: taking the version from `excluded`
+would reset a live row to 1 and make every stale editor current again. It is
+`"version" = "order"."version" + 1` instead.
+
+### Two errors, because they mean different things
+
+`VersionRequiredError` is **400, not retryable** — you left out an input, and the
+identical request fails identically. `VersionConflictError` is **409 + retryable**
+— re-read and re-apply is a real strategy. Both carry `status`, so Junction maps
+them with no registration (verified: → `Conflict` 409 / `BadRequest` 400). Not-found
+still returns `null`; a 409 means the row is there and moved.
+
+### The rest of the surface
+
+`asSystem()` skips the check and still bumps — a migration or a job is not a
+second editor, the same reason it skips gates. The version travels in `data`
+rather than `where`, because a Resource fetch carries every column and a form
+round-trips it with no plumbing. It reaches the client as `readOnly` in the
+update schema plus **`x-version`** naming the column, is absent from the create
+schema, and typegen drops it from `*Create` and makes it **required** in
+`*Update` — the type saying what the runtime does. One per model, `Int`, not
+optional, not the `@id`; all four are schema errors.
+
+**The client half landed the same day** — `createResource` remembers the version
+of every record it reads and puts it on the next patch, so an app writes nothing.
+See sierra's `CHANGES.md` (`FJS-105`).
+
+## 2026-08-06 — the bulk write paths run the `ctx.auth` stamps
+
+1416 tests (was 1408). Closes `FJS-092`, which was filed too narrow.
+
+`upsertMany` stamped nothing from `ctx.auth` — not `@default(auth().id)`, not
+`@createdBy`, not `@updatedBy`. Probing the whole table rather than the one
+filed method turned up a second hole:
+
+| Path | `@updatedAt` | `@updatedBy` | `@createdBy` / `@default(auth().id)` |
+| --- | --- | --- | --- |
+| `create` / `createMany` | ✓ | — | ✓ |
+| `update` | ✓ | ✓ | n/a |
+| `updateMany` | ✓ | **✗** | n/a |
+| `upsertMany` | ✓ | **✗** | **✗** |
+
+**`updateMany` was the worse of the two, and it wrote a wrong name rather than
+no name.** `@updatedAt` is a SQL trigger (`ddl.js`), so the timestamp half of the
+pair kept working on every path while the identity half — which needs `ctx.auth`,
+which SQLite does not have — silently did not:
+
+```js
+await asBob.doc.update(…)       // updatedById: 2   ← Bob
+await asAnn.doc.updateMany(…)   // updatedById: 2   ← still Bob, timestamp moved
+```
+
+A row reading *edited four seconds ago by Bob* when Ann edited it is worse than
+a null: null says unknown, a stale name says something false in an audit shape.
+
+### A conflict is an update
+
+`upsertMany` needed more than a stamp call. `updateCols` defaults to every column
+that is not the conflict target, so simply filling `createdById` would have put it
+in the `ON CONFLICT … SET` clause and made every bulk upsert rewrite the original
+author. Create-time columns are now held out of that clause — **but only the ones
+we filled**. A column the caller supplied stays in, because naming it is an
+explicit request and excluding it would change behaviour that predates the
+stamps; an explicit `update: ['createdById']` moves it too.
+
+### One owner for "ctx.auth → column"
+
+The stamp was inline in four places with two different meanings mixed between
+them. Now two functions, named for the distinction:
+
+- `stampFromAuth` — the **principal wins**. `@createdBy`, `@updatedBy`.
+- `applyAuthDefaults` — the **payload wins**. `@default(auth().field)`, which is
+  a default and documented as one.
+
+Neither fires without `ctx.auth`, which is what keeps `asSystem()` seeders,
+imports and backfills able to carry an explicit author in.
+
+8 tests; **4 fail if the stamps are removed.**
+
+## 2026-08-06 — raw SQL goes through `asSystem()` when the schema declares access rules
+
+1408 tests (was 1399).
+
+`db.sql` reads the base table: no `@@gate`, no `@@allow`, no `@guarded`, no
+`@scoped`, no `@@softDelete` — they are all enforced above SQLite. For a
+deliberate escape hatch that is defensible. What was not is that it was the
+**same function on every proxy**. `authSql` closed over `user` and never read
+it, so it was byte-identical to the unscoped `sql` — while `authQuery`, directly
+beneath it in the same closure, goes to real trouble to keep that same auth
+context alive through `$transaction`. One preserved the scope; one silently
+dropped it.
+
+Measured on one model with `@@allow` + `@guarded` + `@@softDelete`:
+
+```
+$setAuth({id:1}).invoice.findMany()   → 1 row,  ssn absent
+$setAuth({id:1}).sql`SELECT * …`      → 3 rows, ssn in plaintext, another
+                                         owner's row and a soft-deleted one
+```
+
+### The unscoped client was the wider gap
+
+An unauthenticated `db.invoice.findMany()` returns **0** rows — the policy
+evaluates with `auth() == null` and matches nothing — while `db.sql` returned
+all 3. So this was never "the scoped proxy drops its scope". Raw SQL ignored the
+schema on *every* path and the ORM never does, and the anonymous path is where
+the two disagree most. `IDEAS/scoped-sql.md` argued `db.sql` should be left
+unchanged on the grounds that there is no identity to scope by; that is
+overturned.
+
+### The rule
+
+| Surface | Schema declares access rules | It does not |
+| --- | --- | --- |
+| `db.sql` | **throws** | unchanged |
+| `db.$setAuth(u).sql` | **throws** | unchanged |
+| `db.asSystem().sql` | works — the documented bypass | works |
+
+"Access rules" is `@@gate`, `@@allow`/`@@deny`, `@guarded`, `@encrypted`/
+`@secret`, field `@allow`, `@scoped`. **Not** `@omit` or `@@softDelete` — those
+shape what a read returns rather than who may read it, and refusing raw SQL for
+a soft-delete column would fire on most schemas for a lifecycle rule.
+
+### Coarse per schema, not per statement — on purpose
+
+Deciding per statement means parsing the statement, and a hand-written SQL
+validator that is subtly wrong grants a **false** guarantee, which is worse than
+an honest raw hatch because people trust it. The escape routes are numerous and
+all real: `main.`/`temp.` qualification, `ATTACH` (which this client exposes on
+the proxy), `PRAGMA`, views created mid-statement, comment and string-literal
+tricks. SQLite's own authorizer would be the right mechanism and **`bun:sqlite`
+does not expose it** — verified, `Database` has no `setAuthorizer`.
+
+### The refusal names both ways forward
+
+`asSystem().sql` to bypass deliberately, or stay on the ORM — and for an
+expression the query builder cannot express, `where: { $raw: sql\`…\` }` keeps
+every policy. Verified rather than assumed: through `$raw` a scoped caller still
+gets 1 row with the `@guarded` column withheld.
+
+Also: three byte-identical copies of the raw runner (`sql`, `sysSql`, `authSql`)
+collapsed to one.
+
+9 tests; **5 fail if the refusal is removed**. The first caller it caught was
+this package's own `@encrypted: stored as ciphertext in DB`, which peeked at a
+raw column with `db.sql` — a genuine bypass, now saying so. Ruled in
+`DECISIONS.md` § Access control. **Scoped raw SQL — the per-identity view set in
+`IDEAS/scoped-sql.md` — is deliberately not built**; revisit with `herald`.
+
+## 2026-08-06 — the audit log can record a String actor
+
+1399 tests (was 1396).
+
+The synthetic audit model declared `actorId Int`, and the jsonl driver's
+companion index is a STRICT table. So the first audited write with a known actor
+threw
+
+```
+SQLiteError: cannot store TEXT value in INTEGER column auditLogs_idx.actorId
+```
+
+and took the request with it. **Every FrontierJS app is exposed**:
+`@frontierjs/auth` issues `id String @id @default(uuid())`, so its users are
+uuids, and `@@log(audit)` on any model then fails on its first write by a
+signed-in caller.
+
+It was invisible until the same afternoon, and for a precise reason: Junction
+handed the Data boundary a principal with no `id` at all, so `actorId` was always
+null — and NULL fits an INTEGER column. Fixing that (junction's
+`toDataPrincipal`) uncovered this. Two defects, one masking the other.
+
+`actorId` is now `Any` — a real SQLite STRICT column type, and the honest one:
+the trail records whoever the host app keys its users by, which is an Int in one
+app and a uuid in another. The `.jsonl` itself was always untyped JSON.
+
+**An existing index is rebuilt, not abandoned.** `CREATE TABLE IF NOT EXISTS`
+does nothing to a table that already exists, so an index built before the type
+changed would keep the old column and keep failing against a schema that no
+longer explains it. The driver now compares the declared column types against
+`pragma_table_info`, drops the table when they disagree, and **refills it from
+the `.jsonl`** — which has every line and every byte offset. Dropping without
+refilling would have been worse than the error: an audit trail that silently
+looks shorter.
+
+Found by `example/`, whose orders and customers are `@@log(audit)` and whose
+users are auth's uuids.
+
+
+## 2026-08-06 — `@encrypted` works on a `Json` field instead of destroying it
+
+1396 tests (was 1387).
+
+`@encrypted` on a `Json` field **silently destroyed the value**. `encryptField`
+does `String(plaintext)`; an object stringifies to `'[object Object]'`, and what
+went into the column was a faithful AES-256-GCM ciphertext of that literal
+string. Nothing threw. The row looked correctly encrypted. The original was
+unrecoverable.
+
+```js
+await db.vault.create({ data: { blob: { secret: 'hunter2', n: 42 } } })
+// before → "[object Object]"
+// after  → { secret: 'hunter2', n: 42 }
+```
+
+`ISSUES.md` FJS-006, S1. It had been "mitigated" by a `CLAUDE.md` hazard note
+telling people to declare `String @encrypted` and serialize by hand — that note
+is now removed.
+
+### The fix is two points, because the pipeline is already symmetric
+
+The write path encrypts and *then* serializes (`serializeRow(..., jsonFields)`);
+the read path parses and *then* decrypts (`read()` → `applyFieldPolicy`). So a
+Json field only needed its own serialization stepped inside the encryption:
+
+- **encrypt:** `JSON.stringify(val)` before `encryptField`, so what is encrypted
+  is text rather than `String(object)`.
+- **decrypt:** `JSON.parse` after `decryptField`, mirroring it.
+
+Keyed on the **declared** type — `json: field.type?.name === 'Json'`, captured in
+`buildFieldPolicyMap` beside the other per-field facts, because neither call site
+has the schema in scope. Keying on "the value looks like JSON" would have parsed
+a `String @encrypted` field that happens to hold `{"a":1}`.
+
+### What is covered
+
+Objects, nested structures, arrays, and the JSON scalars (`string`, `number`,
+`boolean`) — the scalars matter because `String(plaintext)` handled *those*
+correctly, so a fix that only special-cased objects would have passed the obvious
+tests and quietly double-encoded the rest. `null` stays null. `@secret`,
+`$rotateKey` and `@encrypted(searchable: true)` all verified on a Json field; an
+unencrypted Json field on the same model is untouched, and `@encrypted` still
+implies `@guarded(all)`.
+
+Verified beyond round-tripping: the stored column is ciphertext, and the
+plaintext does not appear anywhere in the database file. A round-trip test alone
+would also pass if the field were simply not being encrypted.
+
+### Legacy rows read as the broken string, not null
+
+Data written before this is already lost and cannot be recovered. A parse
+failure therefore leaves the decrypted value alone rather than nulling it: `null`
+reads as "this was empty", `'[object Object]'` reads as "something went wrong
+here", and only the second sends anyone looking.
+
+9 tests; **4 fail if the fix is reverted**.
+
+## 2026-08-06 — authorship is one line, and cannot be forged
+
+1387 tests (was 1370).
+
+`@@createdBy` and `@@updatedBy` on a model each expand at parse time into the
+pair of fields you were writing by hand:
+
+    model Doc { id Int @id  title String  @@createdBy  @@updatedBy }
+
+    // → createdById Int?  @createdBy
+    //   createdBy   User? @relation("Doc_createdBy", fields: [createdById], references: [id])
+    //   updatedById Int?  @updatedBy
+    //   updatedBy   User? @relation("Doc_updatedBy", fields: [updatedById], references: [id])
+
+Pure desugaring — nothing downstream knows the attribute existed. DDL emits both
+foreign keys, `include: { createdBy: true }` resolves, typegen and JSON Schema see
+ordinary fields. The FK type is copied from the `@@auth` model's `@id`, so an `Int`
+id and a `String @default(uuid())` id both land right. `@@createdBy(owner)` renames
+the pair. A field you already declare under either name wins and is left alone.
+Without a model marked `@@auth`, both are a schema error — the same ruling
+`@scoped` already makes.
+
+**The field-level `@createdBy` is new, and it is a stamp, not a default.** The
+obvious expansion was `@default(auth().id)`, and probing it is what killed that:
+
+    const asAnn = db.$setAuth({ id: 1 })
+    await asAnn.doc.create({ data: { title: 'x', createdById: 2 } })
+    //  → createdById: 2      ← Bob. A default loses to the payload.
+
+Authorship you can forge by adding a key to the request body is not authorship.
+`@createdBy` overwrites instead, matching `@updatedBy`, which had these semantics
+all along. Both are skipped entirely when `ctx.auth` is null, so `asSystem()`
+writes, seeders and backfills still carry an explicit author in — that is the
+only way a migration can.
+
+Stamped on `create`, `createMany` and both `upsert` paths; the upsert fast path
+stamps the INSERT branch only, so a conflict does not rewrite the original
+author. `upsertMany` and `updateMany` were the two paths that stamped nothing —
+see the entry below, which closes that as `FJS-092`.
+`generateFactory` skips both attributes, and typegen drops them from the
+`*Create` interface: a value there loses to the principal anyway.
+
+## 2026-08-05 — every bulk write reaches the audit trail
+
+1370 tests (was 1362).
+
+`updateMany` and `deleteMany` on a model declaring `@@log` wrote **no audit entry
+at all** — not an entry without snapshots, no entry. Both called `fireQuery` and
+never `emitLogs`, and so did `removeMany`, `restore` and `upsertMany`. Probed
+rather than read:
+
+    createMany 3 rows · updateMany 3 · deleteMany 3   →  entries: 2 (the creates)
+
+Two bulk writes destroyed three audited rows and the trail said nothing happened.
+An append-only trail that omits the most destructive operation in the API is worse
+than no trail, because it is trusted.
+
+All five paths now log. `createMany`'s entry named no rows for the same underlying
+reason — an `@id @default(autoincrement())` row has no id until SQLite assigns one,
+and the entry was built from the pre-insert data — so the bulk paths take
+`RETURNING` on a logged model and name their rows by id. An unlogged model is
+untouched: the `RETURNING` path is guarded by `tableHasAnyLog`, so `run()` still
+serves the common case.
+
+Details worth knowing:
+
+- **A bulk write records which rows and what operation, never contents.**
+  `before`/`after` stay single-row-only, as documented. Naming the rows is what
+  makes the trail complete; snapshotting a million-row update is a different
+  feature with a different cost.
+- **`upsertMany` splits its batch** into a `create` entry and an `update` entry.
+  It looks up which conflict keys already exist *before* writing — one prepared
+  `SELECT` per row, on logged models only — because after the write every row
+  looks like an update.
+- **`restore` logs as `update`.** The vocabulary is create|update|delete|read, and
+  a restored row changed state; it was not created.
+
+`docs/audit-logging.md` said "`before`/`after` snapshots are only included for
+single-row `update()` calls — not `updateMany()`", which reads as *the entry exists
+without snapshots*. It did not exist. Corrected there, along with three `db.auditLog`
+call sites that should be `db.auditLogs`.
+
+Repo register: `ISSUES.md` FJS-074.
+
 ## 2026-08-05 — a transaction can read its own writes
 
 1362 tests (was 1355).

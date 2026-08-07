@@ -4,11 +4,26 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <title>Basecamp</title>
 <!--
-  `app` + a theme go on <body>. The theme is one class on any ancestor — swap it
-  for theme-dark / theme-forest / theme-midnight and everything below follows,
-  because it is all custom-property inheritance. No colour is named here.
+  NOTHING in this file may write the body tag inside a comment. Vite injects the
+  built script and stylesheet at the FIRST textual match for it and does not skip
+  comments, so a mention here captures the injection: the tags land inside the
+  comment, the build succeeds, dist/index.html looks right, and the page loads no
+  JavaScript and no CSS at all — a blank white screen with an empty console.
+  That is exactly what this file did until 2026-08-06; `bun run verify` could not
+  see it because it drives the dev server, where nothing is injected. The same
+  trap was fixed in example/web/index.html two days earlier and is in CLAUDE.md.
+
+  `app` + a theme go on the body element. The theme is one class on any ancestor
+  — swap it for theme-dark / theme-forest / theme-midnight and everything below
+  follows, because it is all custom-property inheritance. No colour is named here.
+
+  theme-basecamp is this app's own: the palette of the original UI prototype
+  (docs/mock/BasecampUI.jsx), which carried it as an 18-key object read by 2,761
+  inline style objects. It lives in @frontierjs/css as a theme rather than here
+  as CSS, because a palette is tokens and tokens are the design system's job —
+  which is also what makes it one class to swap back.
 -->
-<body class="app theme-default">
+<body class="app theme-basecamp">
   <div id="app"></div>
   <script type="module" src="/src/main.js"></script>
 </body>

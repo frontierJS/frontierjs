@@ -149,15 +149,39 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
 
 // ─── basecampAuditLog ─────────────────────────────────────────────────────────
 // Writes a record to audit_event after any mutation.
-// Registered as a global after hook in app.ts.
+// Registered as a global `after: { all: [...] }` hook in app.ts.
 // Failures are swallowed — audit log must never break the request.
+//
+// `except` is `service.method` names that mutate but must not be recorded. The
+// one entry today is `servers.heartbeat`: an agent checks in on a timer, so a
+// fleet of fifty would write six figures of rows a day and bury every action a
+// person took. It is deliberately NOT `ctx.dispatch = false` — that would also
+// silence the channel, and the live status pill on the server screen is fed by
+// exactly that publish.
 
-export function basecampAuditLog(app: BasecampApp): Hook {
+export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: string[] } = {}): Hook {
+  const skip = new Set(except)
+
   return async (ctx: ServiceContext): Promise<void> => {
-    const mutating = ['create', 'patch', 'remove']
-    if (!mutating.includes(ctx.method)) return
+    if (skip.has(`${ctx.service}.${ctx.method}`)) return
+    // What counts as a mutation is decided the same way Junction decides what
+    // to announce on a channel: everything except `find`/`get`, and a
+    // read-shaped custom action opts out with `ctx.dispatch = false`.
+    //
+    // It used to be a literal `['create','patch','remove']`, which meant the
+    // trail recorded a server being CREATED and not a server being DRAINED —
+    // and drain, cancel, deploy, trigger and heartbeat are most of what an
+    // operator actually does here. An audit trail that misses the verbs is
+    // worse than none, because it reads as complete.
+    if (ctx.method === 'find' || ctx.method === 'get') return
+    if (ctx.dispatch === false) return
 
-    const result  = (ctx.result as { data?: Record<string, unknown> } | null)?.data as Record<string, unknown> | null
+    // Two result shapes reach here. CRUD answers the envelope, so the row is
+    // under `.data`; a custom action answers the row itself. Reading only the
+    // first recorded every action against subjectId 'unknown', which is a trail
+    // entry that cannot be joined back to the thing it happened to.
+    const raw     = ctx.result as Record<string, unknown> | null
+    const result  = (raw?.data as Record<string, unknown> | undefined) ?? raw
     const session = userOf(ctx)
 
     try {
@@ -167,7 +191,10 @@ export function basecampAuditLog(app: BasecampApp): Hook {
         data: {
           workspaceId: (ctx.locals.workspaceId as string | undefined) ?? null,
           actorId:     session?.userId ?? null,
-          actorType:   session?.authMethod === 'api_key' ? 'api_key' : 'user',
+          // No session is not an anonymous user — it is the engine, a job or an
+          // agent acting for itself. `AuditEvent.actorType` defaults to 'user',
+          // so leaving it unstated would file every machine write under people.
+          actorType:   session ? (session.authMethod === 'api_key' ? 'api_key' : 'user') : 'system',
           action:      `${ctx.service}.${ctx.method}`,
           subjectType: ctx.service,
           subjectId:   (result?.id as string | undefined) ?? 'unknown',

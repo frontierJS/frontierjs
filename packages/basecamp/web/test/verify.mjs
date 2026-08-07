@@ -611,6 +611,13 @@ check('and the trail records it',
   await evaluate(`document.getElementById('server-events')?.textContent ?? ''`),
   t => t.includes('drain'))
 
+// The Toaster is mounted once in the shell; anything can call toasts.success().
+// Asserted here rather than in a chrome section of its own because a toast is
+// transient — the only honest place to look for one is straight after the act.
+check('the transition is confirmed in a toast',
+  await waitFor(`document.querySelector('.toast-stack')?.textContent ?? ''`, t => t.includes('draining')),
+  t => t.includes('draining'))
+
 check('a draining server offers cancel, not drain',
   await evaluate(`document.getElementById('server-actions')?.textContent ?? ''`),
   t => t.includes('Cancel drain') && !t.includes('>Drain'))
@@ -629,6 +636,54 @@ check('removing an online server is refused, in words',
   await evaluate(`document.querySelector('.alert.danger')?.textContent.trim() ?? ''`),
   t => t.includes('drain it first'))
 check('…and it is still here', await path(), serverPath)
+
+// ── 11b. Shell chrome — the attention system and ⌘K ───────────────────
+// The mock's NoticeBar / ActionQueue / CommandPalette, over real rows. The
+// notice engine is src/notices.js, a leaf module both the shell and the home
+// screen call, so "needs attention" has one definition.
+
+// Pressure reported by the agent. Nothing here reloads: the heartbeat
+// publishes to the workspace channel, the shell's servers store takes the
+// push, and the notice is DERIVED from the store — so this asserts the whole
+// chain, not a re-fetch.
+await apiCall(`/servers/${serverId}`, {
+  method: 'POST', workspace: firstWs.id,
+  body: { agent_version: '0.4.1', health: { cpu: 95, memory: 41 } },
+  header: { 'x-service-method': 'heartbeat' },
+})
+check('a notice appears with no reload, off the same push the page reads',
+  await waitFor(`document.body.textContent`, t => t.includes('CPU at 95%')),
+  t => t.includes('CPU at 95%'))
+
+// ⌘K. The listener is on `mesa:window`, so the event goes to the window.
+await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))`)
+await sleep(500)
+check('⌘K opens the palette',
+  await evaluate(`!!document.querySelector('.cp-panel')`), true)
+check('…and the fleet is in it, not just the nav',
+  await evaluate(`document.querySelector('.cp-panel')?.textContent ?? ''`),
+  t => t.includes('Provision server') && t.includes('gateway-01'))
+await evaluate(`document.querySelector('.cp-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+await sleep(400)
+check('…and Escape closes it', await evaluate(`!!document.querySelector('.cp-panel')`), false)
+
+// The queue is the same notices, unfolded, on the home screen.
+await goto('/')
+check('the home screen opens on what needs attention',
+  await waitFor(`document.getElementById('notice-rows')?.textContent ?? ''`, t => t.includes('CPU at 95%')),
+  t => t.includes('CPU at 95%'))
+check('…counted by priority',
+  await evaluate(`document.getElementById('notice-warning')?.textContent ?? ''`),
+  t => t.includes('warning'))
+
+// Targeted, not click('✕'): the shell's NoticeBar carries a dismiss with the
+// same glyph and sits ABOVE the queue, so the loose match would have dismissed
+// the wrong one and the check would have failed for the wrong reason.
+await evaluate(`document.querySelector('#notice-rows button[aria-label^="Dismiss"]').click()`)
+await sleep(400)
+check('a notice can be dismissed',
+  await evaluate(`document.getElementById('notice-rows')?.textContent ?? ''`),
+  t => !t.includes('CPU at 95%'))
 
 // ── 12. Jobs ──────────────────────────────────────────────────────────
 // Seeded fleets have jobs; a fresh database does not, so one is created over
@@ -705,6 +760,130 @@ check('…and unconfigured ones say so, rather than reading as broken',
   await evaluate(`document.getElementById('adapter-tiles')?.textContent ?? ''`),
   t => t.includes('unconfigured'))
 
+// ── 13b. Portal — the same appliances, measured rather than declared ──
+// /admin/adapters/ asks whether an adapter is WIRED and pings nothing; this
+// screen asks whether it answers RIGHT NOW. The service splits the same way:
+// find() is the declaration, get(id) is the ping.
+await goto('/portal/')
+check('the portal lists the appliances', await heading(), 'Portal')
+check('…with their URLs, not just their names',
+  await evaluate(`document.getElementById('portal-tiles')?.textContent ?? ''`),
+  t => t.includes('Typesense') && t.includes('Zot'))
+
+await evaluate(`document.getElementById('portal-check-all').click()`)
+check('checking pings every adapter for real',
+  await waitFor(`document.getElementById('portal-tiles')?.textContent ?? ''`,
+    t => !t.includes('not checked')),
+  t => !t.includes('not checked'))
+
+// An appliance opens at its own URL, and opening it IS the health check.
+await evaluate(`document.querySelector('#portal-tiles a[href^="/portal/"]').click()`)
+await sleep(1800)
+check('an appliance has its own screen',
+  await evaluate(`document.getElementById('appliance-facts')?.textContent ?? ''`),
+  t => t.includes('Adapter'))
+check('…and says whether it is real or a stub',
+  await evaluate(`document.getElementById('appliance-status')?.textContent.trim() ?? ''`),
+  t => t.length > 0)
+
+// ── 13c. Networking, Alerts, Secrets ─────────────────────────────────
+// Three sets of models sat in db/schema.lite with NO API surface at all until
+// 2026-08-06 — `Network`+`ServerNetwork`+`AppNetwork`, `AlertRule`+`AlertEvent`
+// and `Secret`. These checks are the proof they are reachable.
+
+await goto('/networks/')
+check('networking renders', await heading(), 'Networking')
+await click('New network')
+await sleep(800)
+await fill({ name: 'Mesh prod', cidr: '10.10.0.0/16' })
+await submit()
+check('a network is created',
+  await waitFor(`document.getElementById('network-list')?.textContent ?? ''`, t => t.includes('Mesh prod')),
+  t => t.includes('Mesh prod') && t.includes('10.10.0.0/16'))
+
+// The join table is the point of the service — a network nothing is on tells
+// an operator nothing.
+await click('Attach a server')
+await sleep(600)
+await evaluate(`
+  (() => {
+    const sel = document.querySelector('#network-list select')
+    sel.value = [...sel.options].find(o => o.value)?.value
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+await click('Attach')
+check('a server joins the network',
+  await waitFor(`document.getElementById('network-list')?.textContent ?? ''`, t => t.includes('gateway-01')),
+  t => t.includes('gateway-01') && t.includes('1 attached'))
+
+// Deleting is refused while anything is on it — the service's judgement, shown
+// rather than pre-empted by a disabled button.
+await click('Delete')
+await sleep(1200)
+check('a populated network refuses to be deleted, in words',
+  await evaluate(`document.querySelector('.alert.danger')?.textContent ?? ''`),
+  t => t.includes('detach'))
+
+await goto('/alerts/')
+check('alerts renders', await heading(), 'Alerts')
+check('…and says plainly that nothing evaluates the rules yet',
+  await evaluate(`document.body.textContent`), t => t.includes('not yet evaluated'))
+await click('New rule')
+await sleep(800)
+await fill({ name: 'DB memory high', metricName: 'memory', threshold: '85' })
+await submit()
+check('an alert rule is created',
+  await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('DB memory high')),
+  t => t.includes('DB memory high'))
+await click('History')
+check('a rule that never fired says so, rather than showing an empty box',
+  await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('never fired')),
+  t => t.includes('never fired'))
+
+await goto('/secrets/')
+check('secrets renders', await heading(), 'Secrets')
+await click('Add a secret')
+await sleep(800)
+await fill({ name: 'deploy-key', data: 'ssh-ed25519 AAAAC3NzaC1PLAINTEXTCANARY' })
+await submit()
+check('a secret is stored',
+  await waitFor(`document.getElementById('secret-rows')?.textContent ?? ''`, t => t.includes('deploy-key')),
+  t => t.includes('deploy-key') && t.includes('unverified'))
+
+// The one that matters. Not "is it masked" — the key is ABSENT from the
+// response, because @encrypted is enforced at the Data boundary.
+check('the plaintext is nowhere on the page',
+  await evaluate(`document.body.textContent.includes('PLAINTEXTCANARY')`), false)
+check('…nor in what the API answers',
+  await evaluate(`
+    fetch('/secrets', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': ${JSON.stringify(secondWs.id)},
+    }}).then(r => r.text()).then(t => t.includes('PLAINTEXTCANARY'))`),
+  false)
+
+// ── 13d. Activity — the trail as a narrative ─────────────────────────
+// The point of this check is not the table. It is that the trail now records
+// ACTIONS: before 2026-08-06 the audit hook ran on create/patch/remove only,
+// so draining a server — the operator verb — was recorded nowhere.
+await goto('/activity/')
+check('the activity feed renders', await heading(), 'Activity')
+check('the trail records custom actions, not only CRUD',
+  await waitFor(`document.getElementById('activity-rows')?.textContent ?? ''`, t => t.includes('drain')),
+  t => t.includes('drain'))
+check('…and an actor id is resolved to a person',
+  await evaluate(`document.getElementById('activity-rows')?.textContent ?? ''`),
+  t => t.includes('sam@example.com') || t.includes('Sam'))
+
+const kindCount = await evaluate(`document.querySelectorAll('#activity-kinds button').length`)
+check('the kind filter is built from what happened, not declared', kindCount, n => n > 1)
+await evaluate(`[...document.querySelectorAll('#activity-kinds button')].find(b => b.textContent.trim() === 'servers').click()`)
+await sleep(600)
+check('filtering to one kind drops the others',
+  await evaluate(`document.getElementById('activity-rows')?.textContent ?? ''`),
+  t => t.includes('servers') && !t.includes('projects'))
+
 // Delete the project, which cascades in the schema.
 await goto(projectPath)
 await click('Delete')
@@ -744,7 +923,9 @@ const AUDIT = `(() => {
 })()`
 
 for (const route of ['/', '/projects/', '/projects/create/', '/servers/', '/servers/create/',
-                     '/deployments/', '/jobs/', '/admin/', '/admin/audit/', '/admin/adapters/']) {
+                     '/deployments/', '/jobs/', '/networks/', '/alerts/', '/secrets/',
+                     '/activity/', '/portal/',
+                     '/admin/', '/admin/audit/', '/admin/adapters/']) {
   await goto(route)
   const issues = await evaluate(AUDIT)
   check(`a11y: ${route}`, Array.isArray(issues) ? issues.join(' | ') : String(issues), '')

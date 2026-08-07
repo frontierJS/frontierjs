@@ -176,7 +176,8 @@ One schema. One service declaration. One resource binding. Any component that im
 | [Decisions](./DECISIONS.md)                                                           | Dated rulings — read before relitigating any semantics                           |
 | [Verifying](./VERIFYING.md)                                                           | How to know something here is true: run it, probe failure paths, don't trust docs |
 | [Realm Bridge Reference](./CLAUDE.md#bridge-index--the-named-cross-package-handoffs)  | The named cross-package handoffs, and the file each one lives in                 |
-| [Handoff](./HANDOFF.md)                                                               | Current state and the numbered open-issue ledger                                 |
+| [Issues](./ISSUES.md)                                                                 | The open register — every defect, gap and unruled question, one id each          |
+| [Handoff](./HANDOFF.md)                                                               | Current state, newest session first. Narrative; the ledger lives in Issues       |
 
 ### Runnable examples
 

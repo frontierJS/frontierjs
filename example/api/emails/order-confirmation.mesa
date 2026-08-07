@@ -1,0 +1,96 @@
+<script module>
+  // The subject travels WITH the template. `renderEmailFile` returns it
+  // alongside the HTML, so the one place that decides what this email says is
+  // the same file that decides what it looks like — a subject written in the
+  // notification class and a body written here would drift the first time
+  // either changed.
+  //
+  // A FUNCTION of the same data the body renders from, because a receipt's
+  // subject names the order — a static string would push that one fact back out
+  // into the caller and the wording would be authored in two places again.
+  // `renderEmailFile` returns module exports as values, so this arrives as a
+  // function and the caller applies it to the same object.
+  //
+  // A `<script module>` block runs once at import and its named exports are
+  // importable — the same rule that makes `src/resources/shop.mesa` work
+  // (Invariant 18). It runs BEFORE props exist, which is exactly why this is a
+  // function rather than a template literal.
+  export const subject = (d) => `Your order ${d.reference} is confirmed`
+</script>
+
+<script>
+  // A `.mesa` file rendered on the SERVER, at `target: 'email'` — the same
+  // compiler the browser uses, emitting table-based, CSS-inlined, Outlook-safe
+  // HTML instead of a DOM. There is no runtime here and no hydration: the
+  // output is a string that a mail client from 2003 can read.
+  //
+  // Why this is not the `mail()` line builder: that vocabulary is greeting /
+  // paragraph / button, which is right for "your password was reset" and cannot
+  // express a receipt. An order confirmation IS a receipt — it has a table of
+  // facts, and the table is the message.
+  import Email    from '@frontierjs/email-kit/components/Email.mesa'
+  import Section  from '@frontierjs/email-kit/components/Section.mesa'
+  import Row      from '@frontierjs/email-kit/components/Row.mesa'
+  import Column   from '@frontierjs/email-kit/components/Column.mesa'
+  import Card     from '@frontierjs/email-kit/components/Card.mesa'
+  import KeyValue from '@frontierjs/email-kit/components/KeyValue.mesa'
+  import Button   from '@frontierjs/email-kit/components/Button.mesa'
+  import Divider  from '@frontierjs/email-kit/components/Divider.mesa'
+  import Footer   from '@frontierjs/email-kit/components/Footer.mesa'
+
+  // Every default is a value this email would be embarrassing to send. They
+  // exist so the template renders standalone — `bun run email:preview` writes it
+  // to a file you can open — and never so a missing prop passes unnoticed.
+  export let reference = 'ORD-0000'
+  export let customer  = 'there'
+  export let total     = '0.00'
+  export let orderUrl  = 'http://localhost:5274/orders/'
+</script>
+
+<Email subject="Your order is confirmed" preview="We have your payment — here is what happens next.">
+
+  <Section bgcolor="#1f2933">
+    <Row>
+      <Column align="center" padding="28px 16px">
+        <h1 style="font-family:Helvetica,Arial,sans-serif;font-size:24px;font-weight:800;color:#ffffff;margin:0;">
+          Thank you, {customer}
+        </h1>
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:15px;color:rgba(255,255,255,0.85);margin:10px 0 0;line-height:1.5;">
+          Order {reference} is confirmed.
+        </p>
+      </Column>
+    </Row>
+  </Section>
+
+  <Section>
+    <Row>
+      <Column padding="24px 16px 8px">
+        <Card>
+          <KeyValue label="Order" value={reference} />
+          <KeyValue label="Total" value={total} bold={true} border={false} />
+        </Card>
+      </Column>
+    </Row>
+
+    <Row>
+      <Column align="center" padding="16px">
+        <Button href={orderUrl} text="View your order" bgcolor="#1f2933" />
+      </Column>
+    </Row>
+
+    <Divider />
+
+    <Row>
+      <Column padding="8px 16px 24px">
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#555555;margin:0;line-height:1.6;">
+          We will email you again when it ships, with a tracking code.
+        </p>
+      </Column>
+    </Row>
+  </Section>
+
+  <Footer>
+    The kitchen sink shop · this is a demo, no parcel is coming
+  </Footer>
+
+</Email>

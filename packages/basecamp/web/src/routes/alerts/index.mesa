@@ -1,0 +1,220 @@
+---
+title: Alerts
+---
+<script>
+  // The mock's AlertRulesView. `AlertRule` and `AlertEvent` had been in the
+  // schema with no API at all until 2026-08-06.
+  //
+  // What this screen does NOT do is decide that a rule has been breached.
+  // Nothing evaluates rules yet — that needs whatever measures, and inventing
+  // it in the browser would be a page-out fired from the client's idea of the
+  // truth. So an event list that is empty is honest, and says so.
+  import { session } from '../../session.js'
+  import { alerts } from '../../resources/alerts.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Form       from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows     = []
+  let events   = {}      // ruleId → recent events
+  let error    = null
+  let loading  = true
+  let busy     = null
+  let creating = false
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows = (await alerts.service.find({}, { limit: 100 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  const READS = new Set(['get', 'find', 'events'])
+  const off = alerts.service.on('*', (method, row) => {
+    if (READS.has(method) || !row?.id) return
+    load()
+  })
+  $onDestroy(off)
+
+  // Loaded on demand rather than for every rule at once: a rule that has never
+  // fired is the common case, and eight requests to prove that is a waste.
+  async function showEvents(rule) {
+    busy = rule.id
+    try {
+      const raw = await alerts.service.action('events', rule.id)
+      events = { ...events, [rule.id]: Array.isArray(raw) ? raw : raw?.data ?? [] }
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function create(data) {
+    error = null
+    try {
+      // `condition` is Json in the schema and a threshold in the UI. One shape
+      // is built here rather than asking a person to type JSON — and the
+      // service is what refuses a severity it does not recognise.
+      const created = await alerts.service.create({
+        ...data,
+        condition: { operator: 'gt', threshold: Number(data.threshold ?? 0) },
+      })
+      toasts.success(`${created.name} created`)
+      creating = false
+      await load()
+    } catch (e) {
+      error = e.message
+      throw e
+    }
+  }
+
+  async function toggle(rule) {
+    error = null; busy = rule.id
+    try {
+      const updated = await alerts.service.patch(rule.id, { isActive: !rule.isActive })
+      const i = rows.findIndex(r => r.id === rule.id)
+      if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function acknowledge(rule, event) {
+    error = null; busy = rule.id
+    try {
+      await alerts.service.action('acknowledge', rule.id, { eventId: event.id })
+      await showEvents(rule)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove(rule) {
+    error = null; busy = rule.id
+    try {
+      await alerts.service.remove(rule.id)
+      toasts.success(`${rule.name} deleted`)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const TONE = { critical: 'danger', warning: 'warning', info: 'info' }
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+</script>
+
+<div class="section-header">
+  <h1>Alerts</h1>
+  <Button variant="primary" id="new-alert" onclick={() => creating = !creating}>
+    {creating ? 'Cancel' : 'New rule'}
+  </Button>
+</div>
+
+<Callout tone="info" title="Rules are declared, not yet evaluated">
+  Nothing measures these thresholds today — an evaluator belongs with whatever does the
+  measuring, and a rule that fired from the browser's view of the fleet would be theatre.
+  Events written by the system are read here.
+</Callout>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if creating}
+  <Card>
+    <Form resource={alerts} onsubmit={create}>
+      <Input name="name" id="name" />
+      <Input name="metricName" id="metricName" placeholder="memory" />
+      <Input name="threshold" id="threshold" type="number" label="Threshold (%)" />
+      <Select name="severity" options={['info', 'warning', 'critical']} />
+      <Button type="submit" variant="primary">Create rule</Button>
+    </Form>
+  </Card>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No alert rules">
+    Nothing in this workspace is being watched yet.
+  </EmptyState>
+{:else}
+  <div class="stack" id="alert-list">
+    {#each rows as rule}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">{rule.name}</h2>
+          <span class="cluster">
+            <Pill tone={TONE[rule.severity] ?? ''}>{rule.severity}</Pill>
+            {#if !rule.isActive}<Badge tone="muted">paused</Badge>{/if}
+          </span>
+        </div>
+
+        <dl class="facts">
+          <dt>Metric</dt><dd><code>{rule.metricName}</code></dd>
+          <dt>Condition</dt>
+          <dd><code>{rule.condition?.operator ?? 'gt'} {rule.condition?.threshold ?? '—'}</code></dd>
+        </dl>
+
+        {#if events[rule.id]}
+          {#if events[rule.id].length}
+            <ul class="stack">
+              {#each events[rule.id] as ev}
+                <li class="cluster">
+                  <Pill tone={ev.status === 'resolved' ? 'muted' : TONE[ev.severity] ?? ''}>{ev.status}</Pill>
+                  <span class="text-sm">{ev.message}</span>
+                  <span class="text-sm text-muted">{when(ev.firedAt)}</span>
+                  {#if !ev.acknowledgedAt && ev.status !== 'resolved'}
+                    <Button variant="ghost" disabled={busy === rule.id}
+                            onclick={() => acknowledge(rule, ev)}>Acknowledge</Button>
+                  {:else if ev.acknowledgedAt}
+                    <Badge tone="success">acknowledged</Badge>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="text-sm text-muted">This rule has never fired.</p>
+          {/if}
+        {/if}
+
+        <div class="cluster">
+          <Button variant="outlined" disabled={busy === rule.id}
+                  onclick={() => showEvents(rule)}>History</Button>
+          <Button variant="ghost" disabled={busy === rule.id} onclick={() => toggle(rule)}>
+            {rule.isActive ? 'Pause' : 'Resume'}
+          </Button>
+          <Button variant="ghost" disabled={busy === rule.id} onclick={() => remove(rule)}>Delete</Button>
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}

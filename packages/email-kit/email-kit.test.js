@@ -1,7 +1,7 @@
 /**
- * mesa-email.test.js
+ * email-kit.test.js
  *
- * Run from the mesa-email package root:
+ * Run from the email-kit package root:
  *   npx vitest run
  *
  * Requires @frontierjs/mesa to be installed (peer dep).
@@ -45,7 +45,7 @@ const renderEmailFile = (file, data = {}) =>
 
 // ── render.js API ─────────────────────────────────────────────────────────────
 
-describe('@frontierjs/mesa-email render API', () => {
+describe('@frontierjs/email-kit render API', () => {
   it('renderEmail renders from source string', async () => {
     const { renderEmail: re } = await import('./render.js')
     const result = await re(
@@ -152,7 +152,7 @@ describe('Email components', () => {
   it('Button: rendering through raw renderComponent leaves the placeholder', async () => {
     // Documenting the trade-off rather than hiding it. Bypassing the kit's
     // renderer drops the Outlook fallback — silently, which is why it is
-    // pinned. Use renderEmail/renderEmailFile from '@frontierjs/mesa-email/render'.
+    // pinned. Use renderEmail/renderEmailFile from '@frontierjs/email-kit/render'.
     const r = await renderEmailFile('Button.mesa', { href: 'https://example.com', text: 'Click' })
     expect(r.html).toContain('data-mso')
     expect(r.html).not.toContain('v:roundrect')

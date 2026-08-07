@@ -3,6 +3,7 @@
 export { createClient, ValidationError,
          TransitionViolationError, TransitionConflictError,
          TransitionNotFoundError, TransitionGateError,
+         VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError }                          from './core/client.js'
 export { sql, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'

@@ -23,6 +23,8 @@ title: Orders
     { key: 'total',      label: 'Total' },
     { key: 'customerId', label: 'Customer' },
     { key: 'note',       label: 'Note' },
+    // Written by a job, not by anything on this page — see the note below.
+    { key: 'trackingCode', label: 'Tracking' },
     { key: 'moves',      label: 'Moves' },
     { key: 'actions',    label: 'Actions' },
   ]
@@ -84,8 +86,17 @@ title: Orders
     try {
       // Dispatched as POST /api/orders/{id} with X-Service-Method: {name}.
       // Nothing in the app registers that route.
-      await orders.service.action(name, id)
-      await orders.load()
+      const row = await orders.service.action(name, id)
+
+      // No refetch. The server announces the move as `orders pay` and the
+      // client's '*' handler upserts it, so THIS table and every other open
+      // one re-grade from the same broadcast — proved by web/test/verify-live.mjs.
+      // The upsert below is for the socketless case (the HTTP fallback), where
+      // no broadcast arrives; it is idempotent, so it costs the live path
+      // nothing. Until 2026-08-06 this line was `await orders.load()`, and that
+      // refetch was the only reason the page looked right — an action announced
+      // nothing at all, and a second tab went stale in silence.
+      if (row?.id) orders.store.upsert(row)
     } catch (e) {
       // 409 Conflict — the row moved, or the move was never legal from here.
       // 403 Forbidden — the move is gated above this session.
@@ -120,6 +131,15 @@ title: Orders
       <td>{order.total}</td>
       <td class="text-muted">#{order.customerId}</td>
       <td class="text-muted">{order.note === null ? '—' : order.note}</td>
+      <td>
+        {#if order.trackingCode}
+          <code>{order.trackingCode}</code>
+        {:else if order.status === 'shipped'}
+          <span class="text-sm text-muted">booking…</span>
+        {:else}
+          <span class="text-sm text-muted">—</span>
+        {/if}
+      </td>
       <td>
         <!-- `session.level` is named in the expression on purpose: Mesa reads
              an expression's dependencies from its text, so calling
@@ -166,4 +186,15 @@ title: Orders
   <code>@gate(5)</code>, so signed in as <em>sam</em> it renders disabled and
   signed in as <em>alex</em> it does not — and the server answers 403 either way
   if you get past the button.
+</Alert>
+
+<Alert tone="info">
+  <strong>Tracking</strong> is written by a job, not by a request. Press
+  <em>ship</em> and the cell says <em>booking…</em> — the move has happened, the
+  courier has not been called yet. A second or two later the code appears
+  <strong>without this page asking for anything</strong>: a
+  <code>@frontierjs/caravan</code> worker booked the courier off the request,
+  wrote the result through the orders <em>service</em>, and the announcement
+  came down the same channel every other change uses. Leave a second tab open on
+  this page and watch it fill in there too.
 </Alert>

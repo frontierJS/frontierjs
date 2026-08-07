@@ -818,6 +818,7 @@ class Parser {
         return { kind: 'funcCall', fn: 'slug', args: slugArgs }
       }
       case 'updatedAt': return { kind: 'updatedAt' }   // auto-set on every update
+      case 'version':   return { kind: 'version' }     // optimistic concurrency — see client.js
       case 'updatedBy': {
         // @updatedBy              → stamps ctx.auth.id on every update
         // @updatedBy(auth().field) → stamps ctx.auth[field] on every update
@@ -831,6 +832,25 @@ class Parser {
           return { kind: 'updatedBy', authField }
         }
         return { kind: 'updatedBy', authField: 'id' }
+      }
+      case 'createdBy': {
+        // @createdBy               → stamps ctx.auth.id on create
+        // @createdBy(auth().field) → stamps ctx.auth[field] on create
+        //
+        // A stamp, not a default: an authenticated caller cannot forge
+        // authorship by putting the column in the payload. With no ctx.auth
+        // (asSystem(), a seeder, an anonymous write) an explicit value is
+        // honoured — that is how backfills and imports carry authorship in.
+        if (this.check(TK.LPAREN)) {
+          this.eat(TK.LPAREN)
+          this.eatIdent('auth')
+          this.eat(TK.LPAREN); this.eat(TK.RPAREN)
+          this.eat(TK.DOT)
+          const authField = this.eat(TK.IDENT).value
+          this.eat(TK.RPAREN)
+          return { kind: 'createdBy', authField }
+        }
+        return { kind: 'createdBy', authField: 'id' }
       }
 
       // ── Per-scope sequence ─────────────────────────────────────────────────
@@ -1449,6 +1469,32 @@ class Parser {
           throw new ParseError(`@@hasTemplates field name must be a valid identifier, got '${field}'`, this.peek())
         return { kind: 'hasTemplates', field }
       }
+      // ── Authorship ───────────────────────────────────────────────────────────
+      // @@createdBy         — adds `createdById` + a `createdBy` relation to the
+      //                       @@auth model, stamped from ctx.auth on create.
+      // @@updatedBy         — adds `updatedById` + `updatedBy`, restamped on every update.
+      // @@createdBy(owner)  — same pair, named `ownerId` + `owner`.
+      //
+      // Sugar only: both expand at parse time into the fields you would have
+      // written by hand (@default(auth().id) / @updatedBy), so nothing
+      // downstream knows they exist. See expandAuthorshipAttributes().
+      case 'createdBy':
+      case 'updatedBy': {
+        let base = name
+        if (this.check(TK.LPAREN)) {
+          this.eat(TK.LPAREN)
+          // Accept (as: "owner") OR ("owner") OR (owner) for ergonomics
+          if (this.peek().type === TK.IDENT && this.peek().value === 'as') {
+            this.eat(TK.IDENT)
+            this.eat(TK.COLON)
+          }
+          base = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+          this.eat(TK.RPAREN)
+        }
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(base))
+          throw new ParseError(`@@${name} name must be a valid identifier, got '${base}'`, this.peek())
+        return { kind: name, base }
+      }
       // ── Access policies ──────────────────────────────────────────────────────
       // @@allow('read', published || owner == auth())
       // @@allow('create,update', auth() != null)
@@ -1930,7 +1976,7 @@ function resolveTraits(schema) {
 
 const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   'id', 'unique', 'map', 'relation', 'generated', 'from',
-  'encrypted', 'guarded', 'secret', 'updatedAt', 'allow', 'deny',
+  'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow', 'deny',
 ])
 const TYPE_FORBIDDEN_FIELD_TYPES = new Set(['File', 'Bytes'])
 const TYPE_DEFAULT_FORBIDDEN_KINDS = new Set(['now', 'cuid', 'ulid', 'uuid', 'auth'])
@@ -2080,6 +2126,78 @@ function expandHasTemplatesAttributes(schema) {
       comments: [],
     })
   }
+}
+
+// ── @@createdBy / @@updatedBy expansion ────────────────────────────────────────
+// Authorship sugar. Both are pure desugaring — each injects the exact pair of
+// fields you would otherwise hand-write, so from here on nothing knows the
+// attribute existed:
+//
+//   @@createdBy  →  createdById <authIdType>? @createdBy
+//                   createdBy   <AuthModel>?  @relation("<Model>_createdBy",
+//                                               fields: [createdById], references: [<authId>])
+//   @@updatedBy  →  updatedById <authIdType>? @updatedBy
+//                   updatedBy   <AuthModel>?  @relation("<Model>_updatedBy", …)
+//
+// The FK type is copied from the @@auth model's @id, so an Int id and a
+// String uuid id both land right. Both columns are nullable: asSystem() writes
+// and unauthenticated creates have no author, and a NOT NULL here would break
+// every seeder and migration backfill.
+//
+// A field the host already declares under either name wins and is left alone —
+// declare `createdById String?` yourself and you still get the relation for
+// free. Runs before expandEdgeAttributes() so injected columns are visible to
+// its collision checks, and before validate(), which is what resolves the
+// injected relation field's type.kind.
+function expandAuthorshipAttributes(schema) {
+  const errors    = []
+  const authModel = schema.models.find(m => m.attributes.some(a => a.kind === 'auth'))
+
+  for (const model of schema.models) {
+    for (const attr of model.attributes) {
+      if (attr.kind !== 'createdBy' && attr.kind !== 'updatedBy') continue
+
+      if (!authModel) {
+        errors.push(`Model '${model.name}': @@${attr.kind} requires a model marked @@auth`)
+        continue
+      }
+      const authId = authModel.fields.find(f => f.attributes.some(a => a.kind === 'id'))
+      if (!authId) {
+        errors.push(`Model '${model.name}': @@${attr.kind} requires an @id field on the @@auth model '${authModel.name}'`)
+        continue
+      }
+
+      const base = attr.base
+      const key  = `${base}Id`
+
+      if (!model.fields.some(f => f.name === key)) {
+        model.fields.push({
+          name: key,
+          type: { kind: 'scalar', name: authId.type.name, array: false, optional: true },
+          attributes: [{ kind: attr.kind, authField: 'id' }],
+          comments: [],
+        })
+      }
+
+      // The relation is named explicitly: a model carrying both @@createdBy and
+      // @@updatedBy has two relations to the same model, which is ambiguous
+      // without one. A self-authoring @@auth model needs it for the same reason.
+      if (!model.fields.some(f => f.name === base)) {
+        model.fields.push({
+          name: base,
+          type: { kind: 'scalar', name: authModel.name, array: false, optional: true },
+          attributes: [{
+            kind:       'relation',
+            name:       `${model.name}_${base}`,
+            fields:     [key],
+            references: [authId.name],
+          }],
+          comments: [],
+        })
+      }
+    }
+  }
+  return errors
 }
 
 // ── @edge / @scoped normalization ──────────────────────────────────────────────
@@ -2574,6 +2692,26 @@ function validate(schema) {
     }
   }
 
+  // ── @version validation ─────────────────────────────────────────────────────
+  // A row has one version or none. Two would each be a partial answer to "is this
+  // the row I read", and a caller could satisfy one while the other had moved.
+  for (const model of schema.models) {
+    const versioned = model.fields.filter(f => f.attributes.some(a => a.kind === 'version'))
+    if (!versioned.length) continue
+    if (versioned.length > 1)
+      errors.push(`Model '${model.name}': @version declared on ${versioned.map(f => `'${f.name}'`).join(' and ')} — a model has at most one version field`)
+    for (const field of versioned) {
+      if (field.type.name !== 'Int')
+        errors.push(`Model '${model.name}', field '${field.name}': @version requires an Int field, got ${field.type.name}`)
+      // Nullable would mean "this row has no version", and every update against it
+      // would have nothing to compare — a silent hole in the guarantee.
+      if (field.type.optional)
+        errors.push(`Model '${model.name}', field '${field.name}': @version cannot be optional — a row with no version cannot be checked`)
+      if (field.attributes.some(a => a.kind === 'id'))
+        errors.push(`Model '${model.name}', field '${field.name}': @version cannot be the @id — the version changes on every write`)
+    }
+  }
+
   // ── @@external validation ────────────────────────────────────────────────────
   for (const model of schema.models) {
     if (!model.attributes.some(a => a.kind === 'external')) continue
@@ -3024,6 +3162,7 @@ export function parseFile(filePath) {
   // Run the full validator on the merged schema
   expandSecretAttributes(schema)
   expandHasTemplatesAttributes(schema)
+  allErrors.push(...expandAuthorshipAttributes(schema))
   allErrors.push(...expandEdgeAttributes(schema))
   resolveTransitions(schema)
   const { valid, errors, warnings } = validate(schema)
@@ -3061,9 +3200,10 @@ export function parse(src) {
   }
   expandSecretAttributes(schema)
   expandHasTemplatesAttributes(schema)
+  const authorshipErrors = expandAuthorshipAttributes(schema)
   const edgeErrors = expandEdgeAttributes(schema)
   resolveTransitions(schema)
   const { valid, errors, warnings } = validate(schema)
-  const merged = [...edgeErrors, ...errors]
+  const merged = [...authorshipErrors, ...edgeErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings }
 }

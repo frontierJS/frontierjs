@@ -1,0 +1,21 @@
+<script module>
+  // The in-app half of a notification, as a UI resource.
+  //
+  // A `.mesa` file with no markup — Invariant 18: a Resource is a UI-realm noun,
+  // so it is written in the UI-realm language even when all it does is bind a
+  // name to a service. `<script module>` runs once at import and its named
+  // exports are importable anywhere.
+  //
+  // Nothing here says "only mine". The model does
+  // (`@@allow('read', userId == auth().id)`), and the server is what enforces
+  // it — which is why signing out and back in as somebody else needs no code on
+  // this side at all.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const notifications = createResource('notifications', {
+    model: 'Notification',
+  })
+
+  /** Unread first-class: the header counts these, the list styles them. */
+  export const isUnread = (n) => !n.readAt
+</script>

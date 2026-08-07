@@ -1,0 +1,152 @@
+---
+title: Activity
+---
+<script>
+  // The workspace narrative — what happened here, newest first.
+  //
+  // Same rows as /admin/audit/, and deliberately a different question. That
+  // screen is the forensic table: raw action strings, actor ids, filters, the
+  // thing you read when you need to prove what occurred. This one resolves
+  // actors to names, groups by the kind of thing that changed, and links every
+  // row to the subject it happened to — what you read to catch up. The mock
+  // carries both for the same reason (`ActivityFeedView` vs `AuditLogView`).
+  //
+  // It is only as complete as the trail. Until 2026-08-06 the audit hook ran on
+  // create/patch/remove only, so a server being DRAINED — the operator verb —
+  // was never recorded. The hook now runs on `all` minus reads, which is what
+  // makes this screen worth having.
+  import { session } from '../../session.js'
+  import { audit } from '../../resources/audit.mesa'
+  import { workspaces } from '../../resources/workspaces.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+
+  $: session.workspaceId
+
+  let rows    = []
+  let people  = {}
+  let error   = null
+  let denied  = false
+  let loading = true
+  let kind    = 'all'
+
+  // Which screen a subject lives on. A service with no detail route is left
+  // unlinked rather than pointed at a 404 — the same rule the shell nav follows.
+  const SUBJECT_ROUTE = {
+    servers: '/servers/', projects: '/projects/', jobs: '/jobs/',
+    deployments: '/deployments/', environments: '/environments/',
+  }
+
+  async function load() {
+    error = null; denied = false; loading = true
+    try {
+      // Members first and separately: the trail stores an actorId, and a page
+      // that says "1f3c…9a did this" is a log, not a narrative. One request for
+      // the whole workspace, not one per row.
+      // A custom method's return shape is load-bearing and unwrapping is the
+      // caller's problem today (junction FJS-020), so the same tolerant read
+      // the admin screen uses rather than a second guess at the envelope.
+      const raw = await workspaces.service.action('members', session.workspaceId)
+      const members = Array.isArray(raw) ? raw : raw?.data ?? []
+      people = Object.fromEntries(members.map(m => [m.userId, m.user?.name || m.user?.email || m.userId]))
+    } catch {
+      // Not fatal — without it the feed still reads, with ids instead of names.
+      people = {}
+    }
+
+    try {
+      rows = (await audit.service.find({}, { limit: 100 })).data
+    } catch (e) {
+      // The trail is admin/owner. A developer seeing "you cannot read this" is
+      // a correct answer and a better one than an empty feed that looks broken.
+      if (e.status === 403 || e.status === 404) denied = true
+      else error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // `action` is `<service>.<method>` — the service half is the kind, which is
+  // why no second vocabulary is needed here. The filter list is built from what
+  // actually happened rather than declared, so a new service needs no edit.
+  $: kinds = ['all', ...new Set(rows.map(r => r.subjectType))]
+  $: visible = kind === 'all' ? rows : rows.filter(r => r.subjectType === kind)
+
+  const VERB_TONE = { create: 'success', remove: 'danger', drain: 'warning', cancel: 'muted' }
+  const verbOf  = (action) => String(action).split('.')[1] ?? action
+  const toneOf  = (action) => VERB_TONE[verbOf(action)] ?? ''
+  const hrefOf  = (r) => SUBJECT_ROUTE[r.subjectType] ? `${SUBJECT_ROUTE[r.subjectType]}${r.subjectId}/` : null
+  const actorOf = (r) => r.actorId ? (people[r.actorId] ?? r.actorId) : r.actorType
+  const when    = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+</script>
+
+<div class="section-header">
+  <h1>Activity</h1>
+  <span class="text-sm text-muted">what happened in this workspace</span>
+</div>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if denied}
+  <Callout tone="info" title="Admin only">
+    The activity trail is readable by admins and owners. A trail every member can read is
+    a list of what their colleagues have been doing.
+  </Callout>
+{:else if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="Nothing yet">
+    Actions taken in this workspace appear here — deployments, server transitions, jobs.
+  </EmptyState>
+{:else}
+  <!-- Filters are buttons, not a select: there are few, they are the page's
+       primary control, and one press is fewer than open-pick-close. -->
+  <div class="cluster" role="group" aria-label="Filter by kind" id="activity-kinds">
+    {#each kinds as k}
+      <Button variant={kind === k ? 'outlined' : 'ghost'} onclick={() => kind = k}>{k}</Button>
+    {/each}
+  </div>
+
+  <div class="table-wrap">
+    <table class="table striped hover">
+      <thead>
+        <tr>
+          <th scope="col">When</th>
+          <th scope="col">Who</th>
+          <th scope="col">Did</th>
+          <th scope="col">To</th>
+        </tr>
+      </thead>
+      <tbody id="activity-rows">
+        {#each visible as r}
+          <tr>
+            <td class="text-sm text-muted">{when(r.createdAt)}</td>
+            <td>
+              {actorOf(r)}
+              {#if r.actorType !== 'user'}<Badge tone="muted">{r.actorType}</Badge>{/if}
+            </td>
+            <td><Pill tone={toneOf(r.action)}>{verbOf(r.action)}</Pill> {r.subjectType}</td>
+            <td>
+              {#if hrefOf(r)}
+                <a href={hrefOf(r)}><code>{String(r.subjectId).slice(0, 8)}</code></a>
+              {:else}
+                <code>{String(r.subjectId).slice(0, 8)}</code>
+              {/if}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

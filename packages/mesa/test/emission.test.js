@@ -330,6 +330,35 @@ describe('a valueless attribute on a component', () => {
     c.remove()
   })
 
+  it('is NOT the boolean form when an empty string is stated explicitly', async () => {
+    // Found by wiring @frontierjs/ui's <Select> into packages/basecamp:
+    // `placeholder=""` is how the kit documents "suppress the placeholder",
+    // and it compiled to placeholder={true} — so the <option> rendered the
+    // word `true`. The parser has always distinguished the two forms
+    // (value: undefined vs value: ''); inspectProp tested falsiness and lost it.
+    const { result } = await compile(
+      `<script>import C from './C.mesa'</script><C placeholder="" label="x" square />`)
+    expect(result).not.toContain('placeholder: true')
+    // All three forms in one call: explicit empty string, ordinary string, and
+    // the valueless boolean — which must still be true.
+    expect(result).toContain('placeholder: ``')
+    expect(result).toContain('label: `x`')
+    expect(result).toContain('square: true')
+  })
+
+  it('passes an explicit empty string through to the child as ""', async () => {
+    const Child = await build(
+      `<script>export let placeholder = 'fallback'</script><p>{placeholder ? placeholder : 'none'}</p>`,
+      'Child.mesa')
+    const Parent = await build(
+      `<script>import Child from './Child.mesa'</script><Child placeholder="" />`,
+      'Parent.mesa', Child)
+
+    const c = mount(Parent)
+    expect(c.querySelector('p').textContent).toBe('none')
+    c.remove()
+  })
+
   it('still passes the variable when the braced shorthand is used', async () => {
     const { result } = await compile(
       `<script>import C from './C.mesa'\n let striped = true</script><C {striped} />`)

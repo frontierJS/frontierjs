@@ -32,6 +32,23 @@ export interface MailMessage {
   subject:  string
   lines:    MailLine[]
   to?:      string    // optional override — defaults to user.email
+
+  /**
+   * A rendered body, when the builder's lines are not enough.
+   *
+   * `lines` is a deliberately small authoring vocabulary — greeting, paragraph,
+   * button — and it is the right one for most system mail. It cannot express a
+   * receipt with a table of items, which is exactly what a transactional email
+   * usually is, and it cannot use `@frontierjs/email-kit` at all: that renders a
+   * `.mesa` template to Outlook-safe table HTML, and there was nowhere to put
+   * the result.
+   *
+   * Set either and the driver uses it for that field; whichever is absent is
+   * still rendered from `lines`, so a template can supply HTML and let the
+   * builder write the plain-text alternative.
+   */
+  html?:    string
+  text?:    string
 }
 
 // ─── SMS message ──────────────────────────────────────────────────────────────

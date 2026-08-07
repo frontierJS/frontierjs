@@ -1,6 +1,6 @@
 # The style guide
 
-The interactive reference: 49 pages, every component live, six themes —
+The interactive reference: 49 pages, every component live, seven themes —
 all 35 vocabulary terms have a page.
 No React, no build step, no bundler — the same bet the package itself makes.
 

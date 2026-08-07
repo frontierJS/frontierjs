@@ -366,20 +366,22 @@ ESM parser. Reverting the matcher fails 5 of them.
 
 ---
 
-## Known issues / pending notes
+## Known issues / pending notes — see `ISSUES.md`
 
-| Item | Status | Priority |
-|---|---|---|
-| `sourceURL` pragma works on Node, ignored on Bun | partial | low |
-| Frontmatter regex non-greedy but breaks on stray `---` in body | deferred | very low |
-| Registry's `mod.prose` leftover from before segments refactor | cosmetic | very low |
-| `utils:qrcode` requires `npm install qrcode` | known | low |
-| `fli dev` port-broker orchestration | designed, not implemented | medium |
-| TUI interface | planned | medium |
+**`FJS-036`** scaffolds unverified end to end · **`FJS-037`** the sixth
+reserved-key list (`commands/project/_module.md:65`) · **`FJS-038`** the
+hand-copied auth schema in `commands/auth/install.md` · **`FJS-061`**
+`/api/env` ReferenceError and a duplicate `dev` alias (both **`stale?`**) ·
+**`FJS-065`** `admin:generate` emits `.svelte` · **`FJS-066`** the low pile —
+`sourceURL` on Bun, the frontmatter regex, `mod.prose`, `utils:qrcode`.
 
-All previously-pending test fixes (deploy-helpers, deploy-dispatch, zz-steps) are resolved. All carryover engine bugs from past sessions are resolved.
+`fli dev` port-broker orchestration and the TUI are unbuilt features, not
+issues — they are under *On the horizon* below.
 
----
+All previously-pending test fixes (deploy-helpers, deploy-dispatch, zz-steps)
+are resolved, as are all carryover engine bugs.
+
+Add a new item to `../../ISSUES.md`, not here.
 
 ## On the horizon
 

@@ -2693,6 +2693,65 @@ const data = await fetchIt()
 <mesa:boundary><p>{x}</p></mesa:boundary>`, { css: false })
     expect(ctx.analysis.warnings.join(' ')).toContain('no async-derived variables')
   })
+
+  // ── The watch set ───────────────────────────────────────────────────────
+  // A boundary used to watch EVERY async value in the component, so one slow
+  // or hanging await held content that never referenced it, and two boundaries
+  // always showed and hid together. It watches what its body reads.
+
+  const TWO_ASYNC = `
+<script>
+let state = 'CA'
+const cities  = await getCities(state)
+const reports = await getReports()
+</script>`
+
+  it('watches only the async values its body reads', async () => {
+    const out = await cx(`${TWO_ASYNC}
+<mesa:boundary>
+  {#snippet pending()}<p>Loading cities</p>{/snippet}
+  <select>{#each cities as c}<option>{c}</option>{/each}</select>
+</mesa:boundary>`)
+    expect(out).toContain('([$$async_cities])')
+    expect(out).not.toContain('$$async_reports]')
+  })
+
+  it('two boundaries in one component watch different values', async () => {
+    const out = await cx(`${TWO_ASYNC}
+<mesa:boundary><ul>{#each cities as c}<li>{c}</li>{/each}</ul></mesa:boundary>
+<mesa:boundary><ul>{#each reports as r}<li>{r.title}</li>{/each}</ul></mesa:boundary>`)
+    expect(out).toContain('([$$async_cities])')
+    expect(out).toContain('([$$async_reports])')
+    expect(out).not.toContain('[$$async_cities, $$async_reports]')
+  })
+
+  // A read through an attribute, a block header, an inline text interpolation
+  // or a component prop is still a read. Under-watching shows content before
+  // its data arrived, so these are the cases that must not be missed.
+  it.each([
+    ['attribute',      '<div data-n={reports.length}></div>'],
+    ['block header',   '{#if reports.length}<p>some</p>{/if}'],
+    ['inline text',    '<p>total {reports.length}</p>'],
+    ['component prop', '<Table rows={reports} />'],
+    ['@const',         '{@const first = reports[0]}<p>{first}</p>'],
+  ])('sees a read through a %s', async (_label, body) => {
+    const out = await cx(`${TWO_ASYNC}\n<mesa:boundary>${body}</mesa:boundary>`)
+    expect(out).toContain('$$async_reports')
+    expect(out).not.toContain('([$$async_cities])')
+  })
+
+  it('keeps the whole-component union when the body reads no async value', async () => {
+    const out = await cx(`${TWO_ASYNC}
+<mesa:boundary><p>gate this region on everything</p></mesa:boundary>`)
+    expect(out).toContain('([$$async_cities, $$async_reports])')
+  })
+
+  it('keeps the union when the body renders a snippet defined elsewhere', async () => {
+    const out = await cx(`${TWO_ASYNC}
+<mesa:boundary>{@render row()}</mesa:boundary>
+{#snippet row()}<li>{cities[0]}</li>{/snippet}`)
+    expect(out).toContain('([$$async_cities, $$async_reports])')
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4314,5 +4373,71 @@ describe('compileMd remark/rehype plugins', () => {
     const r = await compileSource(src, { filename: 'test.md' })
     expect(r.analysis.errors).toHaveLength(0)
     expect(r.result).toContain('Title')
+  })
+})
+
+describe('compileSource — the extension decides the language', () => {
+  // A `---` block is how every Sierra route states its title and render mode.
+  // compileSource used to route ANY source starting with `---` to the Markdown
+  // compiler, whatever its extension, so most route files in existence were
+  // compiled as Markdown by whoever handed the compiler the raw file. Markdown
+  // escapes what it does not recognise: a component call with props came out as
+  // a PARAGRAPH OF ESCAPED TEXT with the props stringified into it, silently,
+  // while a bare `<LiveStock />` beside it compiled as a component.
+  //
+  // Only callers reading a file off disk were affected — Sierra's Vite path
+  // strips frontmatter before calling compile() — so dev was right and the
+  // static build was wrong, for the same file.
+  const routeSrc = `---
+title: Catalog
+render: static
+---
+<script>
+  import CatalogList from './CatalogList.mesa'
+  export let data = null
+</script>
+<div class="container">
+  <h1>Catalog</h1>
+
+  <CatalogList client:load products={data?.products ?? []} />
+</div>`
+
+  it('compiles a .mesa route with frontmatter as Mesa, not Markdown', async () => {
+    const r = await compileSource(routeSrc, { filename: '/routes/index.mesa', islands: true })
+    expect(r.result).toMatch(/island\(\s*[^,]+,\s*CatalogList/)
+    expect(r.result).not.toMatch(/&#x3C;CatalogList|&lt;CatalogList/)
+    expect(r.islands).toEqual([
+      { component: 'CatalogList', directive: 'load', specifier: './CatalogList.mesa' },
+    ])
+  })
+
+  it('does not render the frontmatter block as page text', async () => {
+    const r = await compileSource(routeSrc, { filename: '/routes/index.mesa' })
+    expect(r.result).not.toContain('title: Catalog')
+    expect(r.result).not.toContain('render: static')
+  })
+
+  it('exposes what the block declared as ctx.frontmatter', async () => {
+    const r = await compileSource(routeSrc, { filename: '/routes/index.mesa' })
+    expect(r.frontmatter).toEqual({ title: 'Catalog', render: 'static' })
+  })
+
+  it('leaves ctx.frontmatter undefined when there is no block', async () => {
+    const r = await compileSource(`<p>hi</p>`, { filename: '/routes/plain.mesa' })
+    expect(r.frontmatter).toBeUndefined()
+  })
+
+  it('keeps line numbers pointing at the line the author wrote', async () => {
+    // The block is replaced by blank lines, not deleted, so a diagnostic on the
+    // <script> below still names its real line.
+    const src = `---\na: 1\nb: 2\n---\n<script>\n  let x = 1\n</script>\n<p>{x}</p>`
+    const r = await compileSource(src, { filename: '/routes/lines.mesa' })
+    expect(r.source.split('\n').length).toBe(src.split('\n').length)
+  })
+
+  it('still routes a .md file to the Markdown compiler', async () => {
+    const r = await compileSource(`---\ntitle: Post\n---\n\n# {title}\n\n**bold**`, { filename: '/pages/post.md' })
+    expect(r.frontmatter).toEqual({ title: 'Post' })
+    expect(r.result).toContain('strong')
   })
 })

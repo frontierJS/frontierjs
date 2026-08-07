@@ -161,17 +161,48 @@ const HELPERS = `
 `
 await cmd('Page.addScriptToEvaluateOnNewDocument', { source: HELPERS })
 
+/**
+ * Sign in from the header and wait for the level badge.
+ *
+ * Waits for the badge OR the header's error alert, because the failure that
+ * actually happens is a 429: createAuthPlugin rate-limits login to 10 per 15
+ * minutes, and this drive shares that window with `verify.mjs`, which signs in
+ * twice per run. Waiting only for the badge turns that into
+ * "waitFor timed out: () => byText('header .badge', 'level 5')", which reads
+ * like a broken app rather than a limiter doing its job. Same check as
+ * `verify.mjs` — change one, change both.
+ */
+async function signIn(who, level) {
+  await evaluate(`
+    byText('header button', 'Sign in (${who})').click();
+    await waitFor(() => byText('header .badge', 'level') || document.querySelector('.alert.danger'));
+    return true;
+  `)
+  const problem = await evaluate(`
+    return { alert: document.querySelector('.alert.danger')?.textContent.trim() ?? null };
+  `)
+  if (problem.alert) {
+    if (problem.alert.includes('429')) {
+      console.error(
+        `\nSign-in was rate limited (HTTP 429).\n` +
+        `Login allows 10 attempts per 15 minutes; this drive signs in once per run and\n` +
+        `shares the window with \`bun run verify\`, which signs in twice. Wait, or restart\n` +
+        `the API to reset the window.`
+      )
+      throw new Error('rate limited')
+    }
+    throw new Error(`sign-in failed: ${problem.alert}`)
+  }
+  await evaluate(`await waitFor(() => byText('header .badge', 'level ${level}')); return true;`)
+}
+
 const got = {}
 const t = (name, value) => { got[name] = value }
 
 try {
   // ─── sign in once, as admin ───────────────────────────────────────────
   await goto('/')
-  await evaluate(`
-    byText('header button', 'Sign in (admin)').click();
-    await waitFor(() => byText('header .badge', 'level 5'));
-    return true;
-  `)
+  await signIn('admin', 5)
 
   // Work on an order this drive creates, so a failed run cannot poison the
   // next one and the seeded orders keep their seeded state.

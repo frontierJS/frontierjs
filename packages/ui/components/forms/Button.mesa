@@ -49,8 +49,16 @@
 
   const isSquare = square || icon
 
+  // A submit button inside <Form> reports the form's state without being told.
+  // Scoped to type="submit" on purpose: that is the button the submission
+  // belongs to, and a "Cancel" beside it must stay live while the save runs.
+  //
+  // Absent form → undefined → unchanged behaviour standing alone.
+  const form      = $context.form
+  const isLoading = loading || (type === 'submit' && !!form?.submitting)
+
   function handleClick(e) {
-    if (!loading) onclick?.(e)
+    if (!isLoading) onclick?.(e)
   }
 </script>
 
@@ -59,9 +67,9 @@
        otherwise breaks the user's expectation of where it will go. -->
   <a
     href={href}
-    class={cx('btn', t, treatment, isSquare && 'square', loading && 'loading')}
+    class={cx('btn', t, treatment, isSquare && 'square', isLoading && 'loading')}
     style:font-size={fontSize || null}
-    aria-busy={loading || null}
+    aria-busy={isLoading || null}
     {class}
     {...$attributes}
   >
@@ -77,9 +85,9 @@
   -->
   <button
     type={type}
-    disabled={disabled || loading}
-    aria-busy={loading || null}
-    class={cx('btn', t, treatment, isSquare && 'square', loading && 'loading')}
+    disabled={disabled || isLoading}
+    aria-busy={isLoading || null}
+    class={cx('btn', t, treatment, isSquare && 'square', isLoading && 'loading')}
     style:font-size={fontSize || null}
     {class}
     {...$attributes}

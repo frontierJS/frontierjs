@@ -160,10 +160,14 @@ function columnDef(field, schema = null, compositePk = false) {
   const isUnique = field.attributes.find(a => a.kind === 'unique')
   if (isUnique) parts.push('UNIQUE')
 
-  // DEFAULT — @updatedAt implies DEFAULT now() so INSERT works without supplying the value
+  // DEFAULT — @updatedAt implies DEFAULT now() and @version implies DEFAULT 1,
+  // so an INSERT works without supplying either value
   const updatedAtAttr = field.attributes.find(a => a.kind === 'updatedAt')
+  const versionAttr   = field.attributes.find(a => a.kind === 'version')
   const def  = field.attributes.find(a => a.kind === 'default')
-  const expr = defaultExpr(def) ?? (updatedAtAttr ? `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` : null)
+  const expr = defaultExpr(def)
+    ?? (updatedAtAttr ? `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` : null)
+    ?? (versionAttr ? '1' : null)
   if (expr) parts.push(`DEFAULT ${expr}`)
 
   // Array default — always '[]', overrides any @default

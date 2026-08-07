@@ -95,7 +95,9 @@ Common uses: SQLite views, FTS5 virtual tables, legacy tables from another tool,
 
 ```js
 db.$attach('./archive.db', 'archive')
-const rows = await db.sql`SELECT * FROM users UNION ALL SELECT * FROM archive.users`
+// asSystem(): raw SQL enforces no access rule, so on a schema that declares
+// one it is available through the documented bypass only.
+const rows = await db.asSystem().sql`SELECT * FROM users UNION ALL SELECT * FROM archive.users`
 db.$detach('archive')
 ```
 

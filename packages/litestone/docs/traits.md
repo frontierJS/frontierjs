@@ -31,12 +31,10 @@ Most apps end up with the same field clusters on every model: timestamps, soft-d
 
 ```
 trait Audited {
-  createdAt   DateTime @default(now())
-  createdById Int?
-  createdBy   User?    @relation("created", fields: [createdById], references: [id])
-  updatedAt   DateTime @updatedAt
-  updatedById Int?
-  updatedBy   User?    @relation("updated", fields: [updatedById], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@createdBy
+  @@updatedBy
   @@log(audit)
 }
 
@@ -46,6 +44,12 @@ model Payment { id Int @id; ...; @@trait(Audited) }
 ```
 
 Add a `deletedById` field to `Audited` and all three models pick it up on the next migration.
+
+`@@createdBy` / `@@updatedBy` are the authorship half of that cluster — each
+expands into a nullable FK plus a named relation to the `@@auth` model, stamped
+from `ctx.auth`. Writing the four fields out by hand still works and is what the
+attributes desugar to; see [schema.md](./schema.md#authorship). A trait carries
+them like any other model attribute.
 
 ## Syntax
 

@@ -7,6 +7,14 @@ the source with line numbers named; the design half is unbuilt. See `VERIFYING.m
 
 ---
 
+## Sibling
+
+`client-data-lifecycle.md` argues that this file's `FJS-011` is one of three faces of
+the same absence — nothing models the lifetime of client-side data — and that the
+entity keying it proposes is what makes a query-scoped subscription expressible at
+all: a query view is a filter over an entity set, and there is no entity set today.
+Read them together; neither is complete alone.
+
 ## Trigger
 
 Remult's `liveQuery`:
@@ -119,13 +127,77 @@ declare a channel. A client-side matcher does not help — filtering for relevan
 not filtering for permission, and a client that discards a row still received it.
 **Per-subscriber policy evaluation is the harder problem sitting behind this one**,
 and it should be named as a prerequisite for any default-on live behaviour rather
-than discovered later.
+than discovered later. § *Per-subscriber deltas* below is the proposed answer.
 
 **2. Pagination is genuinely unanswerable.** Nothing can know whether a new row
 belongs on page 3 without asking the server. The honest design is: live for
 unpaginated and first-page lists, and a `stale` signal beyond that which a view can
 render as "3 new — refresh". Say it out loud; the alternative is a list that is
 quietly wrong past the fold.
+
+---
+
+## Per-subscriber deltas — grading the fan-out, not the fetch
+
+**Added 2026-08-05.** Constraint 1 above names per-subscriber policy evaluation as
+the harder problem behind live queries and stops there. It is worth stating what the
+answer looks like, because the framework is unusually close to it and nobody else
+can copy it.
+
+**The framing first.** A subscription is not a special transport path; it is the
+network edge of one dependency graph. The client holds a signal, the server holds
+the source, and a mutation propagates a *delta* along the edge instead of
+invalidating a cache and triggering a refetch. That framing is worth adopting
+because it is the projections axiom applied to the wire — but it must not become a
+second announcement mechanism. `callService` is the single announcement point
+(repo Invariant 4), so everything below happens **inside `publishToChannels`**, not
+beside it.
+
+**The mechanism.** At publish time the server has three things at once, which is the
+part no other framework has:
+
+1. **The row.** It is the payload — already in memory, not a query away.
+2. **Each subscriber's level.** Every connection carries a session, and
+   `sessionGateLevel(user)` (`junction/src/core/litestone.ts`) already grades it 0–7.
+3. **The declared requirement.** `@@gate` on the model, `@guarded` / `@encrypted` on
+   the column, `@allow` per field — all static, all already parsed.
+
+So the fan-out can grade **per subscriber** before a byte reaches a socket:
+
+| Case | Today | Graded fan-out |
+| --- | --- | --- |
+| subscriber below the model's read gate | receives the row | not sent |
+| subscriber above it, row has `@guarded` columns | receives them | column stripped |
+| field-level `@allow('read', …)` fails for this subscriber | receives it | field stripped |
+| `@scoped` model, row belongs to another tenant | receives it | not sent |
+
+The cost is a comparison per subscriber per field, against a table that does not
+change between mutations — not a query, not a re-run, not a registry. Contrast the
+two known positions: Convex re-runs each subscriber's query (correct, expensive);
+Remult keeps a per-connection query registry (correct, stateful). Neither *can* grade
+a push, because in both the permission lives in a handler rather than in the data.
+**This is the same `only`-column property as `IDEAS/static-safety.md`, one realm over:
+a broadcast is a publication, and the framework knows what each recipient is allowed
+to be published.**
+
+Where it stops, honestly:
+
+- **A row policy that traverses a relation cannot be evaluated in memory.** An
+  `@@allow` expression over the row's own columns plus `auth()` is a pure function of
+  two things the server is holding; one that joins is a query per subscriber, which is
+  Convex's cost reappearing. **Fail closed** — withhold the row and let the client
+  refetch on its own credentials — and say so at subscribe time rather than
+  discovering it under load.
+- **Redaction changes the payload shape per subscriber**, so the matcher in the
+  section above may be handed a record missing a column its query filters on. That is
+  the same "cannot decide → refetch" outcome as a `select`, and it should route
+  through the same hook rather than a second rule.
+- **It does not make `channel:` safe to default on.** It makes it *safe to opt into
+  without reading the source first*, which is the actual barrier today.
+
+This is the strongest argument for the `live:` declaration in § Open questions: a
+service whose policies cannot be graded in memory declares that once, and the server
+refuses to broadcast rather than leaking by default.
 
 ---
 

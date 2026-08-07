@@ -16,7 +16,9 @@ const SCHEMA = `
     attempts      INTEGER NOT NULL DEFAULT 0,
     max_attempts  INTEGER NOT NULL DEFAULT 3,
     retry_delay   TEXT,
-    unique_key    TEXT    UNIQUE,
+    -- NOT column-level UNIQUE. See jobs_unique_live below: a dedup key is
+    -- unique among LIVE jobs, not for the life of the table.
+    unique_key    TEXT,
     run_at        INTEGER NOT NULL,
     started_at    INTEGER,
     finished_at   INTEGER,
@@ -32,7 +34,27 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS jobs_status
     ON jobs(status);
 
-  -- Unique key index for deduplication lookups
+  -- Deduplication. A 'unique' key means "do not queue this twice AT ONCE" —
+  -- it is a lock on work in flight, not an idempotency key for all time. The
+  -- column used to carry a plain UNIQUE constraint, which said the opposite,
+  -- and the two halves disagreed:
+  --
+  --   • dispatch() looked for a PENDING job with the key and, finding none,
+  --     inserted — straight into the table-wide constraint the moment the
+  --     first job had finished:
+  --       500 GeneralError: UNIQUE constraint failed: jobs.unique_key
+  --   • making the lookup match ANY status fixed that and broke the other side:
+  --     a key derived from a row id ('book-courier:4') silently matched a job
+  --     from a deleted order whose id SQLite had reused, and the new work never
+  --     ran. Nothing failed; a courier was simply never booked.
+  --
+  -- A partial unique index says what was meant. Terminal jobs keep their key
+  -- for inspection and stop blocking new work. Both halves were found in one
+  -- afternoon by example/'s courier booking, 2026-08-06.
+  CREATE UNIQUE INDEX IF NOT EXISTS jobs_unique_live
+    ON jobs(unique_key) WHERE unique_key IS NOT NULL AND status IN ('pending', 'running');
+
+  -- Lookup index for the dedup check and for admin queries by key.
   CREATE INDEX IF NOT EXISTS jobs_unique_key
     ON jobs(unique_key) WHERE unique_key IS NOT NULL;
 `
@@ -44,9 +66,63 @@ export function openDb(path: string): Database {
   db.exec('PRAGMA journal_mode = WAL')
   db.exec('PRAGMA foreign_keys = ON')
   db.exec('PRAGMA busy_timeout = 5000')
+  migrateUniqueKey(db)
   db.exec(SCHEMA)
 
   return db
+}
+
+/**
+ * Drop the table-wide UNIQUE on `unique_key` from a database created before
+ * 2026-08-06.
+ *
+ * `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so
+ * an existing jobs.db would keep the old constraint and keep 500-ing on a
+ * repeat dispatch — with a schema that no longer explains why. SQLite cannot
+ * drop a column constraint, so this is the standard rebuild: new table, copy,
+ * drop, rename, in one transaction.
+ *
+ * Cheap to skip: one sqlite_master read, and the string it looks for cannot
+ * appear in the current schema.
+ */
+function migrateUniqueKey(db: Database): void {
+  const row = db.query<{ sql: string }, []>(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'`
+  ).get()
+  if (!row?.sql || !/unique_key\s+TEXT\s+UNIQUE/i.test(row.sql)) return
+
+  db.exec('BEGIN')
+  try {
+    db.exec(`
+      CREATE TABLE jobs_new (
+        id            TEXT    PRIMARY KEY,
+        queue         TEXT    NOT NULL DEFAULT 'default',
+        name          TEXT    NOT NULL,
+        data          TEXT    NOT NULL,
+        status        TEXT    NOT NULL DEFAULT 'pending',
+        priority      INTEGER NOT NULL DEFAULT 0,
+        attempts      INTEGER NOT NULL DEFAULT 0,
+        max_attempts  INTEGER NOT NULL DEFAULT 3,
+        retry_delay   TEXT,
+        unique_key    TEXT,
+        run_at        INTEGER NOT NULL,
+        started_at    INTEGER,
+        finished_at   INTEGER,
+        error         TEXT,
+        created_at    INTEGER NOT NULL
+      );
+      INSERT INTO jobs_new SELECT
+        id, queue, name, data, status, priority, attempts, max_attempts,
+        retry_delay, unique_key, run_at, started_at, finished_at, error, created_at
+      FROM jobs;
+      DROP TABLE jobs;
+      ALTER TABLE jobs_new RENAME TO jobs;
+    `)
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
 }
 
 // ─── Prepared statement wrappers ──────────────────────────────────────────────
@@ -190,10 +266,19 @@ export function buildStatements(db: Database) {
   `))
 
   // ── Deduplication check ─────────────────────────────────────────────────────
-
+  //
+  // IN FLIGHT — pending or running. A `unique` key is a lock on work that has
+  // not finished yet, not an idempotency key for all time; the partial unique
+  // index in SCHEMA enforces exactly this set, so the guard and the constraint
+  // now agree about how long a key lasts. See the comment there for the two
+  // ways they used to disagree.
+  //
+  // `running` matters: without it, a second dispatch while the first job is
+  // executing slips past the guard and hits the index instead of returning the
+  // job already doing the work.
   const findByUniqueKey = wrap<JobRecord, { unique_key: string }>(db.prepare(`
     SELECT * FROM jobs
-    WHERE unique_key = $unique_key AND status = 'pending'
+    WHERE unique_key = $unique_key AND status IN ('pending', 'running')
     LIMIT 1
   `))
 

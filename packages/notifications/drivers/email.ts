@@ -78,10 +78,18 @@ export async function sendEmail(
 
   const lines = message.lines ?? []
 
+  // A rendered body wins over the builder's lines, per field. `@frontierjs/
+  // email-kit` renders a `.mesa` template to Outlook-safe table HTML and there
+  // was previously nowhere to put the result — the driver rendered `lines` and
+  // nothing else, so the kit and this package could not be used together at all.
+  //
+  // Per field, not per message, because the two halves have different best
+  // answers: a receipt's HTML wants the template, and its plain-text
+  // alternative is three lines the builder already writes well.
   await app.mail.send({
     to,
     subject: message.subject,
-    text:    renderText(lines),
-    html:    renderHtml(lines),
+    text:    message.text ?? renderText(lines),
+    html:    message.html ?? renderHtml(lines),
   })
 }

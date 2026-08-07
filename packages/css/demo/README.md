@@ -20,7 +20,7 @@ see what breaks.
 Five routes: Dashboard, Invoices, Invoice detail, Customers, Settings. Between
 them they exercise the full Frame and Page tiers, both tab orientations, the
 table with striped + toned rows composing, forms with native validation,
-dialogs and drawers, toasts, and all six themes.
+dialogs and drawers, toasts, and all seven themes.
 
 Three files:
 
@@ -144,7 +144,7 @@ the sprite-and-`<use>` technique and deliberately stayed out of the package.
 
 No layout scaffolding, no spacing utilities, no color, no component CSS, no
 responsive work, no icon sizing, no type scale. The frame, panes, cards, tiles,
-table, feed, steps, facts, forms, overlays, navigation and all six themes come
+table, feed, steps, facts, forms, overlays, navigation and all seven themes come
 out of the package as-is, and the markup in `index.html` follows the vocabulary
 without fighting it. The inline `style=` attributes that remain are all token
 assignments — `--avatar-size`, `--field-inline-size` — which is the intended

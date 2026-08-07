@@ -109,15 +109,17 @@ import {
 } from './schema-registry.js'
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
-  buildTransitions, transitionsAt,
+  buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
+  toFieldErrors,
 } from './field-rules.js'
 
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
-  buildTransitions, transitionsAt,
+  buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
+  toFieldErrors,
 }
 
 // ── Hook runners ──────────────────────────────────────────────────────────────
@@ -353,7 +355,8 @@ function mergeHooks(target, incoming) {
  *   createResource({ model, service, optionsQuery, hooks })   — object form
  *
  * Returns { service, store, make, load, fields, relations, gate, can,
- *           transitions, validate, normalize, coerce, context, hooks }
+ *           transitions, validate, normalize, coerce, fieldErrors, context,
+ *           hooks }
  *   service  — pass-through of the Junction client: find() gives the list
  *              envelope, single-record methods give the record. See "Return
  *              shapes" in the module header.
@@ -385,93 +388,95 @@ function mergeHooks(target, incoming) {
  * It also labels `ctx.model` in hooks and `resource.context.model`, so naming it
  * is what makes those read as the model rather than as the service.
  *
- * ── opts.coerce ────────────────────────────────────────────────────────────
- * `coerce: true` casts the strings a DOM control produces into the types the
- * schema declares, before every create and patch.
+ * ── The payload pipeline: coerce → blankToNull → validate ──────────────────
  *
- *   createResource('leads', { coerce: true })
+ * All three are ON by default. They were opt-in until 2026-08-06; every one of
+ * them is the answer to a thing the DOM does that the schema does not want, so
+ * a form that did not set all three sent payloads the schema had already said
+ * no to, and the framework knew and stayed quiet. Turning them on is what makes
+ * `<Form resource={leads}>` correct with nothing else declared.
  *
- * `el.value` is a string for every control there is — `<input type="number">`
- * and `<select>` included — and Mesa's bindInput passes it through unchanged,
- * correctly, because it has no idea what the field is. So a form bound to
- * make() sends `"42"` for a Float and `"1"` for an Int, and the server (and
- * `validate`) reject both. Only the schema knows what they were meant to be.
+ * Each is turned off with an explicit `false`:
  *
- * A form bound to DOM inputs almost certainly wants this. Default OFF, for the
- * same reason as the others: it changes what is sent.
+ *   createResource('leads', { coerce: false, blankToNull: false, validate: false })
  *
- * ── opts.blankToNull ───────────────────────────────────────────────────────
- * `blankToNull: true` applies that normalisation automatically before every
- * create and patch.
+ * Order is fixed and load-bearing — see the note at the call site in _call().
  *
- *   createResource('leads', { blankToNull: true })
+ * **coerce** casts the strings a DOM control produces into the types the schema
+ * declares. `el.value` is a string for every control there is — `<input
+ * type="number">` and `<select>` included — and Mesa's bindInput passes it
+ * through unchanged, correctly, because it has no idea what the field is. So a
+ * form bound to make() sends `"42"` for a Float and `"1"` for an Int, and the
+ * server (and `validate`) reject both. Only the schema knows what they were
+ * meant to be. Turn it off for a resource whose data never comes from a DOM
+ * control and whose fields are deliberately loosely typed.
  *
- * A text input cannot produce "no value" — an untouched box submits '' — so
- * without this a form writes '' into a column the schema declared nullable.
- * SQLite does not treat those as the same: `String? @unique` accepts any number
- * of NULLs but rejects a second '', and `WHERE col IS NULL` never matches ''.
- * The form keeps binding to a string; the wire carries the distinction.
+ * **blankToNull** replaces '' with null on nullable fields. A text input cannot
+ * produce "no value" — an untouched box submits '' — so without this a form
+ * writes '' into a column the schema declared nullable. SQLite does not treat
+ * those as the same: `String? @unique` accepts any number of NULLs but rejects
+ * a second '', and `WHERE col IS NULL` never matches ''. The form keeps binding
+ * to a string; the wire carries the distinction. Turn it off where '' is a real
+ * value distinct from null.
  *
- * Default OFF, because it changes what is stored.
+ * **validate** runs the schema-derived check before every create and patch,
+ * throwing ResourceValidationError instead of making the request. The server
+ * validates regardless — Junction derives its rules from the same .lite file —
+ * so this is not the thing that says no; it is where the "no" surfaces. On, it
+ * is the browser, before a round trip, with a per-field message a form can
+ * render. Off, it is a 400 you still have to map. Turn it off for a resource
+ * whose service deliberately accepts a shape the model does not describe.
  *
- * ── opts.validate ──────────────────────────────────────────────────────────
- * `validate: true` also runs that check automatically before every create and
- * patch, throwing ResourceValidationError instead of making the request.
- *
- *   createResource('leads', { validate: true })
- *
- * Default OFF. The server validates regardless — Junction derives its rules
- * from the same .lite file — so this is about failing in the browser, before a
- * round trip, rather than about being the thing that says no. Turning it on
- * changes where an invalid payload surfaces, which is why existing resources
- * are not opted in for you.
- *
- * It runs AFTER the before-hooks, so a hook that completes the record (stamping
- * a tenant id, coercing a field) is reflected in what gets checked. A throw
- * lands in the error phase like any other failure, so an `error` hook can
+ * Validation runs AFTER the before-hooks, so a hook that completes the record
+ * (stamping a tenant id, coercing a field) is reflected in what gets checked. A
+ * throw lands in the error phase like any other failure, so an `error` hook can
  * present it or recover from it.
+ *
+ * With no schema resolved there are no rules, so all three are inert — the
+ * "no schema found" warning above is the one that matters, not these.
  */
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
-  let serviceName, model, optionsQuery, initialHooks, schema, idField,
-      autoValidate, autoBlank, autoCoerce
+  let serviceName, model, optionsQuery, initialHooks, schema, idField, opts
 
   if (typeof nameOrSpec === 'string') {
     serviceName = nameOrSpec
     // createResource('leads', schema, opts)  or  createResource('leads', opts)
     if (schemaOrOpts && (schemaOrOpts.$defs || schemaOrOpts.definitions || schemaOrOpts.properties)) {
       // second arg looks like a schema
-      schema       = schemaOrOpts
-      initialHooks = maybeOpts.hooks    ?? {}
-      idField      = maybeOpts.idField  ?? 'id'
-      model        = maybeOpts.model    ?? serviceName
-      optionsQuery = maybeOpts.optionsQuery
-      autoValidate = maybeOpts.validate === true
-      autoBlank    = maybeOpts.blankToNull === true
-      autoCoerce   = maybeOpts.coerce === true
+      opts   = maybeOpts
+      schema = schemaOrOpts
     } else {
       // second arg is opts
-      const opts   = schemaOrOpts
-      schema       = opts.schema
-      initialHooks = opts.hooks    ?? {}
-      idField      = opts.idField  ?? 'id'
-      model        = opts.model    ?? serviceName
-      optionsQuery = opts.optionsQuery
-      autoValidate = opts.validate === true
-      autoBlank    = opts.blankToNull === true
-      autoCoerce   = opts.coerce === true
+      opts   = schemaOrOpts
+      schema = opts.schema
     }
+    initialHooks = opts.hooks    ?? {}
+    idField      = opts.idField  ?? 'id'
+    model        = opts.model    ?? serviceName
+    optionsQuery = opts.optionsQuery
   } else {
     // object form
-    serviceName  = nameOrSpec.service
-    model        = nameOrSpec.model        ?? serviceName
-    optionsQuery = nameOrSpec.optionsQuery
-    initialHooks = nameOrSpec.hooks        ?? {}
-    schema       = nameOrSpec.schema
-    idField      = nameOrSpec.idField      ?? 'id'
-    autoValidate = nameOrSpec.validate === true
-    autoBlank    = nameOrSpec.blankToNull === true
-    autoCoerce   = nameOrSpec.coerce === true
+    opts         = nameOrSpec
+    serviceName  = opts.service
+    model        = opts.model        ?? serviceName
+    optionsQuery = opts.optionsQuery
+    initialHooks = opts.hooks        ?? {}
+    schema       = opts.schema
+    idField      = opts.idField      ?? 'id'
   }
+
+  // The payload pipeline is ON unless the caller says `false` — see the header.
+  // `!== false` rather than `?? true` so an explicit `undefined` (a prop threaded
+  // through from a component that did not set it) reads as "not stated", not
+  // as "off".
+  const autoValidate = opts.validate    !== false
+  const autoBlank    = opts.blankToNull !== false
+  const autoCoerce   = opts.coerce      !== false
+
+  // Whether the caller ASKED, as opposed to inheriting the default. Only an
+  // explicit request is worth a warning when there is no schema to act on.
+  const askedForPipeline =
+    opts.validate === true || opts.blankToNull === true || opts.coerce === true
 
   // No schema passed — take it from the registry, which Sierra's build fills
   // from db/schema.lite. This is why a resource file names a model and nothing
@@ -560,6 +565,30 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const relations = schema ? buildRelations(modelDef)   : {}
   const gate      = schema ? buildGate(modelDef)        : null
   const stateSpec = schema ? buildTransitions(modelDef) : null
+  const versionOf = schema ? buildVersion(modelDef)     : null
+
+  // ── @version — the value the server compares against ────────────────────────
+  // Litestone refuses a patch on a `@version` model unless it carries the
+  // version that was read, so the client has to hand back the one it was given.
+  // Kept per record rather than read off `store` because a form usually loads a
+  // single record with get(), which does not populate the list store at all.
+  //
+  // Every response is a fresh read, so recording on the way out keeps this
+  // current through create, get, find, patch and any custom action — including
+  // a WS push, which arrives as a find/get result like anything else.
+  const _versions = new Map()
+
+  function _rememberVersions(result) {
+    if (!versionOf || !result) return
+    const rows = Array.isArray(result) ? result
+      : Array.isArray(result?.data) ? result.data
+      : [result]
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
+      const id = row[idField]
+      if (id != null && Number.isInteger(row[versionOf])) _versions.set(id, row[versionOf])
+    }
+  }
 
   /**
    * Would the given level clear this model's gate for that operation?
@@ -579,16 +608,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   }
 
   /**
-   * Check a record against the schema. Always available; only enforced
-   * automatically when the resource was created with `validate: true`.
+   * Check a record against the schema. Always available; enforced automatically
+   * unless the resource was created with `validate: false`.
    */
   function validate(data, mode = 'create') {
     return validateAgainstFields(fields, data, mode)
   }
 
   /**
-   * Replace `''` with `null` on nullable fields. Always available; only applied
-   * automatically when the resource was created with `blankToNull: true`.
+   * Replace `''` with `null` on nullable fields. Always available; applied
+   * automatically unless the resource was created with `blankToNull: false`.
    */
   function normalize(data) {
     return normalizeBlanks(fields, data)
@@ -596,14 +625,35 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   /**
    * Cast the strings a DOM control produces into the schema's declared types.
-   * Always available; only applied automatically with `coerce: true`.
+   * Always available; applied automatically unless created with `coerce: false`.
    */
   function coerce(data) {
     return coerceToSchema(fields, data)
   }
 
-  if (!schema && (autoValidate || autoBlank || autoCoerce)) {
-    const on = [autoValidate && 'validate', autoBlank && 'blankToNull', autoCoerce && 'coerce'].filter(Boolean)
+  /**
+   * Whatever a failed call threw → `{ fields, message }`, ready to hand to a
+   * form. `fields` is keyed by field name for `<Field errors={…}>`.
+   *
+   * On the resource rather than only as a free function because a form has the
+   * resource in hand and should not need to know which of the three wrapper
+   * shapes it is unwrapping — that is one translation, and this is its owner.
+   * `<Form>` calls exactly this.
+   */
+  function fieldErrors(err) {
+    return toFieldErrors(err)
+  }
+
+  // Only when the caller explicitly asked. The three are on by default now, so
+  // warning on the default would fire for every schemaless resource in the app
+  // and say nothing the "no schema found for X" warning above has not already
+  // said louder.
+  if (!schema && askedForPipeline) {
+    const on = [
+      opts.validate    === true && 'validate',
+      opts.blankToNull === true && 'blankToNull',
+      opts.coerce      === true && 'coerce',
+    ].filter(Boolean)
     console.warn(
       `[resource:${serviceName}] ${on.join(' / ')} set, but no schema resolved — ` +
       `there are no field rules to act on, so nothing will happen.`
@@ -658,6 +708,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         if (problems.length) throw new ResourceValidationError(serviceName, problems)
       }
 
+      // @version rides along on a patch. A caller who set it explicitly wins —
+      // that is someone doing their own concurrency control. With no remembered
+      // version the patch goes up without one and the server says so, which is
+      // a better failure than inventing a number that would silently win a race.
+      if (versionOf && method === 'patch' && ctx.data && typeof ctx.data === 'object'
+          && ctx.data[versionOf] == null) {
+        const known = _versions.get(ctx.id)
+        if (known != null) ctx.data = { ...ctx.data, [versionOf]: known }
+      }
+
       // network call
       const proxy = client.service(serviceName)
       switch (method) {
@@ -677,6 +737,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         // caller that wants to force the socket.
         default:        ctx.result = await proxy.action(method, ctx.id, ctx.data); break
       }
+
+      // Record before the after-hooks, so a hook that reads the version off the
+      // resource sees the one that just came back rather than the previous read.
+      _rememberVersions(ctx.result)
 
       // after
       await runPhase(_hooks, 'after', method, ctx)
@@ -757,9 +821,28 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // context — metadata for hooks and components
   const context = { model, service: serviceName, idField }
 
-  // load() — HTTP find + populates store
+  // load() — HTTP find + populates store.
+  // Goes through junctionResource rather than _call, so it has to record the
+  // versions it just read itself. Missing this was the difference between a list
+  // whose rows are patchable and one whose every patch 400s.
   async function load(query, params) {
-    return junctionResource.load(query ?? {}, params)
+    const rows = await junctionResource.load(query ?? {}, params)
+    _rememberVersions(rows)
+    return rows
+  }
+
+  /**
+   * The version this resource last saw for a record — the value a patch will
+   * carry. `null` when the model declares no `@version`, or when nothing has
+   * been read yet.
+   *
+   * Exported for the case a component wants to show it, or wants to pass an
+   * explicit one after resolving a conflict by hand.
+   */
+  function version(idOrRow) {
+    if (!versionOf) return null
+    const id = idOrRow != null && typeof idOrRow === 'object' ? idOrRow[idField] : idOrRow
+    return _versions.get(id) ?? null
   }
 
   // hooks() — add hooks after creation, merged in order
@@ -770,7 +853,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   return {
     service, store, make, load,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
-    context, hooks: addHooks,
+    version, versionField: versionOf,
+    fieldErrors, context, hooks: addHooks,
   }
 }
 
@@ -795,6 +879,9 @@ function _emptyResource(name) {
     validate:  () => [],
     normalize: (data) => data,
     coerce:    (data) => data,
+    version:      () => null,
+    versionField: null,
+    fieldErrors: (err) => toFieldErrors(err),
     context: { model: name, service: name, idField: 'id' },
     hooks:   () => {},
   }

@@ -253,6 +253,20 @@ same split Feathers has between its core (publishes nothing) and its generator
 (writes a publisher). `fli make:*` scaffolds declare it, so a generated app is
 live out of the box.
 
+**A custom action announces too, under its own name** — `orders pay`, not a
+past tense invented for it. An action is a write: `db.order.transition(id,
+'pay')` changes the row exactly as a patch does, and the browser client's `*`
+handler has always upserted any non-CRUD event. Only `find` and `get` are
+excluded, by name. An action that merely READS (search, stats, export) is
+indistinguishable from one that writes at this layer, so it opts out with
+`ctx.dispatch = false` — the same one switch that suppresses any other
+broadcast, and it suppresses both consumers.
+
+*Until 2026-08-06 only the five CRUD methods announced, so an action changed a
+row and told nobody. Every app hid it by re-issuing `find()` afterwards, which
+made the acting tab look right and left every other tab stale in silence. Found
+by `example/web/test/verify-live.mjs` — a watcher tab that never acts.*
+
 Channels and presence live in `src/transport/channels.ts` and
 `src/transport/presence.ts`: server-controlled membership,
 `presence:sync/join/leave/update`, `app.presence()` / `app.presenceOf()`,

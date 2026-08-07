@@ -26,8 +26,10 @@ export type { ErrorMapper } from './src/core/errors.ts'
 
 // ─── Services ─────────────────────────────────────────────────────────────
 export { createService, createBaseService, ServiceRegistry, callService, setServiceCache,
-         SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames } from './src/core/service.ts'
-export type { Service, ServiceDefinition, BaseServiceOptions, CacheDeclaration, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
+         SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames,
+         READ_ONLY_METHODS, resolveMethodPolicy, serviceMethodNames,
+         isMethodAllowed, allowedMethodNames } from './src/core/service.ts'
+export type { Service, ServiceDefinition, BaseServiceOptions, CacheDeclaration, MethodPolicy, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
 export {
@@ -108,7 +110,7 @@ export type { Schema, FieldDef, SchemaOptions, CompiledSchema, ValidationResult,
 // ─── Litestone ───────────────────────────────────────────────────────────
 export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
          deriveModelName, accessorCandidates, withLitestoneDb,
-         sessionGateLevel, LEVELS,
+         sessionGateLevel, toDataPrincipal, LEVELS,
          jsonSchemaToJunctionSchema }                              from './src/core/litestone.ts'
 export type { GradableUser } from './src/core/litestone.ts'
 export type { LitestoneServiceOptions, ParsedQuery,

@@ -6,6 +6,17 @@ export class FrameworkError extends Error {
   code:  number
   data:  unknown
   cause: unknown
+  /**
+   * Whether repeating the request could succeed. Adopted from the originating
+   * error when it declares one — litestone's `VersionConflictError` and
+   * `TransitionConflictError` both do.
+   *
+   * It is on the wire because the status alone cannot carry it: a 409 that is
+   * retryable means *the row moved under you, re-read and re-apply*, and a 409
+   * that is not means *what you asked for is not a legal move*. A client that
+   * cannot tell them apart has to phrase both as the weaker of the two.
+   */
+  retryable?: boolean
 
   constructor(message: string, data?: unknown, cause?: unknown) {
     super(message)
@@ -20,7 +31,8 @@ export class FrameworkError extends Error {
       name:    this.name,
       message: this.message,
       code:    this.code,
-      data:    this.data
+      data:    this.data,
+      ...(typeof this.retryable === 'boolean' ? { retryable: this.retryable } : {})
     }
   }
 }
@@ -132,6 +144,9 @@ function adopt(fe: FrameworkError, original: unknown): FrameworkError {
   if (original instanceof Error) {
     if (fe.data == null && 'errors' in original) {
       fe.data = (original as Error & { errors?: unknown }).errors ?? null
+    }
+    if (typeof (original as Error & { retryable?: unknown }).retryable === 'boolean') {
+      fe.retryable = (original as Error & { retryable?: boolean }).retryable
     }
     fe.cause = original
     fe.stack = original.stack

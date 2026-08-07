@@ -14,7 +14,7 @@
   //   <Combobox bind:value allowNew placeholder="Select or type a tag…" {options} />
 
   import Field from '../forms/Field.mesa'
-  import { uid } from '../../utils.js'
+  import { uid, resolveError } from '../../utils.js'
 
   export let value       = undefined    // scalar — bindable
   export let options     = []           // string[] | { value, label, disabled? }[]
@@ -29,6 +29,10 @@
   export let hint     = ''
   export let error    = ''
   export let errors   = undefined
+
+  // The enclosing <Form>, when there is one — see utils.js § Form context.
+  const form     = $context.form
+  const hasError = !!resolveError(form, name, error, errors)
   export let badge    = undefined
   export let help     = undefined
   export let onchange = undefined
@@ -135,7 +139,7 @@
         spellcheck="false"
         placeholder={placeholder}
         disabled={disabled}
-        aria-invalid={!!(error || errors?.[name]) || null}
+        aria-invalid={hasError || null}
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"

@@ -1,0 +1,147 @@
+---
+title: Portal
+---
+<script>
+  // The operator's view of the shared appliances — is it up, where is it, open it.
+  //
+  // Not the same question as /admin/adapters/, which asks whether an adapter is
+  // WIRED (configured vs stub, and which env var activates it). The service
+  // splits the same way and that split is the reason both screens exist:
+  // `find()` reports wiring and pings nothing, `get(id)` pings live. Adapters
+  // reads the first, this screen reads the second.
+  import { portal } from '../../resources/portal.mesa'
+  import { session } from '../../session.js'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows    = []
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows = (await portal.service.find()).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // One appliance, pinged for real. `get` is the live path — it is why this
+  // screen is not a second rendering of the adapters list.
+  async function check(entry) {
+    error = null; busy = entry.id
+    try {
+      merge(await portal.service.get(entry.id))
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // Sequential, not Promise.all: a ping is a network round trip to somebody
+  // else's box, and eight at once is a burst this screen has no reason to make.
+  async function checkAll() {
+    error = null; busy = 'all'
+    try {
+      for (const entry of rows) merge(await portal.service.get(entry.id))
+      toasts.success('All appliances checked')
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  function merge(fresh) {
+    const i = rows.findIndex(r => r.id === fresh.id)
+    if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...fresh }, ...rows.slice(i + 1)]
+  }
+
+  $: configured = rows.filter(r => r.configured).length
+  $: unhealthy  = rows.filter(r => r.status === 'unreachable' || r.status === 'degraded').length
+
+  const TONE = {
+    healthy: 'success', degraded: 'warning', unreachable: 'danger', unconfigured: 'muted',
+  }
+  const when = (ms) => ms ? new Date(ms).toLocaleTimeString() : 'not checked'
+</script>
+
+<div class="section-header">
+  <h1>Portal</h1>
+  <span class="text-sm text-muted">the shared appliances, live</span>
+</div>
+
+<p class="text-body">
+  Health here is measured, not remembered — <strong>Check</strong> pings the appliance
+  through its adapter. An <strong>unconfigured</strong> one is a stub waiting for its
+  environment variables, which is a state rather than a fault; whether one is wired at all
+  is <a href="/admin/adapters/">Adapters</a>.
+</p>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No appliances">This build declares none.</EmptyState>
+{:else}
+  <div class="tiles" style="--tile-min: 12rem">
+    <StatCard label="Configured" value={configured} sub={`of ${rows.length}`} />
+    <StatCard label="Stub" value={rows.length - configured} sub="log and no-op" />
+    <StatCard label="Unhealthy" value={unhealthy} sub="measured, not assumed" />
+  </div>
+
+  <div class="cluster">
+    <Button variant="outlined" id="portal-check-all" disabled={busy !== null} onclick={checkAll}>
+      {busy === 'all' ? 'Checking…' : 'Check all'}
+    </Button>
+  </div>
+
+  <div class="tiles" style="--tile-min: 17rem" id="portal-tiles">
+    {#each rows as entry}
+      <Card>
+        <div class="cluster">
+          <h2 class="h4"><a href={`/portal/${entry.id}/`}>{entry.name}</a></h2>
+          <Pill tone={TONE[entry.status] ?? ''}>{entry.status}</Pill>
+        </div>
+        <p class="text-sm text-muted">{entry.description}</p>
+        <dl class="facts">
+          <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
+          <dt>Checked</dt><dd class="text-sm text-muted">{when(entry.checked_at)}</dd>
+        </dl>
+        <div class="cluster">
+          <Button variant="ghost" disabled={busy !== null} onclick={() => check(entry)}>
+            {busy === entry.id ? 'Checking…' : 'Check'}
+          </Button>
+          {#if entry.url}
+            <!-- Somebody else's application, so a real navigation out of the SPA
+                 and the pair rel/target that makes that safe. -->
+            <a class="btn ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</a>
+          {:else}
+            <Badge tone="muted">no URL configured</Badge>
+          {/if}
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}

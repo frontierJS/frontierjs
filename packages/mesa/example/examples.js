@@ -2490,7 +2490,7 @@ export const EXAMPLES = {
   // ── Markdown ──────────────────────────────────────────────────────────────────
 
   markdownBasic: {
-    file: 'BlogPost.mesa',
+    file: 'BlogPost.md',
     group: 'Markdown',
     src: `---
 title: My First Mesa Post
@@ -2509,9 +2509,10 @@ Welcome to **Mesa** — a reactive UI language where markdown is a first-class c
 
 ## What you get for free
 
-When a \`.mesa\` file starts with \`---\` frontmatter, the compiler routes it through the
-markdown pipeline automatically. Frontmatter keys become \`export const\` declarations,
-so \`{title}\`, \`{author}\`, and \`{date}\` all work as reactive Mesa expressions.
+A \`.md\` file is a Mesa component whose template is markdown — the extension is what
+picks the pipeline, not the presence of frontmatter. Frontmatter keys become
+\`export const\` declarations, so \`{title}\`, \`{author}\` and \`{date}\` all work as
+reactive Mesa expressions.
 
 ## Code blocks are untouched
 
@@ -2533,7 +2534,7 @@ That's it!`,
   },
 
   markdownInteractive: {
-    file: 'InteractivePost.mesa',
+    file: 'InteractivePost.md',
     group: 'Markdown',
     src: `---
 title: Interactive Markdown
@@ -2579,7 +2580,7 @@ You have clicked the button **{count} time{count === 1 ? '' : 's'}**.
   },
 
   markdownFrontmatter: {
-    file: 'Frontmatter.mesa',
+    file: 'Frontmatter.md',
     group: 'Markdown',
     src: `---
 title: Frontmatter Reference

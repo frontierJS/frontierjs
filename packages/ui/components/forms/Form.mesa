@@ -1,0 +1,332 @@
+<script>
+  // Form.mesa
+  // The form state machine, derived from the schema rather than declared.
+  //
+  // A form has four jobs beyond holding inputs: know whether it is in flight,
+  // know what the server said about each field, know whether anything changed,
+  // and not submit twice. Every app writes those four by hand, slightly
+  // differently, and the field-error half is the one that gets skipped.
+  //
+  // Give it a resource and it does all four:
+  //
+  //   <Form {leads} ondone={r => goto(`/leads/${r.id}`)}>
+  //     <Input name="name" />
+  //     <Input name="email" />
+  //     <Button type="submit">Save</Button>
+  //   </Form>
+  //
+  // Nothing above says what a Lead is. `createResource('leads')` read that from
+  // db/schema.lite, so:
+  //
+  //   • the payload is coerced, blank-stripped and validated before it is sent
+  //     (the resource does this — see createResource's header)
+  //   • a rejection becomes `errors[field]`, and each <Field> under this form
+  //     picks up its own message from context without being handed one
+  //   • <Button type="submit"> disables and spins while in flight
+  //   • the message clears as the user fixes the field
+  //
+  // ── Why the error map is not built here ──────────────────────────────
+  //
+  // A failed write arrives in one of three shapes depending on how far it got
+  // and which transport carried it. Unwrapping that is one translation and it
+  // has one owner — sierra's `toFieldErrors`, reachable as
+  // `resource.fieldErrors(err)`. This component calls it and does not know
+  // what a ResourceValidationError is.
+  //
+  // Without a resource (an `onsubmit` doing something else entirely) there is
+  // no unwrapper, and this DELIBERATELY degrades to a form-level message
+  // rather than carrying a second copy of the logic. Pass `mapErrors` to
+  // supply your own.
+  //
+  // ── novalidate is on by default ──────────────────────────────────────
+  //
+  // Kit controls put a real `required` on the input, so the browser refuses to
+  // fire submit and shows its own bubble instead — with a message that is not
+  // the schema's, in a place the layout did not plan for, and silently, which
+  // reads as "the submit handler is broken". The schema owns the messages, so
+  // the browser's validation UI is turned off and the constraint attributes
+  // stay for assistive tech. `novalidate={false}` restores the native bubbles.
+
+  import Alert from '../feedback/Alert.mesa'
+  import { cx } from '../../utils.js'
+
+  // The resource this form writes through. Optional only when `onsubmit` is
+  // given — one of the two must be present.
+  export let resource = undefined
+
+  // The record being edited. Bindable. Defaults to a schema-seeded blank, so
+  // `<Form {resource}>` with no record is a working create form.
+  export let record = undefined
+
+  // 'auto' picks create or patch from whether the record already has an id,
+  // which is what upsert already does. Name one to force it.
+  export let method = 'auto'          // 'auto' | 'create' | 'patch' | 'upsert'
+
+  // Escape hatches — narrow on purpose. `onsubmit` replaces the request and
+  // nothing else: the in-flight state, the error mapping and the dirty
+  // tracking still apply. `mapErrors` replaces only the unwrapping.
+  export let onsubmit  = undefined    // async (record) => result
+  export let mapErrors = undefined    // (err) => { fields, message }
+
+  export let ondone  = undefined      // (result, record) => void
+  export let onerror = undefined      // (err) => void
+  export let onready = undefined      // (api) => void — see § The imperative API
+
+  export let disabled    = false
+  export let resetOnDone = false      // clear back to the pristine record on success
+  export let novalidate  = true       // see the note above
+  export let showError   = true       // render the form-level Alert
+  export let errorTitle  = ''         // heading for that Alert
+
+  // When a field is first allowed to complain. See § Live validation below.
+  //   'blur'   — on leaving a field the user has typed in (default)
+  //   'input'  — as soon as it is typed in
+  //   'submit' — only when the form is submitted
+  export let validateOn = 'blur'
+
+  // ── State — exported so a caller can bind: any of it ────────────────
+  export let errors    = {}           // { [field]: message } — replaced, never mutated
+  export let formError = ''           // the failure no field can render
+  export let submitting = false
+  export let dirty      = false
+  export let submitted  = false       // a submit has been attempted
+
+  const idField = resource?.context?.idField ?? 'id'
+
+  // A blank seeded from the schema when the caller did not supply a record.
+  // `??=` rather than a default value: `record` is bindable, and a default
+  // would re-seed it every time the prop re-derived.
+  if (record === undefined) record = resource?.make?.() ?? {}
+
+  // The baseline reset() returns to. Snapshotted at mount (`var`, outside the
+  // reactive graph) because a form that reset to the CURRENT record would be a
+  // no-op. Shallow on purpose — a row is flat, and a deep clone would copy
+  // File objects and Dates into things that no longer compare equal.
+  var pristine = { ...record }
+
+  // What descendants read. Rebuilt whenever any part changes, which is what
+  // makes a <Field> three levels down re-render on its own error.
+  $context.form = {
+    errors,
+    submitting,
+    disabled: disabled || submitting,
+    fields: resource?.fields ?? {},
+    submitted,
+  }
+
+  // ── Live validation ──────────────────────────────────────────────────
+  //
+  // One rule: **on input an error may only be removed, never revealed.**
+  //
+  // The obvious wiring — re-validate on every input — misbehaves, because
+  // validation judges the whole record: the first keystroke in `reference`
+  // lights up "status is required" and "customer is required" on fields the
+  // user has not reached. So a field is *revealed* by leaving it (having typed
+  // in it) or by submitting, and input only ever re-checks a field that is
+  // already speaking. A bad value goes red when you leave it and goes quiet
+  // again on the keystroke that fixes it.
+  //
+  // Revealing is sticky: once a field has spoken it may speak again on input,
+  // which is not "adding on input" — it is already showing.
+  //
+  // Two error sources are kept apart. `_server` is what the last failed submit
+  // said, and only the server can know it ("that address is taken"); `_live` is
+  // the schema check, which runs here and re-runs freely. A live message wins
+  // where both exist, because the client is judging what is on screen now, and
+  // a server message survives until its own field is edited.
+  let _touched  = []     // fields that have received input
+  let _revealed = []     // fields allowed to show a message
+  let _server   = {}     // per-field messages from the last failed submit
+
+  const _mode = () =>
+    method === 'patch' || (method === 'auto' && record?.[idField] != null)
+      ? 'patch' : 'create'
+
+  // Validate the COERCED record, never the raw one: every DOM control hands
+  // back a string, so checking `record` directly reports "total must be a
+  // number" for a perfectly good "42".
+  function _live() {
+    if (!resource?.validate) return {}
+    const payload = resource.coerce ? resource.coerce(record) : record
+    const out = {}
+    for (const e of resource.validate(payload, _mode())) {
+      if (_revealed.includes(e.field) && !(e.field in out)) out[e.field] = e.message
+    }
+    return out
+  }
+
+  function _recompute() {
+    errors = { ..._server, ..._live() }
+  }
+
+  function _map(err) {
+    const fn = mapErrors ?? resource?.fieldErrors
+    // No unwrapper: say the one true thing rather than guess at a shape.
+    if (!fn) return { fields: {}, message: err?.message ?? 'Request failed' }
+    return fn(err) ?? { fields: {}, message: '' }
+  }
+
+  function _send(data) {
+    if (!resource) {
+      throw new Error('<Form> needs either a `resource` or an `onsubmit` handler')
+    }
+    if (method === 'create') return resource.service.create(data)
+    if (method === 'patch')  return resource.service.patch(data?.[idField], data)
+    return resource.service.upsert(data)
+  }
+
+  // ── The imperative API ───────────────────────────────────────────────
+  //
+  // Handed to the caller through `onready` rather than exposed on `bind:this`,
+  // because NEITHER documented way of putting a method on a component instance
+  // compiles today (`ISSUES.md` FJS-087):
+  //
+  //   export function submit() {…}     — dropped from the output entirely.
+  //     `compiler.js:5998` skips every ExportNamedDeclaration in the instance
+  //     script and only `export let` is handled before it, so this component's
+  //     own `on:submit={submit}` threw ReferenceError on the first click. Not
+  //     caught by a render test: SSR never dispatches an event.
+  //
+  //   export let submit = async (e) => {…}  — emits `$runtime.get(sig) = true`
+  //     for every assignment in the body. Reads inside a prop initialiser are
+  //     rewritten; assignments are not. Unparseable.
+  //
+  // So these are plain functions, which compile correctly, and the component
+  // hands them out once at mount:
+  //
+  //   <Form {resource} onready={api => saveFromElsewhere = api.submit} />
+  //
+  // When FJS-085 is fixed this should become `bind:this` and `onready` can go.
+
+  async function submit(e) {
+    // Also called programmatically via bind:this, where there is no event.
+    e?.preventDefault?.()
+    if (submitting || disabled) return undefined
+
+    submitted = true
+    formError = ''
+    errors    = {}
+    _server   = {}
+    // Submitting reveals every field — that is what makes it the thing that
+    // speaks for the ones never visited.
+    _revealed = Object.keys(resource?.fields ?? {})
+    submitting = true
+
+    try {
+      const result = onsubmit ? await onsubmit(record) : await _send(record)
+      dirty = false
+      if (resetOnDone) reset()
+      ondone?.(result, record)
+      return result
+    } catch (err) {
+      const mapped = _map(err)
+      _server   = mapped.fields  ?? {}
+      formError = mapped.message ?? ''
+      _recompute()
+      onerror?.(err)
+      return undefined
+    } finally {
+      // finally, not the catch arm: an ondone that throws must still leave the
+      // form usable rather than stuck spinning forever.
+      submitting = false
+    }
+  }
+
+  /** Back to the pristine record, with every error and flag cleared. */
+  function reset(next) {
+    if (next !== undefined) pristine = { ...next }
+    record    = { ...pristine }
+    dirty     = false
+    submitted = false
+    clearErrors()
+  }
+
+  /** Drop the messages without touching the record. */
+  function clearErrors() {
+    errors    = {}
+    formError = ''
+    _server   = {}
+    _revealed = []
+    _touched  = []
+  }
+
+  // `input` and `change` both bubble, so one pair of listeners on the <form>
+  // sees every control under it — including ones this kit did not render.
+  // That is the whole dirty-tracking mechanism: no deep watch of the record,
+  // no per-field wiring.
+  function handleChange(e) {
+    dirty = true
+
+    const key = e?.target?.name
+    if (!key) return
+
+    if (!_touched.includes(key)) _touched = [..._touched, key]
+
+    // A server message is about the value that was sent, so editing that value
+    // retires it. Without this it sits under a box the user has already fixed,
+    // which reads as the form refusing to accept a correct value.
+    if (_server[key] !== undefined) {
+      const next = { ..._server }
+      delete next[key]
+      _server = next
+    }
+
+    if (validateOn === 'input' && !_revealed.includes(key)) {
+      _revealed = [..._revealed, key]
+    }
+
+    // Re-check rather than blindly clear: a field that is already speaking must
+    // be allowed to say something ELSE as the value changes, and one that is
+    // not revealed still cannot start.
+    _recompute()
+  }
+
+  // Reveal on leaving a field that has actually been typed in. Tabbing through
+  // an untouched form must stay silent — submit is what speaks for those.
+  //
+  // `blur` in the CAPTURE phase, not `focusout`. Capture runs from the root
+  // down to the target regardless of whether the event bubbles, so one listener
+  // on the <form> sees a `blur` that by definition does not bubble. `focusout`
+  // would work for real focus loss and miss a synthetic `blur` dispatched
+  // straight at an element, which is how a test drives it.
+  // Hand the imperative API out once the component is alive. $onMount is a
+  // no-op server-side, so a prerendered form simply never offers it — which is
+  // correct: there is nothing to submit.
+  $onMount(() => { onready?.({ submit, reset, clearErrors }) })
+
+  function handleLeave(e) {
+    if (validateOn !== 'blur') return
+    const key = e?.target?.name
+    if (!key || !_touched.includes(key) || _revealed.includes(key)) return
+    _revealed = [..._revealed, key]
+    _recompute()
+  }
+</script>
+
+<form
+  class={cx('stack')}
+  novalidate={novalidate || null}
+  aria-busy={submitting || null}
+  on:submit|preventDefault={submit}
+  on:input={handleChange}
+  on:change={handleChange}
+  on:blur|capture={handleLeave}
+  {class}
+  {...$attributes}
+>
+  <!--
+    The failure no field could render — a 500, a dropped socket, a conflict.
+    role="alert" comes from Alert itself.
+  -->
+  {#if showError && formError}
+    <Alert tone="danger" title={errorTitle}>{formError}</Alert>
+  {/if}
+
+  <slot />
+
+  {#if $slots.actions}
+    <div class="cluster">
+      <slot:actions />
+    </div>
+  {/if}
+</form>

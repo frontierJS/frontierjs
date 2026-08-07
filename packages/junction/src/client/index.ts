@@ -708,10 +708,22 @@ export class JunctionClient extends EventEmitter {
           if (type === 'service_result') {
             pending.resolve(msg.result)
           } else {
+            // `msg.error` is FrameworkError.toJSON() — { name, message, code,
+            // data } — and `data` is where a validation failure's per-field
+            // list lives. Taking only message + code dropped it, so the same
+            // 400 carried field errors over HTTP and nothing but a joined
+            // sentence over the socket. WebSocket is the DEFAULT transport, so
+            // that is the shape a form sees in production while the HTTP
+            // fallback it was built against looked fine.
+            //
+            // Shaped to match the HTTP path exactly (see _request): the parsed
+            // error body goes on `.data`, so `err.data.data` is the list in
+            // both, and one unwrapper serves both transports.
             const err = msg.error as Record<string, unknown>
             pending.reject(
               Object.assign(new Error(String(err?.message ?? 'Service error')), {
-                code: err?.code
+                code: err?.code,
+                data: err
               })
             )
           }

@@ -50,6 +50,9 @@ export default defineConfig({
       '/api':     { target: API, changeOrigin: true },
       '/auth':    { target: API, changeOrigin: true },
       '/session': { target: API, changeOrigin: true },
+      // Caravan's admin routes. Raw app.get routes take no apiPrefix, so this
+      // is /jobs and not /api/jobs — its own proxy entry, not a sub-path of one.
+      '/jobs':    { target: API, changeOrigin: true },
       '/ws':      { target: API, ws: true },
     },
   },

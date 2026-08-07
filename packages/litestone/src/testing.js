@@ -681,6 +681,13 @@ function _shouldSkipField(field, model) {
   }
   if (attrs.some(a => a.kind === 'updatedAt')) return true
 
+  // @createdBy / @updatedBy are stamped from ctx.auth — a factory value would
+  // be overwritten under $setAuth and is meaningless without it
+  if (attrs.some(a => a.kind === 'createdBy' || a.kind === 'updatedBy')) return true
+
+  // @version is owned by the client — always 1 on create, bumped by SQL after
+  if (attrs.some(a => a.kind === 'version')) return true
+
   // Well-known auto-timestamp fields
   if (name === 'createdAt') return true
   if (name === 'updatedAt') return true

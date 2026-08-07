@@ -1,8 +1,27 @@
 # Idea — State machines belong in the schema
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-04. No `@@transitions`
-attribute exists in the `.lite` grammar. Do not cite this file as describing
-behavior — see `VERIFYING.md`.
+**Status: SHIPPED, with a remainder.** Dated 2026-08-04; **header corrected
+2026-08-06**, when it still read *"Nothing here is built. No `@@transitions`
+attribute exists in the `.lite` grammar"* — which had been false since the day
+this file was written. `@@transitions` parses, is enforced at the Data boundary
+(`litestone/src/core/parser.js`, `client.js`, `jsonschema.js`), reaches the
+client as `x-transitions` (`sierra/src/junction/field-rules.js`) and drives
+`example`'s order screen, which asserts an illegal move returns 409.
+`IDEAS/overview.md` row 4.1 has said *shipped* since 2026-08-04; this file did
+not, and a status header that contradicts the index is the drift `VERIFYING.md`
+exists to catch.
+
+**What remains unbuilt** is the full DSL (litestone backlog 5 — `transitionMap`
+is the partial form), and one thing this file never claimed:
+
+> `@@transitions` is a **field** machine. A **process** — checkout, onboarding,
+> an approval chain: multi-step, spanning requests, resumable after a
+> disconnect — is a different noun, and `ARCHITECT.md` §2 has no word for it.
+> Argued in `IDEAS/declared-semantics.md` § 4, which is also where the case for
+> building it out of this plus Caravan is made.
+
+Read the design below as the argument that was made, not as a description of
+what shipped.
 
 ---
 

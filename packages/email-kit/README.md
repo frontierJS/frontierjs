@@ -1,4 +1,4 @@
-# @frontierjs/mesa-email
+# @frontierjs/email-kit
 
 Email component kit for Mesa. Table-based, CSS-inlined, Outlook-safe.
 
@@ -7,7 +7,7 @@ Replaces MJML for transactional email built with the Frontier ecosystem.
 ## Install
 
 ```bash
-npm install @frontierjs/mesa-email @frontierjs/mesa
+npm install @frontierjs/email-kit @frontierjs/mesa
 ```
 
 ## Usage
@@ -20,14 +20,14 @@ npm install @frontierjs/mesa-email @frontierjs/mesa
 </script>
 
 <script>
-  import Email    from '@frontierjs/mesa-email/components/Email.mesa'
-  import Section  from '@frontierjs/mesa-email/components/Section.mesa'
-  import Row      from '@frontierjs/mesa-email/components/Row.mesa'
-  import Column   from '@frontierjs/mesa-email/components/Column.mesa'
-  import Button   from '@frontierjs/mesa-email/components/Button.mesa'
-  import Card     from '@frontierjs/mesa-email/components/Card.mesa'
-  import KeyValue from '@frontierjs/mesa-email/components/KeyValue.mesa'
-  import Footer   from '@frontierjs/mesa-email/components/Footer.mesa'
+  import Email    from '@frontierjs/email-kit/components/Email.mesa'
+  import Section  from '@frontierjs/email-kit/components/Section.mesa'
+  import Row      from '@frontierjs/email-kit/components/Row.mesa'
+  import Column   from '@frontierjs/email-kit/components/Column.mesa'
+  import Button   from '@frontierjs/email-kit/components/Button.mesa'
+  import Card     from '@frontierjs/email-kit/components/Card.mesa'
+  import KeyValue from '@frontierjs/email-kit/components/KeyValue.mesa'
+  import Footer   from '@frontierjs/email-kit/components/Footer.mesa'
 
   export let firstName = 'Friend'
   export let planName  = 'Pro'
@@ -69,7 +69,7 @@ npm install @frontierjs/mesa-email @frontierjs/mesa
 ### Server-side rendering
 
 ```js
-import { renderEmailFile } from '@frontierjs/mesa-email/render'
+import { renderEmailFile } from '@frontierjs/email-kit/render'
 
 const result = await renderEmailFile('./emails/WelcomeEmail.mesa', {
   data: {

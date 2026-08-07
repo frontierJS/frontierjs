@@ -7,7 +7,7 @@ Last verified by running: **2026-08-03**.
 | | |
 | --- | --- |
 | Version | 0.1.0 — working, self-styled pre-alpha |
-| Tests | **781 pass / 0 fail**, 25 files, 1,392 assertions (`bun run test`, 2.2s) |
+| Tests | **866 pass / 0 fail**, 33 files, 1,551 assertions (`bun run test`, 2.0s) |
 | Typecheck | **exactly 212** — the baseline. `bun run typecheck` exits 0 |
 | Realm | API / D8 |
 
@@ -74,46 +74,27 @@ few genuinely wrong service-definition literals). It dropped to this number when
 `app.conduit` stopped being redeclared — older notes quoting 214/216/224/226
 predate that.
 
-## Open
+## Open — see `ISSUES.md`
 
-- **No `apiPrefix` on plugin routes.** `registerServiceRoutes` applies it;
-  plugins calling `app.post()` directly do not. `@frontierjs/auth` defaults to
-  `/auth` while Junction's own browser client hardcodes `/api/auth/login`, so
-  with defaults on both sides they never meet — apps must set
-  `prefix: '/api/auth'` explicitly.
-- **Litestone `onEvent` has zero Junction subscribers.** Needs a
-  post-construction subscribe in litestone, mirroring `$tapQuery`. Mutations
-  announced *through* `callService` do fan out to both the bus and channels;
-  writes that bypass it are invisible.
-- **`createLitestoneService` conflates the accessor with the model name** —
-  `scopedDb[model]` wants `lead`, `generateJsonSchema` keys `$defs` by `Lead`.
-  The `$defs` miss warns rather than throwing, so a service can silently accept
-  unvalidated input. Probably wants two fields.
-- **`createService({ model })` has no way to say "read only".** The model brings
-  the full CRUD set with it, and a service that declares only `find()` still
-  answers `POST`/`PATCH`/`DELETE` through the base — with schema validation, so
-  a well-formed payload is *written*. Found in Basecamp: `/audit` is an
-  append-only trail and an admin could forge a row into it, verified, until the
-  service declared `create`/`patch`/`update`/`remove` that throw
-  `MethodNotAllowed` (`basecamp/api/src/services/audit/audit.service.ts`).
-  Refusing by hand works but is opt-OUT: every append-only or read-only resource
-  is writable until someone remembers four stubs, and nothing warns. Candidates:
-  a `methods: ['find', 'get']` allow-list, or `readOnly: true`. The allow-list
-  generalises further — it also covers "no bulk delete" without a hook.
-- **A custom method's return shape is load-bearing and nothing says so.** Four
-  methods across Basecamp answered a partial row — `setVariable` → `{id,
-  variables}`, the deployment engine's 5-field projection, `heartbeat` →
-  `{ok, server_id, status}`, `jobs.trigger` → `{id, queued}` — and each broke a
-  client that did the obvious thing with the result. The payload is also what
-  the channel publishes, so a projection with no `id` cannot even be matched to
-  the row it describes. Worth stating in the docs, and possibly worth having
-  `createService` warn when a method on a model service returns an object with
-  no id field.
-- **Custom service methods are still called `actions`** and the name is under
-  review; dispatch via the `X-Service-Method` header is decided (`DECISIONS.md`).
-- **Hook context shape differs across realms.** Junction's split
-  (`auth`/`client`/`route`/`locals`, plus `query`/`directives`) is the candidate
-  standard, not yet the settled one.
+Open items for this package are in the repo-wide register, not here:
+**`FJS-010`** litestone `onEvent` has no subscriber ·
+**`FJS-012`** no `apiPrefix` on plugin routes ·
+**`FJS-013`** `createLitestoneService` conflates accessor with model name ·
+**`FJS-016`** service definition vs runtime ·
+**`FJS-017`** middleware vs hooks ·
+**`FJS-018`** types stop at the server ·
+**`FJS-019`** dialect trap ·
+**`FJS-020`** custom-method return shape ·
+**`FJS-034`** typecheck baseline ·
+**`FJS-043`** `/metrics` `actions: []` ·
+**`FJS-044`** bulk patch/remove ·
+**`FJS-045`** double broadcast ·
+**`FJS-046`** export tiering ·
+**`FJS-047`** sibling ownership.
+Decisions waiting: **`FJS-D01`**, **`FJS-D02`**, **`FJS-D08`**,
+**`FJS-D10`**, **`FJS-D11`**, **`FJS-D13`**.
+
+Add a new one to `../../ISSUES.md`, not to this file.
 
 ## Layout
 

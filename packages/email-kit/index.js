@@ -1,17 +1,17 @@
 /**
- * @frontierjs/mesa-email
+ * @frontierjs/email-kit
  *
  * Mesa email component kit.
  * Table-based, CSS-inlined, Outlook-safe email components.
  *
  * Usage:
  *   // In a .mesa template
- *   import Email    from '@frontierjs/mesa-email/components/Email.mesa'
- *   import Section  from '@frontierjs/mesa-email/components/Section.mesa'
- *   import Button   from '@frontierjs/mesa-email/components/Button.mesa'
+ *   import Email    from '@frontierjs/email-kit/components/Email.mesa'
+ *   import Section  from '@frontierjs/email-kit/components/Section.mesa'
+ *   import Button   from '@frontierjs/email-kit/components/Button.mesa'
  *
  *   // Server-side rendering
- *   import { renderEmail, renderEmailFile } from '@frontierjs/mesa-email/render'
+ *   import { renderEmail, renderEmailFile } from '@frontierjs/email-kit/render'
  */
 
 // Component paths — for use as import references in Mesa templates.

@@ -362,7 +362,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // $setAuth is guarded so plain (non-litestone) clients — adapted by
       // createBaseService — pass through without per-user scoping.
       const scopedDb: LitestoneClient = ctx.auth.user && typeof baseDb.$setAuth === 'function'
-        ? baseDb.$setAuth(ctx.auth.user)
+        ? baseDb.$setAuth(toDataPrincipal(ctx.auth.user))
         : baseDb
 
       const telemetry = (ctx.app as Record<string, unknown>)?.telemetry as
@@ -1047,6 +1047,39 @@ export function sessionGateLevel(
   return LEVELS.USER
 }
 
+/**
+ * A Junction session as Litestone's `auth()` sees it.
+ *
+ * **The one translation between two identity shapes.** Junction's
+ * `SessionContext` names the caller `userId`; Litestone's policy language reads
+ * `auth().id` — that is its documented spelling, used by `@default(auth().id)`
+ * and by every `@@allow` example it ships. Handing a `SessionContext` straight
+ * to `$setAuth` therefore gives the Data boundary a principal with **no `id`**,
+ * and a row policy written the documented way:
+ *
+ *   @@allow('read', userId == auth().id)
+ *
+ * compares a column to `undefined` and matches nothing. No error, no warning —
+ * an empty list. Every gate still worked, because `sessionGateLevel()` was
+ * written against Junction's shape; policies read Litestone's, and nothing
+ * bridged the two. Found 2026-08-06 in `example/`, where a user's own
+ * notifications were invisible to them and visible to `asSystem()`.
+ *
+ * Everything else passes through by name — `role`, `accountId`, `workspaceId`,
+ * `email` are already spelled the same on both sides — and an explicit `id`
+ * wins, so a caller that already speaks Litestone's shape is untouched.
+ *
+ * Sibling of `sessionGateLevel()`: same boundary, same direction, one for the
+ * ordinal gate and one for the policy predicate.
+ */
+export function toDataPrincipal(user: unknown): unknown {
+  if (!user || typeof user !== 'object') return user
+  const u = user as { id?: unknown; userId?: unknown }
+  if (u.id !== undefined && u.id !== null) return user
+  if (u.userId === undefined || u.userId === null) return user
+  return { ...user, id: u.userId }
+}
+
 export function withLitestoneDb(db: unknown): import('./hooks.ts').AroundHook {
   return async (ctx, next) => {
     // Scope to the caller here, not in the service.
@@ -1065,7 +1098,7 @@ export function withLitestoneDb(db: unknown): import('./hooks.ts').AroundHook {
     const client = db as LitestoneClient
     ctx.locals.db =
       ctx.auth?.user && typeof client?.$setAuth === 'function'
-        ? client.$setAuth(ctx.auth.user)
+        ? client.$setAuth(toDataPrincipal(ctx.auth.user))
         : client
     await next()
   }
@@ -1140,7 +1173,25 @@ export function jsonSchemaToJunctionSchema(
   for (const [field, prop] of Object.entries(
     (modelDef as LitestoneModelDef).properties ?? {}
   )) {
-    schema[field] = mapProp(prop, field, required, fullSchema.$defs)
+    const def = mapProp(prop, field, required, fullSchema.$defs)
+
+    // A PATCH must not invent a value for a key the caller did not send.
+    //
+    // `mode: 'update'` already drops required-ness — a partial body is the
+    // whole point — but it kept every field's `default`, and validate() fills a
+    // default in for any absent key. So `PATCH /orders/3 {"note":"x"}` was
+    // rewritten as `{ note: 'x', status: 'pending', total: 0, active: true, … }`
+    // before it ever reached the model.
+    //
+    // On an ordinary column that silently reset it. On a column under
+    // `@@transitions` it was worse and, mercifully, loud: patching one unrelated
+    // field on a shipped order answered
+    //   409 Cannot transition order.status from 'shipped' to 'pending'
+    // which reads as a bug in the state machine and is not one. Found
+    // 2026-08-06 by a Caravan job trying to write a tracking code.
+    if (mode === 'update') delete def.default
+
+    schema[field] = def
   }
 
   return schema

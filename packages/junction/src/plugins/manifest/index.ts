@@ -18,7 +18,7 @@
 
 import type { App, Plugin } from '../../core/app.ts'
 import type { HookMap }     from '../../core/hooks.ts'
-import { customMethodNames } from '../../core/service.ts'
+import { customMethodNames, isMethodAllowed, allowedMethodNames } from '../../core/service.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ export interface AppMeta {
 export interface ServiceManifest {
   name:       string
   model:      string
-  methods:    string[]      // CRUD + custom methods
+  methods:    string[]      // CRUD + custom methods, after the `methods:` policy
   hooks:      HookManifest
   softDelete: boolean
   cache:      boolean
@@ -167,12 +167,16 @@ function buildServices(app: App): ServiceManifest[] {
 
     // Was a local STANDARD_KEYS copy that had drifted — it omitted `update`
     // and `_update`, so every service advertised `update` as a custom action.
-    const customMethods = customMethodNames(svc)
+    const customMethods = customMethodNames(svc).filter(m => isMethodAllowed(svc, m))
 
     return {
       name:       svc.name,
       model:      svc.model ?? svc.name,
-      methods:    ['find', 'get', 'create', 'patch', 'remove', 'restore', ...customMethods],
+      // Policy-filtered: advertising a verb the service answers 405 to is worse
+      // than not advertising it, because a generated client would call it.
+      // The hardcoded list was also a fourth spelling of the CRUD set and
+      // omitted `update` — allowedMethodNames() is the one source now.
+      methods:    allowedMethodNames(svc),
       hooks:      serializeHookMap(svc._hookMap),
       softDelete: !!(meta.softDelete),
       cache:      !!(meta.cache),

@@ -88,6 +88,12 @@ Rate limiting works: 5 registers then `429`, keyed per-IP off `ctx.ip`.
 
 ## Findings — ranked by cost of being wrong
 
+
+*Still open here, in `../../ISSUES.md`: **`FJS-002`** (cookie auth),
+**`FJS-003`** (unpublishable), **`FJS-042`** (API keys, no events — `stale?`),
+**`FJS-063`** (timing oracle, `any` types). Decision waiting: **`FJS-D20`**.
+The writeups below are the argued detail.*
+
 **Status: 1, 3 and 5 are fixed. 2, 4, 6 and 7 remain open.**
 
 ### 1. Every auth failure reached the client as HTTP 500 — **FIXED**
@@ -143,28 +149,43 @@ client as a 500 — verified before the change, and now covered by
 Same bug class as Caravan's admin guard — see the error-boundary entry in
 `../../CLAUDE.md`.
 
-### 2. `cookieAuth: true` cannot authenticate a request
+### 2. `cookieAuth: true` cannot authenticate a request — **FIXED 2026-08-06**
 
-The cookie is set correctly — `session=…; Path=/; Max-Age=2592000; HttpOnly;
-SameSite=Lax`, with `Max-Age` correctly derived from `sessionTtl`. But:
+The cookie was set correctly — `session=…; Path=/; Max-Age=2592000; HttpOnly;
+SameSite=Lax`, with `Max-Age` derived from `sessionTtl`. But:
 
 ```
 GET /auth/me  with cookie only  → 401
 ```
 
-Junction's `extractToken()` (`src/transport/http.ts:854`) reads **only**
-`authorization: Bearer` and `x-api-key`. It never looks at cookies, so `ctx.user`
-is never populated from one. Login and logout work (auth's own `extractToken`
-has a `ctx.cookies?.session` fallback); everything in between does not.
+Junction's `extractToken()` read **only** `authorization: Bearer` and
+`x-api-key`, so `ctx.user` was never populated from a cookie. Login and logout
+worked (auth's own `extractToken` has a `ctx.cookies?.session` fallback);
+everything in between did not. The documented mode got you a session you could
+not use.
 
-So the documented cookie mode gets you a session you cannot use. Fixing it means
-teaching Junction's token extraction about a session cookie — a Junction change,
-not an auth one.
+**Fixed in Junction, declared here.** `extractToken` takes an optional cookie
+name, and this plugin calls `app.http.setAuthCookie('session')` from its own
+`register()` when configured `{ cookieAuth: true }` — so cookie mode is ONE
+switch. Requiring the app to also write `config.auth.cookie` would have left a
+half-configured state that reproduces exactly the bug above.
 
-**Still open, but now pinned**: `routes.test.ts` has a test named
-`KNOWN GAP: a cookie alone does not authenticate a request` asserting the 401,
-so the gap cannot be mistaken for working. When Junction learns cookies, flip
-that assertion to 200 — it is the marker for the fix.
+Junction keeps cookies **off by default**, and that is a security decision, not
+caution: a Bearer token has to be attached by script so a cross-site request
+cannot forge one, while a cookie travels automatically — which is what makes
+CSRF possible at all. What makes it safe when enabled is the `SameSite=Lax` this
+plugin sets: the browser withholds the cookie from cross-site writes. An app
+that sets its own session cookie with `SameSite=None` re-opens that and Junction
+cannot tell.
+
+The marker test flipped: `routes.test.ts`'s `KNOWN GAP: a cookie alone does not
+authenticate a request` (asserting 401) is now `a cookie alone authenticates a
+request` (asserting 200), joined by four more covering no-cookie, a garbage
+cookie, the emptied cookie a logout leaves, and Bearer-beats-cookie precedence.
+Junction carries 12 of its own in `tests/auth-cookie.test.ts`, including the
+WebSocket upgrade — a cookie-authenticated app was otherwise connecting its
+socket anonymously, which is silent because an unauthenticated socket is a legal
+state.
 
 ### 3. `cookieAuth: true` also returned the token in the body — **FIXED**
 

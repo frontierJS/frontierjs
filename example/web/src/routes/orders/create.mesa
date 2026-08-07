@@ -5,14 +5,28 @@ title: New order
   // The whole form is derived. Look for a field list, a type, an enum value, a
   // required flag or the name of the customers resource in this file — none of
   // them are here, because all of them are in db/schema.lite.
+  //
+  // Nor is there a state machine. This page used to carry ~90 lines of one:
+  // `errors` / `shown` / `typed` / `visible`, a `check()`, an `onInput`, an
+  // `onLeave`, a `saving` flag, a `failed` string and a `save()` that coerced,
+  // validated, revealed everything and unwrapped a ResourceValidationError by
+  // hand. All of it was correct and none of it was about orders — so it is now
+  // `<Form>` in @frontierjs/ui, and the rule it enforces is stated once there
+  // rather than re-derived per app:
+  //
+  //   on input an error may only be REMOVED, never revealed.
+  //
+  // What is left below is the part that IS about orders: which control a field
+  // gets, and that the foreign key gets a picker.
   import { orders } from '../../resources/shop.mesa'
-  import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/junction'
   import { goto } from '@frontierjs/sierra/router'
   import { session } from '../../session.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
   import Checkbox      from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Form          from '@frontierjs/ui/components/forms/Form.mesa'
   import Input         from '@frontierjs/ui/components/forms/Input.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Select        from '@frontierjs/ui/components/forms/Select.mesa'
@@ -22,7 +36,21 @@ title: New order
   // Which fields to render, in schema order, minus the foreign key — that one
   // gets a picker instead of a number spinner.
   const fk    = fields.customerId.references     // { model:'Customer', field:'id', relation:'customer' }
-  const plain = Object.entries(fields).filter(([name]) => name !== 'customerId')
+
+  // …and minus the fields a PERSON does not fill in. `trackingCode` is written
+  // by the book-courier job; asking a human for it offers them a box whose
+  // value a worker will overwrite in about a second.
+  //
+  // This is the one field name in this file, and it should not have to be here:
+  // the schema knows the column exists and nothing in it can yet say "the
+  // system writes this, not the user". Litestone already emits `readOnly: true`
+  // for computed/generated/@from fields and Sierra reads it nowhere, so the
+  // shape of the answer exists on both sides of the boundary and the annotation
+  // in between does not. Filed as FJS-095 / FJS-D22.
+  const SYSTEM_WRITTEN = ['trackingCode']
+
+  const plain = Object.entries(fields)
+    .filter(([name]) => name !== 'customerId' && !SYSTEM_WRITTEN.includes(name))
 
   // The picker's options come from the RELATION, not from a name written here:
   // orders.relations.customer.model is 'Customer', and the registry resolves it.
@@ -33,11 +61,6 @@ title: New order
 
   let draft   = orders.make()
   let options = []
-  let errors  = []      // whole-record result of the last validate()
-  let shown   = []      // fields whose error is allowed on screen
-  let typed   = []      // fields the user has actually put a keystroke into
-  let saving  = false
-  let failed  = null
 
   $: session.level
 
@@ -45,79 +68,16 @@ title: New order
     .then(res => { options = res.data ?? [] })
     .catch(() => { options = [] })
 
-  // ── Live validation ──────────────────────────────────────────────────────
-  //
-  // One rule: ON INPUT AN ERROR MAY ONLY BE REMOVED, NEVER ADDED.
-  //
-  // The obvious wiring — on:input runs validate() — misbehaves, because
-  // validate() judges the whole record: the first keystroke in `reference`
-  // lights up "status is required" and "customer is required" on fields you
-  // have not reached. Errors are therefore *revealed* by leaving a field or by
-  // submitting, and input only ever re-checks a field that is already showing
-  // one. So a bad value goes red when you leave it and goes quiet again on the
-  // keystroke that fixes it, which is the whole point.
-  //
-  // Validate the COERCED draft, never the raw one: every control hands back a
-  // string, so checking `draft` reports "total must be a number" for "42".
-
-  const check = () => { errors = orders.validate(orders.coerce(draft), 'create') }
-
   // The kit's controls take a value and hand back an event; they are not bound
   // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
   // let and a member expression is not one. Replacing the object rather than
   // mutating it is also what makes the change reactive.
+  //
+  // `name` on each control is what lets <Form> route a message back to it: the
+  // form reads `e.target.name` off the one input listener it has, so a control
+  // without a name is one the form cannot speak to.
   function write(name, value) {
     draft = { ...draft, [name]: value }
-  }
-
-  function onInput(name) {
-    if (!typed.includes(name)) typed = [...typed, name]
-    if (shown.includes(name)) check()          // may clear; cannot reveal
-  }
-
-  // `on:blur` is safe here, though it looks like it should not be: Mesa
-  // delegates events to one root listener and blur does not bubble. It keeps a
-  // NON_DELEGATED_EVENTS set — focus, blur, scroll, resize — and binds those
-  // straight to the element instead, so the handler fires. `on:focusout` works
-  // too, by bubbling; blur is the more direct statement of "this field".
-  function onLeave(name) {
-    if (!typed.includes(name) || shown.includes(name)) return
-    shown = [...shown, name]                   // tabbing through an untouched
-    check()                                    // field stays quiet — submit
-  }                                            // is what reveals those
-
-  // A derived value, not a `problem(name)` helper. Mesa decides what an
-  // expression depends on from the expression's TEXT, so reads hidden inside a
-  // function body are invisible to it and the hint never updates — the same
-  // trap as isActive() in Sierra's example. Naming `errors` and `shown` here
-  // is what makes the whole thing reactive.
-  $: visible = Object.fromEntries(
-    errors.filter(e => shown.includes(e.field)).map(e => [e.field, e.message])
-  )
-
-  async function save() {
-    failed = null
-    // Validate what will actually be SENT, not what the DOM holds: every input
-    // gives back a string and coerce() casts using the schema's types. Checking
-    // the raw draft would report "total must be a number" for a perfectly good
-    // "42".
-    const payload = orders.coerce(draft)
-    errors = orders.validate(payload, 'create')
-    shown  = Object.keys(fields)      // submitting reveals everything
-    if (errors.length) return
-
-    saving = true
-    try {
-      await orders.service.create(payload)
-      goto('/orders/')
-    } catch (e) {
-      // A ResourceValidationError never left the browser. Anything else is the
-      // server's answer — including the 401 from @@gate when signed out.
-      errors = e instanceof ResourceValidationError ? e.errors : []
-      failed = e.message
-    } finally {
-      saving = false
-    }
   }
 </script>
 
@@ -136,89 +96,99 @@ title: New order
 {/if}
 
 <!--
-  The <form> keeps the `card` and `stack` classes: the kit's Card is an
-  <article>, and the element that owns a submit is the form itself.
-  Every control below is a kit component, and none of them is named after a
-  field — the loop is still driven by db/schema.lite.
+  <Form> is the <form>: it keeps the `card` class, and `stack` comes from the
+  component. It owns submit, in-flight state, the reveal rule and the map from
+  a rejection to a message under the right control — including the 401 above,
+  which arrives with no field information and lands in the form-level Alert.
+
+  It also sets `novalidate` itself. That is load-bearing and used to be a
+  hand-written attribute with a paragraph next to it: the kit's controls put a
+  real `required` on the input, so the browser's own constraint validation
+  refuses to fire a submit at all while a required field is empty — silently in
+  a headless browser, and with "Please fill out this field" in a real one. The
+  message this app shows is the one authored in db/schema.lite.
 -->
-<!--
-  `novalidate` is load-bearing. The kit's controls put a real `required` on the
-  input, so the browser's own constraint validation refuses to fire a submit at
-  all while a required field is empty — silently, in a headless browser, and
-  with "Please fill out this field" in a real one. The message this app shows is
-  the one authored in db/schema.lite; the app owns validation, so it turns the
-  native gate off and keeps the attribute for what it is worth to a screen
-  reader and to `:user-invalid`.
--->
-<form class="card stack" style="max-width: 32rem" novalidate on:submit|preventDefault={save}>
+<Form
+  resource={orders}
+  bind:record={draft}
+  class="card"
+  style="max-width: 32rem"
+  ondone={() => goto('/orders/')}
+>
   {#each plain as [name, rule]}
     {#if rule.enum}
       <!-- Options come from fields.status.enum, which exists only because
            {"$ref":"#/$defs/OrderStatus"} is resolved against the registry. -->
       <Select
         id={'f-' + name}
-        label={name}
-        required={rule.required}
+        name={name}
         placeholder="—"
         options={rule.enum}
         value={draft[name]}
-        error={visible[name] ?? ''}
         hint={rule.type + ' · enum' + (rule.nullable ? ' · nullable' : '')}
-        oninput={(e) => { write(name, e.target.value); onInput(name) }}
-        onblur={() => onLeave(name)}
+        oninput={(e) => write(name, e.target.value)}
       />
     {:else if rule.type === 'boolean'}
       <Checkbox
         id={'f-' + name}
+        name={name}
         label={name}
         checked={draft[name]}
-        error={visible[name] ?? ''}
-        onchange={(e) => { write(name, e.target.checked); onInput(name); onLeave(name) }}
+        onchange={(e) => write(name, e.target.checked)}
       />
     {:else}
+      <!--
+        No `label`, no `required`, no `maxlength`, no `min`/`max`, no `type`:
+        every one of them is a schema fact and a control inside a <Form>
+        resolves it from the form's `fields`. The label is `@label` where the
+        schema declares one and the title-cased column name otherwise, which is
+        why `customerId` below introduces itself as "Customer".
+
+        `step` stays. "How finely may this be nudged" is a UI decision the
+        schema does not make.
+      -->
       <Input
         id={'f-' + name}
-        label={name}
-        required={rule.required}
-        type={rule.type === 'number' || rule.type === 'integer' ? 'number'
-            : rule.format === 'email' ? 'email' : 'text'}
+        name={name}
         step={rule.type === 'number' || rule.type === 'integer' ? 'any' : undefined}
-        min={rule.minimum}
-        max={rule.maximum}
-        maxlength={rule.maxLength}
         value={draft[name]}
-        error={visible[name] ?? ''}
         hint={rule.type + (rule.nullable ? ' · nullable' : '')}
-        oninput={(e) => { write(name, e.target.value); onInput(name) }}
-        onblur={() => onLeave(name)}
+        oninput={(e) => write(name, e.target.value)}
       />
     {/if}
   {/each}
 
+  <!--
+    The relation. Everything except the OPTIONS is derived like any other
+    field — `name="customerId"` is what lets the form match it to the rule, so
+    its label is `@label("Customer")` and its message is `@required("…")`, both
+    authored in db/schema.lite and said by the browser, the client-side check
+    and the API alike.
+
+    What is still hand-written is that a `belongsTo` wants a picker at all, and
+    where the rows come from. That is `ISSUES.md` FJS-078's neighbourhood.
+  -->
   <Select
     id="f-customerId"
-    label={fk.relation}
-    required={true}
+    name="customerId"
     placeholder="—"
     options={options.map(o => ({ value: o.id, label: o.name }))}
     value={draft.customerId}
-    error={visible.customerId ?? ''}
     hint={'→ ' + fk.model + '.' + fk.field}
-    oninput={(e) => { write('customerId', e.target.value); onInput('customerId') }}
-    onblur={() => onLeave('customerId')}
+    oninput={(e) => write('customerId', e.target.value)}
   />
 
-  <div class="cluster">
-    <Button type="submit" loading={saving} disabled={saving}>
-      {saving ? 'Saving…' : 'Create order'}
-    </Button>
-    <Button variant="ghost" href="/orders/">Cancel</Button>
-  </div>
-</form>
+  <!--
+    `slot="actions"` rather than children: <Form> puts them in a `.cluster` so a
+    button row is a row. Two elements may name the same slot.
 
-{#if failed}
-  <Alert tone="danger">{failed}</Alert>
-{/if}
+    No `loading`, no `disabled`, no "Saving…" — a type="submit" button inside a
+    <Form> reads the form's in-flight state from context and disables and spins
+    on its own. Cancel does not, and must not: you abandon a save while it runs.
+  -->
+  <Button slot="actions" type="submit">Create order</Button>
+  <Button slot="actions" variant="ghost" href="/orders/">Cancel</Button>
+</Form>
 
 <p class="text-sm text-muted">
   <code>reference</code> is <code>@upper</code> in the schema, so type it in lower case and watch what gets stored. Leave <code>note</code> empty and it saves as NULL rather than <code>''</code> — that is <code>blankToNull</code>.

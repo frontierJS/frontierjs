@@ -1,8 +1,34 @@
 # Idea — Scoped SQL: raw queries against a derived view, not the base tables
 
-**Status: IDEA + LIVE HOLE.** Dated 2026-08-04. The *hole* described first was read
-off the source and is current behaviour; the design half is unbuilt. Do not cite the
-design as describing behavior — see `VERIFYING.md`.
+**Status: THE HOLE IS CLOSED. THE DESIGN IS STILL UNBUILT.** Updated 2026-08-06.
+
+`FJS-005` is closed, but **not by building what this file designs**. Raw SQL is
+now available through `asSystem()` only, on any schema that declares access
+rules — a refusal, not a scoped view set. `DECISIONS.md` § Access control has
+the ruling; `packages/litestone/src/core/client.js` has the code.
+
+Two things this file argues turned out to be wrong, both worth knowing before
+the design is picked up again:
+
+1. **"`db.sql` (no identity) → base tables. Unchanged"** (§Scope follows the
+   proxy) does not hold. The unscoped client is the *widest* gap, not an
+   acceptable one: an unauthenticated `db.invoice.findMany()` returns **0** rows,
+   because the policy evaluates with `auth() == null` and matches nothing, while
+   `db.sql` returned all 3. The ORM is at its most restrictive exactly where this
+   file assumed there was nothing to enforce.
+
+2. **The statement allowlist (§the load-bearing part) has no good mechanism.**
+   SQLite's `sqlite3_set_authorizer` would be the right one — enforced inside
+   SQLite at prepare time, immune to every naming trick — and **`bun:sqlite` does
+   not expose it** (verified: `Database` has no `setAuthorizer`). That leaves a
+   hand-written SQL validator as the only path, which is the piece whose failure
+   mode is a FALSE guarantee. That risk, not the view derivation, is what makes
+   the design expensive.
+
+**Revisit with `herald`** (`IDEAS/agent-surface.md`) — the consumer that makes
+scoped raw SQL a capability worth its cost rather than a speculative one. The
+sections below are the design as argued; do not cite them as behaviour, and read
+the two corrections above first. See `VERIFYING.md`.
 
 ---
 

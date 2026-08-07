@@ -137,7 +137,13 @@ function extractWhereFields(where) {
 // fell through to the `?? 'TEXT'` default below: an indexed `Int` column was
 // created as TEXT in the index table, and numeric comparisons against it sorted
 // lexicographically ('10' < '9'). Keep these keys in step with SCALARS.
-const FIELD_TYPES = { Int: 'INTEGER', Float: 'REAL', Boolean: 'INTEGER', DateTime: 'TEXT', String: 'TEXT', Json: 'TEXT', File: 'TEXT' }
+// `Any` maps to SQLite's ANY, which STRICT tables support for exactly this
+// case: a column whose values are identifiers of whatever type the host app
+// uses. The audit log's `actorId` is one — an Int id in one app, a uuid String
+// in another (which is what @frontierjs/auth issues) — and a STRICT INTEGER
+// column threw `cannot store TEXT value in INTEGER column` on the first write
+// with a known actor. See makeAuditModel() in core/client.js.
+const FIELD_TYPES = { Int: 'INTEGER', Float: 'REAL', Boolean: 'INTEGER', DateTime: 'TEXT', String: 'TEXT', Json: 'TEXT', File: 'TEXT', Any: 'ANY' }
 
 // ─── Default resolution ───────────────────────────────────────────────────────
 
@@ -202,6 +208,26 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
 
     const pk = idName ? `PRIMARY KEY ("${idName}")` : `PRIMARY KEY ("_offset")`
 
+    // The index is a CACHE — every column in it is re-derivable from the .jsonl,
+    // which is the source of truth. So when the declared column types no longer
+    // match the table on disk, drop it and let it refill rather than writing
+    // into a shape that will throw. `CREATE TABLE IF NOT EXISTS` does nothing
+    // to an existing table, so without this an index built before a type
+    // changed keeps the old column forever and every write fails with a
+    // datatype error naming a column the schema no longer describes.
+    const declared = new Map(indexedFieldNames.map(name => {
+      const f = storedFields.find(f => f.name === name)
+      return [name, f ? (FIELD_TYPES[f.type.name] ?? 'TEXT') : 'TEXT']
+    }))
+    const existing = _indexDb.query(
+      `SELECT name, type FROM pragma_table_info(?)`
+    ).all(`${model.name}_idx`)
+
+    const drifted = existing.length > 0 && existing.some(
+      col => declared.has(col.name) && declared.get(col.name) !== col.type
+    )
+    if (drifted) _indexDb.run(`DROP TABLE "${model.name}_idx"`)
+
     _indexDb.run(
       `CREATE TABLE IF NOT EXISTS "${model.name}_idx" (\n${colDefs.join(',\n')},\n` +
       `  ${pk}\n) STRICT;`
@@ -214,7 +240,42 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
       _indexDb.run(`CREATE INDEX IF NOT EXISTS "${idxName}" ON "${model.name}_idx" (${cols});`)
     }
 
+    // A dropped index is refilled from the .jsonl, which has every line and
+    // every byte offset. Without this the rows written before the type changed
+    // stay in the file and become unfindable through the index — the log would
+    // look truncated, which for an audit trail is the worst possible failure.
+    if (drifted) refillIndex(_indexDb)
+
     return _indexDb
+  }
+
+  /** Re-derive every index row from the file. Offsets are byte positions. */
+  function refillIndex(db) {
+    if (!existsSync(filePath)) return
+    const text = readFileSync(filePath, 'utf8')
+    const cols = [...indexedFieldNames, '_offset']
+    const stmt = db.query(
+      `INSERT OR REPLACE INTO "${model.name}_idx" (${cols.map(c => `"${c}"`).join(', ')}) ` +
+      `VALUES (${cols.map(() => '?').join(', ')})`
+    )
+    let offset = 0
+    db.run('BEGIN')
+    try {
+      for (const line of text.split('\n')) {
+        const bytes = Buffer.byteLength(line, 'utf8') + 1   // + the newline
+        if (line.trim()) {
+          try {
+            const record = JSON.parse(line)
+            stmt.run(...indexedFieldNames.map(c => record[c] ?? null), offset)
+          } catch { /* a torn last line — skip it, the file is append-only */ }
+        }
+        offset += bytes
+      }
+      db.run('COMMIT')
+    } catch (err) {
+      db.run('ROLLBACK')
+      throw err
+    }
   }
 
   function insertIndexRecord(record, offset) {

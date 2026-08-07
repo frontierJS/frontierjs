@@ -228,9 +228,30 @@ export async function apply(db, dir = './migrations', client = null) {
         if (typeof up !== 'function')
           throw new Error(`JS migration "${file}" must export an "up" function or a default function`)
 
+        // A migration runs as the SYSTEM, always.
+        //
+        // It is schema surgery performed by an operator, outside any request
+        // and usually before the rows it touches have an owner — so every
+        // access declaration in the schema is beside the point here, and a
+        // migration that could be filtered by a policy would be a migration
+        // that silently half-applied.
+        //
+        // Stated explicitly because raw SQL now refuses on a schema that
+        // declares access rules (FJS-005): `up(tx)` handed migrations the
+        // unscoped client, whose `sql` is guarded, so the very first JS
+        // migration on a gated schema failed with "use asSystem()" — advice
+        // aimed at application code that a migration cannot act on. Caught by
+        // running one, not by reading.
+        //
+        // The system proxy is passed rather than the transaction's `tx`
+        // because $transaction hands the callback the unscoped clientProxy —
+        // the same thing `authQuery` works around to keep auth alive through a
+        // batch. The transaction is connection state, so it still wraps this.
+        const sys = typeof client.asSystem === 'function' ? client.asSystem() : client
+
         // Run inside a transaction — rollback on failure
-        await client.$transaction(async (tx) => {
-          await up(tx)
+        await client.$transaction(async () => {
+          await up(sys)
         })
 
         recordMigration(db, file, null)   // no SQL content for JS migrations

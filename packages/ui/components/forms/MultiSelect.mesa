@@ -40,7 +40,7 @@
   //   <MultiSelect bind:value asyncOptions={{ trigger: searchFn, delay: 200, min: 1 }} />
 
   import Field from '../forms/Field.mesa'
-  import { uid } from '../../utils.js'
+  import { uid, resolveError } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +63,10 @@
   export let hint     = ''
   export let error    = ''
   export let errors   = undefined
+
+  // The enclosing <Form>, when there is one — see utils.js § Form context.
+  const form     = $context.form
+  const hasError = !!resolveError(form, name, error, errors)
   export let badge    = undefined
   export let help     = undefined
 
@@ -296,7 +300,7 @@
     <div
       class="field fjs-multiselect-box"
       data-open={open || null}
-      aria-invalid={!!(error || errors?.[name]) || null}
+      aria-invalid={hasError || null}
       style:opacity={disabled ? 0.6 : null}
       style:cursor={disabled ? 'not-allowed' : 'text'}
       on:click={openDropdown}

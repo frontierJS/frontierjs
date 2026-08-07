@@ -443,6 +443,9 @@ A SQLite view is the most useful form — define the view in a JS migration, the
 
 ```js
 // migrations/20240101000000_create-active-users-view.js
+// `db` here is the SYSTEM client — a migration is schema surgery by an operator,
+// outside any request, so it bypasses every access rule by construction. This is
+// the one place raw `db.sql` is correct on a schema that declares them.
 export async function up(db) {
   await db.sql`
     CREATE VIEW IF NOT EXISTS active_users AS
@@ -1514,7 +1517,9 @@ await db.$backup('./backups/compact.db', { vacuum: true })
 
 // Cross-database queries
 db.$attach('./archive.db', 'archive')
-const rows = await db.sql`SELECT * FROM user UNION ALL SELECT * FROM archive.user`
+// asSystem(): raw SQL enforces no access rule, so a schema that declares one
+// reaches it through the documented bypass only.
+const rows = await db.asSystem().sql`SELECT * FROM user UNION ALL SELECT * FROM archive.user`
 db.$detach('archive')
 
 // Schema introspection

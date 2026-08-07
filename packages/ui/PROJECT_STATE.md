@@ -1,21 +1,22 @@
 # @frontierjs/ui — project state
 
-State as of **2026-08-04**.
+State as of **2026-08-06**.
 
 ## What this is
 
-63 Mesa components over `@frontierjs/css`. Promoted out of
+64 Mesa components over `@frontierjs/css`. Promoted out of
 `packages/mesa/ui-v2/` on 2026-08-03 and restyled; the older 4-component
 `packages/mesa/ui/` was deleted in the same move.
 
 ## What works
 
-- **63/63 components compile and emit parseable JavaScript** —
+- **64/64 components compile and emit parseable JavaScript** —
   `node test/compile-all.mjs`.
 - **25/25 render cases carry the css vocabulary** — `node test/render.mjs`,
   which renders through `renderComponent` and asserts both that the expected
   `@frontierjs/css` classes reach the DOM and that no utility class has
   returned.
+- **7/7 form cases** — `node test/form.mjs`, added 2026-08-06 with `Form`.
 - **Zero Tailwind/Uno utility classes remain** in any component.
 - Mesa's own suite is green with every fix this package has driven:
   **975 passed**. Sierra, the other big Mesa consumer, is unaffected:
@@ -23,10 +24,10 @@ State as of **2026-08-04**.
 
 ## What is verified in a browser
 
-**28 of the 63, as of 2026-08-04.**
+**29 of the 64, as of 2026-08-06.** `Form` joined them the same day.
 
-- *Carrying every route* — Alert, Badge, Button, Card, Checkbox, Field, Input,
-  Label, Pill, SectionHeader, Select, Table. `example/`'s `bun run verify`
+- *Carrying every route* — Alert, Badge, Button, Card, Checkbox, Field, Form,
+  Input, Label, Pill, SectionHeader, Select, Table. `example/`'s `bun run verify`
   asserts 37 facts about the resulting DOM.
 - *Driven by the four screens built for them* — Breadcrumbs, CommandPalette,
   Combobox, DropdownItem, DropdownMenu, EmptyState, Modal, MultiSelect,
@@ -46,7 +47,7 @@ a component is otherwise invisible to the app testing it.
 
 ## What is NOT verified
 
-- **35 of the 63 have still never been opened in a browser.** What is left is
+- **35 of the 64 have still never been opened in a browser.** What is left is
   mostly the long tail — `DatePicker` (1200 lines, and the biggest unknown),
   `FileUpload`, `Drawer`, `Popover`, `ConfirmationPopover`, `AlertProvider`,
   `Fieldset`, `Sparkline`, `Bar`, `AvatarGroup`, `Facts`, `Kbd`, `Mono`,
@@ -129,19 +130,13 @@ All three were invisible to `analysis.errors` — the compiler reported success.
   should use the term instead — the whole point of the restyle was to stop
   the package carrying a second design system.
 
-## Open
+## Open — see `ISSUES.md`
 
-- No browser verification of the other 35 (above).
-- No `example/` of its own — but the repo's `example/` is now a real consumer,
-  which is the thing that was actually missing.
-- **A component takes its handler as a prop (`onclick`), never `on:click`.**
-  That directive belongs to elements, and a consumer writing it on a component
-  gets no error and no handler. Worth a line in the README.
-- **A kit control puts a real `required` on the input**, so a form that owns
-  its own messages needs `novalidate` — otherwise the browser refuses to fire
-  submit while a required field is empty, silently in a headless browser.
-- `Btn` / `Button` overlap (above).
-- `CommandPalette` still draws its own surface rather than composing `.dialog`
-  + `.field` + `.items`; only its palette was moved onto tokens.
-- `themeStore` writes `localStorage['mesa-ui-theme']` and predates the css
-  package's six `theme-*` classes — it has not been reconciled with them.
+**`FJS-028`** 35 of 63 components compile-only · **`FJS-029`** `{...$attributes}`
+on 8 of 63 · **`FJS-054`** `onclick` prop vs `on:click` directive ·
+**`FJS-055`** a kit control's real `required` needs `novalidate` ·
+**`FJS-056`** `Btn`/`Button` overlap, `CommandPalette` surface, `themeStore` vs
+the six `theme-*` classes.
+
+The Mesa gaps above are **`FJS-021`**, **`FJS-022`**, **`FJS-023`**. Add a new
+item to `../../ISSUES.md`, not here.

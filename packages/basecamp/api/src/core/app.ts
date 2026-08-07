@@ -202,9 +202,11 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
       }],
     },
     after: {
-      create: [basecampAuditLog(app)],
-      patch:  [basecampAuditLog(app)],
-      remove: [basecampAuditLog(app)],
+      // `all`, not the three CRUD verbs: a custom action is a mutation too, and
+      // drain / cancel / deploy / trigger are most of what an operator does.
+      // The hook itself decides what counts (find/get and dispatch:false are
+      // out) and takes the exceptions by name.
+      all: [basecampAuditLog(app, { except: ['servers.heartbeat'] })],
     },
     error: {
       all: [(ctx) => {

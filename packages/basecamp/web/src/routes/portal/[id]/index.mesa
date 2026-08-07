@@ -1,0 +1,95 @@
+---
+title: Appliance
+---
+<script>
+  // One appliance. Opening this page IS the health check — `get` pings through
+  // the adapter, so what is on screen was true a moment ago rather than at the
+  // last list render.
+  import { page } from '@frontierjs/sierra/router'
+  import { portal } from '../../../resources/portal.mesa'
+
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card   from '@frontierjs/ui/components/layout/Card.mesa'
+  import Pill   from '@frontierjs/ui/components/display/Pill.mesa'
+
+  $: page.params
+
+  let entry   = null
+  let error   = null
+  let loading = true
+  let busy    = false
+
+  async function load() {
+    error = null
+    try {
+      entry = await portal.service.get(page.params.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: page.params.id, () => load()
+
+  async function recheck() {
+    busy = true
+    try { await load() } finally { busy = false }
+  }
+
+  const TONE = {
+    healthy: 'success', degraded: 'warning', unreachable: 'danger', unconfigured: 'muted',
+  }
+  const when = (ms) => ms ? new Date(ms).toLocaleString() : 'never'
+</script>
+
+<nav aria-label="Breadcrumb" class="cluster">
+  <a class="navlink" href="/portal/">← Portal</a>
+</nav>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{:else if loading}
+  <p class="text-sm text-muted">Checking…</p>
+{:else if entry}
+  <div class="section-header">
+    <h1>{entry.name}</h1>
+    <Pill tone={TONE[entry.status] ?? ''} id="appliance-status">{entry.status}</Pill>
+  </div>
+
+  <p class="text-body">{entry.description}</p>
+
+  <Card>
+    <dl class="facts" id="appliance-facts">
+      <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
+      <!-- The adapter CLASS, which is how "is this real or a stub" is decided
+           on the server: a name beginning Stub is the unconfigured case. -->
+      <dt>Adapter</dt><dd><code>{entry.adapter}</code></dd>
+      <dt>Configured</dt>
+      <dd>{#if entry.configured}<Badge tone="success">yes</Badge>{:else}<Badge tone="muted">stub</Badge>{/if}</dd>
+      <dt>Last checked</dt><dd class="text-sm text-muted">{when(entry.checked_at)}</dd>
+    </dl>
+
+    <div class="cluster">
+      <Button variant="outlined" id="appliance-recheck" disabled={busy} onclick={recheck}>
+        {busy ? 'Checking…' : 'Check again'}
+      </Button>
+      {#if entry.url}
+        <a class="btn ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</a>
+      {/if}
+    </div>
+  </Card>
+
+  {#if !entry.configured}
+    <article class="alert info">
+      <div class="alert-content">
+        This appliance is a stub: calls are logged and dropped. It activates when its
+        environment variables are set — see <a href="/admin/adapters/">Adapters</a>.
+      </div>
+    </article>
+  {/if}
+{/if}

@@ -1,5 +1,240 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-06 — `retryable` reaches the client
+
+869 tests (was 866).
+
+A status cannot say whether repeating a request could work, and a 409 is the case
+where that matters most. Litestone throws two: `VersionConflictError` and
+`TransitionConflictError` are races — re-read and re-apply — while
+`TransitionViolationError` is a domain refusal whose own message is the right
+thing to show. All three arrived as an identical `Conflict`, so a client had to
+phrase every one as the weaker of the two, turning *this can never be legal* into
+*try again*.
+
+Both litestone classes already declared `retryable`; it stopped at the boundary.
+`toFrameworkError` now adopts it alongside `status`, and `FrameworkError.toJSON`
+serializes it **only when the originating error declared one** — an absent flag
+stays absent rather than becoming a `false` that claims knowledge. Both transports
+land it at `err.data.retryable`; sierra's `isStaleWrite()` is the reader.
+
+Same contract as `status`: if you own the error class, set the field. No mapper,
+no registration.
+
+## 2026-08-06 — a session now reaches the Data boundary with an `id`
+
+866 tests (was 842 — 24 new across `data-principal`, `patch-defaults` and
+`method-policy`). Typecheck unchanged at 212.
+
+### Row policies matched nothing, for every Junction caller
+
+`SessionContext` names the caller `userId`. Litestone's policy language reads
+`auth().id` — its documented spelling, the one `@default(auth().id)` and every
+`@@allow` example in its docs use. `$setAuth(ctx.auth.user)` handed the Data
+boundary a principal with **no `id`**, so:
+
+```litestone
+@@allow('read', userId == auth().id)
+```
+
+compared a column to `undefined` and matched nothing. No error, no warning — an
+empty list, which reads as "there is no data" rather than "the policy could not
+see who is asking".
+
+**Gates were fine**, because `sessionGateLevel()` was written against Junction's
+shape. So the translated half worked and the untranslated half failed quietly,
+which is why this survived: an app with `@@gate` and no `@@allow` never notices.
+
+New: `toDataPrincipal(user)` — the one owner of that translation, applied at both
+`$setAuth` call sites (`withLitestoneDb` and `getTable`). Sibling of
+`sessionGateLevel()`: same boundary, same direction, one for the ordinal gate and
+one for the policy predicate. Everything else passes through by name; an explicit
+`id` wins, so a caller already speaking Litestone's shape is untouched.
+
+Found by `example/`, where a signed-in user's own notifications were invisible to
+them and plainly there under `asSystem()`. It went on to uncover a second defect
+it had been masking — see litestone's `CHANGES.md` for the audit log's `actorId`.
+
+### A PATCH no longer invents values for absent keys
+
+`jsonSchemaToJunctionSchema(model, schema, 'update')` dropped required-ness and
+kept every field's `default`, and `validate()` fills a default in for any absent
+key — so `PATCH /orders/3 {"note":"x"}` reached the model as a whole record. On
+an ordinary column that silently reset it; on a column under `@@transitions` it
+answered `409 Cannot transition order.status from 'shipped' to 'pending'`, which
+reads as a broken state machine and is not one. Found by a Caravan job writing a
+tracking code onto a shipped order.
+
+### `methods:` works on both factories
+
+The allow-list was read by `createService` and neither read nor forwarded by
+`createBaseService` — the factory the loader is built around. So the same
+`methods: 'readOnly'` that makes an audit trail append-only through one factory
+did nothing at all through the other, and the only symptom was a write that
+succeeded. It is carried through now and resolved in the one place that
+validates it against the actions that exist.
+
+
+## 2026-08-06 — the transport can resolve a session from a cookie
+
+854 tests (was 842 — 12 new in `tests/auth-cookie.test.ts`). Typecheck unchanged
+at 212.
+
+`extractToken()` read only `authorization: Bearer` and `x-api-key`. So
+@frontierjs/auth's documented `cookieAuth: true` set an httpOnly cookie that
+**nothing ever read back**: `ctx.user` stayed null and a cookie-only request to
+any protected route — including auth's own `GET /auth/me` — was 401. The mode
+handed you a session you could not use. `ISSUES.md` FJS-002.
+
+```ts
+app.http.setAuthCookie('session')   // now reads it, alongside Bearer / x-api-key
+```
+
+### Off by default, and that is a security decision
+
+Not caution about breaking things. A Bearer token has to be attached by script,
+so a cross-site request cannot forge one. A cookie is attached by the browser
+automatically, which is what makes CSRF possible at all — so an app takes that
+exposure deliberately or not at all. What makes it safe when taken is the
+`SameSite=Lax` @frontierjs/auth sets: the browser withholds the cookie from
+cross-site POST/PUT/PATCH/DELETE, and those are the requests that change
+something. An app that sets its own session cookie `SameSite=None` re-opens the
+hole and Junction cannot tell.
+
+### One switch, not two
+
+The auth plugin calls `setAuthCookie('session')` from its own `register()`, so
+`cookieAuth: true` simply works. Making the app *also* write
+`config.auth.cookie` would have left a half-configured state that reproduces the
+original bug exactly — cookie set, cookie ignored. `config.auth.cookie` remains
+the path for a hand-rolled `IAuth` that issues its own cookie and has no plugin
+to declare it.
+
+### Also
+
+- **Explicit beats ambient.** Bearer and `x-api-key` both win over the cookie, so
+  "act as someone else for this one call" stays possible from a browser that is
+  holding a session cookie.
+- **The WebSocket upgrade reads it too.** The upgrade is an ordinary browser
+  request and carries the cookie; without this a cookie-authenticated app
+  connected its socket **anonymously** and every user-scoped channel stayed
+  silent — with no error anywhere, because an unauthenticated socket is a legal
+  state.
+- **An emptied cookie is not a token.** `clearCookie()` leaves `session=` with
+  `Max-Age=0`; treating `''` as a token would fire a guaranteed-failing
+  `verifySession` on every request after sign-out.
+
+7 of the 12 tests fail if the cookie branch is removed. The auth package's marker
+test — `KNOWN GAP: a cookie alone does not authenticate a request`, asserting
+401 — is now `a cookie alone authenticates a request`, asserting 200.
+
+## 2026-08-06 — a custom action announces, like any other write
+
+836 tests (was 830 — 6 new in `tests/event-origin.test.ts`). Typecheck unchanged
+at 212.
+
+An action changed a row and told nobody. `callService`'s announcement block was
+gated on `AUTO_EVENT_MAP[method]`, which holds only the five CRUD writes, so
+`POST /orders/4` + `X-Service-Method: pay` published nothing — not to the
+channel, not to the in-process bus.
+
+**Both halves of the seam already existed.** The browser client has listened for
+action events since it was written:
+
+```ts
+// client/index.ts — "Custom action events (e.g. 'moved', 'archived') — treat
+// as upserts. The server publishes them with the updated record, same as patch."
+svc.on('*', (method, raw) => { … store.upsert(unwrap(raw), idField) })
+```
+
+The server never sent one. The client was waiting for post nobody was posting.
+
+```ts
+const eventName = AUTO_EVENT_MAP[method] ?? (isAction ? method : undefined)
+```
+
+An action announces under its **own** name — `orders pay`, no past tense
+invented for it, matching what `publish()`'s hook form has always put on the
+wire. Reads are excluded by name (`find`, `get`); an action that only reads
+(search, stats, export) opts out with `ctx.dispatch = false`, the one existing
+switch, which suppresses both consumers.
+
+**Why it stayed invisible.** Every app re-issued `find()` after an action, so
+the acting tab looked correct and every *other* tab went stale in silence.
+Found by `example/web/test/verify-live.mjs`, a drive whose watcher tab is signed
+out and never acts: it saw `orders created` and `orders removed` cross the
+socket and no `pay` between them, while the row it was rendering silently kept
+saying `pending`. Reverting the one line above fails 4 of its 12 assertions.
+The example's orders table dropped its refetch and re-grades from the broadcast.
+
+Recorded as [FJS-D21](../../DECISIONS.md).
+
+## 2026-08-06 — a service can say what it does not answer (`methods:`)
+
+830 tests (was 809). Typecheck unchanged at 212.
+
+`createService({ model })` answered every CRUD verb through the base **with
+validation**, whether or not the file declared one. Declaring only `find()` did
+not make a service read-only — it made the writes invisible. Basecamp's `/audit`
+is an append-only trail and an admin could `POST` a forged row into it, verified
+over HTTP, and the only defence was four hand-written `MethodNotAllowed` stubs
+per service. Opt-out safety, with no warning that you had not opted out.
+
+One key, two forms:
+
+```ts
+createService({ name: 'audit', model: 'AuditEvent', methods: 'readOnly' })
+createService({ name: 'tickets', methods: ['find', 'create', 'approve'] })
+```
+
+Absent means everything, so no existing service changes.
+
+The allow-list is the general form because a narrower method set is not only
+ever "read only" — the second example says *no patch, no remove, one action*,
+which a boolean cannot express. `'readOnly'` is sugar on the same key rather
+than a second option.
+
+**Where the check lives is the point.** It is in `callService`, ahead of the
+hook pipeline, because that is the one path every caller takes: an in-process
+`app.service('audit').create()` is refused exactly as the wire is. A policy
+enforced in the transport would have left jobs, engines and hooks — which is how
+an audit trail actually gets written — free to do what a request cannot. Ahead
+of hooks because the policy is structural rather than authorization, so there is
+nothing an identity could change and no reason to run a `before` hook's side
+effects for an impossible call. Accepted consequence: an anonymous caller now
+gets 405 where it used to get 401.
+
+Also:
+
+- CRUD and actions share one list. Being *defined* is not being *offered*.
+- An unknown name throws at construction — `['find','gett']` would otherwise
+  silently block `get` and only read as broken after a 405 in production.
+- `/manifest`, `/metrics` and the OpenAPI spec filter by the same predicate, so
+  what a service answers and what it advertises cannot drift. `/manifest` also
+  stops omitting `update`, which its hardcoded CRUD list had dropped.
+
+21 tests in `tests/method-policy.test.ts`; **7 fail if the enforcement is
+removed**. Ruled as `FJS-D07`, closes `FJS-004`, `DECISIONS.md` § API design.
+
+## 2026-08-06 — a service_error frame dropped the field list
+
+809 tests (was 806).
+
+The server answers a failed WS service call with `FrameworkError.toJSON()` —
+`{ name, message, code, data }` — and `data` is where a validation failure's
+per-field list lives. The client took `message` and `code` and dropped the rest,
+so the same 400 carried field errors over HTTP and nothing but a joined sentence
+over the socket.
+
+**WebSocket is the default transport**, so that was the shape a form saw in
+production while the HTTP fallback it was developed against looked correct. The
+rejection now carries `data`, shaped to match the HTTP path exactly (the parsed
+error body goes on `.data`, so `err.data.data` is the list in both) — which is
+what lets one unwrapper, sierra's `toFieldErrors`, serve both transports.
+
+3 tests in `client-ws-errors.test.ts`, driving the real `onmessage` handler
+rather than resolving the pending call by hand.
+
 ## 2026-08-04 — the client's transport rule, actually applied
 
 803 tests (was 796).

@@ -1,6 +1,8 @@
-# @frontierjs/mesa-email — project state
+# @frontierjs/email-kit — project state
 
-State as of **2026-08-03**, the day the kit was added to this repo.
+State as of **2026-08-06**. The kit was added on 2026-08-03; on 08-06 it was
+renamed to `@frontierjs/email-kit` everywhere (`FJS-D15`) and its suite was
+found to have been failing entirely — see `CHANGES.md`.
 
 ## What this is
 
@@ -15,7 +17,11 @@ and removing it took Mesa from 27 skipped tests to zero.
 
 ## What works
 
-- **34/34 tests pass** — `bun run test`.
+- **34/34 tests pass** — `bun run test`. Re-verified 2026-08-06: between
+  2026-08-03 and then **all 34 were failing**, because mesa moved its sources
+  into `src/` and both this package's probe paths and mesa's own temp-dir
+  resolution still assumed the old layout. This line said "34/34 pass"
+  throughout. A state file is a claim; run it.
 - Renders a full `<!DOCTYPE html>` document with MSO namespaces, an
   Outlook-safe head block, inlined CSS, preserved `@media` queries, a
   `subject` from `<script module>`, and a derived `text` alternative.
@@ -50,7 +56,7 @@ because happy-dom does not escape `"` in a serialised attribute value either.
 **Consequence to know:** rendering a kit component through Mesa's
 `renderComponent` *directly* leaves the placeholder in place and drops the
 Outlook fallback. Use `renderEmail` / `renderEmailFile` from
-`@frontierjs/mesa-email/render`. Pinned by a test that asserts exactly that.
+`@frontierjs/email-kit/render`. Pinned by a test that asserts exactly that.
 
 ### The plain-text alternative was full of markup artefacts
 
@@ -80,18 +86,15 @@ Fixed in Mesa's `htmlToText` (`packages/mesa/render-component.js`):
   `components/`, and nothing asserts that its rules survive inlining.
 - **Dark-mode / `prefers-color-scheme`** is not handled anywhere in the kit.
 
-## Open
+## Open — see `ISSUES.md`
 
-- **The package name does not match its directory.** `packages/email-kit`
-  declares `@frontierjs/mesa-email`. Every other package in this repo matches
-  (`packages/ui` → `@frontierjs/ui`). Pick one; the mismatch will bite
-  someone looking for the source.
-- `index.js` exports a `components` map of absolute paths built from
-  `import.meta.url` `.pathname` — wrong on Windows, where that yields a
-  leading `/` before the drive letter. Use `fileURLToPath`, as `render.js`
-  already does.
-- `render.js`'s header documents an `autoImport: true` option that nothing
-  implements. It is spread into the render options and silently ignored.
-- No integration with `@frontierjs/ui` or `@frontierjs/css`, and there should
-  not be: email needs inlined table markup, and the css package ships a
-  stylesheet. The two kits are deliberately separate.
+**`FJS-051`** package name does not match the directory (ruling: **`FJS-D15`**) ·
+**`FJS-052`** `import.meta.url.pathname` is wrong on Windows, and the documented
+`autoImport` option is unimplemented · **`FJS-053`** never opened in a real mail
+client.
+
+No integration with `@frontierjs/ui` or `@frontierjs/css`, and there should not
+be: email needs inlined table markup and the css package ships a stylesheet. The
+two kits are deliberately separate — that is a decision, not an open item.
+
+Add a new item to `../../ISSUES.md`, not here.

@@ -357,6 +357,12 @@ State: the strongest package; ~0.85:1 test:source, 1 TODO in 18K LOC, 44 docs.
 
 ## Appendix — concrete bug list (one line each)
 
+
+*Frozen at the 2026-07-31 tree. **The live register is `ISSUES.md`** — most of
+the "Open" list below is carried there as `stale?` rows, and at least two entries
+(notifications empty email body, `css` not-a-package) proved wrong or already
+fixed afterwards. Read this as an audit snapshot, not as state.*
+
 Fixed 2026-08-01: litestone migration rebuild data loss/corruption ✔ ·
 splitStatements BEGIN fusion ✔ · no-ROLLBACK apply ✔ · gates fail-open ✔ ·
 where/take-skip/data/required semantics ✔ · junction derived-hooks drop ✔ ·

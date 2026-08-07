@@ -1,7 +1,7 @@
 # Litestone Project State
 
-**Body written:** 2026-04-25 · **header re-verified:** 2026-08-01
-**Tests:** 1286 pass / 0 fail across 5 files (`bun run test`)
+**Body written:** 2026-04-25 · **header re-verified:** 2026-08-05
+**Tests:** 1416 pass / 0 fail across 6 files (`bun run test`)
 **Status:** shipped — workspace is **v1.1.0**. npm `latest` is still 1.0.3, so anything
 installed from the registry outside this workspace gets the pre-rename dialect.
 

@@ -85,6 +85,24 @@ export function createAuthPlugin(
 
     register(app: any) {
 
+      // ── Tell the transport to read the cookie we are about to set ────
+      //
+      // Without this, `cookieAuth: true` set an httpOnly cookie that nothing
+      // ever read back: Junction resolved `ctx.user` from `authorization` and
+      // `x-api-key` only, so a cookie-only request to any protected route —
+      // including this plugin's own GET /auth/me — was 401. The documented
+      // mode handed you a session you could not use (FJS-002).
+      //
+      // Declared HERE rather than asked of the app, so cookie mode is one
+      // switch. Requiring the app to also write `config.auth.cookie` would
+      // mean the half-configured state reproduces exactly the bug above.
+      //
+      // Junction keeps the cookie off by default because a cookie travels
+      // automatically and a Bearer token does not — the CSRF exposure is
+      // opt-in. What makes it safe here is the `SameSite=Lax` set in respond()
+      // below: the browser withholds the cookie from cross-site writes.
+      if (cookieAuth) app.http?.setAuthCookie?.('session')
+
       // ── POST /auth/register ──────────────────────────────────────────
       // Plugin-level only — not on IAuth.
       // createUser + login in one step. Issues a session token.

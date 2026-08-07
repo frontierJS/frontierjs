@@ -278,6 +278,71 @@ describe('admin routes over real routes', () => {
     expect(jobsOf(app).find(id)!.status).toBe('pending')
   })
 
+  // ── POST /jobs/run/{name} ──────────────────────────────────
+  //
+  // The admin surface could retry a job and cancel a job but not START one, so
+  // a nightly sweep could only be exercised by waiting until 03:00 — its
+  // handler was untestable and, during an incident, unrunnable. Added
+  // 2026-08-06 while giving `example/` a cron it could actually drive.
+
+  it('POST /jobs/run/{name} dispatches a registered job', async () => {
+    const app = await createTestApp()
+    app.configure(createCaravan(opts({ admin: true })))
+    jobsOf(app).handle('report', async () => {})
+
+    const res = await request(app).post('/jobs/run/report')
+
+    expect(res.status).toBe(200)
+    const { ok, id } = res.body as { ok: boolean; id: string }
+    expect(ok).toBe(true)
+    expect(jobsOf(app).find(id)!.name).toBe('report')
+  })
+
+  it('the body becomes the job data, so a scheduled handler can be re-parameterised', async () => {
+    const app = await createTestApp()
+    app.configure(createCaravan(opts({ admin: true })))
+    jobsOf(app).schedule('sweep', '0 3 * * *', async () => {})
+
+    const res = await request(app).post('/jobs/run/sweep').send({ days: 0 })
+
+    const { id } = res.body as { id: string }
+    expect(JSON.parse(jobsOf(app).find(id)!.data as string)).toEqual({ days: 0 })
+  })
+
+  it('an empty body is an empty data object, not a hang', async () => {
+    // ctx.body is already parsed by the transport. Reading the raw request
+    // instead would await a stream nobody is going to write to.
+    const app = await createTestApp()
+    app.configure(createCaravan(opts({ admin: true })))
+    jobsOf(app).handle('report', async () => {})
+
+    const res = await request(app).post('/jobs/run/report')
+    const { id } = res.body as { id: string }
+
+    expect(JSON.parse(jobsOf(app).find(id)!.data as string)).toEqual({})
+  })
+
+  it('refuses an unregistered name with 404 rather than queueing it', async () => {
+    // A job nothing handles sits pending forever and reports as a backlog.
+    const app = await createTestApp()
+    app.configure(createCaravan(opts({ admin: true })))
+
+    const res = await request(app).post('/jobs/run/nope')
+
+    expect(res.status).toBe(404)
+    expect(jobsOf(app).list()).toHaveLength(0)
+  })
+
+  it('run/{name} is guarded by the same secret as everything else', async () => {
+    const app = await createTestApp()
+    app.configure(createCaravan(opts({ admin: { secret: 's3cret' } })))
+    jobsOf(app).handle('report', async () => {})
+
+    expect((await request(app).post('/jobs/run/report')).status).toBe(401)
+    expect((await request(app).post('/jobs/run/report')
+      .set('x-caravan-secret', 's3cret')).status).toBe(200)
+  })
+
   it('honours a custom admin path', async () => {
     const app = await createTestApp()
     app.configure(createCaravan(opts({ admin: { path: '/admin/jobs' } })))

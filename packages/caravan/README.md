@@ -79,8 +79,31 @@ await queue.dispatch('deploy', { version: '1.2.3' }, {
   queue:    'critical',
   delay:    5_000,      // run after 5 seconds
   priority: 10,         // higher = sooner
+  unique:   'deploy:1.2.3',  // idempotency key — see below
 })
 ```
+
+`unique` is a lock on work **in flight**: if a job with that key is pending or
+running, the dispatch is a no-op and returns that job's id. Two clicks a second
+apart book one courier. Once the job finishes the key is free, so the same work
+can be queued again later — this is "only one of these at a time", not an
+idempotency key. A key built from a row id is not one either: SQLite reuses ids,
+so `book-courier:4` can name two different orders months apart.
+
+### `POST /jobs/run/{name}` — run a registered job now
+
+Part of the admin routes. Dispatches a registered handler immediately; the
+request body becomes the job's data, so a scheduled handler can be given a
+different parameter by hand. Answers 404 for a name with no handler, rather than
+queueing work no worker will pick up.
+
+```bash
+curl -X POST localhost:3000/jobs/run/sweep-abandoned -d '{"days":0}'
+# → { "ok": true, "id": "…" }
+```
+
+This is how a cron's *behaviour* gets tested. `nextRuns()` only proves a
+schedule was registered.
 
 ### `queue.handle(name, handler, opts?)`
 

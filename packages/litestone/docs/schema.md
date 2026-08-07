@@ -45,8 +45,80 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 @updatedAt                       auto-set to now() on every UPDATE
 @updatedBy                       stamp ctx.auth.id on every UPDATE
 @updatedBy(auth().field)         stamp custom auth field on every UPDATE
+@createdBy                       stamp ctx.auth.id on CREATE
+@createdBy(auth().field)         stamp custom auth field on CREATE
+@version                         optimistic concurrency — Int, bumped on every write
 @sequence(scope: field)          per-scope auto-increment — see sequences.md
 ```
+
+`@createdBy` is a **stamp, not a default** — that is the whole difference from
+`@default(auth().id)`. A default loses to a value in the payload, so an
+authenticated caller could forge authorship by sending the column; a stamp
+overwrites it. With no `ctx.auth` — `asSystem()`, a seeder, an anonymous write —
+nothing is stamped and an explicit value is honoured, which is how backfills and
+imports carry authorship in. It never re-stamps on update; that is `@updatedBy`.
+
+Most models want the pair on the model instead — see
+[`@@createdBy` / `@@updatedBy`](#authorship) below.
+
+### `@version` — optimistic concurrency
+
+Without it, two people editing the same row both `PATCH`, both succeed, and the
+second silently erases the first. Declare the column and that becomes a 409:
+
+```prisma
+model Order {
+  id      Int    @id
+  status  String
+  version Int    @version
+}
+```
+
+```js
+const alice = await db.order.findUnique({ where: { id: 1 } })   // version 1
+const bob   = await db.order.findUnique({ where: { id: 1 } })   // version 1
+
+await db.order.update({ where: { id: 1 }, data: { status: 'paid',  version: alice.version } })
+// → { status: 'paid', version: 2 }
+
+await db.order.update({ where: { id: 1 }, data: { status: 'void',  version: bob.version } })
+// → throws VersionConflictError — expected 1, row is at 2
+```
+
+Mechanically it is the compare-and-swap `@@transitions` already runs, with the
+column unfrozen: the update narrows its `WHERE` by the version you read, so a row
+that moved does not match, and the bump rides the `SET`.
+
+**The version travels in `data`**, not `where` — a row fetched through a Resource
+carries every column, so it round-trips through a form with no extra plumbing.
+It is a precondition, never a value: the column is bumped by SQL and never set to
+what arrived.
+
+Per path:
+
+| Path | Requires a version | Bumps |
+| --- | --- | --- |
+| `create` / `createMany` | — | starts at **1**, whatever the payload says |
+| `update` | **yes** | ✓ |
+| `updateMany` | no | ✓ |
+| `upsert` / `upsertMany` | no | ✓ (insert starts at 1) |
+
+`update` is the concurrent-editor path, so it is the one that insists. A bulk
+`where` matches many rows and therefore many versions — there is no single value
+to compare — and an upsert is reached by natural key from a sync or an import,
+which cannot have read a version. Both still **bump**, which is what keeps an
+open editor correctly stale after one lands.
+
+- **Escape hatch:** `asSystem()` writes skip the check and still bump — a
+  migration or a job is not a second editor. Same reason `asSystem()` skips gates.
+- Errors: `VersionRequiredError` (400, not retryable — you left out an input) and
+  `VersionConflictError` (409, **retryable** — re-read and re-apply). Both carry
+  `status`, so Junction maps them with no registration.
+- Not-found stays `null`. A 409 means the row is there and moved.
+- Reaches the client as `readOnly` in the update schema plus **`x-version`** on
+  the model naming the column; absent from the create schema. Typegen drops it
+  from `*Create` and makes it **required** in `*Update`.
+- One per model, `Int`, not optional, not the `@id` — all schema errors.
 
 ### Visibility & security
 ```
@@ -177,6 +249,63 @@ See [soft-delete.md](./soft-delete.md).
 @@fts([field1, field2])          FTS5 virtual table + sync triggers
 ```
 See [full-text-search.md](./full-text-search.md).
+
+### Authorship
+```
+@@createdBy                      adds createdById + createdBy, stamped on create
+@@updatedBy                      adds updatedById + updatedBy, restamped on every update
+@@createdBy(owner)               same pair, named ownerId + owner
+@@updatedBy(as: "editor")        same, long form
+```
+
+Sugar. Each one expands at parse time into the two fields you would otherwise
+hand-write — a nullable FK carrying the stamp, and a named relation to the
+`@@auth` model:
+
+```prisma
+model User { id Int @id  name String  @@auth }
+
+model Doc {
+  id    Int    @id
+  title String
+  @@createdBy
+  @@updatedBy
+}
+
+// …is exactly:
+
+model Doc {
+  id          Int    @id
+  title       String
+  createdById Int?   @createdBy
+  createdBy   User?  @relation("Doc_createdBy", fields: [createdById], references: [id])
+  updatedById Int?   @updatedBy
+  updatedBy   User?  @relation("Doc_updatedBy", fields: [updatedById], references: [id])
+}
+```
+
+Nothing downstream knows the attribute existed — DDL emits both foreign keys,
+`include: { createdBy: true }` resolves the row, typegen and JSON Schema see
+ordinary fields.
+
+- The FK type is copied from the `@@auth` model's `@id`, so an `Int` id and a
+  `String @default(uuid())` id both land right.
+- Both columns are **nullable**. `asSystem()` writes and anonymous creates have
+  no author, and a `NOT NULL` here would break every seeder and backfill.
+- The relations are **named** (`"<Model>_<base>"`) because a model carrying both
+  attributes has two relations to the same model, which is otherwise ambiguous.
+  A model marked `@@auth` may author itself.
+- A field you declare yourself under either name **wins and is left alone** —
+  write `createdById String? @createdBy @omit` and you still get the relation
+  for free.
+- Without a model marked `@@auth`, both are a schema error.
+
+Every write path runs the stamps — `create`, `createMany`, `update`,
+`updateMany`, `upsert` and `upsertMany`. In `upsertMany` an insert is stamped
+and a conflict is treated as what it is: `@updatedBy` moves, and the create-time
+columns (`@createdBy`, `@default(auth().field)`) are held out of the
+`ON CONFLICT … SET` list so the author survives. Name one in an explicit
+`update: [...]` and it moves anyway — that is a deliberate request.
 
 ### Access control
 ```

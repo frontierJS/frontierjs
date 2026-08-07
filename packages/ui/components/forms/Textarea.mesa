@@ -6,7 +6,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid } from '../../utils.js'
+  import { nameToLabel, uid, resolveError } from '../../utils.js'
 
   export let value       = ''
   export let placeholder = ''
@@ -31,7 +31,8 @@
   const textareaId = id || uid('textarea')
   const autoLabel  = nameToLabel(name)
 
-  const hasError = !!(error || errors?.[name])
+  const form     = $context.form
+  const hasError = !!resolveError(form, name, error, errors)
 
   let el
   export function focus() { el?.focus() }
@@ -80,12 +81,19 @@
   {/if}
 {/snippet}
 
-{#if label || (name && !label && autoLabel)}
-  {@const resolvedLabel = label || autoLabel}
+{#if label || (name && autoLabel)}
+  <!--
+    label and required go down UNRESOLVED where the caller stated nothing:
+    Field reads the same rule off the same <Form> and resolves them once. This
+    used to pass `label || autoLabel`, which meant the title-cased column name
+    always arrived as an explicit label and a schema `@label("Customer")` could
+    never be seen — the control shadowed the very thing it was meant to show.
+    `|| undefined` because '' is a real answer here: it suppresses the label.
+  -->
   <Field
     id={textareaId}
     name={name}
-    label={resolvedLabel}
+    label={label || undefined}
     required={required}
     badge={badge}
     help={help}

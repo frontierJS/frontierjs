@@ -677,6 +677,32 @@ app.configure(createBetterAuthPlugin(betterAuthInstance))  // mounts /auth/* rou
 
 `authenticate` hook reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()`, stamps `ctx.auth.user`.
 
+### Sessions from a cookie
+
+Off by default. Turn it on and the transport reads the session token from a
+cookie as well — on HTTP requests **and** on the WebSocket upgrade:
+
+```typescript
+app.http.setAuthCookie('session')      // or config: { auth: { cookie: 'session' } }
+```
+
+Using `@frontierjs/auth` you never write that: `createAuthPlugin(auth, { cookieAuth: true })`
+declares it from its own `register()`, so cookie mode is one switch.
+
+Three rules worth knowing:
+
+- **Explicit beats ambient.** `Authorization: Bearer` and `X-API-Key` both win
+  over the cookie, so acting as someone else for one call still works from a
+  browser holding a session cookie.
+- **An empty cookie is not a token** — that is what a logout leaves behind.
+- **It is off by default for a security reason, not caution.** A bearer token has
+  to be attached by script, so a cross-origin page cannot forge one. A cookie is
+  attached by the browser automatically, which is what makes CSRF possible at
+  all — so an app takes that exposure deliberately. What makes it safe once on is
+  `SameSite=Lax` (which `@frontierjs/auth` sets): the browser withholds the
+  cookie from cross-site writes. Set your own session cookie `SameSite=None` and
+  you re-open the hole — see `csrf()` below.
+
 **`SessionContext` shape** — what `ctx.auth.user` looks like inside hooks and services:
 
 ```typescript
@@ -866,6 +892,8 @@ app.services.register(createService({
   softDelete: 'deletedAt',  // optional — soft-delete via a nullable DateTime field
   allowBulk:  false,        // optional — default false, blocks bulk patch/delete
   cache:      true,         // optional — cache find/get responses, bust on writes
+  methods:    ['find','get'],  // optional — narrow what this service answers.
+                               //   Omitted = everything. See below.
   hooks: {
     before: {
       create: [authenticate],
@@ -875,6 +903,35 @@ app.services.register(createService({
   },
 }))
 ```
+
+### `methods:` — what a service does *not* answer
+
+A model service answers every CRUD verb through the base **with validation**,
+whether or not your file declares one. Writing only `find()` does not make a
+service read-only; it makes the writes invisible. An append-only audit trail
+built that way accepts a forged `POST`.
+
+Declare the narrower set with one key. Two forms:
+
+```typescript
+createService({ name: 'audit',   model: 'AuditEvent', methods: 'readOnly' })
+createService({ name: 'tickets', methods: ['find', 'create', 'approve'] })
+```
+
+- **Omitted means everything** — existing services are unaffected.
+- `'readOnly'` is shorthand for `['find', 'get']`.
+- **CRUD and custom actions share the list.** Being defined on the service is
+  not being offered; an action the list omits is refused like any verb.
+- An unlisted method answers **405**, on every transport *and* to an in-process
+  `app.service('audit').create()` — the check is in `callService`, which every
+  caller goes through, so a job or a hook cannot do what a request cannot.
+- A name the service does not have **throws at construction**, so `['find','gett']`
+  fails immediately instead of silently blocking `get`.
+- `/manifest`, `/metrics` and the OpenAPI spec all filter by the policy, so what
+  a service answers and what it advertises cannot drift.
+
+Because the policy is structural rather than authorization, it is checked ahead
+of the hook pipeline — an anonymous caller gets 405, not 401.
 
 **`withLitestoneDb(db)`** attaches the base Litestone client to `ctx.locals.db` as an around hook. Auth scoping (`$setAuth`) happens inside `getTable()` at call time — after the `authenticate` hook has run — so the right user is always applied to every query.
 
@@ -1263,7 +1320,13 @@ await posts.create({ title: 'With image', cover: file })
 posts.on('created', (post) => console.log('new post', post))
 posts.on('patched', (post) => updateRow(post))
 posts.on('removed', (post) => removeRow(post))
+
+// A custom action announces under its own name — no past tense is invented.
+posts.on('publish', (post) => updateRow(post))
 ```
+
+Reads never announce. An action that only reads says so with `ctx.dispatch =
+false`, which suppresses the broadcast to browsers and the in-process bus alike.
 
 **`resource()`** — convenience wrapper that combines a service proxy, a reactive `Store`, and a `load()` function. The store stays in sync with real-time events automatically:
 

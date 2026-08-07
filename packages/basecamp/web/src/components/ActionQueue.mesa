@@ -1,0 +1,72 @@
+<script>
+  // ActionQueue.mesa — the full half of the mock's attention system.
+  //
+  // NoticeBar is the shell's condensed view; this is the list the home screen
+  // shows: every notice, counted by priority, with the "show N more" fold the
+  // mock has. Same engine, same notices — one definition of "needs attention"
+  // (src/notices.js), two presentations.
+  //
+  // The empty state is not an absence: "All clear" is the answer to a question
+  // the operator asked, so it renders as a result rather than as nothing.
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import { goto } from '@frontierjs/sierra/router'
+  import { PRIORITY_TONE, noticeCounts } from '../notices.js'
+
+  export let notices = []
+  export let fold    = 6      // how many before the fold
+
+  let showAll   = false
+  let dismissed = []
+
+  $: live    = notices.filter(n => !dismissed.includes(n.id))
+  $: counts  = noticeCounts(live)
+  $: visible = showAll ? live : live.slice(0, fold)
+  $: hidden  = live.length - visible.length
+
+  function dismiss(id) { dismissed = [...dismissed, id] }
+</script>
+
+<Card>
+  <div class="section-header">
+    <h2 class="h4">Needs attention</h2>
+    <span class="cluster">
+      {#if counts.critical}
+        <Badge tone="danger" id="notice-critical">{counts.critical} critical</Badge>
+      {/if}
+      {#if counts.warning}
+        <Badge tone="warning" id="notice-warning">{counts.warning} warning</Badge>
+      {/if}
+    </span>
+  </div>
+
+  {#if !live.length}
+    <EmptyState title="All clear">No issues detected in this workspace.</EmptyState>
+  {:else}
+    <ul class="stack" id="notice-rows">
+      {#each visible as n}
+        <li class="cluster">
+          <Pill tone={PRIORITY_TONE[n.priority]}>{n.priority}</Pill>
+          <span class="stack">
+            <strong class="text-sm">{n.title}</strong>
+            <span class="text-sm text-muted">{n.detail}</span>
+          </span>
+          {#if n.href}
+            <Button variant="ghost" onclick={() => goto(n.href)}>{n.action} →</Button>
+          {/if}
+          <Button variant="ghost" aria-label={`Dismiss: ${n.title}`} onclick={() => dismiss(n.id)}>✕</Button>
+        </li>
+      {/each}
+    </ul>
+
+    {#if hidden > 0 || showAll}
+      <Button variant="ghost" id="notice-fold" onclick={() => showAll = !showAll}>
+        {showAll ? 'Show less' : `Show ${hidden} more`}
+      </Button>
+    {/if}
+  {/if}
+</Card>

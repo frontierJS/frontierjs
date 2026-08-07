@@ -8,7 +8,7 @@
  * moved in v0.10. These tests are what stops them drifting back out.
  */
 
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite'];
+var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp'];
 
 /* ── Icon ────────────────────────────────────────────────────────────
  *

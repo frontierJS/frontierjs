@@ -4414,10 +4414,38 @@ export function pop(_node)           {}   // no-op client-side; SSR hydration us
 
 const TEMPLATE_FRAGMENT = 1
 
+/**
+ * Parse a template's HTML afresh, with no cache and no clone.
+ *
+ * Used on the SERVER only. happy-dom's `cloneNode` does not copy an element's
+ * attributes — it re-derives some of them from default PROPERTIES, and gets it
+ * wrong for `<input>`: every cloned input gains `formaction="<the page's own
+ * URL>"` and `formmethod=""`, and an authored relative `formaction="/search"`
+ * comes back absolutised to `http://localhost:5274/search`.
+ *
+ * That is not cosmetic. `formaction` on a submit control OVERRIDES its form's
+ * action, so a prerendered form shipped by `target: 'static'` posted to
+ * whatever origin built it — and the localhost URL of the build machine went
+ * into a public file. Found in `example/`'s prerendered catalogue, where a
+ * search box that never submits anything still carried both attributes.
+ *
+ * Parsing is the same path that produced the original, so what ships is what
+ * was written. The cost is one parse per template INSTANCE instead of one per
+ * template, which is a build-time cost on a page that is rendered once.
+ */
+function parseTemplateFresh(html, asFragment) {
+  const t = document.createElement('template')
+  t.innerHTML = html.replace(/<>/g, '<!---->')
+  const content = t.content
+  if (!asFragment && content.firstChild === content.lastChild) return content.firstChild
+  return content
+}
+
 export function template(html, flags) {
   const isFragment = flags & TEMPLATE_FRAGMENT
   let parsed = null
   return function () {
+    if (!_isClient) return parseTemplateFresh(html, !!isFragment)
     if (!parsed) parsed = htmlToFragment(html, isFragment ? 2 : 1)
     return parsed.cloneNode(true)
   }

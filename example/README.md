@@ -28,6 +28,10 @@ tables.
 | `bun run web` | the UI realm |
 | `bun run verify` | drive the app in headless Chrome and assert what happened (both servers must be up) |
 | `bun run verify:ui` | drive the kit's behavioural components — tabs, menus, a dialog, a palette — 26 assertions |
+| `bun run verify:live` | open a watcher tab that never acts, change rows from outside it, and assert what crossed the socket — 14 assertions |
+| `bun run verify:jobs` | the deferred-work realm over HTTP, no browser — 8 assertions |
+| `bun run verify:notify` | the outbound boundary: mail at a real server, and who can see what — 9 assertions |
+| `bun run email:preview` | render the transactional emails to files you can open |
 | `bun run build` | production build to `web/dist/client/` |
 | `bun run verify:build` | build, then drive **the built app** with the same 37 assertions (needs `bun run api`) |
 | `bun run preview` | serve `web/dist/client/` on :5310 with `/api` `/auth` `/session` `/ws` proxied — `vite preview` carries no proxy |
@@ -150,9 +154,66 @@ and the model wants level 4 for that.
 
 Each button is a custom service action: `POST /api/orders/{id}` with an
 `X-Service-Method: pay` header. Nothing in the app registers that route, and
-[orders.service.ts](api/services/orders.service.ts) is four one-line functions
-calling `db.order.transition(id, name)` — which states a move is legal from,
-what it moves to and what level it needs all live in the schema.
+[orders.service.ts](api/services/orders.service.ts) reduces every move to
+`db.order.transition(id, name)` — which states a move is legal from, what it
+moves to and what level it needs all live in the schema.
+
+**The Tracking cell is filled in by a job, in a tab you are not using.** Press
+*ship* and it says *booking…*: the order has moved and the courier has not been
+called. A `@frontierjs/caravan` worker calls it off the request and patches the
+result back **through the orders service**, so the write announces on the same
+channel every other change uses. Open two tabs on `/orders/`, press *ship* in
+one, and watch both fill in. That the job goes through the service rather than
+`db.asSystem().order.update(…)` is the whole point: a write at the Data boundary
+announces nothing (`FJS-010`) and every open tab keeps the stale row.
+
+**Paying an order sends an email, and the email is checked.** The customer's
+confirmation goes out through `@frontierjs/conduit` to a declared target, and
+that target is [`api/mail-sink.ts`](api/mail-sink.ts) — a dev mail catcher on
+:3610 speaking the shape a provider REST API speaks. A separate listener on
+purpose: an in-process fake would prove the payload is built and nothing else,
+while over a real socket the credential really resolves (the sink 401s without
+it) and `POST /fail-next` makes the provider fail so the retry path is a test
+rather than a claim. Read what the shop has sent:
+
+```bash
+curl localhost:3610/outbox
+```
+
+The mailer is [`api/mailer.ts`](api/mailer.ts): Junction's `IMail`, implemented
+over `app.conduit.send()`. Pointing it at the real api.resend.com is a change of
+`address` and `ref` in [`api/app.ts`](api/app.ts) and nothing else — a target
+holds a credential *reference*, resolved at send time, never a key in a closure.
+
+**The email body is a `.mesa` file.** [`api/emails/order-confirmation.mesa`](api/emails/order-confirmation.mesa)
+is rendered by `@frontierjs/email-kit` through the same Mesa compiler the
+browser uses, at `target: 'email'` — tables, inlined CSS, an Outlook conditional
+block. Not the `mail()` line builder: that vocabulary is greeting / paragraph /
+button, which is right for "your password was reset" and cannot express a
+receipt. The subject is a **function of the render data** in the template's
+`<script module>`, so the wording and the layout are decided in one file.
+
+```bash
+bun run email:preview     # writes the HTML and the text where you can open them
+```
+
+**The staff hear about it in the app.** Signed in, the header grows a bell with
+a count. Those rows come back through the model's own
+`@@allow('read', userId == auth().id)` — sign in as `sam` and you see sam's
+copy, not alex's, and neither the service nor the component contains a line
+saying so. A background job has no session, so `api/gate.ts` declares `SYSTEM`:
+work with no caller still has a principal, graded in the one place every
+principal is graded.
+
+**The nightly sweep is run rather than waited for.** `sweep-abandoned` cancels
+orders left `pending` past a horizon, at 03:00. A cron you can only observe
+through `nextRuns()` is a schedule, not a behaviour:
+
+```bash
+curl -X POST localhost:3600/jobs/run/sweep-abandoned -d '{"days":0}'
+```
+
+That route did not exist until this app needed it.
 
 ---
 
@@ -161,10 +222,29 @@ what it moves to and what level it needs all live in the schema.
 Nothing in this file is asserted from reading the source. `bun run verify`
 drives the app in headless Chrome — navigating, signing in, typing into fields
 and leaving them, filling the form, submitting, deleting, signing out — and
-asserts 37 facts about what a real browser ended up showing. Last run:
+asserts 37 facts about what a real browser ended up showing. Four sibling drives
+add 56 more — the kit's behavioural components, real-time from a second client,
+deferred work, and the outbound boundary. Last run:
 
 ```
-all 37 assertions passed        (3 consecutive runs, 0 console errors, 0 exceptions)
+all 37 assertions passed        (dev AND the production build, 0 console errors)
+all 26 assertions passed        bun run verify:ui
+all 14 assertions passed        bun run verify:live
+all  8 assertions passed        bun run verify:jobs
+all  9 assertions passed        bun run verify:notify
+
+94 assertions, five drives, twice consecutively against one database.
+```
+
+`verify:live` is the one that watches a client which did **not** make the
+change — a signed-out tab on `/orders/`, while node changes rows over HTTP:
+
+```
+watcher.sawCreate        appeared: true          ← no reload, no session
+watcher.sawPay           status: paid            ← a custom ACTION, the case that was broken
+watcher.movesRegraded    ship refund cancel      ← the record was replaced, not a cell patched
+watcher.sawDelete        left: true
+watcher.events           orders created · orders pay · orders removed
 ```
 
 Including, in the browser:
@@ -231,12 +311,28 @@ illegal state transition is a client error and comes back 500. See below.
 
 ## Found by building this
 
-An example is only worth having if it can fail. Eight things this one settled,
-five more the day its markup moved onto `@frontierjs/ui`, and eight more from
-the screens built to use the components a render test cannot reach:
+An example is only worth having if it can fail. Nine things this one settled,
+eight the day it grew a job queue, an outbound boundary and a watcher tab that
+never acts,
+five more the day its markup moved onto `@frontierjs/ui`, eight more from the
+screens built to use the components a render test cannot reach, and four the day
+its order form was rewritten onto `<Form>`:
 
 | | |
 | --- | --- |
+| **A prerendered page could publish gated data, and nothing checked.** | Adding one `render: static` route to this app found a fail-OPEN hole in the check being built to stop exactly that. `importCompanion` swallows an import error and returns null, so a `.meta.js` that *throws on import* was indistinguishable from a route with no companion and was waved through as "reads nothing" — which is what happened on the first `bun run build:public`, run under Node, where the companion's db import died on `bun:sqlite`. The page was emitted anyway. A companion that exists but could not be read is now UNKNOWN, which is the one case the check exists to refuse. `ISSUES.md` FJS-081; `web/src/public-site/catalog/` is the route. |
+| **Every row policy in the framework matched nothing.** | `@@allow('read', userId == auth().id)` is the shape `@frontierjs/notifications`' own README ships. It returned an empty list for every signed-in caller, and the rows were plainly there under `asSystem()`. Junction's `SessionContext` names the caller `userId`; Litestone's policy language reads `auth().id` — its documented spelling — and nothing bridged the two, so the predicate compared a column to `undefined`. **Gates were fine**, because `sessionGateLevel()` was written against Junction's shape; the half that was translated worked and the half that was not failed in silence, which is why an app with `@@gate` and no `@@allow` would never notice. `FJS-097`. |
+| **Fixing that broke the audit log, which is how it was found twice.** | With a real `id` on the principal, the audit trail finally had an actor to record — and its `actorId` column was declared `Int` while `@frontierjs/auth` issues uuids. The first audited write after signing in threw `cannot store TEXT value in INTEGER column auditLogs_idx.actorId` and took the request with it. It had been unreachable for exactly as long as the bug above existed: no id meant a null actor, and NULL fits an INTEGER column. Two defects, one masking the other, both in one afternoon. `FJS-098`. |
+| **An append-only service that was not.** | `methods: ['find','get','patch']` on the notifications service answered `403` from the model's gate instead of `405` — because `methods:` was read by `createService` and neither read nor forwarded by `createBaseService`, the factory the loader is built around. The same declaration that makes an audit trail append-only through one factory did nothing at all through the other. `FJS-099`. |
+| **A PATCH of one field rewrote the whole record.** | Junction's update-mode validation dropped required-ness and kept every field's `default`, and a default is applied to any absent key — so `PATCH /orders/3 {"note":"x"}` arrived at the model as `{ note: 'x', status: 'pending', total: 0, … }`. On an ordinary column that silently reset it. On a column under `@@transitions` it came back `409 Cannot transition order.status from 'shipped' to 'pending'` — a state machine correctly refusing a move nobody asked for. Found by the courier job, whose whole purpose is to patch one field on a shipped order; the job's own retries are what made it visible. |
+| **A queue key that meant two opposite things.** | Caravan's `unique` looked for a *pending* job with the key while the column was `UNIQUE` forever. Dispatching the same key after the first job finished walked past the guard into the constraint — `500 UNIQUE constraint failed: jobs.unique_key`, out of an ordinary request. Matching any status instead fixed that and broke the other side: `book-courier:4` matched a job belonging to a **deleted** order whose id SQLite had reused, and the courier was silently never booked. Both readings met in one afternoon. It is a lock on work in flight now, enforced by a partial unique index over live jobs so the guard and the constraint cannot drift again. |
+| **A cron could be scheduled and never run.** | Caravan's admin routes could retry a job and cancel a job, but not *start* one — so the only way to reach a nightly sweep was to wait until 03:00. Every cron handler in every app was untestable, and unrunnable during an incident. `POST /jobs/run/{name}` exists now, and the body becomes the job's data. |
+| **A generated form offered a human a box the system owns.** | Adding `trackingCode` to the schema put a *Tracking* control in the order form — correct behaviour for a form derived from the model, and wrong for the domain: whatever you typed would be overwritten by a worker a second later. Nothing in FJS can say "the system writes this column". Both halves exist and do not meet — Litestone emits `readOnly` for computed and generated fields, Sierra reads it nowhere — so the create page carries the only hard-coded field name in the app, marked as the workaround it is. `FJS-095` / `FJS-D22`. |
+| **A custom action told nobody it had changed anything.** | Every live-update observation this app had ever made was the tab that made the change, so none of them could tell a broadcast from an echo. A watcher tab that never acts settles it: `orders created` and `orders removed` do cross to a stranger and the store applies them — and the `pay` between them was never published at all. `callService` announced only the five CRUD writes; the browser client had been listening for action events since the day it was written. **What hid it was this app**: it re-issued `find()` after every action, so the acting tab looked right and every other tab went quietly stale. Fixed in junction, ruled as `FJS-D21`, and the refetch is gone — the table re-grades from the broadcast now. `bun run verify:live`, 14 assertions, 4 of which fail if the fix is reverted. |
+| **A Mesa component cannot expose a method.** | `export function submit()` in an instance script is dropped from the compiled output entirely, so `<Form>`'s own `on:submit={submit}` threw `ReferenceError` on the first click — and VISION §10.2 documents `counterRef.reset()` as a supported API. The obvious workaround, `export let submit = async () => {…}`, emits `$runtime.get(sig) = true` for each assignment in the body and does not parse. **No render test could catch either half**: SSR never dispatches an event. `ISSUES.md` FJS-087. |
+| **An unpicked relation picker silently selected the first row.** | The kit's placeholder `<option>` was `disabled`, and a disabled option cannot hold the selection. A select whose options arrive late — which is every relation picker — lost the placeholder the moment the list repopulated and landed on the first real customer. The form then filed the order against them with nothing on screen having said so. Had been failing this drive's `form.customerStartsEmpty` for days. |
+| **A control shadowed the schema's `@label`.** | `Select` and `Textarea` computed `nameToLabel(name)` and passed it down as an explicit label, so a rule's `title` could never win: `@label("Customer")` rendered as "Customer Id" and the annotation was unreachable through the kit. |
+| **This drive could only be run once per database.** | It deletes an order, and `seed()` guarded everything on `product.count() > 0` — so the orders ran out, no restart brought them back, and the second run failed in ways that read as a regression in whatever you had just changed. A verification that only works once is not one; the seeder now guards per table and restores the seeded orders by reference. |
 | **A click inside a portal never reached its handler.** | Mesa delegates events from the target up to a registered root, and only the app's container is one. `<mesa:portal>` appends to `document.body`, outside it — so every dropdown item, command-palette row and toast dismiss button in the kit was inert. Correct markup, correct ARIA, no error, nothing happens. **Fixed** in mesa: a portal registers its target as a delegation root, reference-counted so two open portals cannot tear each other's listener down. |
 | **Every store in `@frontierjs/ui` was inert.** | `toasts.add()` queued correctly and the Toaster never rendered; ⌘K flipped a boolean nothing was listening to. A plain object is watched through `watchProxy`, and only a write through that proxy notifies — the rule this app's own `session.js` documents. All four kit stores now write through a handle. |
 | **`<Modal onclick={() => open = false}>` threw on click.** | An assignment inside a COMPONENT prop was rewritten as a signal read: `$runtime.get($$sig_open) = false`. `on:click` on an element had always been handled; the component path had not. |
@@ -296,8 +392,8 @@ gates, end to end, verified. Deliberately absent:
 
 | | |
 | --- | --- |
-| **`caravan` jobs, `conduit` outbound, `notifications`** | Fulfilment as background work; order confirmation as an email. The hooks are already named in [`api/app.ts`](api/app.ts) — `onPasswordResetRequested` and `onEmailVerificationRequested` are where a mailer goes. |
-| **Live updates** | Services declare `channel:`, the WebSocket connects (the header pill goes `live`), and every connection joins all three channels. Nothing re-renders from a channel event yet. |
-| **`@frontierjs/ui`'s 63 components** | The UI here is raw `@frontierjs/css` vocabulary. The component kit has never been opened in a browser, and rebuilding these screens on it is where the bugs are. |
+| **A real mail client** | The confirmation email is rendered by `@frontierjs/email-kit` now and asserted to be a table document — but nobody has opened one in Outlook, Gmail or Apple Mail. `bun run email:preview` writes it to a file; `curl localhost:3610/outbox` gets the delivered copy to forward to yourself. |
+| **`static` / islands** | `web/src/public-site/` prerenders a catalogue. What is unproven is an island rehydrating in the built output. |
+| **`@frontierjs/ui`'s remaining 35 components** | 29 of 64 are now driven in a browser. `DatePicker` (1200 lines), `Drawer`, `Popover`, `ConfirmationPopover` and `FileUpload` are compile-only. The way in is a screen that genuinely needs one, not a gallery. |
 | **`static` / islands target, email previews** | Build-mode wings off this same app rather than separate projects. |
 | **jetty, the VS Code extension** | Different containers. Out of scope for a single app, by design. |

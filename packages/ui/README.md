@@ -1,6 +1,6 @@
 # @frontierjs/ui
 
-Mesa components over [`@frontierjs/css`](../css). 63 components across forms,
+Mesa components over [`@frontierjs/css`](../css). 64 components across forms,
 display, layout, overlay and feedback.
 
 ```bash
@@ -88,7 +88,7 @@ The old six-value `variant` conflated the two, which is why `outline` and
 
 ## What's in the box
 
-**forms** — `Button` `Btn` `Field` `Fieldset` `Label` `Input` `Textarea`
+**forms** — `Form` `Button` `Btn` `Field` `Fieldset` `Label` `Input` `Textarea`
 `Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Combobox`
 `MultiSelect` `DatePicker` `FileUpload`
 
@@ -107,6 +107,52 @@ The old six-value `variant` conflated the two, which is why `outline` and
 `Skeleton`
 
 **stores** — `toastStore` `alertStore` `themeStore` `commandPaletteStore`
+
+## Forms know what they are editing
+
+`<Form>` takes a resource and derives the rest. It owns the four things every
+form needs beyond its inputs — whether it is in flight, whether anything
+changed, what the server said about each field, and not submitting twice:
+
+```svelte
+<Form {leads} ondone={r => goto(`/leads/${r.id}`)}>
+  <Input name="name" />
+  <Input name="email" />
+  <Button type="submit">Save</Button>
+</Form>
+```
+
+Nothing there states what a Lead is. `createResource('leads')` read that from
+`db/schema.lite`, so `email` arrives labelled, `required`, `type="email"`, with
+its `@length` as `maxlength` — and if the write is rejected, the message lands
+under that control without anyone routing it there. The form puts the rules and
+the error map in context; each control resolves its own.
+
+**A stated prop always wins**, including a falsy one — `required={false}` beats
+a schema that says required, because the resolution asks "was anything said",
+not "is it truthy".
+
+**Standing alone, nothing changes.** Every control works outside a form exactly
+as it did; an absent form resolves to `undefined` and each fallback is what the
+component did before.
+
+What `<Form>` deliberately does not do is validate. The resource does that
+(coercing, blank-stripping and checking against the schema are on by default),
+and this only renders what came back. Nor does it build the error map: that is
+`resource.fieldErrors(err)`, one owner in sierra, because a failed write
+arrives in three different shapes and two copies of that unwrapping would
+drift.
+
+Two escape hatches, both narrow. `onsubmit` replaces the request and nothing
+else — the in-flight state, the error mapping and the dirty tracking still
+apply. `mapErrors` replaces only the unwrapping. Neither turns the rest off.
+
+| Bind | What it is |
+| --- | --- |
+| `errors` | `{ [field]: message }` — replaced, never mutated |
+| `formError` | the failure no field could render |
+| `submitting` `dirty` `submitted` | the state machine |
+| `submit()` `reset()` `clearErrors()` | via `bind:this` |
 
 ## The platform does the work
 
@@ -153,7 +199,7 @@ ladder.
 bun run test     # inside this package
 ```
 
-Two suites, and the split matters:
+Three suites, and the split matters:
 
 - **`test/compile-all.mjs`** — every `.mesa` compiles *and* the emitted
   JavaScript parses. Those are different claims: Mesa can report zero errors
@@ -164,6 +210,12 @@ Two suites, and the split matters:
   63 components were styled with Tailwind/Uno classes that nothing in this
   repo generates — so every one of them rendered unstyled while compiling
   perfectly.
+- **`test/form.mjs`** — `<Form>` and the form context. Asserts the claim that
+  makes the component worth having: a control handed nothing but a `name` comes
+  out labelled, constrained and carrying its server error. Covers the wiring,
+  not the state machine — the machine's inputs are pinned in sierra's
+  `resource-validation.test.js`, and the whole of it in `example/`'s
+  `bun run verify`.
 
 ## Status
 

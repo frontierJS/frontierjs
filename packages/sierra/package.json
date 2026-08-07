@@ -22,6 +22,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:safety": "bun tests/static-safety-real.mjs",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs",
     "example:api": "bun run example/api/app.ts",

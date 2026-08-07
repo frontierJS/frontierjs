@@ -27,17 +27,27 @@
   //   Pattern B — shorthand label prop on the input itself:
   //     <Input label="Email" name="email" bind:value={email} {errors} />
   //
+  //   Pattern C — inside <Form>, where neither is passed at all:
+  //     <Form {resource}>
+  //       <Field name="email"><Input bind:value={email} /></Field>
+  //     </Form>
+  //
   // Error resolution order:
   //   1. Direct `error` string prop
   //   2. `errors[name]` — server-returned error map (replace, don't mutate)
-  //   3. Nothing shown
+  //   3. The enclosing <Form>'s error map, by this field's name
+  //   4. Nothing shown
+  //
+  // The form is also where `required` and the label come from when they were
+  // not given — both are schema facts, and restating them on every control is
+  // how a form and its .lite file drift apart. An explicit prop always wins.
 
   import Label from './Label.mesa'
-  import { nameToLabel } from '../../utils.js'
+  import { nameToLabel, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let id       = ''
   export let name     = ''
-  export let label    = nameToLabel(name)    // auto-derive from name if not set
+  export let label    = undefined            // falls back to the schema, then the name
   export let required = undefined
   export let badge    = undefined            // label badge override
   export let help     = undefined            // label tooltip: string or { text }
@@ -48,8 +58,19 @@
   export let removable   = false             // show × next to the label
   export let onremovekey = undefined
 
+  // The enclosing <Form>, or undefined when this field stands alone.
+  const form = $context.form
+
   // errors is export let (reactive) — re-derives when the object is replaced.
-  const displayError = error || (errors?.[name] ?? '')
+  // So is `form`, so a server error reaches a field nobody passed anything to.
+  const displayError = resolveError(form, name, error, errors)
+
+  // Schema facts, used only where the caller stated nothing. `@label("…")`
+  // reaches the browser as the rule's `title`; failing that the column name
+  // is title-cased, which is what this component always did.
+  const rule = resolveRule(form, name)
+  const resolvedLabel    = stated(label, rule?.title, nameToLabel(name))
+  const resolvedRequired = stated(required, rule?.required)
 
   function handleRemove() {
     onremovekey?.()
@@ -59,9 +80,9 @@
 <div class="field-group" {class}>
 
   <!-- Label row: label + optional remove-key × button -->
-  {#if type !== 'hidden' && label}
+  {#if type !== 'hidden' && resolvedLabel}
     <div class="split">
-      <Label {label} {id} {required} {badge} {help} type={type} />
+      <Label label={resolvedLabel} {id} required={resolvedRequired} {badge} {help} type={type} />
 
       {#if removable}
         <button type="button" class="btn ghost square" aria-label="Remove field" on:click={handleRemove}>

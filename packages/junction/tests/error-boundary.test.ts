@@ -224,3 +224,45 @@ describe('the boundary applies to service calls, not just routes', () => {
     expect((await request(app).post('/boom').send({})).status).toBe(500)
   })
 })
+
+// ─── retryable, carried to the client ────────────────────────────────────────
+//
+// The status alone cannot say whether repeating the request could work. Litestone
+// throws two different 409s and they want opposite words: VersionConflictError
+// and TransitionConflictError are races (re-read and re-apply), while
+// TransitionViolationError is a domain refusal whose own message is the right
+// thing to show. A client that cannot tell them apart has to phrase both as the
+// weaker of the two, which is how "this cannot ever be legal" becomes "try again".
+//
+// Sierra's isStaleWrite() reads it off the serialized body.
+
+describe('retryable survives the boundary and the wire', () => {
+
+  it('is adopted from the originating error', () => {
+    const race   = Object.assign(new Error('row moved'), { status: 409, retryable: true })
+    const refuse = Object.assign(new Error('illegal move'), { status: 409, retryable: false })
+
+    expect(toFrameworkError(race).retryable).toBe(true)
+    expect(toFrameworkError(refuse).retryable).toBe(false)
+  })
+
+  it('is serialized only when the error declared one', () => {
+    const race  = toFrameworkError(Object.assign(new Error('row moved'), { status: 409, retryable: true }))
+    const plain = toFrameworkError(Object.assign(new Error('nope'), { status: 409 }))
+
+    expect(race.toJSON()).toMatchObject({ code: 409, retryable: true })
+    expect('retryable' in plain.toJSON()).toBe(false)
+  })
+
+  it('reaches the response body', async () => {
+    const app = await createTestApp()
+    app.services.register(createService({
+      name: 'races',
+      async create() { throw Object.assign(new Error('row moved'), { status: 409, retryable: true }) },
+    }))
+
+    const res = await request(app).post('/races').send({})
+    expect(res.status).toBe(409)
+    expect(res.body.retryable).toBe(true)
+  })
+})

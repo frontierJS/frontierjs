@@ -10,6 +10,21 @@ Format: **decision — why — where it lives.**
 
 ## Naming & vocabulary
 
+**2026-08-06 · The email component kit is `@frontierjs/email-kit`.**
+Closes `FJS-D15`; fixes `FJS-051`. Not `@frontierjs/mesa-email`. Every other
+package's npm name matches its directory, and `email-kit` is the directory —
+so the directory was right and the name was the odd one out. It also says what
+the package IS rather than what it is built on: `@frontierjs/ui` is a Mesa
+component kit too and is not called `mesa-ui`.
+
+`package.json` already carried the new name; what survived was the old one in
+prose, comments and one filename, which is the shape this kind of thing takes
+once the code is correct. Swept: README, `index.js`, `render.js` (including the
+user-facing peer-dependency error), `PROJECT_STATE.md`, mesa's own docs, and
+`mesa-email.test.js` → `email-kit.test.js`. `drift-report.md` keeps the old
+name: it is a dated audit and rewriting its findings would falsify the record.
+*Lives in:* `packages/email-kit/`.
+
 **2026-08-01 · Model names are PascalCase and singular, always.**
 `model Lead` → accessor `db.lead`; `model PageView` → `db.pageView`. The accessor
 rule derives the API from the model name, so mixed conventions produced three
@@ -24,7 +39,98 @@ create+update+delete unless one is given explicitly; missing keys cascade
 read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
+**2026-08-06 · `Signal` and `Event` are two words for two things, both legal.**
+**Signal** is Mesa's reactive cell — the thing `createSignal`/`watchProxy` make and
+`$:` tracks. **Event** is Junction's announcement — the thing `publish()` fans out
+and a channel carries. `ARCHITECT.md` §2 previously listed *signal* as a banned
+synonym for Event, which was written to stop "signal" meaning *notification* and
+accidentally outlawed the word Mesa's own runtime, docs and White Paper use for
+its core primitive. The ban is narrowed rather than dropped: **do not call an
+Event a signal.** Calling a reactive cell a Signal is correct and required.
+They cannot be confused in practice because they live in different realms — a
+Signal never crosses a Boundary, an Event only exists to.
+*Lives in:* `ARCHITECT.md` §2; `packages/mesa/runtime.js`;
+`packages/junction/src/transport/channels.ts`.
+
+**2026-08-06 · `Policy` keeps exactly one meaning, and it is not "business rule".**
+A **policy** is a row/field predicate (`@@allow`/`@@deny`) compiled into SQL WHERE.
+A **Gate** is the ordinal per-operation level check. Both were already ruled. A
+third proposed sense — "declarative business rule, as opposed to imperative
+mechanism" — is **refused**: it is the word doing three jobs, and the two existing
+senses cost an audit to separate. Where that distinction is wanted, the words are
+already there: a **Declaration** is what the schema states, a **Hook** is what runs.
+*Lives in:* `ARCHITECT.md` §2 clarifications.
+
+**2026-08-06 · `Projection` is adopted for a read model only.**
+A **Projection** is a *stored or served* shape derived from the seed for reading —
+a materialised view, a serialised subset, a report. What the compiler derives at
+build time stays **derived**; what a component computes stays **derived**. Adopted
+because the existing vocabulary had no noun for "a second shape of the same truth,
+kept in sync", and FJS-005's fix (`IDEAS/scoped-sql.md`) needs one. Not a synonym
+for derived — if it has no independent existence, it is not a Projection.
+*Lives in:* `ARCHITECT.md` §2 (to add); `IDEAS/scoped-sql.md`.
+
 ## Access control
+
+**2026-08-06 · Raw SQL is available through `asSystem()` only, on any schema
+that declares access rules.** Fixes `FJS-005`.
+
+`db.sql` goes straight to the read connection — no `@@gate`, no `@@allow`, no
+`@guarded`, no `@scoped`, no `@@softDelete`, because all of those are enforced
+above SQLite. For a deliberate escape hatch that is defensible. What was not is
+that it was the **same function on every proxy**: `db.$setAuth(user).sql` closed
+over the user and never read it, so a caller who had done everything right got
+every row in the table, silently. Measured on one model with `@@allow` +
+`@guarded` + `@@softDelete`:
+
+```
+$setAuth({id:1}).invoice.findMany()   → 1 row,  ssn absent
+$setAuth({id:1}).sql`SELECT * …`      → 3 rows, ssn plaintext, another owner's
+                                         row and a soft-deleted one included
+```
+
+**The unscoped client was the wider gap, not the narrower one.** An
+unauthenticated `db.invoice.findMany()` returns **0** rows — the policy
+evaluates with `auth() == null` and matches nothing — while `db.sql` returned
+all 3. So the defect is not "the scoped proxy drops its scope"; it is that raw
+SQL ignores the schema on every path and the ORM never does. That is why the
+rule covers `db.sql` too, overturning `IDEAS/scoped-sql.md`'s "unchanged".
+
+The rule:
+
+| Surface | Schema declares access rules | It does not |
+| --- | --- | --- |
+| `db.sql` | **throws** | unchanged |
+| `db.$setAuth(u).sql` | **throws** | unchanged |
+| `db.asSystem().sql` | works — the documented bypass | works |
+
+"Access rules" means `@@gate`, `@@allow`/`@@deny`, `@guarded`, `@encrypted`/
+`@secret`, field-level `@allow`, `@scoped`. **Not** `@omit` or `@@softDelete`:
+those shape what a read returns rather than who may read it, and refusing raw
+SQL for a soft-delete column would fire on most schemas for a lifecycle rule.
+
+**Coarse per schema, not per statement, on purpose.** Deciding per statement
+means parsing the statement, and a hand-written SQL validator that is subtly
+wrong grants a FALSE guarantee — worse than an honest raw hatch, because people
+trust it. The escape routes are numerous and all real in SQLite (`main.` and
+`temp.` qualification, `ATTACH` — which litestone exposes on the proxy —
+`PRAGMA`, views created mid-statement, comment and string-literal tricks).
+SQLite's own authorizer would be the right mechanism and **`bun:sqlite` does not
+expose it** (verified: `Database` has no `setAuthorizer`).
+
+The refusal names both ways forward: `asSystem().sql` to bypass deliberately, or
+`where: { $raw: sql`…` }` to stay on the ORM — verified to keep every policy
+(1 row, `@guarded` column still withheld).
+
+**Scoped raw SQL as a capability — a per-identity view set — is NOT built.**
+`IDEAS/scoped-sql.md` designs it; it is a feature where this is a defect, and
+the consumer that made it urgent (`herald`, the agent surface) does not exist.
+Revisit with `herald`.
+
+*Lives in:* `packages/litestone/src/core/client.js`
+(`schemaDeclaresAccessRules`, `rawSqlRefusal`, `_runRawSql`); 9 tests in
+`test/litestone.test.ts` § "raw SQL and the access rules it cannot enforce",
+5 of which fail if the refusal is removed.
 
 **2026-08-01 · Gates enforce by default when declared; undeclared imposes nothing.**
 Any model with `@@gate` is enforced from the first request via the shipped
@@ -87,6 +193,74 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+**2026-08-06 · A custom action announces like any other write, under its own
+name.** Closes `FJS-D21`; fixes `FJS-033`. `callService`'s one announcement
+point derives `orders pay` for an action exactly as it derives `orders patched`
+for a patch — no past tense is invented, matching what the `publish()` hook form
+had always put on the wire and what the browser client's `*` handler had always
+upserted. Only `find` and `get` are excluded, by name.
+
+The alternative considered was opt-in: an action announces only if it set
+`ctx.dispatch`. Rejected because it makes the safe case the one you have to
+remember — a transition is the ordinary reason to have an action at all, and a
+framework whose live updates work for `patch` but not for `pay` until you add a
+line is one that looks broken in the exact place it is being shown off.
+
+Rulings inside the ruling:
+
+- **An action that only READS opts out with `ctx.dispatch = false`.** At this
+  layer a `search` action is indistinguishable from a `pay` one, so the leak
+  direction is real and accepted; `dispatch` is the existing one switch,
+  suppressing browsers and the in-process bus together. No new vocabulary.
+- **Nothing announces without `channel:`.** Unchanged. Broadcasting is still
+  opt-in per service, because row policies are evaluated on read and a broadcast
+  does not re-evaluate them per subscriber.
+- **The gap was structural, not a slip.** Both halves existed and neither side
+  could see the other: the client listened for action events, the server sent
+  none, and every app masked it by re-issuing `find()` after each action — which
+  made the *acting* tab correct and every other tab stale. Nothing in the repo
+  watched a client that had not acted until `example/web/test/verify-live.mjs`.
+
+**2026-08-06 · A service narrows its method set with one key: `methods`.**
+Closes `FJS-D07`; fixes `FJS-004`. Two forms on the same key —
+`methods: ['find', 'get']` is the general allow-list, `methods: 'readOnly'` is
+shorthand for exactly that list. Absent means every method, so nothing that
+exists changes.
+
+The allow-list is the general form because a narrower method set is not only
+ever "read only": `['find','get','create','approve']` says *no patch, no remove,
+one action*, which a boolean cannot express and which otherwise goes back to a
+hand-written hook. `'readOnly'` is sugar **on the same key** rather than a
+second option, so there is still one place to look.
+
+Rulings inside the ruling:
+
+- **CRUD and actions share one list.** Being defined on the service is not being
+  offered; an action the list omits is refused like any verb.
+- **405, not 404 or 403.** The route is real and the service exists; the verb is
+  not offered, to anybody. A 404 sends someone hunting a mounting problem and a
+  403 implies a different identity would succeed.
+- **Enforced in `callService`, ahead of the hook pipeline.** That is the one path
+  every caller takes, so an in-process `app.service('audit').create()` is refused
+  exactly as the wire is — the alternative leaves jobs, engines and hooks free to
+  do what a request cannot. Ahead of hooks because the policy is structural
+  rather than authorization: nothing an identity could change, already public in
+  `/manifest`, and running `before` hooks for an impossible call means running
+  their side effects. Consequence, accepted: an anonymous caller gets 405 where
+  it used to get 401.
+- **An unknown name throws at construction.** `['find','gett']` would otherwise
+  silently block `get` and only read as broken after a 405 in production.
+- **The three advertisers filter by the same predicate** — `/manifest`,
+  `/metrics` and the OpenAPI spec — so what a service answers and what it claims
+  to answer cannot drift. `isMethodAllowed()` / `allowedMethodNames()` are the
+  one owner, beside `isCustomMethod()` / `customMethodNames()`.
+
+*Lives in:* `packages/junction/src/core/service.ts`; consumed by
+`plugins/manifest`, `plugins/openapi`, `transport/health.ts`. 21 tests in
+`tests/method-policy.test.ts`; 7 of them fail if the enforcement is removed.
+First consumer: `packages/basecamp`'s `/audit`, which drops four hand-written
+`MethodNotAllowed` stubs for one line.
 
 **2026-08-01 · Custom service actions stay on `X-Service-Method` header dispatch.**
 Proposal to move to sub-path dispatch (`POST /api/notes/:id/summary`) was
@@ -420,22 +594,11 @@ work, not a decision.)*
 
 ## Open (discussed, not yet ruled)
 
-- Junction structural refactor priorities (definition/compiled Service split →
-  ~~single event origin~~ *(ruled 2026-08-02)* → ~~Envelope module~~
-  *(ruled 2026-08-02)* → export tiering → middleware/hook naming) — proposed and
-  sequenced in `drift-report.md`, awaiting go.
-- Partial success for bulk PATCH and REMOVE — creates only, so far.
-- Litestone `onEvent` still has zero Junction subscribers, so a write that
-  bypasses the service layer (`asSystem()` in a job) announces nothing. Fixing
-  it needs a litestone API addition — `onEvent` is fixed at `createClient` and
-  there is no post-construction subscribe, unlike `$tapQuery(fn)`. Mirroring
-  `$tapQuery`'s shape is the obvious move.
-- Coherence-review vocabulary proposals (Hook/Guard/Observer/Delegate split,
-  Provider, Job, Target, Component/Binding, Slice axis, Manifest→Release) —
-  argued in `drift-report.md` §synthesis, not yet adopted into `ARCHITECT.md`.
-- Migrations second tier: rollback stance documentation (`--backup`?),
-  row-count assertion after rebuilds, second-granular timestamp collisions.
-- IAuth partial acceptance (`auth: { verifySession }` sufficing), `publish()`
-  string shorthand / `write` phase alias, typed `createSchema` inference,
-  `createClient` options grouping + `setters/getters` hook naming (deferred
-  2026-08-01 pending monorepo-wide Hook vocabulary decision).
+**Moved to `ISSUES.md` § Needs a decision (2026-08-05)** — every unruled question
+in the repo is listed there with an id, so that "what is waiting on me?" is one
+table rather than six. A ruling comes back **here** and closes the row there.
+
+What was listed here, by its new id: `FJS-D01` junction structural refactor ·
+`FJS-D11` bulk PATCH/REMOVE partial success · `FJS-D04` litestone `onEvent`
+post-construction subscribe · `FJS-D06` coherence-review vocabulary ·
+`FJS-D09` migrations second tier · `FJS-D10` the deferred API cluster.

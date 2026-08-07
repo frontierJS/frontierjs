@@ -1,4 +1,4 @@
-# FrontierJS CSS — Project State (v0.10)
+# FrontierJS CSS — Project State (v0.12)
 
 > A minimal, composable, semantics-first CSS framework. Plain CSS, no build
 > step, no UnoCSS. Drop this whole doc + the source files into a fresh chat
@@ -558,7 +558,8 @@ The attribute is the source of truth; the class is the styling hook only when
 no attribute exists.
 
 ### Theming (one class on body)
-`class="theme-default"` (or sunset/forest/midnight/dark/elite). Themes nest.
+`class="theme-default"` (or sunset/forest/midnight/dark/elite/basecamp). Themes
+nest.
 
 ### Sub-regions
 `surface-header` / `surface-body` / `surface-footer` (shared across surface
@@ -600,6 +601,26 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   Block patterns)
 - ✅ frontier-demo.html single-file build for CodePen/local testing
 - ✅ FJL image-to-layout converter prompt
+
+### A seventh theme — `basecamp` (v0.12, 2026-08-06)
+- ✅ `themes/basecamp.css`, ported from the Basecamp UI prototype's `T` object
+  (`packages/basecamp/docs/mock/BasecampUI.jsx`) — a design that carried its
+  palette as 18 keys read by 2,761 inline `style={{}}` objects
+- ✅ **The prototype's neutrals failed WCAG AA and nobody had measured**:
+  `T.sec` 3.24:1 and `T.muted` 1.53:1 as body text. Both lifted by uniform
+  linear-RGB scaling — the operation chip.css uses to cap a fill — so the hue
+  is unchanged and only the luminance moves. Targeted at 7:1 and 4.6:1
+  respectively rather than both at the floor, so the three-step ink ramp
+  survives instead of collapsing into two
+- ✅ Added to the `THEMES` array in `contrast`, `components` and `core-gaps`
+  specs, so it is held to the same bar as the other six from the first commit
+  rather than exempted. **208 passing** (was 205)
+- ✅ First theme in the package where `.btn.outlined` clears AA (5.63:1) —
+  recorded in the FJS-027 finding, which stays open at six of seven
+- ⚠️ `T.sidebar` and `T.modal` had nowhere to land: frame.css paints the topbar
+  and the sidebar with `--surface` and there is no `--sidebar-bg`/`--dialog-bg`
+  token. Left as one surface; noted in the theme file as the argument for the
+  token if the separation turns out to matter
 
 ---
 
@@ -1223,7 +1244,11 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
 
 ---
 
-## Open finding — `.btn.outlined` fails WCAG AA in all six themes (2026-08-03)
+## Open finding — `.btn.outlined` fails WCAG AA in six of seven themes (2026-08-03)
+
+
+*Tracked as **`FJS-027`** in `../../ISSUES.md`. The analysis below is the
+argued detail; the register is where it is counted.*
 
 Found by the FrontierJS website (`website/`), which is this package's second
 consuming app. Measured with `getComputedStyle` in headless Chrome, not estimated.
@@ -1231,11 +1256,20 @@ consuming app. Measured with `getComputedStyle` in headless Chrome, not estimate
 Untoned `.btn.outlined` paints `color: var(--bg-mix, var(--color-primary))` on
 `background: var(--surface)`:
 
-| default | sunset | forest | midnight | dark | elite |
-| ------- | ------ | ------ | -------- | ---- | ----- |
-| 3.96    | 2.35   | 3.30   | 4.23     | 4.40 | 1.99  |
+| default | sunset | forest | midnight | dark | elite | basecamp |
+| ------- | ------ | ------ | -------- | ---- | ----- | -------- |
+| 3.96    | 2.35   | 3.30   | 4.23     | 4.40 | 1.99  | **5.63** |
 
-All below the 4.5:1 threshold for body-size text; elite is the worst at 1.99:1.
+Six of the seven are below the 4.5:1 threshold for body-size text; elite is the
+worst at 1.99:1.
+
+`basecamp` is the exception and does not weaken the finding — it clears AA by
+accident of being a dark theme, where a mid-brightness accent on a near-black
+surface has a lot of room. It is evidence for the diagnosis rather than against
+it: the ratio is a property of the theme's ground, which is exactly why an
+accent used as text needs `--ink-soft` and not a contrast guarantee nobody
+checked. Re-measured 2026-08-06 in headless Chrome; the six original figures
+reproduce unchanged.
 
 **The reasoning for the fix is already in this package.** `buttons.css`, in the
 comment above `.btn.ghost`:

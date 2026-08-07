@@ -35,7 +35,7 @@ someone reads it as a package that failed to install.
 | `mesa` | UI substrate | true leaf — keep it that way |
 | `css` | UI | design system |
 | `ui` | UI | component kit over `css` |
-| `email-kit` | UI / email | ships as `@frontierjs/mesa-email` — name ≠ directory |
+| `email-kit` | UI / email | ships as `@frontierjs/email-kit` |
 | `auth` | D6 | native provider; no OAuth |
 | `caravan` | D5 | jobs + cron |
 | `conduit` | D4 | outbound boundary |
@@ -123,10 +123,10 @@ it is very urgent the moment one does.
 - **Which of these are slices rather than packages?** `ledger` and `flags` clearly.
   `marshal` probably is a package with a slice-shaped install. The distinction
   matters once `slices.md` gets a ruling in `DECISIONS.md`.
-- **Does `email-kit`'s name/directory mismatch get fixed** while the register is
-  being tidied? It declares `@frontierjs/mesa-email` from a directory called
-  `email-kit`, which is exactly the kind of thing that is free to fix now and
-  annoying later.
+- ~~**Does `email-kit`'s name/directory mismatch get fixed?**~~ Ruled 2026-08-06:
+  the package is `@frontierjs/email-kit` and the directory already agreed. The
+  old name survived only in prose and comments, which is the form this kind of
+  thing takes once the code is right.
 
 ## See also
 
@@ -141,5 +141,30 @@ it is very urgent the moment one does.
   shares `project:map --json` with `atlas`
 - `IDEAS/app-manifest.md` — `frontier.config.js` + `frontier.lock`; also `fli` rather
   than a package, and the lock may simply *be* `project:map --json`, committed
+- `IDEAS/time-travel.md` — named checkpoints over the audit trail; `fli` commands over
+  litestone, and the cheapest thing `quarry` and `assay` can both stand on
+- `IDEAS/derived-suspense.md` — a Mesa compiler change, no package; listed here so the
+  register does not read as though every idea needs a name
+- `IDEAS/client-data-lifecycle.md` — **no package, and that is the finding.** Request
+  staleness, optimism and entity identity are three faces of one owner nothing in the
+  repo has: sierra's `createResource` is a hook pipeline over a pass-through client
+  and has no model of time. Whether that owner is a name of its own or a layer inside
+  `sierra/junction` is open — it is small, and it sits under `compass` rather than
+  beside it
+- `IDEAS/form-actions.md` and `IDEAS/server-only-boundary.md` — **sierra, no new
+  package, and they want one design.** Both turn on the same unbuilt thing:
+  module scope that runs but does not ship. Today `<script module>` is
+  browser-only (Mesa rule 30) and Invariant 18 makes it a Resource's home, so
+  splitting it is the real work in either
+- `IDEAS/declared-semantics.md` — **litestone, no new package.** Four attributes
+  (`@version`, `Money`, `@eventTime`/`@recordTime`) plus one genuinely unnamed
+  noun: a resumable multi-step process, which is neither a Job (Caravan) nor a
+  field machine (`@@transitions`) and would be built from both. If anything here
+  earns a package name it is that one, and it should not be named until it has a
+  design
+- `IDEAS/forms-from-the-seed.md` — the remainder of `foundry` after `<Form>` shipped
+  on 2026-08-06. What is left is the field *list* and a control table with one home,
+  which is the same table a UI plugin would contribute to — so this is where the
+  `FJS-D17` question about what a UI plugin can contribute gets its first real answer
 - `PROS_AND_CONS.md` — `foundry` and `warden` are the two fixes it ranks first
 - `CLAUDE.md` § Packages — the authoritative state of what exists

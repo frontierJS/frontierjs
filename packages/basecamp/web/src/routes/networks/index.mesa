@@ -1,0 +1,210 @@
+---
+title: Networking
+---
+<script>
+  // The mock's NetworkingView, over the three models that had no API until
+  // 2026-08-06. A network is a name and a CIDR; what an operator needs is who
+  // is ON it, so the membership list is the screen rather than a sub-page.
+  import { session } from '../../session.js'
+  import { networks } from '../../resources/networks.mesa'
+  import { servers } from '../../resources/servers.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Form       from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows      = []
+  let members   = {}       // networkId → join rows
+  let fleet     = []
+  let error     = null
+  let loading   = true
+  let busy      = null
+  let creating  = false
+  let attachTo  = null     // network id whose attach control is open
+  let pickedSrv = ''
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows = (await networks.service.find({}, { limit: 100 })).data
+      // The fleet is needed to offer an attach target, and it is one request
+      // for the workspace rather than one per network.
+      fleet = (await servers.service.find({}, { limit: 200 })).data
+      for (const n of rows) await loadMembers(n.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  async function loadMembers(id) {
+    const raw = await networks.service.action('members', id)
+    members = { ...members, [id]: Array.isArray(raw) ? raw : raw?.data ?? [] }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  const READS = new Set(['get', 'find', 'members'])
+  const off = networks.service.on('*', (method, row) => {
+    if (READS.has(method) || !row?.id) return
+    load()
+  })
+  $onDestroy(off)
+
+  // The resource validates against the schema before anything is sent, so a
+  // bad CIDR is refused twice: here in the browser by shape, and at the service
+  // by the rule that knows what a CIDR is. The second one is the boundary.
+  async function create(data) {
+    error = null
+    try {
+      const created = await networks.service.create(data)
+      toasts.success(`${created.name} created`)
+      creating = false
+      await load()
+    } catch (e) {
+      error = e.message
+      throw e            // <Form> renders the per-field half
+    }
+  }
+
+  async function attach(network) {
+    if (!pickedSrv) return
+    error = null; busy = network.id
+    try {
+      await networks.service.action('attach', network.id, { serverId: pickedSrv })
+      await loadMembers(network.id)
+      toasts.success('Server attached')
+      attachTo = null; pickedSrv = ''
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function detach(network, serverId) {
+    error = null; busy = network.id
+    try {
+      await networks.service.action('detach', network.id, { serverId })
+      await loadMembers(network.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove(network) {
+    error = null; busy = network.id
+    try {
+      await networks.service.remove(network.id)
+      toasts.success(`${network.name} deleted`)
+      await load()
+    } catch (e) {
+      // 'N server(s) are still attached — detach them first' arrives here. The
+      // button is not disabled: the refusal is the service's to make, and
+      // showing it is more honest than guessing at it.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const unattached = (id) => fleet.filter(s => !(members[id] ?? []).some(m => m.serverId === s.id))
+</script>
+
+<div class="section-header">
+  <h1>Networking</h1>
+  <Button variant="primary" id="new-network" onclick={() => creating = !creating}>
+    {creating ? 'Cancel' : 'New network'}
+  </Button>
+</div>
+
+<p class="text-body">
+  A private network is a CIDR the fleet joins. Membership is the interesting part — it
+  decides what can reach what, which is why attaching is held at the same bar as creating.
+</p>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if creating}
+  <Card>
+    <!-- The form takes the resource: every control resolves its own label,
+         constraints and server error from the schema through $context.form.
+         Nothing here restates a field's type or its required-ness. -->
+    <Form resource={networks} onsubmit={create}>
+      <Input name="name" id="name" />
+      <Input name="cidr" id="cidr" placeholder="10.0.0.0/16" />
+      <Button type="submit" variant="primary">Create network</Button>
+    </Form>
+  </Card>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No networks">
+    Nothing in this workspace has a private network yet.
+  </EmptyState>
+{:else}
+  <div class="stack" id="network-list">
+    {#each rows as n}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">{n.name}</h2>
+          <span class="cluster">
+            <Pill>{n.type}</Pill>
+            <code>{n.cidr}</code>
+            <Badge tone="muted">{(members[n.id] ?? []).length} attached</Badge>
+          </span>
+        </div>
+
+        {#if (members[n.id] ?? []).length}
+          <ul class="stack">
+            {#each members[n.id] as m}
+              <li class="cluster">
+                <a href={`/servers/${m.serverId}/`}>{m.server?.name ?? m.serverId}</a>
+                <code>{m.ipAddress ?? 'no address'}</code>
+                <Button variant="ghost" disabled={busy === n.id}
+                        aria-label={`Detach ${m.server?.name ?? m.serverId}`}
+                        onclick={() => detach(n, m.serverId)}>Detach</Button>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="text-sm text-muted">No servers on this network.</p>
+        {/if}
+
+        <div class="cluster">
+          {#if attachTo === n.id}
+            <label class="visually-hidden" for={`attach-${n.id}`}>Server to attach</label>
+            <Select id={`attach-${n.id}`} value={pickedSrv} placeholder="Pick a server…"
+                    options={unattached(n.id).map(s => ({ value: s.id, label: s.name }))}
+                    onchange={(e) => pickedSrv = e.target.value} />
+            <Button variant="primary" disabled={busy === n.id || !pickedSrv}
+                    onclick={() => attach(n)}>Attach</Button>
+            <Button variant="ghost" onclick={() => { attachTo = null; pickedSrv = '' }}>Cancel</Button>
+          {:else}
+            <Button variant="outlined" onclick={() => { attachTo = n.id; pickedSrv = '' }}>Attach a server</Button>
+            <Button variant="ghost" disabled={busy === n.id} onclick={() => remove(n)}>Delete</Button>
+          {/if}
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}

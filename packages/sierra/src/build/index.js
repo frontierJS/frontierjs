@@ -13,7 +13,9 @@
  * @module sierra/build
  */
 
-import { resolve } from 'path'
+import { resolve, isAbsolute } from 'path'
+import { existsSync } from 'fs'
+import { pathToFileURL } from 'url'
 import { mesaPlugin } from './mesa-plugin.js'
 import { devtoolsPlugin } from './devtools-plugin.js'
 import { scannerPlugin } from './scanner-plugin.js'
@@ -37,6 +39,11 @@ import { autoImportPlugin } from './auto-import-plugin.js'
  * @property {{ components?: string[] }} [autoImport]
  * @property {{ output?: string, environments?: object }} [manifest]
  * @property {object} [junction]
+ * @property {string} [db] — module exporting a Litestone client, used by the
+ *   `static` target to observe what a route's `load()` reads (FJS-081). The
+ *   module may default-export the client, or export it as `db` or `client`;
+ *   a function export is called and awaited. Without it, a `render: static`
+ *   route that reads data must declare `publishes:` in its frontmatter.
  * @property {object} [analytics]
  * @property {object} [vite]  — raw Vite overrides, merged last
  * @property {Array}  [plugins] — additional Vite plugins
@@ -305,6 +312,23 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
       isBuild = viteConfig.command === 'build'
     },
 
+    // What CSS this build emitted. A prerendered page is assembled by Sierra
+    // rather than by Vite's HTML transform, so nothing was linking the app's
+    // stylesheet into it: `target: 'static'` shipped pages carrying every
+    // @frontierjs/css class name and none of the rules. The bundle is only
+    // visible in an output hook — closeBundle has no access to it — so it is
+    // recorded here and read one hook later.
+    //
+    // writeBundle, not generateBundle: Vite's own CSS plugin emits the
+    // stylesheet in ITS generateBundle, which runs after this plugin's (plugin
+    // order), so reading the bundle a hook earlier saw an empty asset list and
+    // linked nothing, with no error to say so.
+    writeBundle(_opts, bundle) {
+      sierraContext.cssAssets = Object.values(bundle)
+        .filter((c) => c.type === 'asset' && c.fileName.endsWith('.css'))
+        .map((c) => c.fileName)
+    },
+
     async closeBundle() {
       if (!isBuild) return  // skip in dev server
 
@@ -337,15 +361,34 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
       // acting on it. An 'spa' build ignores the frontmatter exactly as before.
       if ((config.target ?? 'spa') === 'static') {
         const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+
+        // Static safety (FJS-081): a prerendered page is public, so the build
+        // has to be able to say what data went into it. The schema came from
+        // schemaPlugin earlier in this same build; the client is what lets the
+        // build OBSERVE a load()'s reads via $tapQuery. Without the client a
+        // route that reads data is refused rather than assumed safe — see
+        // build/static-safety.js.
+        const safetyDb = await resolveBuildDb(config, root)
+
         const pre = await prerenderRoutes({
           tree, root,
           routesDir: config.routesDir ?? 'src/routes',
           outDir,
           renderComponent,
+          schemaDefs:   sierraContext.schemaDefs,
+          schemaModels: sierraContext.schemaModels,
+          db:           safetyDb,
           // Islands are the only way a `target: 'static'` page can be
           // interactive — it ships no other script — so the marker pass is on
           // for this target rather than being another flag to find.
           islands: config.islands !== false,
+          // The document around the body: the app's own stylesheet, plus
+          // whatever `index.html` puts on <body> (a theme class, in every app
+          // in this repo). Neither reaches a prerendered page any other way.
+          stylesheets: (sierraContext.cssAssets ?? [])
+            .map((f) => (config.base ?? '/').replace(/\/$/, '') + '/' + f),
+          bodyClass: config.document?.bodyClass,
+          lang:      config.document?.lang,
           // Compile temp modules inside the app so a layout's bare imports
           // resolve from the app's node_modules, not Mesa's (Mesa SSR_SPEC W1).
           tmpDir: resolve(root, 'node_modules/.sierra/render'),
@@ -355,6 +398,13 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         if (pre.written.length > 0) {
           console.log(`\n  [Sierra] Prerendered ${pre.written.length} page(s):`)
           for (const f of pre.written) console.log(`    ✓ ${f}`)
+        }
+
+        // Print what the safety check proved. A rule whose passing case is
+        // invisible is a rule people assume is not running.
+        if (pre.safety?.report) {
+          console.log(`\n  [Sierra] Static safety — what each page may publish:`)
+          console.log(pre.safety.report)
         }
 
         // Islands: bundle what the prerendered pages actually used, then put a
@@ -406,6 +456,48 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         console.log()
       }
     },
+  }
+}
+
+/**
+ * Load the Litestone client the static-safety check taps (FJS-081).
+ *
+ * Config `db` names a module. Which export holds the client is not worth a
+ * second config key, so the conventional three are tried — default, `db`,
+ * `client` — and a function export is called, which covers the common
+ * `export default () => createClient(…)` factory.
+ *
+ * Every failure returns null rather than throwing. A missing or broken client
+ * does NOT make the build pass: it makes reads unobservable, and an
+ * unobservable route is refused by checkRoute unless it declares `publishes:`.
+ * Failing here instead would report "cannot import db.js" for what is really
+ * "this page might be leaking", which sends the reader to the wrong problem.
+ */
+async function resolveBuildDb(config, root) {
+  if (!config?.db) return null
+
+  const abs = isAbsolute(config.db) ? config.db : resolve(root, config.db)
+  if (!existsSync(abs)) {
+    console.warn(`  [Sierra] static safety: config.db '${config.db}' not found — reads cannot be checked`)
+    return null
+  }
+
+  try {
+    const mod = await import(pathToFileURL(abs).href + `?t=${Date.now()}`)
+    let candidate = mod.default ?? mod.db ?? mod.client ?? null
+    if (typeof candidate === 'function') candidate = await candidate()
+
+    if (!candidate || typeof candidate.$tapQuery !== 'function') {
+      console.warn(
+        `  [Sierra] static safety: '${config.db}' does not export a Litestone client ` +
+        `with $tapQuery — reads cannot be checked`
+      )
+      return null
+    }
+    return candidate
+  } catch (err) {
+    console.warn(`  [Sierra] static safety: could not load '${config.db}': ${err.message}`)
+    return null
   }
 }
 

@@ -18,7 +18,7 @@
   //   <FileUpload {files} progressMap={uploadProgress} multiple />
 
   import Field from './Field.mesa'
-  import { uid } from '../../utils.js'
+  import { uid, resolveError } from '../../utils.js'
 
   export let accept       = '*/*'     // MIME types e.g. 'image/*' or '.pdf,.doc'
   export let multiple     = false
@@ -86,7 +86,8 @@
     }
   }
 
-  const displayError = localError || error || errors?.[name] || ''
+  const form         = $context.form
+  const displayError = localError || resolveError(form, name, error, errors)
 </script>
 
 {#snippet dropzone()}

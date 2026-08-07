@@ -11,7 +11,7 @@
     "./components/*": "./components/*.mesa"
   },
   "scripts": {
-    "test": "node test/compile-all.mjs && node test/render.mjs",
+    "test": "node test/compile-all.mjs && node test/render.mjs && node test/form.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "peerDependencies": {

@@ -57,7 +57,16 @@ model User {
 }
 ```
 
-`before`/`after` snapshots are only included for single-row `update()` calls — not `updateMany()`.
+`before`/`after` snapshots are only included for single-row writes — `update()`, `delete()` and `remove()`. A bulk write records **which** rows it touched and **what** it did to them, never their contents:
+
+```js
+// db.widget.updateMany({ where: { state: 'draft' }, data: { state: 'live' } })
+{ operation: 'update', model: 'widget', records: [1, 2, 3], before: null, after: null, ... }
+```
+
+Every write path reaches the trail: `create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `remove`, `removeMany`, `delete`, `deleteMany` and `restore`. A bulk op on a logged model takes a `RETURNING` path so the entry can name the rows by id — an autoincrement id does not exist until SQLite assigns one — and `upsertMany` splits its batch into a `create` entry and an `update` entry, because it did both. `restore` logs as `update`: a restored row changed state, it was not created.
+
+An unlogged model pays none of this — the `RETURNING` path is taken only when the model declares `@log` / `@@log`.
 
 ## Protected fields are redacted
 
@@ -117,19 +126,19 @@ Log entries are queryable through the standard ORM API:
 
 ```js
 // All writes to users table
-const writes = await db.auditLog.findMany({
+const writes = await db.auditLogs.findMany({
   where:   { model: 'users' },
   orderBy: { createdAt: 'desc' },
   limit:   50,
 })
 
 // Writes by a specific actor
-const actorWrites = await db.auditLog.findMany({
+const actorWrites = await db.auditLogs.findMany({
   where: { actorId: 'user_abc', operation: { in: ['create', 'update', 'delete'] } }
 })
 
 // All changes to a specific record
-const history = await db.auditLog.findMany({
+const history = await db.auditLogs.findMany({
   where: {
     model:   'users',
     records: { $raw: sql`json_extract(records, '$[0]') = ${userId}` }

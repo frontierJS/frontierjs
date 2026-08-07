@@ -9,6 +9,12 @@
 // row into the audit trail and did — verified, a forged `forged.event` landed
 // with a real id. A trail anyone can write to answers no question worth asking.
 //
+// `methods: 'readOnly'` is now the whole statement. It used to be four
+// hand-written MethodNotAllowed stubs, one per verb — which worked, but only
+// for the verbs somebody remembered to write, and said nothing to /manifest or
+// the OpenAPI spec, both of which went on advertising create/patch/remove.
+// Junction FJS-004 / FJS-D07.
+//
 // The schema records the intent (`AuditEvent` update/delete are meant to be
 // LOCKED, which not even asSystem() passes), but no `@@gate` is installed yet,
 // so today the service is the only thing enforcing it.
@@ -23,7 +29,7 @@
 // Access is admin/owner. A trail that every member can read is a list of what
 // their colleagues have been doing.
 
-import { createService, MethodNotAllowed } from '@frontierjs/junction'
+import { createService } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, getPagination } from '../../core/hooks.ts'
 import { dbOf, wsOf } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -31,8 +37,9 @@ import type { ServiceContext } from '@frontierjs/junction'
 
 export function createAuditService(app: BasecampApp) {
   return createService({
-    name:  'audit',
-    model: 'AuditEvent',
+    name:    'audit',
+    model:   'AuditEvent',
+    methods: 'readOnly',
 
     async find(ctx: ServiceContext) {
       const { limit, offset } = getPagination(ctx, { limit: 50 })
@@ -57,13 +64,6 @@ export function createAuditService(app: BasecampApp) {
 
       return { total, limit, offset, data: rows }
     },
-
-    // 405, not 403: the method does not exist on this resource for anybody,
-    // which is a different statement from "you may not".
-    async create() { throw new MethodNotAllowed('The audit trail is append-only, and only the app appends to it') },
-    async patch()  { throw new MethodNotAllowed('Audit events cannot be edited') },
-    async update() { throw new MethodNotAllowed('Audit events cannot be edited') },
-    async remove() { throw new MethodNotAllowed('Audit events cannot be deleted') },
 
     hooks: {
       before: {

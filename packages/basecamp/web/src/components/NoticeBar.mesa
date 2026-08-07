@@ -1,0 +1,46 @@
+<script>
+  // NoticeBar.mesa — the condensed half of the mock's attention system.
+  //
+  // The mock renders a stack of hand-styled divs against T.red / T.amber /
+  // T.blue. Here a notice's priority is a TONE and the row is an `Alert` from
+  // @frontierjs/ui, so there is no colour in this file and none in the engine
+  // that produced the notice (repo invariant 13).
+  //
+  // Dismissal is local and deliberately not persisted: a notice is a statement
+  // about the fleet right now, so it comes back when the condition does. The
+  // mock behaves the same way, for the same reason.
+
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import { goto } from '@frontierjs/sierra/router'
+  import { PRIORITY_TONE } from '../notices.js'
+
+  export let notices  = []
+  export let max      = 3     // the shell shows the top few; the full list is the queue
+  export let heading  = ''    // '' renders no landmark label
+
+  let dismissed = []
+
+  // Derived, so a new notice arriving over the WebSocket re-renders the bar
+  // without anything here being told about it.
+  $: visible = notices.filter(n => !dismissed.includes(n.id)).slice(0, max)
+
+  function dismiss(id) {
+    // A new array, not a push: Mesa re-derives from the assignment.
+    dismissed = [...dismissed, id]
+  }
+</script>
+
+{#if visible.length}
+  <section class="stack" aria-label={heading || 'Needs attention'}>
+    {#each visible as n}
+      <Alert tone={PRIORITY_TONE[n.priority]} title={n.title} dismissible onclose={() => dismiss(n.id)}>
+        {n.detail}
+        {#if n.href}
+          <!-- An anchor, not a button: it goes somewhere, so it is a link and
+               middle-click and copy-link work. goto() keeps it client-side. -->
+          <a class="navlink" href={n.href} on:click={(e) => { e.preventDefault(); goto(n.href) }}>{n.action} →</a>
+        {/if}
+      </Alert>
+    {/each}
+  </section>
+{/if}

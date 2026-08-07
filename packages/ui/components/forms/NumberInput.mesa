@@ -22,7 +22,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid } from '../../utils.js'
+  import { nameToLabel, uid, resolveError } from '../../utils.js'
 
   // ── Core props ────────────────────────────────────────────────────────────
 
@@ -94,7 +94,8 @@
 
   // Server-error state. Client-side invalidity is `:user-invalid` in
   // @frontierjs/css and needs nothing here.
-  const hasError = !!(error || errors?.[name])
+  const form     = $context.form
+  const hasError = !!resolveError(form, name, error, errors)
 
   let inputEl
   export function focus() { inputEl?.focus() }

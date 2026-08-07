@@ -11,11 +11,27 @@ title: Home
   // the projects screen — that arrives in Phase 3.
   import { session } from '../session.js'
   import { projects } from '../resources/projects.mesa'
+  import { servers } from '../resources/servers.mesa'
+  import { deployments } from '../resources/deployments.mesa'
+  import { jobs } from '../resources/jobs.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import ActionQueue from '../components/ActionQueue.mesa'
+  import { computeNotices } from '../notices.js'
 
   const { get: rows, unsubscribe } = useStore(projects.store)
   $onDestroy(unsubscribe)
+
+  // The queue subscribes; it does NOT load. The shell already loaded these
+  // three for the notice bar and a resource store is a module singleton, so
+  // asking again here would be a second request for rows this page already
+  // has — and the WebSocket keeps them current either way.
+  const { get: srv, unsubscribe: unsubSrv } = useStore(servers.store)
+  const { get: dep, unsubscribe: unsubDep } = useStore(deployments.store)
+  const { get: jbs, unsubscribe: unsubJbs } = useStore(jobs.store)
+  $onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
+
+  $: notices = computeNotices({ servers: srv(), deployments: dep(), jobs: jbs() })
 
   $: (session.user, session.workspaceId, session.workspaces)
 
@@ -67,6 +83,10 @@ title: Home
     <div class="alert-content">{error}</div>
   </article>
 {/if}
+
+<!-- The mock's Basecamp home opens with the queue, and so does this one:
+     the first question an operator has is "what is broken", not "what exists". -->
+<ActionQueue notices={notices} />
 
 <div class="tiles" style="--tile-min: 16rem">
   <article class="card stack">

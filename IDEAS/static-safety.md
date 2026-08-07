@@ -1,10 +1,39 @@
 # Idea — Prove a static page is safe to publish
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-04. The prerenderer performs
-no authorization check of any kind. Do not cite this file as describing behavior —
-see `VERIFYING.md`.
+**Status: THE CHECK IS BUILT (2026-08-06). The classifier is not.** `FJS-081` is
+closed — `packages/sierra/src/build/static-safety.js`, wired into
+`build/prerender.js`, 39 tests plus `bun run test:safety` against a real
+Litestone client, exercised in `example/` (`bun run build:public`). See
+`packages/sierra/CHANGES.md`.
+
+**One premise in this file was wrong, and it mattered.** §What would have to be
+built item 1 says to track resource reads *during prerender*, because "the
+prerenderer knows which resources a route touched (it renders them)". It does
+not: a static route's data comes from `load()` in the `.meta.js` companion,
+before render, and arrives as a plain `data` prop. Nothing is read during render
+in any route in this repo, so a render-watcher would have observed an empty set
+and passed every page — a green check proving nothing. The read set is collected
+from litestone's `$tapQuery` around the companion instead, which also covers a
+`load()` that queries a Litestone client directly — the case no build-time
+analysis of the render could ever see.
+
+**Still unbuilt: the classifier** (§The other half, and item 5). The per-route
+table it wants is now produced as a by-product — `prerenderRoutes` returns
+`safety.rows` and the build prints it — but routes are still hand-annotated
+`render: static` rather than sorted into buckets. Do not cite that section as
+describing behaviour; see `VERIFYING.md`.
 
 ---
+
+## Sibling
+
+`server-only-boundary.md` is the same class one axis over — this file is
+authenticated **data** reaching a public artifact, that one is server **code**
+reaching a client bundle. Different inputs (models-and-gates vs the import
+graph), same shape of answer: compare two things the build already knows and
+fail rather than emit. They should share one reporting surface even though they
+are two checks, and together with 4.4b they are three answers from one
+traversal.
 
 ## The hole
 
@@ -64,6 +93,44 @@ check off globally — the point is that publishing gated data becomes a thing s
   before it is a security one — the page silently shows one arbitrary tenant's rows,
   or none).
 
+## The other half: classify the route, don't only check it
+
+**Added 2026-08-05.** The check above answers *may this route be static?* The same
+two inputs answer the larger question — *what kind of route is this?* — and that one
+retires a hand-annotation rather than adding a check.
+
+Today `render: static` is written by a person. It is a claim about data the framework
+already knows the answer to, so it is a claim that can be wrong (that is this file's
+whole subject) and one nobody can keep current as a schema changes. Sort every route
+into three buckets instead, from what is already known at build time:
+
+| Bucket | Condition | Consequence |
+| --- | --- | --- |
+| **prerenderable** | every model it reads gates at 0, no `@scoped` model, no per-viewer read | emit HTML at build |
+| **server-needed** | reads a gated or `@scoped` model outside an island | render per request, or move the read into an island |
+| **pure client** | reads no model at build time; all data arrives through `client:*` islands or `createResource` at runtime | ship the shell, hydrate nothing else |
+
+The declaration then becomes *checkable intent* rather than instruction: a route that
+says `render: static` and classifies as server-needed fails the build with the reason,
+and a route that says nothing gets the classification as its default. Same failure
+message, same comparison, one fewer thing to write by hand — and, unlike the check
+alone, it produces an artifact worth showing: a per-route table of what each page is
+allowed to be, which is also an input to `atlas` (`IDEAS/operational-edge.md`).
+
+**Astro, Next and Nuxt cannot derive this column.** They can see which route calls
+which loader; they cannot see what the loader is *permitted* to return, because the
+permission lives in a handler behind a fetch. The classification is downstream of
+authorization-as-data in exactly the way the check is.
+
+Two cautions, both inherited from above rather than new:
+
+- **Islands flip a route's bucket in the safe direction** and must be excluded from
+  the read set — an island fetches at runtime with the viewer's session. The island
+  seam already separates the two cleanly.
+- **`asSystem()` at build time defeats the classifier**, same as it defeats the
+  check. That is the case the per-route acknowledgement exists for; the classifier
+  should treat an acknowledged route as *declared*, never re-derive it.
+
 ## What would have to be built
 
 1. **Track resource reads during prerender.** The prerenderer composes the route with
@@ -76,6 +143,10 @@ check off globally — the point is that publishing gated data becomes a thing s
 4. **A per-route acknowledgement syntax** for the deliberate case (public content
    from a gated model read via `asSystem()` at build time, which is legitimate and
    will happen).
+5. **The classifier and its table** (section above) — the same read set and the same
+   `buildGate()` comparison, reported per route instead of thrown per violation.
+   Worth building second: a check nobody has run is a rule nobody trusts, and the
+   table is what makes it legible.
 
 ## Open questions
 
@@ -98,6 +169,8 @@ check off globally — the point is that publishing gated data becomes a thing s
 ## See also
 
 - `IDEAS/compliance-from-the-seed.md` — the same declarations, read for audit
+- `IDEAS/operational-edge.md` — `atlas`, which the per-route classification feeds
+- `IDEAS/one-mental-model.md` §6 — the target axis the classification is a property of
 - `IDEAS/package-map.md` — where a shared gate-reader would live
 - `packages/sierra/src/build/prerender.js` — the build step this attaches to
 - `packages/sierra/src/junction/field-rules.js` — `buildGate()` / `canAtLevel()`

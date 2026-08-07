@@ -1,5 +1,38 @@
 # Changes — @frontierjs/auth
 
+## 2026-08-06 — `cookieAuth: true` actually authenticates
+
+74 tests (was 70).
+
+The cookie was set correctly all along — `session=…; HttpOnly; SameSite=Lax`,
+`Max-Age` derived from `sessionTtl`. Nothing read it back. Junction's
+`extractToken()` looked at `authorization: Bearer` and `x-api-key` only, so
+`ctx.user` was never resolved from a cookie and a cookie-only request to any
+protected route — including this plugin's own `GET /auth/me` — was 401. Login
+and logout worked, because those go through this package's own `extractToken`,
+which has always had a `ctx.cookies?.session` fallback. Everything in between
+did not. `ISSUES.md` FJS-002.
+
+**The plugin now declares the mode**, in `register()`:
+
+```ts
+if (cookieAuth) app.http?.setAuthCookie?.('session')
+```
+
+That is deliberately here rather than asked of the app. Junction keeps cookie
+reading off by default — a Bearer token cannot be forged cross-site, a cookie
+travels automatically, so the CSRF exposure is opt-in — and if the app had to
+enable it *separately* from `cookieAuth: true`, the half-configured state would
+be exactly the bug above: cookie set, cookie ignored. One switch.
+
+`SameSite=Lax` is what makes the mode safe once on, and this package was already
+setting it: the browser withholds the cookie from cross-site writes.
+
+The marker test flipped. `KNOWN GAP: a cookie alone does not authenticate a
+request` (asserting 401) is now `a cookie alone authenticates a request`
+(asserting 200), plus four covering no cookie, a garbage cookie, the emptied
+cookie a logout leaves, and Bearer-beats-cookie precedence.
+
 Applied during the 2026-07-25/26 FrontierJS pass. Baseline was the archive dated
 2026-05-07.
 

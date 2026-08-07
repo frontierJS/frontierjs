@@ -375,6 +375,34 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
           const ok = await caravan.cancel(id)
           return Response.json({ ok })
         })
+
+        // Run a registered job NOW, by name.
+        //
+        // The admin surface could retry a job and cancel a job but not START
+        // one, so the only way to exercise a nightly sweep was to wait until
+        // 03:00 — which means a cron handler's behaviour is untestable and, in
+        // an incident, unrunnable. "Run the sweep now" is the ops verb this was
+        // missing.
+        //
+        // POSTed to a NAME, not an id: an id is a job that already exists.
+        // The body, if any, becomes the job's data — the same shape dispatch()
+        // takes — so a scheduled handler that reads a parameter can be given a
+        // different one by hand. Refuses an unregistered name rather than
+        // queueing a job no worker will ever pick up.
+        appRouter.post(`${basePath}/run/{name}`, async (ctx: unknown) => {
+          const c = ctx as Record<string, unknown>
+          guard(c)
+          const name = (c.params as Record<string, string>)?.name
+          if (!handlers.has(name))
+            deny(404, `No handler registered for '${name}'`)
+
+          // TransportContext.body is already parsed by the transport — there is
+          // no request to read here, and awaiting one would hang.
+          const data = (c.body && typeof c.body === 'object') ? c.body : {}
+
+          const id = await caravan.dispatch(name, data)
+          return Response.json({ ok: true, id })
+        })
       }
     },
 

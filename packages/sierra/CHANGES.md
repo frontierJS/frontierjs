@@ -1,5 +1,184 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-06 — `@version` works from the browser, not just at the boundary
+
+805 tests (was 789). Closes `FJS-105`.
+
+Litestone shipped optimistic concurrency the same day: a patch on a `@version`
+model that does not carry the version it read is refused, and one carrying a
+version that moved is a 409. `x-version` named the column in the JSON Schema and
+**`createResource` read none of it** — so every patch on such a model 400'd until
+an app threaded the column by hand. The framework was enforcing a guarantee its
+own client could not satisfy.
+
+`createResource` now remembers the version of every record it reads — `get`,
+`find`, `load()`, `create`, and each patch response — and puts it on the next
+patch. Two details decided the shape:
+
+- **Kept per record, not read off `store`.** A form usually loads one record with
+  `get()`, which does not populate the list store at all.
+- **`load()` needed its own call.** It goes through `junctionResource` rather than
+  `_call`, so it saw none of this — and a list whose rows cannot be patched is the
+  same bug wearing a different hat.
+
+A caller-supplied version still wins — that is someone doing their own
+concurrency control. With nothing remembered the patch goes up *without* one and
+the server refuses, which is better than inventing a number that would silently
+win a race. `resource.version(id)` and `.versionField` expose it.
+
+### A 409 could not say which kind of 409 it was
+
+Litestone throws two, and they want opposite words. `VersionConflictError` and
+`TransitionConflictError` are races — re-read and re-apply. `TransitionViolationError`
+is a domain refusal, and *its own message* is the right thing to show; telling
+someone to retry a move that will never be legal is worse than saying nothing.
+
+The flag already existed on the litestone classes and stopped at the boundary.
+Junction's `toFrameworkError` now adopts `retryable` and `FrameworkError.toJSON`
+serializes it, so both transports land it at `err.data.retryable`.
+`isStaleWrite(err)` reads it and `toFieldErrors` returns
+
+> This record changed while you were editing it. Reload to see the current
+> version, then try again.
+
+instead of a column name and two integers. A non-retryable 409 keeps its own
+message, and a per-field 400 is untouched.
+
+Verified end to end rather than against a mock — a real litestone update behind a
+real route, over a real HTTP round-trip, with the browser client's error shape
+rebuilt from the response body: 409 retryable → the sentence, 409 non-retryable →
+its own message, 400 → the required-version explanation, success → version 1 → 2.
+
+## 2026-08-06 — a prerendered page must prove it is safe to publish
+
+789 tests (was 755), plus `bun run test:safety` — 5 checks against a real
+Litestone client. Typecheck clean.
+
+`render: static` emitted HTML at build time. Every model declares who may read
+it. **Nothing connected the two**, so a static route whose `load()` read a model
+gated at level 4 wrote that data into a public file — then served, CDN-cached
+and indexed, with no warning and no way back. Two correct features, combined the
+obvious way. `ISSUES.md` FJS-081.
+
+The prerenderer now collects each route's read set and refuses to emit a page
+whose data outranks what the route declares:
+
+```
+✗  src/public-site/catalog/index.mesa — render: static
+   reads `Invoice`, which is @@gate read 4 — level 4 required to read.
+   A prerendered page is public: whatever it contains is served to anyone,
+   cached by a CDN and indexed, and cannot be recalled.
+
+   Change the route to `render: spa`, move the data into a client:* island,
+   or — if this data really is meant to be public — say so in the route:
+
+       publishes: 4
+```
+
+### The read set does not come from the render
+
+`IDEAS/static-safety.md` proposed watching the render, on the grounds that "the
+prerenderer knows which resources a route touched (it renders them)". **It does
+not.** A static route's data comes from `load()` in the `.meta.js` companion,
+*before* render, and arrives as a plain `data` prop. Watching the render would
+have observed an empty set and passed everything — a green check proving
+nothing, which is worse than no check.
+
+It comes from litestone's `$tapQuery` instead, wrapped around the companion.
+That also covers the case a build-time analysis structurally cannot see: a
+`load()` that imports a Litestone client directly and queries it, which is how a
+real app is written.
+
+One thing only running it could settle: **the tap reports the TABLE name
+(`product`) and `$defs` is keyed by the MODEL name (`Product`)**. `modelNameFor()`
+already owns that resolution, so it resolves through it rather than
+lower-casing by hand.
+
+### Fail closed, with a written escape
+
+A route whose reads cannot be *observed* is not a route known to be safe, so it
+is refused rather than assumed clean. The only way past is per-route, in the
+frontmatter — never a global flag — so publishing gated data is something
+somebody wrote down and a reviewer sees in the diff:
+
+```
+---
+render: static
+publishes: 4
+---
+```
+
+Absent, the bar is 0. `publishes: true` is **refused**: `Number(true)` is 1, so
+coercing it would have accepted "level 1" and turned the check off by accident.
+
+### A fail-open hole in the first version of this, found by running it
+
+`importCompanion` swallows an import error and returns null, so a `.meta.js`
+that *throws on import* looked identical to a route with no companion and was
+waved through as "reads nothing". Found in `example/`, not by reading — the
+first `bun run build:public` ran under Node, the companion's db import died on
+`bun:sqlite`, and the page was emitted anyway. A companion that exists but could
+not be read is now UNKNOWN, which is the case the check exists to refuse.
+
+### Also
+
+- New config key `db` — a module exporting the Litestone client the build taps.
+  Every failure to load it returns null rather than throwing, because "cannot
+  import db.js" would send the reader at the wrong problem; the route is then
+  refused for being unobservable, which is the real one.
+- No `.lite` schema means no gates, so the check stands down entirely. A Sierra
+  app with no database is unaffected.
+- The build prints what it PROVED, not only what it rejected — a rule whose
+  passing case is invisible is one people assume is not running.
+- **Sharp edge:** the build's `$defs` come from `db/schema.lite`, which can be
+  narrower than what the app composes at runtime. In `example/`, auth's `User`
+  is appended by `authSchemaFragments()` and so is not in the build's view — a
+  static route reading it is refused as *unknown gate* rather than *gate 8*.
+  Both refuse; only the wording differs.
+
+Exercised for real in `example/`: `bun run build:public` prerenders `/catalog/`
+from the live database and reports `/catalog/ 0 Product(0)`. Point its `load()`
+at a gated model and the build exits 1.
+
+## 2026-08-06 — the payload pipeline is on by default, and a thrown value has an unwrapper
+
+755 tests (was 742).
+
+**`coerce`, `blankToNull` and `validate` now default ON** for
+`createResource`. Each was opt-in, and each answers something the DOM does that
+the schema has already said no to:
+
+- every control hands back a string, including `<input type="number">`, so a
+  Float field arrived as `"42"`
+- an untouched text box submits `''`, which SQLite does not treat as the NULL a
+  nullable column wants — `String? @unique` accepts any number of NULLs and
+  rejects a second `''`
+- and without the check, the first "no" is a 400 you still have to map
+
+The evidence they were the wrong default is that every app in the repo set all
+three: all three resources in `example/`, and eight of the nine in
+`packages/basecamp` (the two that did not are read-only). Those flags are now
+deleted from both — a flag every app turns on is a default. Off is
+`{ validate: false }`, and the test is `!== false` rather than `?? true`, so a
+prop threaded through a component that never set it reads as "not stated"
+instead of silently disarming the check.
+
+This is also what makes `<Form>` in `@frontierjs/ui` correct with nothing
+declared but a resource: the form does not validate, the resource does, and the
+form only renders what came back.
+
+**New: `toFieldErrors(err)` in `field-rules.js`, and `resource.fieldErrors(err)`.**
+A failed write arrives in one of three shapes, because each hop adds a wrapper:
+`err.errors` (ResourceValidationError — the browser said no), `err.data.data`
+(a server 400 as the browser client throws it) and `err.data` (the same list
+one wrapper shallower). It returns `{ fields, message }` — `fields` keyed for
+`<Field errors={…}>`, `message` the form-level line, empty when the failure was
+entirely per-field so a form does not say everything twice.
+
+One owner for that translation, in the leaf module, so a form does not need to
+know which shape it is unwrapping and there is nowhere for a second copy to
+drift. 10 tests.
+
 ## 2026-08-04 — compiler errors now fail the transform
 
 742 tests. `mesa-plugin` read `ctx.analysis.warnings` and never

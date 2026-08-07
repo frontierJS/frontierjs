@@ -252,6 +252,19 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       continue
     }
 
+    // ── @version — readOnly everywhere, present in update ───────────────────
+    // A caller never chooses the value: create writes 1, every write bumps it.
+    // But an update must CARRY the one it read, so unlike a computed field it
+    // stays in the update schema — readOnly so a generated form round-trips it
+    // instead of rendering a number input, and never required on create.
+    if (field.attributes.some(a => a.kind === 'version')) {
+      if (mode !== 'create') {
+        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
+        properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': 'version' }
+      }
+      continue
+    }
+
     const isComputed  = field.attributes.find(a => a.kind === 'computed')
     const isGenerated = field.attributes.find(a => a.kind === 'generated' || a.kind === 'funcCall')
     if (isComputed || isGenerated) {
@@ -363,6 +376,12 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
 
   // Annotate models with row-level policies so Junction knows to enforce them
   if (hasPolicies) result['x-litestone-policies'] = true
+
+  // ── x-version ──────────────────────────────────────────────────────────────
+  // Names the column an update must carry back. One string, so a client knows
+  // which field to round-trip without scanning properties for a readOnly Int.
+  const versionField = model.fields.find(f => f.attributes.some(a => a.kind === 'version'))
+  if (versionField) result['x-version'] = versionField.name
 
   // ── x-gate ─────────────────────────────────────────────────────────────────
   // Emitted when the model has @@gate — structural metadata, emitted on all modes.

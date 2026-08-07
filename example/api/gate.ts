@@ -44,6 +44,27 @@ import { LEVELS }           from '@frontierjs/litestone'
 type Gradable = { role?: string } | null | undefined
 
 export function shopGateLevel(user: Gradable): number {
-  if (user?.role === 'admin') return LEVELS.ADMINISTRATOR   // 5
+  if (user?.role === 'system') return LEVELS.SYSADMIN        // 7 — see SYSTEM below
+  if (user?.role === 'admin')  return LEVELS.ADMINISTRATOR   // 5
   return sessionGateLevel(user)
 }
+
+/**
+ * The principal background work runs as.
+ *
+ * A Caravan job has no session — nobody is making the request. Junction's
+ * in-process caller defaults to `auth: { user: null }`, which grades STRANGER(0)
+ * here, so `book-courier` writing back through the orders service was refused by
+ * the model's own `@@gate` exactly as an anonymous browser would be. Correct, and
+ * the reason it must be said out loud rather than worked around: the alternative
+ * is the job reaching for `db.asSystem()` and writing at the DATA boundary, where
+ * nothing announces the change and no tab ever hears about it.
+ *
+ * So background work gets a principal, and it is graded in the same file every
+ * other principal is graded in. `api/jobs/*.job.ts` pass it as
+ * `app.service('orders').patch(id, data, { auth: { user: SYSTEM } })`.
+ *
+ * It is NOT a row in the users table and cannot log in — nothing issues a
+ * session with this role, so it is unreachable from the wire.
+ */
+export const SYSTEM = { role: 'system', userId: 'system', email: 'system@shop.test' }

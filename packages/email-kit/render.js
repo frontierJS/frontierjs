@@ -1,11 +1,11 @@
 /**
- * @frontierjs/mesa-email/render
+ * @frontierjs/email-kit/render
  *
  * Convenience wrappers around @frontierjs/mesa renderComponent / renderFile
  * pre-configured for email output.
  *
  * Usage:
- *   import { renderEmail, renderEmailFile } from '@frontierjs/mesa-email/render'
+ *   import { renderEmail, renderEmailFile } from '@frontierjs/email-kit/render'
  *
  *   // From a source string
  *   const result = await renderEmail(source, {
@@ -21,12 +21,17 @@
  *
  *   result.html     — complete <!DOCTYPE html> email document with inlined CSS
  *   result.text     — plain-text fallback (auto-derived from HTML)
- *   result.subject  — from `export const subject = ...` in <script module>
+ *   result.subject  — from `export const subject = ...` in <script module>.
+ *                     May be a FUNCTION of the same data the body renders from,
+ *                     for the common case of a subject that names the record:
+ *                     `export const subject = (d) => \`Order \${d.reference}\``.
+ *                     It comes back exactly as exported — apply it yourself. The
+ *                     document's <title> uses it only when it is a string.
  *   result.css      — collected CSS before inlining (for debugging)
  *
  * Auto-import:
  *   Pass `autoImport: true` to resolve component imports relative to
- *   @frontierjs/mesa-email/components automatically — no import statements needed
+ *   @frontierjs/email-kit/components automatically — no import statements needed
  *   in templates that only use kit components.
  */
 
@@ -47,9 +52,17 @@ async function getMesaRender() {
 
   const candidates = [
     // Sibling in the monorepo layout (dev) — try first, so an edit to
-    // packages/mesa is picked up rather than a stale install.
-    new URL('../mesa/render-component.js', import.meta.url).pathname,
-    new URL('../../mesa/render-component.js', import.meta.url).pathname,
+    // packages/mesa is picked up rather than a stale install. `bun install`
+    // resolves workspace:* to a COPY, so this is a real defence and not a
+    // micro-optimisation.
+    //
+    // The path is `mesa/src/…`: mesa keeps its sources under src/ and maps them
+    // through `exports`. These candidates used to name `mesa/render-component.js`
+    // — the pre-src layout — so BOTH sibling probes missed, and under Vite the
+    // miss was fatal rather than a fall-through (see the notFound test below).
+    // Every one of this package's 34 tests failed on it.
+    new URL('../mesa/src/render-component.js', import.meta.url).pathname,
+    new URL('../../mesa/src/render-component.js', import.meta.url).pathname,
     // The installed peer dep. This is the only candidate that works when the
     // package is consumed from npm, where there is no sibling `../mesa/` — its
     // absence meant an installed consumer always hit the error below, however
@@ -73,8 +86,14 @@ async function getMesaRender() {
       }
       failures.push(`${c}: loaded but exports no renderComponent`)
     } catch (err) {
+      // Node says ERR_MODULE_NOT_FOUND / "Cannot find module". A bundler says
+      // it differently — Vite and vitest report a missing file as
+      // `Failed to load url … Does the file exist?` with no code — and reading
+      // only Node's phrasing turned a missing candidate into a rethrow, so the
+      // loop never reached the candidate that works.
       const notFound = err?.code === 'ERR_MODULE_NOT_FOUND' ||
-                       /Cannot find (module|package)/.test(err?.message ?? '')
+                       /Cannot find (module|package)/.test(err?.message ?? '') ||
+                       /Failed to load url/.test(err?.message ?? '')
       // A module that exists but throws is a real error, not a missing dep.
       if (!notFound) throw err
       failures.push(`${c}: not found`)
@@ -82,14 +101,14 @@ async function getMesaRender() {
   }
 
   throw new Error(
-    '[@frontierjs/mesa-email] @frontierjs/mesa is required as a peer dependency. ' +
+    '[@frontierjs/email-kit] @frontierjs/mesa is required as a peer dependency. ' +
     'Install it: npm install @frontierjs/mesa\n  Tried:\n    ' +
     failures.join('\n    ')
   )
 }
 
 /**
- * Inject @frontierjs/mesa-email/components as the default cwd so templates
+ * Inject @frontierjs/email-kit/components as the default cwd so templates
  * can import kit components with relative paths without specifying an absolute path.
  *
  * If the caller provides a cwd, we use that — it's likely where their
@@ -161,7 +180,7 @@ function expand(result) {
  * @param {object} options
  * @param {object}  [options.data={}]     — Props to pass to the component
  * @param {string}  [options.cwd]         — Working directory for import resolution
- *                                          Defaults to mesa-email/components so kit
+ *                                          Defaults to email-kit/components so kit
  *                                          component imports resolve automatically.
  * @param {string}  [options.filename]    — Source filename for error messages
  * @param {boolean} [options.preserveMediaQueries=true]

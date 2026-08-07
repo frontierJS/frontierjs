@@ -29,7 +29,7 @@
 
 import type { App, Plugin }      from '../../core/app.ts'
 import type { CompiledSchema, Schema, FieldDef } from '../../core/schema.ts'
-import { customMethodNames }     from '../../core/service.ts'
+import { customMethodNames, isMethodAllowed } from '../../core/service.ts'
 
 // ─── Options ──────────────────────────────────────────────────────────────
 
@@ -405,7 +405,9 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions): OASpec {
     // so "is this an action?" is decided by core/service.ts — this was a local
     // copy of the reserved-key set that had drifted (it omitted `update` and
     // `_update`, so both were documented as custom actions on every service).
-    const customMethods = customMethodNames(service)
+    // Policy-filtered: a documented endpoint that answers 405 is worse than an
+    // undocumented one, because a generated client will call it.
+    const customMethods = customMethodNames(service).filter(m => isMethodAllowed(service, m))
     // Custom actions — dispatched via X-Service-Method header on POST /{id}.
     // Each action gets its own path entry for Swagger UI discoverability.
     // The path slug is documentation-only; the wire format uses the header.

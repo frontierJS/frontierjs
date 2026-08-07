@@ -12,8 +12,39 @@ siteName: Kitchen sink
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
+  import DropdownItem   from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownMenu   from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
   import { toasts }         from '@frontierjs/ui/stores/toastStore.js'
+
+  import { notifications, isUnread } from '../resources/notifications.mesa'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  // The bell. `notifications` is a resource like any other, and the store is
+  // fed by the same WS events every other table uses — the inApp driver
+  // publishes to `notifications:user:<id>`, api/app.ts joins a signed-in
+  // connection to it, and nothing here polls.
+  const { get: notes, unsubscribe: unsubNotes } = useStore(notifications.store)
+  $onDestroy(unsubNotes)
+
+  // Reload on sign-in and sign-out, not once at mount: the list is scoped to
+  // the caller by the model's own row policy, so a session change is a
+  // different list. Signed out it is empty and the bell does not render.
+  // A block, not a bare `if` — Mesa's `$:` takes an expression or a block, and
+  // the compiler says so by name rather than emitting something that half works.
+  $: { if (session.level > 0) notifications.load().catch(() => {}) }
+
+  $: unread = notes().filter(isUnread).length
+
+  async function openNote(note) {
+    // Marking read is a patch of one field — `readAt` is the only thing the
+    // service accepts, and the model's @@allow('update') is what stops it being
+    // somebody else's row.
+    if (isUnread(note)) await notifications.service.patch(note.id, {}).catch(() => {})
+    const url = note.data?.action?.url
+    if (url) goto(url)
+  }
 
   $: (page.siteName, page.route)
   $: (status.connected, session.level, session.email, session.role, session.error)
@@ -104,6 +135,25 @@ siteName: Kitchen sink
       </Button>
 
       {#if session.level > 0}
+        <DropdownMenu>
+          {#snippet trigger()}
+            <Button variant="ghost" id="bell" aria-label="Notifications">
+              🔔{#if unread}<Badge tone="danger" id="bell-count">{unread}</Badge>{/if}
+            </Button>
+          {/snippet}
+
+          {#each notes() as note}
+            <DropdownItem
+              tone={isUnread(note) ? 'info' : ''}
+              kbd={isUnread(note) ? 'new' : ''}
+              onclick={() => openNote(note)}
+            >{note.data?.title ?? note.type} — {note.data?.body ?? ''}</DropdownItem>
+          {/each}
+          {#if !notes().length}
+            <DropdownItem disabled>Nothing yet</DropdownItem>
+          {/if}
+        </DropdownMenu>
+
         <Badge tone="info">{session.email} · level {session.level}</Badge>
         <!-- A kit component takes its handler as a PROP (`onclick`), not as
              `on:click` — that directive belongs to elements. -->

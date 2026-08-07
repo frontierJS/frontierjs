@@ -22,6 +22,51 @@ export function uid(prefix = 'id') {
 }
 
 /*
+ * ── Form context ─────────────────────────────────────────────────────
+ *
+ * A control under <Form> can learn two things from it without being handed
+ * them: its own server error, and its own rules from db/schema.lite. Both
+ * resolvers take the consumed `$context.form` — the read itself has to happen
+ * in the component (Mesa RULE 25: provides and consumes are top level) — and
+ * both treat an absent form as "nothing to add", so every control still works
+ * standing on its own.
+ *
+ * An explicitly-passed prop always wins. That is what keeps the form context
+ * an affordance rather than a thing you have to fight.
+ */
+
+/**
+ * The message to show under a control.
+ * Order: the `error` prop, then an `errors` map passed directly, then the
+ * enclosing form's map. First hit wins; '' when there is nothing to say.
+ */
+export function resolveError(form, name, error, errors) {
+  return error || errors?.[name] || (name ? form?.errors?.[name] : '') || ''
+}
+
+/**
+ * The field's rule object from the schema — `{ type, required, maxLength,
+ * title, enum, format, … }` as buildFieldRules() emits it — or null when there
+ * is no form, no name, or no schema behind it.
+ */
+export function resolveRule(form, name) {
+  if (!name) return null
+  return form?.fields?.[name] ?? null
+}
+
+/**
+ * Pick the first value that was actually stated.
+ *
+ * `undefined` means "not stated" and everything else is a real answer,
+ * including `false` and `0` — so `required={false}` beats a schema that says
+ * required, and `??` is the operator rather than `||`.
+ */
+export function stated(...values) {
+  for (const v of values) if (v !== undefined && v !== null) return v
+  return undefined
+}
+
+/*
  * ── Tones ────────────────────────────────────────────────────────────
  *
  * @frontierjs/css has exactly seven tones, and a tone is one free-standing

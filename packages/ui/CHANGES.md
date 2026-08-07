@@ -2,6 +2,110 @@
 
 Newest first.
 
+## 2026-08-06 (later) — `<Form>` in a real browser, and three defects it found
+
+`example/web/src/routes/orders/create.mesa` was rewritten onto `<Form>`. About
+90 lines went: `errors` / `shown` / `typed` / `visible`, a `check()`, an
+`onInput`, an `onLeave`, a `saving` flag, a `failed` string, and a `save()` that
+coerced, validated, revealed everything and unwrapped a
+`ResourceValidationError` by hand. All of it was correct and none of it was
+about orders. `bun run verify` is **37/37 in dev and in the production build**.
+
+**`<Form>` gained the live-validation rule**, because the page had it and it is
+not app-specific. One rule: *on input an error may only be removed, never
+revealed.* A field is revealed by leaving it having typed in it, or by
+submitting; input then re-checks a field that is already speaking, so a bad
+value goes red on blur and quiet again on the keystroke that fixes it. Client
+and server messages are kept apart — a server message survives until its own
+field is edited, a live one wins where both exist. `validateOn` is
+`'blur'` (default) / `'input'` / `'submit'`.
+
+Implementation note: the reveal listener is **`blur` in the capture phase**, not
+`focusout`. Capture runs root-to-target regardless of whether the event bubbles,
+so one listener on the `<form>` sees a `blur` that by definition does not.
+
+### Three defects, all found by running it
+
+**A component cannot expose a method** — `ISSUES.md` FJS-087. `export function
+submit()` is dropped from Mesa's output entirely, so `<Form>`'s own
+`on:submit={submit}` threw `ReferenceError` on the first click. The documented
+workaround is worse: `export let submit = async () => {…}` emits
+`$runtime.get(sig) = true` for each assignment in the body and does not parse.
+**No render test could have caught the first half** — SSR never dispatches an
+event. `<Form>` hands its API out through an `onready` callback until this is
+fixed, and several components in this package document `bind:this` methods that
+do not exist.
+
+**An unpicked relation picker selected the first row** — FJS-075, open since
+before 2026-08-05. `Select`'s placeholder `<option>` was `disabled`, and a
+disabled option cannot hold the selection: a select whose options arrive late —
+which is every relation picker — lost the placeholder the moment the list
+repopulated and landed on the first real row. An unpicked "customer" became
+customer #1 and the order was filed against them with nothing on screen saying
+so. The placeholder is no longer disabled.
+
+**A control shadowed the schema's `@label`** — FJS-077, second half. `Select`
+and `Textarea` computed `nameToLabel(name)` and passed it to `<Field>` as an
+explicit label, so a rule's `title` could never win and `@label("Customer")`
+rendered as "Customer Id". Both now pass `label={label || undefined}` and let
+`Field` resolve once. Every other control that wraps `Field` still has it.
+
+## 2026-08-06 — `<Form>`, and the schema reaching the control that needs it
+
+**New: `components/forms/Form.mesa`.** The form state machine, derived rather
+than declared. `<Form {resource}>` owns in-flight state, dirty tracking,
+double-submit refusal and the map from a failed write to a per-field message —
+the four things every app wrote by hand, of which the fourth was usually
+skipped.
+
+```html
+<Form {leads} ondone={r => goto(`/leads/${r.id}`)}>
+  <Input name="name" />
+  <Input name="email" />
+  <Button type="submit">Save</Button>
+</Form>
+```
+
+Nothing there says what a Lead is. `createResource('leads')` read that from
+`db/schema.lite`, and the form puts the rules and the error map in
+`$context.form` so each control resolves its own.
+
+**Nine components now read that context**, and an explicitly-passed prop always
+beats it, so every one still works standing alone:
+
+- **`Field`** — the error message, and `required` / the label from the schema
+  (`@label` arrives as the rule's `title`).
+- **`Input`** — the error, plus `type` from the column (`format: email` →
+  `type="email"`, a numeric column → `type="number"`), `maxlength`/`minlength`
+  from `@length`, `min`/`max` from `@gte`/`@lte`. `date-time` is deliberately
+  NOT mapped: Litestone stores a zone and `datetime-local` neither accepts nor
+  emits one, so the round trip would shift the time silently.
+- **`Textarea`, `Select`, `NumberInput`, `Combobox`, `MultiSelect`,
+  `FileUpload`** — the error, which they already forwarded to `Field`; what was
+  missing was their own `aria-invalid`, computed locally from a map they were
+  never given.
+- **`Button`** — `type="submit"` disables and spins while the form is in
+  flight. Scoped to submit on purpose: the Cancel beside it has to stay live.
+
+**`novalidate` is on by default.** Kit controls put a real `required` on the
+input, so the browser refused to fire submit and showed its own bubble instead
+— not the schema's sentence, not where the layout expected it, and silently,
+which reads as a broken submit handler. Turning the native UI off is what lets
+the schema own the messages; the constraint attributes stay for assistive tech.
+
+**The error map is not built here.** A failed write arrives in one of three
+shapes; unwrapping it is one translation with one owner, sierra's
+`toFieldErrors`, reached as `resource.fieldErrors(err)`. Without a resource
+`<Form>` degrades to a form-level message rather than carrying a second copy —
+pass `mapErrors` to supply your own.
+
+New: `utils.js` gains `resolveError` / `resolveRule` / `stated`. `stated()`
+exists because `required={false}` has to beat a schema that says required, so
+the resolution is `??` over "was anything said", not `||` over truthiness.
+
+Tests: `test/form.mjs`, 7 cases — 64/64 compile, 25/25 render, and `example`'s
+`verify:ui` still 26/26 in a browser.
+
 ## 2026-08-04 — the overlay and form families, in a browser at last
 
 `example/` grew four screens built to drive the components a render test

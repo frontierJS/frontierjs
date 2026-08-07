@@ -29,7 +29,7 @@ Read `docs/BLOCK_TEARDOWN_PASS.md` and `docs/REACTIVITY_PASS.md` before changing
 |---|---|---|
 | `@frontierjs/mesa` | `./mesa/` | Core compiler, runtime, REPL, render pipeline |
 | `@frontierjs/mesa-vite` | `./mesa/mesa-vite/` | Vite plugin — HMR, devtools, dev client |
-| `@frontierjs/mesa-email` | `packages/email-kit/` | Email component kit. **Arrived 2026-08-03.** The skipped `email-kit.test.js` that needed it is deleted — it was all 27 of this package's skipped tests. |
+| `@frontierjs/email-kit` | `packages/email-kit/` | Email component kit. **Arrived 2026-08-03.** The skipped `email-kit.test.js` that needed it is deleted — it was all 27 of this package's skipped tests. |
 | `@frontierjs/ui` | `packages/ui/` | Component kit over `@frontierjs/css`, 63 components. **Promoted out of `packages/mesa/ui-v2/` on 2026-08-03** and restyled; `packages/mesa/ui/` (the older 4: Badge, Button, Card, Input) was deleted in the same move. |
 
 Monorepo layout — this is the pre-monorepo layout and no longer matches the
@@ -40,7 +40,7 @@ frontierjs/packages/
   ui/             @frontierjs/ui          ← real, since 2026-08-03
   css/            @frontierjs/css
   sierra/         @frontierjs/sierra
-  email-kit/      @frontierjs/mesa-email   ← real, since 2026-08-03
+  email-kit/      @frontierjs/email-kit   ← real, since 2026-08-03
 ```
 
 ---
@@ -65,11 +65,11 @@ frontierjs/packages/
 | Effect phase | 5 | `test/effect-phase.test.js` |
 | **Total** | **946** | |
 
-Run: `npx vitest run` → **946 pass / 0 fail / 0 skipped** across 15 files
+Run: `bun run test` → **1015 pass / 0 fail / 0 skipped** across 16 files
 (verified 2026-08-04).
 
 Nothing is skipped any more. The 27 that were are gone with `email-kit.test.js`,
-deleted on 2026-08-03: it rendered 14 `.mesa` files from `@frontierjs/mesa-email`
+deleted on 2026-08-03: it rendered 14 `.mesa` files from `@frontierjs/email-kit`
 through an absolute `/tmp/mesa/email` path, and that kit now lives at
 `packages/email-kit` with a real 34-test suite of its own. Restyling and
 rendering it also fixed four defects in this package's `htmlToText`
@@ -217,7 +217,7 @@ Key details:
 
 ---
 
-## @frontierjs/mesa-email
+## @frontierjs/email-kit
 
 22 components in `components/`:
 Email, Section, Row, TwoCol, Column, Spacer, Heading, Text, Button, Image, Link, Divider, Card, KeyValue, DataTable, Stars, Avatar, Review, Contact, Address, Header, Footer
@@ -279,39 +279,28 @@ invalid JS; `{@const}` inside `{#each}` calls the loop index as a getter; and
 
 ---
 
-## Known Issues / Backlog
+## Known Issues / Backlog — see `ISSUES.md`
 
-- **`mesa-vite` has no tests at all**, and its HMR id-normalisation fix has never been
-  confirmed in a browser. `injectHMR` strips the project root from the id to produce
-  root-relative registry keys; the reasoning is sound and unverified. To confirm: run a
-  dev server with `App.mesa` at the project root and in a `src/` subdirectory, edit each,
-  and watch the console for `[Mesa HMR] No registered instances`. Highest-value untested
-  surface in the package — it is the dev loop.
-- **Nothing is verified in a real browser.** Every suite here is happy-dom. The REPL in
-  particular was repaired against happy-dom only; codemirror, the importmap and the drawer
-  UI are unchecked. `npm run serve` and a click would settle it.
-- ~~**Sierra's `static` target is not wired to the renderer**~~ — **wired 2026-08-02.**
-  `sierra/src/build/prerender.js` composes each route with its layout chain and renders
-  it through `renderComponent` from `closeBundle`. Remaining gaps there: islands still
-  emit no marker (SSR_SPEC W3) and have no loader, and `renderComponent` resolves bare
-  imports from Mesa's own package root (SSR_SPEC W1). See `docs/SSR_SPEC.md` for both, and
-  `docs/STATIC_RENDERING.md` §Status.
-- **`{@render children?.()}` vs `<slot />`** — the `uiComponents` example renders empty
-  Cards: `ui/Card.mesa` reads the `children` prop while the showcase passes element
-  children, which only `<slot />` receives (see `docs/STATIC_RENDERING.md` §Component children).
-  Switching `Card` to `<slot />` fixes the composition and then surfaces further latent
-  errors in the `ui/` kit, so it is left alone — it is a `ui/` kit task, not a REPL one.
-- **`tick()`** — not yet added. Returns Promise after next reactive flush. One `queueMicrotask` delay.
-- **`{#virtual each}` in SSR** — client-only, produces no output in `renderComponent`. By design. V2 could add `{:static}` fallback.
-- **White Paper §4.2/§4.4** — REVIEW NEEDED (note: `spec-check.mjs` covers VISION §4 and
-  passes 16/16 as of 2026-08-02; its hardcoded path was fixed so it runs again —
-  `node spec-check.mjs`). The open question: `$: { (a, b) }` (block wrapping sequence expression) is semantically different from `$: (a, b)` (multi-path watch). Block form = auto-tracked effect; sequence form = proxy watch signals. Not called out explicitly in spec or §4.7 table.
-- **Variable-height `{#virtual each}`** — deferred
-- **Full hydration SSR** — deferred to v1.1
-- **TypeScript support** — deferred
-- **`$: fn()` post-execution hooks** — design approved, implementation deferred
+Defects and gaps for this package are in the repo-wide register:
+**`FJS-021`** destructuring assignment to reactive lets ·
+**`FJS-022`** `{@const}` index-as-getter inside `{#each}` ·
+**`FJS-023`** `<mesa:element this={…}>` compiles but is not a feature ·
+**`FJS-024`** `mesa-vite` has no tests, HMR unconfirmed in a browser ·
+**`FJS-025`** nothing verified in a real browser (every suite is happy-dom) ·
+**`FJS-026`** `mesa-vite/`/`mesa-bench/` invisible to the workspace glob ·
+**`FJS-060`** `externalSignals` is hand-maintained ·
+**`FJS-067`** the deferred set — `tick()`, `{#virtual each}` in SSR,
+variable-height virtual lists, full hydration SSR, TypeScript,
+`$: fn()` post-execution hooks ·
+**`FJS-068`** `renderComponent` resolves bare imports from Mesa's package root
+(SSR_SPEC W1) · **`FJS-069`** White Paper header version.
+Decision waiting: **`FJS-D18`** — `$: { (a, b) }` vs `$: (a, b)`.
 
----
+Still true and not an issue: `{@render children?.()}` vs `<slot />` in the
+`uiComponents` REPL example is a `ui/` kit task, deliberately left alone
+(`docs/STATIC_RENDERING.md` § Component children).
+
+Add a new item to `../../ISSUES.md`, not here.
 
 ## White Paper
 
@@ -334,7 +323,7 @@ invalid JS; `{@const}` inside `{#each}` calls the loop index as a getter; and
 | `example/index.html` | REPL |
 | `test/repl.test.js` | 9 REPL tests — module-graph link check, examples compile + emit valid JS, feature-coverage ratchet, preview interactivity |
 | `example/examples.js` | 66 REPL examples across 22 groups |
-| `test/compiler.test.js` | 406 compiler tests |
+| `test/compiler.test.js` | 426 compiler tests, incl. 9 pinning the `<mesa:boundary>` watch set — it watches the async values its body reads, not every one in the component |
 | `test/runtime.test.js` | 286 runtime tests |
 | `test/emission.test.js` | 17 tests — the compiler must emit JS that parses (component `bind:`, multi-line attrs, `bind:` to a member expression, and the component function name colliding with a reserved word or a `<script module>` binding) |
 | `test/css-inliner.test.js` | 36 CSS inliner tests |

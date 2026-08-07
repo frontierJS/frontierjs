@@ -2,7 +2,7 @@
   "name": "@frontierjs/email-kit",
   "version": "0.1.0",
   "type": "module",
-  "description": "Mesa email component kit — table-based email components with CSS inlining for transactional email",
+  "description": "Mesa email component kit \u2014 table-based email components with CSS inlining for transactional email",
   "main": "./index.js",
   "exports": {
     ".": {
@@ -10,6 +10,9 @@
     },
     "./render": {
       "import": "./render.js"
+    },
+    "./components/*.mesa": {
+      "import": "./components/*.mesa"
     },
     "./components/*": {
       "import": "./components/*.mesa"

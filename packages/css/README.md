@@ -112,7 +112,7 @@ inheritance.
 ```
 
 `theme-default` · `theme-sunset` · `theme-forest` · `theme-midnight` ·
-`theme-dark` · `theme-elite`
+`theme-dark` · `theme-elite` · `theme-basecamp`
 
 A theme overrides tokens, not just colours — Elite changes radii, weights,
 tracking and the font family.

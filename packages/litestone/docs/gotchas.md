@@ -167,21 +167,33 @@ await db.user.findUnique({ where: { id: 1 }, withDeleted: true }) // → the row
 
 ---
 
-## @encrypted on a Json field silently destroys the value
+## ~~@encrypted on a Json field silently destroys the value~~ — fixed 2026-08-06
 
-**Open bug — route around it.** A `Json @encrypted` column round-trips as the string `"[object Object]"`. The object is stringified with `String(obj)` instead of `JSON.stringify` before it reaches the cipher, so the payload is gone before encryption happens.
+**Fixed.** `Json @encrypted` now round-trips. Kept here because the failure shape
+is worth recognising and because a database written before the fix still holds
+the damage.
 
-Everything around it works, which is what makes it dangerous: the column really is encrypted at rest, `@guarded(all)` read-withholding is enforced, the write returns normally, nothing throws and nothing warns. Only the value is missing, and only on read-back.
+It used to store the string `"[object Object]"`: the value reached the cipher
+through `String(obj)` rather than `JSON.stringify`, so the payload was gone
+*before* encryption happened. Everything around it worked, which is what made it
+dangerous — the column really was encrypted at rest, `@guarded(all)` was
+enforced, the write returned normally, nothing threw and nothing warned. Only the
+value was missing, and only on read-back.
 
-Declare the column `String @encrypted` and serialize at the service layer instead:
+A Json field is now serialized before encryption and parsed after decryption,
+keyed on the declared type. `@secret`, `$rotateKey` and
+`@encrypted(searchable: true)` all work on a Json field.
 
-```prisma
-model Secret {
-  data  String @encrypted   // not Json — parse/stringify in the service
-}
+**Rows written before the fix are not recoverable** — the original never reached
+the cipher. They decrypt to the literal string `'[object Object]'` rather than
+`null`, deliberately: `null` reads as "this was empty", the string reads as
+"something went wrong here", and only the second sends anyone looking. Search for
+it if you ran `Json @encrypted` in anger:
+
+```sql
+-- per @encrypted Json column
+SELECT id FROM vault WHERE blob IS NOT NULL;   -- then read each back through the client
 ```
-
----
 
 ## Audit log reads lag writes within a session
 

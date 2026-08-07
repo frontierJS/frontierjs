@@ -248,6 +248,28 @@ const THEMES = {
       "--font-mono": "'IBM Plex Mono', monospace",
     },
   },
+  basecamp: {
+    name: "Basecamp",
+    description: "Deep blue-black, cool neutrals, six accent hues.",
+    tokens: {
+      "--color-primary": "#5a8ef8",
+      "--color-secondary": "#9d87f5",
+      "--color-muted": "#636882",
+      "--color-info": "#1ec8d4",
+      "--color-success": "#2dd4a0",
+      "--color-warning": "#f5b540",
+      "--color-danger": "#f06b6b",
+      "--surface": "#151820",
+      "--surface-raised": "#1b1f2c",
+      "--surface-sunken": "#0b0d14",
+      "--ink": "#dde1ed",
+      "--ink-soft": "#a0a7cf",
+      "--ink-mute": "#7c86af",
+      "--rule": "rgba(255,255,255,.07)",
+      "--rule-strong": "rgba(255,255,255,.13)",
+      "--shadow-lg": "0 8px 32px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04)",
+    },
+  },
 };
 
 function getLabel(id) {
@@ -431,7 +453,7 @@ cp -r packages/css src/styles`),
         "2. Import it",
         `
         <p class="sg-prose">
-          One import covers everything: tokens, all six themes, tones, the two
+          One import covers everything: tokens, all seven themes, tones, the two
           lineage bases, layout helpers, components and patterns. The entry point
           assigns each file to a cascade layer as it goes.
         </p>
@@ -1447,8 +1469,8 @@ function tonalPage() {
           </div>`,
         )}
         <p class="sg-prose">
-          <code>bun run test</code> checks all <strong>42</strong> tone × theme
-          combinations — seven tones × six themes — on each of
+          <code>bun run test</code> checks all <strong>49</strong> tone × theme
+          combinations — seven tones × seven themes — on each of
           <code>.btn</code>, <code>.pill</code> and <code>.badge</code>, and
           they clear AA. Because it is derived rather than tabulated it holds
           for hues no theme has defined yet, so the suite also throws
@@ -7606,6 +7628,7 @@ const INDEX_CSS = `/*
 @import './themes/midnight.css' layer(themes);
 @import './themes/dark.css'     layer(themes);
 @import './themes/elite.css'    layer(themes);
+@import './themes/basecamp.css' layer(themes);
 
 /* Foundation — the rest of it; tokens.css is imported above */
 @import './foundation/tones.css'   layer(tones);

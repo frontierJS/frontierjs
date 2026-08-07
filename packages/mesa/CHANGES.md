@@ -1,5 +1,126 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-06 — a `.mesa` import may name a package
+
+1013 tests. Two fixes for the same shape of caller: somebody rendering a
+component tree that is not their own.
+
+**A bare specifier resolves.** `compileTree` did `path.resolve(dirname(importer),
+spec)` for every `.mesa` import, so
+
+```mesa
+import Email from '@frontierjs/email-kit/components/Email.mesa'
+```
+
+— the usage that package's README documents — became
+`…/api/emails/@frontierjs/email-kit/components/Email.mesa` and ENOENT'd. It
+worked inside the kit only because its own templates import `../components/…`
+relatively. Bare specifiers now go through `import.meta.resolve` from the
+importing file, with the old path join kept as the fallback so a genuinely
+missing file still names what the author wrote.
+
+**A `subject` export may be a function.** `<script module>` runs once at import,
+before props exist, so `export const subject` could only ever be a constant —
+and a receipt's subject names the record. Module exports already came back as
+values; what stood in the way was the email document wrapper calling
+`subject.replace()` to build its `<title>`, which threw
+`subject.replace is not a function` out of the renderer. The title is now taken
+only when the export is a string, and `result.subject` hands back exactly what
+was exported for the caller to apply.
+
+
+## 2026-08-06 — `prop=""` on a component is an empty string, not `true`
+
+1015 tests (was 1013 — two new).
+
+`<Component prop="">` compiled to `prop={true}`. `inspectProp` decided the
+boolean form by testing the value for falsiness, and an explicit empty string is
+falsy — so the one spelling every `@frontierjs/ui` component documents for
+"suppress this" produced the opposite of nothing.
+
+The parser had never lost the distinction: a valueless attribute is
+`{ value: undefined, type: 'attribute' }` and `prop=""` is
+`{ value: '', type: 'text' }`. The test is now `value === undefined`.
+`<Table striped>` is unchanged, which the existing tests already pin.
+
+Found by wiring `<Select placeholder="">` into `packages/basecamp`'s workspace
+switcher: the placeholder was suppressed in the source and rendered anyway, as
+an `<option>` whose visible text was the word **`true`**. Silent everywhere it
+could have been caught — a valid prop of the wrong type, a clean compile, and a
+component that rendered.
+
+Only component props go through this path; element attributes are emitted
+separately, so `<option value="">` was never affected.
+
+1013 tests (was 1012 — one new, and it is the point of this entry).
+
+`renderComponent()` compiles to a temp `.mjs` and imports it, so that file has to
+sit somewhere Node can resolve `@frontierjs/mesa/runtime.js` from. `findMesaDir()`
+found that directory by testing `dirname(import.meta.url)` for a `package.json`
+— which stopped being true the moment this file moved into `src/`. The fallback
+then searched up from **`process.cwd()`**, so it worked only when the process
+happened to be started inside `packages/mesa`, and any other caller hit the last
+resort: the OS temp dir, where the emitted `import '@frontierjs/mesa/runtime.js'`
+cannot resolve at all.
+
+It now walks up from its own location to the nearest `package.json`, which is
+correct whatever the layout.
+
+Invisible from here, and total from outside: **every one of
+`@frontierjs/email-kit`'s 34 tests was failing**, and that package's own state
+file said "34 tests green". Found while sweeping the `mesa-email` → `email-kit`
+rename. The comment above `findMesaDir` already stated the requirement this
+broke; the code had quietly stopped meeting it.
+
+**Why no test here caught it, and what now does.** Every test in this package
+runs from the mesa package root — the one working directory where the broken
+lookup still found the right answer. So the new case renders in a **child
+process with its cwd outside the repo**, which is what a consuming package
+does. Reverting the fix fails it with
+`Cannot find package '@frontierjs/mesa' imported from /tmp/__mesa_render_…`;
+that was checked by reverting it.
+
+The last-resort branch **warns** now rather than silently writing temp modules
+to a directory where the runtime import cannot resolve. Landing there is a
+misconfiguration, and it should not have to be diagnosed from a stack trace that
+points at `/tmp`.
+
+
+## 2026-08-05 — `<mesa:boundary>` watches what its body reads
+
+1012 tests (was 1003).
+
+A boundary watched **every** async-derived value in the component, whatever its
+body referenced — the compiler said so in a comment:
+
+    // Get all async-derived vars — boundary watches all $async state objects
+
+So a boundary around a city dropdown stayed in `pending` while an unrelated
+reports fetch was in flight, and one `await` that never resolved held content
+that did not use it, forever. Two boundaries in the same component watched the
+same union and therefore always showed and hid together, which made the
+multiple-boundaries-per-component capability VISION §12.5 advertises
+functionally single.
+
+The watch set is now the async values the body reads — through an
+interpolation, a block header, an attribute, a component prop or an `@const`,
+all of which are pinned by tests. The collection deliberately over-approximates
+(it scans the subtree's expression sources for identifiers) because
+under-watching is the dangerous direction: it would show content before its
+data arrived.
+
+Two cases keep the whole-component union:
+
+- **The body reads no async value.** That is how you say "gate this region on
+  everything", and it is the only way to say it.
+- **The body renders a snippet defined elsewhere** (`{@render foo()}`), whose
+  reads are not in this subtree.
+
+Emission is otherwise unchanged — same `boundaryBlock` call, same snippet
+resolution, narrower first argument.
+
+Repo register: `ISSUES.md` FJS-073.
+
 ## 2026-08-05 — `bind:files` threw on mount in a real browser
 
 1003 tests (was 997). Verified in headless Chrome, because none of this is
@@ -687,7 +808,7 @@ pre-existing `phase8` `import.meta` failure).
 
 ## 2026-08-03 — htmlToText produced unusable plain-text email
 
-Found by rendering `@frontierjs/mesa-email`'s WelcomeEmail, which now lives at
+Found by rendering `@frontierjs/email-kit`'s WelcomeEmail, which now lives at
 `packages/email-kit`. Four faults, all in the `target: 'email'` text
 alternative — the half of a multipart email nobody looks at until a client
 renders it:
@@ -1477,7 +1598,7 @@ architecture with watched plain objects, which is what motivated both changes.
 
 710 passing. The 27 failures in `email-kit.test.js` are pre-existing and
 environmental: they need `/tmp/mesa/email/*.mesa` fixtures from the sibling
-`@frontierjs/mesa-email` package, which is not part of this archive. Unchanged
+`@frontierjs/email-kit` package, which is not part of this archive. Unchanged
 from baseline.
 
 ## Not changed, but worth knowing

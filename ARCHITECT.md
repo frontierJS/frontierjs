@@ -51,14 +51,33 @@ Use the left column. Never the right.
 | **Hook**                    | middleware, interceptor, lifecycle callback |
 | **Boundary**                | layer boundary, API boundary (generic)      |
 | **Channel**                 | room, topic, subscription                   |
-| **Event**                   | message, notification, signal               |
+| **Event**                   | message, notification                       |
 | **Gate**                    | permission, policy, ACL                     |
 | **Trust Hierarchy**         | roles, permissions, access levels           |
 | **Plugin**                  | middleware, extension, addon                |
 | **Context**                 | request context, state, payload             |
 | **Chain of Responsibility** | pipeline, middleware stack, flow            |
+| **Signal**                  | observable, atom, ref, store (for the cell) |
+| **Projection**              | (nothing — new noun, see below)             |
 
 Clarifications settled by the code:
+
+- **Signal is not Event, and both are legal words.** A **Signal** is Mesa's
+  reactive cell; an **Event** is Junction's announcement. *signal* used to sit in
+  the Event row's "not" column, which was aimed at "signal" meaning
+  *notification* and accidentally banned the word Mesa's runtime, docs and White
+  Paper use for their core primitive. The ban now reads: never call an Event a
+  signal. A Signal never crosses a Boundary; an Event exists only to. (Ruled
+  2026-08-06 — `DECISIONS.md`.)
+- **Projection** is a *stored or served* second shape of the same truth — a
+  materialised view, a serialised subset, a report. What a compiler or a
+  component computes and throws away stays **derived**. If it has no independent
+  existence, it is not a Projection. (Ruled 2026-08-06.)
+- **Policy has two meanings and will not get a third.** Gate = the ordinal
+  per-operation check; policies = `@@allow`/`@@deny` row/field predicates. A
+  proposed third sense ("declarative business rule vs imperative mechanism") is
+  refused — the words for that are already **Declaration** and **Hook**.
+  (Ruled 2026-08-06.)
 
 - **Gate** is the ordinal per-operation level check (`@@gate`, resolved against
   the Trust Hierarchy, enforced by default when declared). Row/field predicates

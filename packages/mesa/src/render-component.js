@@ -56,7 +56,7 @@
 import path          from 'path'
 import { readFile, writeFile, unlink, mkdir } from 'fs/promises'
 import { existsSync }  from 'fs'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { compileSource } from './compiler.js'
 import { initRenderer, renderToHTML } from './render.js'
 import { inlineCSS }     from './css-inliner.js'
@@ -79,9 +79,23 @@ async function ensureRenderer() {
 
 function findMesaDir() {
   try {
-    const candidate = path.dirname(fileURLToPath(import.meta.url))
-    // Valid if it exists on disk and contains package.json
-    if (existsSync(path.join(candidate, 'package.json'))) return candidate
+    // Walk UP from this module to the nearest package.json rather than assuming
+    // this file sits at the package root. It does not: it lives in `src/`, and
+    // testing only `dirname(import.meta.url)` for a package.json therefore
+    // failed for every caller — the resolution then fell through to the cwd
+    // search below, which finds mesa only when the process was started from
+    // inside it. From any other package the last resort applies, temp modules
+    // land in the OS temp dir, and every `import '@frontierjs/mesa/runtime.js'`
+    // inside them fails to resolve. That is exactly what the comment above this
+    // function says must not happen; it stopped being true when the sources
+    // moved into src/, and the only symptom was somebody else's test suite.
+    let dir = path.dirname(fileURLToPath(import.meta.url))
+    for (let i = 0; i < 6; i++) {
+      if (existsSync(path.join(dir, 'package.json'))) return dir
+      const parent = path.dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
   } catch { /* import.meta.url was rewritten by Vite to a non-file URL */ }
 
   // Fallback: search up from cwd for a directory containing mesa's package.json
@@ -95,7 +109,21 @@ function findMesaDir() {
     if (parent === dir) break
     dir = parent
   }
-  // Last resort — use OS temp dir (loses @frontierjs/mesa resolution but won't throw)
+  // Last resort — the OS temp dir. This LOSES `@frontierjs/mesa` resolution, so
+  // every temp module written here will fail to import the runtime; it exists
+  // only so that resolution failing is not itself a throw.
+  //
+  // It says so now. Landing here silently is how the src/ move went unnoticed:
+  // this package's own tests kept passing (they run from the package root) while
+  // every render from another package failed on a bare specifier, and the error
+  // pointed at a file in /tmp rather than at the resolution that put it there.
+  // Resolved once and cached, so this warns at most once per process.
+  console.warn(
+    '[Mesa renderComponent] could not locate the @frontierjs/mesa package directory; ' +
+    'temp render modules will be written to the OS temp dir, where ' +
+    "`import '@frontierjs/mesa/runtime.js'` cannot resolve. Pass options.tmpDir to " +
+    'a directory inside your project to fix this.'
+  )
   return import('os').then(os => os.tmpdir()).catch(() => '/tmp')
 }
 
@@ -157,6 +185,36 @@ function isMesaSpecifier(spec) {
  *   - islands   — every `client:*` call site in this file and its deps, each
  *                 tagged with the file it was written in
  */
+/**
+ * Resolve a `.mesa` import to a file on disk.
+ *
+ * Relative and absolute specifiers are ordinary paths. A BARE one is a package
+ * specifier — `@frontierjs/email-kit/components/Email.mesa` — and is resolved
+ * the way Node resolves any other subpath export, from the importing file.
+ *
+ * Without this, a bare specifier was `path.resolve`d against the importer's
+ * directory and produced nonsense:
+ *
+ *   ENOENT: …/api/emails/@frontierjs/email-kit/components/Email.mesa
+ *
+ * which is the usage `@frontierjs/email-kit`'s own README documents. It worked
+ * inside that package only because its templates import `../components/…`
+ * relatively; the first consumer outside it hit the wall. Same shape as the
+ * temp-dir bug next door: correct from within, broken from without.
+ */
+function resolveMesaImport(spec, importer) {
+  if (spec.startsWith('.') || path.isAbsolute(spec))
+    return path.resolve(path.dirname(importer), spec)
+
+  try {
+    return fileURLToPath(import.meta.resolve(spec, pathToFileURL(importer).href))
+  } catch {
+    // Fall through to the old behaviour so the error names the file the author
+    // wrote, not a resolution API they have never heard of.
+    return path.resolve(path.dirname(importer), spec)
+  }
+}
+
 async function compileTree(filePath, visited = new Map(), tempFiles = [], opts = {}, sourceOverride = null) {
   const canonical = path.resolve(filePath)
 
@@ -244,7 +302,7 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
   while ((m = IMPORT_RE.exec(js)) !== null) {
     const spec = m[2]
     if (!isMesaSpecifier(spec)) continue
-    const depPath = path.resolve(path.dirname(canonical), spec)
+    const depPath = resolveMesaImport(spec, canonical)
     const child = await compileTree(depPath, visited, tempFiles, opts)
     css += '\n' + child.css
     for (const [k, v] of child.modules) modules.set(k, v)
@@ -646,7 +704,15 @@ export async function renderComponent(source, options = {}) {
         bodyHTML = inlined.slice(styleMatch[0].length)
       }
       html = wrapEmailDoc(bodyHTML, {
-        subject:      namedExports.subject ?? '',
+        // A `subject` export may be a FUNCTION of the render data — a receipt's
+        // subject names the order, and `<script module>` runs before props
+        // exist, so a template literal cannot say it. The caller applies it
+        // (`result.subject` hands back whatever was exported); the document's
+        // <title> is a string or nothing. Passing the function through here
+        // threw `subject.replace is not a function` out of the renderer, which
+        // is a confusing way to learn that a document title cannot be a
+        // callback.
+        subject:      typeof namedExports.subject === 'string' ? namedExports.subject : '',
         preservedCSS,
         bgcolor:      namedExports.bgcolor  ?? '#f4f4f4',
       })

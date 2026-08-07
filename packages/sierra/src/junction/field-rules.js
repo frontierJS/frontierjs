@@ -463,6 +463,118 @@ export function validateAgainstFields(fields, data, mode = 'create') {
   return errors
 }
 
+// ── Version ───────────────────────────────────────────────────────────────────
+
+/**
+ * The name of the model's `@version` column, or null when it declares none.
+ *
+ * `x-version` is a single string rather than a flag because the column is
+ * named in the schema and a client has to send that exact key back. It is the
+ * one piece of the optimistic-concurrency contract the browser needs: the
+ * comparison happens at the Data boundary and the client cannot check anything
+ * — its whole job is to return the value it was given.
+ *
+ * The field is also emitted `readOnly` in the update schema, which is what stops
+ * a generated form rendering a number input for it.
+ */
+export function buildVersion(schema) {
+  const v = schema?.['x-version']
+  return typeof v === 'string' && v ? v : null
+}
+
+/**
+ * Did this failure mean *the row moved under you*?
+ *
+ * A 409 alone cannot answer it. Litestone throws two of them and they want
+ * opposite words: `VersionConflictError` / `TransitionConflictError` are races
+ * (`retryable: true` — re-read and try again), while `TransitionViolationError`
+ * is a domain refusal (`retryable: false` — "you cannot ship a cancelled
+ * order"), whose own message is the right thing to show. Junction carries
+ * `retryable` on the wire for exactly this, and both transports land it at
+ * `err.data.retryable`.
+ */
+export function isStaleWrite(err) {
+  if (!err || typeof err !== 'object') return false
+  const code = err.code ?? err.status ?? err.data?.code
+  if (code !== 409) return false
+  return err.retryable === true || err.data?.retryable === true
+}
+
+/** The sentence a form shows for a stale write. Exported so an app can match or replace it. */
+export const STALE_WRITE_MESSAGE =
+  'This record changed while you were editing it. Reload to see the current version, then try again.'
+
+// ── Thrown value → per-field messages ─────────────────────────────────────────
+
+/**
+ * Pull the `{ field, message }[]` out of whatever was thrown.
+ *
+ * There are three shapes and they are all the same list wearing a different
+ * number of wrappers, because each hop adds one:
+ *
+ *   err.errors        ResourceValidationError — the browser said no, no request
+ *                     was made, and the list is the property it was built with.
+ *   err.data.data     A server 400. Junction's validator throws
+ *                     `BadRequest(joined, list)`; `toJSON()` puts the list on
+ *                     `data`; the browser client assigns the whole parsed body
+ *                     to `.data` on the Error it throws. So the list is two
+ *                     `data`s deep, and it looks like a typo. It is not.
+ *   err.data          The same list one wrapper shallower — a FrameworkError
+ *                     caught in-process, or a transport that unwrapped once.
+ *
+ * Anything else is a failure with no field information: a 500, a dropped
+ * socket, a thrown string. That is not an empty result, it is a form-level
+ * message, which is why this returns both halves.
+ *
+ * @param {unknown} err
+ * @returns {{ fields: Record<string,string>, message: string }}
+ *   `fields` is keyed for direct use as `<Field errors={…}>`; `message` is the
+ *   form-level line, and is empty when the failure was entirely per-field.
+ */
+export function toFieldErrors(err) {
+  const fields = {}
+  let message  = ''
+
+  // A lost-update race has no field to blame and its raw message names a column
+  // and two integers. Say the thing the person can act on instead.
+  if (isStaleWrite(err)) return { fields, message: STALE_WRITE_MESSAGE }
+
+  for (const e of _errorList(err)) {
+    const field = typeof e === 'object' && e !== null ? e.field : null
+    const text  = (typeof e === 'object' && e !== null ? e.message : e) ?? ''
+    if (!text) continue
+
+    // '_' is what Junction's validator reports for "Expected an object" — a
+    // failure of the whole payload, which no field can render.
+    if (!field || field === '_') {
+      if (!message) message = String(text)
+      continue
+    }
+    // First message per field wins. A field can fail two rules at once (absent
+    // AND wrong type is not possible, but too-short AND wrong format is), and
+    // one line under one control is what there is room for.
+    if (!(field in fields)) fields[field] = String(text)
+  }
+
+  // Nothing per-field — fall back to the error's own message so the form has
+  // something true to say rather than a silent no-op submit.
+  if (!message && Object.keys(fields).length === 0) {
+    message = (err && typeof err === 'object' && 'message' in err)
+      ? String(err.message)
+      : String(err ?? 'Request failed')
+  }
+
+  return { fields, message }
+}
+
+function _errorList(err) {
+  if (!err || typeof err !== 'object') return []
+  if (Array.isArray(err.errors))    return err.errors
+  if (Array.isArray(err.data))      return err.data
+  if (Array.isArray(err.data?.data)) return err.data.data
+  return []
+}
+
 // ── Coercion ──────────────────────────────────────────────────────────────────
 
 /**

@@ -3,29 +3,117 @@ siteName: Basecamp
 ---
 <script>
   import { page, goto, isActive } from '@frontierjs/sierra/router'
-  import { status } from '@frontierjs/sierra/junction'
+  import { status, useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { session, signOut, switchWorkspace } from '../session.js'
+
+  import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button         from '@frontierjs/ui/components/forms/Button.mesa'
+  import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select         from '@frontierjs/ui/components/forms/Select.mesa'
+  import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
+  import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
+  import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
+
+  import NoticeBar from '../components/NoticeBar.mesa'
+  import { servers }     from '../resources/servers.mesa'
+  import { deployments } from '../resources/deployments.mesa'
+  import { jobs }        from '../resources/jobs.mesa'
+  import { computeNotices } from '../notices.js'
 
   $: (page.siteName, page.route)
   $: (status.connected, session.user, session.workspaceId, session.workspaces)
+  $: commandPalette.open
+
+  // ── The attention system's data ──────────────────────────────────────────
+  // The shell subscribes to three stores rather than polling: a resource store
+  // is a module singleton fed by the same WebSocket events the screens use, so
+  // a server going unreachable reaches the notice bar without this file asking
+  // again. load() runs once per workspace, not once per navigation.
+  const { get: srv,  unsubscribe: unsubSrv }  = useStore(servers.store)
+  const { get: dep,  unsubscribe: unsubDep }  = useStore(deployments.store)
+  const { get: jbs,  unsubscribe: unsubJbs }  = useStore(jobs.store)
+  $onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
+
+  // Failures are swallowed on purpose: the shell is not the screen that owns
+  // any of these lists, and a workspace the caller cannot read is the guard's
+  // problem, not a banner on every page. The screens report their own errors.
+  function loadAttention() {
+    if (!session.user || !session.workspaceId) return
+    servers.load().catch(() => {})
+    deployments.load().catch(() => {})
+    jobs.load().catch(() => {})
+  }
+
+  loadAttention()
+
+  // Explicit-dependency effect (Mesa §4.2) — the handler runs untracked, so the
+  // reads inside loadAttention() add no subscriptions of their own.
+  $: session.workspaceId, () => loadAttention()
+
+  // Derived here, not in the template: one definition of "needs attention",
+  // shared with the home screen's queue (src/notices.js).
+  $: notices = computeNotices({ servers: srv(), deployments: dep(), jobs: jbs() })
+
+  // ── ⌘K ───────────────────────────────────────────────────────────────────
+  // The commands are the nav and the header's own behaviours, reached a second
+  // way — never a second set of actions. `$:` and not a plain const because
+  // the Servers and Workspace groups are built from live rows.
+  $: COMMANDS = [
+    { id: 'go-home',        group: 'Navigate', label: 'Overview',    action: () => goto('/') },
+    { id: 'go-projects',    group: 'Navigate', label: 'Projects',    action: () => goto('/projects/') },
+    { id: 'go-servers',     group: 'Navigate', label: 'Servers',     action: () => goto('/servers/') },
+    { id: 'go-deployments', group: 'Navigate', label: 'Deployments', action: () => goto('/deployments/') },
+    { id: 'go-jobs',        group: 'Navigate', label: 'Jobs',        action: () => goto('/jobs/') },
+    { id: 'go-networks',    group: 'Navigate', label: 'Networking',  sub: 'private networks',   action: () => goto('/networks/') },
+    { id: 'go-alerts',      group: 'Navigate', label: 'Alerts',      sub: 'rules and firings',  action: () => goto('/alerts/') },
+    { id: 'go-secrets',     group: 'Navigate', label: 'Secrets',     sub: 'machine credentials', action: () => goto('/secrets/') },
+    { id: 'go-activity',    group: 'Navigate', label: 'Activity',    sub: 'what happened here', action: () => goto('/activity/') },
+    { id: 'go-portal',      group: 'Navigate', label: 'Portal',      sub: 'shared appliances',  action: () => goto('/portal/') },
+    { id: 'go-admin',       group: 'Navigate', label: 'Admin',       action: () => goto('/admin/') },
+    { id: 'go-audit',       group: 'Navigate', label: 'Audit trail', sub: 'Admin', action: () => goto('/admin/audit/') },
+    { id: 'go-adapters',    group: 'Navigate', label: 'Adapters',    sub: 'Admin', action: () => goto('/admin/adapters/') },
+
+    { id: 'new-project', group: 'Create', label: 'New project',    action: () => goto('/projects/create/') },
+    { id: 'new-server',  group: 'Create', label: 'Provision server', action: () => goto('/servers/create/') },
+    { id: 'new-network', group: 'Create', label: 'New network',       action: () => goto('/networks/') },
+    { id: 'new-alert',   group: 'Create', label: 'New alert rule',    action: () => goto('/alerts/') },
+
+    // A server the palette can reach is a server the fleet actually has —
+    // the rows are the ones already loaded for the notice engine, so this
+    // group costs no extra request.
+    ...srv().map(s => ({
+      id: `srv-${s.id}`, group: 'Servers', label: s.name, sub: s.status,
+      action: () => goto(`/servers/${s.id}/`),
+    })),
+
+    ...session.workspaces
+      .filter(w => w.id !== session.workspaceId)
+      .map(w => ({
+        id: `ws-${w.id}`, group: 'Workspace', label: `Switch to ${w.name}`,
+        action: () => switchWorkspace(w.id),
+      })),
+
+    { id: 'sign-out', group: 'Session', label: 'Sign out', action: out },
+  ]
 
   function out() {
     signOut()
     goto('/login/')
   }
 
+  // Select's `onchange` is the NATIVE callback — it hands over the event, not
+  // the value, exactly as `on:change` on a bare <select> would.
   function pick(e) {
     switchWorkspace(e.target.value)
   }
 </script>
 
 <!--
-  Every class here comes from @frontierjs/css: the frame (shell / topbar /
-  screen), the badges, the field. No <style> block, no colour, no utility
-  classes (repo invariant 13).
-
-  There is no nav yet on purpose — the sections it would link to arrive in
-  Phase 3. A link to a route that does not exist is worse than no link.
+  Every class here comes from @frontierjs/css and every control from
+  @frontierjs/ui: the frame (shell / topbar / screen) is vocabulary, the badges,
+  pills, buttons and the switcher are components. No <style> block, no colour,
+  no utility classes (repo invariant 13).
 -->
 <!-- The skip link is the first focusable thing on the page and is invisible
      until focused. Without it, a keyboard user tabs through the nav, the
@@ -38,7 +126,7 @@ siteName: Basecamp
   <header class="topbar">
     <span class="cluster">
       <strong>{page.siteName}</strong>
-      <span class="badge muted">alpha</span>
+      <Badge tone="muted">alpha</Badge>
     </span>
 
     {#if session.user}
@@ -64,6 +152,16 @@ siteName: Basecamp
            aria-current={(page.route, isActive('/deployments/')) ? 'page' : null}>Deployments</a>
         <a class="navlink" href="/jobs/"
            aria-current={(page.route, isActive('/jobs/')) ? 'page' : null}>Jobs</a>
+        <a class="navlink" href="/networks/"
+           aria-current={(page.route, isActive('/networks/')) ? 'page' : null}>Networking</a>
+        <a class="navlink" href="/alerts/"
+           aria-current={(page.route, isActive('/alerts/')) ? 'page' : null}>Alerts</a>
+        <a class="navlink" href="/secrets/"
+           aria-current={(page.route, isActive('/secrets/')) ? 'page' : null}>Secrets</a>
+        <a class="navlink" href="/activity/"
+           aria-current={(page.route, isActive('/activity/')) ? 'page' : null}>Activity</a>
+        <a class="navlink" href="/portal/"
+           aria-current={(page.route, isActive('/portal/')) ? 'page' : null}>Portal</a>
         <a class="navlink" href="/admin/"
            aria-current={(page.route, isActive('/admin/')) ? 'page' : null}>Admin</a>
       </nav>
@@ -73,33 +171,73 @@ siteName: Basecamp
       {#if session.user && session.workspaces.length}
         <!-- The switcher is the whole of Phase 2: nothing downstream of here
              works without X-Workspace-Id, and the header is where the scope a
-             page is showing has to be legible. -->
-        <label class="visually-hidden" for="workspace-switch">Workspace</label>
-        <!-- .field is full-width because that is right in a form column and
+             page is showing has to be legible.
+             .field is full-width because that is right in a form column and
              wrong in a topbar; --field-inline-size is the knob the design
              system provides for exactly this (css components/form-core.css). -->
-        <select class="field" id="workspace-switch" style="--field-inline-size: auto"
-                on:change={pick}>
-          {#each session.workspaces as ws}
-            <option value={ws.id} selected={ws.id === session.workspaceId}>{ws.name}</option>
-          {/each}
-        </select>
+        <label class="visually-hidden" for="workspace-switch">Workspace</label>
+        <!-- The custom property is set on a wrapper rather than passed as a
+             prop: --field-inline-size inherits, and a kit component takes the
+             props it declares — it is not a div with a style attribute. -->
+        <span style="--field-inline-size: auto">
+          <Select
+            id="workspace-switch"
+            value={session.workspaceId}
+            placeholder=""
+            options={session.workspaces.map(w => ({ value: w.id, label: w.name }))}
+            onchange={pick}
+          />
+        </span>
       {/if}
 
       <!-- The live WebSocket as a tone, not a hand-mixed green. It opens only
            once a token is stored, so 'offline' before sign-in is correct. -->
-      <span class="pill" class:success={status.connected} class:muted={!status.connected}>
+      <Pill tone={status.connected ? 'success' : 'muted'}>
         {status.connected ? 'live' : 'offline'}
-      </span>
+      </Pill>
 
       {#if session.user}
+        <Button variant="ghost" id="palette-open" onclick={() => commandPalette.show()}>
+          Search <kbd class="kbd">⌘K</kbd>
+        </Button>
+
         <span class="text-sm text-muted">{session.user.email}</span>
-        <button class="btn ghost" on:click={out}>Sign out</button>
+        <!-- A kit component takes its handler as a PROP (`onclick`), not as
+             `on:click` — that directive belongs to elements. -->
+        <Button variant="ghost" onclick={out}>Sign out</Button>
       {/if}
     </span>
   </header>
 
   <main class="screen" id="screen" tabindex="-1">
-    <div class="container stack"><slot /></div>
+    <div class="container stack">
+      <!-- The condensed attention view rides above every screen. The full list,
+           with the fold and the counts, is the home screen's ActionQueue —
+           same notices, same engine, two presentations. -->
+      {#if session.user}
+        <NoticeBar notices={notices} max={2} />
+      {/if}
+      <slot />
+    </div>
   </main>
 </div>
+
+<!--
+  ⌘K anywhere. `mesa:window` is the one place a global key listener belongs —
+  a document listener added by hand in a component outlives the component.
+-->
+<mesa:window on:keydown={(e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); commandPalette.toggle() }
+}} />
+
+{#if commandPalette.open}
+  <CommandPalette
+    items={COMMANDS}
+    groupOrder={['Navigate', 'Create', 'Servers', 'Workspace', 'Session']}
+    placeholder="Search commands, servers, workspaces…"
+    onclose={() => commandPalette.hide()}
+  />
+{/if}
+
+<!-- One Toaster for the app; anything can call toasts.success(). -->
+<Toaster position="bottom-right" />

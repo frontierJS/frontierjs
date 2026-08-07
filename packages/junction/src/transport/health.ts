@@ -16,7 +16,7 @@
 // If no auth is configured the endpoints are public — fine for internal
 // networks, should be locked down for internet-facing deployments.
 
-import { customMethodNames }     from '../core/service.ts'
+import { customMethodNames, isMethodAllowed, allowedMethodNames } from '../core/service.ts'
 import type { App }              from '../core/app.ts'
 import type { TransportContext } from './types.ts'
 
@@ -83,6 +83,8 @@ export interface MetricsResponse {
     count:      number
     details:    Record<string, {
       actions:   string[]
+      /** Everything callable, CRUD and actions, after the `methods:` policy. */
+      methods:   string[]
       allowBulk: boolean
     }>
   }
@@ -253,7 +255,10 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
                   // service object — so /metrics reported `actions: []` for
                   // every service, always, while /manifest listed them
                   // correctly. Two answers to one question; now one.
-                  actions:   customMethodNames(svc),
+                  // Policy-filtered, so an action a `methods:` allow-list
+                  // withholds is not reported as available.
+                  actions:   customMethodNames(svc).filter(m => isMethodAllowed(svc, m)),
+                  methods:   allowedMethodNames(svc),
                   allowBulk: !!(svc as unknown as { allowBulk?: boolean }).allowBulk,
                 }]
               })

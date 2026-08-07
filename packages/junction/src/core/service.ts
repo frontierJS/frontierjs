@@ -12,7 +12,7 @@ import {
   type HookMap,
   type ResolvedPipeline
 } from './hooks.ts'
-import { NotFound, BadRequest, toFrameworkError } from './errors.ts'
+import { NotFound, BadRequest, MethodNotAllowed, toFrameworkError } from './errors.ts'
 import { createMemoryCache, type ICache }         from '../cache/index.ts'
 import { wrapResult, isServiceResult, resultData } from './envelope.ts'
 // NOTE: service.ts ⇄ litestone.ts is an intentional, safe ESM cycle:
@@ -174,6 +174,24 @@ export interface Service {
    * every service, including ones configured `allowBulk: true`.
    */
   allowBulk?: boolean
+
+  /**
+   * The DECLARATION, as written — `['find','get']` or `'readOnly'`.
+   *
+   * Carried on the object because `createBaseService` returns options for
+   * `createService` to resolve, and the loader spreads one into the other.
+   * `_methods` below is the resolved form and the one to read.
+   */
+  methods?: MethodPolicy
+
+  /**
+   * The resolved method allow-list, or null when none was declared.
+   *
+   * Read it through `isMethodAllowed()` / `allowedMethodNames()` rather than
+   * directly — those are what callService and the three advertisers agree on.
+   */
+  _methods?: Set<string> | null
+
   find:     (ctx: ServiceContext) => Promise<unknown>
   get:      (ctx: ServiceContext) => Promise<unknown>
   create:   (ctx: ServiceContext) => Promise<unknown>
@@ -297,6 +315,32 @@ export async function callService(
   const method = ctx.method
   const isAction = !CRUD_METHODS.has(method as string)
 
+  // ── The method policy ────────────────────────────────────────────────
+  // Enforced HERE because callService is the one path every caller takes —
+  // HTTP, WebSocket, a job, and `app.service('audit').create()` from inside
+  // the process. Putting it in the transport would leave the internal caller
+  // free to do what the wire is refused, which is the shape of most of the
+  // "the guard was somewhere else" bugs in this repo (Invariant 4).
+  //
+  // 405, not 404: the service exists and the route is real, the verb is not
+  // offered. A 404 would send someone looking for a mounting problem.
+  //
+  // BEFORE the hook pipeline, which means an anonymous caller gets 405 rather
+  // than the 401 an authenticate hook would have raised. That is deliberate on
+  // two counts. The policy is structural, not authorization — it says "nobody
+  // may, ever", so there is nothing an identity could change, and it is already
+  // public in /manifest and the OpenAPI spec. And running `before` hooks for a
+  // call that cannot proceed means running their side effects: a rate-limit
+  // counter incremented, a row touched, for a verb the service does not have.
+  // It matches the action-existence NotFound directly below, which has always
+  // answered ahead of the pipeline for the same reason.
+  if (!isMethodAllowed(service, method as string)) {
+    throw new MethodNotAllowed(
+      `Service '${service.name}' does not offer '${method}' ` +
+      `(allowed: ${allowedMethodNames(service).join(', ') || 'none'})`
+    )
+  }
+
   // For custom methods, check the service has it registered
   if (isAction && typeof (service as Record<string, unknown>)[method as string] !== 'function') {
     throw new NotFound(`Method '${method}' not found on service '${service.name}'`)
@@ -409,8 +453,23 @@ export async function callService(
   //
   // Fires when the call succeeded and the method is a write. Reads never
   // announce — which is why this is per-method and not an `all` hook.
-  if (!ctx.error && !pipelineError && AUTO_EVENT_MAP[method as string]) {
-    const past = AUTO_EVENT_MAP[method as string]!
+  // A CRUD write announces under its past-tense name; a custom ACTION announces
+  // under its own (`orders pay`), because it is a write too — `db.order
+  // .transition(id,'pay')` changes the row exactly as a patch does. Until
+  // 2026-08-06 only the map counted, so an action changed a row and told nobody:
+  // the browser client had listened for action events since it was written
+  // ("custom action events — treat as upserts", client/index.ts), and the server
+  // had never sent one. Apps hid it by re-issuing find() after every action.
+  //
+  // Reads never announce, which is why `find`/`get` are excluded by name rather
+  // than by shape. An action that only READS (search, stats, export) is
+  // indistinguishable from one that writes at this layer — it opts out with
+  // `ctx.dispatch = false`, the same switch that suppresses any other broadcast.
+  const eventName = AUTO_EVENT_MAP[method as string]
+    ?? (isAction ? (method as string) : undefined)
+
+  if (!ctx.error && !pipelineError && eventName) {
+    const past = eventName
 
     // ctx.dispatch is the ONE suppression/override switch, honoured by both
     // consumers: `false` announces nothing, any other value replaces the
@@ -467,6 +526,17 @@ export interface BaseServiceOptions {
 
   /** Channel(s) to broadcast mutations to. See ServiceDefinition.channel. */
   channel?:  PublishDeclaration
+
+  /**
+   * Narrow what this service answers — `['find','get']`, or `'readOnly'`.
+   *
+   * Same key and same meaning as on `createService`; carried through and
+   * resolved there, against the actions that exist. Declaring it here used to
+   * do NOTHING — the option was neither read nor forwarded, so an append-only
+   * service written with this factory answered every verb and the only symptom
+   * was a write that worked.
+   */
+  methods?:  MethodPolicy
 
   /**
    * Hook pipeline. Carried through onto the returned object.
@@ -562,6 +632,7 @@ export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
   // `publish: (rows, ctx) => …` would have had it copied on as a callable
   // custom method and routed over HTTP as an action.
   'channel',
+  'methods',
 ])
 
 /** Keys present on a *built* Service — CRUD, bypass twins, and internals. */
@@ -569,7 +640,98 @@ export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
   '_find', '_get', '_create', '_update', '_patch', '_remove', '_restore',
   '_hookMap', '_pipelines', '_compiledPipelines', '_meta', '_schemas',
+  '_methods',
 ])
+
+// ─── The method policy (FJS-004 / FJS-D07) ────────────────────────────────
+//
+// A model service answers every CRUD verb through the base, WITH validation,
+// whether or not the file declares one. That is opt-OUT safety with no warning:
+// Basecamp's `/audit` is an append-only trail and an admin could forge a row
+// into it — verified over HTTP — until four MethodNotAllowed stubs were written
+// by hand. Writing those stubs is the workaround this replaces.
+//
+// One key, two forms:
+//
+//   methods: ['find', 'get']    an allow-list — the general form
+//   methods: 'readOnly'         shorthand for exactly that list
+//
+// Absent means every method is allowed, so nothing that exists today changes.
+//
+// The allow-list is the general form because a narrower method set is not only
+// ever "read only": `['find','get','create','approve']` says "no patch, no
+// remove, one action", which a boolean cannot express and which otherwise goes
+// back to a hand-written hook. `'readOnly'` is sugar on the same key rather than
+// a second option, so there is still one place to look.
+
+/** What `methods: 'readOnly'` expands to. */
+export const READ_ONLY_METHODS: readonly string[] = ['find', 'get']
+
+/** A service's declared method policy: an allow-list, or the one preset. */
+export type MethodPolicy = string[] | 'readOnly'
+
+/**
+ * Normalise a declared policy to the set of callable method names.
+ *
+ * Returns `null` for "no policy declared", which is NOT the same as an empty
+ * set — an empty `methods: []` is a service that answers nothing, and saying so
+ * explicitly is allowed.
+ *
+ * `available` is every name this service could legitimately answer: CRUD plus
+ * its own actions. A name outside it THROWS at construction rather than being
+ * ignored, because the failure mode of a silent typo is the one this whole
+ * feature exists to prevent — `methods: ['find', 'gett']` would block `get`
+ * and read as "the allow-list is broken" only after a 405 in production.
+ */
+export function resolveMethodPolicy(
+  policy:      MethodPolicy | undefined,
+  available:   readonly string[],
+  serviceName: string,
+): Set<string> | null {
+  if (policy === undefined) return null
+
+  if (policy === 'readOnly') return new Set(READ_ONLY_METHODS)
+
+  if (!Array.isArray(policy)) {
+    throw new TypeError(
+      `[Junction] service '${serviceName}': methods must be an array of method ` +
+      `names or the string 'readOnly', got ${JSON.stringify(policy)}`
+    )
+  }
+
+  const known   = new Set(available)
+  const unknown = policy.filter(m => !known.has(m))
+  if (unknown.length) {
+    throw new TypeError(
+      `[Junction] service '${serviceName}': methods lists ${unknown.map(m => `'${m}'`).join(', ')}, ` +
+      `which this service does not have. Available: ${[...known].sort().join(', ')}`
+    )
+  }
+
+  return new Set(policy)
+}
+
+/** Every method name a service could answer — CRUD plus its own actions. */
+export function serviceMethodNames(svc: object): string[] {
+  return [...CRUD_METHODS, ...customMethodNames(svc)]
+}
+
+/**
+ * Is this method callable on this service?
+ *
+ * The single predicate. `callService` enforces it and the three advertisers
+ * (manifest, OpenAPI, /metrics) filter by it, so what a service answers and
+ * what it says it answers cannot drift.
+ */
+export function isMethodAllowed(svc: object, method: string): boolean {
+  const allowed = (svc as { _methods?: Set<string> | null })._methods
+  return !allowed || allowed.has(method)
+}
+
+/** The callable method names, policy applied. Ordered as CRUD then actions. */
+export function allowedMethodNames(svc: object): string[] {
+  return serviceMethodNames(svc).filter(m => isMethodAllowed(svc, m))
+}
 
 /**
  * The one predicate for "is this a custom service method (action)?".
@@ -608,7 +770,7 @@ export function createBaseService(
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
-  const { model, name, hooks, db, paginate, allowBulk, idField, softDelete, cache, schema, channel } = opts
+  const { model, name, hooks, db, paginate, allowBulk, idField, softDelete, cache, schema, channel, methods } = opts
 
   const base = createLitestoneBase({
     model,
@@ -750,6 +912,15 @@ export function createBaseService(
     ...customMethods,
     ...(name    !== undefined ? { name }    : {}),
     ...(channel !== undefined ? { channel } : {}),
+    // Carried through, not resolved here: the loader spreads this object into
+    // createService(), which is where the allow-list is validated against the
+    // actions that exist. Dropping it was a SECURITY-shaped silence — the same
+    // `methods: 'readOnly'` that makes an audit trail append-only through
+    // createService did nothing at all through createBaseService, and the only
+    // symptom was a write that succeeded. Which factory you picked decided
+    // whether your method policy existed, exactly as it once decided whether
+    // your row policies did.
+    ...(methods !== undefined ? { methods } : {}),
     hooks: mergedHooks,
     ...(cache      !== undefined ? { cache }      : {}),
     ...(allowBulk  !== undefined ? { allowBulk }  : {}),
@@ -840,6 +1011,24 @@ export interface ServiceDefinition {
   db?:        () => unknown
   paginate?:  { default: number; max: number }
   allowBulk?: boolean
+
+  /**
+   * Narrow what this service answers. Absent = everything.
+   *
+   *   methods: ['find', 'get']                     an allow-list
+   *   methods: 'readOnly'                          shorthand for the above
+   *   methods: ['find', 'get', 'create', 'approve'] CRUD and actions together
+   *
+   * A method left out answers **405**, on every transport and to an in-process
+   * `app.service(name).create()` alike. A name the service does not have throws
+   * at construction rather than silently blocking the one you meant.
+   *
+   * Without this a `createService({ model })` answers every verb through the
+   * base *with validation*, so a well-formed payload is written — an admin
+   * could forge a row into an append-only audit trail. Opt-out safety, no
+   * warning; this is the opt-in.
+   */
+  methods?:   MethodPolicy
 
   /**
    * Broadcast this service's mutations to a WebSocket channel.
@@ -1098,6 +1287,14 @@ export function createService(def: ServiceDefinition): Service {
   for (const [key, val] of Object.entries(def)) {
     if (isCustomMethod(key, val)) (service as Record<string, unknown>)[key] = val
   }
+
+  // Resolve the method policy AFTER the actions are on, because an allow-list
+  // may name one and the unknown-name check has to be able to see it.
+  ;(service as Service)._methods = resolveMethodPolicy(
+    def.methods,
+    serviceMethodNames(service),
+    defName ?? '(unnamed)',
+  )
 
   return service
 }

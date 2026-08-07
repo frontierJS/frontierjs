@@ -597,6 +597,24 @@ export declare class TransitionConflictError extends Error {
   retryable: true
 }
 
+/** An update on a `@version` model that did not carry the version it read. 400. */
+export declare class VersionRequiredError extends Error {
+  model:     string
+  field:     string
+  status:    400
+  retryable: false
+}
+
+/** The row moved between the read and the write. 409 — re-read and re-apply. */
+export declare class VersionConflictError extends Error {
+  model:     string
+  field:     string
+  expected:  number
+  actual:    number
+  status:    409
+  retryable: true
+}
+
 export declare class TransitionNotFoundError extends Error {
   model:      string
   transition: string

@@ -86,6 +86,16 @@ export interface HttpTransportOptions {
   }
   static?:      StaticOptions
   auth?:        IAuth
+  /**
+   * Cookie name to read the session token from, in addition to
+   * `Authorization: Bearer` and `x-api-key`. Null/omitted = cookies are not
+   * read at all, which is the default and a deliberate one — see extractToken.
+   *
+   * Usually set for you: @frontierjs/auth calls `setAuthCookie('session')` from
+   * its own register() when configured `{ cookieAuth: true }`. Set it here (via
+   * `config.auth.cookie`) for a hand-rolled IAuth that issues its own cookie.
+   */
+  authCookie?:  string | null
   powered?:     string     // X-Powered-By header value
   onError?:     (err: unknown, ctx?: TransportContext) => void
   /**
@@ -207,6 +217,21 @@ export class HttpTransport {
   // via type-erasing casts, which no type-checker could protect.
   setAuth(auth: IAuth): void {
     this._opts.auth = auth
+  }
+
+  /**
+   * Accept the session token from a cookie of this name, as well as from
+   * `Authorization: Bearer` and `x-api-key`. Pass null to stop.
+   *
+   * Exists so an auth plugin can turn cookie mode on from its own `register()`
+   * rather than making the app state it twice. `cookieAuth: true` on
+   * @frontierjs/auth used to set a cookie nothing read back — declaring the
+   * mode in one place and having the transport honour it is what closes that.
+   *
+   * See extractToken for why this is opt-in rather than always on.
+   */
+  setAuthCookie(name: string | null): void {
+    this._opts.authCookie = name
   }
 
   stop(): Promise<void> {
@@ -355,7 +380,7 @@ export class HttpTransport {
     // ── Resolve auth ───────────────────────────────────────────────
     let user = null
     if (this._opts.auth) {
-      const token = extractToken(headers)
+      const token = extractToken(headers, this._opts.authCookie ?? null)
       if (token) {
         try { user = await this._opts.auth.verifySession(token) } catch {}
       }
@@ -790,7 +815,11 @@ export class HttpTransport {
     if (this._opts.auth) {
       const token =
         ws.data.query?.token ??
-        extractToken(ws.data.headers)
+        // The upgrade request is an ordinary browser request and carries the
+        // cookie, so cookie mode has to work for the socket too — otherwise a
+        // cookie-authenticated app connects as anonymous and every channel
+        // scoped to the user stays silent.
+        extractToken(ws.data.headers, this._opts.authCookie ?? null)
       if (token) {
         try { ws.data.user = await this._opts.auth.verifySession(token) } catch {}
       }
@@ -851,12 +880,52 @@ function toResponse(result: unknown, ctx: TransportContext): Response {
 
 // ─── Token extraction from headers ───────────────────────────────────────
 
-function extractToken(headers: Record<string, string>): string | null {
+/**
+ * Resolve the session token for a request.
+ *
+ * Order is deliberate: an explicitly-attached credential always beats an
+ * ambiently-attached one, so a Bearer token or an API key wins over the cookie
+ * even when both are present. That makes "act as someone else for this one
+ * call" possible from a browser that is also holding a session cookie.
+ *
+ * ── Why the cookie is opt-in (FJS-002) ────────────────────────────────────
+ *
+ * This used to read only `authorization` and `x-api-key`, so
+ * `createAuthPlugin(auth, { cookieAuth: true })` set an httpOnly cookie that
+ * nothing ever read back: `ctx.user` stayed null and a cookie-only request to
+ * any protected route was 401. The documented mode handed you a session you
+ * could not use.
+ *
+ * It stays OFF unless a cookie name is supplied, and that is a security
+ * decision rather than caution about breaking things. A Bearer token has to be
+ * attached by script, so a cross-site request cannot forge one. A cookie is
+ * attached by the browser automatically, which is what makes CSRF possible at
+ * all — so an app only gets that exposure when it asks for it. What makes it
+ * safe when asked for is `SameSite=Lax`, which @frontierjs/auth sets: the
+ * browser withholds the cookie from cross-site POST/PUT/PATCH/DELETE, and those
+ * are the requests that change something. An app that sets its own session
+ * cookie with `SameSite=None` re-opens the hole and Junction cannot tell.
+ */
+function extractToken(
+  headers:    Record<string, string>,
+  cookieName: string | null = null,
+): string | null {
   const auth = headers['authorization']
   if (auth?.startsWith('Bearer ')) return auth.slice(7)
 
   const apiKey = headers['x-api-key']
   if (apiKey) return apiKey
+
+  if (cookieName) {
+    const raw = headers['cookie']
+    if (raw) {
+      const value = parseCookies(raw)[cookieName]
+      // An empty cookie is how a logout clears one. Treating '' as a token
+      // would send a guaranteed-failing verifySession on every request after
+      // sign-out.
+      if (value) return value
+    }
+  }
 
   return null
 }

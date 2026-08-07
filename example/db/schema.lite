@@ -115,6 +115,17 @@ model Order {
                       @required("Please select a customer from the list")
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
+  /// Written by a JOB, not by a request. `ship` books a courier, that call is
+  /// slow and can fail, so it happens after the response: the action queues
+  /// `book-courier` (@frontierjs/caravan) and the job patches this column when
+  /// the courier answers. Nullable because between the move and the booking
+  /// there is a real window where a shipped order has no tracking yet.
+  ///
+  /// It is the field that proves deferred work reaches the browser — the job
+  /// writes through the orders SERVICE, so the write announces on the channel
+  /// and a tab nobody touched fills this cell in seconds later.
+  trackingCode String? @label("Tracking")
+
   createdAt DateTime @default(now())
 
   /// The state machine, declared where every other access rule lives rather
@@ -133,4 +144,37 @@ model Order {
 
   @@gate("0.4.4.5")
   @@log(audit)
+}
+
+
+// ─── Notifications ────────────────────────────────────────────────────────
+//
+// `fli add notifications` writes this model; it is here by hand because this
+// app appends auth's fragments at runtime and keeps its own models in one file.
+//
+// A notification is not a shop noun — it is the SHOP TALKING TO ITS STAFF, so
+// the row belongs to a User (auth's uuid `id`, hence String) and never to a
+// Customer. The customer hears about their order by email, which persists
+// nothing here; the two audiences are two notification classes, not one class
+// with a branch in it.
+
+model Notification {
+  id          Int       @id
+  userId      String
+  type        String
+  data        Json
+  contextType String?
+  contextId   Int?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  /// RCUD: read is open because the row policy below is what scopes it —
+  /// a gate is per-operation and cannot say "your own rows". Create is 8
+  /// (SYSTEM): only `asSystem()` writes one, which is what the inApp driver
+  /// uses. NOT 9 — that is LOCKED, which `asSystem()` does not pass either,
+  /// so a 9 here would stop the driver from ever writing a row. Update is 4
+  /// so a signed-in user can mark their own as read; delete is SYSTEM.
+  @@gate("0.8.4.8")
+  @@allow('read',   userId == auth().id)
+  @@allow('update', userId == auth().id)
 }

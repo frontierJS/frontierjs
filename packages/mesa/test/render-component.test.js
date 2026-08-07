@@ -427,3 +427,46 @@ describe('renderComponent — tmpDir', () => {
     expect(stray).toEqual([])
   })
 })
+
+// ─── The default tmpDir must not depend on where you started the process ─────
+//
+// A temp render module carries `import '@frontierjs/mesa/runtime.js'`, so it has
+// to be written somewhere that specifier resolves from — the mesa package root.
+// `findMesaDir()` used to test `dirname(import.meta.url)` for a package.json,
+// which stopped being true when these sources moved into `src/`; it then fell
+// back to searching up from `process.cwd()`, so it found mesa only when the
+// process happened to be started inside it, and every other caller silently got
+// the OS temp dir where nothing resolves.
+//
+// Every test in this file passes either way, because vitest runs them from the
+// mesa package root. So this one runs the renderer in a CHILD PROCESS with its
+// cwd somewhere else — which is what `@frontierjs/email-kit` does, and what had
+// all 34 of its tests failing while this suite stayed green. `FJS-100`.
+
+describe('renderComponent from another working directory', () => {
+  it('resolves the runtime regardless of cwd', async () => {
+    const { execFile } = await import('child_process')
+    const { promisify } = await import('util')
+    const { tmpdir }    = await import('os')
+    const { fileURLToPath } = await import('url')
+
+    const mesaSrc = path.join(
+      path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'render-component.js')
+
+    const script = path.join(tmpdir(), `mesa-cwd-probe-${Date.now()}.mjs`)
+    await writeFile(script, `
+      import { renderComponent } from ${JSON.stringify(mesaSrc)}
+      const { html } = await renderComponent('<p>from elsewhere</p>', { target: 'fragment' })
+      process.stdout.write(html)
+    `)
+
+    try {
+      // cwd is deliberately NOT inside the repo.
+      const { stdout } = await promisify(execFile)(
+        process.execPath, [script], { cwd: tmpdir() })
+      expect(stdout).toContain('from elsewhere')
+    } finally {
+      await unlink(script).catch(() => {})
+    }
+  })
+})

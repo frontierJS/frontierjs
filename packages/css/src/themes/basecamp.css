@@ -1,0 +1,106 @@
+/*
+ * basecamp.css
+ * Deep blue-black, cool neutrals, six accent hues. The fleet-operations look.
+ *
+ * Ported from the Basecamp UI prototype (packages/basecamp/docs/mock/
+ * BasecampUI.jsx), which carried its palette as an 18-key `T` object read by
+ * 2,761 inline style objects. The hues are that palette; the neutral ramp is
+ * not, and the difference is the point — see below.
+ *
+ * Like dark.css this overrides neutrals and keeps the token contract; unlike
+ * dark.css it also sets the brand hues, because the accents ARE the design
+ * here rather than a tint on top of one.
+ */
+
+.theme-basecamp {
+  /*
+   * Tells the UA to render native form controls, scrollbars, and the
+   * <select> dropdown dark. Without it those stay light and the theme only
+   * looks dark until you focus an input. Same reasoning as dark.css.
+   */
+  color-scheme: dark;
+
+  /* ── Accents ───────────────────────────────────────────────────────
+   * Taken verbatim from the prototype's T object. They need no contrast
+   * correction: chip.css derives chip text from the fill's luminance, so a
+   * tone used as a FILL is safe by construction, and every one of these
+   * also clears AA as TEXT on --surface (measured: 5.63–9.77:1), which is
+   * the pairing the package has no derivation for.
+   *
+   * --color-secondary is the prototype's purple rather than a dark slate.
+   * The light themes make secondary a near-black neutral, which on this
+   * ground would render as a ghost button — a tone that reads as absent is
+   * worse than one that reads as a second accent.
+   */
+  --color-primary:   #5a8ef8;  /* T.blue   */
+  --color-secondary: #9d87f5;  /* T.purple */
+  --color-muted:     #636882;  /* T.sec    */
+  --color-info:      #1ec8d4;  /* T.cyan   */
+  --color-success:   #2dd4a0;  /* T.green  */
+  --color-warning:   #f5b540;  /* T.amber  */
+  --color-danger:    #f06b6b;  /* T.red    */
+
+  /* ── Surfaces ──────────────────────────────────────────────────────
+   * T.bg is the page ground, so it maps to --surface-sunken: frame.css
+   * backgrounds .screen with it, which is exactly what T.bg was for.
+   * T.card and T.elevated then land on --surface and --surface-raised.
+   *
+   * Two of the prototype's surfaces have nowhere to go, and that is a
+   * finding rather than an omission: T.sidebar (#0e1019) and T.modal
+   * (#12151f) were distinct from the card, but frame.css paints both the
+   * topbar and the sidebar with --surface and there is no --sidebar-bg or
+   * --dialog-bg token. Adding one would be a change to the design system,
+   * not a theme, so the shell here is one surface. If the separation turns
+   * out to matter, that is the argument for the token.
+   */
+  --surface:        #151820;  /* T.card     */
+  --surface-raised: #1b1f2c;  /* T.elevated */
+  --surface-sunken: #0b0d14;  /* T.bg       */
+
+  /* ── Ink ───────────────────────────────────────────────────────────
+   * The one place this theme departs from the prototype, deliberately.
+   *
+   * T.sec (#636882) and T.muted (#383d52) FAIL WCAG AA as body text on
+   * their own backgrounds — measured 3.24:1 and 1.53:1, against the 4.5:1
+   * that applies to every surface --ink-mute actually appears on
+   * (placeholders, table headers, field hints, nav labels, all 11–13px).
+   * The prototype never measured: 2,761 inline styles, no test.
+   *
+   * Both are lifted by scaling uniformly in linear RGB — the same operation
+   * chip.css uses to cap a fill, and the one tokens.css used on --ink-mute —
+   * so chromaticity is exact and these are the identical blue-greys, only
+   * light enough to read. The ramp is targeted against --surface-raised,
+   * the tightest of the three surfaces:
+   *
+   *   --ink        #dde1ed   12.56:1 on raised   (T.text, unchanged)
+   *   --ink-soft   #a0a7cf    6.98:1             (T.sec,   was 3.24:1)
+   *   --ink-mute   #7c86af    4.60:1             (T.muted, was 1.53:1)
+   *
+   * Lifting both to the same AA floor would have collapsed the three-step
+   * ramp into two, so --ink-soft is targeted at 7:1 and --ink-mute at the
+   * floor — the visual hierarchy the prototype had, at a contrast it did
+   * not.
+   */
+  --ink:      #dde1ed;
+  --ink-soft: #a0a7cf;
+  --ink-mute: #7c86af;
+
+  /*
+   * Translucent white, as the prototype had them. A rule that composites
+   * over whatever is beneath it stays correct on all three surfaces, where
+   * a solid grey picked against --surface reads too heavy on --surface-sunken
+   * and too light on --surface-raised.
+   */
+  --rule:        rgba(255, 255, 255, 0.07);
+  --rule-strong: rgba(255, 255, 255, 0.13);
+
+  /*
+   * Near-black shadows are invisible against a #151820 surface, so the
+   * alpha goes up sharply — the same correction dark.css makes, pushed
+   * further because this ground is darker still. The long, soft spread is
+   * the prototype's (`0 8px 32px rgba(0,0,0,0.45)` on its cards and toasts).
+   */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}

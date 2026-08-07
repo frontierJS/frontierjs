@@ -187,10 +187,13 @@ import { compile, compileSource, compileFile } from '@frontierjs/mesa'
 // .mesa source — always routes to Mesa compiler
 const ctx = await compile(source, { filename: 'Counter.mesa', css: false })
 
-// Auto-routes: frontmatter → compileMd, otherwise → compile
-const ctx = await compileSource(source, { filename: 'Post.mesa' })
+// Routes on the EXTENSION: .md → compileMd, anything else → compile.
+// A `---` block at the top of a .mesa file is metadata (a route's title, its
+// render mode) — it is stripped, exposed as ctx.frontmatter, and does not
+// change which language the file is written in.
+const ctx = await compileSource(source, { filename: 'Post.md' })
 
-// Reads file + auto-routes by content and extension
+// Reads file + routes by extension
 const ctx = await compileFile('./src/Counter.mesa')
 
 ctx.result           // compiled JS string

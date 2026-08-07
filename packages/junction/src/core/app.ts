@@ -428,6 +428,12 @@ export function createApp(opts: AppOptions = {}): App {
     ddos:        config.http.ddos,
     static:      config.http.static,
     auth:        opts.auth,
+    // Cookie mode is normally declared by the auth plugin, which calls
+    // http.setAuthCookie() from its own register(). This is the path for a
+    // hand-rolled IAuth that issues its own cookie.
+    authCookie:  (config as Record<string, unknown>).auth
+      ? ((config as { auth?: { cookie?: string } }).auth?.cookie ?? null)
+      : null,
     powered:     config.http.powered,
     onError:     (err) => {
       console.error('[HTTP Error]', err)

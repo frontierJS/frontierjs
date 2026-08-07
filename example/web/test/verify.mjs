@@ -229,7 +229,12 @@ try {
     return document.querySelectorAll('tbody tr').length;
   `))
   t('orders.statuses', await evaluate(`
-    return [...document.querySelectorAll('tbody tr .pill')].map(p => p.textContent.trim());
+    // Paired with the reference and sorted, for the reason in readMoves below.
+    return [...document.querySelectorAll('tbody tr')]
+      .map(tr => [tr.querySelector('code')?.textContent.trim(),
+                  tr.querySelector('.pill')?.textContent.trim()])
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([, status]) => status);
   `))
 
   // The Moves column is @@transitions read back through x-transitions — no list
@@ -240,12 +245,26 @@ try {
   // — automatic semicolon insertion silently discards the value and the
   // assertion fails against `undefined` for a reason that has nothing to do
   // with the page.
-  const readMoves = `(() => [...document.querySelectorAll('tbody tr')].map(tr => ({
-      ref:    tr.querySelector('code')?.textContent.trim(),
-      status: tr.querySelector('.pill')?.textContent.trim(),
-      moves:  [...tr.querySelectorAll('td:nth-child(6) button')]
-                .map(b => b.textContent.trim() + (b.disabled ? '(disabled)' : '')),
-    })))()`
+  //
+  // The Moves cell is found through its HEADER, not by position. It used to be
+  // `td:nth-child(6)`, and adding a Tracking column ahead of it turned every
+  // moves assertion into `[]` — which reads as "@@transitions stopped reaching
+  // the browser", not as "the table grew a column". A drive should fail for the
+  // reason it is testing.
+  const readMoves = `(() => {
+      const col = [...document.querySelectorAll('thead th')]
+        .findIndex(th => th.textContent.trim() === 'Moves') + 1;
+      // Sorted by reference. The table declares no order, and verify:jobs
+      // re-creates a seeded order it cancels -- which gives that row a new id
+      // and moves it to the end. These assertions are about which moves each
+      // order offers, not about what order the rows arrived in.
+      return [...document.querySelectorAll('tbody tr')].map(tr => ({
+        ref:    tr.querySelector('code')?.textContent.trim(),
+        status: tr.querySelector('.pill')?.textContent.trim(),
+        moves:  [...tr.querySelectorAll('td:nth-child(' + col + ') button')]
+                  .map(b => b.textContent.trim() + (b.disabled ? '(disabled)' : '')),
+      })).sort((a, b) => a.ref.localeCompare(b.ref));
+    })()`
 
   t('moves.anon', await evaluate(`return ${readMoves}`))
 
@@ -417,13 +436,16 @@ try {
   // would leave the database changed and the second run of this file would find
   // no `pay` button at all — a verification that only works once is not one.
   t('moves.afterPay', await evaluate(`
+    const col = [...document.querySelectorAll('thead th')]
+      .findIndex(th => th.textContent.trim() === 'Moves') + 1;
     const row = () => byText('tbody tr', 'ORD-CDP-1');
-    const before = [...row().querySelectorAll('td:nth-child(6) button')].map(b => b.textContent.trim());
-    [...row().querySelectorAll('td:nth-child(6) button')].find(b => b.textContent.trim() === 'pay').click();
+    const moves = () => [...row().querySelectorAll('td:nth-child(' + col + ') button')];
+    const before = moves().map(b => b.textContent.trim());
+    moves().find(b => b.textContent.trim() === 'pay').click();
     await waitFor(() => row().querySelector('.pill').textContent.trim() === 'paid');
     return {
       before,
-      after:  [...row().querySelectorAll('td:nth-child(6) button')].map(b => b.textContent.trim()),
+      after:  moves().map(b => b.textContent.trim()),
       status: row().querySelector('.pill').textContent.trim(),
     };
   `))
@@ -521,10 +543,19 @@ const expected = {
   'orders.deleteEnabledAdmin': true,
   'signedIn.badge':            'alex@shop.test · level 5',
 
-  // Seven controls, none of them named in the component: five from the model's
+  // Five controls, none of them named in the component: four from the model's
   // own fields, plus the relation picker. `id` and `createdAt` are not offered.
+  //
+  // The LABELS are schema-derived as of 2026-08-06, which is why they are no
+  // longer the raw column names. The page used to pass `label={name}` to every
+  // control and `label={fk.relation}` to the picker; now it passes neither, and
+  // a control inside <Form> resolves its own from the field rule — `@label`
+  // where the schema declares one, the title-cased column name otherwise.
+  // `Customer` rather than `Customer Id` is the whole point of `@label`, and it
+  // was previously unreachable: every control passed its own nameToLabel() down
+  // as an explicit label, so the schema's was shadowed and never seen.
   'form.controls': [
-    'reference:text', 'status:select', 'total:number', 'note:text', 'customer:select',
+    'Reference:text', 'Status:select', 'Total:number', 'Note:text', 'Customer:select',
   ],
   'form.statusOptions':     ['pending', 'paid', 'shipped', 'refunded', 'cancelled'],
   'form.customerOptions':   ['Acme Corp', 'Globex'],

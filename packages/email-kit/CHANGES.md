@@ -2,6 +2,53 @@
 
 Newest first.
 
+## 2026-08-06 — the kit can be used from outside itself
+
+34 tests. Driven by `example/` for the first time, which is what found all of
+this: every defect below is invisible from inside the package.
+
+- **`exports` could not serve the specifier the README documents.** The map was
+  `"./components/*" → "./components/*.mesa"`, so
+  `@frontierjs/email-kit/components/Email.mesa` resolved to `Email.mesa.mesa`.
+  Mesa requires the `.mesa` suffix in the specifier — that is how it recognises
+  a component import at all — so the documented form was the only one that could
+  work, and it was the one that did not. Added the extension-carrying pattern;
+  the extensionless form still resolves.
+- **Templates outside this package could not import its components.** Mesa's
+  `compileTree` resolved every `.mesa` import as a path. Fixed there; see mesa's
+  `CHANGES.md`.
+- **A `subject` export may now be a function** of the render data, which is what
+  a subject that names a record needs. Also fixed in mesa.
+
+
+## 2026-08-06 — the name is `@frontierjs/email-kit`, and the tests run again
+
+34 tests, and this is the first time that number has been true in a while.
+
+**Named.** `@frontierjs/mesa-email` is gone (`FJS-D15`). `package.json` already
+said `@frontierjs/email-kit`; the old name survived in the README, `index.js`,
+`render.js` — including the peer-dependency error a user would actually read —
+`PROJECT_STATE.md`, mesa's docs, and the test filename, now `email-kit.test.js`.
+The kit is named for what it is, not for what it is built on: `@frontierjs/ui`
+is a Mesa component kit too and is not called `mesa-ui`.
+
+**Every test in the package had been failing.** Two causes, one here and the
+real one next door:
+
+- This package probed for mesa's renderer at `../mesa/render-component.js` — the
+  layout before mesa moved its sources into `src/` — so both sibling candidates
+  missed. Worse, the "is this a missing module?" test read only Node's phrasing
+  (`ERR_MODULE_NOT_FOUND`, `Cannot find module`) while Vite and vitest say
+  `Failed to load url … Does the file exist?`, so a missed candidate was
+  rethrown as a real error and the loop never reached the specifier that works.
+  Both fixed: the paths point at `mesa/src/`, and the bundler's phrasing counts
+  as not-found.
+- In mesa: `findMesaDir()` put temp render modules in the OS temp dir whenever
+  the process was not started inside `packages/mesa`, and a bare
+  `@frontierjs/mesa/runtime.js` cannot resolve from there. See mesa's
+  `CHANGES.md` for 2026-08-06.
+
+
 ## 2026-08-03 — added to the monorepo; two silent rendering defects fixed
 
 The kit arrived as `packages/email-kit`. Before this it existed only on

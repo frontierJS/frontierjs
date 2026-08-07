@@ -17,7 +17,7 @@ _As of this pass. Superseded 2026-08-01: `email-kit.test.js` is now
 `../PROJECT_STATE.md`._
 
 `npx vitest run` → **841 pass / 27 fail**. The 27 are `email-kit.test.js`, which
-needs `@frontierjs/mesa-email` and its `/tmp/mesa` fixtures; unchanged from
+needs `@frontierjs/email-kit` and its `/tmp/mesa` fixtures; unchanged from
 before this pass, do not chase them.
 
 Sierra downstream check: `cd ../sierra && npx vitest run` → **521/521**.

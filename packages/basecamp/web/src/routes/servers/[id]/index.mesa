@@ -5,6 +5,7 @@ title: Server
   import { page, goto } from '@frontierjs/sierra/router'
   import { servers } from '../../../resources/servers.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
 
   $: page.params
 
@@ -54,6 +55,11 @@ title: Server
     try {
       server = await servers.service.action(method, server.id)
       events = rowsOf(await servers.service.action('events', server.id))
+      // A transition is confirmed where the operator is looking, not only by
+      // the status pill changing further down the page. `error` stays as the
+      // inline record of a refusal — a toast is transient, and a refusal is
+      // something you may need to read twice.
+      toasts.success(`${server.name} → ${server.status}`)
     } catch (e) {
       error = e.message
     } finally {
