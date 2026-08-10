@@ -1,0 +1,11 @@
+<script module>
+  // src/resources/AuditEvent.mesa — the Resource layer.
+  //
+  // Read-only by design: the service answers 405 to create, patch and remove,
+  // because a trail anyone can write to answers no question worth asking.
+  // No coerce/validate/blankToNull — those shape a payload being SENT, and
+  // nothing is ever sent here.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const audit = createResource('audit')
+</script>
