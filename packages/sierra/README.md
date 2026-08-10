@@ -768,7 +768,8 @@ Everything in `sierra.config.js`:
 | `theme` | — | `{ default, persist, attribute, key }` |
 | `analytics` | — | `{ provider }` — `'plausible'`, `'gtm'`, or a custom `{ init, pageview, track }` |
 | `devtools` | — | `{ port, position, n1Threshold }` |
-| `autoImport.components` | `[]` | directories whose PascalCase components need no import |
+| `autoImport.components` | `[]` | directories, scanned recursively, whose PascalCase components need no import |
+| `autoImport.modules` | `{}` | package → bindings that need no import |
 | `siteUrl` | `''` | absolute origin for the sitemap |
 | `llms` | `true` | emit `llms.txt` |
 | `markdownPages` | `false` | `true` \| `'auto'` — emit `index.md` beside each page |
@@ -920,9 +921,30 @@ Runs automatically after `vite build`:
   logs, connections and an N+1 waterfall. Zero production bundle cost.
 - **Build warnings.** Unexported snippets, frontmatter shadowing a reserved `page` field,
   and duplicate snippet/layout-prop names.
-- **Auto-import.** With `autoImport: { components: ['src/components/UI'] }`, PascalCase
-  components in those directories need no import statement; names are injected only where
-  the template actually uses them. Two directories exporting the same name is a build error.
+- **Auto-import.** Two registries, one namespace:
+
+  ```js
+  autoImport: {
+    components: ['src/components/UI'],
+    modules: {
+      'svelte/store':       ['writable', 'readable'],
+      '@frontierjs/sierra': [['theme', 'appTheme']],   // named, under an alias
+      'some/pkg':           { default: 'Pkg', star: 'ns' },
+      dayjs:                'dayjs',                   // shorthand for a default import
+    }
+  }
+  ```
+
+  Component directories are scanned **recursively** and keyed on the basename, so a
+  component's directory organises it and its name identifies it. A **component** is
+  injected where the template uses it as a `<Tag>`; a **module binding** where any code —
+  a `<script>` body or a `{…}` expression — uses it as a bare identifier. Prose is not
+  code: `<p>Use dayjs</p>` imports nothing. Neither is a property access (`x.writable`),
+  an object key, a string, or a comment.
+
+  A name the file already binds always wins — an explicit import, or a local `const`.
+  Two sources providing the same name is a build error, whether they are two directories,
+  two packages, or one of each; alias the binding or rename the component.
 
 ---
 

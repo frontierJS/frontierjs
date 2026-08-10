@@ -25,7 +25,7 @@
   const s = statusMap[status] ?? { tone: 'muted', label: status, pulse: false }
 </script>
 
-<div class="cluster" style:gap="0.5rem" {class}>
+<div class="cluster" style:gap="0.5rem" {class} {...$attributes}>
   <!-- The label below is visible text, so the dot stays decorative. -->
   <Dot tone={s.tone} pulse={s.pulse} size={size} />
   <div class="stack" style:gap="0.125rem">

@@ -47,7 +47,7 @@
   reader can come back to, not something to interrupt them with. That is the
   whole difference from Alert, and it belongs in the element, not the styling.
 -->
-<aside class={cx('alert', t, !filled && 'outlined')} {class}>
+<aside class={cx('alert', t, !filled && 'outlined')} {class} {...$attributes}>
   <div class="alert-icon">
     <svg
       xmlns="http://www.w3.org/2000/svg"

@@ -153,7 +153,26 @@ exist either.
 One name encoding an arrangement is the good idea here. Whether the *implied
 role for child 1* survives is the open question (§Risks).
 
-### 2. A content/prose layer
+### 2. A content/prose layer — **SHIPPED**
+
+`src/patterns/prose.css` ships `.prose`, and the guide writes it. This section
+is kept as the record of what was asked for, because what shipped is narrower
+than what is below and the difference is the interesting part.
+
+It landed in the shape this file argued for — an **opt-in scope**, never a
+global element rule. Two things it deliberately does not do: it sets no face,
+size, weight or heading rule, because Heading already owns `h1`–`h6` and two
+owners for one property is Invariant 4; and it sets **no margins**, because the
+parent owns the space between children (`class="prose stack"`), which also keeps
+it reachable by `--density`. What is left is measure, body ink and list
+indentation — the three things no term owned.
+
+The evidence for the gap was this guide: 286 `<p>` each carrying a class,
+because there was no way to say *this region is prose* once. That was
+`sg-prose`, and `guide/AUDIT.md` recorded it at 287 uses as the proof the tier
+was missing. Both are now gone.
+
+The original argument follows.
 
 The package styles **no `p`** — deliberate, it is not classless. That is right
 for an app: the app writes elements. It is wrong for anything markdown-driven,
@@ -242,8 +261,8 @@ The work, ranked by whether it is worth doing:
 | --- | --- | --- |
 | 1 | Section/Band structure vocabulary | **Real gap.** The reason there is no marketing surface in the repo |
 | 2 | Decoration: filters, background image, gradient | Cheap, composes with tones already |
-| 3 | An opt-in `prose` scope | Needed for anything markdown-driven; the one item that can break a consumer |
+| 3 | An opt-in `prose` scope | **Shipped** — `src/patterns/prose.css`, scoped as proposed |
 | 4 | Positional roles | **Least fit.** Trades checkability for terseness |
 
-None of it is scheduled. `packages/css/PROJECT_STATE.md` is where it would land
-if it were.
+Item 3 shipped. The rest is unscheduled; `packages/css/PROJECT_STATE.md` is
+where it would land if it were.

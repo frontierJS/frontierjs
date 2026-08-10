@@ -13,6 +13,6 @@
     <DropdownLabel>Danger zone</DropdownLabel>
     <DropdownItem tone="danger" onclick={signOut}>Sign out</DropdownItem>
 -->
-<div role="presentation" class="navlist-label" {class}>
+<div role="presentation" class="navlist-label" {class} {...$attributes}>
   <slot />
 </div>

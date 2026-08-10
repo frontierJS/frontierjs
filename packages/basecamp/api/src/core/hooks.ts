@@ -2,8 +2,8 @@
 // Basecamp-specific hooks — used across Basecamp services.
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
-import { BadRequest, Forbidden, NotFound, authenticate } from '@frontierjs/junction'
-import type { Hook, ServiceContext }  from '@frontierjs/junction'
+import { BadRequest, Forbidden, NotFound, authenticate, toDataPrincipal } from '@frontierjs/junction'
+import type { Hook, AroundHook, ServiceContext }  from '@frontierjs/junction'
 import type { BasecampApp }                from '../basecamp.types.ts'
 
 // ─── The session ─────────────────────────────────────────────────────────
@@ -17,7 +17,12 @@ interface Session {
   // Put here by basecampSessionFields (core/session-auth.ts) off this app's own
   // User columns, not by @frontierjs/auth.
   isSystemAdmin?: boolean; status?: string; kind?: string
+  // Put here by applyStanding() below, per request, off the WorkspaceMember row
+  // for the workspace being addressed. Never a column on `user`.
+  memberRole?: string
 }
+
+interface MemberRow { role?: string; workspace?: { status?: string } }
 
 function userOf(ctx: ServiceContext): Session | undefined {
   return ctx.auth?.user as Session | undefined
@@ -63,9 +68,99 @@ export function requireWorkspace(): Hook {
   }
 }
 
+// ─── Standing ────────────────────────────────────────────────────────────
+// Who the caller is IN THE WORKSPACE this request is for — resolved once, and
+// put where both halves of access control can read it.
+//
+// Two readers, and they are not the same reader:
+//
+//   the hooks below      read ctx.locals.memberRole and answer 403 with a
+//                        sentence naming the role you would need.
+//   @@gate               reads `memberRole` off the PRINCIPAL, through
+//                        core/gate.ts, at the Data boundary — which is where
+//                        Invariant 6 says access is decided, and which also
+//                        covers every path a hook does not: an engine calling
+//                        a service in-process, a custom action nobody wired a
+//                        role hook onto, a query built by hand in a method.
+//
+// The principal is where the interesting part is. Junction scopes the client
+// from `ctx.auth.user` in an around hook installed by createApp({ db }) — which
+// runs before any hook can know which workspace is being addressed — so the
+// standing has to be put ON the principal and the client re-scoped from it.
+// Doing that on the client alone is not enough: junction's getTable() re-derives
+// its own scoped copy from ctx.auth.user, so a standing that lives only on
+// ctx.locals.db is dropped the moment a service touches a model.
+//
+// A fresh object, never a mutation. Over WebSocket the session is resolved
+// once at upgrade and the same object is handed to every frame — and the
+// internal-call path freezes it. Mutating it would either throw or leak one
+// call's workspace role into the next call on that socket.
+
+const STANDING_FOR = '__standingFor'
+
+/**
+ * Resolve the caller's standing in `workspaceId` and apply it to this call.
+ *
+ * Idempotent per workspace: called from the around hook with the header's
+ * workspace, and again by any service that addresses a different one (the
+ * workspaces service, where the workspace IS the id). Re-resolving is what
+ * keeps a caller who is admin of workspace A from carrying that level into a
+ * request against workspace B.
+ */
+export async function applyStanding(
+  app:         BasecampApp,
+  ctx:         ServiceContext,
+  workspaceId: string | undefined
+): Promise<MemberRow | null> {
+  const user = userOf(ctx)
+  if (!user?.userId || !workspaceId) return null
+  if (ctx.locals[STANDING_FOR] === workspaceId) return (ctx.locals.member as MemberRow | null) ?? null
+
+  // asSystem(): membership is what DECIDES the caller's access, so it cannot be
+  // read through a client already scoped by that access — and with @@gate live,
+  // WorkspaceMember is not readable at the level a caller with no standing yet
+  // holds. `include`, not a second findUnique: this runs on every request to
+  // every workspace-scoped service, and the workspace's status is one join away
+  // from a row already being read.
+  const sys: any = app.data.asSystem()
+  const member: MemberRow | null = await sys.workspaceMember.findFirst({
+    where:   { workspaceId, userId: user.userId },
+    include: { workspace: true },
+  })
+
+  ctx.locals[STANDING_FOR] = workspaceId
+  ctx.locals.member        = member
+  ctx.locals.memberRole    = member?.role
+
+  const principal = { ...user, memberRole: member?.role, workspaceId }
+  ctx.auth.user   = principal as unknown as typeof ctx.auth.user
+  ctx.locals.db   = (app.data as any).$setAuth(toDataPrincipal(principal))
+
+  return member
+}
+
+/**
+ * App-level around hook: every service call starts with the caller's standing.
+ *
+ * Registered in app.ts, so it composes INSIDE junction's own withLitestoneDb —
+ * which is the order that works, since this replaces the client that one
+ * installed with a copy scoped to a principal carrying the workspace role.
+ *
+ * It refuses nothing. A request naming a workspace the caller is not in gets a
+ * principal with no role, which @@gate grades VISITOR(1) and scopeToWorkspace
+ * turns into a sentence. Refusing here would 403 the services that legitimately
+ * run with no workspace at all — /workspaces, /hub, the agent endpoints.
+ */
+export function withWorkspaceStanding(app: BasecampApp): AroundHook {
+  return async (ctx, next) => {
+    await applyStanding(app, ctx, resolveWorkspaceId(ctx))
+    await next()
+  }
+}
+
 // ─── scopeToWorkspace ────────────────────────────────────────────────────
 // Verifies the authenticated user is a member of the requested workspace.
-// Stamps ctx.locals.memberRole so requireWorkspaceRole avoids a second query.
+// The membership row is already in hand — the around hook read it.
 
 export function scopeToWorkspace(app: BasecampApp): Hook {
   return async (ctx: ServiceContext): Promise<void> => {
@@ -74,16 +169,7 @@ export function scopeToWorkspace(app: BasecampApp): Hook {
 
     if (!userId || !workspaceId) return
 
-    // asSystem(): membership is what DECIDES the caller's access, so it cannot
-    // be read through a client already scoped by that access.
-    // `include`, not a second findUnique: this hook runs on every request to
-    // every workspace-scoped service, and the status is one join away from a
-    // row already being read.
-    const sys: any = app.data.asSystem()
-    const member = await sys.workspaceMember.findFirst({
-      where:   { workspaceId, userId },
-      include: { workspace: true },
-    })
+    const member = await applyStanding(app, ctx, workspaceId)
 
     if (!member) throw new Forbidden('You are not a member of this workspace')
 
@@ -96,8 +182,6 @@ export function scopeToWorkspace(app: BasecampApp): Hook {
     // than learning that a workspace they cannot see is suspended.
     if (member.workspace?.status === 'suspended')
       throw new Forbidden('This workspace is suspended. Ask a system administrator to restore it.')
-
-    ctx.locals.memberRole = member.role
   }
 }
 
@@ -106,7 +190,14 @@ export function scopeToWorkspace(app: BasecampApp): Hook {
 //
 // Role hierarchy: viewer(1) = billing(1) < developer(2) < admin(3) < owner(4)
 //
-// Reads ctx.locals.memberRole stamped by scopeToWorkspace — no extra query.
+// A SECOND ladder, and it is not the gate's. This one exists to answer with a
+// sentence — *requires admin or owner role in this workspace (you have:
+// developer)* — which a 403 out of the Data boundary cannot say, since @@gate
+// knows levels and not the words a person picked in a members screen. It is
+// derived from the same WorkspaceMember row, so the two cannot disagree about
+// WHO the caller is; they can only differ in what they say when refusing.
+//
+// Reads ctx.locals.memberRole, stamped by applyStanding — no extra query.
 
 const ROLE_LEVEL: Record<string, number> = {
   viewer: 1, billing: 1, developer: 2, admin: 3, owner: 4,
@@ -121,15 +212,8 @@ export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook
 
     if (!userId || !workspaceId) return
 
-    let role = ctx.locals.memberRole as string | undefined
-
-    if (!role) {
-      const member = await app.data.asSystem().workspaceMember.findFirst({
-        where: { workspaceId, userId },
-      })
-      role = member?.role
-      if (role) ctx.locals.memberRole = role
-    }
+    await applyStanding(app, ctx, workspaceId)
+    const role = ctx.locals.memberRole as string | undefined
 
     const userLevel = ROLE_LEVEL[role ?? ''] ?? 0
     if (userLevel < minLevel)

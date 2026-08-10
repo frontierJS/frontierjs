@@ -282,8 +282,6 @@ invalid JS; `{@const}` inside `{#each}` calls the loop index as a getter; and
 ## Known Issues / Backlog — see `ISSUES.md`
 
 Defects and gaps for this package are in the repo-wide register:
-**`FJS-021`** destructuring assignment to reactive lets ·
-**`FJS-022`** `{@const}` index-as-getter inside `{#each}` ·
 **`FJS-023`** `<mesa:element this={…}>` compiles but is not a feature ·
 **`FJS-024`** `mesa-vite` has no tests, HMR unconfirmed in a browser ·
 **`FJS-025`** nothing verified in a real browser (every suite is happy-dom) ·

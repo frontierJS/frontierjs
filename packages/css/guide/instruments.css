@@ -24,9 +24,8 @@
  *
  *   lineage / basis   the chip and surface families, drawn as a tree
  *   resolve           how a cascade resolves, drawn as columns
- *   tonal / color     the tone recipe and the ramps it produces
+ *   color             the tone ramps
  *   palette / theme   a theme's tokens, previewed
- *   scale / pad / gap the space ladder, drawn as bars
  *   typescale/weight  the type ladder and its weights
  *   matrix            tone x treatment, as a grid
  *   cheat-*           the cheat sheet's miniatures and swatch tables
@@ -160,11 +159,6 @@
   align-items: stretch;
   margin: 0 0 18px;
 }
-.sg-resolve-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
 .sg-resolve-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -183,11 +177,8 @@
   color: var(--ink-mute);
 }
 
-.sg-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-}
+/* .tiles.gap-lg — only the track width is this one's. */
+.sg-card-grid { --tile-min: 240px; }
 .sg-card-text {
   margin: 0;
   font-size: 14px;
@@ -203,54 +194,51 @@
   border-radius: 3px;
 }
 
-/* Themes page */
+/*
+ * Themes page — the picker, not the preview.
+ *
+ * The preview below IS an instrument: it draws a theme's tokens, so it
+ * cannot be built out of them. The picker is an ordinary control that
+ * happens to sit next to one — `.tiles` + `.tile.surface` on a <button>,
+ * with `.item-text`/`-title`/`-sub` for the two lines, which is the same
+ * shape the topbar's theme menu and the ⌘K row use. It is declared here
+ * rather than in guide.css only because it shares the family's prefix and
+ * moving it buys nothing; what it must not do is hand-roll a term.
+ *
+ * `.tile-min` is the switcher's own track width. `.tiles` already reads it,
+ * so the grid is a token rather than a repeated `auto-fit` expression.
+ */
 .sg-theme-switcher {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  margin-bottom: 20px;
+  --tile-min: 180px;
+  gap: var(--space-sm);
+  margin-block-end: var(--space-2xl);
 }
+/*
+ * `.tile` padding is symmetric and this row is a swatch beside two lines of
+ * text, which wants less above and below than at the sides.
+ */
 .sg-theme-tab {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  transition: border-color 120ms, box-shadow 120ms;
+  padding: var(--space-lg) var(--space-xl);
+  gap: var(--space-lg);
 }
-.sg-theme-tab:hover {
-  border-color: var(--rule-strong);
-}
-.sg-theme-tab.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(13, 131, 221, 0.12);
+/*
+ * Selected is `[aria-pressed]`, never a class — a control that LOOKS
+ * selected while announcing itself unselected is a divergence a class makes
+ * possible and an attribute makes unrepresentable. The ring is mixed rather
+ * than a literal: `rgba(13,131,221,0.12)` was --color-primary frozen at 12%,
+ * so on the Themes page the control for switching themes was the one thing
+ * that did not follow the switch.
+ */
+.sg-theme-tab[aria-pressed='true'] {
+  --surface-border: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .sg-theme-swatch {
-  width: 28px;
-  height: 28px;
+  inline-size: 28px;
+  block-size: 28px;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1px solid rgba(0,0,0,0.1);
-}
-.sg-theme-tab-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.sg-theme-tab-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.sg-theme-tab-desc {
-  font-size: 12px;
-  color: var(--ink-mute);
+  border: 1px solid var(--rule);
 }
 
 .sg-theme-preview {
@@ -264,11 +252,6 @@
   gap: 24px;
   transition: background 200ms;
   font-family: var(--font-primary);
-}
-.sg-theme-block {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 .sg-theme-label {
   font-size: 11px;
@@ -378,67 +361,9 @@
   text-align: center;
 }
 
-.sg-tonal-strip {
-  display: grid;
-  grid-template-columns: repeat(11, 1fr);
-  gap: 0;
-  margin-bottom: 12px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--rule);
-}
-.sg-tonal-strip .tonal {
-  border-radius: 0;
-  min-height: 56px;
-  font-size: 10px;
-  padding: 8px 4px;
-}
 .sg-tonal-raw {
   background: var(--sg-ramp) !important;
   color: white !important;
-}
-
-.sg-tonal-chip {
-  min-width: 110px;
-}
-
-.sg-tonal-strip-row {
-  display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  gap: 4px;
-}
-.sg-tonal-step {
-  min-height: 42px;
-  border-radius: 4px;
-  font-size: 10px;
-  padding: 6px 2px;
-}
-
-.sg-tonal-matrix {
-  display: grid;
-  gap: 4px;
-}
-.sg-tonal-matrix-row {
-  display: grid;
-  grid-template-columns: 70px repeat(9, 1fr);
-  gap: 4px;
-  align-items: stretch;
-}
-.sg-tonal-matrix-label {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 0 8px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink-soft);
-  background: transparent;
-}
-.sg-tonal-cell {
-  min-height: 36px;
-  font-size: 10px;
-  border-radius: 3px;
-  padding: 4px 2px;
 }
 
 /* Stack helper for previews */
@@ -455,69 +380,6 @@
 .sg-prose-preview p {
   margin: 0;
   color: var(--ink);
-}
-
-/* Spacing page */
-.sg-scale {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.sg-scale-row {
-  display: grid;
-  grid-template-columns: 36px 1fr 80px 60px;
-  align-items: center;
-  gap: 14px;
-  padding: 6px 12px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-}
-.sg-scale-token {
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  color: var(--ink);
-  background: transparent;
-  padding: 0;
-  text-align: center;
-}
-.sg-scale-track {
-  display: flex;
-  align-items: center;
-  height: 18px;
-}
-.sg-scale-bar {
-  height: 14px;
-  background: var(--accent);
-  border-radius: 2px;
-  min-width: 0;
-}
-.sg-scale-val,
-.sg-scale-px {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-mute);
-  background: transparent;
-  padding: 0;
-  text-align: right;
-}
-
-.sg-pad-demo {
-  background: rgba(13, 131, 221, 0.08);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 500;
-}
-.sg-gap-demo {
-  display: flex;
-  align-items: center;
-  padding: 8px;
-  background: var(--surface);
-  border: 1px dashed var(--rule-strong);
-  border-radius: 6px;
 }
 
 /* Typography page */
@@ -622,33 +484,11 @@
 }
 
 /* Cheat sheet */
-.sg-cheat-bases {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-  margin: 0 0 12px;
-}
-.sg-cheat-base {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-}
 .sg-cheat-base-preview {
   flex-shrink: 0;
   min-width: 56px;
   display: flex;
   justify-content: center;
-}
-.sg-cheat-base-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
 }
 .sg-cheat-name {
   font-family: 'Geist Mono', monospace;
@@ -718,13 +558,12 @@
   border: 1px solid var(--rule);
   border-radius: 8px;
 }
-.sg-basis-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+/*
+ * .split.gap-sm, plus the wrap. Split does not wrap — it is two ends of one
+ * row — and this header carries a name beside a variable count of member
+ * chips, so it has to fall to a second line rather than squeeze them.
+ */
+.sg-basis-head { flex-wrap: wrap; }
 .sg-basis-base .sg-cheat-name {
   font-size: 15px;
   font-weight: 600;
@@ -833,7 +672,7 @@
   width: 20px;
   height: 20px;
   border-radius: 4px;
-  border: 1px solid rgba(0,0,0,0.08);
+  border: 1px solid var(--rule);
 }
 .sg-cheat-token {
   font-family: 'Geist Mono', monospace;
@@ -904,11 +743,8 @@
   align-items: center;
 }
 
-.sg-cheat-vars {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
+/* .tiles.gap-lg */
+.sg-cheat-vars { --tile-min: 220px; }
 .sg-cheat-var-group {
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -1018,11 +854,8 @@
   padding: 6px 2px;
 }
 
-.sg-cheat-themes {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 6px;
-}
+/* .tiles.gap-xs — a tight list of themes, not a grid of cards. */
+.sg-cheat-themes { --tile-min: 220px; }
 .sg-cheat-theme {
   display: flex;
   align-items: center;
@@ -1037,7 +870,7 @@
   height: 16px;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1px solid rgba(0,0,0,0.08);
+  border: 1px solid var(--rule);
 }
 .sg-cheat-theme-desc {
   font-size: 11px;
@@ -1162,7 +995,16 @@
   flex-shrink: 0;
 }
 
-.sg-wiz-opt .sg-sk { margin-block-end: 8px; }
+/*
+ * The sketch has no width of its own — it is sized by whatever holds it. In a
+ * wizard option that is a Tile, whose column shrinks a block-level child to
+ * its content, so the wireframe drew narrower than the card it sits in and
+ * every option looked ragged against its neighbours.
+ */
+.sg-wiz-opt .sg-sk {
+  margin-block-end: 8px;
+  inline-size: 100%;
+}
 
 /* Extra sketch primitives, for the drill-down questions. */
 

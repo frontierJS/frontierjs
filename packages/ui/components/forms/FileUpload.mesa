@@ -97,6 +97,11 @@
       hand-written Enter/Space handler — the platform already does that, and
       the old version's keydown fired on Space *and* scrolled the page.
     -->
+    <!--
+      The caller's attributes land here rather than on the <input type="file">
+      below it: that input is visually-hidden, so an aria-label or a test hook
+      placed on it addresses something nobody can see or click.
+    -->
     <button
       type="button"
       class="fjs-dropzone"
@@ -108,6 +113,7 @@
       on:dragleave={() => dragging = false}
       on:drop={handleDrop}
       on:click={() => inputEl?.click()}
+      {...$attributes}
     >
       <svg
         class="fjs-dropzone-icon"

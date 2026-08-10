@@ -33,6 +33,7 @@
   style:block-size={sz}
   style:margin-top={inFeed ? null : '0'}
   {class}
+  {...$attributes}
 >
   {#if pulse}
     <span class={cx('feed-dot', t, 'fjs-dot-ping')} aria-hidden="true"></span>

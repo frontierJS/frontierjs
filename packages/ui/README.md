@@ -193,13 +193,45 @@ Your own stylesheet is unlayered, and unlayered CSS beats every cascade layer
 in `@frontierjs/css`, so overriding needs no `!important` and no specificity
 ladder.
 
+**Every component also forwards the attributes it does not declare** — `id`,
+`data-*`, `aria-*`, `title`, anything:
+
+```svelte
+<Mono id="token" data-test="api-token">fjs_8x92…</Mono>
+<!-- → <code class="…" id="token" data-test="api-token"> -->
+```
+
+The caller wins: an attribute the component sets itself is replaced, not
+duplicated, so `<Breadcrumbs aria-label="Sections">` overrides the default.
+
+**Where it lands is not the same everywhere, and the difference is the point:**
+
+| Tier | The attributes go on |
+| --- | --- |
+| display · layout · feedback · overlay | the outermost element — the same one `{class}` lands on |
+| form controls | the **control** (`<input>`, `<select>`, `<textarea>`), not the `.field-group` wrapper |
+
+A form control is addressed by a `<label for>` and pointed at by
+`aria-describedby`, so an id or an aria attribute on the wrapper would name the
+wrong element. Two departures, each stated in the file: `FileUpload` puts them
+on the visible dropzone rather than the visually-hidden `<input type="file">`,
+and `DatePicker` has no control of its own — its trigger is whatever you put in
+the slot — so they go on the wrapper.
+
+Where a component **declares** `id` it means something else and the attribute
+never reaches the DOM as an id: `Toast` (the identity the store dismisses by),
+`Tab`/`TabPanel`/`AccordionItem` (which name a pairing and render as
+`id="tab-{id}"`), `Label`/`Field` (the id of the control being labelled) and
+`Tooltip` (the generated tooltip id). Address those with a `data-*` attribute.
+`test/attributes.mjs` holds the whole contract, exceptions included.
+
 ## Tests
 
 ```bash
 bun run test     # inside this package
 ```
 
-Three suites, and the split matters:
+Four suites, and the split matters:
 
 - **`test/compile-all.mjs`** — every `.mesa` compiles *and* the emitted
   JavaScript parses. Those are different claims: Mesa can report zero errors
@@ -210,6 +242,11 @@ Three suites, and the split matters:
   63 components were styled with Tailwind/Uno classes that nothing in this
   repo generates — so every one of them rendered unstyled while compiling
   perfectly.
+- **`test/attributes.mjs`** — every component forwards its caller's attributes,
+  the caller's value replaces the component's own, and `id` lands wherever it
+  is not a declared prop. Renders all 64; the six it cannot render are named
+  with the reason rather than filtered out, so nothing goes quiet. 55 of 64
+  components dropped every undeclared attribute before it existed.
 - **`test/form.mjs`** — `<Form>` and the form context. Asserts the claim that
   makes the component worth having: a control handed nothing but a `name` comes
   out labelled, constrained and carrying its server error. Covers the wiring,

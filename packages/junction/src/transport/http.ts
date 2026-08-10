@@ -16,6 +16,7 @@ import type { StaticOptions }             from './static.ts'
 import { bridge, jsonResponse, errorResponse } from './bridge.ts'
 import { toFrameworkError }               from '../core/errors.ts'
 import { createStats }                    from './types.ts'
+import { wsSend, flushOutbox, dropOutbox, setMaxQueuedBytes } from './outbox.ts'
 import type { TransportStats }            from './types.ts'
 import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
               WsData, WsContext, WsHandlerSet }  from './types.ts'
@@ -107,6 +108,18 @@ export interface HttpTransportOptions {
    * past IP-keyed rate limiting and DDoS protection.
    */
   trustProxy?:  boolean
+  /**
+   * How many bytes junction will hold for one socket that is not draining,
+   * before closing it with 1013 rather than growing without bound. Default 8MB
+   * — see outbox.ts, which is also where the reason a frame needs holding at
+   * all is written down.
+   *
+   * There is deliberately no knob for Bun's own buffer: `maxBackpressureLimit`
+   * is accepted and ignored (measured on 1.3.11 — 64KB, 1MB and 16MB all drop
+   * at the same ~16.9MB), so exposing it would be a control that changes
+   * nothing.
+   */
+  wsMaxQueued?: number
 }
 
 // ─── HTTP Transport ───────────────────────────────────────────────────────
@@ -188,6 +201,8 @@ export class HttpTransport {
 
     // Build route cache — must happen before first request
     this.router.build()
+
+    setMaxQueuedBytes(this._opts.wsMaxQueued)
 
     this._server = Bun.serve({
       port:     this._opts.port,
@@ -797,7 +812,9 @@ export class HttpTransport {
       ip:      ws.data.ip,
       user:    ws.data.user,
       send(data: string | object): void {
-        ws.send(typeof data === 'string' ? data : JSON.stringify(data))
+        // Never ws.send() directly. A dropped frame is silent — outbox.ts is
+        // the one place that knows what Bun's return value means.
+        wsSend(ws, typeof data === 'string' ? data : JSON.stringify(data))
       },
       close(code?: number, reason?: string): void {
         ws.close(code, reason)
@@ -831,7 +848,7 @@ export class HttpTransport {
     // Signal the client that auth is resolved and the connection is registered.
     // The client defers _wsReady until it receives this — prevents service calls
     // from firing before verifySession and connMap registration are complete.
-    ws.send(JSON.stringify({ type: 'connected' }))
+    wsSend(ws, JSON.stringify({ type: 'connected' }))
   }
 
   private async _wsMessage(ws: Bun.ServerWebSocket<WsData>, message: string | Buffer): Promise<void> {
@@ -841,11 +858,15 @@ export class HttpTransport {
 
   private async _wsClose(ws: Bun.ServerWebSocket<WsData>, code: number, reason: string): Promise<void> {
     this.stats.performance.online--
+    dropOutbox(ws)
     const ctx = this._buildWsContext(ws)
     try { await ws.data.handlers.close?.(ctx, code, reason) } catch {}
   }
 
   private async _wsDrain(ws: Bun.ServerWebSocket<WsData>): Promise<void> {
+    // The socket has room again — anything held back goes out first, in order,
+    // before any handler gets a chance to write more.
+    flushOutbox(ws)
     const ctx = this._buildWsContext(ws)
     try { await ws.data.handlers.drain?.(ctx) } catch {}
   }

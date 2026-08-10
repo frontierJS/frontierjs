@@ -44,6 +44,7 @@
 <span
   class="tooltip-anchor"
   {class}
+  {...$attributes}
   on:keydown={onKeydown}
   on:mouseenter={onEnter}
   on:focusin={onEnter}

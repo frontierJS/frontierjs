@@ -70,6 +70,28 @@ const all = await db.asSystem().posts.findMany()
 const result = await userDb.posts.findMany({ policyDebug: true })
 ```
 
+### Reaching a model through `include`
+
+A relation is a read of the model it points at, and every rule that model
+declares applies there too — the row policy filters the children, `_count`
+counts only what the caller may read, `@guarded` and field `@allow` withhold
+columns, and a `@@gate` the caller does not clear **refuses the query** rather
+than answering an empty list (a gate is per model: *no rows* and *not for you*
+are different answers).
+
+```js
+// Vault is @@gate("7"); the caller is level 4
+await userDb.team.findMany({ include: { secrets: true } })
+// AccessDeniedError: "Vault.read" requires level 7, user has level 4
+
+// Post is @@allow('read', accountId == auth().accountId)
+await userDb.account.findMany({ include: { posts: true } })
+// each account carries only the posts this caller may read
+```
+
+The gate is checked before the query runs, so it names the model it refused.
+`asSystem()` bypasses all of it, here as everywhere.
+
 ### Field-level policies
 
 ```prisma

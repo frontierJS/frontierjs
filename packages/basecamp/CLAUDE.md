@@ -7,7 +7,7 @@ All three realms are real.
 ```
 bun run dev          # preflights both ports, then API + web together
 bun run test         # bun — the db tests
-bun run verify       # 262 checks in a real browser; starts and stops both servers
+bun run verify       # 270 checks in a real browser; starts and stops both servers
 bun run verify:build # builds, then probes the PRODUCTION output (FJS-085)
 bun run db:seed      # an example fleet
 bun run db:reset     # stops the servers, deletes the databases
@@ -47,15 +47,36 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
 
 ## What bites here
 
-- **No `@@gate` anywhere.** Grading happens in service hooks, which is
-  outstanding work against **Invariant 6** — access is declared in the schema, not
-  in hooks. `example/api/gate.ts` is the pattern it needs. `FJS-007`; deliberately
-  scheduled last so it is not in the way while the app is assembled. **Every
-  screen is now built, so nothing is in the way any more** — this is the next
-  piece of work here. Two things are already in place for it: `isSystemAdmin` is
-  a column and reaches the session, which is exactly what `sessionGateLevel()`
-  grades SYSADMIN(7) on, and the hub's reads go through `asSystem()` because
-  `User` is meant to be `@@gate("8")` — a level even SYSADMIN does not pass.
+- **A level is per WORKSPACE, and it rides on the principal.** All 37 models
+  declare `@@gate`; `api/src/core/gate.ts` is the ladder (viewer/billing 2,
+  developer 4, admin 5, owner 6, `isSystemAdmin` 7, authenticated-but-not-a-member
+  1). The level comes from the `WorkspaceMember` row for the workspace the
+  request is FOR, which is why `sessionGateLevel()` is not used here — it grades
+  standing that travels with the user and would answer the same in every
+  workspace. `applyStanding()` (`core/hooks.ts`) resolves it once per request,
+  puts `memberRole` on **a fresh copy of the principal** and re-scopes
+  `ctx.locals.db` from it. Three traps in that one sentence: it must be the
+  principal, because junction's `getTable()` re-derives its own scoped client
+  from `ctx.auth.user`; it must be a copy, because the WS session object is
+  shared across every frame on the socket and frozen; and it must re-resolve
+  when the workspace changes mid-request, which the workspaces service does
+  (it addresses `ctx.id`, not the header). The role hooks stay — a gate refuses
+  with a level, a person needs the sentence.
+- **`Server` is the one model whose tenancy is in the schema.** `@@allow('all',
+  workspaceId == auth().workspaceId)`, graded off the same principal — the other
+  36 are still the `workspaceId` in a service where-clause plus
+  `scopeToWorkspace`. Adding the next one is an audit before it is a line: **a
+  policy filters where a gate refuses**, so any read crossing a workspace that
+  is not `asSystem()` starts matching nothing, quietly. The engines, the hub and
+  the agent endpoints already are; a new one is the thing to check. `db/README.md`
+  § Access control is the depth, `db/test/schema.test.ts` runs it with no
+  service in the picture.
+- **`asSystem()` is what a system path needs, and a transaction used to lose
+  it.** `db.asSystem().$transaction(tx => …)` handed the callback the ROOT
+  client until 2026-08-10, so `POST /setup` — four models in one transaction —
+  failed with *"Account.create" requires SYSTEM access (use asSystem())* about a
+  call that was using it. Fixed in litestone (`FJS-149`); the mirror image,
+  `$setAuth(u).$transaction`, silently ran with `auth()` null.
 - **A session carries three columns auth knows nothing about.** `isSystemAdmin`,
   `status` and `kind` are Basecamp's additions to auth's `User`, and they reach
   `ctx.auth.user` through `sessionFields` (`core/session-auth.ts`), which auth
@@ -111,15 +132,16 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   so a `--force` left those rows in place. Neither shows up in `verify`, which
   drives screens rather than the seeder. Run it after any schema change, and add
   the model to the `--force` list when you add one.
-- **A custom action that answers `{ data, total, …anything else }` loses the
-  anything else.** `wrapResult` recognises those two keys as a paginated list
-  and rebuilds the envelope from `total`/`limit`/`offset`/`data`/`errors`;
-  every sibling key is dropped with a 200 and no warning. `dashboards.kinds`
-  shipped nine widget kinds and neither of the vocabularies needed to configure
-  them, so the picker offered widgets it could not fill in. An action answering
-  more than one thing returns NAMED keys and no `data` — that wraps as `single`
-  and unwraps whole. `volumes.usage` documents the same trap from the other
-  side (`FJS-140`).
+- **Only `find` is built into a list envelope; an action is handed back whole.**
+  It used to be shape alone — any `{ data, total }` was rebuilt as a paginated
+  list from `total`/`limit`/`offset`/`data`/`errors` and every sibling key was
+  dropped with a 200 and no warning, whatever method produced it.
+  `dashboards.kinds` shipped nine widget kinds and neither of the vocabularies
+  needed to configure them, so the picker offered widgets it could not fill in
+  (`FJS-140`, closed 2026-08-10). An action answering rows now keeps everything
+  it sends, and a `find` that answers anything but a list throws rather than
+  guessing. NAMED keys and no `data` is still the clearest shape for an action
+  that answers more than one thing — `volumes.usage`, `cleanup.targets`.
 - **`web/config/vite.config.js`'s `API_PATHS` is a hand-kept copy of the service
   registry, and it has gone stale three times** — `audit`, `channels`, `flags`
   and `api-keys` were each missing for a phase or more. Nothing fails loudly:

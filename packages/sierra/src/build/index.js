@@ -36,7 +36,7 @@ import { autoImportPlugin } from './auto-import-plugin.js'
  * @property {string} [outDir='dist/client']
  * @property {{ dir?: string, entry?: string, outDir?: string }} [widgets]
  * @property {{ shadowDOM?: boolean }} [mesa]
- * @property {{ components?: string[] }} [autoImport]
+ * @property {{ components?: string[], modules?: Record<string, string[]|object|string> }} [autoImport]
  * @property {{ output?: string, environments?: object }} [manifest]
  * @property {object} [junction]
  * @property {string} [db] — module exporting a Litestone client, used by the
@@ -81,7 +81,7 @@ export function createSierraViteConfig(config = {}) {
     tree: null,
     staticMap: new Map(),
     layoutPropMap: new Map(),  // layout file path → Set of export let prop names
-    autoImportMap: new Map(),  // ComponentName → absolute file path
+    autoImportMap: new Map(),  // name → { kind, from, imported }
   }
 
   const sierraPlugins = []

@@ -4,7 +4,8 @@
 components, no build step, no utility classes (Invariant 13: style with a tone
 and a treatment, never a color).
 
-`bun run test` runs three node harnesses in order: compile-all → render → form.
+`bun run test` runs four node harnesses in order: compile-all → render →
+attributes → form.
 
 ---
 
@@ -24,7 +25,7 @@ components/
 stores/       alertStore · toastStore · themeStore · commandPaletteStore
 utils.js      shared helpers
 tokens.css    the kit's own tokens, on top of @frontierjs/css
-test/         compile-all.mjs · render.mjs · form.mjs
+test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs
 ```
 
 ---
@@ -38,6 +39,15 @@ test/         compile-all.mjs · render.mjs · form.mjs
   **A stated prop always wins**, including `required={false}`.
 - **The live-validation rule lives in `Form.mesa`, once**: on input an error may
   only be *removed*, never added. Do not re-implement it per control.
+- **`{...$attributes}` goes on the element the caller means, and that is not
+  always the root.** Display, layout, feedback and overlay put it where
+  `{class}` already goes; a form control puts it on the CONTROL, because a
+  `<label for>` and an `aria-describedby` have to reach that element and not
+  the `.field-group` around it. `test/attributes.mjs` holds it for all 64 and
+  names the six it cannot render. Where `id` is a declared prop it means
+  something else (a toast identity, a tab pairing, the id of the control a
+  `Label` points at) and never reaches the DOM as an id — those are in the
+  suite's own exception list, with the reason.
 - **A component cannot expose a method** (mesa `FJS-087`) — `export function` in
   an instance script is dropped. Hand behaviour out through a callback prop.
 - **A local `<style>` may not name a class `@frontierjs/css` owns.** That is the

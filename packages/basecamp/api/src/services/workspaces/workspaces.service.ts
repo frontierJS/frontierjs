@@ -11,7 +11,7 @@
 
 import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized, authenticate }
   from '@frontierjs/junction'
-import { requireWorkspaceRole, getPagination } from '../../core/hooks.ts'
+import { requireWorkspaceRole, applyStanding, getPagination } from '../../core/hooks.ts'
 import { dbOf, actorOf, slugify, narrowPatch } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -28,8 +28,16 @@ export function createWorkspacesService(app: BasecampApp) {
    * guard and **enforced nothing**: any authenticated user could rename or
    * delete any workspace, or promote themselves inside it.
    */
-  function stampSelfAsWorkspace(ctx: ServiceContext): void {
-    if (ctx.id) ctx.locals.workspaceId = String(ctx.id)
+  async function stampSelfAsWorkspace(ctx: ServiceContext): Promise<void> {
+    if (!ctx.id) return
+    ctx.locals.workspaceId = String(ctx.id)
+    // Re-resolve the standing against THIS workspace. The around hook already
+    // resolved one from X-Workspace-Id — the workspace the UI is currently
+    // showing — and that is a different workspace from the one being addressed
+    // whenever a person renames or leaves one from a list. Without this an
+    // admin of the workspace they are LOOKING AT would carry ADMINISTRATOR(5)
+    // into a patch of any other workspace they can name.
+    await applyStanding(app, ctx, String(ctx.id))
   }
 
   /**

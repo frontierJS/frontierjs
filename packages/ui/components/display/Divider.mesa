@@ -20,9 +20,9 @@
 </script>
 
 {#if label}
-  <div class="divider-label" style:margin-block={sp || null} {class}>
+  <div class="divider-label" style:margin-block={sp || null} {class} {...$attributes}>
     <span>{label}</span>
   </div>
 {:else}
-  <hr class="divider" style:margin-block={sp || null} {class} />
+  <hr class="divider" style:margin-block={sp || null} {class} {...$attributes} />
 {/if}

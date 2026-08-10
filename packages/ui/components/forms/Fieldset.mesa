@@ -21,7 +21,7 @@
   `opacity + pointer-events: none` never achieved (a keyboard user could
   still tab into every one of them).
 -->
-<fieldset disabled={disabled} class="fjs-fieldset" {class}>
+<fieldset disabled={disabled} class="fjs-fieldset" {class} {...$attributes}>
   {#if legend}
     <legend class="h4" style:margin="0 0 0.25rem">{legend}</legend>
   {/if}

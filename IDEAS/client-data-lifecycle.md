@@ -18,7 +18,7 @@ Three of the ten landed in the same place:
 
 | | Problem | Where FJS is |
 | --- | --- | --- |
-| 1 | A stale response clobbers a newer one | nothing. `FJS-082` |
+| 1 | A stale response clobbers a newer one | **closed 2026-08-10** — `FJS-082` |
 | 2 | An optimistic update that rolls back cleanly | nothing exists repo-wide |
 | 8 | A mutation on one screen, five stale views elsewhere | design right, three holes |
 
@@ -41,21 +41,19 @@ graph the caller maintains. TanStack Query's `invalidateQueries` is a thing you
 have to remember to call and can get wrong; here the server says what changed
 and every subscriber already knows. The mental model is smaller and it is right.
 
-### Hole 1 — a load has no identity
+### Hole 1 — a load has no identity — **closed 2026-08-10**
 
-`packages/junction/src/client/index.ts:519`:
+It was one unconditional line: read rows, set the store. Two overlapping
+`load()` calls resolved in arrival order, so the slower earlier request won if
+it landed second — type `ac`, type `acme`, and the store showed `ac` until the
+next keystroke, with nothing thrown and nothing logged.
 
-```ts
-const rows = (await svc.find(query, params)).data
-store.set(rows)
-```
+A load is now stamped when it is issued and only the newest stamp writes the
+store; the superseded caller still receives its own rows. `FJS-082`.
 
-Unconditional. Two overlapping `load()` calls resolve in arrival order, so the
-slower earlier request wins if it lands second. A search box is the canonical
-case: type `ac`, type `acme`, and the store can end up showing the results for
-`ac` and staying there. Nothing throws, nothing logs. `FJS-082`.
-
-The only `AbortController` in the file is the request timeout (`:563`).
+What that does NOT do is cancel the request: a superseded read is still sent,
+still answered, and still paid for. Cancellation needs the owner this file
+argues for — it is a property of the load's lifetime, not of one call site.
 
 ### Hole 2 — a store holds rows, not entities
 

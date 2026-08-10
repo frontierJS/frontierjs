@@ -676,9 +676,19 @@ if (import.meta.main) {
       'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',
       'alertEvent', 'alertRuleChannel', 'alertRule', 'notificationChannel',
       'apiKey', 'secret', 'serverNetwork', 'network', 'volume', 'serverEvent',
-      'server', 'auditEvent', 'workspaceMember', 'workspace', 'session',
+      'server', 'workspaceMember', 'workspace', 'session',
       'credential', 'verification', 'user', 'account',
     ]) await sys[model].deleteMany({})
+
+    // auditEvent is NOT in that list and must not be: AuditEvent is
+    // @@gate("5.8.9.9"), and 9 is LOCKED — a level asSystem() does not pass
+    // either, which is the one gate that protects the trail from the
+    // application itself. Almost nothing is left behind: the column is
+    // `onDelete: Cascade`, so SQLite takes every row belonging to a workspace
+    // deleted above — including the fourteen this seeder writes below. What
+    // survives is the rows with a NULL workspaceId, which are the ones a
+    // system-level action wrote, and a --force that erased those would be
+    // erasing the only record that they happened.
 
     // Asked for first, because SQLite resolves the table at PREPARE time: a
     // `DELETE … WHERE EXISTS (SELECT … FROM sqlite_master)` guard still throws.
@@ -692,7 +702,12 @@ if (import.meta.main) {
     console.log('cleared previous data')
   }
 
-  await runSeeder(db, BasecampSeeder)
+  // asSystem(), not the root client. Seeding is not a request — there is no
+  // caller to scope to — and every model declares a @@gate, so the root client
+  // grades STRANGER(0) and the first factory write is refused by the level it
+  // needs. The header of this file already said everything runs as system; it
+  // was the one line that did not.
+  await runSeeder(db.asSystem(), BasecampSeeder)
 
   const sys = db.asSystem()
   const counts = {}

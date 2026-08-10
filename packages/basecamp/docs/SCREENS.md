@@ -157,10 +157,10 @@ follow the data. Suggested phases, each one shippable:
 1. ~~**Shell chrome (E).**~~ ✅ done — § Phase 1.
 2. ~~**The two free screens (A).**~~ ✅ done — § Phase 2. The activity feed was
    not free: the audit trail recorded no custom actions at all.
-3. **`@@gate` — `FJS-007`. Moved to LAST, decided 2026-08-06.** It would be in
-   the way while the app is still being assembled, and this is a long way from
-   live. The cost is accepted: screens built before it need revisiting, the
-   sysadmin Users screen most of all. Each screen flags it as it lands.
+3. ~~**`@@gate` — `FJS-007`. Moved to LAST, decided 2026-08-06.**~~ ✅ done
+   2026-08-10, after every screen, as decided. The cost of deferring turned out
+   to be nothing: the sysadmin Users screen everyone expected to break was
+   already written through `asSystem()`, because `User` gates at 8.
 4. **Services over existing models (B).** ← **next** Alerts, networks, secrets. Three sets
    of models are currently dead weight in the schema — this is the highest
    value-per-line work in the app, and it is API-realm.
@@ -597,8 +597,8 @@ columns. Nothing in the schema can say *the system writes this*, which is
 dedicated `bot` user for CI, and this app has no way to create one — `User`
 carries a `UserKind` and there is no user-management screen. So a key belongs
 to whoever made it and carries their access, which the screen says out loud
-rather than implying otherwise. It needs the sysadmin `UsersView`, which
-`FJS-007` will break first.
+rather than implying otherwise. It needs the sysadmin `UsersView` — built in
+Phase 10, which closed this.
 
 ## Phase 7 — the first thing here that is observed ✅ done 2026-08-10
 
@@ -870,9 +870,9 @@ that forgets looks exactly like the eighteen that did not.
 So `/hub` is one service behind one `requireSystemAdmin` hook, and it takes no
 workspace at all — there is nothing for a caller to widen. It reads through
 `asSystem()`, which is not a convenience: `User` is the model auth's own
-fragment gates at level **8**, one above SYSADMIN, so once `FJS-007` lands there
-is no caller-scoped client that can read a user list. These reads are already
-written the way they will still have to be.
+fragment gates at level **8**, one above SYSADMIN, so no caller-scoped client
+can read a user list. The gates landed the day after this screen and it needed
+no change.
 
 Refusal is **404, not 403** — the hub is not a screen someone is being refused,
 it is a surface they have no business knowing exists.
@@ -951,4 +951,5 @@ external probe read it; worth a decision rather than a quiet edit.
 - `docs/UI_PLAN.md` — how the first screens got built, and what each phase found
 - `docs/UI_HANDOFF.md` — the API contract the screens are written against
 - `docs/VISION.md` — what Basecamp is meant to be
-- `../../ISSUES.md` — `FJS-007` (no `@@gate`), `FJS-031`, `FJS-032`, `FJS-085`
+- `../../ISSUES.md` — `FJS-031`, `FJS-032`, `FJS-085` (`FJS-007`, the missing
+  `@@gate`, closed 2026-08-10)

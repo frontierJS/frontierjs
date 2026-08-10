@@ -39,6 +39,6 @@
 </script>
 
 <!-- .stack gives the gap between items; each item draws its own border. -->
-<div class="stack" style:gap="0.5rem" {class}>
+<div class="stack" style:gap="0.5rem" {class} {...$attributes}>
   <slot />
 </div>

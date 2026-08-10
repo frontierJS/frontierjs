@@ -28,7 +28,7 @@
   }
 </script>
 
-<details class="disclosure" open={isOpen} {class}>
+<details class="disclosure" open={isOpen} {class} {...$attributes}>
   <summary
     class="disclosure-summary"
     id="{id}-header"

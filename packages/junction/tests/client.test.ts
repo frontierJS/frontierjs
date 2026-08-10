@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, mock } from 'bun:test'
 import {
   createJunctionClient,
   JunctionClient,
+  ResultShapeError,
   ServiceProxy,
   Store,
 } from '../src/client/index.ts'
@@ -378,6 +379,21 @@ describe('Store', () => {
     expect(s.get()[0].name).toBe('Alicia')
   })
 
+  it('upsert() refuses a record with no id rather than appending a phantom', () => {
+    // `findIndex` on undefined matches nothing, so this used to be pushed on as
+    // a new row: a heartbeat answering { ok, server_id, status } put junk in
+    // every subscriber's list, silently (FJS-020).
+    const s = new Store([{ id: '1', name: 'Alice' }])
+    const warn = console.warn
+    const said: string[] = []
+    console.warn = (...a: unknown[]) => { said.push(a.join(' ')) }
+    s.upsert({ ok: true, server_id: '1', status: 'online' } as never)
+    console.warn = warn
+
+    expect(s.get()).toHaveLength(1)
+    expect(said[0]).toContain('cannot be matched to a row')
+  })
+
   it('upsert() with custom idField', () => {
     const s = new Store([{ uid: 'abc', name: 'Alice' }])
     s.upsert({ uid: 'abc', name: 'Alicia' }, 'uid')
@@ -411,6 +427,74 @@ describe('Store', () => {
 })
 
 // ─── resource() ───────────────────────────────────────────────────────────────
+
+// ─── find() shape normalisation ───────────────────────────────────────────────
+// find() accepts three shapes and refuses a fourth. The refusal is the test
+// that matters: every non-list answer used to become an empty list, so a
+// service answering ONE object (a rollup, a settings blob, a health snapshot)
+// gave a 200 with zero rows while the API was correct throughout — invisible
+// outside a browser, and it cost two sessions before FJS-144 named it.
+
+describe('ServiceProxy.find() — shape', () => {
+
+  it('keeps a real list envelope whole', async () => {
+    const { restore } = mockFetch({ kind: 'list', object: 'items', data: [{ id: '1' }], errors: [], total: 7 })
+    const res = await makeClient().service('items').find()
+    expect(res.data).toHaveLength(1)
+    expect(res.total).toBe(7)
+    restore()
+  })
+
+  it('wraps a bare array', async () => {
+    const { restore } = mockFetch([{ id: '1' }, { id: '2' }])
+    const res = await makeClient().service('items').find()
+    expect(res.kind).toBe('list')
+    expect(res.data).toHaveLength(2)
+    restore()
+  })
+
+  it('wraps a paginated shape, keeping total and skip-as-offset', async () => {
+    const { restore } = mockFetch({ total: 9, limit: 20, skip: 40, data: [{ id: '1' }] })
+    const res = await makeClient().service('items').find()
+    expect(res.total).toBe(9)
+    expect(res.offset).toBe(40)
+    restore()
+  })
+
+  it('throws on a single object rather than answering an empty list', async () => {
+    const { restore } = mockFetch({ runtime: 'ok', servers: 3 })
+    const err = await makeClient().service('hub').find().catch((e: Error) => e)
+    expect(err).toBeInstanceOf(ResultShapeError)
+    // The message has to name the service and what arrived — the whole failure
+    // was that neither was anywhere to be read.
+    expect((err as Error).message).toContain('hub.find()')
+    expect((err as Error).message).toContain('runtime, servers')
+    expect((err as ResultShapeError).received).toEqual({ runtime: 'ok', servers: 3 })
+    restore()
+  })
+
+  // An empty body lands here too — _request parses one to null.
+  it('throws on null — no rows and no list are different answers', async () => {
+    const { restore } = mockFetch(null)
+    const err = await makeClient().service('items').find().catch((e: Error) => e)
+    expect(err).toBeInstanceOf(ResultShapeError)
+    expect((err as Error).message).toContain('answered null')
+    restore()
+  })
+
+  it('throws over WebSocket too — one rule, both transports', async () => {
+    const c = makeClient() as unknown as {
+      _wsReady: boolean
+      _wsCall: (...a: unknown[]) => Promise<unknown>
+      service(name: string): { find(): Promise<unknown> }
+    }
+    c._wsReady = true
+    c._wsCall  = async () => ({ ok: true })
+    const err = await c.service('items').find().catch((e: Error) => e)
+    expect(err).toBeInstanceOf(ResultShapeError)
+  })
+
+})
 
 describe('client.resource()', () => {
 
@@ -471,6 +555,68 @@ describe('client.resource()', () => {
     service._receive('removed', { id: '1' })
     expect(store.get()).toHaveLength(1)
     expect(store.get()[0].id).toBe('2')
+  })
+
+  // ── load() staleness (FJS-082) ────────────────────────────────────────────
+  // The store is shared; the returned rows belong to one caller. A load that
+  // has been superseded may still answer its own caller and may NOT write the
+  // store, whichever order the two responses arrive in.
+
+  // Answers each request with the rows it was configured with, after the delay
+  // it was configured with — the only way to make the earlier request the
+  // slower one, which is the failing case.
+  function mockSlowFetch(plan: Array<{ delay: number; rows: unknown[] }>) {
+    const original = globalThis.fetch
+    let call = 0
+    globalThis.fetch = (async () => {
+      const { delay, rows } = plan[call++]!
+      await new Promise((r) => setTimeout(r, delay))
+      return new Response(
+        JSON.stringify({ kind: 'list', object: 'items', data: rows, errors: [], total: rows.length }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    }) as typeof fetch
+    return { restore: () => { globalThis.fetch = original } }
+  }
+
+  it('an earlier load landing last does not overwrite the newer rows', async () => {
+    const { restore } = mockSlowFetch([
+      { delay: 30, rows: [{ id: 'ac' }] },     // typed `ac`  — slower
+      { delay: 1,  rows: [{ id: 'acme' }] },   // typed `acme` — lands first
+    ])
+    const { store, load } = makeClient().resource('items')
+    const [stale, fresh] = await Promise.all([load({ q: 'ac' }), load({ q: 'acme' })])
+
+    expect(store.get()).toEqual([{ id: 'acme' }])
+    // Each caller still gets what it asked for — the request is not cancelled.
+    expect(stale).toEqual([{ id: 'ac' }])
+    expect(fresh).toEqual([{ id: 'acme' }])
+    restore()
+  })
+
+  it('the newest load still writes the store when it lands last', async () => {
+    const { restore } = mockSlowFetch([
+      { delay: 1,  rows: [{ id: 'ac' }] },
+      { delay: 30, rows: [{ id: 'acme' }] },
+    ])
+    const { store, load } = makeClient().resource('items')
+    await Promise.all([load({ q: 'ac' }), load({ q: 'acme' })])
+    expect(store.get()).toEqual([{ id: 'acme' }])
+    restore()
+  })
+
+  it('stamps are per resource() call — two stores do not supersede each other', async () => {
+    const { restore } = mockSlowFetch([
+      { delay: 20, rows: [{ id: 'a' }] },
+      { delay: 1,  rows: [{ id: 'b' }] },
+    ])
+    const c = makeClient()
+    const one = c.resource('items')
+    const two = c.resource('items')
+    await Promise.all([one.load(), two.load()])
+    expect(one.store.get()).toEqual([{ id: 'a' }])
+    expect(two.store.get()).toEqual([{ id: 'b' }])
+    restore()
   })
 
   it('service() returns the same proxy as resource().service', () => {

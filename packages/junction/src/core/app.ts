@@ -427,6 +427,10 @@ export function createApp(opts: AppOptions = {}): App {
     compress:    config.http.compress,
     ddos:        config.http.ddos,
     static:      config.http.static,
+    // How much junction holds for a socket that is not draining before it
+    // closes it. See outbox.ts — past Bun's own buffer a frame is DROPPED,
+    // which is silent at every layer above it.
+    wsMaxQueued: config.http.wsMaxQueued,
     auth:        opts.auth,
     // Cookie mode is normally declared by the auth plugin, which calls
     // http.setAuthCookie() from its own register(). This is the path for a

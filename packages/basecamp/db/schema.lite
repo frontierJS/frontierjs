@@ -19,34 +19,51 @@
 ///   DateTime is stored as ISO-8601 TEXT, not epoch milliseconds.
 ///   Tables are STRICT by default.
 ///
-/// ACCESS CONTROL — @@gate is MISSING. This is a known gap, not a design.
+/// ACCESS CONTROL — every model declares @@gate. Read the level, not the hooks.
 ///
-/// It violates VISION.md constraint 3 and repo Invariant 6, both of which say
-/// access is declared in the schema. There is no longer a decision excusing it:
-/// the 2026-08-04 ruling that gates could not work here was withdrawn once
-/// example/ proved otherwise by running it.
+/// The level is a fact about the caller IN A WORKSPACE, not about their row in
+/// `user`: the same person is `owner` in one workspace and `viewer` in the next.
+/// api/src/core/gate.ts is the mapping and the whole ladder; core/hooks.ts
+/// applyStanding() is what puts `memberRole` on the principal, once per request,
+/// off the WorkspaceMember row for the workspace being addressed.
 ///
-/// What was believed: declaring ANY @@gate makes Litestone auto-install
-/// GatePlugin({ getLevel: FrontierGateGetLevel }), which grades every
-/// @frontierjs/auth session as VISITOR(1), so all 24 gated models would 403.
-/// The first half is true. The second was true only until 2026-08-04, when that
-/// resolver was fixed to stop reading an ABSENT verifiedAt as "unverified" — it
-/// now grades a verified auth session USER(4) on its own. Either way an app
-/// supplies its own
-/// getLevel, and sessionGateLevel() plus a role wrapper grades a verified user
-/// USER(4) and a verified admin ADMINISTRATOR(5). See example/api/gate.ts.
+///   0 STRANGER   no session, or suspended
+///   1 VISITOR    authenticated, no standing in any workspace — reads Workspace
+///   2 READER     viewer / billing
+///   4 USER       developer
+///   5 ADMIN      admin
+///   6 OWNER      owner
+///   7 SYSADMIN   User.isSystemAdmin — the hub tier
+///   8 SYSTEM     asSystem() only: engines, agents, seeds, migrations
+///   9 LOCKED     nothing passes, asSystem() included
 ///
-/// What Basecamp still needs beyond that pattern is the per-request part: a
-/// getLevel that resolves the active workspace and maps WorkspaceMember.role
-/// onto the 0–7 scale. The intended level for every model is recorded in
-/// db/README.md §Access control so the design is not lost.
+/// Reading the gates below: "2.4.4.5" is R.C.U.D — a viewer reads, a developer
+/// creates and updates, an admin deletes. A missing position inherits the one
+/// before it, so "5" is admin for all four and "2.5" is read-by-anyone,
+/// written-by-admin. 8 in a write position means only an engine or an agent
+/// writes this; 9 means not even they do.
 ///
-/// Access control TODAY is service hooks (requireWorkspaceRole, scopeToWorkspace),
-/// which is weaker than the schema-declared version and should be replaced.
+/// The levels are not a design drawn on paper — they are the requireWorkspaceRole
+/// calls the services were already making, moved to the one place that covers
+/// the paths a hook does not (an engine calling a service in-process, a custom
+/// action nobody wired a role hook onto, a where-clause built by hand). The
+/// hooks stay: a gate refuses with a level, and a person needs the sentence.
 ///
-/// STILL ENFORCED AT THE DATA BOUNDARY, gates or no gates: @guarded and
+/// A gate is per MODEL and never per row. WHICH rows is @@allow, and Server is
+/// the first model to declare one: `workspaceId == auth().workspaceId`, graded
+/// against the workspace applyStanding() put on the principal. The other 36 are
+/// still the workspaceId filter in every service read plus scopeToWorkspace
+/// refusing a non-member — which works, and is the thing being moved into the
+/// schema one model at a time (see db/README.md § Access control).
+///
+/// A policy FILTERS, where a gate REFUSES. So the failure shape of a wrong one
+/// is an empty screen and no error: any read that legitimately crosses a
+/// workspace has to be asSystem() — the three engines, the hub and the agent's
+/// heartbeat all are.
+///
+/// ALSO ENFORCED AT THE DATA BOUNDARY, independently of any level: @guarded and
 /// @encrypted. Those are field policy keyed on asSystem(), not GatePlugin, so
-/// Secret.data stays unreadable and encrypted regardless. Verified by test.
+/// Secret.data stays unreadable and encrypted for an admin and a sysadmin alike.
 ///
 /// The database path is declared below in `database main`. litestone.config.js
 /// carries the schema and migrations paths for the CLI.
@@ -234,6 +251,7 @@ model User {
   deployments    Deployment[]
   apiKeys        ApiKey[]
 
+  @@gate("8")
   @@softDelete
   @@log(audit)
   @@unique([accountId, username])
@@ -256,6 +274,7 @@ model Credential {
   scope           String?
   createdAt       DateTime   @default(now())
 
+  @@gate("8")
   @@log(audit)
   @@index([userId, type])
   @@index([type, value])
@@ -271,6 +290,7 @@ model Session {
   userAgent  String?
   createdAt  DateTime  @default(now())
 
+  @@gate("8")
   @@log(audit)
   @@index([userId])
   @@index([expiresAt])
@@ -283,6 +303,7 @@ model Verification {
   expiresAt   DateTime
   createdAt   DateTime  @default(now())
 
+  @@gate("8")
   @@log(audit)
   @@index([identifier])
 }
@@ -306,6 +327,7 @@ model Account {
   users       User[]
   workspaces  Workspace[]
 
+  @@gate("6.8")
   @@softDelete(cascade)
   @@log(audit)
 }
@@ -347,6 +369,7 @@ model Workspace {
   flags       FeatureFlag[]
   auditEvents AuditEvent[]
 
+  @@gate("1.1.5.6")
   @@softDelete(cascade)
   @@log(audit)
   @@index([accountId])
@@ -366,6 +389,7 @@ model WorkspaceMember {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @default(now()) @updatedAt
 
+  @@gate("1.5")
   @@log(audit)
   @@unique([workspaceId, userId])
   @@index([workspaceId, userId])
@@ -399,6 +423,7 @@ model Secret {
   updatedAt   DateTime   @default(now()) @updatedAt
   deletedAt   DateTime?
 
+  @@gate("5")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, name])
@@ -464,6 +489,7 @@ model ApiKey {
   // visible state, not a hidden row; delete means the operator is done looking
   // at it. A second, invisible deleted state on top would make "revoked" and
   // "gone" four combinations instead of two.
+  @@gate("5")
   @@log(audit)
   @@unique([workspaceId, name])
   @@index([credentialId])
@@ -515,6 +541,20 @@ model Server {
   appServers       AppServer[]
   serverNetworks   ServerNetwork[]
 
+  @@gate("2.4.4.5")
+  // WHICH servers, where the gate answers only whether Server may be touched at
+  // all. `workspaceId` reaches auth() through applyStanding(), which resolves
+  // the workspace being addressed once per request and puts it on the principal
+  // — so this is the same fact the service where-clauses filter on, declared
+  // where it cannot be forgotten. Compiled into the SQL of every read, update
+  // and delete from a scoped client, and checked in JS before a create.
+  //
+  // The paths that legitimately cross a workspace are the three engines, the
+  // hub and the agent's heartbeat, and every one of them already goes through
+  // asSystem(), which bypasses this. A path that is NOT system and names no
+  // workspace matches nothing — quietly, since a policy filters rather than
+  // refuses. That is the failure shape to look for if a screen empties.
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -533,6 +573,7 @@ model ServerEvent {
   metadata  Json     @default("{}")
   createdAt DateTime @default(now())
 
+  @@gate("2.4.8.8")
   @@index([serverId])
 }
 
@@ -582,6 +623,7 @@ model Volume {
   discoveredAt    DateTime @default(now())
   lastSeenAt      DateTime @default(now())
 
+  @@gate("2.8.8.5")
   @@log(audit)
   @@unique([serverId, name])
   @@index([serverId])
@@ -609,6 +651,7 @@ model Network {
   appNetworks    AppNetwork[]
   serverNetworks ServerNetwork[]
 
+  @@gate("2.5")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -623,6 +666,7 @@ model ServerNetwork {
   ipAddress String?
   joinedAt  DateTime @default(now())
 
+  @@gate("2.5")
   @@unique([serverId, networkId])
 }
 
@@ -648,6 +692,7 @@ model Project {
 
   environments Environment[]
 
+  @@gate("2.4.4.5")
   @@softDelete(cascade)
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -675,6 +720,7 @@ model Environment {
   jobs        Job[]
   flagOverrides FlagOverride[]
 
+  @@gate("2.4.4.5")
   @@softDelete(cascade)
   @@log(audit)
   @@unique([projectId, slug])
@@ -715,6 +761,7 @@ model App {
   appNetworks   AppNetwork[]
   domains       Domain[]
 
+  @@gate("2.4.4.5")
   @@softDelete(cascade)
   @@log(audit)
   @@unique([environmentId, slug])
@@ -759,6 +806,7 @@ model Domain {
   updatedAt     DateTime  @default(now()) @updatedAt
   deletedAt     DateTime?
 
+  @@gate("2.5")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, hostname])
@@ -780,6 +828,7 @@ model AppServer {
   startedAt    DateTime?
   stoppedAt    DateTime?
 
+  @@gate("2.8")
   @@unique([appId, serverId, replicaIndex])
 }
 
@@ -793,6 +842,7 @@ model AppNetwork {
   dnsName   String?
   joinedAt  DateTime @default(now())
 
+  @@gate("2.8")
   @@unique([appId, networkId])
 }
 
@@ -836,6 +886,7 @@ model Deployment {
 
   steps                DeploymentStep[]
 
+  @@gate("2.4.4.4")
   @@log(audit)
   @@index([appId])
   @@index([workspaceId])
@@ -854,6 +905,7 @@ model DeploymentStep {
   finishedAt   DateTime?
   durationMs   Int?
 
+  @@gate("2.4.8.8")
   @@index([deploymentId])
 }
 
@@ -890,6 +942,7 @@ model Job {
 
   runs           JobRun[]
 
+  @@gate("2.4.4.5")
   @@softDelete
   @@log(audit)
   @@index([workspaceId])
@@ -912,6 +965,7 @@ model JobRun {
 
   createdAt  DateTime     @default(now())
 
+  @@gate("2.8")
   @@index([jobId])
 }
 
@@ -978,6 +1032,7 @@ model Recipe {
 
   runs           RecipeRun[]
 
+  @@gate("4.5")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -1012,6 +1067,7 @@ model RecipeRun {
   durationMs  Int?
   createdAt   DateTime  @default(now())
 
+  @@gate("2.4.8.8")
   @@index([recipeId])
   @@index([serverId])
 }
@@ -1058,6 +1114,7 @@ model DiskUsage {
 
   reportedAt                 DateTime @default(now())
 
+  @@gate("2.8")
   @@unique([serverId])
 }
 
@@ -1094,6 +1151,7 @@ model CleanupRun {
   durationMs  Int?
   createdAt   DateTime  @default(now())
 
+  @@gate("2.4.8.8")
   @@log(audit)
   @@index([serverId])
 }
@@ -1140,6 +1198,7 @@ model FeatureFlag {
 
   overrides   FlagOverride[]
 
+  @@gate("2.4.4.5")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, key])
@@ -1162,6 +1221,7 @@ model FlagOverride {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
 
+  @@gate("2.4.4.4")
   @@log(audit)
   @@unique([flagId, environmentId])
   @@index([environmentId])
@@ -1215,6 +1275,7 @@ model NotificationChannel {
 
   rules       AlertRuleChannel[]
 
+  @@gate("2.5")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, name])
@@ -1239,6 +1300,7 @@ model AlertRule {
   events      AlertEvent[]
   channels    AlertRuleChannel[]
 
+  @@gate("2.5")
   @@log(audit)
   @@index([workspaceId])
 }
@@ -1259,6 +1321,7 @@ model AlertRuleChannel {
 
   createdAt DateTime            @default(now())
 
+  @@gate("2.5")
   @@unique([ruleId, channelId])
   @@index([channelId])
 }
@@ -1280,6 +1343,7 @@ model AlertEvent {
   acknowledgedBy String?
   acknowledgedAt DateTime?
 
+  @@gate("2.8.4.8")
   @@index([ruleId])
   @@index([status])
 }
@@ -1325,6 +1389,7 @@ model Dashboard {
 
   widgets     DashboardWidget[]
 
+  @@gate("2.4.4.4")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -1368,6 +1433,7 @@ model DashboardWidget {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @default(now()) @updatedAt
 
+  @@gate("2.4.4.4")
   @@log(audit)
   @@index([dashboardId])
 }
@@ -1392,6 +1458,7 @@ model AuditEvent {
   diff        Json?
   createdAt   DateTime   @default(now())
 
+  @@gate("5.8.9.9")
   @@index([workspaceId])
   @@index([subjectType, subjectId])
 }

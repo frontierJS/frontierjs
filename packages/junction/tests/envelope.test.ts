@@ -15,7 +15,7 @@ import { describe, test, expect } from 'bun:test'
 import {
   wrapResult, unwrapResult, resultData,
   isServiceResult, isListResult,
-  single, list, toBulkFailure,
+  single, list, toBulkFailure, ResultShapeError,
 } from '../src/core/envelope.ts'
 
 describe('isServiceResult — strict, because the loose version was wrong', () => {
@@ -57,24 +57,25 @@ describe('isServiceResult — strict, because the loose version was wrong', () =
 
 describe('wrapResult', () => {
 
-  test('a paginated shape becomes a list with its metadata', () => {
-    const r = wrapResult({ total: 57, limit: 20, offset: 40, data: [{ id: 1 }] }, 'posts')
+  test('a paginated find becomes a list with its metadata', () => {
+    const r = wrapResult({ total: 57, limit: 20, offset: 40, data: [{ id: 1 }] }, 'posts', 'find')
     expect(r).toMatchObject({ kind: 'list', object: 'posts', total: 57, limit: 20, offset: 40 })
     expect(r.data).toHaveLength(1)
   })
 
   test('Feathers-style `skip` is accepted as offset', () => {
-    const r = wrapResult({ total: 9, limit: 5, skip: 5, data: [] }, 'posts')
+    const r = wrapResult({ total: 9, limit: 5, skip: 5, data: [] }, 'posts', 'find')
     expect(r.offset).toBe(5)
   })
 
-  test('a bare array becomes a list', () => {
-    expect(wrapResult([{ id: 1 }, { id: 2 }], 'posts')).toMatchObject({ kind: 'list', object: 'posts' })
+  test('a bare array becomes a list, whatever the method', () => {
+    expect(wrapResult([{ id: 1 }, { id: 2 }], 'posts', 'find')).toMatchObject({ kind: 'list', object: 'posts' })
+    expect(wrapResult([{ id: 1 }], 'posts', 'patch')).toMatchObject({ kind: 'list' })
   })
 
   test('anything else becomes a single', () => {
-    expect(wrapResult({ id: 1 }, 'posts')).toMatchObject({ kind: 'single', object: 'posts' })
-    expect(wrapResult(null, 'posts')).toMatchObject({ kind: 'single', data: null })
+    expect(wrapResult({ id: 1 }, 'posts', 'get')).toMatchObject({ kind: 'single', object: 'posts' })
+    expect(wrapResult(null, 'posts', 'get')).toMatchObject({ kind: 'single', data: null })
   })
 
   test('`object` is the SERVICE name, for both kinds', () => {
@@ -82,8 +83,79 @@ describe('wrapResult', () => {
     // field answered "how is this packaged?" in a slot named "what is this?".
     // `kind` answers that now, so `object` is free to be a stable identity a
     // client can key a cache or a type off.
-    expect(wrapResult([{ id: 1 }], 'posts').object).toBe('posts')
-    expect(wrapResult({ id: 1 }, 'posts').object).toBe('posts')
+    expect(wrapResult([{ id: 1 }], 'posts', 'find').object).toBe('posts')
+    expect(wrapResult({ id: 1 }, 'posts', 'get').object).toBe('posts')
+  })
+})
+
+// ─── the METHOD decides, not the shape ────────────────────────────────────
+// It used to be the shape alone: any { data, total } was rebuilt as a
+// paginated list, whatever produced it, and the rebuild kept exactly
+// total/limit/offset/data/errors. Two failures, one mistake — guessing what a
+// method meant from what it happened to return.
+//
+//   FJS-140  dashboards.kinds answered { total, data, statSources,
+//            portalServices }; the browser got the rows and neither vocabulary,
+//            so the picker offered widgets it could not fill in. 200, no word.
+//   FJS-144  a find answering one object was wrapped as a `single`, which the
+//            browser client then read as an EMPTY list. 200, no word.
+
+describe('a custom action keeps everything it answers', () => {
+
+  test('{ data, total, …extra } from an action is a single, not a rebuilt list', () => {
+    const raw = { total: 2, data: [{ id: 'a' }], statSources: ['cpu'], portalServices: ['mail'] }
+    const r = wrapResult(raw, 'dashboards', 'kinds')
+    expect(r.kind).toBe('single')
+    // The whole answer survives — this is the bug, stated as a test.
+    expect(r.data).toEqual(raw)
+  })
+
+  test('the bulk partial-write protocol is still a list, on any method', () => {
+    // { data, errors } is how a bulk create reports which rows saved and which
+    // did not. It is a list because the protocol says so, not because create
+    // was mistaken for find.
+    const r = wrapResult({ data: [{ id: 1 }], total: 1, errors: [{ data: {}, error: {} }] }, 'posts', 'create')
+    expect(r.kind).toBe('list')
+    expect(r.errors).toHaveLength(1)
+  })
+})
+
+describe('find promises a list, and says so when it is not one', () => {
+
+  test('one object throws, naming the service and what arrived', () => {
+    const err = (() => { try { wrapResult({ runtime: 'ok' }, 'hub', 'find') } catch (e) { return e } })() as ResultShapeError
+    expect(err).toBeInstanceOf(ResultShapeError)
+    expect(err.message).toContain('hub.find()')
+    expect(err.message).toContain('runtime')
+    expect(err.status).toBe(500)
+  })
+
+  test('nothing at all throws — a 204 is not an empty page', () => {
+    expect(() => wrapResult(null,      'posts', 'find')).toThrow(ResultShapeError)
+    expect(() => wrapResult(undefined, 'posts', 'find')).toThrow(ResultShapeError)
+  })
+
+  test('`data` that is not an array throws rather than becoming an uniterable list', () => {
+    // This passed isListResult() and reached the browser as a list nothing
+    // could map over.
+    expect(() => wrapResult({ data: { id: 1 }, total: 3 }, 'posts', 'find')).toThrow(ResultShapeError)
+  })
+
+  test('a list carrying a summary throws, naming the keys that have no home', () => {
+    const err = (() => {
+      try { wrapResult({ data: [], total: 0, facets: {}, summary: 1 }, 'posts', 'find') } catch (e) { return e }
+    })() as ResultShapeError
+    expect(err).toBeInstanceOf(ResultShapeError)
+    expect(err.message).toContain('facets, summary')
+  })
+
+  test('a pre-`kind` envelope off the wire is not stray keys', () => {
+    // The client asks this same function of what a server sent, and an older
+    // server sends { object: 'list', data, total }. Reading the envelope's own
+    // field names as strays would refuse a perfectly good response.
+    const r = wrapResult({ object: 'list', data: [{ id: 1 }], total: 1 }, 'posts', 'find')
+    expect(r.kind).toBe('list')
+    expect(r.object).toBe('posts')
   })
 })
 

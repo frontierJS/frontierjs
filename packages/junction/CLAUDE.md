@@ -71,6 +71,23 @@ src/
   `@@allow(... auth().id)` matches nothing, silently.
 - **`before: { all: [...] }` applies to every method**, including agent endpoints.
   A comment claiming exemption is not one.
+- **Never call `ws.send()` directly — `wsSend()` in `transport/outbox.ts` is the
+  one owner.** Bun's return value is load-bearing: `-1` means buffered, **`0`
+  means the frame was DROPPED**, and ignoring it left callers waiting on replies
+  that were never coming (`FJS-145`). The outbox holds a dropped frame, flushes
+  it on `drain`, and closes the socket with 1013 past `http.wsMaxQueued`.
+- **The METHOD decides list vs single** — `wrapResult(raw, service, method)`.
+  `find` must answer a list or it throws `ResultShapeError`; an array is a list;
+  `{ data, errors }` is a list on any method (the bulk protocol); everything else
+  is a single and travels whole. It used to guess from shape alone, which dropped
+  an action's extra keys (`FJS-140`) and turned a non-list `find` into an empty
+  list in the browser (`FJS-144`). The browser client calls this same function
+  rather than copying the rule — that copy is how the two ends drifted.
+- **`resource().load()` writes the store only if it is still the newest load.**
+  Stamped when issued (`FJS-082`); an overtaken load still RETURNS its rows to
+  the caller that awaited them, and its request is not cancelled. Code reading
+  the return value of a load it may have superseded is reading stale rows on
+  purpose — the store is what is current.
 - **A custom action announces under its own name** (`orders pay`) since
   2026-08-06. Only `find`/`get` are excluded; a read-shaped action opts out with
   `ctx.dispatch = false`.

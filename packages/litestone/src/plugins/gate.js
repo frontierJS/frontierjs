@@ -203,6 +203,74 @@ function collectNestedOps(data, tableName, relationMap, ops = []) {
   return ops
 }
 
+// ─── Nested read preflight ────────────────────────────────────────────────────
+//
+// A relation reached through `include:` is a read of the target model, and it
+// used to be a read nothing graded. Includes are resolved by their own SQL
+// below the query pipeline, so `@@gate` — which fires in onBeforeRead for the
+// model being addressed — never saw them: a caller refused `Vault.findMany`
+// outright could ask for `team.findMany({ include: { secrets: true } })` and
+// get every row of the model they had just been refused.
+//
+// The walk follows both spellings, because a relation can be named under
+// `select:` as well as `include:`, and `_count` counts rows of the target,
+// which is a read of it too. Deduped by model: the answer is per model, so a
+// tree that mentions the same one ten times asks once.
+
+function pushRelationTargets(spec, model, relationMap, out, seenPaths) {
+  if (!spec || typeof spec !== 'object') return out
+
+  const rels = relationMap[model] ?? {}
+
+  for (const [key, val] of Object.entries(spec)) {
+    if (!val) continue
+
+    if (key === '_count') {
+      const counted = val === true ? null : (val.select ?? val)
+      if (counted === null) {
+        for (const rel of Object.values(rels))
+          if (rel.kind === 'hasMany' || rel.kind === 'manyToMany') out.add(rel.targetModel)
+        continue
+      }
+      if (typeof counted !== 'object') continue
+      for (const [alias, cs] of Object.entries(counted)) {
+        if (!cs) continue
+        const relName = (typeof cs === 'object' && cs.relation) ? cs.relation : alias
+        const rel     = rels[relName]
+        if (rel) out.add(rel.targetModel)
+      }
+      continue
+    }
+
+    const rel = rels[key]
+    if (!rel) continue
+    out.add(rel.targetModel)
+
+    if (typeof val !== 'object') continue
+
+    // A cycle in the schema (Team → members → team) would otherwise recurse
+    // forever on a self-referential include; the pair is what repeats.
+    const path = `${model}.${key}`
+    if (seenPaths.has(path)) continue
+    seenPaths.add(path)
+
+    pushRelationTargets(val.include, rel.targetModel, relationMap, out, seenPaths)
+    pushRelationTargets(val.select,  rel.targetModel, relationMap, out, seenPaths)
+  }
+
+  return out
+}
+
+function collectIncludedModels(args, model, relationMap) {
+  if (!args) return []
+  const out   = new Set()
+  const paths = new Set()
+  pushRelationTargets(args.include, model, relationMap, out, paths)
+  pushRelationTargets(args.select,  model, relationMap, out, paths)
+  out.delete(model)
+  return [...out]
+}
+
 // ─── GatePlugin ───────────────────────────────────────────────────────────────
 
 export class GatePlugin extends Plugin {
@@ -265,6 +333,8 @@ export class GatePlugin extends Plugin {
 
   async onBeforeRead(model, args, ctx) {
     await this._check(model, 'read', ctx)
+    for (const target of collectIncludedModels(args, model, this._relationMap))
+      await this._check(target, 'read', ctx)
   }
 
   // ── Create ──────────────────────────────────────────────────────────────────

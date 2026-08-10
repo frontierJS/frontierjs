@@ -148,6 +148,7 @@
         on:focus={() => open = true}
         on:blur={handleBlur}
         on:keydown={handleKeydown}
+        {...$attributes}
       />
 
       {#if clearable && (value != null || query)}

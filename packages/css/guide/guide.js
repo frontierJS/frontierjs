@@ -1174,7 +1174,7 @@ function compositionPage() {
           <code>!important</code> and without caring about import order.
         </p>
         <div class="sg-resolve">
-          <div class="sg-resolve-col">
+          <div class="stack gap-sm">
             <div class="sg-resolve-label">chip.css — structure, 0 specificity</div>
             ${code(
               `:where(.chip, .btn, .pill, .badge) {
@@ -1188,7 +1188,7 @@ function compositionPage() {
             )}
           </div>
           <div class="sg-resolve-arrow">+</div>
-          <div class="sg-resolve-col">
+          <div class="stack gap-sm">
             <div class="sg-resolve-label">badges.css — only what is its own</div>
             ${code(
               `.badge {
@@ -2491,28 +2491,29 @@ ${Object.entries(theme.tokens)
           Pick a theme. The vars cascade. Every button, badge, pill, and tonal
           surface below reskins instantly. No component code changes.
         </p>
-        <div class="sg-theme-switcher">
+        <div class="tiles sg-theme-switcher">
           ${Object.entries(THEMES)
             .map(
               ([key, t]) => `
           <button
             type="button"
-            class="sg-theme-tab${active === key ? ' active' : ''}"
+            class="surface tile item sg-theme-tab"
+            aria-pressed="${active === key}"
             data-theme="${key}">
             <span class="sg-theme-swatch" style="background: ${
               t.tokens['--color-primary'] || 'var(--color-primary)'
             }"></span>
-            <div class="sg-theme-tab-text">
-              <div class="sg-theme-tab-name">${t.name}</div>
-              <div class="sg-theme-tab-desc">${t.description}</div>
-            </div>
+            <span class="item-text">
+              <span class="item-title">${t.name}</span>
+              <span class="item-sub">${t.description}</span>
+            </span>
           </button>`
             )
             .join('')}
         </div>
 
         <div class="sg-theme-preview" style="${styleAttr(theme.tokens)}">
-          <div class="sg-theme-block">
+          <div class="stack gap-md">
             <div class="sg-theme-label">Buttons</div>
             <div class="cluster">
               <button class="btn">Save</button>
@@ -2523,7 +2524,7 @@ ${Object.entries(theme.tokens)
             </div>
           </div>
 
-          <div class="sg-theme-block">
+          <div class="stack gap-md">
             <div class="sg-theme-label">Badges &amp; Pills</div>
             <div class="cluster">
               <span class="badge success">Active</span>
@@ -2535,7 +2536,7 @@ ${Object.entries(theme.tokens)
             </div>
           </div>
 
-          <div class="sg-theme-block">
+          <div class="stack gap-md">
             <div class="sg-theme-label">Tonal ramp</div>
             <div class="sg-theme-ramp" style="--sg-ramp: var(--color-primary); --color: var(--ink)">
               ${ramp
@@ -2554,7 +2555,7 @@ ${Object.entries(theme.tokens)
             </div>
           </div>
 
-          <div class="sg-theme-block">
+          <div class="stack gap-md">
             <div class="sg-theme-label">Form field</div>
             <div class="field-group">
               <label>Email address</label>
@@ -2894,7 +2895,7 @@ function cardsPage() {
           — same structure, different surface treatment.
         </p>
         ${preview(`
-          <div class="sg-card-grid">
+          <div class="tiles gap-lg sg-card-grid">
             <div class="card">
               <strong>Default</strong>
               <p class="sg-card-text">Border + surface fill.</p>
@@ -2926,7 +2927,7 @@ function cardsPage() {
           Tonal page do the work.
         </p>
         ${preview(`
-          <div class="sg-card-grid">
+          <div class="tiles gap-lg sg-card-grid">
             <div class="card info">
               <strong>Info card</strong>
               <p class="sg-card-text">
@@ -5479,7 +5480,7 @@ function cheatSheetPage() {
             return `
         <div class="sg-basis">
           <div class="sg-basis-base">
-            <div class="sg-basis-head">
+            <div class="split gap-sm sg-basis-head">
               <code class="sg-cheat-name">.${base}</code>
               <span class="sg-basis-tag">${
                 base === 'chip' ? 'inline lineage' : 'block lineage'
@@ -5498,7 +5499,7 @@ function cheatSheetPage() {
               <div class="sg-cheat-base-preview">${
                 BASE_PREVIEW[name] || `<span class="${name}">${name}</span>`
               }</div>
-              <div class="sg-cheat-base-meta">
+              <div class="item-text gap-2xs sg-cheat-base-meta">
                 <code class="sg-cheat-name"><span class="sg-basis-inherit">.${base}</span> + .${name}</code>
                 <code class="sg-cheat-shortcut">${esc(
                   BASE_NOTES[name] || 'declared in ' + (BASE_FILES[name] || 'the stylesheet')
@@ -5746,7 +5747,7 @@ function cheatSheetPage() {
           Each theme is a class that re-binds the global tokens. Wrap any
           subtree.
         </p>
-        <div class="sg-cheat-themes">
+        <div class="tiles gap-xs sg-cheat-themes">
           ${Object.entries(THEMES)
             .map(
               ([key, t]) => `
@@ -5789,7 +5790,7 @@ function cheatSheetPage() {
       ${section(
         'CSS variables',
         `
-        <div class="sg-cheat-vars">
+        <div class="tiles gap-lg sg-cheat-vars">
           ${varGroups
             .map(
               ([title, vars]) => `
@@ -10294,6 +10295,14 @@ const WIZ_SKETCH = {
   }
 }
 
+/*
+ * An option that LANDS on a term shows that term on the tile, muted. The
+ * wizard's whole claim is that the term follows from the question, so
+ * hiding the answer behind the click makes it a quiz — someone who already
+ * knows the vocabulary had to commit to a branch to find out where it went,
+ * and someone who doesn't never sees the two names side by side. Muted and
+ * last in the tile so it reads as the destination, not as the label.
+ */
 function wizQuestion(id) {
   const q = DECIDE.questions[id]
   /* Only where the answer is a shape. WIZ_SKETCH's header lists the five
@@ -10306,6 +10315,7 @@ function wizQuestion(id) {
         ${(set && set[o.on || o.to]) || ''}
         <span class="item-title">${esc(o.label)}</span>
         ${o.hint ? `<span class="item-sub">${esc(o.hint)}</span>` : ''}
+        ${o.on && TERM[o.on] ? `<span class="sg-wiz-lands">${esc(o.on)}</span>` : ''}
       </button>`
     )
     .join('')
@@ -11207,6 +11217,52 @@ function kb(bytes) {
 }
 
 /*
+ * The classes that change under a width media query — counted, because the
+ * claim beside it is that this package has no breakpoint VARIANTS while
+ * still being responsive, and the second half of that is only credible if
+ * the number is real.
+ *
+ * Width only: the bundle also carries `prefers-reduced-motion` and
+ * `hover: hover`, which are @media and are not breakpoints. Counting every
+ * @media gives 14 instead of 8, and the six it adds — `.card`, `.tile`,
+ * `.btn`, `.surface`, `.spinner`, `.loading` — make the package look
+ * responsive in places it is not.
+ *
+ * Descends through @import and @layer the same way countShippedClasses()
+ * does — index.css is 44 imports, so a walk that stops at the top level
+ * counts nothing.
+ *
+ * Reading the CSSOM rather than the file text is also what keeps comments
+ * out: `frame.css` explains the toggle's display by naming `.btn` in prose
+ * inside a width query, and a regex over the source counts that as a ninth
+ * class. Two methods agreeing on 8 is why this one is trusted.
+ */
+function countResponsiveClasses() {
+  const seen = new Set()
+  const walk = (rules, underWidth) => {
+    for (const r of rules) {
+      const isWidth =
+        r.media && /\b(min|max)-width\b/.test(r.conditionText || r.media.mediaText || '')
+      const inside = underWidth || isWidth
+      if (inside && r.selectorText) {
+        for (const c of r.selectorText.match(/\.[a-zA-Z][a-zA-Z0-9_-]*/g) || []) seen.add(c.slice(1))
+      }
+      if (r.cssRules) walk(r.cssRules, inside)
+      if (r.styleSheet && r.styleSheet.cssRules) walk(r.styleSheet.cssRules, inside)
+    }
+  }
+  for (const sheet of document.styleSheets) {
+    if (!sheet.href || !/\/src\//.test(sheet.href)) continue
+    try {
+      walk(sheet.cssRules, false)
+    } catch (e) {
+      return null
+    }
+  }
+  return seen.size
+}
+
+/*
  * Our own two numbers, read rather than remembered.
  *
  * The class count is countShippedClasses() — the same walk the compare page
@@ -11223,6 +11279,7 @@ const FJS_GZIP = 11200
 
 function footprintPage() {
   const classes = countShippedClasses()
+  const responsive = countResponsiveClasses()
   const terms = VOCAB.reduce((n, t) => n + t[2].length, 0)
 
   /* Ours is inserted in weight order like everything else — putting it on
@@ -11251,15 +11308,24 @@ function footprintPage() {
       </tr>`
 
   /*
-   * Ours is counted the same way as theirs and comes out at 12 size-suffixed
-   * (7 `gap-*`, 5 `text-*`) and 15 with a colour word in them — the 7 tones,
-   * the 5 `.text-*` inks, plus `.bordered`, `.muted` and `.theme-dark`, which
-   * the grep catches on a substring. Counting them is the honest move: the
-   * claim is that the ratio is small, not that it is zero, and a hand-lowered
-   * numerator would be the one number on the page nobody could reproduce.
+   * Ours is counted by the SAME command as theirs, which is the only reason
+   * the ratio means anything — and running it rather than eyeballing it is
+   * what caught two errors in this row.
+   *
+   * The suffix count is 10, not the 12 a hand-written pattern first gave:
+   * `.gap-2xl`/`.gap-3xl` end in `xl` but the published regex requires a
+   * separator before it, so they do not match. Ten is what the command
+   * prints, so ten is what ships here.
+   *
+   * The colour count is 13, and three of those are substring false
+   * positives the grep cannot avoid — `.bordered` contains "red",
+   * `.theme-dark` contains "dark", `.secondary` is not a colour name at
+   * all. They are counted anyway. Every framework in the table gets the
+   * same crude instrument pointed at it, and quietly exempting our own row
+   * is the one edit that would make the comparison worthless.
    */
   const varRows = FOOTPRINT.concat([
-    { name: 'FrontierJS', classes, breakpoint: 12, colour: 15, ours: true }
+    { name: 'FrontierJS', classes, breakpoint: 10, colour: 13, ours: true }
   ])
     .slice()
     .sort((a, b) => (a.classes || 0) - (b.classes || 0))
@@ -11340,16 +11406,24 @@ function footprintPage() {
         </p>
         <p>
           So the same class lists, split by what the names are:
-          <strong>breakpoint clones</strong> (<code>.col-md-6</code>,
-          <code>.d-lg-none</code>) and <strong>colour clones</strong>
+          <strong>size-suffixed</strong> (<code>.col-md-6</code>,
+          <code>.d-lg-none</code>, <code>.text-sm</code>) and
+          <strong>colour-worded</strong>
           (<code>.has-background-primary-40-invert</code>).
+        </p>
+        <p>
+          Both columns are one crude grep over class names, run identically on
+          every row including ours. That is the point — a measurement that
+          flatters whoever wrote it is not a measurement — but it means the
+          columns count <em>spelling</em>, not meaning, and the next section
+          is where our own row does not mean what it appears to.
         </p>
         <div class="table-wrap">
           <table class="table compact striped">
             <thead>
               <tr>
                 <th>Package</th><th>Classes</th>
-                <th>Breakpoint clones</th><th>Colour clones</th><th>Clones</th>
+                <th>Size-suffixed</th><th>Colour-worded</th><th>Share</th>
               </tr>
             </thead>
             <tbody>${varRows}</tbody>
@@ -11394,15 +11468,45 @@ function footprintPage() {
           the treatment and the density already exist and already compose.
         </p>
         <p>
-          The counter-check is in the table above, and our own row is counted
-          by the same grep rather than by hand: the classes here with a colour
-          word in them are the ${TONES.length} tones, the five
-          <code>.text-*</code> inks, and three the substring match sweeps up
-          (<code>.bordered</code>, <code>.muted</code>,
-          <code>.theme-dark</code>). None of them is a combination. There is
-          no <code>.btn-danger</code>, and there is no
-          <code>.alert-danger</code> either — <code>danger</code> is one class
-          and it goes on both.
+          Our own row in that table is 23 classes, so here they are in full.
+          A share is a number nobody can check; a list of 23 names is one
+          anybody can.
+        </p>
+        ${code(`size-suffixed (10)
+  .gap-xs  .gap-sm  .gap-md  .gap-lg  .gap-xl      one space rung each
+  .text-xs .text-sm .text-md .text-lg .text-xl     one type rung each
+
+colour-worded (13)
+  .primary .secondary .success .warning .danger .info .muted   the 7 tones
+  .text-primary .text-success .text-warning .text-danger .text-info
+                                                   the same 7 as ink
+  .bordered      contains "red"
+  .theme-dark    contains "dark"`, 'txt')}
+        <p>
+          <strong>Not one of them is a variant of another class.</strong>
+          <code>.gap-lg</code> is one rung of the space ladder, not
+          <code>.gap</code> at a large breakpoint. <code>.text-sm</code> is
+          one rung of the type scale, and it is the same class on a heading, a
+          button and a table cell. <code>.bordered</code> and
+          <code>.theme-dark</code> are in the list because the grep matches
+          <em>red</em> inside <em>bordered</em> — they are counted rather than
+          excused, because exempting our own row is how a comparison stops
+          being one.
+        </p>
+        <p>
+          The number that is actually zero is the one the left column is named
+          after. <strong>This package ships no breakpoint variant of anything.</strong>
+          There is no <code>.gap-md-lg</code>, no <code>.text-sm-xl</code>, no
+          <code>.col-md-6</code>.
+          ${responsive === null ? 'Some classes' : `<strong>${responsive} classes</strong>`}
+          do change at a width — <code>.shell</code>, <code>.sidebar</code>,
+          <code>.screen</code>, <code>.container</code> among them — and every
+          one of them keeps
+          the same name while the rule underneath it changes. That is the
+          difference between a framework where the author picks the breakpoint
+          and one where the stylesheet already knows it, and it is the whole
+          of why ${bootstrap.breakpoint.toLocaleString()} of Bootstrap's names
+          do not have an equivalent here.
         </p>`
       )}
 
@@ -11461,9 +11565,12 @@ gzip -9 -c bulma.css | wc -c
 # unique class names in a file
 grep -oE '\\.[a-zA-Z_-][a-zA-Z0-9_-]*' bulma.css | sort -u | wc -l
 
-# how many of those are breakpoint clones
+# how many of those are size-suffixed — swap the file to compare
 grep -oE '\\.[a-zA-Z_-][a-zA-Z0-9_-]*' bulma.css | sort -u \\
-  | grep -cE '\\-(sm|md|lg|xl|xxl|xs|tablet|desktop|mobile|widescreen|fullhd|touch)(\\-|$)'`, 'bash')}
+  | grep -cE '\\-(sm|md|lg|xl|xxl|xs|tablet|desktop|mobile|widescreen|fullhd|touch)(\\-|$)'
+
+# drop the -c to see the names rather than the count. Run it on
+# dist/frontier.min.css and it prints the ten in the list above.`, 'bash')}
         <p class="text-muted text-xs">
           The class-name grep is a lexical count, not a parse: it counts a
           name once no matter how many rules declare it, and it cannot tell a
@@ -11741,7 +11848,6 @@ const search = { open: false, hits: [], at: 0, from: null }
 function searchHighlight() {
   $$('[data-hit]', app).forEach((el, i) => {
     const on = i === search.at
-    el.classList.toggle('active', on)
     el.setAttribute('aria-selected', on ? 'true' : 'false')
     if (on) {
       el.scrollIntoView({ block: 'nearest' })
@@ -11905,26 +12011,26 @@ function topbar() {
               <span class="sg-theme-trigger-swatch" style="background: ${
                 theme.tokens['--color-primary'] || 'var(--color-primary)'
               }"></span>
-              <span class="sg-theme-trigger-name">${theme.name}</span>
-              <span class="sg-theme-trigger-arrow">⌄</span>
+              ${theme.name}
+              <span class="sg-theme-trigger-arrow" aria-hidden="true">⌄</span>
             </button>
             <div hidden data-theme-dropdown>
               <div class="sg-theme-backdrop" data-theme-close></div>
-              <div class="sg-theme-dropdown">
+              <div class="surface raised items menu sg-theme-dropdown" role="menu">
                 ${Object.entries(THEMES)
                   .map(
                     ([key, t]) => `
-                <button type="button" class="sg-theme-option${
-                  key === state.theme ? ' active' : ''
-                }" data-theme="${key}">
+                <button type="button" class="item sg-theme-option" role="menuitemradio" aria-pressed="${
+                  key === state.theme
+                }" aria-checked="${key === state.theme}" data-theme="${key}">
                   <span class="sg-theme-option-swatch" style="background: ${
                     t.tokens['--color-primary'] || 'var(--color-primary)'
                   }"></span>
-                  <span class="sg-theme-option-text">
-                    <span class="sg-theme-option-name">${t.name}</span>
-                    <span class="sg-theme-option-desc">${t.description}</span>
+                  <span class="item-text">
+                    <span class="item-title sg-theme-option-name">${t.name}</span>
+                    <span class="item-sub">${t.description}</span>
                   </span>
-                  ${key === state.theme ? `<span class="sg-theme-option-check">✓</span>` : ''}
+                  ${key === state.theme ? `<span class="sg-theme-option-check" aria-hidden="true">✓</span>` : ''}
                 </button>`
                   )
                   .join('')}

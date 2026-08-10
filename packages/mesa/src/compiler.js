@@ -379,6 +379,24 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
         patches.push({ start: n.start, end: n.end, replacement })
         return
       }
+      // A pattern on the left — same handling as the script path, and the same
+      // failure without it: the targets rewrite as reads and the handler is
+      // unparseable JS inside an otherwise clean compile.
+      if (
+        n.operator === '=' &&
+        (left.type === 'ArrayPattern' || left.type === 'ObjectPattern')
+      ) {
+        const replacement = rewritePatternAssignment(n, {
+          source:    expr,
+          setterFor: (name) => (localScope.has(name) ? null : setterMap[name] || null),
+          rewriteSub: (sub) =>
+            rewriteExpr(expr.slice(sub.start, sub.end), accessorMap, setterMap)
+        })
+        if (replacement) {
+          patches.push({ start: n.start, end: n.end, replacement })
+          return
+        }
+      }
     }
 
     // Rewrite update expressions: x++ → $$set_x($runtime.get($$sig_x) + 1)
@@ -523,6 +541,108 @@ function rewriteFragmentAssignments(src, ctx) {
   return rewriteAssignments(src, ast, { ...ctx, script: { ...ctx.script, source: src } })
 }
 
+/**
+ * Rewrite one destructuring assignment whose pattern names at least one
+ * reactive binding: `[a, b] = [b, a]`, `({x: a} = o)`.
+ *
+ * Both rewriters need this and neither can borrow the other's — they index
+ * into different strings and disagree about what is reactive (rewriteExpr
+ * knows the local scope, rewriteAssignments does not) — so the shape they
+ * share is passed in: `source` is the string the node's positions index into,
+ * `setterFor(name)` answers the setter or null, and `rewriteSub(node)` renders
+ * a sub-expression the way that caller renders every other one.
+ *
+ * Returns the replacement source, or **null** when the pattern names nothing
+ * reactive (leave it alone) or holds a target that cannot be mirrored into a
+ * temp (leave it alone rather than emit a guess).
+ *
+ * The pattern is reproduced verbatim with every TARGET replaced by a temp, so
+ * holes, rest elements and nesting keep working without this function having
+ * to understand them — only the leaves move. A shorthand property has to be
+ * expanded (`{a}` → `{a: $$d0}`), because the identifier there is both the key
+ * and the target and only the target moves.
+ */
+function rewritePatternAssignment(n, { source, setterFor, rewriteSub }) {
+  const subs = []      // { start, end, text } — spans inside the pattern
+  const assigns = []   // one write per target, in source order
+  let temps = 0
+  let reactive = false
+  let bail = false
+
+  const srcOf = (node) => source.slice(node.start, node.end)
+
+  /** Record one leaf target: sub its span for a temp, and write it back after. */
+  const leaf = (target, span = target, wrap = (t) => t) => {
+    const t = `$$d${temps++}`
+    const setter = target.type === 'Identifier' ? setterFor(target.name) : null
+    if (setter) {
+      reactive = true
+      assigns.push(`${setter}(${t})`)
+    } else if (target.type === 'Identifier') {
+      assigns.push(`${target.name} = ${t}`)
+    } else if (target.type === 'MemberExpression') {
+      // `[o.x, a] = pair` — the member half is not reactive, but it has to keep
+      // working when it shares a pattern with something that is.
+      assigns.push(`${rewriteSub(target)} = ${t}`)
+    } else {
+      bail = true
+      return
+    }
+    subs.push({ start: span.start, end: span.end, text: wrap(t) })
+  }
+
+  const walkPattern = (p) => {
+    if (!p || bail) return          // a hole in an array pattern is null
+    switch (p.type) {
+      case 'ArrayPattern':
+        p.elements.forEach(walkPattern)
+        return
+      case 'ObjectPattern':
+        for (const prop of p.properties) {
+          if (bail) return
+          if (prop.type === 'RestElement') { walkPattern(prop.argument); continue }
+          // A computed key is an ordinary expression and may read a signal.
+          if (prop.computed) subs.push({ ...spanOf(prop.key), text: rewriteSub(prop.key) })
+          if (prop.shorthand) {
+            const defaulted = prop.value.type === 'AssignmentPattern'
+            const target = defaulted ? prop.value.left : prop.value
+            if (target.type !== 'Identifier') { bail = true; return }
+            const def = defaulted ? ` = ${rewriteSub(prop.value.right)}` : ''
+            leaf(target, prop, (t) => `${target.name}: ${t}${def}`)
+            continue
+          }
+          walkPattern(prop.value)
+        }
+        return
+      case 'AssignmentPattern':       // `[a = fallback]` — the default is a read
+        subs.push({ ...spanOf(p.right), text: rewriteSub(p.right) })
+        walkPattern(p.left)
+        return
+      case 'RestElement':
+        walkPattern(p.argument)
+        return
+      default:
+        leaf(p)
+    }
+  }
+
+  walkPattern(n.left)
+  if (bail || !reactive) return null
+
+  // Substitute back-to-front so earlier spans keep their positions.
+  const base = n.left.start
+  let pattern = srcOf(n.left)
+  for (const s of [...subs].sort((a, b) => b.start - a.start)) {
+    pattern = pattern.slice(0, s.start - base) + s.text + pattern.slice(s.end - base)
+  }
+
+  // The IIFE answers the right-hand value, which is what an assignment
+  // expression evaluates to — `x = ([a, b] = pair)` keeps its meaning.
+  return `(($$dv) => { let ${pattern} = $$dv; ${assigns.join('; ')}; return $$dv })(${rewriteSub(n.right)})`
+}
+
+const spanOf = (node) => ({ start: node.start, end: node.end })
+
 export function rewriteAssignments(src, node, ctx) {
   const { setters, accessors, script } = ctx
   // Early return only if there are NEITHER local setters NOR proxy fire functions.
@@ -601,6 +721,32 @@ export function rewriteAssignments(src, node, ctx) {
         }
         patches.push({ start: n.start, end: n.end, replacement })
         return // don't descend — right side already handled above
+      }
+
+      // Destructuring assignment: `[a, b] = [b, a]`, `({x: a} = o)`.
+      //
+      // The branches above only recognise a bare Identifier on the left, so a
+      // pattern fell through to the generic descent and its targets were
+      // rewritten as READS — `[$runtime.get($$sig_a), …] = …`, which does not
+      // parse. Clean compile, module dead on load; the kit's DatePicker used
+      // the swap idiom and threw before it rendered anything.
+      if (
+        n.operator === '=' &&
+        (n.left.type === 'ArrayPattern' || n.left.type === 'ObjectPattern')
+      ) {
+        const replacement = rewritePatternAssignment(n, {
+          source:    script.source,
+          setterFor: (name) => setters[name] || null,
+          rewriteSub: (sub) =>
+            rewriteExpr(
+              rewriteAssignments(script.source.slice(sub.start, sub.end), sub, ctx),
+              accessors
+            )
+        })
+        if (replacement) {
+          patches.push({ start: n.start, end: n.end, replacement })
+          return
+        }
       }
     }
 

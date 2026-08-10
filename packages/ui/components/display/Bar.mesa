@@ -48,10 +48,11 @@
     max={max}
     aria-label={label || displayVal}
     {class}
+    {...$attributes}
   >{displayVal}</progress>
 
 {:else}
-  <div class="stack" style:gap="0.375rem" {class}>
+  <div class="stack" style:gap="0.375rem" {class} {...$attributes}>
     {#if label || showVal}
       <div class="split">
         {#if label}

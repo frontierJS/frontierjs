@@ -50,17 +50,17 @@
     role="button" and a keydown handler — which loses middle-click, open-in-
     new-tab, and the status bar, all of which an <a> gets for free.
   -->
-  <a class="tile fjs-tile-link" href={href} {class}>
+  <a class="tile fjs-tile-link" href={href} {class} {...$attributes}>
     {@render body()}
   </a>
 {:else if onclick}
   <!-- A real <button> when the action is not navigation: Enter and Space
        are then the platform's job, not a hand-rolled keydown handler. -->
-  <button type="button" class="tile fjs-tile-link" {class} on:click={onclick}>
+  <button type="button" class="tile fjs-tile-link" {class} {...$attributes} on:click={onclick}>
     {@render body()}
   </button>
 {:else}
-  <article class="tile" {class}>
+  <article class="tile" {class} {...$attributes}>
     {@render body()}
   </article>
 {/if}

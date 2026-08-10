@@ -20,7 +20,7 @@ import { buildInfra }                from '../infra/index.ts'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './db.ts'
 import { createSecretResolver }          from './credentials.ts'
-import { basecampAuditLog }               from './hooks.ts'
+import { basecampAuditLog, withWorkspaceStanding } from './hooks.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './session-auth.ts'
 import { apiKeyGuard, apiKeyUsage }       from '../services/api-keys/scopes.ts'
 import { slugify }                        from './resource.ts'
@@ -214,11 +214,20 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   // ── Global hooks ──────────────────────────────────────────────────────
   app.hooks({
     around: {
-      all: [async (ctx, next) => {
-        const t = Date.now()
-        await next()
-        logger.debug(`${ctx.service}.${ctx.method}`, { ms: Date.now() - t })
-      }],
+      all: [
+        // FIRST, and an around hook rather than a before one: it decides what
+        // the caller's Litestone client is, and every before hook after it —
+        // and every method — reads through that client. Junction installs its
+        // own scoping around hook at createApp({ db }), before this file runs,
+        // so this composes INSIDE it and replaces the client it made with one
+        // whose principal carries the workspace role. See core/hooks.ts.
+        withWorkspaceStanding(app),
+        async (ctx, next) => {
+          const t = Date.now()
+          await next()
+          logger.debug(`${ctx.service}.${ctx.method}`, { ms: Date.now() - t })
+        },
+      ],
     },
     before: {
       // App level, not per service: a key that is scoped on fifteen services

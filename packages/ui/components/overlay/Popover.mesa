@@ -100,6 +100,7 @@
   bind:this={triggerEl}
   style:display="inline-block"
   {class}
+  {...$attributes}
   on:click|stopPropagation={openPopover}
 >
   {@render trigger?.()}

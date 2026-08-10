@@ -44,6 +44,9 @@ const CASES = [
   ['components/feedback/Alert.mesa',    { tone: 'danger' },          ['alert', 'danger', 'alert-icon']],
   ['components/feedback/Spinner.mesa',  {},                          ['spinner', 'visually-hidden']],
   ['components/feedback/Progress.mesa', { value: 40 },               ['progress']],
+  // Renderable at all only since mesa stopped running {@attach} server-side
+  // (FJS-146) — its fade-in attachment called el.animate on a happy-dom node.
+  ['components/feedback/Toast.mesa',    { message: 'Saved', tone: 'success' }, ['toast', 'success', 'alert-icon']],
   ['components/feedback/Skeleton.mesa', { variant: 'text' },         ['skeleton', 'text']],
   ['components/overlay/Modal.mesa',     { title: 'T' },              ['dialog', 'surface-header']],
   ['components/overlay/Drawer.mesa',    { title: 'T' },              ['drawer', 'from-right']],

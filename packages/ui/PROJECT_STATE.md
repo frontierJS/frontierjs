@@ -96,19 +96,15 @@ All three were invisible to `analysis.errors` — the compiler reported success.
 
 ## Known Mesa gaps (not fixed — worked around here)
 
-- **A destructuring assignment to reactive lets is not rewritten.**
-  `[a, b] = [b, a]` emits `[$runtime.get(…), $runtime.get(…)] = …`, which does
-  not parse. `rewriteAssignments` only recognises a bare identifier on the
-  left. `DatePicker` used the swap idiom and threw on load; it now uses a temp
-  variable. Pinned as current behaviour in `emission.test.js`.
-- **`{@const}` inside `{#each}` treats the index as a getter**, so
-  `{@const isLast = idx === list.length - 1}` compiles to `idx()` and throws
-  `idx is not a function`. `Breadcrumbs` precomputes the flag in the script
-  instead. (Related, and FIXED 2026-08-04: an attribute whose only dependency
-  was a `{@const}` was written once and never updated — `Steps` kept
-  `aria-current` on a completed step.)
 - **`<mesa:element this={…}>` is not a feature**, and compiles without
   complaint. `SectionHeader` uses an explicit `h1`–`h6` ladder.
+
+Two are gone (2026-08-10). A **destructuring assignment to reactive lets** is
+rewritten through the setters, so `DatePicker` writes its range swap as
+`[_startDate, _endDate] = [_endDate, _startDate]` again. A **`{@const}` reading
+the loop index** works — the index is a signal, so calling it is correct — and
+`Breadcrumbs` keeps its precomputed flag only because truncation is what
+decides which item is last.
 
 ## Landmines
 
@@ -132,11 +128,18 @@ All three were invisible to `analysis.errors` — the compiler reported success.
 
 ## Open — see `ISSUES.md`
 
-**`FJS-028`** 35 of 63 components compile-only · **`FJS-029`** `{...$attributes}`
-on 8 of 63 · **`FJS-054`** `onclick` prop vs `on:click` directive ·
+**`FJS-028`** 35 of 63 components compile-only · **`FJS-054`** `onclick` prop
+vs `on:click` directive ·
 **`FJS-055`** a kit control's real `required` needs `novalidate` ·
 **`FJS-056`** `Btn`/`Button` overlap, `CommandPalette` surface, `themeStore` vs
 the six `theme-*` classes.
 
-The Mesa gaps above are **`FJS-021`**, **`FJS-022`**, **`FJS-023`**. Add a new
-item to `../../ISSUES.md`, not here.
+The Mesa gap above is **`FJS-023`**. Three more were found by rendering all 64
+components for the first time and are **fixed the same day** — `FJS-146` an
+`{@attach}` ran under SSR where `el.animate` does not exist, `FJS-147`
+`{#each { length: n }}` was not iterable so **`DatePicker` had never rendered
+at all**, `FJS-148` a null `style:` directive emitted the string `null`.
+`Toast` and `DatePicker` are in the attribute sweep as a result, and `Toast` is
+a render case.
+
+Add a new item to `../../ISSUES.md`, not here.

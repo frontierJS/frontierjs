@@ -208,9 +208,10 @@ export function createRecipesService(app: BasecampApp) {
       ctx.dispatch = false   // read-shaped
       const recipe = await getScoped(ctx, 'recipe', 'Recipe')
       const { limit } = getPagination(ctx, { limit: RUN_PAGE, max: 200 })
-      // Named keys, not `{ total, data }`: a list envelope is rebuilt from
-      // total/limit/offset/data/errors alone and every sibling key is dropped
-      // with a 200 and no warning (`FJS-140`).
+      // Named keys, not `{ total, data }`: only `find` is built into a list
+      // envelope, and that envelope holds total/limit/offset/data/errors and
+      // refuses anything else. A single travels whole, so naming the keys is
+      // what lets this answer two things at once.
       return { recipeId: recipe.id, runs: await runsFor(ctx, recipe.id as string, limit) }
     },
 

@@ -84,14 +84,13 @@ Open items for this package are in the repo-wide register, not here:
 **`FJS-017`** middleware vs hooks ·
 **`FJS-018`** types stop at the server ·
 **`FJS-019`** dialect trap ·
-**`FJS-020`** custom-method return shape ·
 **`FJS-034`** typecheck baseline ·
 **`FJS-043`** `/metrics` `actions: []` ·
 **`FJS-044`** bulk patch/remove ·
 **`FJS-045`** double broadcast ·
 **`FJS-046`** export tiering ·
 **`FJS-047`** sibling ownership.
-Decisions waiting: **`FJS-D01`**, **`FJS-D02`**, **`FJS-D08`**,
+Decisions waiting: **`FJS-D01`**, **`FJS-D02`**,
 **`FJS-D10`**, **`FJS-D11`**, **`FJS-D13`**.
 
 Add a new one to `../../ISSUES.md`, not to this file.

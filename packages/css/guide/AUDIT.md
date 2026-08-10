@@ -134,8 +134,8 @@ the browser said another, and only one of them is evidence.
 
 **Ten are legitimately the guide's own brand** and should stay, declared as
 brand rather than as a copy: `--paper`, `--accent`, `--code-bg`, `--code-text`,
-`--font-primary` (Geist), `--font-mono` (Geist Mono), and the Fraunces heading
-face. None of these exist in `tokens.css`; a guide is allowed to look like
+`--font-primary` (Geist), `--font-mono` (Geist Mono), and the `--font-display`
+heading face. None of these exist in `tokens.css`; a guide is allowed to look like
 itself.
 
 ---
@@ -218,14 +218,26 @@ not CSS, and the same reasoning applies here.
 - `sg-copy` (1) — copy-to-clipboard on code blocks. Its wrapper is `.relative`, the shipped utility
 - `sg-class-box`, `sg-kind`, `sg-class-swatch` (4) — the class index
 - `sg-next-*` (6) — pager footer, partly replaceable (see A)
-- `sg-prose` (**287 uses**), `sg-list`, `sg-lead`, `sg-td-prose` — see below
+- `sg-lead`, `sg-td-prose` — the two that are still the guide's own
 
-**`sg-prose` is the interesting one.** 287 uses, and it is *not* debt: the
-package styles no `<p>` by design (it is not classless), so a documentation site
-full of prose has to bring its own. This is exactly the content-layer gap
-recorded in `IDEAS/page-composition.md` — the guide is the evidence that the gap
-is real, since the reference implementation had to invent the missing tier to
-document the package. Keep it, and cite it there.
+**`sg-prose` was the interesting one, and it is now the closed one.** This file
+recorded it at **287 uses** and ruled it *not* debt: the package styles no `<p>`
+by design, so a documentation site full of prose had to bring its own, and that
+made the guide the evidence for the content-layer gap in
+`IDEAS/page-composition.md`.
+
+The gap was closed — `src/patterns/prose.css` ships `.prose`, and the guide
+writes it. `sg-prose` and `sg-list` are gone; `guide.css` keeps a comment where
+each one was, because the reason a class went is worth more than the class. What
+survives is `sg-prose-preview`, which is not the same thing: it flattens `<p>`
+margins *inside a preview box*, where the page-level rhythm would be wrong.
+
+**The 287 was also the last live number in this file, and it had rotted.**
+Re-derive rather than cite — and strip comments first, or the count reads the
+prose recording a deletion as the class still being there. At the time of
+writing, 214 declared `.sg-*`, and it moves with every batch. A number in
+a document is a claim nothing re-checks — which is the whole argument for
+`guide.spec.js` holding the shape instead.
 
 ---
 

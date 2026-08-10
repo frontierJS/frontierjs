@@ -46,6 +46,10 @@ export interface AppConfig {
     // Grace period (ms) between stop() and process.exit — lets in-flight
     // requests complete. Default 5000ms.
     drainTimeout?: number
+    // How much junction holds for a WebSocket that is not draining before it
+    // closes it with 1013. Default 8MB. Past Bun's own buffer a frame is
+    // DROPPED rather than queued, and that drop is silent — FJS-139.
+    wsMaxQueued?: number
   }
 
   // Cache

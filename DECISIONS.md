@@ -128,6 +128,60 @@ for derived — if it has no independent existence, it is not a Projection.
 
 ## Access control
 
+**2026-08-10 · Basecamp's gate ladder: a level is a fact about a caller IN A
+WORKSPACE, so it is resolved per request and carried on the principal.**
+
+The gap `FJS-007` recorded for ten phases was never the resolver. It was that
+the shape Junction ships — `sessionGateLevel()`, standing that travels with the
+row in `user` — cannot say *admin of THIS workspace*. The same person is `owner`
+in one workspace and `viewer` in the next, so grading them from their user row
+answers USER(4) everywhere, in every workspace, including the ones they are not
+a member of.
+
+So the level is resolved from the `WorkspaceMember` row for the workspace the
+request is for:
+
+| | |
+| --- | --- |
+| no session, or `suspended` | STRANGER (0) |
+| authenticated, no membership in the workspace named | VISITOR (1) — reads `Workspace`, nothing else |
+| `viewer` · `billing` | READER (2) |
+| `developer` | USER (4) |
+| `admin` | ADMINISTRATOR (5) |
+| `owner` | OWNER (6) |
+| `User.isSystemAdmin` | SYSADMIN (7), above any membership |
+
+Three things about it are the decision rather than the arithmetic.
+
+**The standing goes on the PRINCIPAL, not on the client.** Junction scopes the
+Litestone client in an around hook installed by `createApp({ db })`, before any
+hook knows which workspace is being addressed — and `getTable()` re-derives its
+own scoped copy from `ctx.auth.user` on first use. A standing put only on
+`ctx.locals.db` is therefore dropped the moment a service touches a model.
+`applyStanding()` builds a fresh principal carrying `memberRole`, assigns it to
+`ctx.auth.user`, and re-scopes from that. Fresh, never a mutation: over
+WebSocket the session is resolved once at upgrade and shared by every frame on
+that socket — and the internal-call path freezes it — so mutating would either
+throw or leak one call's role into the next.
+
+**It re-resolves when the workspace changes mid-request.** The workspaces
+service addresses `ctx.id`, not the header, and an admin of the workspace they
+are looking at must not carry level 5 into a patch of a different one.
+
+**The hooks stay.** A gate refuses with a level; `requireWorkspaceRole` refuses
+with the sentence a person can act on (*requires admin or owner in this
+workspace — you have developer*). Two ladders over one membership row, so they
+cannot disagree about who the caller is, only about what they say when refusing.
+The gate is the boundary and covers what a hook cannot: an engine calling a
+service in-process, a custom action nobody wired a hook onto, a where-clause
+built by hand.
+
+**What a gate deliberately does not do is scope rows.** It is per model:
+*may this caller touch Server at all*, never *may they touch THAT server*.
+Tenancy stays the `workspaceId` filter in every service read plus
+`scopeToWorkspace` refusing a non-member. Expressing it as `@@allow` is the next
+step and is not claimed by this ruling.
+
 **2026-08-10 · A tier above every tenant is a SEPARATE service, and the bit
 that grants it is a column named for the standing it grants.**
 
@@ -143,9 +197,10 @@ ways to answer them, and only one of them scales down to being wrong safely:
 The second. What makes it hold is that the hub service takes **no workspace at
 all** — there is nothing for a caller to widen. It reads through `asSystem()`,
 not as a convenience but because `User` is the model auth's own fragment gates
-at level 8, which even SYSADMIN(7) does not reach: once `FJS-007` lands there is
-no caller-scoped client that can read a user list, so writing those reads any
-other way today means rewriting them then.
+at level 8, which even SYSADMIN(7) does not reach: no caller-scoped client can
+read a user list, so writing those reads any other way would have meant
+rewriting them when the gates landed. They landed the same day, and the hub
+needed no change.
 
 **The privileged bit is `User.isSystemAdmin Boolean`, and the name is
 load-bearing.** Not auth's `role` — that column defaults to `"user"`, nothing in
@@ -348,6 +403,67 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+**2026-08-10 · A method may answer what it likes; an ANNOUNCEMENT is about a
+row, so it carries one.** (`FJS-D08`, closing `FJS-020`.)
+
+A custom method's return value is also its broadcast payload, and those two jobs
+want different things. A caller asked for `setVariable` and can be answered with
+whatever suits it. A subscriber was told *this row changed* and has nowhere to
+put anything that is not the row: the browser store upserts BY ID and replaces
+wholesale, so an id-less payload is appended as a phantom row and a partial one
+replaces the record and loses every field it omitted — in every open tab, with
+nothing said.
+
+Basecamp shipped four of them: `setVariable` answering `{ id, variables }`, the
+deployment engine's five-field projection, `servers.heartbeat` answering
+`{ ok, server_id, status }` with no id at all, and `jobs.trigger` answering
+`{ id, queued: true }`. **All four were found by looking at a screenshot** — a
+page doing the obvious thing rendered `undefined` as its heading while every
+other assertion passed. *A partial row is indistinguishable from a full one
+until it breaks.*
+
+Three options, and the difference is who pays:
+
+| | |
+| --- | --- |
+| Document the rule | What already happened. Four times, in one app, by the people who wrote the rule |
+| Warn and send it anyway | Names the mistake, still corrupts every subscriber's store |
+| **Send the row** | The announcement is correct whatever the method answered, and the service is told once so the *caller's* half gets fixed too |
+
+The third. `announcementPayload()` in `core/litestone.ts` — one owner, called
+from the one announcement point in `callService`:
+
+- the payload when it already is a row (extra keys are fine — `{ ...job, queued: true }`
+  is a row and a flag, and only an OMISSION makes it a projection)
+- otherwise the row re-read by `payload[idField] ?? ctx.id`, which is why a
+  collection-level action and an id-bearing one behave differently
+- otherwise the payload, as the **signal** it is
+
+**Dropping that last case was the first design, and it was wrong.** An action
+that changes MANY rows has no single row to carry — `volumes.report` answers
+`{ serverId, reported, added, updated, forgotten }` — and its subscribers use
+the event as a trigger to re-read, not as a record. Suppressing would have
+stopped a live screen updating with nothing but a server-side line to say why:
+the same silent failure this ruling exists to remove, introduced by the fix for
+it. Caught by asking what basecamp actually returns before running its drive.
+The phantom-row half is closed on the client instead, where `Store.upsert`
+refuses a record with no id — which is the better place for it anyway, since a
+payload from a hand-rolled `channel.send()` never reaches the server-side check.
+
+**The warning is once per `service.method`**, names the missing columns and both
+ways out. Per-call would be a log nobody reads, which is the same silence in a
+louder font.
+
+**Two things are deliberately left alone.** `ctx.dispatch` — a stated payload is
+a declaration of what to send, and second-guessing it would make one switch mean
+two things. And a service with **no model**: there is no row for its answer to be
+a partial version of, so nothing is inferred. *I cannot tell* is not *this is
+wrong* — the same rule `$checkWhere` follows for an unknown accessor.
+
+The response half is NOT fixed by this and cannot be: a method that answers a
+projection still answers a projection, and a caller assigning it over a record
+still loses fields. That is what the warning is for.
 
 **2026-08-10 · An app's own User columns reach the session through one hook, at
 the point the row is already in hand.** `createLitestoneAuth(db, {

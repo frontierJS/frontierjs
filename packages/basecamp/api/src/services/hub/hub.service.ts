@@ -131,15 +131,13 @@ export function createHubService(app: BasecampApp) {
     ],
 
     // ── overview — the runtime, as one object ─────────────────────────
-    // An ACTION and not `find`, which was the obvious first shape and does not
-    // work: the browser client normalises every `find` answer into a list
-    // envelope, and anything that is not a list or a `{data:[…]}` becomes an
-    // EMPTY one — so this object reached the screen as `{ data: [] }` with a
-    // 200 and no warning (`FJS-144`). `find` means a list; a service answering
-    // one thing says so with a name.
+    // An ACTION and not `find`, which was the obvious first shape and is not
+    // one this can take: `find` promises a list, and an object is refused at
+    // both ends (`FJS-144`). It used to be worse than refused — the browser
+    // turned it into an EMPTY list with a 200 and no warning, which is a screen
+    // that renders nothing while the API is right.
     //
-    // Named keys and no `data`, so it wraps as a `single` and unwraps whole:
-    // `{ data, total, …anything else }` loses the anything else (`FJS-140`).
+    // Named keys and no `data`, so it wraps as a `single` and unwraps whole.
     async overview(ctx: ServiceContext) {
       ctx.dispatch = false
       const raw     = (app.db as { db: { query: (s: string) => { get: () => any } } }).db

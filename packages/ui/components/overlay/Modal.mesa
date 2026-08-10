@@ -89,6 +89,7 @@
   style:max-width={maxWidth}
   aria-labelledby={title ? titleId : null}
   {class}
+  {...$attributes}
   on:close={handleClose}
   on:cancel={handleCancel}
   on:click={handleClick}

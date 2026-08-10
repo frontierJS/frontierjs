@@ -2262,25 +2262,27 @@ describe('app.service()', () => {
     const app = await createTestApp({
       services: [() => createService({
         name: 'items',
-        find: async (ctx) => ({ workspace: ctx.locals.workspaceId }),
+        // A probe, but still a list — find promises one, and wrapResult throws
+        // rather than guess (FJS-140/FJS-144).
+        find: async (ctx) => [{ workspace: ctx.locals.workspaceId }],
       })],
     })
-    const result = await app.service('items').find({}, { locals: { workspaceId: 'ws-99' } }) as Record<string, unknown>
-    expect(result.workspace).toBe('ws-99')
+    const result = await app.service('items').find({}, { locals: { workspaceId: 'ws-99' } }) as { data: Record<string, unknown>[] }
+    expect(result.data[0].workspace).toBe('ws-99')
   })
 
   it('passing params threads user into ctx.auth.user', async () => {
     const app = await createTestApp({
       services: [() => createService({
         name: 'items',
-        find: async (ctx) => ({ callerUser: ctx.auth.user?.userId ?? null }),
+        find: async (ctx) => [{ callerUser: ctx.auth.user?.userId ?? null }],
         hooks: { before: { find: [authenticate] } },
       })],
     })
     const fakeUser = { userId: 'u-1', role: 'user', userType: 'user', authMethod: 'session', scopes: [] }
     // With user → hook passes, result has the user
-    const result = await app.service('items').find({}, { auth: { user: fakeUser as any } }) as Record<string, unknown>
-    expect(result.callerUser).toBe('u-1')
+    const result = await app.service('items').find({}, { auth: { user: fakeUser as any } }) as { data: Record<string, unknown>[] }
+    expect(result.data[0].callerUser).toBe('u-1')
   })
 
   it('no params → anonymous call, auth hooks fire on null user', async () => {
@@ -2317,11 +2319,11 @@ describe('app.service()', () => {
     const app = await createTestApp({
       services: [() => createService({
         name: 'items',
-        find: async (ctx) => ({ transport: ctx.transport }),
+        find: async (ctx) => [{ transport: ctx.transport }],
       })],
     })
-    const result = await app.service('items').find() as Record<string, unknown>
-    expect(result.transport).toBe('internal')
+    const result = await app.service('items').find() as { data: Record<string, unknown>[] }
+    expect(result.data[0].transport).toBe('internal')
   })
 })
 

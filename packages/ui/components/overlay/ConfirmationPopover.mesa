@@ -112,7 +112,7 @@
 
 <mesa:window on:keydown={(e) => { if (e.key === 'Escape' && open) close() }} />
 
-<span bind:this={triggerEl} style:display="inline-block" {class} on:click|stopPropagation={openPopover}>
+<span bind:this={triggerEl} style:display="inline-block" {class} {...$attributes} on:click|stopPropagation={openPopover}>
   {@render trigger?.()}
 </span>
 

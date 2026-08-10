@@ -285,6 +285,7 @@ export function createStore(service, opts = {}) {
   const { initial = [] } = opts
 
   let _data = Array.isArray(initial) ? [...initial] : initial
+  let _issued = 0
   const _subs = new Set()
 
   function _notify() {
@@ -318,9 +319,14 @@ export function createStore(service, opts = {}) {
       _notify()
     },
 
+    // Stamped when issued, so a slower earlier request landing second cannot
+    // overwrite newer rows — the same rule junction's resource().load() applies,
+    // and for the same reason: this store is shared by everything subscribed to
+    // it, while the returned result belongs to the one caller who awaited it.
     async find(query, params) {
+      const stamp = ++_issued
       const result = await service.find(query, params)
-      store.set(Array.isArray(result) ? result : result?.data ?? [])
+      if (stamp === _issued) store.set(Array.isArray(result) ? result : result?.data ?? [])
       return result
     },
   }
@@ -574,8 +580,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // single record with get(), which does not populate the list store at all.
   //
   // Every response is a fresh read, so recording on the way out keeps this
-  // current through create, get, find, patch and any custom action — including
-  // a WS push, which arrives as a find/get result like anything else.
+  // current through create, get, patch and any custom action.
+  //
+  // List data is recorded off the STORE instead, below — a load whose result the
+  // store refused as stale must not leave its versions behind either, and only
+  // the store knows which load won. It also covers a WS push, which reaches the
+  // store as an upsert and never passes through a call result at all: before
+  // this, the row a second tab patched kept its pre-patch version here and the
+  // next patch from this tab 409'd on a number nothing had read.
   const _versions = new Map()
 
   function _rememberVersions(result) {
@@ -589,6 +601,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       if (id != null && Number.isInteger(row[versionOf])) _versions.set(id, row[versionOf])
     }
   }
+
+  // Whatever is in the store is what the user is looking at, and its versions
+  // are the ones a patch from this screen has to carry. Subscribing is free when
+  // the model declares no @version, so it is not wired at all in that case.
+  if (versionOf) store.subscribe(_rememberVersions)
 
   /**
    * Would the given level clear this model's gate for that operation?
@@ -833,13 +850,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const context = { model, service: serviceName, idField }
 
   // load() — HTTP find + populates store.
-  // Goes through junctionResource rather than _call, so it has to record the
-  // versions it just read itself. Missing this was the difference between a list
-  // whose rows are patchable and one whose every patch 400s.
+  // The versions come off the store subscription above rather than from these
+  // rows: junction drops a load the store has already moved past, and rows it
+  // refused must not be remembered as current either (`FJS-082`).
   async function load(query, params) {
-    const rows = await junctionResource.load(query ?? {}, params)
-    _rememberVersions(rows)
-    return rows
+    return junctionResource.load(query ?? {}, params)
   }
 
   /**

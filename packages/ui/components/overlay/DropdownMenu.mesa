@@ -139,6 +139,7 @@
   bind:this={triggerEl}
   style:display="inline-block"
   {class}
+  {...$attributes}
   on:click|stopPropagation={openMenu}
 >
   {@render trigger?.()}

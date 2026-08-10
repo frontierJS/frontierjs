@@ -62,7 +62,7 @@
   }
 </script>
 
-<div {class}>
+<div {class} {...$attributes}>
   {#if actions}
     <div class="table-actions">
       {@render actions?.()}

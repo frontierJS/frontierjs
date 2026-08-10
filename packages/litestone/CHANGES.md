@@ -1,5 +1,105 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-10 — an `include` enforced nothing the model declared
+
+Every access rule in the package held on a direct read and none of them survived
+being reached as somebody's child:
+
+```js
+await db.$setAuth(u).vault.findMany()
+// AccessDeniedError: "Vault.read" requires level 7, user has level 4
+
+await db.$setAuth(u).team.findMany({ include: { secrets: true } })
+// → every Vault row, @guarded(all) columns in plaintext
+```
+
+Four rules, one hole. `@@gate` never fired, because it fires in `onBeforeRead`
+for the model being addressed. `@@allow`/`@@deny` never filtered, so a tenant
+scoped out of a row still received it as a parent's child. `@guarded` and a
+field `@allow` were never applied, and `@encrypted` came back as raw ciphertext
+— which also meant `asSystem()` did **not** decrypt it, the same bug pointing
+the other way.
+
+The cause is one shape: `resolveIncludes()` builds its own SQL and bypasses the
+query pipeline for speed, which is why the soft-delete and `@@hasTemplates`
+filters in it are hand-appended. Nothing hand-appended the access rules. No test
+in 1462 asked a policy question through an include, and the docs promise the
+opposite in as many words — *there is no path to unfiltered data except
+`asSystem()`*.
+
+Three owners, because the three rules answer at different times:
+
+- **The gate is a preflight**, in `GatePlugin.onBeforeRead`, walking `include:`,
+  `select:` and `_count` down the tree. It has to be a preflight rather than a
+  filter: `getLevel` is async and the include resolver is not. It also has to
+  **refuse** rather than return nothing — a gate is per model, so an empty list
+  would read as *no rows* instead of *not for you*. The nested-WRITE preflight
+  beside it has done exactly this since gates existed; reads were the direction
+  nobody mirrored.
+- **The row policy is compiled in**, into all three relation SQL shapes and both
+  `_count` shapes. The m2m branch takes it as a subquery over the target alone,
+  because there the target is aliased `t` beside the join table and the policy
+  compiler emits unqualified column names.
+- **The field rules moved out of the closure.** `applyFieldPolicyTo(row,
+  modelName, …)` is now module level, so a path holding rows of a model that is
+  not its own can ask for them — one definition instead of the two that drifted.
+
+13 tests, mutation-checked: 10 fail on revert, 3 are controls. 1475 pass. Found
+by declaring `@@allow` on one model of `basecamp`'s 37 and asking what would
+have to be audited first — the answer was the `include` graph, and the graph
+turned out not to matter, because nothing in it was enforced.
+
+## 2026-08-10 — a refused update stayed applied
+
+`@@allow('post-update', …)` is the rule that catches a write which was legal
+when it started and illegal once it landed — moving a row out from under its
+owner. It rolled the write back by writing the before-snapshot's columns back
+one by one, and that snapshot came from `read()`, where a Json column is an
+object. A SQLite parameter cannot be an object:
+
+```
+TypeError: Binding expected string, TypedArray, boolean, number, bigint or null
+```
+
+Two failures out of one line. The `AccessDeniedError` never reached the caller —
+a binding error did, naming nothing they had written — and **the update the
+policy had just refused was left in the database**, because the throw happened
+before the revert.
+
+`read()` was the wrong snapshot for the job in two further ways: it adds
+computed and `@from` fields that no `UPDATE` can name, and it strips `@guarded`
+ones. The rollback now reverts from the raw row, whose keys are the table's
+columns exactly. `beforeRow` stays read-shaped, for the audit snapshot that
+wanted it that way.
+
+It surfaced the first time a model with Json columns declared a policy —
+`basecamp`'s `Server`, where *move this server into another workspace* is the
+exact thing post-update is there to refuse.
+
+## 2026-08-10 — a transaction dropped the scope it was started from
+
+`db.asSystem().$transaction(tx => tx.account.create(…))` was refused by the
+`@@gate` it was meant to bypass. The callback received the **root** client:
+every scoped proxy — `asSystem()`, `$setAuth(u)`, `$scopedBy()` — exposed the
+root `$transaction`, which hands `fn` the unscoped `clientProxy`.
+
+It fails in opposite directions on the two flavours, and only one of them is
+loud. As system, the body is refused by a level it should never have been asked
+about. As a user, nothing throws at all: `auth()` is null inside the
+transaction, so every `@@allow` matches nothing and every `@createdBy` stamps
+nobody — which reads as a bug in the transaction body.
+
+Each proxy now passes ITSELF; the root is unchanged. The `query()` batcher on
+those same proxies already did this and carried a comment explaining why —
+`$transaction` was the one that did not.
+
+Nothing had noticed because no schema in the repo carried both a transaction and
+a gate until `basecamp` declared its levels. Its first-run `POST /setup` writes
+four models in one transaction as system, and failed on the very first request
+of the drive with *"Account.create" requires SYSTEM access (use asSystem())* —
+about a call that was using `asSystem()`. 3 tests, including the quiet policy
+case; 1461 pass.
+
 ## 2026-08-07 — raw SQL could not write, and had never been able to
 
 `db.asSystem().sql` is the documented — and on any schema declaring access

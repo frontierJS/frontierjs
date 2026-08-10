@@ -19,7 +19,7 @@
 </script>
 
 {#if keys.length}
-  <span class="cluster" style:gap="0.25rem" {class}>
+  <span class="cluster" style:gap="0.25rem" {class} {...$attributes}>
     {#each keys as key, i (i)}
       {#if i > 0}
         <span class="text-muted text-xs" aria-hidden="true">+</span>
@@ -28,7 +28,7 @@
     {/each}
   </span>
 {:else}
-  <kbd class="kbd" style:font-size={fontSize || null} {class}>
+  <kbd class="kbd" style:font-size={fontSize || null} {class} {...$attributes}>
     <slot />
   </kbd>
 {/if}

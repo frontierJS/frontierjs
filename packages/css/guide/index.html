@@ -35,6 +35,12 @@
   work; `.sg-app` is the theming hook the switcher writes tokens onto, and
   carries the two things the guide wants differently (paper background, a
   document-sized line height).
+
+  `.app` is on a <div> and not on the <body> the vocabulary names, because
+  guide.js renders with `app.innerHTML =` and the four classic scripts below
+  are inside <body> — rendering into the body would delete them mid-run. This
+  is what put `body { margin: 0 }` into the package's own reset: the App term
+  cannot zero a default on an element it is not on.
 -->
 <div class="app sg-app" id="app"></div>
 

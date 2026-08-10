@@ -178,6 +178,7 @@
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
+      {...$attributes}
     >
 
       <!-- ── Search input ── -->

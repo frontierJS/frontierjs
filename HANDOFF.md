@@ -1,10 +1,10 @@
 # Handoff — 2026-08-10
 
-> **Basecamp rebuild: every screen whose blocker was an API is built.**
-> `packages/basecamp/docs/SCREENS.md` is the map — 41 mock screens, **31 built**,
-> and the 10 left each need a new model or a real third party. **Gating
-> (`FJS-007`) was deliberately scheduled last and nothing is in the way of it
-> any more.** It is still S1.
+> **Basecamp declares `@@gate` on all 37 models and `@@allow` on one** — `Server`,
+> as of 2026-08-10. The gate ladder is per WORKSPACE, not per user, which is why
+> `example/api/gate.ts` could not be copied; the policy is graded off the same
+> principal. Every screen whose blocker was an API is built —
+> `packages/basecamp/docs/SCREENS.md` is the map, 41 mock screens, **31 built**.
 
 Session state for picking up cold. Read `CLAUDE.md` first (the map), then this.
 
@@ -15,207 +15,166 @@ verify something, it says so.
 
 ---
 
-## Next — `FJS-007`, the gate that was deferred ten phases (2026-08-10)
+## Next — the other 36 models (2026-08-10)
 
-**Declare `@@gate` in `db/schema.lite` and delete the service hooks that stand
-in for it.** This is the outstanding gap against repo Invariant 6 — access is
-declared in the schema, not in hooks — and it has been deferred since
-2026-08-06 on the grounds that it would be in the way while the app was being
-assembled. That reason has expired: every screen is built.
+`Server` declares `@@allow('all', workspaceId == auth().workspaceId)` and holds.
+The rest is repetition with an audit in front of each one, and the audit is the
+part that matters: **a gate refuses, a policy filters**, so a read that
+legitimately crosses a workspace and is not `asSystem()` returns nothing with a
+200. For `Server` that audit came out clean — the three engines, the hub and the
+agent's heartbeat were already system paths. The next model may not be.
 
-**What Phase 10 already put in place, so it is not re-derived:**
+Do them one at a time with `bun run verify` between. Two shapes to look at
+before each: **who reads this model without a workspace** (grep the service for
+`asSystem`), and **which parent includes it**, now that an include really does
+apply the child's rules.
 
-- **`User.isSystemAdmin` is a column and it reaches the session.** The name is
-  the one `sessionGateLevel()` grades **SYSADMIN(7)** on, so the field the hub
-  screens are gated by today is the field `@@gate` reads tomorrow. The path is
-  `core/session-auth.ts` → auth's `sessionFields` → `ctx.auth.user`.
-- **The hub's reads already go through `asSystem()`**, because `User` is
-  `@@gate("8")` in auth's own fragment — a level even SYSADMIN does not pass.
-  The screen `FJS-007` breaks first will not need rewriting.
-- **The intended level for every model is recorded** in `db/README.md`
-  § Access control, and `example/api/gate.ts` is the pattern.
+`Volume` and `ServerEvent` are the interesting pair, because neither carries a
+`workspaceId` — their tenancy is the join to `Server`, and `check(server)` is
+the policy expression for exactly that. Worth doing early: it is the shape most
+of the remaining models are not, and it will say whether `check()` through a
+belongsTo is enough.
 
-**What is genuinely undone, and it is the hard part**: a `getLevel` that
-resolves the ACTIVE WORKSPACE and maps `WorkspaceMember.role` onto the 0–7
-scale. Litestone's scale is global and this app's roles are per tenant, so the
-mapping needs the workspace in hand at grading time — which `ctx.locals.workspaceId`
-has and a `getLevel(user)` signature does not. That is the design question to
-settle first; do not start by writing `@@gate` lines.
-
-**Also worth knowing**: `/metrics` is unauthenticated here (`healthPlugin` got
-no token), so the service registry and every action name is world-readable. Not
-touched in Phase 10 because the drives and any external probe read it — it wants
+**Still unruled**: `/metrics` is unauthenticated (`healthPlugin` got no token),
+so the service registry and every action name is world-readable. Untouched
+again this session because the drives and any external probe read it — it wants
 a decision, not a quiet edit.
+
+**Not run this session: `example`'s browser drives.** A `bun run api` from
+another session has held :3600 since 03:50 (11h54m at the time of writing) and
+serves pre-change code; killing it is not mine to do, and probing it would have
+proved the old build. If you can clear that port, `example`: `verify` +
+`verify:public` are the two the litestone read-path change most deserves.
 
 ---
 
-## Session — the tier above every tenant (2026-08-10)
+## Session — an include enforced nothing, and one model got a policy (2026-08-10)
 
 ```
-packages/basecamp   verify 262/262, twice consecutively  (was 230) · verify:build 8/8
-                    49 data tests  (was 45) · typecheck 76, baseline lowered from 77
-                    db:seed + --force clean · db:check clean
-packages/auth       83 tests, unchanged · example/ verify 37/37, unchanged
+packages/litestone   1476 tests (was 1462) · junction 919 · sierra 833 + 5 safety
+packages/basecamp    verify 270/270 · 61 data tests (was 56) · typecheck 63, unchanged
 ```
 
-Phase 10 — `/hub/`, `/hub/workspaces/`, `/hub/users/`, `/hub/flags/`. 31 of 41
-screens, 21 services, 37 models. The last group whose blocker was an API.
+The ask was `@@allow` on `Server`, one model, as the start of moving row-level
+tenancy out of service where-clauses. The declaration is one line and it works.
+Everything else here is what was found underneath it.
 
-**A cross-tenant surface is a separate service, not nineteen widened ones.**
-Nineteen of the twenty services here take `X-Workspace-Id` and refuse without
-it, which is the tenancy boundary working. Widening them with `?scope=hub` puts
-the decision *may this caller see every tenant* into a query string, on nineteen
-services, each of which has to get it right — nineteen chances to leak, and the
-one that forgets looks exactly like the eighteen that did not. `/hub` takes no
-workspace at all, so there is nothing for a caller to widen, and sits behind one
-`requireSystemAdmin` hook. It reads through `asSystem()`, not for convenience:
-`User` is gated at level 8 by auth's own fragment, one above SYSADMIN, so those
-reads are already written the way `FJS-007` will force. Refusal is 404, not 403.
+**The audit named in the last handoff was the `include:` graph, and the answer
+was worse than the question.** The question was *does a policy on a child model
+apply to a parent's include* — asked by probing rather than reading, and the
+answer is that **nothing** did. Not the policy, not `@@gate`, not `@guarded`,
+not a field `@allow`. A caller refused `Vault.findMany` by a level got the whole
+table back as `team.secrets`, with the `@guarded(all)` column in plaintext and
+the `@encrypted` one as raw ciphertext. `resolveIncludes()` builds its own SQL
+below the query pipeline — which is why the soft-delete and `@@hasTemplates`
+filters in it are hand-appended, and why the access rules, which nobody
+hand-appended, were absent. 1462 tests and not one asked a policy question
+through an include (`FJS-150`).
 
-**`suspended` was a word nothing honoured.** `User.status` had been a free
-`String` since the schema was written, and @frontierjs/auth — which owns the
-model — never looks at it. A Suspend button written against it would have
-reported success and revoked nothing. Making it real took three things, and no
-two of them are enough: an **enum**, so the column carries a CHECK and the
-service's copy is held against it by a test in both directions; the **front
-door**, checked after the password so the refusal does not disclose which
-addresses are suspended accounts; and **the door already open** — a token issued
-before the suspension stops resolving, because deleting the `Session` rows
-misses an API key, which is a `Credential`. For a workspace the one door is
-`scopeToWorkspace`, so it bites in nineteen places by being written in one. It is
-not deletion: `@@softDelete(cascade)` stamps every child, a status change stamps
-nothing.
+That is also the sentence that matters for the previous session's work: **the
+gate the last handoff called landed was one join away from not being enforced
+at all**, for a day, in an app whose whole tenancy model is nested.
 
-**A machine account is created from an admin screen; a human is not.** The Users
-screen makes `UserKind.bot` accounts and ships without the mock's Invite button.
-A bot has no password credential, so creating one hands nobody anything; creating
-a human here would be an admin minting an account with a password only they know
-(`FJS-032`, still open). It closes what `api-keys.service.ts` had recorded in its
-own comment since Phase 6 — a key was always minted for the caller, so CI's key
-was a person's key and revoking it when they left broke the pipeline.
+Three fixes, because the three rules answer at different times. The gate is a
+**preflight** in `GatePlugin.onBeforeRead`, walking `include:`, `select:` and
+`_count`: `getLevel` is async and the include resolver is not, and a gate is per
+model, so refusing by name beats returning an empty list that reads as *no rows*.
+The row policy is compiled into all three relation SQL shapes and both `_count`
+shapes — subqueried in the m2m branch, where the target is aliased beside the
+join table and the policy compiler emits unqualified column names. The field
+rules moved out of `makeTable`'s closure into `applyFieldPolicyTo(row,
+modelName, …)`, because an include holds rows of a model that is not its own.
 
-All three ruled in `DECISIONS.md`.
+**The second defect only appears when a policied model has a Json column, and
+`Server` has four.** `@@allow('post-update', …)` reverts a write that became
+illegal once it landed, and it reverted from the `read()`-shaped snapshot —
+where a Json column is an object, and a SQLite parameter cannot be one. So the
+revert threw `Binding expected string, TypedArray, boolean, number, bigint or
+null`, the `AccessDeniedError` never reached the caller, and **the write the
+policy had just refused stayed in the database** (`FJS-151`). It reverts from
+the raw row now; `beforeRow` stays read-shaped for the audit snapshot, which is
+what wanted it that way.
 
-### What it found
+**What the declaration itself needed was an audit, not a line.** Every read that
+crosses a workspace has to be `asSystem()` before the policy exists, or it
+silently filters to nothing — and here all of them already were, each with a
+comment saying why. That is the only reason this was a one-liner, and it will
+not be true of every model.
 
-**An app could not get its own `User` columns onto the session.** auth owns
-`model User`, every app extends it, and the only route to `isSystemAdmin` per
-request was to wrap `verifySession` and re-read the user — a third query on the
-hottest path in the app, forever, for a row `toContext()` had just fetched.
-Closed in @frontierjs/auth with `createLitestoneAuth(db, { sessionFields })`,
-called from `toContext()`, the single place every issued session is built, so it
-covers login, `verifySession`, an API key and `createUser` alike. Spread last, so
-an app that states a field wins. Additive — 83 auth tests and `example/`'s 37
-unchanged.
+Five tests run the policy with **no service and no hook in the picture**
+(`db/test/schema.test.ts`), which is the only arrangement that can tell a policy
+from the where-clause the service was already writing: a caller reads one
+workspace's servers with no `where` at all, naming another workspace's server by
+id answers null, creating or moving one into another workspace is refused, and a
+`Workspace` carries only its own servers through an `include`.
 
-**A `find` that answers one object becomes an EMPTY list in the browser**
-(`FJS-144`). `GET /hub` was the overview. The client normalises three shapes
-into a `ListResult` and everything else falls through to `list(name, [])`, so
-the screen received `{ data: [] }` with a 200 and rendered nothing at all while
-the API was answering correctly throughout. Only a browser could see it.
-Worked around by making the read an action — **`find` means a list**. Same family
-as `FJS-140`, from the other end.
+---
 
-**The typechecker caught a number that would always have been zero.**
-`app.conduit.list()` is async; `.length` on the promise is `undefined`, which
-`?? 0` turns into a confident *no targets registered* on a hub with twelve. Both
-answers render, so no browser check could have found it — and the baseline
-ratchet is what made the regression visible at all.
-
-### Worth knowing next time
-
-**Smoke over curl first — a third phase running.** Every refusal in the hub
-service was proved in ten minutes of `curl` before a line of UI existed, and both
-remaining defects were ones only a browser could see. That split is now reliable
-enough to plan around: the API is a debugger, the browser is the proof.
-
-**A stale dev server, again, and it was five hours old.** An `example` API from
-before this session held :3610 and would have answered the auth regression run
-with pre-change code — the exact hazard `CLAUDE.md` documents. Check the port
-before starting; a run against a server started before your fix reads as "the
-fix did not work".
-
-**Two vocabularies, two homes, one test.** `UserStatus` and `WorkspaceStatus` are
-in the schema because the column needs a CHECK, and copied into the service so a
-bad value is refused by NAME rather than by a SQLite constraint message. The db
-suite imports the service's copy and holds them together in both directions —
-the same shape the widget-kind test uses, and the reason `AlertRule.severity`
-could once default to a value its own API refused.
-
-## Session — the two ways to act on a machine (2026-08-10)
+## Session — the gate that was deferred ten phases (2026-08-10)
 
 ```
-packages/basecamp   verify 230/230, twice consecutively  (was 207) · verify:build 8/8
-                    45 data tests  (was 39) · typecheck 77, unchanged
-                    db:seed writes 6 recipes / 4 runs / 7 disk pictures / 2 sweeps · db:check clean
+packages/basecamp   verify 270/270 (was 262) · 56 data tests (was 49)
+                    typecheck 63, baseline lowered from 76
+packages/litestone  1461 tests (was 1458) · junction 919 · sierra 810 + 5 safety
 ```
 
-Phase 9 of the basecamp rebuild — `Recipe`, `RecipeRun`, `DiskUsage`,
-`CleanupRun`, and the screens `/recipes/` and `/cleanup/`. 27 of 41 screens, 37
-models, 20 services. They were built together because each is the other's
-argument.
+`FJS-007` closed. All 37 models declare `@@gate`; `FJS-149` was found on the
+first request of the drive and fixed in litestone.
 
-**A vocabulary cannot bound a script, so the record does.** The obvious move was
-to apply yesterday's ruling again — a saved view names a declared kind — and it
-does not transfer. A stored query is dangerous because it is executed at the
-Data boundary, where `@@gate` and `@@allow` grade a CALLER against a MODEL and a
-string cannot be graded. A script is not executed there at all: it is handed to
-an agent and run on a machine, where there is no model, no caller and no grade.
-It runs at whatever the agent has, for everyone, every time.
+**What it was actually blocked on was never the resolver.** `sessionGateLevel()`
+grades standing that travels with the user, and here the same person is `owner`
+in one workspace and `viewer` in the next — so grading them from their user row
+answers USER(4) everywhere, including workspaces they are not in. The level is
+resolved per request from the `WorkspaceMember` row for the workspace being
+addressed: viewer/billing 2, developer 4, admin 5, owner 6, `isSystemAdmin` 7
+above any membership, and an authenticated caller with no membership 1 — which
+reads `Workspace` and nothing else, because that is the screen a fresh login
+needs before it can name a workspace.
 
-So the two screens carry opposite safeguards. A cleanup stores target NAMES from
-a list the service owns and refuses anything else by name; a recipe stores code,
-**authoring it is admin-or-owner and running it is developer**, and every run
-keeps the script it ran. That split is the point: writing the script is the
-privileged act, running a vetted one is what somebody on the pager does at 3am,
-and collapsing them is how people end up pasting the script into a terminal
-instead. Ruled in `DECISIONS.md`.
+**Three things about `applyStanding()` are the work; the rest is arithmetic.**
+It puts `memberRole` on the PRINCIPAL rather than on the client, because
+junction's `getTable()` re-derives its own scoped copy from `ctx.auth.user` and
+would drop it. It builds a fresh object rather than mutating, because the WS
+session is resolved once at upgrade, shared by every frame on that socket, and
+frozen. And it re-resolves when the workspace changes mid-request — the
+workspaces service addresses `ctx.id`, not the header, and without it an admin
+of the workspace on screen carried level 5 into a patch of any other workspace
+they could name.
 
-One run row per SERVER, because a fleet run is N executions with N exit codes.
-Neither screen executes anything — both queue on Caravan's new `fleet` queue and
-`api/src/engine/fleet.engine.ts` asks the agent through Conduit, one file for
-both because the shape is one shape and only the safeguards differ.
+**The levels were not designed, they were moved.** Each one is the
+`requireWorkspaceRole` call the service was already making — into the one place
+that also covers an engine calling a service in-process, a custom action nobody
+wired a hook onto, and a where-clause built by hand. The hooks stay: a gate
+refuses with a level, a person needs the sentence.
 
-**Every number on the cleanup screen was measured by Docker.** `DiskUsage`
-carries `docker system df`'s own per-category reclaimable figures; the mock
-multiplied a count by an average and printed gigabytes beside figures that were
-real. The estimate sums by SOURCE rather than by target — both image targets
-draw on one figure, and adding them would promise twice what a sweep delivers.
+**262 green checks proved nothing about the gates and that is the trap.** The
+drive signs in as the setup user, who is `isSystemAdmin` — SYSADMIN(7) clears
+every gate in the schema. Eight checks now ask the same API as a second human,
+and the one that matters is *a developer is refused `GET /secrets`*, asserted on
+the message naming the level: no hook refuses that read, so it fails if
+`memberRole` never reaches the principal. That is the only check that can tell
+a working gate from a wired-up-but-inert one.
 
-### What it found
+**`FJS-149` — `$transaction` on a scoped client handed the callback the ROOT
+client.** `POST /setup` writes four models in one transaction as system and
+failed with *"Account.create" requires SYSTEM access (use asSystem())* about a
+call that was using `asSystem()`. The mirror image is the quiet one:
+`$setAuth(u).$transaction(…)` ran with `auth()` null, so `@@allow` matched
+nothing and `@createdBy` stamped nobody. The `query()` batcher on those same
+proxies already kept its scope and says so in a comment; `$transaction` was the
+one that did not.
 
-**A set-valued vocabulary has no home in the schema** (`FJS-141`).
-`targets ReclaimTarget[]` does not parse — *array [] is only supported for Text,
-Integer, File, or a model name for many-to-many*. A declared enum beside a
-`String[]` column would be two homes with nothing joining them, the shape that
-let `AlertRule.severity` default to a value its own API refused. One home in the
-service instead, and a data test asserts the schema declares no competing enum.
+Two smaller things fell out: `runSeeder` ran on the root client (STRANGER(0)) in
+a file whose own header says everything runs as system, and `AuditEvent` at
+LOCKED(9) means `db:seed --force` cannot clear the table — it lets the workspace
+FK cascade do it.
 
-**A resource needs `stampWorkspace` even when the service stamps the column.**
-`Recipe.mesa` shipped without it, reasoning that the service fills `workspaceId`
-itself — but browser-side validation runs first, so every save was refused in
-the form with *workspace is required*, naming a field no form shows. The API was
-correct throughout; only the browser drive could see it.
-
-**A fixed Chrome debugging port drove another session's browser.** Two runs
-failed as `no field #workspace on /packages/css/guide/index.html` — a page from
-another package, in a Chrome another session had left on :9333, twenty checks
-into a run that was green. Chrome refuses to start a second browser on a bound
-debugging port and exits quietly, so the harness's `/json/list` poll found the
-other browser's tabs. Both basecamp harnesses now ask for port 0 and read it
-back off stderr, which is what `example/`'s four already did.
-
-### Worth knowing next time
-
-**Smoke over curl first — again.** Every API-side defect in this phase was found
-in ten minutes of `curl` before a line of UI existed, and the browser suite then
-had only UI bugs left to find. Both of the ones it did find were invisible from
-the API side.
-
-**A refusal has to be readable in the DOM you assert on.** The kit renders a
-field message as `.field-hint.danger` with `role="alert"`; there is no
-`.field-error` class, and a selector for one reports the empty string, which
-reads as "nothing was refused" rather than "you looked in the wrong place".
+**Not run: `example`'s browser drive.** The rule table says a litestone client
+change wants it. Port 3600 was held by an `example` API from another session
+that has been up since 03:50, running pre-change code; killing it is not mine to
+do, and probing it would have proved the old build. The change is covered by
+litestone's own 1461 (3 written for this), basecamp's 270 in a browser, junction
+919, sierra 810 + `test:safety`.
 
 ---
 

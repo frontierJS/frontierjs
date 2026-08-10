@@ -21,7 +21,7 @@ import { wrapResult, isServiceResult, resultData } from './envelope.ts'
 import { createSchema } from './schema.ts'
 import {
   createLitestoneBase, autoValidate, gateAuth, autoFilter,
-  jsonSchemaToJunctionSchema, resolveDefsKey,
+  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload,
 } from './litestone.ts'
 
 // ─── Service-level cache ──────────────────────────────────────────────────
@@ -394,13 +394,19 @@ export async function callService(
       // and its (nonexistent) .data served instead. isServiceResult() checks
       // the `kind` discriminant.
       if (raw === null || raw === undefined) {
+        // A find promises a list, and nothing is not an empty list. Left to
+        // fall through it answered 204, which reaches the browser as an empty
+        // body — indistinguishable from a page with no rows, and the screen
+        // then renders nothing while the service is the thing at fault.
+        if (ctx.method === 'find') wrapResult(raw, service.name, 'find')
         ctx.result = null
       } else if (isServiceResult(raw)) {
         ctx.result = raw
       } else {
         // `object` names the SERVICE, so a client can key a cache or a type off
-        // it without first working out which kind it is holding.
-        ctx.result = wrapResult(raw, service.name)
+        // it without first working out which kind it is holding. The METHOD is
+        // what decides list vs single — see wrapResult.
+        ctx.result = wrapResult(raw, service.name, ctx.method)
       }
     }, t)   // gated: undefined when no telemetry subscribers → per-hook fast path
   } catch (err) {
@@ -477,18 +483,35 @@ export async function callService(
     // a hook that suppressed a broadcast still leaked the record to every
     // server-side subscriber — including the webhook fan-out.
     if (ctx.dispatch !== false) {
-      const payload = ctx.dispatch !== undefined ? ctx.dispatch : resultData(ctx.result)
+      let payload = ctx.dispatch !== undefined ? ctx.dispatch : resultData(ctx.result)
 
-      // A bulk write announces once PER RECORD, as Feathers does. One event
-      // carrying an array would reach a client store as a single malformed
-      // upsert — the browser's created/patched/removed handlers each take one
-      // record. Bulk create only started working recently, so this path is
-      // newly reachable.
-      const rows = Array.isArray(payload) ? payload : [payload]
+      // An announcement is about a ROW, so it carries one — see
+      // announcementPayload. A method free to answer a projection is not free
+      // to broadcast one: the subscriber has nowhere to put it and says nothing
+      // about that. Skipped when the app stated the payload itself; ctx.dispatch
+      // is a declaration of what to send, and second-guessing it would make the
+      // switch mean two things.
+      if (ctx.dispatch === undefined) {
+        payload = await announcementPayload(
+          ctx, payload, (service as { model?: string }).model ?? service.name,
+          (service as { idField?: string }).idField ?? 'id'
+        )
+      }
 
-      for (const row of rows) {
-        events?.emit(`${service.name}:${past}`, row)
-        await publishToChannels(service, ctx, `${service.name} ${past}`, row)
+      // null means announce nothing — and it has to skip the fan-out WITHOUT
+      // leaving callService, or the pipeline error below is never re-thrown.
+      if (payload !== null) {
+        // A bulk write announces once PER RECORD, as Feathers does. One event
+        // carrying an array would reach a client store as a single malformed
+        // upsert — the browser's created/patched/removed handlers each take one
+        // record. Bulk create only started working recently, so this path is
+        // newly reachable.
+        const rows = Array.isArray(payload) ? payload : [payload]
+
+        for (const row of rows) {
+          events?.emit(`${service.name}:${past}`, row)
+          await publishToChannels(service, ctx, `${service.name} ${past}`, row)
+        }
       }
     }
   }

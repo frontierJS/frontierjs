@@ -39,6 +39,18 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
   its template throws `ReferenceError` on first interaction — invisible to a
   render test, because SSR dispatches no events. Hand the function out through a
   callback prop. `FJS-087`.
+- **`{#each}` takes an array, an iterable or an array-like — and refuses a
+  number or a plain object by name.** `eachItems()` in `runtime.js` is the one
+  definition; `{#each}` and `{#virtual each}` share it. It used to call `.map()`
+  on whatever arrived, so `{#each { length: 6 }}` — a fixed-size grid, which is
+  what the kit's `DatePicker` builds its calendar from — died as `array.map is
+  not a function`, naming no block and no expression. That component had
+  therefore never rendered at all while compiling perfectly (`FJS-147`).
+- **`{@attach}` does not run on the server.** No mount, no attachment — the
+  same rule that already keeps `$onMount` and `watchProxy` off the SSR path.
+  Running it handed the function a happy-dom element, which has no
+  `el.animate`, so one animating attachment threw and took the whole render
+  down (`FJS-146`). Guard is `!_isClient` in `attach()`/`applyAttachments()`.
 - **`{@attach}` runs when the element MOUNTS, not when it is built** (VISION
   §10.6, enforced since `FJS-114`). It used to run on a detached node, where
   `el.animate(..., { fill: 'forwards' })` returns an animation that never starts

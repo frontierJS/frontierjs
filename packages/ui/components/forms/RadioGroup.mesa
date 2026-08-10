@@ -64,6 +64,7 @@
     aria-label={label || null}
     class={layout === 'inline' ? 'cluster' : 'stack'}
     style:gap="0.5rem"
+    {...$attributes}
   >
     {#each items as item (item.value)}
       {@const isSelected = value === item.value}

@@ -1028,6 +1028,32 @@ describe('bindStyle', () => {
     flushSync()
     expect(el.style.color).toBe('blue')
   })
+
+  // Every conditional style in the repo is `style:x={cond ? 'v' : null}`.
+  // Handing that null to setProperty left the answer to the DOM: happy-dom
+  // wrote the string "null" for `position` and `z-index` and dropped it for
+  // `color` and `top`, so one server-rendered element carried
+  // `style="position: null; z-index: null;"` while the client carried nothing.
+  it('removes the property when the value is null, rather than writing it', () => {
+    const [on, setOn] = createSignal(true)
+    const el = div()
+    for (const [prop, value] of [['color', 'red'], ['position', 'absolute'], ['z-index', '10'], ['top', '1px']]) {
+      bindStyle(el, prop, () => (on() ? value : null))
+    }
+    expect(el.getAttribute('style')).toContain('position')
+
+    setOn(false)
+    flushSync()
+    const style = el.getAttribute('style') || ''
+    expect(style).not.toContain('null')
+    expect(style.trim()).toBe('')
+  })
+
+  it('treats an empty string the same as null', () => {
+    const el = div()
+    bindStyle(el, 'font-size', () => '')
+    expect(el.getAttribute('style') || '').toBe('')
+  })
 })
 
 describe('bindInput', () => {
@@ -1732,6 +1758,53 @@ describe('ifBlock — full lifecycle null→block→block→null', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // §14  $$eachBlock
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe('$$eachBlock — what it may iterate', () => {
+  const rowsFrom = (value) => {
+    const container = div()
+    const anchor = document.createComment('')
+    container.appendChild(anchor)
+    // Keyed by index: an array-like yields `undefined` for every item, and
+    // keying by value would warn about duplicates rather than test anything.
+    $$eachBlock(anchor, 0, () => value, (_item, i) => i, (getItem) => {
+      const el = document.createElement('li')
+      createEffect(() => { el.textContent = String(getItem() ?? '') })
+      return el
+    })
+    return [...container.querySelectorAll('li')].map((l) => l.textContent)
+  }
+
+  // `{#each { length: 6 } as _, i}` is how a fixed-size grid is written, and
+  // it used to die as `array.map is not a function` — no block, no expression,
+  // nothing to search for. @frontierjs/ui's DatePicker built both of its
+  // calendar panes that way, so the component threw on first render and had
+  // never rendered at all, in any environment.
+  it('takes an array-like', () => {
+    expect(rowsFrom({ length: 3 })).toEqual(['', '', ''])
+  })
+
+  it('takes an iterable', () => {
+    expect(rowsFrom(new Set(['a', 'b']))).toEqual(['a', 'b'])
+    expect(rowsFrom('ab')).toEqual(['a', 'b'])
+  })
+
+  it('treats null and undefined as empty', () => {
+    expect(rowsFrom(null)).toEqual([])
+    expect(rowsFrom(undefined)).toEqual([])
+  })
+
+  // Refused by name rather than converted: both are typos with an obvious
+  // intent, and guessing produces an empty list where the author wanted rows.
+  it('refuses a number, and says what to write instead', () => {
+    expect(() => rowsFrom(3)).toThrow(/\{#each\}.*number/s)
+    expect(() => rowsFrom(3)).toThrow(/length: 3/)
+  })
+
+  it('refuses a plain object, and points at Object.entries', () => {
+    expect(() => rowsFrom({ a: 1 })).toThrow(/plain object/)
+    expect(() => rowsFrom({ a: 1 })).toThrow(/Object\.entries/)
+  })
+})
 
 describe('$$eachBlock', () => {
   it('renders initial list', () => {

@@ -66,6 +66,6 @@
   }
 </script>
 
-<div class="tabs" {class}>
+<div class="tabs" {class} {...$attributes}>
   <slot />
 </div>

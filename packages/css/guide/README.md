@@ -12,7 +12,7 @@ all:
   Pico, Foundation and Open Props, and then the half that matters: where their
   class counts come from. 59% of Bootstrap's class names are the same ideas at
   five widths and 34% of Bulma's are one colour helper at every step of a
-  lightness ramp, against 14% here — which is the multiplication argument from
+  lightness ramp, against 12% here — which is the multiplication argument from
   **Why this one** stated as a number a reader can recount rather than agree
   with. Our figures are read from the live CSSOM as the page renders; theirs
   are frozen constants with a version and a date on every row, because
@@ -21,6 +21,15 @@ all:
   the four commands that produced every number, and states what the table does
   *not* support — eight themes are in our bundle, no grid ships at all, and
   nothing on either side is tree-shaken.
+  **Our own 23 are listed by name**, because a share is a number nobody can
+  check and 23 names is one anybody can — and listing them is what showed the
+  columns count spelling rather than meaning. Ten are one rung each of the
+  space and type ladders, not `.gap` at a breakpoint; three are substring
+  false positives the grep cannot avoid (`.bordered` contains *red*), counted
+  anyway rather than quietly exempted. The number that is genuinely zero is
+  the one the column is named after: **no breakpoint variant of anything
+  ships**, while `countResponsiveClasses()` finds the 8 classes that do change
+  at a width and keep their name while doing it.
 - **Reference → Cheat sheet** ends with **Every class, searchable** — all 166
   classes the stylesheet ships, read out of the live CSSOM, each with what
   kind of class it is, one line saying what it is, and which files declare it.

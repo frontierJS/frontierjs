@@ -2,6 +2,135 @@
 
 Newest first. What changed and why; the current state is `PROJECT_STATE.md`.
 
+## 2026-08-10 — the first `@@allow`, and what it found under it
+
+`Server` declares row-level tenancy in the schema:
+
+```
+@@allow('all', workspaceId == auth().workspaceId)
+```
+
+One model of 37, deliberately. The declaration itself is a line — the work is
+the audit that has to come before it, because **a policy filters where a gate
+refuses**: any read that legitimately crosses a workspace and is not
+`asSystem()` stops matching, with no error and a 200. Here that audit came out
+clean, which is the only reason this was a one-line change: the three engines
+each open with `app.data.asSystem()` and say why, the hub reads through
+`asSystem()` because `User` is gated above SYSADMIN, and the agent's heartbeat
+does too. `workspaceId` reaches `auth()` the way `memberRole` does —
+`applyStanding()` puts both on the principal for the workspace being addressed.
+
+Five tests in `db/test/schema.test.ts` run it with **no service and no hook**,
+which is the only way to tell a policy from the where-clause the service was
+already writing: a caller reads one workspace's servers with no `where` at all,
+naming another workspace's row by id answers null, and creating or moving a
+server into another workspace is refused.
+
+**Two Litestone defects were in the way, and neither was visible from here.**
+
+`include:` applied **no** access rule of the model it reached — not `@@allow`,
+not `@@gate`, not `@guarded` (`FJS-150`). So the declaration would have held on
+`/servers/` and leaked one join away, and the `@@gate` work of the previous
+session had the same hole underneath it the whole time.
+
+And a post-update denial did not roll back on a model with a Json column
+(`FJS-151`) — which `Server` is, four times over. *Move this server into another
+workspace* is exactly what post-update refuses, and the revert threw a SQLite
+binding error on its way out: the caller saw a `TypeError` about bindings, and
+the write the policy had just refused stayed in the database.
+
+`verify` 270/270, 61 data tests (was 56).
+
+## 2026-08-10 — the gate, and why it could not be `example`'s four lines
+
+All 37 models declare `@@gate`. `FJS-007` had been open since Phase 1 and
+deferred on purpose until every screen existed; what it was actually blocked on
+was never the resolver.
+
+`sessionGateLevel()` grades standing that travels with the user —
+`isAdmin`/`isOwner`/`isSystemAdmin`, the lifecycle stamps. None of that can say
+*admin of THIS workspace*, and here the same person is `owner` in one workspace
+and `viewer` in the next. Graded from their user row they would be USER(4)
+everywhere, including workspaces they are not in.
+
+So the level is resolved per request from the `WorkspaceMember` row for the
+workspace being addressed: viewer/billing READER(2), developer USER(4), admin
+ADMINISTRATOR(5), owner OWNER(6), `isSystemAdmin` SYSADMIN(7) above any
+membership, and an authenticated caller with no membership VISITOR(1) — which
+reads `Workspace` and nothing else, because that is the screen a fresh login
+needs before it can name a workspace at all.
+
+`applyStanding()` (`core/hooks.ts`) does it once and replaces the two membership
+queries the hooks were each making. Three things it has to get right, each of
+which was a way to ship a gate that does nothing:
+
+- **It puts `memberRole` on the PRINCIPAL, not on the client.** Junction's
+  `getTable()` re-derives its own scoped copy from `ctx.auth.user`, so a
+  standing that lives only on `ctx.locals.db` is dropped the moment a service
+  touches a model.
+- **A fresh object, never a mutation.** Over WebSocket the session is resolved
+  once at upgrade and shared by every frame — and the internal-call path freezes
+  it — so mutating would either throw or leak one call's role into the next.
+- **It re-resolves when the workspace changes mid-request.** The workspaces
+  service addresses `ctx.id`, not the header; without this an admin of the
+  workspace on screen carried level 5 into a patch of any other workspace they
+  could name.
+
+The levels are not a design drawn on paper: they are the `requireWorkspaceRole`
+calls the services were already making, moved to the one place that also covers
+an engine calling a service in-process, a custom action nobody wired a hook
+onto, and a where-clause built by hand. The hooks stay — a gate refuses with a
+level, a person needs the sentence.
+
+Two departures from the levels `db/README.md` had recorded since Phase 1, both
+because a path reads what it needs: `Recipe` reads at 4 rather than 5 (running
+one is a developer's act, and running it means reading the script), and the
+machine-written models read at 2 rather than being SYSTEM throughout (a person's
+action writes the `ServerEvent` beside it; only the engine's updates are 8).
+`AuditEvent` is `"5.8.9.9"` — LOCKED on update and delete, which `asSystem()`
+does not pass either, so `db:seed --force` no longer clears the table and lets
+the workspace FK cascade do it instead.
+
+`runSeeder` also ran on the root client, which grades STRANGER(0). The seed's
+own header said everything runs as system; that was the one line that did not.
+
+**Proven by refusal.** The drive signs in as the setup user, who is
+`isSystemAdmin` and clears every gate in the schema, so 262 green checks proved
+only that the app still works. Eight new checks ask the same API as a second
+human: a viewer reads the fleet and creates nothing, a developer writes projects
+and is still refused `GET /secrets` **with the level named in the message** —
+the check that fails if `memberRole` never reaches the principal, since no hook
+refuses that read. Plus 8 tests at the Data boundary against the app's own
+resolver. `verify` 270/270, `bun run test` 56.
+
+It found a framework defect on the first request: `db.asSystem().$transaction()`
+handed its callback the ROOT client, so `POST /setup` failed with *"Account.create"
+requires SYSTEM access (use asSystem())* about a call that was using it
+(`FJS-149`, fixed in litestone).
+
+## 2026-08-10 — the drive stopped stepping around the thing it found
+
+`verify.mjs` § 13c-ter is the only reproduction of `FJS-139` — a reload driven
+from a channel subscriber that does not settle — and it had an
+`await goto('/volumes/')` immediately before the check that would have caught it.
+The check therefore passed against a fresh navigation whether or not the live
+reload ever settled: the test that found the defect was also the reason it could
+not be observed again.
+
+The goto is gone. That check now reads whatever the push-driven reload produced,
+and `bun run verify --reset` passes **262/262 three runs consecutively** in that
+state, so FJS-139 is closed as not reproducible. Which change stopped it is not
+known — the register says so rather than crediting the nearest fix. What makes
+closing it acceptable is that the live path is now asserted: if it comes back,
+the drive fails on it instead of navigating past it.
+
+The same run is what proves this app against three junction changes landed the
+same day — `find` must answer a list, an action's answer is no longer rebuilt as
+a list, and a dropped WebSocket frame is now held and re-sent. Roughly fifteen
+services here answer `{ total, limit, offset, data }` from a custom action and so
+now arrive unwrapped; every consumer reads `.data`, and 262/262 says so in a
+browser rather than in a grep.
+
 ## 2026-08-10 — the tier above every tenant
 
 Phase 10: `/hub/`, `/hub/workspaces/`, `/hub/users/`, `/hub/flags/` — the last

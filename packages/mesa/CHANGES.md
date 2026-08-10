@@ -1,5 +1,108 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-10 — three defects a suite that renders every component found
+
+1052 tests (was 1044). `FJS-146`, `FJS-147`, `FJS-148` fixed. All three were
+found by `@frontierjs/ui`'s new `test/attributes.mjs`, which renders all 64 kit
+components — the first thing in the repo that renders every one. None was
+reachable from a compile test, and two had been shipping for months.
+
+**`{#each}` accepted only a real array, and said so badly.** The block called
+`.map()` on whatever it was handed, so anything else died as `array.map is not
+a function` — no block, no expression, nothing to search for. The case that
+bit is the array-LIKE: `{#each { length: 6 } as _, i}` is how a fixed-size grid
+is written, and `DatePicker` built both of its calendar panes that way, so the
+component **threw on first render and had never rendered at all**, in any
+environment, while compiling perfectly.
+
+`eachItems()` is now the one definition of what an `{#each}` may iterate: an
+array as-is, anything iterable (a Set, a Map, a NodeList, a string) or
+array-like through `Array.from`, `null`/`undefined` as empty. A number or a
+plain object is **refused by name** — both are typos with an obvious intent,
+and converting one produces an empty list where the author expected rows; the
+number's message says to write `{ length: n }` instead. `{#virtual each}` reads
+the same getter and gets the same contract.
+
+**An `{@attach}` ran during a server render.** `renderToHTML` renders against
+happy-dom, which implements no Web Animations API, so an attachment that
+animates threw `el.animate is not a function` and took the whole render with
+it. The rule was already written and simply not applied here: an attachment
+runs when the element MOUNTS (VISION §10.6), and a server render has no mount —
+which is why `$onMount`, `watchProxy` and path watches are already no-ops under
+`setRenderEnvironment(true, false)`. `attach()` and `applyAttachments()` now
+return early on `!_isClient`, beside the six guards that already say it.
+
+**A `style:` directive resolving to `null` wrote the string `null`.** For
+`position` and `z-index` but not `color` or `top` — same element, same render,
+because `setProperty` was handed the null and the answer was the DOM
+implementation's. Every conditional style in the repo is
+`style:x={cond ? 'v' : null}`. A browser ignores the invalid declaration, so
+the cost was never the paint: the server's attribute and the client's
+disagreed, which is what hydration compares. `null`, `undefined` and `''` now
+remove the property.
+
+Mutation-checked: reverting the three turns 1, 4 and 16 tests red.
+`example` `verify` 37/37, `verify:ui` 27/27, `verify:public` 21/21; sierra 810,
+email-kit 34, `@frontierjs/ui` 64 compile / 26 render / 60 attributes / 7 form.
+
+## 2026-08-10 — a destructuring assignment writes through the setters
+
+1044 tests (was 1035). `FJS-021` fixed; `FJS-022` closed as no longer real.
+
+`[a, b] = [b, a]` to two reactive lets emitted
+
+```js
+[$runtime.get($$sig_a), $runtime.get($$sig_b)] = [$runtime.get($$sig_b), …]
+```
+
+— an assignment to a call, so the module did not parse. Clean compile, empty
+`analysis.errors`, and the failure surfaced as *contains invalid JS syntax*
+from Vite. Both rewriters recognised only a bare `Identifier` on the left, so a
+pattern fell through to the generic descent and every target was rewritten as a
+READ.
+
+The pattern is now mirrored into temps and each target written back through
+whatever it is — a setter for a reactive let, an ordinary assignment for
+anything else, so a pattern may mix them:
+
+```js
+[a, plain, o.x] = triple
+  → (($$dv) => { let [$$d0, $$d1, $$d2] = $$dv
+                 $$set_a($$d0); plain = $$d1; o.x = $$d2; return $$dv })(triple)
+```
+
+Reproducing the pattern rather than rebuilding it is what keeps holes, rest
+elements and nesting working without the rewriter having to understand them —
+only the leaves move. Two exceptions it does have to know about: a **shorthand**
+property is expanded (`{a}` → `{a: $$d0}`), because the identifier there is both
+the key and the target and only the target moves, and a **default** is an
+ordinary expression that may read a signal, so it is rewritten in place. The
+IIFE answers the right-hand value, which is what an assignment expression
+evaluates to, so `x = ([a, b] = pair)` keeps its meaning. A pattern naming
+nothing reactive is left exactly as written.
+
+**Both rewriters needed it and neither could borrow the other's.** A handler in
+the script goes through `rewriteAssignments`, the same handler written inline on
+the element goes through `rewriteExpr`; they index into different strings and
+disagree about what is reactive — `rewriteExpr` knows the local scope. So the
+shape they share is passed in (`source`, `setterFor`, `rewriteSub`) and the
+walk is written once. Fixing only the script path passes a compile test and
+leaves every inline handler broken, which is how this stayed open.
+
+**`FJS-022` — `{@const}` inside `{#each}` calling the index — does not
+reproduce and is closed.** It was real while the loop index was a plain number;
+the index is a signal in its own right since 2026-08-04 (the fix for stale
+indices after a keyed move), so `idx()` is now the correct emission. Probed
+plain, keyed, destructured, nested, after a mutation, after a reorder, and
+through SSR. It is pinned in `emission.test.js` because the two halves are
+owned in different files — the compiler decides to CALL it, the runtime decides
+to hand over a getter — and either one moving alone brings back `idx is not a
+function`.
+
+Proven by `example`: `verify` 37/37 and `verify:public` 21/21. In the kit,
+`DatePicker` drops its temp-variable swap and `Breadcrumbs` loses a comment that
+had become false.
+
 ## 2026-08-07 — a component's anchor is a node of its own
 
 1035 tests (was 1027). `FJS-110`.

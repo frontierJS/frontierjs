@@ -47,7 +47,12 @@
   }
 </script>
 
-<div class={cx('toast', t, 'fjs-toast')} role="alert" aria-live="polite" {@attach toastAnim}>
+<!--
+  `id` is this component's toast identity, not a DOM id, so it is declared and
+  never reaches $attributes — a caller wanting to address the element writes a
+  data-* attribute.
+-->
+<div class={cx('toast', t, 'fjs-toast')} role="alert" aria-live="polite" {@attach toastAnim} {...$attributes}>
   <div class="fjs-toast-row">
     <span class="alert-icon">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">

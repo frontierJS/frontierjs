@@ -450,16 +450,8 @@
     } else {
       const rawEnd = updateTime(endDateTime, timestamp)
       _endDate = (inclusiveEnd && !showTimePicker) ? makeEndInclusive(rawEnd) : rawEnd
-      // Written as a temp swap, not `[a, b] = [b, a]`. Mesa's assignment
-      // rewriter only recognises a bare identifier on the left, so a
-      // destructuring assignment to reactive lets emits
-      // `$runtime.get(sig) = …` — invalid JS, no compile error, throws on
-      // load. See PROJECT_STATE.md.
-      if (_startDate > _endDate) {
-        const _swap = _startDate
-        _startDate  = _endDate
-        _endDate    = _swap
-      }
+      // Picking backwards is ordinary: the second click may be before the first.
+      if (_startDate > _endDate) [_startDate, _endDate] = [_endDate, _startDate]
       startDate = _startDate
       endDate   = _endDate
       if (!alwaysShow) isOpen = false
@@ -537,10 +529,15 @@
   if (typeof startOfWeek === 'string') startOfWeek = parseInt(startOfWeek, 10)
 </script>
 
+<!--
+  The caller's attributes land on the wrapper: this component has no control of
+  its own — the trigger is whatever the caller puts in the slot.
+-->
 <div
   bind:this={wrapperEl}
   class="datepicker"
   data-picker-theme={theme}
+  {...$attributes}
 >
   <!-- Trigger slot — whatever the parent puts inside the component -->
   <slot />

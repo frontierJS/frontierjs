@@ -1430,9 +1430,94 @@ function injectHasTemplatesFilter(where, mode, field = 'isTemplate') {
   return { AND: [filter, where] }
 }
 
+// ─── Field policy ─────────────────────────────────────────────────────────────
+// Strip and decrypt fields according to @omit/@guarded/@encrypted/@allow rules.
+//
+// mode: 'list'   — findMany / findFirst (strictest — strips @omit)
+//       'single' — findUnique           (@omit included, @guarded still stripped)
+//       'select' — explicit select      (@omit/@omit(all) bypassed if field selected)
+//
+// Module level rather than a makeTable closure because a row does not have to
+// come from its own table: an `include` reads a DIFFERENT model, and it used to
+// hand those rows back raw — a @guarded(all) column in plaintext, an @encrypted
+// one as ciphertext, a field @allow nobody evaluated. One definition, asked for
+// by model name, is what keeps the two paths from drifting apart again.
+function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'list', selectedFields = null } = {}) {
+  if (!row || !fieldPolicy) return row
+  const isSystem = ctx.isSystem
+  const out = { ...row }
+
+  for (const fieldName in fieldPolicy) {
+    const policy = fieldPolicy[fieldName]
+    const { omit, guarded, encrypted, allow } = policy
+    const explicitlySelected = selectedFields?.has(fieldName)
+
+    // ── Determine if field should be stripped ────────────────────────────
+    let strip = false
+
+    if (encrypted) {
+      strip = !isSystem
+    } else if (guarded === 'all') {
+      strip = !isSystem
+    } else if (guarded === 'select') {
+      strip = !isSystem
+    } else if (omit === 'all') {
+      strip = !explicitlySelected
+    } else if (omit === 'lists') {
+      strip = mode === 'list' && !explicitlySelected
+    } else if (allow?.read?.length && !isSystem) {
+      const permitted = allow.read.some(expr =>
+        evalJs(expr, ctx, out, modelName, ctx.policyMap ?? {}, ctx.relationMap)
+      )
+      if (!permitted) strip = true
+    }
+
+    if (strip) {
+      delete out[fieldName]
+      continue
+    }
+
+    // ── Decrypt if field is present and encrypted ─────────────────────────
+    if (encrypted && fieldName in out && out[fieldName] != null) {
+      try {
+        out[fieldName] = decryptField(out[fieldName], ctx.encKey)
+
+        // Mirror of the write step: a Json field was serialized before it was
+        // encrypted, so it is parsed after it is decrypted.
+        //
+        // The parse gets its OWN try/catch rather than riding the outer one,
+        // which sets the field to null. A row written before this was fixed
+        // decrypts to the literal string '[object Object]' — real data that is
+        // already lost. Surfacing that beats blanking it: null reads as "this
+        // was empty", the string reads as "something went wrong here", and
+        // only the second sends anyone looking.
+        if (policy.json && typeof out[fieldName] === 'string') {
+          try { out[fieldName] = JSON.parse(out[fieldName]) } catch {}
+        }
+      } catch {
+        out[fieldName] = null
+      }
+    }
+  }
+
+  return out
+}
+
 // ─── Include resolution ───────────────────────────────────────────────────────
 // One query per relation level, batched with IN — never N queries per row.
 // Uses readDb for all include fetches.
+//
+// ── Access rules apply here too, and they are applied by hand ────────────────
+//
+// These paths build their own SQL and bypass buildWhere entirely, which is why
+// the soft-delete and @@hasTemplates filters below are hand-appended. @@allow
+// was not, until 2026-08-10: a policy declared on a model filtered every direct
+// read of it and none reached through a parent's `include`, so a tenant scoped
+// out of a row by `@@allow('read', workspaceId == auth().workspaceId)` still
+// received it as `appServer.server`. Same for the field rules — see
+// applyFieldPolicyTo above. The gate is the third of the three and is checked
+// before the query runs, in GatePlugin.onBeforeRead, because getLevel is async
+// and everything here is not.
 
 // Coerce a raw edge column value (from a join/side table) to its JS type.
 function coerceEdgeValue(raw, desc) {
@@ -1489,10 +1574,22 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       let sql, results
 
+      // A count of rows the caller may not read is a read of them — one number
+      // at a time. The join table alone cannot answer it once the TARGET is
+      // policied, so the count joins through to the target in that case.
+      const countPolicy = ctx.hasPolicies
+        ? buildPolicyFilter(rel.targetModel, 'read', ctx, ctx.policyMap, ctx.schema, relationMap)
+        : null
+
       if (rel.kind === 'manyToMany') {
         // M2M: count via join table — where filters not supported on join table, skip
-        sql = `SELECT "${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" WHERE "${rel.selfKey}" IN (${ph}) GROUP BY "${rel.selfKey}"`
-        results = readDb.query(sql).all(...pkValues)
+        sql = countPolicy
+          ? `SELECT j."${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" j ` +
+            `WHERE j."${rel.selfKey}" IN (${ph}) ` +
+            `AND j."${rel.targetKey}" IN (SELECT "id" FROM "${modelToTable(rel.targetModel)}" WHERE ${countPolicy.sql}) ` +
+            `GROUP BY j."${rel.selfKey}"`
+          : `SELECT "${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" WHERE "${rel.selfKey}" IN (${ph}) GROUP BY "${rel.selfKey}"`
+        results = readDb.query(sql).all(...pkValues, ...(countPolicy?.params ?? []))
       } else {
         const sdExtra = softDeleteMap[rel.targetModel] ? ` AND "deletedAt" IS NULL` : ''
         // Default _count behaviour mirrors normal reads — exclude templates.
@@ -1508,8 +1605,9 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
           const ws = buildWhere(where, whereParams)
           if (ws) whereExtra = ` AND (${ws})`
         }
-        sql = `SELECT "${rel.foreignKey}" as __pk, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" WHERE "${rel.foreignKey}" IN (${ph})${sdExtra}${htExtra}${whereExtra} GROUP BY "${rel.foreignKey}"`
-        results = readDb.query(sql).all(...pkValues, ...whereParams)
+        const polExtra = countPolicy ? ` AND (${countPolicy.sql})` : ''
+        sql = `SELECT "${rel.foreignKey}" as __pk, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" WHERE "${rel.foreignKey}" IN (${ph})${sdExtra}${htExtra}${whereExtra}${polExtra} GROUP BY "${rel.foreignKey}"`
+        results = readDb.query(sql).all(...pkValues, ...whereParams, ...(countPolicy?.params ?? []))
       }
 
       const counts = new Map(results.map(r => [r.__pk, r.__n]))
@@ -1526,6 +1624,28 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
     const rel = tableRelations[relName]
     if (!rel) throw new Error(`Unknown relation "${relName}" on "${modelName}"`)
+
+    // ── The target model's own read policy ──────────────────────────────────
+    // Built once here and appended by each branch below, because the three
+    // branches emit three different SQL shapes. `policyFor` is the plain form
+    // for a single-table FROM; `policyIn` re-scopes it through a subquery for
+    // the m2m branch, where the target is aliased `t` beside the join table `j`
+    // and the compiler's unqualified column names would be ambiguous.
+    const targetPolicy = ctx.hasPolicies
+      ? buildPolicyFilter(rel.targetModel, 'read', ctx, ctx.policyMap, ctx.schema, relationMap)
+      : null
+    const policyClause = targetPolicy ? ` AND (${targetPolicy.sql})` : ''
+    const policyParams = targetPolicy ? targetPolicy.params : []
+    const policyInClause = targetPolicy
+      ? ` AND t."id" IN (SELECT "id" FROM "${modelToTable(rel.targetModel)}" WHERE ${targetPolicy.sql})`
+      : ''
+
+    // Field rules on the target — @guarded, @encrypted, @omit, field @allow.
+    const targetFieldPolicy = ctx.fieldPolicyMap?.[rel.targetModel] ?? null
+    const shapeRelated = (rows_, opts) =>
+      targetFieldPolicy && Object.keys(targetFieldPolicy).length
+        ? rows_.map(r => applyFieldPolicyTo(r, rel.targetModel, targetFieldPolicy, ctx, opts))
+        : rows_
 
     const nestedInclude = typeof relInclude === 'object' && relInclude !== true
       ? relInclude.include ?? null : null
@@ -1598,10 +1718,13 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       // Per-include where filter (belongsTo: filters the parent → nulls if excluded)
       const rw = relWhereSql(null)
 
-      const related = readDb
-        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rw.clause}`)
-        .all(...sdParams, ...rw.params)
-        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx))
+      const related = shapeRelated(readDb
+        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rw.clause}${policyClause}`)
+        .all(...sdParams, ...rw.params, ...policyParams)
+        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx)),
+        parsedNested
+          ? { mode: 'select', selectedFields: parsedNested.requestedFields }
+          : { mode: 'single' })
 
       const mergedInclude = { ...(nestedInclude ?? {}), ...(parsedNested?.relationSelects ?? {}) }
       if (Object.keys(mergedInclude).length)
@@ -1635,9 +1758,9 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         .query(
           `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey${edgeSelect} FROM "${modelToTable(rel.targetModel)}" t ` +
           `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t."id" ` +
-          `WHERE j."${rel.selfKey}" IN (${ph})${rwM.clause}`
+          `WHERE j."${rel.selfKey}" IN (${ph})${rwM.clause}${policyInClause}`
         )
-        .all(...pkValues, ...rwM.params)
+        .all(...pkValues, ...rwM.params, ...policyParams)
 
       // Strip __jSelfKey before processing so it doesn't leak into the output row
       const selfKeys = rawRows.map(r => { const k = r.__jSelfKey; delete r.__jSelfKey; return k })
@@ -1655,8 +1778,9 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         return bag
       })
 
-      const related = rawRows
-        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx))
+      const related = shapeRelated(rawRows
+        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx)),
+        { mode: 'list' })
 
       // Attach namespaced edge values onto each shaped target row.
       if (edgeDescs.length) {
@@ -1706,10 +1830,13 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (htClause) sdWhere = `${sdWhere} AND ${htClause}`
       const rwH = relWhereSql(null)
 
-      const related = readDb
-        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}`)
-        .all(...pkValues, ...rwH.params)
-        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx))
+      const related = shapeRelated(readDb
+        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}${policyClause}`)
+        .all(...pkValues, ...rwH.params, ...policyParams)
+        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx)),
+        parsedNested
+          ? { mode: 'select', selectedFields: parsedNested.requestedFields }
+          : { mode: 'list' })
 
       const mergedInclude = { ...(nestedInclude ?? {}), ...(parsedNested?.relationSelects ?? {}) }
       if (Object.keys(mergedInclude).length)
@@ -2417,69 +2544,11 @@ function makeTable(
   }
 
   // ── Field policy helpers ──────────────────────────────────────────────────
-  // Strip and decrypt fields according to @omit/@guarded/@encrypted rules.
-  // mode: 'list'   — findMany / findFirst (strictest — strips @omit)
-  //       'single' — findUnique           (@omit included, @guarded still stripped)
-  //       'select' — explicit select      (@omit/@omit(all) bypassed if field selected)
-  function applyFieldPolicy(row, { mode = 'list', selectedFields = null } = {}) {
+  // The rules themselves are applyFieldPolicyTo, at module level — an include
+  // has to apply them to a model that is not this one.
+  function applyFieldPolicy(row, opts) {
     if (!row || !hasFieldPolicy) return row
-    const isSystem = ctx.isSystem
-    const out = { ...row }
-
-    for (const fieldName in fieldPolicy) {
-      const policy = fieldPolicy[fieldName]
-      const { omit, guarded, encrypted, allow } = policy
-      const explicitlySelected = selectedFields?.has(fieldName)
-
-      // ── Determine if field should be stripped ────────────────────────────
-      let strip = false
-
-      if (encrypted) {
-        strip = !isSystem
-      } else if (guarded === 'all') {
-        strip = !isSystem
-      } else if (guarded === 'select') {
-        strip = !isSystem
-      } else if (omit === 'all') {
-        strip = !explicitlySelected
-      } else if (omit === 'lists') {
-        strip = mode === 'list' && !explicitlySelected
-      } else if (allow?.read?.length && !isSystem) {
-        const permitted = allow.read.some(expr =>
-          evalJs(expr, ctx, out, modelName, ctx.policyMap ?? {}, ctx.relationMap)
-        )
-        if (!permitted) strip = true
-      }
-
-      if (strip) {
-        delete out[fieldName]
-        continue
-      }
-
-      // ── Decrypt if field is present and encrypted ─────────────────────────
-      if (encrypted && fieldName in out && out[fieldName] != null) {
-        try {
-          out[fieldName] = decryptField(out[fieldName], ctx.encKey)
-
-          // Mirror of the write step: a Json field was serialized before it was
-          // encrypted, so it is parsed after it is decrypted.
-          //
-          // The parse gets its OWN try/catch rather than riding the outer one,
-          // which sets the field to null. A row written before this was fixed
-          // decrypts to the literal string '[object Object]' — real data that is
-          // already lost. Surfacing that beats blanking it: null reads as "this
-          // was empty", the string reads as "something went wrong here", and
-          // only the second sends anyone looking.
-          if (policy.json && typeof out[fieldName] === 'string') {
-            try { out[fieldName] = JSON.parse(out[fieldName]) } catch {}
-          }
-        } catch {
-          out[fieldName] = null
-        }
-      }
-    }
-
-    return out
+    return applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, opts)
   }
 
   // ── Read helpers ──────────────────────────────────────────────────────────
@@ -4270,9 +4339,17 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // ── Logging + post-update rollback: capture before snapshot ────────────
       // Also needed when post-update policy exists so rollback has data to revert with.
       const needsBeforeRow = tableHasAnyLog || (ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
-      const beforeRow = needsBeforeRow
-        ? read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams), { mode: 'single' })
+      // Two snapshots of one row, and the rollback needs the RAW one. read()
+      // parses Json to objects and coerces booleans, and a SQLite parameter
+      // cannot be an object — reverting from it threw "Binding expected string,
+      // TypedArray, boolean, number, bigint or null" out of the revert, so the
+      // denial never surfaced AND the denied write stayed applied. Its keys are
+      // also the table's columns exactly: read() adds computed and @from fields
+      // that no UPDATE can name, and strips @guarded ones.
+      const beforeRaw = needsBeforeRow
+        ? readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
         : null
+      const beforeRow = beforeRaw ? read(beforeRaw, { mode: 'single' }) : null
 
       // ── Transition enforcement ────────────────────────────────────────────
       // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
@@ -4358,10 +4435,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           checkPostUpdatePolicy(modelName, updated, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
         } catch (e) {
           // Rollback the update by re-querying and reverting
-          if (beforeRow) {
-            const revertCols = Object.keys(beforeRow).filter(k => k !== idField)
+          if (beforeRaw) {
+            const revertCols = Object.keys(beforeRaw).filter(k => k !== idField)
             if (revertCols.length) {
-              const revertParams = revertCols.map(k => beforeRow[k] ?? null)
+              const revertParams = revertCols.map(k => beforeRaw[k] ?? null)
               revertParams.push(updated[idField])
               writeDb.run(
                 `UPDATE "${tableName}" SET ${revertCols.map(c => `"${c}" = ?`).join(', ')} WHERE "${idField}" = ?`,
@@ -6674,11 +6751,21 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   }
 
   // $transaction — wraps async callback in BEGIN IMMEDIATE / COMMIT
+  //
+  // `asProxy` is which flavour of client the callback is handed, and it is not
+  // a detail: every scoped proxy (asSystem, $setAuth, $scopedBy) exposed THIS
+  // function directly, so the callback received the ROOT client and the scope
+  // was dropped for the whole transaction — silently, in both directions.
+  // `db.asSystem().$transaction(tx => tx.account.create(…))` ran as an
+  // anonymous caller and was refused by the model's own @@gate; the mirror
+  // image, `db.$setAuth(u).$transaction(…)`, ran with `auth()` null, so every
+  // @@allow matched nothing and every @createdBy stamped nobody. Both look like
+  // the transaction body is wrong. Each proxy now passes itself.
   let clientProxy
-  async function $transaction(fn) {
+  async function $transaction(fn, asProxy) {
     const sp = tx.begin()
     try {
-      const result = await fn(clientProxy)
+      const result = await fn(asProxy ?? clientProxy)
       tx.commit(sp)
       return result
     } catch (e) {
@@ -7040,12 +7127,18 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    _systemProxy = new Proxy({ sql: sysSql, query: sysQuery, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: sys$lock, $locks: lockPrimitive.$locks }, {
+    _systemProxy = new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, _systemProxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: sys$lock, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
         if (prop in target)     return Reflect.get(target, prop)
         if (prop in sysTables)  return sysTables[prop]
+        // Idempotent, and it has to be: a caller handed a client cannot tell
+        // which flavour it is, so `db.asSystem()` at the top of a function is
+        // the normal defensive spelling. Without this it threw
+        // `"asSystem" is not a table in this schema` — a message about tables,
+        // about a method every other flavour of this client has.
+        if (prop === 'asSystem') return () => _systemProxy
         if (prop === '$close')  return () => _closeAll()
         if (prop === '$schema') return schema
         if (prop === '$checkWhere') return $checkWhere
@@ -7061,12 +7154,13 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(sysTables),
-          ['$close', '$schema', '$checkWhere', '$enums'],
+          ['asSystem', '$close', '$schema', '$checkWhere', '$enums'],
         )
       },
-      has(target, prop) { return prop in target || prop in sysTables },
+      has(target, prop) { return prop === 'asSystem' || prop in target || prop in sysTables },
       getOwnPropertyDescriptor(target, prop) {
-        if (prop in sysTables) return { configurable: true, enumerable: true, writable: false }
+        if (prop in sysTables || prop === 'asSystem')
+          return { configurable: true, enumerable: true, writable: false }
         return Reflect.getOwnPropertyDescriptor(target, prop)
       },
     })
@@ -7135,7 +7229,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -7185,9 +7279,12 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
-      asSystem, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb,
+      // Hands the callback THIS proxy — the dimension bindings and the auth on
+      // it are what the body was asking for. See $transaction.
+      $transaction: (fn) => $transaction(fn, scopedProxy),
+      asSystem, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb,
     }
-    return new Proxy(target, {
+    const scopedProxy = new Proxy(target, {
       get(t, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -7204,6 +7301,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       ownKeys(t)   { return dedupeKeys(Reflect.ownKeys(t), Object.keys(tables)) },
       has(t, prop) { return prop in t || prop in tables },
     })
+    return scopedProxy
   }
   function $scopedBy(bindings) {
     return _makeScopedProxy({ scopedBy: { ...(ctx.scopedBy ?? {}), ...(bindings ?? {}) }, auth: ctx.auth })

@@ -69,6 +69,7 @@
   aria-label={label || null}
   class={cx('tablist', v, toTone(tone))}
   {class}
+  {...$attributes}
   on:keydown={handleKeyDown}
 >
   <slot />

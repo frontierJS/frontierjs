@@ -139,6 +139,51 @@ const shippedCss = collectCss(srcDir).sort();
 const vocabulary = readFileSync(join(pkg, 'vocabulary.js'), 'utf8');
 
 /*
+ * vocabulary.json is GENERATED from the file above by build-vocabulary.js, and
+ * it is committed rather than built into dist/ — dist/ is gitignored and wiped
+ * every build, so a consumer installing from git would find the file missing.
+ *
+ * A generated file that is committed goes stale silently: someone adds a term,
+ * the guide and these specs see it immediately because they read the .js, and
+ * the .json every OTHER consumer reads keeps describing the old vocabulary.
+ * Nothing would say so until an app asked for a term that exists.
+ *
+ * So the runner regenerates the payload in memory and hands the specs a verdict
+ * on whether the committed file matches. Regenerating rather than diffing
+ * timestamps: a rebuild that changes nothing must not fail the suite.
+ */
+const vocabularyJsonState = (() => {
+  let onDisk = null;
+  try {
+    onDisk = readFileSync(join(pkg, 'vocabulary.json'), 'utf8');
+  } catch {
+    return { present: false, fresh: false, terms: 0 };
+  }
+  try {
+    const { VOCAB, ANATOMY } = new Function(
+      `${vocabulary}\n;return { VOCAB, ANATOMY };`
+    )();
+    const terms = VOCAB.reduce((n, [, , rows]) => n + rows.length, 0);
+    const parsed = JSON.parse(onDisk);
+    return {
+      present: true,
+      /*
+       * Compare the counts the generator derives, not the whole file: the
+       * payload carries the package version, so a version bump alone would
+       * otherwise read as vocabulary drift.
+       */
+      fresh:
+        parsed.counts?.terms === terms &&
+        parsed.counts?.anatomy === Object.keys(ANATOMY).length &&
+        parsed.terms?.length === terms,
+      terms,
+    };
+  } catch (err) {
+    return { present: true, fresh: false, terms: 0, error: err.message };
+  }
+})();
+
+/*
  * guide/decisions.js — the Learn wizard's routing tree, inlined like
  * vocabulary.js.
  *
@@ -282,6 +327,7 @@ const page = `<!doctype html>
 </head>
 <body class="theme-default">
 <script>window.__FJS_SHIPPED_CSS__ = ${JSON.stringify(shippedCss)};</script>
+<script>window.__FJS_VOCAB_JSON__ = ${JSON.stringify(vocabularyJsonState)};</script>
 <script>window.__FJS_GLOW__ = ${JSON.stringify(glowSamples)};</script>
 <script>window.__FJS_DEMO_HTML__ = ${escapeForInlineScript(JSON.stringify(demoHtml))};</script>
 <!--

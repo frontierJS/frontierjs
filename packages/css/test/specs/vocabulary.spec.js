@@ -170,3 +170,28 @@ test('vocabulary: term names are unique', function () {
   });
   assert.equal(dupes.length, 0, 'duplicate term: ' + dupes.join(', '));
 });
+
+/* ── The published JSON is the same vocabulary ─────────────────────── */
+
+test('vocabulary: vocabulary.json is present and current', function () {
+  /*
+   * vocabulary.js is the source and is a classic script by necessity, so it
+   * exports nothing and no consumer can read it. vocabulary.json is generated
+   * from it for that audience, and it is committed — dist/ is wiped on every
+   * build, so a generated file there would not survive an install from git.
+   *
+   * Committed and generated is the combination that goes stale quietly: the
+   * guide and every spec in this suite read the .js and see a new term at
+   * once, while the .json that ships keeps describing the vocabulary as it
+   * was. The runner regenerates the payload and compares; this asserts the
+   * verdict. Fix with `bun run build:vocabulary`.
+   */
+  var state = window.__FJS_VOCAB_JSON__;
+  assert.ok(state, 'the runner injected no vocabulary.json state');
+  assert.ok(state.present, 'vocabulary.json is missing — run `bun run build:vocabulary`');
+  assert.ok(
+    state.fresh,
+    'vocabulary.json is stale' + (state.error ? ' (' + state.error + ')' : '') +
+      ' — run `bun run build:vocabulary`'
+  );
+});

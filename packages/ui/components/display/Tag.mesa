@@ -23,7 +23,7 @@
   const t = toTone(color || tone)
 </script>
 
-<span class={cx('pill', t, !readonly && 'removable')} {class}>
+<span class={cx('pill', t, !readonly && 'removable')} {class} {...$attributes}>
   <slot />
 
   {#if !readonly}

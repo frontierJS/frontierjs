@@ -1427,11 +1427,11 @@ check('a new disk appears with no reload',
 
 await REPORT([{ name: 'pg-data', size_bytes: 6 * 1024 ** 3, in_use: true, containers: ['pg-data-svc'] }])
 // Reloaded, not watched. The push arrives and the screen starts its reload, and
-// that reload does not settle — `FJS-138`, which this is the only reproduction
-// of. The claim being tested here is the report's replace-semantics, and it is
-// tested against a fresh read rather than left to a live update that is
-// currently unreliable; the live path has its own check above.
-await goto('/volumes/')
+// that reload does not settle. There is deliberately no `goto` here: this reads
+// whatever the PUSH-DRIVEN reload produced, so the live path is asserted rather
+// than stepped around. It used to navigate first, which made the check pass
+// whether or not the reload ever settled — and that is what let `FJS-139` sit
+// open with the only reproduction of it masked by the test that found it.
 // Read the whole page, not `#volume-list`: an empty list renders an EmptyState
 // and no list at all, so scoping the read to the list cannot tell "the row went"
 // from "everything went".
@@ -1976,6 +1976,67 @@ const patHub = await fetch(`http://localhost:${API_PORT}/hub`, {
 // 404, not 403: the hub is not a screen somebody is being refused, it is a
 // surface they have no business knowing exists.
 check('the hub is invisible to a non-administrator', patHub.status, 404)
+
+// ── The gate ladder, asked of somebody who is not a sysadmin ──────────
+//
+// Everything above ran as the setup user, who is `isSystemAdmin` and therefore
+// SYSADMIN(7) — a level that clears every gate in the schema. So none of it
+// proves a gate; it proves the app still works with gates on. This section is
+// the other half, and it is the only place the ladder is exercised at all.
+//
+// Pat is a real second human with no standing anywhere. What each refusal
+// below is coming FROM matters:
+//
+//   POST /servers   the role hook AND @@gate("2.4.4.5") both refuse a viewer
+//   GET  /secrets   ONLY @@gate("5") refuses — the secrets service has no role
+//                   hook on find, so before this landed a viewer could list
+//                   every secret in the workspace
+//
+// The second is why this is worth the requests: it fails if `memberRole` never
+// reaches the principal, which is the one thing no unit test can see.
+
+const asPat = (path, opts = {}) => fetch(`http://localhost:${API_PORT}${path}`, {
+  method:  opts.method ?? 'GET',
+  headers: {
+    accept: 'application/json', authorization: `Bearer ${patToken}`,
+    'x-workspace-id': opts.workspace ?? firstWs.id,
+    ...(opts.body ? { 'content-type': 'application/json' } : {}),
+  },
+  body: opts.body ? JSON.stringify(opts.body) : undefined,
+})
+
+check('a non-member is refused the workspace outright', (await asPat('/servers')).status, 403)
+
+await apiCall(`/workspaces/${firstWs.id}`, {
+  method: 'POST', header: { 'x-service-method': 'addMember' },
+  body:   { userId: pat.user.userId, role: 'viewer' },
+})
+
+check('a viewer reads the fleet',          (await asPat('/servers')).status, 200)
+check('…and creates nothing',              (await asPat('/servers', { method: 'POST', body: { name: 'nope', hostname: 'nope.example' } })).status, 403)
+
+const viewerSecrets = await asPat('/secrets')
+check('…and cannot list secrets', viewerSecrets.status, 403)
+// Naming the level is what makes this check about the GATE. A 403 alone would
+// also be what a role hook answers, and the point of this one is that there is
+// no role hook on secrets.find — the schema is the only thing refusing.
+check('…refused by a level, which is the schema talking',
+  await viewerSecrets.text(), t => t.includes('requires level 5'))
+
+await apiCall(`/workspaces/${firstWs.id}`, {
+  method: 'POST', header: { 'x-service-method': 'setMemberRole' },
+  body:   { userId: pat.user.userId, role: 'developer' },
+})
+
+check('promoting to developer opens the write',
+  (await asPat('/projects', { method: 'POST', body: { name: 'Pat project', slug: 'pat-project' } })).status, 201)
+check('…and secrets stay shut at the Data boundary', (await asPat('/secrets')).status, 403)
+
+// The standing is per workspace, not per person: the same token, one header
+// apart. Without applyStanding re-resolving, a developer here would be a
+// developer everywhere they can name.
+check('standing does not travel to another workspace',
+  (await asPat('/servers', { workspace: secondWs.id })).status, 403)
 
 // ── Flags at hub scope ───────────────────────────────────────────────
 await goto('/hub/flags/')

@@ -36,7 +36,7 @@
   export let action      = null     // snippet — CTA button(s)
 </script>
 
-<div class="empty" style:padding={compact ? '1.5rem 1rem' : null} {class}>
+<div class="empty" style:padding={compact ? '1.5rem 1rem' : null} {class} {...$attributes}>
   <!-- .empty-icon sets --icon-size: 1em, so the svg tracks this font-size. -->
   <div class="empty-icon" style:font-size={compact ? '1.5rem' : null} aria-hidden="true">
     {#if icon}

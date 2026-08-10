@@ -39,6 +39,7 @@
   class={cx('btn', t, treatment, isSquare && 'square')}
   style:font-size={fontSize}
   {class}
+  {...$attributes}
   on:click={onclick}
 >
   <slot />

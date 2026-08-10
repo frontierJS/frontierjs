@@ -35,7 +35,7 @@
   <!-- `for` is dropped when there is no id: `for=""` points at nothing, and a
        label that points at nothing is worse than one that only reads as text
        (a RadioGroup, whose control is a group, hit exactly this). -->
-  <label for={id || null} class="cluster" style:gap="0.375rem" {class}>
+  <label for={id || null} class="cluster" style:gap="0.375rem" {class} {...$attributes}>
 
   <span>
     {label}

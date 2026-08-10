@@ -25,9 +25,10 @@
   export let maxItems = 0     // 0 = show all; N = show first + … + last N
   export let label    = 'Breadcrumb'   // landmark name
 
-  // Truncate middle items if maxItems is set, and mark the last one here
-  // rather than in the template: a `{@const}` inside an {#each} calls the
-  // index as a getter (`idx()`), so `idx === visible.length - 1` throws.
+  // Truncate middle items if maxItems is set, and mark the last one here —
+  // truncation is what decides which item IS last, so the two answers come
+  // from one pass rather than the template re-deriving it against a length
+  // that may already have been cut down.
   const visible = (() => {
     const list = (!maxItems || items.length <= maxItems)
       ? items
@@ -36,7 +37,7 @@
   })()
 </script>
 
-<nav class="breadcrumb" aria-label={label} {class}>
+<nav class="breadcrumb" aria-label={label} {class} {...$attributes}>
   <ol>
     {#each visible as item}
       <li>

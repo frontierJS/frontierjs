@@ -38,5 +38,5 @@
   The ring is decorative; the visually-hidden live region is what announces.
   Splitting them is the whole accessibility contract for this component.
 -->
-<span class={cx('spinner', t)} style:font-size={fontSize} aria-hidden="true" {class}></span>
+<span class={cx('spinner', t)} style:font-size={fontSize} aria-hidden="true" {class} {...$attributes}></span>
 <span class="visually-hidden" role="status">{label}</span>

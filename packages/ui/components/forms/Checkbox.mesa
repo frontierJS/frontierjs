@@ -51,6 +51,7 @@
       aria-describedby={description ? descId : null}
       aria-invalid={error ? 'true' : null}
       on:change={handleChange}
+      {...$attributes}
     />
     {#if label}<span>{label}</span>{/if}
   </label>

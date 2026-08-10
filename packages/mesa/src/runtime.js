@@ -929,7 +929,16 @@ export function bindClassExp(el, fn) {
 }
 export function bindStyle(el, name, fn) {
   createEffect(() => {
-    el.style.setProperty(name, fn())
+    const v = fn()
+    // `null` means "do not set this property" — every conditional style in the
+    // repo is written `style:position={float ? 'absolute' : null}`. Handing
+    // that null to setProperty leaves the answer to the DOM implementation:
+    // happy-dom wrote the literal string for some properties and dropped it
+    // for others, so one element rendered `style="position: null; z-index:
+    // null;"` on the server and nothing on the client — which is exactly what
+    // hydration compares.
+    if (v == null || v === '') el.style.removeProperty(name)
+    else el.style.setProperty(name, v)
   })
 }
 /**
@@ -1478,6 +1487,14 @@ export function throttle(fn, ms) {
  * @param {Function} getFn  () => attachmentFn — evaluated in reactive context
  */
 export function attach(el, getFn) {
+  // An attachment runs when the element MOUNTS, and a server render has no
+  // mount — the same rule that already keeps $onMount off the SSR path
+  // (render.js, RULE 19). Running it there hands the function a happy-dom
+  // element, which implements no Web Animations API: an attachment that
+  // animates threw `el.animate is not a function` and took the WHOLE render
+  // with it, so a component could not be server-rendered at all.
+  if (!_isClient) return
+
   createEffect(() => {
     const fn = getFn()           // tracked — re-runs when expression deps change
     if (!fn) return
@@ -1545,6 +1562,7 @@ export function attach(el, getFn) {
  */
 export function applyAttachments(el, fns) {
   if (!fns?.length) return
+  if (!_isClient) return   // same rule as attach() above — no mount, no attachment
   for (const fn of fns) {
     createEffect(() => {
       if (!fn) return
@@ -2076,8 +2094,10 @@ export const eachDefaultKey = (item) => item
  * @param {Function} keyFn      — (item, i) => key, or null for index keying
  * @param {Function} makeRow    — makeBlock factory for one row
  */
-export function $$virtualEach(anchor, getArray, keyFn, makeRow) {
+export function $$virtualEach(anchor, getItems, keyFn, makeRow) {
   if (!_isBrowser) return
+  // Same contract as {#each} — see eachItems().
+  const getArray = () => eachItems(getItems())
 
   const OVERSCAN    = 5     // extra rows to render above and below viewport
   const DEFAULT_ROW = 40    // fallback row height (px) before measurement
@@ -2252,6 +2272,36 @@ export function $$virtualEach(anchor, getArray, keyFn, makeRow) {
   }
 }
 
+/**
+ * What an {#each} may iterate.
+ *
+ * The block used to call `.map()` on whatever it was handed, so anything that
+ * was not a real array died as `array.map is not a function` — no block name,
+ * no expression, nothing to search for. An array-LIKE is the case that bit:
+ * `{#each { length: 6 } as _, i}` is how a fixed-size grid gets written, and
+ * `@frontierjs/ui`'s DatePicker used it in both panes, so the component threw
+ * on first render and had never rendered at all.
+ *
+ * Anything iterable (a Set, a Map, a NodeList, a string) or array-like is
+ * taken. A number or a plain object is refused BY NAME rather than converted:
+ * both are typos with an obvious intent, and guessing at one produces an empty
+ * list where the author expected rows.
+ */
+function eachItems(v) {
+  if (Array.isArray(v)) return v
+  if (v == null) return []
+  if (typeof v === 'object' || typeof v === 'string') {
+    if (typeof v[Symbol.iterator] === 'function') return Array.from(v)
+    if (typeof v.length === 'number') return Array.from(v)
+  }
+  throw new TypeError(
+    `[Mesa] {#each} needs an array, an iterable or an array-like, got ${typeof v === 'object' ? 'a plain object' : typeof v}. ` +
+    (typeof v === 'number'
+      ? `Write {#each { length: ${v} } as _, i} to repeat something ${v} times.`
+      : `Iterate Object.entries(obj) or Object.keys(obj) to walk an object.`)
+  )
+}
+
 export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) {
   if (!_isBrowser)
     throw new Error(
@@ -2409,7 +2459,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
   }
 
   createEffect(() => {
-    const array  = getArray() || []
+    const array  = eachItems(getArray())
     const newLen = array.length
 
     // ── Fast path: clear ────────────────────────────────────────────────────

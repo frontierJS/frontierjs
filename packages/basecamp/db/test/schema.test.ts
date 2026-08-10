@@ -15,7 +15,11 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { parseFile, generateDDL, createClient } from '../../../litestone/src/index.js'
+import { parseFile, generateDDL, createClient, GatePlugin, LEVELS } from '../../../litestone/src/index.js'
+// The app's own resolver, not a stand-in. A gate test against a hand-written
+// getLevel proves the levels in this file, not the ones the API runs — and the
+// two disagreeing is exactly the failure @@gate exists to prevent.
+import { basecampGateLevel, WORKSPACE_ROLE_LEVEL } from '../../api/src/core/gate.ts'
 // The API realm's half of the widget vocabulary. Imported rather than restated:
 // the whole point of the first Dashboard test is that these two lists are one
 // list, and a copy here would be a third.
@@ -57,9 +61,26 @@ function freshDb(name = 'bc.db') {
  * env() is read when the schema is parsed, so it has to be set before the call
  * rather than passed to it.
  */
-async function client(dbPath: string, opts: Record<string, unknown> = {}) {
+// `any`: a Litestone client is a Proxy whose accessors are the schema's models,
+// which no static type here knows. Every test in this file would otherwise open
+// with the same cast.
+async function client(dbPath: string, opts: Record<string, unknown> = {}): Promise<any> {
   process.env.DATABASE_URL = dbPath
-  return createClient({ path: SCHEMA, encryptionKey: ENC_KEY, ...opts })
+  // The same GatePlugin core/db.ts installs. Leaving it out does NOT give an
+  // ungated client — a schema declaring any @@gate installs Litestone's default
+  // resolver instead, which grades a plain principal USER(4) and would have
+  // these tests asserting against levels no request in this app ever gets.
+  return createClient({
+    path:          SCHEMA,
+    encryptionKey: ENC_KEY,
+    plugins:       [new GatePlugin({ getLevel: basecampGateLevel })],
+    ...opts,
+  })
+}
+
+/** A principal with standing in a workspace, as applyStanding() builds one. */
+function as(memberRole: string, extra: Record<string, unknown> = {}) {
+  return { id: 'u1', userId: 'u1', memberRole, ...extra }
 }
 
 beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'basecamp-db-')) })
@@ -96,20 +117,29 @@ describe('schema.lite', () => {
       expect(names).toContain(required)
   })
 
-  test('gates are absent — a KNOWN GAP against Invariant 6, not a decision', () => {
-    // Pins the current state so the gap stays visible; not an endorsement.
-    // Invariant 6 has no exceptions and this schema owes 24 declarations
-    // (levels in db/README.md §Access control). When they land, INVERT this
-    // test rather than deleting it.
-    //
-    // The blocker is the per-workspace mapping, not the resolver: Litestone's
-    // default was fixed 2026-08-04 and now grades a verified auth session
-    // USER(4); example/api/gate.ts is the four-line pattern for the rest.
+  test('every model declares @@gate — Invariant 6 has no exceptions', () => {
+    // The inverse of the test that used to stand here, which pinned the gap.
+    // A model added without a level is the failure this catches: it would be
+    // ungated in a schema where every neighbour is gated, and nothing else
+    // would say so — the app would simply let anyone read it.
     const r = parseFile(SCHEMA)
-    const gated = r.schema.models
-      .filter((m: any) => m.attributes.some((a: any) => a.kind === 'gate'))
+    const ungated = r.schema.models
+      .filter((m: any) => !m.attributes.some((a: any) => a.kind === 'gate'))
       .map((m: any) => m.name)
-    expect(gated).toEqual([])
+    expect(ungated).toEqual([])
+  })
+
+  test('every WorkspaceRole has a level — a role added to the enum fails closed', () => {
+    // The enum is the vocabulary; core/gate.ts is the mapping. A value in one
+    // and not the other grades VISITOR(1) at runtime, which reads as "the
+    // screen is empty for that person" rather than as a missing line.
+    const r     = parseFile(SCHEMA)
+    const roles = r.schema.enums
+      .find((e: any) => e.name === 'WorkspaceRole').values
+      .map((v: any) => v.name)
+    expect(roles.filter((v: string) => WORKSPACE_ROLE_LEVEL[v] === undefined)).toEqual([])
+    // …and nothing in the mapping that the enum does not declare.
+    expect(Object.keys(WORKSPACE_ROLE_LEVEL).filter(k => !roles.includes(k))).toEqual([])
   })
 
   test('soft-deleting parents cascade — archiving a workspace cannot orphan live rows', () => {
@@ -204,7 +234,11 @@ describe('Secret.data protection', () => {
     const ws  = await seedWorkspace(sys)
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{"priv":"x"}' } })
 
-    const [row] = await db.$setAuth({ userId: 'u1', role: 'admin' }).secret.findMany({ limit: 1 })
+    // An ADMINISTRATOR(5), which is the level Secret.read wants — so this is
+    // the field policy refusing a caller the GATE let through. Two independent
+    // boundaries: @guarded keys on asSystem(), not on a level, and no place on
+    // the ladder reaches this column.
+    const [row] = await db.$setAuth(as('admin')).secret.findMany({ limit: 1 })
     expect(row.name).toBe('k')          // metadata is readable
     expect('data' in row).toBe(false)   // the value is not merely null — the key is gone
     db.$close()
@@ -259,16 +293,19 @@ describe('audit logging', () => {
   })
 })
 
-// ─── Access control without gates ────────────────────────────────────────────
-// @@gate was removed on 2026-08-04 (see DECISIONS.md). These pin what that did
-// and — more importantly — what it did NOT weaken.
+// ─── Access control — the gate ladder ────────────────────────────────────────
+// The levels are declared in schema.lite and the mapping onto them is
+// api/src/core/gate.ts. These run the pair against a real database, because the
+// only thing that proves a level is a refusal: a schema that parses says
+// nothing about what a viewer can do.
+//
+// `memberRole` on the principal is what applyStanding() puts there per request,
+// off the WorkspaceMember row for the workspace being addressed. A test that
+// invented some other field would be testing a resolver nothing calls.
 
-describe('access control after gate removal', () => {
+describe('the gate ladder', () => {
 
-  test('no GatePlugin is auto-installed, so an ordinary caller can read', async () => {
-    // The whole point of the removal: with any @@gate present, Litestone
-    // auto-installs a resolver that grades every auth session VISITOR(1) and
-    // this read would throw ACCESS_DENIED.
+  test('a viewer reads the fleet and creates nothing', async () => {
     const db  = await client(freshDb())
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
@@ -276,26 +313,127 @@ describe('access control after gate removal', () => {
       workspaceId: ws.id, environmentId: await seedEnvironmentId(sys, ws), name: 'web', slug: 'web',
     } })
 
-    const rows = await db.$setAuth({ userId: 'u1', role: 'user' }).app.findMany({ limit: 1 })
-    expect(rows.length).toBe(1)
+    const viewer = db.$setAuth(as('viewer'))
+    expect((await viewer.app.findMany({ limit: 1 })).length).toBe(1)
+    await expect(viewer.project.create({ data: { workspaceId: ws.id, name: 'p', slug: 'p' } }))
+      .rejects.toThrow(/requires level 4/)
     db.$close()
   })
 
-  test('@guarded/@encrypted STILL protect without gates — field policy is not GatePlugin', async () => {
-    // Field policy keys on asSystem(), not on a level, so removing gates does
-    // not expose a single protected column. This is the safety net for the
-    // whole decision.
+  test('a developer writes apps and cannot read a secret', async () => {
     const db  = await client(freshDb())
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
-    await sys.secret.create({ data: {
-      workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{"priv":"STILL-PROTECTED"}',
+    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
+
+    const dev = db.$setAuth(as('developer'))
+    const created = await dev.project.create({ data: { workspaceId: ws.id, name: 'p', slug: 'p' } })
+    expect(created.id).toBeTruthy()
+    // Secret is the admin tier — and this is the one level that is NOT the same
+    // question as @guarded: the column would be hidden anyway, the ROW is what
+    // a developer may not list.
+    await expect(dev.secret.findMany({ limit: 1 })).rejects.toThrow(/requires level 5/)
+    db.$close()
+  })
+
+  test('an admin reads secrets; only an owner deletes the workspace', async () => {
+    const db  = await client(freshDb())
+    const sys = db.asSystem()
+    const ws  = await seedWorkspace(sys)
+    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
+
+    const admin = db.$setAuth(as('admin'))
+    expect((await admin.secret.findMany({ limit: 1 })).length).toBe(1)
+    // remove() on a @@softDelete model is an UPDATE, so this is the update
+    // position of the gate (5) rather than the delete one (6) — which is why
+    // Workspace is written "1.1.5.6" and not "1.1.5.5": the hard delete is the
+    // owner's, and an admin archiving a workspace is a different act.
+    await expect(admin.workspace.delete({ where: { id: ws.id } })).rejects.toThrow(/requires level 6/)
+
+    const owner = db.$setAuth(as('owner'))
+    expect(await owner.workspace.delete({ where: { id: ws.id } })).toBeTruthy()
+    db.$close()
+  })
+
+  test('isSystemAdmin outranks membership — and still cannot read User', async () => {
+    const db  = await client(freshDb())
+    const sys = db.asSystem()
+    const ws  = await seedWorkspace(sys)
+    await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
+
+    // No membership anywhere, so the workspace ladder gives nothing.
+    const sa = db.$setAuth({ id: 'u9', userId: 'u9', isSystemAdmin: true })
+    expect((await sa.secret.findMany({ limit: 1 })).length).toBe(1)
+    // The identity models are @@gate("8"): the hub's own screens read them
+    // through asSystem() for exactly this reason, and that is auth's design
+    // rather than a workaround.
+    await expect(sa.user.findMany({ limit: 1 })).rejects.toThrow(/SYSTEM access/)
+    db.$close()
+  })
+
+  test('a suspended principal is STRANGER at the Data boundary, membership or not', async () => {
+    // The app refuses a suspended caller at two doors already (login, and an
+    // app-level before hook). This is the third, and it is the only one an
+    // engine calling a service in-process passes through.
+    const db  = await client(freshDb())
+    const sys = db.asSystem()
+    const ws  = await seedWorkspace(sys)
+    await sys.app.create({ data: {
+      workspaceId: ws.id, environmentId: await seedEnvironmentId(sys, ws), name: 'web', slug: 'web',
     } })
 
-    const [row] = await db.$setAuth({ userId: 'u1', role: 'admin' }).secret.findMany({ limit: 1 })
-    expect(row.name).toBe('k')
-    expect('data' in row).toBe(false)
+    const suspended = db.$setAuth(as('owner', { status: 'suspended' }))
+    await expect(suspended.app.findMany({ limit: 1 })).rejects.toThrow(/requires level 2, user has level 0/)
     db.$close()
+  })
+
+  test('an authenticated caller with no workspace reads Workspace and nothing else', async () => {
+    // VISITOR(1) is the level a fresh login holds before it names a workspace,
+    // and Workspace is the one model it must be able to read — otherwise the
+    // screen that lists the workspaces you could act in cannot load.
+    const db  = await client(freshDb())
+    const sys = db.asSystem()
+    await seedWorkspace(sys)
+
+    const fresh = db.$setAuth({ id: 'u1', userId: 'u1' })
+    expect((await fresh.workspace.findMany({ limit: 1 })).length).toBe(1)
+    await expect(fresh.server.findMany({ limit: 1 })).rejects.toThrow(/requires level 2/)
+    db.$close()
+  })
+
+  test('the audit trail cannot be rewritten from inside the application', async () => {
+    // AuditEvent is "5.8.9.9". 9 is LOCKED, which asSystem() does not pass
+    // either — the one gate here that is aimed at the app rather than at its
+    // callers. It is also why db/seed.js --force cannot clear the table and
+    // lets the workspace FK cascade do it.
+    const db  = await client(freshDb())
+    const sys = db.asSystem()
+    const ws  = await seedWorkspace(sys)
+    const ev  = await sys.auditEvent.create({ data: {
+      workspaceId: ws.id, actorId: 'u1', action: 'servers.drain',
+      subjectType: 'servers', subjectId: 's1',
+    } })
+
+    await expect(sys.auditEvent.update({ where: { id: ev.id }, data: { action: 'nothing.happened' } }))
+      .rejects.toThrow(/LOCKED/)
+    await expect(sys.auditEvent.deleteMany({})).rejects.toThrow(/LOCKED/)
+    // An admin still reads it — that is the audit screen.
+    expect((await db.$setAuth(as('admin')).auditEvent.findMany({ limit: 1 })).length).toBe(1)
+    db.$close()
+  })
+
+  test('the levels are the ones the ladder documents', () => {
+    // Cheap, and it is what keeps core/gate.ts's header block honest.
+    expect(basecampGateLevel(null)).toBe(LEVELS.STRANGER)
+    expect(basecampGateLevel({ userId: 'u' })).toBe(LEVELS.VISITOR)
+    expect(basecampGateLevel(as('viewer'))).toBe(LEVELS.READER)
+    expect(basecampGateLevel(as('billing'))).toBe(LEVELS.READER)
+    expect(basecampGateLevel(as('developer'))).toBe(LEVELS.USER)
+    expect(basecampGateLevel(as('admin'))).toBe(LEVELS.ADMINISTRATOR)
+    expect(basecampGateLevel(as('owner'))).toBe(LEVELS.OWNER)
+    expect(basecampGateLevel(as('viewer', { isSystemAdmin: true }))).toBe(LEVELS.SYSADMIN)
+    // A role the mapping does not know fails closed rather than upward.
+    expect(basecampGateLevel(as('auditor'))).toBe(LEVELS.VISITOR)
   })
 
   test('re-adding a single gate would re-arm the auto-install — the trap, pinned', async () => {
@@ -311,6 +449,106 @@ describe('access control after gate removal', () => {
     const db = await createClient({ schema: gatedSchema, db: ':memory:' })
     await expect(db.$setAuth({ userId: 'u1', role: 'admin' }).thing.findMany({ limit: 1 }))
       .rejects.toThrow(/ACCESS_DENIED|requires level/)
+    db.$close()
+  })
+})
+
+// ─── Access control — the row policy ─────────────────────────────────────────
+// `@@gate` answers *may this caller touch Server at all*; `@@allow` answers
+// *which servers*. Server is the first model to declare one, and these run it
+// with no service and no hook in the picture — a where-clause in a service
+// would pass every one of these whether the policy existed or not.
+//
+// `workspaceId` reaches auth() the same way `memberRole` does: applyStanding()
+// puts both on the principal, once per request, for the workspace being
+// addressed.
+
+describe('Server — @@allow, the tenancy the gate cannot express', () => {
+
+  /** Two workspaces, one server in each. Returns both ids. */
+  async function twoTenants(sys: any) {
+    const a = await seedWorkspace(sys)
+    const b = await sys.workspace.create({ data: {
+      accountId: a.accountId, ownerId: a.ownerId,
+      name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
+    } })
+    await sys.server.create({ data: { workspaceId: a.id, name: 'a1', slug: 'a1' } })
+    await sys.server.create({ data: { workspaceId: b.id, name: 'b1', slug: 'b1' } })
+    return { a, b }
+  }
+
+  test('a caller reads the servers of the workspace on their principal, and no others', async () => {
+    const db      = await client(freshDb())
+    const sys     = db.asSystem()
+    const { a }   = await twoTenants(sys)
+
+    // No `where`. Anything that comes back beyond a1 came back because nothing
+    // filtered it — which is what the whole declaration is for.
+    const rows = await db.$setAuth(as('admin', { workspaceId: a.id })).server.findMany({})
+    expect(rows.map((r: any) => r.name)).toEqual(['a1'])
+    expect(await db.$setAuth(as('admin', { workspaceId: a.id })).server.count()).toBe(1)
+    db.$close()
+  })
+
+  test('naming another workspace does not reach its rows', async () => {
+    const db          = await client(freshDb())
+    const sys         = db.asSystem()
+    const { a, b }    = await twoTenants(sys)
+    const other       = await sys.server.findFirst({ where: { workspaceId: b.id } })
+
+    const caller = db.$setAuth(as('owner', { workspaceId: a.id }))
+    expect(await caller.server.findUnique({ where: { id: other.id } })).toBeNull()
+    // A filter that asks for the other tenant by name is answered, not obeyed.
+    expect(await caller.server.findFirst({ where: { workspaceId: b.id } })).toBeNull()
+    db.$close()
+  })
+
+  test('a server cannot be created into, or moved into, another workspace', async () => {
+    const db       = await client(freshDb())
+    const sys      = db.asSystem()
+    const { a, b } = await twoTenants(sys)
+    const mine     = await sys.server.findFirst({ where: { workspaceId: a.id } })
+
+    const caller = db.$setAuth(as('admin', { workspaceId: a.id }))
+    await expect(caller.server.create({ data: { workspaceId: b.id, name: 'x', slug: 'x' } }))
+      .rejects.toThrow(/denied by @@allow/)
+    // The post-update half: the row was the caller's when the UPDATE matched it
+    // and would not be afterwards, so it rolls back.
+    await expect(caller.server.update({ where: { id: mine.id }, data: { workspaceId: b.id } }))
+      .rejects.toThrow(/denied by @@allow/)
+    expect((await sys.server.findUnique({ where: { id: mine.id } })).workspaceId).toBe(a.id)
+    db.$close()
+  })
+
+  test('a workspace carries only its own servers through an include', async () => {
+    // The include path builds its own SQL, and until litestone FJS-150 it applied
+    // no policy at all — so this is the leak the declaration would otherwise
+    // still have: one join away from a model that filters correctly.
+    const db       = await client(freshDb())
+    const sys      = await db.asSystem()
+    const { a, b } = await twoTenants(sys)
+
+    const rows = await db.$setAuth(as('admin', { workspaceId: a.id }))
+      .workspace.findMany({ include: { servers: true } })
+    const mine   = rows.find((w: any) => w.id === a.id)
+    const theirs = rows.find((w: any) => w.id === b.id)
+    expect(mine.servers.map((s: any) => s.name)).toEqual(['a1'])
+    expect(theirs?.servers ?? []).toEqual([])
+    db.$close()
+  })
+
+  test('a principal with no workspace matches nothing — quietly, which is the failure shape', async () => {
+    // A policy filters; it does not refuse. So a path that forgot to resolve a
+    // workspace and is not asSystem() produces an empty screen rather than an
+    // error, and that is what to look for when one goes blank.
+    const db  = await client(freshDb())
+    const sys = db.asSystem()
+    await twoTenants(sys)
+
+    expect(await db.$setAuth(as('owner')).server.findMany({})).toEqual([])
+    // asSystem() is the deliberate way across — the engines, the hub and the
+    // agent's heartbeat all take it.
+    expect((await sys.server.findMany({})).length).toBe(2)
     db.$close()
   })
 })

@@ -18,7 +18,7 @@ This file describes what it currently does.
 
 | Realm | State |
 | --- | --- |
-| **Data** (`db/`) | **Real.** `schema.lite` is the seed — 37 models, 21 enums, 0 errors / 0 warnings; the migration is generated from it and verified against a fresh database |
+| **Data** (`db/`) | **Real.** `schema.lite` is the seed — 37 models, 21 enums, 0 errors / 0 warnings; the migration is generated from it and verified against a fresh database. **All 37 declare `@@gate`** (2026-08-10), graded per WORKSPACE by `api/src/core/gate.ts`. **One declares `@@allow`** — `Server`, the first of the row-level tenancy the other 36 still keep in service where-clauses |
 | **API** (`api/`) | **Real.** **21 services** + 3 engines on Litestone accessors, zero raw SQL. Twenty are workspace-scoped; `hub` is the one that is not — it takes no workspace at all and sits behind `requireSystemAdmin` |
 | **UI** (`web/`) | **Real.** Sierra SPA over every service — 39 route files, driven end to end in a browser by `bun run verify`, and the BUILT output probed by `bun run verify:build` |
 
@@ -604,33 +604,42 @@ porting the JSX first would only produce more screens reading hardcoded arrays.
 ## Ordered next steps
 
 
-*Steps 1–3 are tracked as **`FJS-007`** (no `@@gate`), **`FJS-032`** (no
-invitation flow) and **`FJS-031`** (publishes on reads) in `../../ISSUES.md`.*
+*Steps 1–2 are tracked as **`FJS-032`** (no invitation flow) and **`FJS-031`**
+(publishes on reads) in `../../ISSUES.md`.*
 
-**Sequencing, decided 2026-08-06: gating goes LAST, after every screen.** It
-would be in the way while the app is still being built, and this is a long way
-from live. The cost is known and accepted — screens written before it will need
-revisiting, the sysadmin Users screen most of all, since `User` is meant to be
-`@@gate("8")` and even SYSADMIN does not pass. Screens flag it as they land.
+**`@@gate` landed 2026-08-10 and closed `FJS-007`** — deferred to last, as
+decided 2026-08-06, and it cost nothing to defer: the admin zone everyone
+expected to break was already written through `asSystem()` because `User` is
+`@@gate("8")`. All 37 models declare a level; the ladder is per WORKSPACE
+(`api/src/core/gate.ts`), which is the part `example/api/gate.ts` could not
+supply.
 
-1. **Declare `@@gate` in the schema.** *(Deferred to last — see above.)*
-   Access control is service hooks today,
-   which is weaker than the schema-declared version and the outstanding gap
-   against repo Invariant 6. The blocker is a per-workspace `getLevel` mapping
-   `WorkspaceMember.role` onto the 0–7 scale; intended levels are in
-   `db/README.md` §Access control and the pattern is `example/api/gate.ts`.
-   Expect the admin zone to break first — `User` is meant to be `@@gate("8")`,
-   which even SYSADMIN does not pass, so a member list will need `asSystem()`.
-2. **An invitation flow.** `/auth/register` creates a user with no account and
+**`@@allow` started the same day, on one model.** `Server` declares
+`@@allow('all', workspaceId == auth().workspaceId)`, graded off the workspace
+`applyStanding()` puts on the principal — the first *which rows* answer this app
+keeps in the schema rather than in a service where-clause. Proven by five tests
+in `db/test/schema.test.ts` that run with no service and no hook, which is the
+only arrangement where the policy is the thing acting. Declaring it found two
+Litestone defects sitting under the gate work as well: an `include:` enforced
+nothing the model it reached declared (`FJS-150`), and a post-update denial did
+not roll back on a model with a Json column (`FJS-151`).
+
+1. **Declare `@@allow` on the other 36.** One at a time, with `bun run verify`
+   between them. The line is never the work: **a policy filters where a gate
+   refuses**, so a read that legitimately crosses a workspace and is not
+   `asSystem()` starts matching nothing, with no error — an empty screen. The
+   three engines, the hub and the agent endpoints are already `asSystem()`, and
+   that audit is what has to precede each declaration.
+3. **An invitation flow.** `/auth/register` creates a user with no account and
    no workspace, so every scoped request 400s and they cannot create a workspace
    either. `addMember` needs an existing user id. Today the setup wizard is the
    only way in.
-3. **Narrow channel publishing to mutations.** Every service publishes after
+4. **Narrow channel publishing to mutations.** Every service publishes after
    every method, reads included, so a `GET` broadcasts the row to everyone
    connected to the workspace. Noise rather than a leak, but the wrong default.
-4. **`litestone types`** — 77 of this package's typecheck diagnostics are the
+5. **`litestone types`** — 77 of this package's typecheck diagnostics are the
    untyped-accessor class and would go with generated types.
-5. **Build the remaining 16 screens** — `FJS-101`, phased in `docs/SCREENS.md`
+6. **Build the remaining 16 screens** — `FJS-101`, phased in `docs/SCREENS.md`
    §What the order should be. Phases 1–8 are **done**: shell chrome; Portal and
    Activity; services over `AlertRule`/`Network`/`Secret`; `AppDetailView`;
    Channels and Flags; `ApiKey`; `Volume` — the first screen over a model nobody
@@ -641,11 +650,10 @@ revisiting, the sysadmin Users screen most of all, since `User` is meant to be
    app acts on a machine, both queued through Caravan's `fleet` queue.
 
    **Phase 10 is the sysadmin tier — `WorkspacesView`, `UsersView`, `FlagsView`
-   (hub scope) and `SysOverviewView`.** They are the last group whose blocker is
-   an API rather than a model, and `UsersView` is the one `FJS-007` breaks
-   first: `User` is meant to be `@@gate("8")`, which even SYSADMIN does not
-   pass, so any member list must go through `asSystem()`. Building it is
-   therefore also the sensible run-up to gating.
+   (hub scope) and `SysOverviewView`.** Done. It was the last group whose
+   blocker was an API rather than a model, and it was written against
+   `asSystem()` throughout because `User` is `@@gate("8")`, which even SYSADMIN
+   does not pass — so when the gates landed the day after, it needed no change.
 
    **Two things ruled before it starts** (2026-08-10, written up in
    `../../HANDOFF.md` § Next): a sysadmin is a COLUMN — `isSystemAdmin Boolean

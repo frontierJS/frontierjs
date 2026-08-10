@@ -148,6 +148,27 @@ describe('renderToHTML — server semantics (RULE 19)', () => {
     delete globalThis.__ssrMounted
   })
 
+  // An attachment runs when the element MOUNTS, and there is no mount here —
+  // the same reason $onMount is skipped above. Running it handed the function
+  // a happy-dom element, which implements no Web Animations API, so a
+  // component whose attachment animates threw `el.animate is not a function`
+  // and took the WHOLE render with it. `@frontierjs/ui`'s Toast was one, and
+  // it meant a Sierra `static` route carrying one could not be prerendered.
+  it('does not run an {@attach}, so an animating attachment cannot break a render', async () => {
+    let ran = 0
+    globalThis.__ssrAttached = () => { ran++ }
+    const Comp = await build(`<script>
+  function fade(el) {
+    globalThis.__ssrAttached()
+    el.animate([{ opacity: 0 }, { opacity: 1 }], 120)
+  }
+</script>
+<p {@attach fade}>hi</p>`)
+    expect(await renderToHTML(Comp)).toBe('<p>hi</p>')
+    expect(ran).toBe(0)
+    delete globalThis.__ssrAttached
+  })
+
   it('disposes what a render created — pages do not accumulate effects', () => {
     // The SSG shape: one process, many pages, a shared module-scope store.
     // Each render's effects used to stay subscribed to it forever; after N

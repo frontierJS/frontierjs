@@ -1286,6 +1286,9 @@ const res  = await posts.find({ status: 'published' }, { limit: 20 })
 res.data     // the rows
 res.total    // total matching — pagination works in the browser too
 const rows = await posts.findData({ status: 'published' })  // rows only
+// A find that answers anything but a list throws ResultShapeError, at the server
+// and in the browser. find means a list; a service answering one thing gives it
+// a name and is called as an action, which is handed back whole.
 
 // get(id) or get(query) → T  (query form uses $first routing)
 const post    = await posts.get(1)

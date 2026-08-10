@@ -185,9 +185,9 @@ export function createVolumesService(app: BasecampApp) {
     // ── usage — POST /volumes  X-Service-Method: usage ────────────────
     // Fleet totals: how much storage there is and how much of it is reclaimable.
     //
-    // Its own method rather than a key on `find`, because the envelope is built
-    // from `{total, limit, offset, data}` and nothing else — a summary returned
-    // beside them is dropped by wrapResult without a word. And it must be the
+    // Its own method rather than a key on `find`, because a list envelope holds
+    // `{total, limit, offset, data}` and nothing else — a summary returned
+    // beside them is refused by wrapResult. And it must be the
     // whole fleet rather than the page: a header stating "12 GB across the
     // fleet" from the first 50 rows is wrong exactly when it matters.
     async usage(ctx: ServiceContext) {

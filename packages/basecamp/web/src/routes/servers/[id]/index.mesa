@@ -89,17 +89,13 @@ title: Server
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 
   /**
-   * A custom method that returns a list comes back WRAPPED —
-   * `{ kind: 'list', object: 'servers', data: [...] }` — because the envelope
-   * is applied by method shape, not by method name. find() unwraps it for you;
-   * action() hands back exactly what the server sent.
+   * `action()` hands back exactly what the server sent, and a custom method
+   * that answers rows sends `{ total, limit, offset, data }` — only `find` is
+   * built into a list envelope.
    *
    * Assigning that object straight to `events` is not an error: `.length` is
    * undefined, so the page renders "No events recorded" over a full trail and
    * looks like a service that returned nothing.
-   *
-   * (`object` says 'servers' even though these rows are ServerEvents — the
-   * envelope names the service, not the model.)
    */
   const rowsOf = (result) => Array.isArray(result) ? result : result?.data ?? []
 

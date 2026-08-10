@@ -53,7 +53,16 @@ guide/decisions.js the Learn wizard's routing tree — questions and near
 guide/search.js    the ⌘K search: tokeniser, ranker, and the term entries built
                    from vocabulary.js. Also owns `slugify` — the section id and
                    the href a result builds to it must be one function
+vocabulary.json    GENERATED from vocabulary.js, committed, shipped. The
+                   consumer-readable half: the .js is a classic script and
+                   exports nothing, so nothing outside the guide could read
+                   it. Not built into dist/ — that is gitignored and wiped
+                   every build, so an install from git would find it missing.
+                   `bun run build:vocabulary` regenerates; the suite fails if
+                   it drifts (vocabulary.spec.js reads a verdict the runner
+                   computes by regenerating in memory)
 build.js           optional dist/ bundle
+build-vocabulary.js  vocabulary.js → vocabulary.json
 test/run.js        the harness
 ```
 

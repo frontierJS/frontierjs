@@ -73,7 +73,7 @@
   function handleImgError() { imgError = true }
 </script>
 
-<span class="fjs-avatar-wrap" style:inline-size={sz} style:block-size={sz} {class}>
+<span class="fjs-avatar-wrap" style:inline-size={sz} style:block-size={sz} {class} {...$attributes}>
   {#if showImage}
     <img
       class="avatar"

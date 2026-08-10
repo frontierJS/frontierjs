@@ -153,7 +153,7 @@ export function createCleanupService(app: BasecampApp) {
     // The vocabulary, fetched rather than copied into the bundle. Addresses the
     // COLLECTION: there is no subject run, which neither client could express
     // until `FJS-122`. A named key rather than `data`, so `wrapResult` treats it
-    // as a single and hands it over whole (`FJS-140`).
+    // as a single and hands it over whole.
     async targets(ctx: ServiceContext) {
       ctx.dispatch = false   // read-shaped
       return { targets: RECLAIM_TARGETS }

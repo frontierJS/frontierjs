@@ -1,5 +1,59 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-10 — auto-import recurses, and covers module bindings
+
+`autoImport.components` scanned one directory level and matched only tags, which
+made it the weaker half of what it was modelled on. Two changes.
+
+**Directories are scanned recursively**, keyed on the basename. A component's
+directory organises it; its name identifies it — the same split the repo already
+makes between a resource file and its accessor. `node_modules`, `dist` and
+dot-directories are skipped, because a misconfigured path otherwise walks the
+whole dependency graph before it fails.
+
+**`autoImport.modules` is a package → bindings map** — named, aliased, default
+and namespace forms. A module binding is not a tag, so it cannot be found the
+way a component is: identifier scanning replaces tag scanning for these, over
+`<script>` bodies and `{…}` expressions only. Template prose is not code, or
+`<p>Use dayjs</p>` would import `dayjs`; neither is a property access, an object
+key, a string or a comment. A name the file already binds — an explicit import
+or a local declaration — always wins, since injecting over either is a
+redeclaration the module will not parse.
+
+Both registries share one namespace, because the injected import is the same
+identifier whichever produced it: two sources providing one name is a build
+error naming both sides.
+
+`injectAutoImports()` still accepts the old `name → path` map, so a caller
+holding one is not silently skipped.
+
+833 tests — including a real Vite build over a nested fixture, since a prepended
+import can be syntactically fine and still land in the wrong block, and a
+missing injection does NOT fail a build: Mesa compiles a reference to an
+undefined name happily. Only what is in the bundle separates the two.
+
+## 2026-08-10 — `@version` follows the store, and a sub-set store cannot be overtaken
+
+The sierra half of `FJS-082`. Junction now refuses a `load()` that has been
+overtaken, and this package had two paths carrying the same defect.
+
+`createStore(service).find()` — the independent store for sub-sets — set its
+rows unconditionally, so it went wrong exactly the way `resource().load()` did.
+It now takes the same stamp-when-issued guard.
+
+The `@version` map was filled from `load()`'s return value, which was wrong in
+both directions once ordering matters: a load whose rows the store refused as
+stale still left its versions behind, and a WS push — which reaches the store as
+an upsert and passes through no call result at all — never updated them, so the
+row a second tab patched kept its pre-patch version here and the next patch from
+this tab 409'd against a number nobody had read. Versions are now recorded off
+the store, which is the one thing that knows what data is current. A `get`,
+`create`, `patch` or action result still records on the way out: a form reads a
+single record that never enters the list store, which is why the map exists
+apart from it.
+
+810 tests; `test:safety` 5/5; `example` `verify` 37/37 and `verify:build` 37/37.
+
 ## 2026-08-08 — `action()` can address a collection, and carry a query
 
 `resource.service.action(name, id, data, query)`: `id` may be null for an

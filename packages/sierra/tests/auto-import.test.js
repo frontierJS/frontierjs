@@ -8,7 +8,7 @@ import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 
-import { injectAutoImports, autoImportPlugin } from '../src/build/auto-import-plugin.js'
+import { injectAutoImports, autoImportPlugin, normalizeModules } from '../src/build/auto-import-plugin.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const TMP = join(__dirname, 'tmp-autoimport')
@@ -122,6 +122,117 @@ describe('injectAutoImports', () => {
   })
 })
 
+// ─── module bindings ──────────────────────────────────────────────────────────
+
+describe('normalizeModules', () => {
+  test('array of names → named imports', () => {
+    expect(normalizeModules({ 'svelte/store': ['writable', 'readable'] })).toEqual([
+      { local: 'writable', from: 'svelte/store', imported: 'writable', kind: 'named' },
+      { local: 'readable', from: 'svelte/store', imported: 'readable', kind: 'named' },
+    ])
+  })
+
+  test('tuple → aliased named import', () => {
+    expect(normalizeModules({ pkg: [['theme', 'appTheme']] })).toEqual([
+      { local: 'appTheme', from: 'pkg', imported: 'theme', kind: 'named' },
+    ])
+  })
+
+  test('object form covers default, star and named together', () => {
+    const out = normalizeModules({ pkg: { default: 'Pkg', star: 'ns', named: ['a'] } })
+    expect(out).toContainEqual({ local: 'Pkg', from: 'pkg', imported: null, kind: 'default' })
+    expect(out).toContainEqual({ local: 'ns',  from: 'pkg', imported: null, kind: 'star' })
+    expect(out).toContainEqual({ local: 'a',   from: 'pkg', imported: 'a',  kind: 'named' })
+  })
+
+  test('string shorthand is the default import', () => {
+    expect(normalizeModules({ dayjs: 'dayjs' })).toEqual([
+      { local: 'dayjs', from: 'dayjs', imported: null, kind: 'default' },
+    ])
+  })
+})
+
+describe('injectAutoImports — module bindings', () => {
+  const map = new Map([
+    ['writable', { kind: 'named',   from: 'svelte/store', imported: 'writable' }],
+    ['appTheme', { kind: 'named',   from: '@frontierjs/sierra', imported: 'theme' }],
+    ['ns',       { kind: 'star',    from: 'some/pkg', imported: null }],
+    ['dayjs',    { kind: 'default', from: 'dayjs', imported: null }],
+    ['Button',   { kind: 'default', from: '/src/components/UI/Button.mesa', imported: null }],
+  ])
+
+  test('injects a named import used in the script', () => {
+    const source = `<script>\n  const s = writable(0)\n</script>\n<div />`
+    expect(injectAutoImports(source, map)).toContain("import { writable } from 'svelte/store'")
+  })
+
+  test('injects an aliased named import', () => {
+    const source = `<script>\n  console.log(appTheme)\n</script>`
+    expect(injectAutoImports(source, map)).toContain(
+      "import { theme as appTheme } from '@frontierjs/sierra'"
+    )
+  })
+
+  test('injects a namespace import', () => {
+    const source = `<script>\n  ns.go()\n</script>`
+    expect(injectAutoImports(source, map)).toContain("import * as ns from 'some/pkg'")
+  })
+
+  test('injects for use in a template expression', () => {
+    const source = `<script></script>\n<p>{dayjs(x).format()}</p>`
+    expect(injectAutoImports(source, map)).toContain("import dayjs from 'dayjs'")
+  })
+
+  test('a name in template PROSE is not a use', () => {
+    const source = `<script></script>\n<p>Use dayjs to format writable dates.</p>`
+    expect(injectAutoImports(source, map)).toBe(source)
+  })
+
+  test('a property access is not a use', () => {
+    const source = `<script>\n  const x = store.writable\n</script>`
+    expect(injectAutoImports(source, map)).toBe(source)
+  })
+
+  test('an object KEY is not a use', () => {
+    const source = `<script>\n  const o = { writable: 1 }\n</script>`
+    expect(injectAutoImports(source, map)).toBe(source)
+  })
+
+  test('a name inside a string or comment is not a use', () => {
+    const source = `<script>\n  // writable is nice\n  const m = 'dayjs'\n</script>`
+    expect(injectAutoImports(source, map)).toBe(source)
+  })
+
+  test('a locally declared name wins over the registry', () => {
+    const source = `<script>\n  const dayjs = () => {}\n  dayjs()\n</script>`
+    expect(injectAutoImports(source, map)).toBe(source)
+  })
+
+  test('an explicit import wins over the registry', () => {
+    const source = `<script>\n  import { writable } from 'other'\n  writable(1)\n</script>`
+    const result = injectAutoImports(source, map)
+    expect([...result.matchAll(/import \{ writable \}/g)].length).toBe(1)
+  })
+
+  test('a component is only injected as a TAG, not as a bare identifier', () => {
+    const source = `<script>\n  const label = Button\n</script>\n<div />`
+    expect(injectAutoImports(source, map)).toBe(source)
+  })
+
+  test('components and module bindings inject together, sorted', () => {
+    const source = `<script>\n  const s = writable(0)\n</script>\n<Button />`
+    const result = injectAutoImports(source, map)
+    expect(result).toContain("import Button from")
+    expect(result).toContain("import { writable } from 'svelte/store'")
+    expect(result.indexOf('import Button')).toBeLessThan(result.indexOf('import { writable }'))
+  })
+
+  test('nested braces in a template expression are still code', () => {
+    const source = `<script></script>\n<p>{items.map(x => ({ id: dayjs(x) }))}</p>`
+    expect(injectAutoImports(source, map)).toContain("import dayjs from 'dayjs'")
+  })
+})
+
 // ─── autoImportPlugin scan ────────────────────────────────────────────────────
 
 describe('autoImportPlugin.scan', () => {
@@ -182,6 +293,72 @@ describe('autoImportPlugin.scan', () => {
 
     expect(ctx.autoImportMap.has('helpers')).toBe(false)
     expect(ctx.autoImportMap.has('utils')).toBe(false)
+  })
+
+  test('recurses into subdirectories', async () => {
+    const nested = join(TMP, 'components/UI/forms/deep')
+    await mkdir(nested, { recursive: true })
+    await writeFile(join(nested, 'TextField.mesa'), '<input />', 'utf8')
+
+    const ctx = { autoImportMap: new Map() }
+    const plugin = autoImportPlugin({ autoImport: { components: ['components/UI'] } }, ctx)
+    plugin.configResolved({ root: TMP, command: 'build' })
+    await plugin.buildStart.call({ warn: () => {} })
+
+    expect(ctx.autoImportMap.has('TextField')).toBe(true)
+    expect(ctx.autoImportMap.get('TextField').from).toContain('forms/deep')
+  })
+
+  test('skips node_modules and dot-directories', async () => {
+    await mkdir(join(TMP, 'components/UI/node_modules'), { recursive: true })
+    await writeFile(join(TMP, 'components/UI/node_modules/Vendor.mesa'), '<i />', 'utf8')
+    await mkdir(join(TMP, 'components/UI/.cache'), { recursive: true })
+    await writeFile(join(TMP, 'components/UI/.cache/Cached.mesa'), '<i />', 'utf8')
+
+    const ctx = { autoImportMap: new Map() }
+    const plugin = autoImportPlugin({ autoImport: { components: ['components/UI'] } }, ctx)
+    plugin.configResolved({ root: TMP, command: 'build' })
+    await plugin.buildStart.call({ warn: () => {} })
+
+    expect(ctx.autoImportMap.has('Vendor')).toBe(false)
+    expect(ctx.autoImportMap.has('Cached')).toBe(false)
+  })
+
+  test('modules alone are enough to make a plugin', () => {
+    const plugin = autoImportPlugin({ autoImport: { modules: { dayjs: 'dayjs' } } }, {})
+    expect(plugin?.name).toBe('sierra:auto-import')
+  })
+
+  test('buildStart registers module bindings alongside components', async () => {
+    const ctx = { autoImportMap: new Map() }
+    const plugin = autoImportPlugin({
+      autoImport: {
+        components: ['components/UI'],
+        modules: { 'svelte/store': ['writable'] },
+      },
+    }, ctx)
+    plugin.configResolved({ root: TMP, command: 'build' })
+    await plugin.buildStart.call({ warn: () => {} })
+
+    expect(ctx.autoImportMap.get('writable')).toEqual({
+      local: 'writable', from: 'svelte/store', imported: 'writable', kind: 'named',
+    })
+    expect(ctx.autoImportMap.has('Button')).toBe(true)
+  })
+
+  test('a module binding colliding with a component is a build error', async () => {
+    const ctx = { autoImportMap: new Map() }
+    const plugin = autoImportPlugin({
+      autoImport: {
+        components: ['components/UI'],
+        modules: { 'some/pkg': ['Button'] },
+      },
+    }, ctx)
+    plugin.configResolved({ root: TMP, command: 'build' })
+
+    await expect(
+      plugin.buildStart.call({ warn: () => {} })
+    ).rejects.toThrow(/naming conflict.*Button/s)
   })
 
   test('throws on naming conflict between two dirs', async () => {

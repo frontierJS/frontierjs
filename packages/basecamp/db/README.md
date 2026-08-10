@@ -85,41 +85,68 @@ column would make user creation throw.
 
 ## Access control
 
-**No model declares `@@gate` today. That is a gap against `docs/VISION.md`
-constraint 3 and repo Invariant 6, not a decision.** A 2026-08-04 ruling that
-excused it was withdrawn the same day, once `example/` proved its premise wrong
-by running it.
+**Every model declares `@@gate`.** `api/src/core/gate.ts` is the resolver and
+`api/src/core/hooks.ts`'s `applyStanding()` is what feeds it; the full ruling is
+`DECISIONS.md` § Access control (2026-08-10).
 
-Half of the original reasoning still holds, and it is a real trap: Litestone
-treats a declared-but-unenforced gate as a fail-open default, so a schema
-carrying **any** `@@gate` auto-installs
-`GatePlugin({ getLevel: FrontierGateGetLevel })` when the app supplies none.
-Supplying your own replaces it; supplying none does *not* disable it.
+**The level is a fact about a caller IN A WORKSPACE, not about their user row.**
+That is the whole reason this app could not use `example/`'s four-line
+`getLevel`: `sessionGateLevel()` grades standing that travels with the user, and
+the same person here is `owner` in one workspace and `viewer` in the next.
 
-That shipped default **used to** reject every `@frontierjs/auth` session, which
-is where the withdrawn ruling came from. It was fixed on 2026-08-04: it had
-tested `!user.verifiedAt`, collapsing "the app does not model verification"
-(absent) into "this user is unverified" (`null`). It now honours the documented
-contract, so a verified auth session grades `USER(4)` through the default alone.
-Supplying a `getLevel` is still right — the default cannot know what your `role`
-strings mean — but forgetting one no longer 403s the whole API.
+| | |
+| --- | --- |
+| no session, or `suspended` | STRANGER (0) |
+| authenticated, no membership in the workspace named | VISITOR (1) — reads `Workspace`, nothing else |
+| `viewer` · `billing` | READER (2) |
+| `developer` | USER (4) |
+| `admin` | ADMINISTRATOR (5) |
+| `owner` | OWNER (6) |
+| `User.isSystemAdmin` | SYSADMIN (7) |
+| `asSystem()` | SYSTEM (8) — engines, agents, the seed, migrations |
 
-The other half was wrong. An app is expected to supply its own `getLevel`, and
-Junction ships the general case: `sessionGateLevel()` grades a verified user
-`USER(4)`, and a one-line wrapper reading `role` grades an admin
-`ADMINISTRATOR(5)`. Verified end to end in `example/` — see `example/api/gate.ts`,
-which is four lines.
+CREATOR(3) is unused: the narrowest role reads and the next one up writes.
 
-What Basecamp needs on top of that pattern is the per-request part: a `getLevel`
-that resolves the request's active workspace and maps `WorkspaceMember.role`
-onto the 0–7 scale. **Access control today is service hooks**
-(`requireWorkspaceRole`, `scopeToWorkspace`), which is weaker and should be
-replaced.
+The trap that remains real, and is not about this app: a schema carrying **any**
+`@@gate` auto-installs `GatePlugin({ getLevel: FrontierGateGetLevel })` when the
+app supplies none. Supplying your own replaces it; supplying none does *not*
+disable it. `core/db.ts` supplies one — and the tests in `db/test/schema.test.ts`
+install the same one, so they assert against the levels the API actually runs
+rather than a stand-in's.
+
+**What a gate does not do is scope rows.** It answers *may this caller touch
+Server at all*, never *may they touch THAT server*. That is `@@allow`, and
+**`Server` is the first model here to declare one**:
+
+```
+@@allow('all', workspaceId == auth().workspaceId)
+```
+
+`workspaceId` reaches `auth()` the same way `memberRole` does — `applyStanding()`
+resolves the workspace being addressed once per request and puts both on the
+principal. So the declaration is the same fact the service where-clauses already
+filter on, moved to where it cannot be omitted: compiled into the SQL of every
+read, update and delete from a scoped client, and checked in JS before a create.
+Five tests in `db/test/schema.test.ts` run it with no service and no hook in the
+picture, which is the only way to tell the policy from the where-clause.
+
+**A policy filters where a gate refuses**, and that is the whole risk in the
+remaining 36. A read that legitimately crosses a workspace and is not
+`asSystem()` matches nothing — no error, an empty screen. The paths that do
+cross are the three engines, the hub and the agent's heartbeat, and every one of
+them already takes `asSystem()`. Do one model at a time and run `bun run verify`
+between them.
+
+One thing had to be fixed in Litestone before the declaration was worth
+anything: **an `include:` applied no access rule of the model it reached** — not
+the policy, not the gate, not `@guarded` (litestone `FJS-150`). A model that
+filters correctly on its own is one join away from a parent that does not.
 
 ### What is still enforced at the Data boundary
 
 `@guarded` and `@encrypted` are **field policy keyed on `asSystem()`, not
-GatePlugin**, so removing gates exposed nothing:
+GatePlugin**, so no level reaches them — an ADMINISTRATOR(5) clears
+`Secret.read` and still gets no `data` key:
 
 - `Secret.data` is still AES-256-GCM encrypted at rest — the plaintext key is
   absent from the database file.
@@ -130,61 +157,39 @@ GatePlugin**, so removing gates exposed nothing:
 All three are pinned by tests in `db/test/schema.test.ts`, including one that
 re-arms a gate in an inline schema to keep the auto-install trap documented.
 
-### The intended gates, kept so the design is not lost
+### The declared gates
 
-This is what goes back in with a working resolver. Minimum level to **read**:
+**`schema.lite` is the list — this section is only what the numbers cannot
+say.** A table here would be a second copy of 37 declarations and would go stale
+on the first one anyone edits.
 
-| read requires | models |
-|---|---|
-| `USER` (4) | `Workspace` `WorkspaceMember` `Project` `Environment` `App` `AppServer` `AppNetwork` `Server` `ServerEvent` `Network` `ServerNetwork` `Deployment` `DeploymentStep` `Job` `JobRun` `AlertRule` `AlertEvent` |
-| `ADMIN` (5) | `Secret` `AuditEvent` |
-| `OWNER` (6) | `Account` |
-| `SYSTEM` (8) | `User` `Credential` `Session` `Verification` |
+The shape of them: an ordinary workspace model is `"2.4.4.5"` (a viewer reads, a
+developer writes, an admin deletes), a model in the admin tier is `"2.5"` or
+`"5"`, a model only a machine writes has an 8 in its write positions, and the
+identity models auth owns are `"8"` throughout.
 
-The fleet-action models, added 2026-08-10, and the one thing about them that is
-not obvious: **reading a recipe means reading its script**, which is the whole
-payload, so it sits a level above the machine facts around it.
+Where the levels came from: the `requireWorkspaceRole` calls the services were
+already making. Two places the shipped levels differ from what this document
+recorded before they landed, both because a path reads what it needs:
 
-| read requires | models |
-|---|---|
-| `USER` (4) | `DiskUsage` `CleanupRun` `RecipeRun` |
-| `ADMIN` (5) | `Recipe` |
+- **`Recipe` reads at 4, not 5.** Authoring is an admin's act and running is a
+  developer's — but running one means reading its script, so a read gate above
+  `developer` refuses the person the service is written to allow.
+- **The machine-written models read at 2 and take 8 only on the writes the
+  ENGINE makes.** `ServerEvent`, `DeploymentStep`, `RecipeRun` and `CleanupRun`
+  are created as a side effect of a person's action, through that person's own
+  client; it is the later advance-the-run updates that no caller may make.
 
-Writes follow the split the services already enforce: `Recipe` create/update/
-delete are ADMIN (authoring is the privileged act), `RecipeRun` and `CleanupRun`
-are SYSTEM on every verb (only the engine writes one), and `DiskUsage` is SYSTEM
-throughout — a row exists because an agent reported it, and nobody authors one.
-
-*The models added in phases 4–8 — `Domain`, `NotificationChannel`,
-`AlertRuleChannel`, `FeatureFlag`, `FlagOverride`, `ApiKey`, `Volume`,
-`Dashboard`, `DashboardWidget` — are not in these tables yet. Whoever lands
-`FJS-007` writes their levels; the services' `requireWorkspaceRole` calls are
-the current evidence of what each was intended to be.*
-
-Writes are stricter than reads wherever the action is operational rather than
-editorial — a few worth knowing:
-
-| | create | update | delete |
-|---|---|---|---|
-| `App`, `Project`, `Job` | USER | USER | ADMIN |
-| `Server`, `Environment` | ADMIN | ADMIN | OWNER |
-| `Deployment` | USER | **SYSTEM** | **SYSADMIN** |
-| `AppServer`, `JobRun`, `DeploymentStep`, `ServerEvent` | SYSTEM | SYSTEM | SYSTEM |
-| `AuditEvent` | SYSTEM | **LOCKED** | **LOCKED** |
-
-A person starts a deployment; only the engine advances it, and erasing
-deployment history takes a SYSADMIN. Placement, job runs and step output are
-written by engines and never by hand.
-
-Two properties of that design worth carrying forward when it returns:
+Two properties worth knowing, both verified by running:
 
 - **`User` at SYSTEM (8) means even SYSADMIN cannot read it** — any service
-  listing workspace members must go through `asSystem()`. That is auth's own
-  design and it fails closed.
-- **`AuditEvent` update/delete at LOCKED (9) is not passable by `asSystem()`** —
-  verified by running it. The audit trail cannot be rewritten from inside the
-  application. Worth restoring first: it is the one gate that protects against
-  the application itself.
+  listing workspace members goes through `asSystem()`. That is auth's own design
+  and it fails closed. The hub was written that way two phases before the gates
+  landed, which is why it needed no change.
+- **`AuditEvent` update/delete at LOCKED (9) is not passable by `asSystem()`.**
+  The audit trail cannot be rewritten from inside the application — the one gate
+  here aimed at the app rather than at its callers. `db/seed.js --force` cannot
+  clear the table and lets the workspace FK cascade do it.
 
 `Secret.data` is `@encrypted`, which implies `@guarded(all)`: an ADMIN listing
 secrets gets `id`, `name`, `kind` and **no `data` key at all**, `asSystem()`

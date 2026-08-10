@@ -32,7 +32,7 @@
   const countLabel = `${total} member${total === 1 ? '' : 's'}`
 </script>
 
-<div class="avatars" {class}>
+<div class="avatars" {class} {...$attributes}>
   {#if showCount}
     <span class="visually-hidden">{countLabel}</span>
   {/if}

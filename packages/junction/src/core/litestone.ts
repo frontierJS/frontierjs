@@ -863,6 +863,137 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
   }
 }
 
+// ─── An announcement is about a ROW ─────────────────────────────────────────
+//
+// A custom method may answer whatever it likes — but the same value is what
+// gets announced, and a subscriber has nowhere to put anything that is not a
+// row. The browser's store upserts BY ID and replaces wholesale, so:
+//
+//   { ok, server_id, status }   no id  → appended as a phantom row
+//   { id, variables }           partial → replaces the row, losing the rest
+//
+// Both silent, in every open tab. Basecamp shipped four of them — `setVariable`,
+// the deployment engine's five-field projection, the server heartbeat and
+// `jobs.trigger` — and each was found by looking at a screenshot, because a
+// page doing the obvious thing (`environment = await …setVariable(…)`) rendered
+// "undefined" as its heading with every other assertion still passing. *A
+// partial row is indistinguishable from a full one until it breaks* (`FJS-020`,
+// ruled by `FJS-D08`).
+//
+// So the announcement carries the row: the payload when it already is one,
+// otherwise the row re-read by id. When there is no id to re-read by, nothing
+// is announced — a phantom row in every subscriber is worse than silence — and
+// the service is told once, by name, with both ways out.
+//
+// Only model services are subject to this. A service with no model has no row
+// for its answer to be a partial version of, so its payload travels untouched.
+
+const _announceWarned = new Set<string>()
+
+/** Test seam — the warning is once per service.method for the life of the process. */
+export function resetAnnouncementWarnings(): void { _announceWarned.clear() }
+
+const _columnsFor = new WeakMap<object, Map<string, Set<string> | null>>()
+
+/** The columns the model declares, or null when the model cannot be resolved. */
+async function modelColumns(client: unknown, accessor: string): Promise<Set<string> | null> {
+  const c = client as { $schema?: unknown } | null
+  if (!c || typeof c !== 'object') return null
+
+  let perModel = _columnsFor.get(c as object)
+  if (!perModel) { perModel = new Map(); _columnsFor.set(c as object, perModel) }
+  if (perModel.has(accessor)) return perModel.get(accessor)!
+
+  const jsonSchema = await _deriveJsonSchema(client)
+  const defsKey    = jsonSchema ? resolveDefsKey(jsonSchema, accessor, c.$schema) : null
+  const def        = defsKey ? jsonSchema!.$defs[defsKey] as { properties?: Record<string, unknown> } : null
+  const cols       = def?.properties ? new Set(Object.keys(def.properties)) : null
+
+  perModel.set(accessor, cols)
+  return cols
+}
+
+/** The accessor's table on this client, without tripping the throw-on-unknown proxy. */
+function tableFor(client: unknown, accessor: string): { findFirst?: Function } | null {
+  const c = client as Record<string, unknown> | null
+  if (!c) return null
+  for (const candidate of accessorCandidates(accessor)) {
+    // `in` rather than a read: a Litestone client THROWS on an unknown property
+    // rather than answering undefined, so probing by reading is an explosion.
+    if (candidate in c) return c[candidate] as { findFirst?: Function }
+  }
+  return null
+}
+
+/**
+ * What this call should announce — the row, or nothing.
+ *
+ * Returns the payload unchanged for anything this cannot judge (no model, no
+ * client, an unresolvable accessor): *I cannot tell* is not *this is wrong*.
+ */
+export async function announcementPayload(
+  ctx:      ServiceContext,
+  payload:  unknown,
+  accessor: string | undefined,
+  idField:  string = 'id'
+): Promise<unknown> {
+  if (!accessor) return payload
+  const client = ctx.locals?.db
+  if (!client) return payload
+
+  const columns = await modelColumns(client, accessor)
+  if (!columns || columns.size === 0) return payload
+
+  const keys    = payload && typeof payload === 'object' ? new Set(Object.keys(payload)) : new Set<string>()
+  const missing = [...columns].filter(c => !keys.has(c))
+  // Extra keys are fine — `{ ...job, queued: true }` is the whole row and a
+  // flag, which is a row. Only an omission makes it a projection.
+  if (missing.length === 0) return payload
+
+  const id = (payload as Record<string, unknown> | null)?.[idField] ?? ctx.id
+  const named = `${ctx.service}.${ctx.method}`
+  const shown = missing.slice(0, 6).join(', ') + (missing.length > 6 ? `, +${missing.length - 6} more` : '')
+
+  if (id != null) {
+    try {
+      const table = tableFor(client, accessor)
+      const row   = await table?.findFirst?.({ where: { [idField]: id } })
+      if (row) {
+        warnOnce(named,
+          `[Junction] ${named}() answered ${keys.size} of ${columns.size} columns — missing ${shown}. ` +
+          `The announcement carries the row instead, re-read by ${idField}; the CALLER still gets the ` +
+          `projection, and a page assigning it over the record it renders loses those fields. Answer the ` +
+          `whole row, or state the payload with ctx.dispatch.`)
+        return row
+      }
+    } catch {
+      // A refused or failed re-read is not worth taking the call down for —
+      // fall through to the suppression below, which says so.
+    }
+  }
+
+  // No row to be found, so the payload travels as the SIGNAL it is. Dropping it
+  // was the first design and it was wrong: an action that changes many rows
+  // (`volumes.report` — added, updated, forgotten) has no single row to carry,
+  // and its subscribers use the event as a trigger to re-read rather than as a
+  // record. Suppressing would have stopped a live screen updating with nothing
+  // but a server-side line to say why — the same silent failure this exists to
+  // remove. The phantom-row half is closed on the client instead, where
+  // `Store.upsert` refuses a record with no id.
+  warnOnce(named,
+    `[Junction] ${named}() announced something that is not a ${accessor} row — missing ${shown}` +
+    `${id == null ? ', and carries no id to re-read one by' : ', and no row answered to that id'}. ` +
+    `Subscribers can use it as a signal but cannot merge it into a record. Answer the row, or say what ` +
+    `you mean with ctx.dispatch = <value> (which silences this), or ctx.dispatch = false to announce nothing.`)
+  return payload
+}
+
+function warnOnce(key: string, message: string): void {
+  if (_announceWarned.has(key)) return
+  _announceWarned.add(key)
+  console.warn(message)
+}
+
 // ─── Filter keys derived from the model ─────────────────────────────────────
 //
 // `GET /products?bogusColumn=7` answered `200 {"data":[],"total":0}`. So did a

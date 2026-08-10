@@ -155,6 +155,7 @@
     on:focus={onfocus}
     on:keydown={onkeydown}
     on:keypress={onkeypress}
+    {...$attributes}
   />
 {/snippet}
 

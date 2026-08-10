@@ -77,7 +77,7 @@
   }
 </script>
 
-<div class="field-group" {class}>
+<div class="field-group" {class} {...$attributes}>
 
   <!-- Label row: label + optional remove-key × button -->
   {#if type !== 'hidden' && resolvedLabel}

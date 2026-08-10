@@ -64,6 +64,7 @@
     style:flex-direction={isBottom ? 'column-reverse' : 'column'}
     aria-live="polite"
     aria-label="Notifications"
+    {...$attributes}
   >
     {#each visibleItems as toast (toast.id)}
       <Toast

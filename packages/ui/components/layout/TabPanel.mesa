@@ -36,6 +36,7 @@
       tabindex="0"
       class="view"
       {class}
+      {...$attributes}
     >
       <slot />
     </article>
@@ -54,6 +55,7 @@
     hidden={!isActive}
     class="view"
     {class}
+    {...$attributes}
   >
     <slot />
   </article>

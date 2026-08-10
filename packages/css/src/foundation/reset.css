@@ -10,7 +10,10 @@
  * Everything else is a class. A reset that starts styling `p`, `ul` or
  * `body` has started deciding what a host app's un-classed markup looks
  * like, which is the one thing the package has always refused to do —
- * see the note on `.app` in components/frame.css.
+ * see the note on `.app` in components/frame.css. The `body { margin }`
+ * rule below is the one exception, and it is here because it meets the
+ * bar above rather than despite it: the term that would fix it cannot
+ * always be on the element that carries the default.
  *
  * ── Layer placement ──────────────────────────────────────────────────
  *
@@ -48,4 +51,32 @@
  */
 a:where([class]) {
   text-decoration: none;
+}
+
+/*
+ * ── The UA's 8px on the body ─────────────────────────────────────────
+ *
+ * `body { margin: 8px }` is a UA default, and the App term already zeroes
+ * it — but only when `.app` is ON the body, which is where the vocabulary
+ * says it goes. An app that cannot put it there gets the margin back, and
+ * that is not a rare mistake: a client-rendered app whose root does
+ * `root.innerHTML = …` must render into an inner element, because anything
+ * else in the body gets deleted mid-run. The package's own guide is that
+ * app — its four classic scripts live in the body — so `.app` sits on a
+ * <div> there and the 8px survived.
+ *
+ * It survives as a band of the page behind the shell, which is why it is
+ * easy to miss: in a light theme the sunken surface and the paper are close
+ * enough to read as nothing, and in a dark one it is an obvious frame
+ * around the whole app. Reported as a margin nobody could find, because
+ * every candidate rule was on `.sidebar` and `.shell` and the margin was on
+ * neither.
+ *
+ * Zeroed for every `body`, not `body:where([class])`. The default fights
+ * any full-bleed layout and no host app wants 8px of dead space it did not
+ * ask for; a host that does want it says so and wins, since this is the
+ * first layer.
+ */
+body {
+  margin: 0;
 }

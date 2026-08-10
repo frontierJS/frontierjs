@@ -93,6 +93,7 @@
   aria-label={label || null}
   aria-hidden={label ? null : 'true'}
   {class}
+  {...$attributes}
 >
   {#if fill && normalized.length}
     <defs>

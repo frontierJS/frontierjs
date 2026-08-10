@@ -72,6 +72,12 @@ src/
   `isConnected`, not `parentNode`.
 - **`externalSignals`** (build/mesa-plugin.js) is hand-maintained and slated for
   retirement. Adding to it is a smell; check whether the case can be inferred.
+- **A missing auto-import does not fail a build.** Mesa compiles a reference to
+  an undefined name without complaint, so the symptom is a component that
+  renders as nothing. Only what reached the bundle separates *injected* from
+  *silently skipped* — `tests/auto-import-build.test.js` asserts on chunk
+  content for that reason, and its assertions were checked against a negative
+  control rather than trusted for passing.
 
 ## Proving a change
 

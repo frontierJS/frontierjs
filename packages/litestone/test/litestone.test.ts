@@ -5865,6 +5865,37 @@ describe('@@allow / @@deny row-level policies', () => {
     db.$close()
   })
 
+  test('post-update rollback survives a Json column on the model', async () => {
+    // The revert wrote the BEFORE snapshot back column by column, and that
+    // snapshot had been through read() — where a Json column is an object and a
+    // SQLite parameter cannot be one. So on any model carrying Json the revert
+    // threw `Binding expected string, TypedArray, boolean, number, bigint or
+    // null` on its way out, the AccessDeniedError never surfaced, and the write
+    // the policy had just refused stayed applied. It reverts from the raw row.
+    const db = await makeDb(`
+      model Post {
+        id      Int @id
+        ownerId Int
+        active  Boolean @default(true)
+        meta    Json    @default("{}")
+        @@allow('read', true)
+        @@allow('update', ownerId == auth().id)
+        @@allow('post-update', ownerId == auth().id)
+      }
+    `, 'policy-post-update-json')
+    await db.asSystem().post.create({ data: { ownerId: 1, meta: { tier: 3 } } })
+
+    const { AccessDeniedError } = await import('../src/core/plugin.js')
+    await expect(db.$setAuth({ id: 1 }).post.update({ where: { id: 1 }, data: { ownerId: 2 } }))
+      .rejects.toThrow(AccessDeniedError)
+
+    const row = await db.asSystem().post.findFirst({ where: { id: 1 } }) as any
+    expect(row.ownerId).toBe(1)
+    expect(row.meta).toEqual({ tier: 3 })
+    expect(row.active).toBe(true)
+    db.$close()
+  })
+
   // ── check() delegation ────────────────────────────────────────────────────
 
   test('check() — delegates read policy to parent model', async () => {
@@ -5893,6 +5924,92 @@ describe('@@allow / @@deny row-level policies', () => {
     db.$close()
   })
 
+  // ── Through an include ────────────────────────────────────────────────────
+  //
+  // A relation is a read of the target model, and the include paths build their
+  // own SQL. Until 2026-08-10 nothing applied the target's policy there, so a
+  // model filtered on every direct read travelled whole as somebody's child.
+
+  async function policiedTree(name: string) {
+    const db = await makeDb(`
+      model Account {
+        id    Int @id
+        name  String
+        posts Post[]
+        tags  Tag[]
+      }
+      model Post {
+        id        Int @id
+        accountId Int
+        account   Account @relation(fields: [accountId], references: [id])
+        title     String
+        @@allow('read', accountId == auth().accountId)
+      }
+      model Tag {
+        id       Int @id
+        name     String
+        accounts Account[]
+        @@allow('read', name != 'private')
+      }
+    `, name)
+    const sys = db.asSystem()
+    await sys.account.create({ data: { id: 1, name: 'mine' } })
+    await sys.account.create({ data: { id: 2, name: 'theirs' } })
+    await sys.post.create({ data: { accountId: 1, title: 'mine' } })
+    await sys.post.create({ data: { accountId: 2, title: 'theirs' } })
+    await sys.tag.create({ data: { id: 1, name: 'public',  accounts: { connect: [{ id: 1 }] } } })
+    await sys.tag.create({ data: { id: 2, name: 'private', accounts: { connect: [{ id: 1 }] } } })
+    return db
+  }
+
+  test('include (hasMany) applies the target read policy', async () => {
+    const db   = await policiedTree('policy-include-hasmany')
+    const rows = await db.$setAuth({ id: 1, accountId: 1 })
+      .account.findMany({ include: { posts: true } }) as any[]
+    expect(rows.find(r => r.id === 1).posts.map((p: any) => p.title)).toEqual(['mine'])
+    expect(rows.find(r => r.id === 2).posts).toEqual([])
+    db.$close()
+  })
+
+  test('include (belongsTo) applies the target read policy', async () => {
+    const db   = await policiedTree('policy-include-belongsto')
+    const rows = await db.$setAuth({ id: 1, accountId: 1 })
+      .post.findMany({ include: { account: true } }) as any[]
+    // The post itself is already filtered — what this pins is that the parent
+    // fetch does not re-open the row from the other side.
+    expect(rows).toHaveLength(1)
+    expect(rows[0].account.name).toBe('mine')
+    db.$close()
+  })
+
+  test('include (manyToMany) applies the target read policy', async () => {
+    const db   = await policiedTree('policy-include-m2m')
+    const rows = await db.$setAuth({ id: 1, accountId: 1 })
+      .account.findMany({ where: { id: 1 }, include: { tags: true } }) as any[]
+    expect(rows[0].tags.map((t: any) => t.name)).toEqual(['public'])
+    db.$close()
+  })
+
+  test('_count in an include counts only readable rows', async () => {
+    const db  = await policiedTree('policy-include-count')
+    const one = await db.$setAuth({ id: 1, accountId: 1 })
+      .account.findMany({ where: { id: 1 }, include: { _count: { select: { posts: true, tags: true } } } }) as any[]
+    expect(one[0]._count).toEqual({ posts: 1, tags: 1 })
+
+    const all = await db.asSystem()
+      .account.findMany({ where: { id: 1 }, include: { _count: { select: { posts: true, tags: true } } } }) as any[]
+    expect(all[0]._count).toEqual({ posts: 1, tags: 2 })
+    db.$close()
+  })
+
+  test('a nested include applies the policy at every level', async () => {
+    const db   = await policiedTree('policy-include-nested')
+    const rows = await db.$setAuth({ id: 1, accountId: 1 })
+      .account.findMany({ include: { posts: { include: { account: true } } } }) as any[]
+    expect(rows.find(r => r.id === 2).posts).toEqual([])
+    expect(rows.find(r => r.id === 1).posts[0].account.name).toBe('mine')
+    db.$close()
+  })
 
 })
 
@@ -6081,6 +6198,60 @@ describe('@allow field-level access', () => {
     db.$close()
   })
 
+  // ── Through an include ────────────────────────────────────────────────────
+  //
+  // The field rules are a property of the MODEL, not of the query that reached
+  // it. Reached as a child, a @guarded column used to come back in plaintext, an
+  // @encrypted one as raw ciphertext (for everyone, asSystem included), and a
+  // field @allow was never evaluated at all.
+
+  async function fieldPolicyTree(name: string) {
+    const db = await makeDb(`
+      model Team {
+        id      Int @id
+        name    String
+        members Member[]
+      }
+      model Member {
+        id     Int @id
+        teamId Int
+        team   Team @relation(fields: [teamId], references: [id])
+        name   String
+        token  String  @guarded(all)
+        salary Float?  @allow('read', auth().role == 'hr')
+      }
+    `, name)
+    const sys = db.asSystem()
+    await sys.team.create({ data: { id: 1, name: 'T' } })
+    await sys.member.create({ data: { id: 1, teamId: 1, name: 'M', token: 'SEKRIT', salary: 50000 } })
+    return db
+  }
+
+  test('@guarded is withheld from a row reached through an include', async () => {
+    const db  = await fieldPolicyTree('field-include-guarded')
+    const row = (await db.$setAuth({ id: 1, role: 'member' })
+      .team.findMany({ include: { members: true } }) as any[])[0]
+    expect(row.members[0].name).toBe('M')
+    expect('token'  in row.members[0]).toBe(false)
+    expect('salary' in row.members[0]).toBe(false)
+    db.$close()
+  })
+
+  test('a field @allow is evaluated through an include', async () => {
+    const db  = await fieldPolicyTree('field-include-allow')
+    const row = (await db.$setAuth({ id: 1, role: 'hr' })
+      .team.findMany({ include: { members: true } }) as any[])[0]
+    expect(row.members[0].salary).toBe(50000)
+    expect('token' in row.members[0]).toBe(false)   // @guarded is not a role
+    db.$close()
+  })
+
+  test('asSystem() sees a guarded field through an include', async () => {
+    const db  = await fieldPolicyTree('field-include-system')
+    const row = (await db.asSystem().team.findMany({ include: { members: true } }) as any[])[0]
+    expect(row.members[0].token).toBe('SEKRIT')
+    db.$close()
+  })
 
 })
 
@@ -6583,6 +6754,181 @@ describe('GatePlugin', () => {
     await expect(fm.billing.findMany()).resolves.toHaveLength(1)
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     await expect(fm.billing.create({ data: { id: 3 } })).rejects.toThrow(AccessDeniedError)
+    db.$close()
+  })
+
+  // ── $transaction carries the scope it was called on ─────────────────────────
+  // Every scoped proxy used to expose the ROOT $transaction, which hands the
+  // callback `clientProxy`. So the body of a transaction ran unscoped: as
+  // system it was refused by the gate it was meant to bypass, and as a user it
+  // ran with auth() null. Found by basecamp's first-run /setup route, whose
+  // whole point is that it writes four models in one transaction as system.
+
+  test('asSystem().$transaction hands the callback a SYSTEM client', async () => {
+    const db = await makeGateDb(`
+      model Thing { id Int @id  name String  @@gate("4.8.8.8") }
+    `, 'gate-tx-system', () => 0)
+
+    const row = await db.asSystem().$transaction(async (tx: any) =>
+      tx.thing.create({ data: { id: 1, name: 'a' } }))
+    expect(row.id).toBe(1)
+    db.$close()
+  })
+
+  test('$setAuth(u).$transaction hands the callback the SAME user', async () => {
+    const db = await makeGateDb(`
+      model Thing { id Int @id  name String  @@gate("4") }
+    `, 'gate-tx-auth', (user: any) => user ? 4 : 0)
+
+    const row = await db.$setAuth({ id: 'u1' }).$transaction(async (tx: any) =>
+      tx.thing.create({ data: { id: 1, name: 'a' } }))
+    expect(row.id).toBe(1)
+
+    // The root client is unchanged — this is a scope carried, not a bypass added.
+    const { AccessDeniedError } = await import('../src/core/plugin.js')
+    await expect(db.$transaction(async (tx: any) => tx.thing.create({ data: { id: 2, name: 'b' } })))
+      .rejects.toThrow(AccessDeniedError)
+    db.$close()
+  })
+
+  test('asSystem() is idempotent — a function handed a client cannot tell which it has', async () => {
+    // `const sys = db.asSystem()` at the top of a function is the normal
+    // defensive spelling, and it threw `"asSystem" is not a table in this
+    // schema` — a message about tables, about a method every other flavour of
+    // the client has. basecamp's seeder is written exactly that way.
+    const db = await makeGateDb(`
+      model Thing { id Int @id  name String  @@gate("4.8.8.8") }
+    `, 'gate-assystem-idempotent', () => 0)
+
+    const sys = db.asSystem()
+    expect(sys.asSystem()).toBe(sys)
+    expect('asSystem' in sys).toBe(true)
+    expect(await sys.asSystem().thing.create({ data: { id: 1, name: 'a' } })).toBeTruthy()
+    db.$close()
+  })
+
+  test('$transaction inside a scope sees the policies of that scope, not none', async () => {
+    // The quieter half: with @@allow rather than @@gate, an unscoped tx does not
+    // throw — it matches nothing and stamps nobody, which reads as a bug in the
+    // transaction body.
+    const db = await makeDb(`
+      model Note {
+        id      Int    @id
+        ownerId String
+        body    String
+        @@allow('all', ownerId == auth().id)
+      }
+    `, 'tx-scope-policy')
+
+    const mine = await db.$setAuth({ id: 'u1' }).$transaction(async (tx: any) =>
+      tx.note.create({ data: { id: 1, ownerId: 'u1', body: 'x' } }))
+    expect(mine.id).toBe(1)
+
+    const { AccessDeniedError } = await import('../src/core/plugin.js')
+    await expect(db.$setAuth({ id: 'u2' }).$transaction(async (tx: any) =>
+      tx.note.create({ data: { id: 2, ownerId: 'u1', body: 'y' } })))
+      .rejects.toThrow(AccessDeniedError)
+    db.$close()
+  })
+
+  // ── The gate on a model reached through an include ──────────────────────────
+  //
+  // `include` resolves below the query pipeline, so onBeforeRead only ever saw
+  // the model being addressed: a caller refused `Vault.findMany` outright could
+  // ask for it as `team.secrets` and be handed every row. The check is a
+  // preflight rather than a filter — a gate is per model, so the answer to *may
+  // you read Vault* is yes or no, and an empty list would read as "no rows".
+
+  async function gatedTree(name: string) {
+    return makeGateDb(`
+      model Team {
+        id      Int @id
+        name    String
+        secrets Vault[]
+      }
+      model Vault {
+        id     Int @id
+        teamId Int
+        team   Team @relation(fields: [teamId], references: [id])
+        label  String
+        @@gate("7")
+      }
+    `, name, () => 4)
+  }
+
+  test('include refuses a model the caller may not read', async () => {
+    const db = await gatedTree('gate-include')
+    await db.asSystem().team.create({ data: { id: 1, name: 'T' } })
+    await db.asSystem().vault.create({ data: { id: 1, teamId: 1, label: 'v' } })
+
+    await expect(db.$setAuth({ id: 1 }).team.findMany({ include: { secrets: true } }))
+      .rejects.toThrow(/"Vault.read" requires level 7/)
+    // The parent on its own is still readable — the refusal is about the child.
+    expect(await db.$setAuth({ id: 1 }).team.findMany()).toHaveLength(1)
+    db.$close()
+  })
+
+  test('a relation named under select: is gated the same way', async () => {
+    const db = await gatedTree('gate-include-select')
+    await db.asSystem().team.create({ data: { id: 1, name: 'T' } })
+    await expect(db.$setAuth({ id: 1 }).team.findMany({ select: { name: true, secrets: true } }))
+      .rejects.toThrow(/"Vault.read" requires level 7/)
+    db.$close()
+  })
+
+  test('_count of a gated relation is a read of it', async () => {
+    const db = await gatedTree('gate-include-count')
+    await db.asSystem().team.create({ data: { id: 1, name: 'T' } })
+    await expect(db.$setAuth({ id: 1 }).team.findMany({ include: { _count: { select: { secrets: true } } } }))
+      .rejects.toThrow(/"Vault.read" requires level 7/)
+    db.$close()
+  })
+
+  test('a nested include is gated at every level', async () => {
+    const db = await makeGateDb(`
+      model Org {
+        id    Int @id
+        teams Team[]
+      }
+      model Team {
+        id      Int @id
+        orgId   Int
+        org     Org @relation(fields: [orgId], references: [id])
+        secrets Vault[]
+      }
+      model Vault {
+        id     Int @id
+        teamId Int
+        team   Team @relation(fields: [teamId], references: [id])
+        label  String
+        @@gate("7")
+      }
+    `, 'gate-include-nested', () => 4)
+    await db.asSystem().org.create({ data: { id: 1 } })
+    await expect(db.$setAuth({ id: 1 })
+      .org.findMany({ include: { teams: { include: { secrets: true } } } }))
+      .rejects.toThrow(/"Vault.read" requires level 7/)
+    db.$close()
+  })
+
+  test('an ungated include is unaffected', async () => {
+    const db = await makeGateDb(`
+      model Team {
+        id      Int @id
+        name    String
+        members Member[]
+      }
+      model Member {
+        id     Int @id
+        teamId Int
+        team   Team @relation(fields: [teamId], references: [id])
+        name   String
+      }
+    `, 'gate-include-open', () => 4)
+    await db.asSystem().team.create({ data: { id: 1, name: 'T' } })
+    await db.asSystem().member.create({ data: { id: 1, teamId: 1, name: 'M' } })
+    const rows = await db.$setAuth({ id: 1 }).team.findMany({ include: { members: true } }) as any[]
+    expect(rows[0].members).toHaveLength(1)
     db.$close()
   })
 })

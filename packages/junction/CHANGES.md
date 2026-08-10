@@ -1,5 +1,108 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-10 — a load that has been overtaken no longer writes the store
+
+Closes `FJS-082`. `resource().load()` was one unconditional line — read rows,
+set the store — so two overlapping loads landed in arrival order. A
+search-as-you-type box typing `ac` and then `acme` showed the results for `ac`
+whenever the first request was the slower one, and stayed there until the next
+keystroke. Nothing threw and nothing logged.
+
+A load is stamped when it is issued, and only the newest stamp may write the
+store. The superseded request is not cancelled and its own caller still gets its
+rows back: the ordering problem belongs to the shared store, not to whoever
+awaited the call. `service.find()` is unchanged — it returns rows and has never
+touched the store.
+
+919 tests (was 916). The three new ones make the earlier request the slower one,
+which is the only arrangement that fails.
+
+## 2026-08-10 — a dropped WebSocket frame is held and re-sent, not lost
+
+Bun's `ws.send()` returns the bytes written, `-1` when the frame was buffered
+under backpressure, and **`0` when it was discarded**. Junction ignored that
+number at all five send sites, and the `BunWS` type declared `send` as returning
+`void`, so no call site could have read it.
+
+A dropped `service_result` left the caller's promise pending until its own 30s
+timeout: no error, no close, nothing logged, and a screen sitting on "Loading…"
+while the server believed it had answered. A dropped `event` frame is quieter —
+nothing is waiting on it, so the row is never updated and every open tab is
+stale. Measured on one socket with 200 concurrent reads of a ~1MB payload: 193
+never settled, and a call issued afterwards answered in 34ms, which is what makes
+it read as *the socket is fine*.
+
+`transport/outbox.ts` is now the one owner of *put this frame on that socket*:
+send, hold what was dropped, flush on `drain`. Once anything is held everything
+queues behind it — a frame that jumps the queue arrives before one sent earlier,
+and an event stream that reorders is worse than one that pauses. The queue is
+bounded by `http.wsMaxQueued` (default 8MB); past the cap the socket is closed
+with 1013, the client rejects every in-flight call and reconnects, and a consumer
+that cannot keep up is told rather than quietly served nothing.
+
+**No knob for Bun's own buffer.** `maxBackpressureLimit` is accepted and ignored
+— measured on 1.3.11, a 64KB, a 1MB and a 16MB limit all start dropping at the
+same ~16.9MB — so exposing it would be a control that changes nothing.
+
+Found while probing `FJS-139` (a reload from a channel subscriber that does not
+settle) and filed as `FJS-145`. It has that defect's exact signature but does not
+explain its volume — three small agent reports are nowhere near 16.9MB. FJS-139
+is closed separately, as not reproducible: its only reproduction turned out to be
+masked inside the drive that found it, and with the mask removed basecamp passes
+262/262 three runs consecutively. Which change stopped it is not known, and the
+register says so rather than claiming this one did.
+
+8 tests, both halves mutation-verified — the integration case delivers 200 of
+200 frames with the outbox and 98 of 200 without it. 905 pass.
+
+## 2026-08-10 — the METHOD decides list vs single, not the shape
+
+`wrapResult` guessed. Any `{ data, total }` was read as a paginated list and
+rebuilt from `total`/`limit`/`offset`/`data`/`errors`, whatever method produced
+it. One guess, two silent failures, closed together:
+
+- **`FJS-140`** — an action answering rows **plus** a summary lost the summary.
+  `dashboards.kinds` returned `{ total, data, statSources, portalServices }`;
+  the browser got the nine kinds and neither vocabulary needed to render them,
+  so the picker offered widgets it could not fill in. 200, no word.
+- **`FJS-144`** — a `find` answering one object was wrapped as a `single`, which
+  the browser client then read as an EMPTY list. A screen rendering nothing
+  while the API was correct — visible only from a browser.
+
+`wrapResult(raw, object, method)` now reads:
+
+    find             → a list, or ResultShapeError
+    { data, errors } → a list, any method — the bulk partial-write protocol
+    Array            → a list
+    anything else    → a single, which unwraps whole and loses nothing
+
+So an action keeps everything it answers, and the one method that promises a
+list is the one that has to produce one. `data` must be an ARRAY to be a list:
+`{ data: {…}, total: 3 }` used to pass `isListResult()` and reach the browser as
+a list nothing could iterate.
+
+`ResultShapeError` (exported from `core/envelope.ts` and re-exported by the
+client, `status` 500) names the service, the method, what arrived — `typeof` for
+a primitive, the key list for an object — and any keys a list envelope cannot
+carry. **The browser client asks the same function**, as `find`, instead of
+carrying a hand-copy of the rule; that copy is how the two ends drifted apart in
+the first place. A find answering `null` throws too — a 204 is not an empty page,
+and over the wire the two are indistinguishable.
+
+Not gated on a dev flag: the browser has none it can trust, and a dev-only throw
+leaves production with exactly the silent failure being removed. An app that was
+already broken pays a loud error; a correct app pays nothing.
+
+Blast radius, checked rather than assumed: ~15 list-shaped ACTIONS in basecamp
+become singles, which reach the browser as the same `{ total, limit, offset,
+data }` minus the wrapper — every consumer in the repo reads `.data`/`.total` or
+`Array.isArray(raw) ? raw : raw?.data`, and nothing reads `envelope.kind`. Every
+model `find` (Litestone's base, basecamp's `findScoped`) already answers exactly
+the allowed keys. `kind` and `object` are allowed keys so that a pre-`kind`
+envelope from an older server is still accepted by the client.
+
+13 tests; 897 pass.
+
 ## 2026-08-09 — `SessionContext.credentialId`
 
 One additive field on the interface, for the auth-provider side of `FJS-135`.

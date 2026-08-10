@@ -58,6 +58,7 @@
   class={cx('steps', orientation === 'vertical' && 'vertical')}
   aria-label={label}
   {class}
+  {...$attributes}
 >
   {#each steps as step, i (step.id)}
     {@const status = statusOf(i)}

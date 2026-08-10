@@ -60,6 +60,7 @@
   type="button"
   class={cx('btn', variant, !label && 'square', copied && 'success')}
   {class}
+  {...$attributes}
   aria-label={label ? null : (copied ? 'Copied' : 'Copy to clipboard')}
   on:click={copy}
 >

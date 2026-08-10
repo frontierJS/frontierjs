@@ -23,8 +23,9 @@
 // dependency-free, so it bundles into the browser build without pulling
 // anything else in — and it means the client cannot drift from the shape the
 // server actually sends, which is precisely what happened before.
-import { isListResult, list, type ListResult, type ServiceResult } from '../core/envelope.ts'
+import { isListResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
 export type { ListResult, ServiceResult }
+export { ResultShapeError }
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -156,34 +157,24 @@ export class ServiceProxy<
    *
    * Matches HTTP and app.service() exactly: a list keeps its envelope, a
    * single unwraps to the record.
+   *
+   * Throws `ResultShapeError` if the server answered anything that is not a list.
    */
   async find(query?: Record<string, unknown>, params?: FindParams): Promise<ListResult<T>> {
     const merged: FindParams = {
       ...params,
       query: { ...(params?.query ?? {}), ...(query ?? {}) }
     }
-    // Normalise whatever the server sent into one shape, so callers see one
-    // shape. Three inputs are legitimate:
-    //   • a proper list envelope             (current server)
-    //   • a bare array                       ($wrap=false, or a custom find)
-    //   • { total, limit, offset|skip, data } (older server, or a service
-    //                                          returning a paginated shape)
-    // The third case is why this is not a two-liner: dropping it would turn a
-    // perfectly good paginated response into an empty list, silently.
-    const asEnvelope = (res: unknown): ListResult<T> => {
-      if (isListResult<T>(res)) return res
-      if (Array.isArray(res))   return list(this.name, res as T[])
-
-      const r = res as { data?: unknown; total?: number; limit?: number; offset?: number; skip?: number } | null
-      if (r && typeof r === 'object' && Array.isArray(r.data)) {
-        return list(this.name, r.data as T[], {
-          total:  r.total,
-          limit:  r.limit,
-          offset: r.offset ?? r.skip,
-        })
-      }
-      return list(this.name, [])
-    }
+    // Normalise whatever arrived into one shape, so callers see one shape:
+    // an envelope passes through, and everything else goes to the SAME
+    // wrapResult the service layer uses, asked as `find`. This used to be a
+    // hand-copy of that rule — array, then { total, data }, then an invented
+    // empty list for anything else — which is how "no rows" and "not a list at
+    // all" became one answer (FJS-144) and how a list carrying a summary lost
+    // it at both ends rather than one (FJS-140). One rule, one function, both
+    // sides of the wire; wrapResult throws ResultShapeError for the rest.
+    const asEnvelope = (res: unknown): ListResult<T> =>
+      isListResult<T>(res) ? res : wrapResult(res, this.name, 'find') as ListResult<T>
 
     if (this._client._wsReady) {
       // Send the FULL merged query (filters + $limit/$offset/$orderBy/$select)
@@ -526,12 +517,23 @@ export class JunctionClient extends EventEmitter {
     // load() keeps returning rows — the store holds records, not envelopes,
     // and a view subscribing to it wants something it can map over.
     // Pagination metadata is reachable via service.find() when a caller needs it.
+    //
+    // A load is stamped when it is ISSUED, and only the newest stamp may write
+    // the store. Without that, two overlapping loads landed in arrival order: a
+    // search box typed `ac` then `acme` showed the results for `ac` whenever the
+    // first request was the slower one, and stayed wrong until the next
+    // keystroke, with nothing thrown and nothing logged (`FJS-082`).
+    //
+    // The superseded request is not cancelled — its caller awaited those rows
+    // and still receives them. Only the SHARED store has an ordering problem.
+    let issued = 0
     const load = async (
       query: Record<string, unknown> = {},
       params: FindParams = {}
     ): Promise<T[]> => {
+      const stamp = ++issued
       const rows = (await svc.find(query, params)).data
-      store.set(rows)
+      if (stamp === issued) store.set(rows)
       return rows
     }
 
@@ -1026,8 +1028,24 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
     this._notify()
   }
 
-  /** Upsert a single record by id field. */
+  /**
+   * Upsert a single record by id field.
+   *
+   * A record with no id is REFUSED. `findIndex` on `undefined` matches nothing,
+   * so an id-less payload used to be appended as a phantom row — a heartbeat
+   * answering `{ ok, server_id, status }` put junk in every subscriber's list
+   * and nothing said so (`FJS-020`). The server now announces the row instead,
+   * but this is the last line before a store: a payload from `channel.send()`
+   * never passed through that check at all.
+   */
   upsert(record: T, idField = 'id'): void {
+    if (record == null || (record as Record<string, unknown>)[idField] == null) {
+      console.warn(
+        `[Junction] ignored an update with no ${idField} — it cannot be matched to a row. ` +
+        `An announcement carries the record it is about.`
+      )
+      return
+    }
     const idx = this._data.findIndex((r) => r[idField] === record[idField])
     if (idx === -1) {
       this._data = [...this._data, record]

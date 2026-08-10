@@ -345,6 +345,7 @@
           on:keydown={handleKeydown}
           on:blur={handleBlur}
           on:focus={() => open = true}
+          {...$attributes}
         />
       {/if}
 

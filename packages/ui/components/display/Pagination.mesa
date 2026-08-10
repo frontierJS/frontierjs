@@ -56,7 +56,7 @@
   }
 </script>
 
-<div class="split" style:flex-wrap="wrap" {class}>
+<div class="split" style:flex-wrap="wrap" {class} {...$attributes}>
   {#if showInfo && total > 0}
     <p class="text-sm text-muted" style:margin="0">
       Showing {rangeStart}–{rangeEnd} of {total}

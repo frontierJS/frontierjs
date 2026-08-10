@@ -1,0 +1,941 @@
+{
+  "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
+  "version": "0.15.0-alpha.0",
+  "counts": {
+    "terms": 55,
+    "tiers": 8,
+    "anatomy": 26
+  },
+  "terms": [
+    {
+      "term": "Chip",
+      "tier": "Base",
+      "tierBlurb": "Not a containment tier — the two shapes every Block and Inline term is built from. Both are writable on their own, and both are declared at zero specificity in a :where() that names every composite, so a leaf class always wins.",
+      "element": "<span>",
+      "meaning": "The inline lineage: layout and alignment, no skin. Every Button, Pill and Badge is one",
+      "class": "chip"
+    },
+    {
+      "term": "Surface",
+      "tier": "Base",
+      "tierBlurb": "Not a containment tier — the two shapes every Block and Inline term is built from. Both are writable on their own, and both are declared at zero specificity in a :where() that names every composite, so a leaf class always wins.",
+      "element": "<div> / <article>",
+      "meaning": "The block lineage: background, border, radius, and the tonal tint recipe. Every Card, Alert, Toast, Popover, Drawer and Dialog is one",
+      "class": "surface"
+    },
+    {
+      "term": "App",
+      "tier": "Frame",
+      "tierBlurb": "The application shell. Persistent across navigation.",
+      "element": "<body>",
+      "meaning": "The whole application surface",
+      "class": "app"
+    },
+    {
+      "term": "Topbar",
+      "tier": "Frame",
+      "tierBlurb": "The application shell. Persistent across navigation.",
+      "element": "<header>",
+      "meaning": "Global bar across the top",
+      "class": "topbar"
+    },
+    {
+      "term": "Sidebar",
+      "tier": "Frame",
+      "tierBlurb": "The application shell. Persistent across navigation.",
+      "element": "<nav>",
+      "meaning": "Primary navigation column",
+      "class": "sidebar"
+    },
+    {
+      "term": "Shell",
+      "tier": "Frame",
+      "tierBlurb": "The application shell. Persistent across navigation.",
+      "element": "<div>",
+      "meaning": "The grid that positions Topbar + Sidebar + Screen",
+      "class": "shell"
+    },
+    {
+      "term": "Screen",
+      "tier": "Page",
+      "tierBlurb": "What changes when you navigate.",
+      "element": "<main>",
+      "meaning": "The routed page body",
+      "class": "screen"
+    },
+    {
+      "term": "Pane",
+      "tier": "Page",
+      "tierBlurb": "What changes when you navigate.",
+      "element": "<section aria-labelledby>",
+      "meaning": "A labelled major subdivision of a Screen",
+      "class": "pane"
+    },
+    {
+      "term": "View",
+      "tier": "Page",
+      "tierBlurb": "What changes when you navigate.",
+      "element": "<article role=\"tabpanel\">",
+      "meaning": "One switchable view inside a Pane",
+      "class": "view"
+    },
+    {
+      "term": "Tabs",
+      "tier": "Page",
+      "tierBlurb": "What changes when you navigate.",
+      "element": "<div> + <div role=\"tablist\">",
+      "meaning": "The control that switches Views. The buttons are <button role=\"tab\">",
+      "class": "tabs"
+    },
+    {
+      "term": "Section",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<section> / <article>",
+      "meaning": "<article> when nested inside a Section (Principle 2)",
+      "class": null
+    },
+    {
+      "term": "Group",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<div>",
+      "meaning": "A visual cluster with no semantic identity",
+      "class": null
+    },
+    {
+      "term": "Prose",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<div>",
+      "meaning": "A region of authored long-form copy, styled by element — the one place the package touches a bare <p>. Sets measure, ink and list indentation only; a Heading or Code inside keeps its own term. Spacing is the parent's: compose with Stack",
+      "class": "prose"
+    },
+    {
+      "term": "Bar",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<div>",
+      "meaning": "A horizontal strip. Layout only — no role, no keyboard contract, contents are whatever you put there",
+      "class": "bar"
+    },
+    {
+      "term": "Toolbar",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<div role=\"toolbar\">",
+      "meaning": "A strip whose contents are controls, presented as ONE tab stop. The role promises arrow-key movement and the app owes it (Principle 6) — if you are not providing the keys, use Bar",
+      "class": "toolbar"
+    },
+    {
+      "term": "Divider",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<hr>",
+      "meaning": "A labelled or plain break between groups",
+      "class": "divider"
+    },
+    {
+      "term": "Nav",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<ul> + <li> + <a>",
+      "meaning": "A list of navigation links. The link is .navlink; a heading above it is .navlist-label",
+      "class": "navlist"
+    },
+    {
+      "term": "Breadcrumb",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<nav aria-label=\"Breadcrumb\"> + <ol>",
+      "meaning": "The trail back up. The current page carries aria-current",
+      "class": "breadcrumb"
+    },
+    {
+      "term": "Pagination",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<nav aria-label=\"Pagination\">",
+      "meaning": "Page-by-page movement through a list. Each control is .pagination-link",
+      "class": "pagination"
+    },
+    {
+      "term": "Card",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<article>",
+      "meaning": "A bounded unit of content on a surface. Write it as an <a> or a <button> and it becomes interactive — cursor, a 1px lift and a tone-following border, no modifier",
+      "class": "card"
+    },
+    {
+      "term": "Tile",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<article>",
+      "meaning": "A compact metric or stat unit. Interactive as an <a>/<button>, like Card",
+      "class": "tile"
+    },
+    {
+      "term": "Item",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<li>",
+      "meaning": "A lightweight list entry",
+      "class": "item"
+    },
+    {
+      "term": "Row",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<li> / <tr>",
+      "meaning": "A record entry with trailing actions",
+      "class": "list-row"
+    },
+    {
+      "term": "Feed",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<ol> + <li><article>",
+      "meaning": "A chronological stream, plotted on a connecting timeline. Each entry carries a dot and the line runs between them — a stream with no marker column is Item",
+      "class": "feed"
+    },
+    {
+      "term": "Alert",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<article>",
+      "meaning": "An inline notification",
+      "class": "alert"
+    },
+    {
+      "term": "Steps",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<ol> + <li>",
+      "meaning": "A multi-stage flow indicator",
+      "class": "steps"
+    },
+    {
+      "term": "Facts",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<dl> + <dt>/<dd>",
+      "meaning": "A label/value list",
+      "class": "facts"
+    },
+    {
+      "term": "Code",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<pre> + <code>",
+      "meaning": "A block of code",
+      "class": "code"
+    },
+    {
+      "term": "Table",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<table>",
+      "meaning": "Tabular data. Wrap it in .table-wrap so it scrolls in its own box rather than taking the page sideways",
+      "class": "table"
+    },
+    {
+      "term": "Disclosure",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<details> + <summary>",
+      "meaning": "A section that collapses. The native element, so it works before the JS does",
+      "class": "disclosure"
+    },
+    {
+      "term": "Empty",
+      "tier": "Block",
+      "tierBlurb": "Self-contained units of content.",
+      "element": "<div>",
+      "meaning": "The stand-in for a Block that has nothing in it yet",
+      "class": "empty"
+    },
+    {
+      "term": "Button",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<button>",
+      "meaning": "An action",
+      "class": "btn"
+    },
+    {
+      "term": "Link",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<a>",
+      "meaning": "A navigation",
+      "class": "link"
+    },
+    {
+      "term": "Pill",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<span>",
+      "meaning": "A count or very short datum — never the status; that is Badge",
+      "class": "pill"
+    },
+    {
+      "term": "Badge",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<span>",
+      "meaning": "A categorical status — never the count; that is Pill. Elsewhere 'badge' often means the count",
+      "class": "badge"
+    },
+    {
+      "term": "Field",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<input> / <select> / <textarea>",
+      "meaning": "A form control",
+      "class": "field"
+    },
+    {
+      "term": "Switch",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<input type=\"checkbox\" role=\"switch\">",
+      "meaning": "An on/off control that commits immediately — not a checkbox, which commits with the form",
+      "class": "switch"
+    },
+    {
+      "term": "Heading",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<h1>–<h6>",
+      "meaning": "Outline structure (Principle 3)",
+      "class": null
+    },
+    {
+      "term": "Text",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<p> / <span>",
+      "meaning": "Prose",
+      "class": null
+    },
+    {
+      "term": "Icon",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<span aria-hidden>",
+      "meaning": "A decorative glyph",
+      "class": "icon"
+    },
+    {
+      "term": "Avatar",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<img> / <span>",
+      "meaning": "A person, org or bot marker",
+      "class": "avatar"
+    },
+    {
+      "term": "Kbd",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<kbd>",
+      "meaning": "A key the user is meant to press",
+      "class": "kbd"
+    },
+    {
+      "term": "Progress",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<progress>",
+      "meaning": "Determinate completion. The native element announces value and max for free",
+      "class": "progress"
+    },
+    {
+      "term": "Spinner",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<span aria-hidden>",
+      "meaning": "Indeterminate waiting. Say what is loading in a role=\"status\" region beside it — the spinner itself announces nothing",
+      "class": "spinner"
+    },
+    {
+      "term": "Skeleton",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<div aria-hidden>",
+      "meaning": "A placeholder for content still arriving. Put aria-busy on the container",
+      "class": "skeleton"
+    },
+    {
+      "term": "Dialog",
+      "tier": "Overlay",
+      "tierBlurb": "Things that float above the Screen.",
+      "element": "<dialog>",
+      "meaning": "A modal, via showModal()",
+      "class": "dialog"
+    },
+    {
+      "term": "Drawer",
+      "tier": "Overlay",
+      "tierBlurb": "Things that float above the Screen.",
+      "element": "<dialog>",
+      "meaning": "An off-canvas panel, also via showModal()",
+      "class": "drawer"
+    },
+    {
+      "term": "Popover",
+      "tier": "Overlay",
+      "tierBlurb": "Things that float above the Screen.",
+      "element": "<article>",
+      "meaning": "An anchored floating unit",
+      "class": "popover"
+    },
+    {
+      "term": "Tooltip",
+      "tier": "Overlay",
+      "tierBlurb": "Things that float above the Screen.",
+      "element": "<span role=\"tooltip\">",
+      "meaning": "An attachment, not a unit. A span, because .tooltip-anchor is inline and a div is not phrasing content",
+      "class": "tooltip"
+    },
+    {
+      "term": "Toast",
+      "tier": "Overlay",
+      "tierBlurb": "Things that float above the Screen.",
+      "element": "<article>",
+      "meaning": "A transient notification",
+      "class": "toast"
+    },
+    {
+      "term": "Stack",
+      "tier": "Layout",
+      "tierBlurb": "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
+      "element": "<div>",
+      "meaning": "Children flow down with an even gap",
+      "class": "stack"
+    },
+    {
+      "term": "Cluster",
+      "tier": "Layout",
+      "tierBlurb": "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
+      "element": "<div>",
+      "meaning": "Children flow across, wrap, and stay centred",
+      "class": "cluster"
+    },
+    {
+      "term": "Center",
+      "tier": "Layout",
+      "tierBlurb": "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
+      "element": "<div>",
+      "meaning": "One child, dead centre in both axes",
+      "class": "center"
+    },
+    {
+      "term": "Split",
+      "tier": "Layout",
+      "tierBlurb": "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
+      "element": "<div>",
+      "meaning": "Two-up: first item left, last item right",
+      "class": "split"
+    },
+    {
+      "term": "Container",
+      "tier": "Layout",
+      "tierBlurb": "Composition helpers. They own one arrangement each and no skin, so they compose onto anything, including a term from another tier. The names are Every Layout's — the vocabulary people already have.",
+      "element": "<div>",
+      "meaning": "A max-width column with responsive padding",
+      "class": "container"
+    }
+  ],
+  "anatomy": {
+    "Surface": {
+      "markup": "<article class=\"surface raised\">\n  <div class=\"surface-header\">Title</div>\n  <div class=\"surface-body\">Body</div>\n  <div class=\"surface-footer\">\n    <button class=\"btn\">Save</button>\n  </div>\n</article>",
+      "parts": [
+        [
+          ".surface-header",
+          "A title strip. Shares the surface border colour, so dividers stay consistent",
+          "optional"
+        ],
+        [
+          ".surface-body",
+          "The content, padded independently of the header and footer",
+          "optional"
+        ],
+        [
+          ".surface-footer",
+          "Actions. Where a Button row goes",
+          "optional"
+        ]
+      ]
+    },
+    "Card": {
+      "markup": "<article class=\"card\">\n  <div class=\"surface-header\">Maid.Tech</div>\n  <div class=\"surface-body\">\n    <p>A platform serving cleaning businesses.</p>\n  </div>\n  <div class=\"surface-footer\">\n    <button class=\"btn\">View</button>\n  </div>\n</article>",
+      "parts": [],
+      "uses": [
+        "surface-header",
+        "surface-body",
+        "surface-footer"
+      ]
+    },
+    "Alert": {
+      "markup": "<article class=\"alert info\">\n  <div class=\"alert-icon\" aria-hidden=\"true\">&#9432;</div>\n  <div class=\"alert-content\">\n    <strong>Heads up.</strong>\n    <p>What happened, and what to do about it.</p>\n  </div>\n</article>",
+      "parts": [
+        [
+          ".alert-icon",
+          "The glyph. aria-hidden, because a colour and a symbol are not the message",
+          "optional"
+        ],
+        [
+          ".alert-content",
+          "Everything else — a strong title, then prose"
+        ]
+      ]
+    },
+    "Empty": {
+      "markup": "<div class=\"empty\">\n  <div class=\"empty-icon\" aria-hidden=\"true\">&#128230;</div>\n  <div class=\"empty-title\">No invoices yet</div>\n  <div class=\"empty-text\">Create one and it will show up here.</div>\n  <div class=\"empty-actions\">\n    <button class=\"btn\">New invoice</button>\n  </div>\n</div>",
+      "parts": [
+        [
+          ".empty-icon",
+          "A glyph or illustration. aria-hidden",
+          "optional"
+        ],
+        [
+          ".empty-title",
+          "What is missing, in a phrase"
+        ],
+        [
+          ".empty-text",
+          "Why, and what to do next",
+          "optional"
+        ],
+        [
+          ".empty-actions",
+          "The way out. Anatomy rather than a bare Button row, because the gap is the empty state’s, not the buttons’",
+          "optional"
+        ]
+      ]
+    },
+    "Tile": {
+      "markup": "<article class=\"tile\">\n  <div class=\"tile-label\">Revenue</div>\n  <div class=\"tile-value\">&pound;48,210</div>\n  <div class=\"tile-delta success\">+12.4%</div>\n</article>",
+      "parts": [
+        [
+          ".tile-label",
+          "What is being measured"
+        ],
+        [
+          ".tile-value",
+          "The number, at display size"
+        ],
+        [
+          ".tile-delta",
+          "The change. Takes a tone, which is the only place the colour is decided",
+          "optional"
+        ]
+      ]
+    },
+    "Feed": {
+      "markup": "<ol class=\"feed\">\n  <li>\n    <article class=\"feed-item\">\n      <span class=\"feed-dot success\" aria-hidden=\"true\"></span>\n      <div class=\"feed-content\">\n        <div class=\"text-muted text-sm\">2 hours ago</div>\n        <div>Invoice #1042 was paid.</div>\n      </div>\n    </article>\n  </li>\n</ol>",
+      "parts": [
+        [
+          ".feed-item",
+          "One event. An <article> because each entry is self-contained"
+        ],
+        [
+          ".feed-dot",
+          "The timeline marker. Reads --bg-mix, so any tone colours it"
+        ],
+        [
+          ".feed-content",
+          "When, and what"
+        ]
+      ]
+    },
+    "Steps": {
+      "markup": "<ol class=\"steps\">\n  <li class=\"step complete\">\n    <span class=\"step-marker\"></span>\n    <span class=\"step-label\">Details</span>\n  </li>\n  <li class=\"step\" aria-current=\"step\">\n    <span class=\"step-marker\"></span>\n    <span class=\"step-label\">Payment</span>\n    <span class=\"step-hint\">Card or transfer</span>\n  </li>\n</ol>",
+      "parts": [
+        [
+          ".step",
+          "One step. The current one is keyed off aria-current, never a class"
+        ],
+        [
+          ".step-marker",
+          "The numbered disc. An empty one numbers itself from its position"
+        ],
+        [
+          ".step-label",
+          "The step name"
+        ],
+        [
+          ".step-hint",
+          "A second line under the label",
+          "optional"
+        ]
+      ]
+    },
+    "Disclosure": {
+      "markup": "<details class=\"disclosure\">\n  <summary class=\"disclosure-summary\">Advanced settings</summary>\n  <div class=\"disclosure-body\">\n    <p>Anything that should start folded away.</p>\n  </div>\n</details>",
+      "parts": [
+        [
+          ".disclosure-summary",
+          "The clickable row. A real <summary>, so the open state is the browser’s"
+        ],
+        [
+          ".disclosure-body",
+          "What unfolds. Animated by ::details-content, not by a class"
+        ]
+      ]
+    },
+    "Table": {
+      "markup": "<div class=\"table-wrap\">\n  <table class=\"table striped\">\n    <thead>\n      <tr><th>Invoice</th><th>Client</th><th></th></tr>\n    </thead>\n    <tbody>\n      <tr>\n        <td>#1042</td>\n        <td>Maid.Tech</td>\n        <td class=\"table-actions\">\n          <button class=\"btn ghost square\" aria-label=\"Edit\">&hellip;</button>\n        </td>\n      </tr>\n    </tbody>\n  </table>\n</div>",
+      "parts": [
+        [
+          ".table-wrap",
+          "The scroll box. Without it a wide table takes the whole page sideways",
+          "optional"
+        ],
+        [
+          ".table-actions",
+          "A trailing cell of controls, right-aligned and tight",
+          "optional"
+        ]
+      ]
+    },
+    "Field": {
+      "markup": "<div class=\"field-group\">\n  <label for=\"email\">Email</label>\n  <input class=\"field\" id=\"email\" type=\"email\" required>\n  <div class=\"field-hint\">We only use this for receipts.</div>\n</div>",
+      "parts": [
+        [
+          ".field-group",
+          "Label, control and hint as one unit. The label is a real <label for>",
+          "optional"
+        ],
+        [
+          ".field-hint",
+          "Help text under the control",
+          "optional"
+        ],
+        [
+          ".field-row",
+          "A control with addons welded to it — the group loses its gaps and the corners join",
+          "optional"
+        ],
+        [
+          ".field-addon",
+          "A prefix or suffix inside a .field-row: a currency mark, a unit",
+          "optional"
+        ],
+        [
+          ".field-check",
+          "A checkbox or Switch beside its own label. The <label> is the box",
+          "optional"
+        ]
+      ]
+    },
+    "Dialog": {
+      "markup": "<dialog class=\"dialog\">\n  <div class=\"surface-header\">\n    <strong>Delete invoice</strong>\n    <button class=\"dialog-close\" aria-label=\"Close\">&times;</button>\n  </div>\n  <div class=\"surface-body\">\n    <p>This cannot be undone.</p>\n  </div>\n  <div class=\"surface-footer\">\n    <button class=\"btn outlined\">Cancel</button>\n    <button class=\"btn danger\">Delete</button>\n  </div>\n</dialog>",
+      "parts": [
+        [
+          ".dialog-close",
+          "The dismiss control in the header",
+          "optional"
+        ]
+      ],
+      "uses": [
+        "surface-header",
+        "surface-body",
+        "surface-footer"
+      ]
+    },
+    "Drawer": {
+      "markup": "<dialog class=\"drawer from-right\">\n  <div class=\"surface-header\">\n    <strong>Settings</strong>\n    <button class=\"dialog-close\" aria-label=\"Close\">&times;</button>\n  </div>\n  <div class=\"surface-body\">\n    <p>Anything a Dialog would hold.</p>\n  </div>\n  <div class=\"surface-footer\">\n    <button class=\"btn\">Save</button>\n  </div>\n</dialog>",
+      "parts": [],
+      "uses": [
+        "surface-header",
+        "surface-body",
+        "surface-footer",
+        "dialog-close"
+      ]
+    },
+    "Popover": {
+      "markup": "<article class=\"popover\">\n  <div class=\"surface-header\"><strong>Quick note</strong></div>\n  <div class=\"surface-body\">Short, contextual information.</div>\n</article>",
+      "parts": [],
+      "uses": [
+        "surface-header",
+        "surface-body"
+      ]
+    },
+    "Tabs": {
+      "markup": "<div class=\"tabs\">\n  <div class=\"tablist\" role=\"tablist\" aria-label=\"Invoice sections\">\n    <button class=\"tab\" role=\"tab\" id=\"t-1\" aria-selected=\"true\" aria-controls=\"v-1\">Summary</button>\n    <button class=\"tab\" role=\"tab\" id=\"t-2\" aria-selected=\"false\" aria-controls=\"v-2\" tabindex=\"-1\">History</button>\n  </div>\n  <article class=\"view\" role=\"tabpanel\" id=\"v-1\" aria-labelledby=\"t-1\">\n    The selected panel.\n  </article>\n</div>",
+      "parts": [
+        [
+          ".tablist",
+          "The strip. role=\"tablist\", and the indicator rides it"
+        ],
+        [
+          ".tab",
+          "One tab. Selection comes from aria-selected, never a class"
+        ]
+      ]
+    },
+    "Nav": {
+      "markup": "<nav class=\"sidebar\">\n  <div class=\"navlist-label\">Workspace</div>\n  <ul class=\"navlist\">\n    <li><a class=\"navlink\" href=\"#\" aria-current=\"page\">Invoices</a></li>\n    <li><a class=\"navlink\" href=\"#\">Clients <span class=\"badge\">4</span></a></li>\n  </ul>\n</nav>",
+      "parts": [
+        [
+          ".navlink",
+          "One destination. The active one carries aria-current=\"page\""
+        ],
+        [
+          ".navlist-label",
+          "A group heading above a run of links",
+          "optional"
+        ]
+      ]
+    },
+    "Pagination": {
+      "markup": "<nav class=\"pagination\" aria-label=\"Pagination\">\n  <a class=\"pagination-link\" href=\"#\" aria-disabled=\"true\">Previous</a>\n  <a class=\"pagination-link\" href=\"#\" aria-current=\"page\">1</a>\n  <a class=\"pagination-link\" href=\"#\">2</a>\n  <span class=\"pagination-gap\" aria-hidden=\"true\">&hellip;</span>\n  <a class=\"pagination-link\" href=\"#\">9</a>\n</nav>",
+      "parts": [
+        [
+          ".pagination-link",
+          "One control — a number, or Previous/Next. Current is aria-current=\"page\", unavailable is aria-disabled"
+        ],
+        [
+          ".pagination-gap",
+          "The elision between runs. aria-hidden — it is punctuation",
+          "optional"
+        ]
+      ]
+    },
+    "Pill": {
+      "markup": "<span class=\"pill primary removable\">\n  Design\n  <button class=\"pill-close\" aria-label=\"Remove Design\">&times;</button>\n</span>",
+      "parts": [
+        [
+          ".pill-close",
+          "The remove control. Needs .removable on the Pill to make room for it",
+          "optional"
+        ]
+      ]
+    },
+    "Divider": {
+      "markup": "<hr class=\"divider\">\n<div class=\"divider-label\">or continue with</div>",
+      "parts": [
+        [
+          ".divider-label",
+          "The labelled form. A <div> rather than an <hr>, because an <hr> cannot hold text",
+          "optional"
+        ]
+      ]
+    },
+    "Item": {
+      "markup": "<ul class=\"items menu\">\n  <li class=\"item\">\n    <span class=\"item-lead\">section</span>\n    <span class=\"item-text\">\n      <span class=\"item-title\">Below 640px it stacks</span>\n      <span class=\"item-sub\">Facts</span>\n    </span>\n  </li>\n</ul>",
+      "parts": [
+        [
+          ".item-lead",
+          "A fixed gutter before the text — a kind, a category, a shortcut. The row aligns to the baseline when one is present",
+          "optional"
+        ],
+        [
+          ".item-text",
+          "The stacked text block. Shrinkable, so a long title ellipses rather than pushing the row wider",
+          "optional"
+        ],
+        [
+          ".item-title",
+          "The line the entry is about",
+          "optional"
+        ],
+        [
+          ".item-sub",
+          "What it belongs to, or where it came from",
+          "optional"
+        ]
+      ]
+    },
+    "Row": {
+      "markup": "<ul class=\"rows divided\">\n  <li class=\"list-row\">\n    <label class=\"field-check\">\n      <input type=\"checkbox\">\n      <span>Send the invoice</span>\n    </label>\n    <div class=\"row-actions\">\n      <button class=\"btn ghost square\" aria-label=\"Edit\">&hellip;</button>\n    </div>\n  </li>\n</ul>",
+      "parts": [
+        [
+          ".row-actions",
+          "The trailing controls. Pushed right by the row, not by a margin",
+          "optional"
+        ]
+      ]
+    },
+    "Section": {
+      "markup": "<section aria-labelledby=\"s-1\">\n  <div class=\"section-header\">\n    <h2 id=\"s-1\" class=\"h4\">Recent invoices</h2>\n    <button class=\"btn outlined\">New</button>\n  </div>\n  <div class=\"stack\">&hellip;</div>\n</section>",
+      "parts": [
+        [
+          ".section-header",
+          "A heading with its own actions beside it",
+          "optional"
+        ]
+      ]
+    },
+    "Toast": {
+      "markup": "<div class=\"toast-stack\">\n  <article class=\"toast success\">Invoice sent.</article>\n</div>",
+      "parts": [
+        [
+          ".toast-stack",
+          "The corner they queue in. One per app, not one per Toast",
+          "optional"
+        ]
+      ]
+    },
+    "Tooltip": {
+      "markup": "<span class=\"tooltip-anchor\">\n  <button class=\"btn square\" aria-label=\"Delete\" aria-describedby=\"tip-1\">&times;</button>\n  <span class=\"tooltip\" role=\"tooltip\" id=\"tip-1\">Delete invoice</span>\n</span>",
+      "parts": [
+        [
+          ".tooltip-anchor",
+          "The positioning context. The Tooltip is absolute inside it"
+        ]
+      ]
+    },
+    "Shell": {
+      "markup": "<div class=\"shell\">\n  <header class=\"topbar\">\n    <button class=\"btn ghost square sidebar-toggle\" aria-label=\"Open navigation\" aria-expanded=\"false\">&#9776;</button>\n  </header>\n  <nav class=\"sidebar\">&hellip;</nav>\n  <main class=\"screen\">&hellip;</main>\n</div>",
+      "parts": [
+        [
+          ".sidebar-toggle",
+          "The control that reveals the Sidebar below 768px. The Shell decides when it exists; opening it is the app’s job",
+          "optional"
+        ]
+      ]
+    },
+    "Facts": {
+      "markup": "<dl class=\"facts divided\">\n  <dt>Invoice</dt>\n  <dd>#1042</dd>\n  <dt>Status</dt>\n  <dd><span class=\"badge success\">Paid</span></dd>\n</dl>",
+      "parts": [
+        [
+          "dt",
+          "The label. A real <dt> — no class, on purpose"
+        ],
+        [
+          "dd",
+          "The value, on the same baseline as its label"
+        ]
+      ]
+    },
+    "Code": {
+      "markup": "<pre class=\"code\"><code>const total = items.reduce(sum, 0)</code></pre>",
+      "parts": [
+        [
+          "code",
+          "The code itself. Inside a <pre class=\"code\"> it drops the inline box"
+        ]
+      ]
+    }
+  },
+  "notAnatomy": {
+    "code-inline": "An alias for the <code> element, for markup that cannot use the tag. Not a part of Code — it IS Code, spelled differently",
+    "sidebar-first": "A modifier on Shell: it swaps the grid so the Sidebar runs full height. Nothing to do with the Sidebar element",
+    "skip-link": "An a11y utility. It belongs to no term — every app has one and it sits above the Shell",
+    "visually-hidden": "An a11y utility, and the most composable class in the package",
+    "list-row": "The Row term’s own class. `.row` would collide with Bootstrap’s grid, so the concept and the class name diverge",
+    "from-top": "A direction modifier on Drawer",
+    "from-right": "A direction modifier on Drawer",
+    "from-bottom": "A direction modifier on Drawer",
+    "from-left": "A direction modifier on Drawer",
+    "text-xs": "A size utility",
+    "text-sm": "A size utility",
+    "text-md": "A size utility",
+    "text-lg": "A size utility",
+    "text-xl": "A size utility",
+    "gap-0": "A gap utility",
+    "gap-3xs": "A gap utility",
+    "gap-2xs": "A gap utility",
+    "gap-xs": "A gap utility",
+    "gap-sm": "A gap utility",
+    "gap-md": "A gap utility",
+    "gap-lg": "A gap utility",
+    "gap-xl": "A gap utility",
+    "gap-2xl": "A gap utility",
+    "gap-3xl": "A gap utility",
+    "gap-4xl": "A gap utility",
+    "gap-5xl": "A gap utility",
+    "gap-6xl": "A gap utility",
+    "clamp-1": "A line-clamp utility",
+    "clamp-2": "A line-clamp utility",
+    "clamp-3": "A line-clamp utility",
+    "text-body": "A colour utility",
+    "text-muted": "A colour utility",
+    "text-primary": "A colour utility",
+    "text-info": "A colour utility",
+    "text-success": "A colour utility",
+    "text-warning": "A colour utility",
+    "text-danger": "A colour utility",
+    "theme-default": "A theme",
+    "theme-dark": "A theme",
+    "theme-midnight": "A theme",
+    "theme-forest": "A theme",
+    "theme-sunset": "A theme",
+    "theme-elite": "A theme",
+    "theme-basecamp": "A theme",
+    "theme-notebook": "A theme"
+  },
+  "notATerm": {
+    "tone": [
+      "primary",
+      "secondary",
+      "muted",
+      "info",
+      "success",
+      "warning",
+      "danger"
+    ],
+    "treatment": [
+      "raised",
+      "outlined",
+      "ghost",
+      "bordered"
+    ],
+    "density": [
+      "dense",
+      "roomy"
+    ],
+    "modifier": [
+      "bottom",
+      "circle",
+      "compact",
+      "complete",
+      "disabled",
+      "divided",
+      "end",
+      "focusable",
+      "hover",
+      "loading",
+      "menu",
+      "narrow",
+      "pills",
+      "removable",
+      "square",
+      "start",
+      "stretch",
+      "striped",
+      "text",
+      "vertical",
+      "viewport",
+      "wide",
+      "wrap"
+    ],
+    "container": [
+      "avatars",
+      "items",
+      "rows",
+      "tiles"
+    ],
+    "anatomy": [
+      "tab",
+      "tablist",
+      "step",
+      "navlink"
+    ],
+    "heading": [
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6"
+    ],
+    "utility": [
+      "relative"
+    ]
+  }
+}

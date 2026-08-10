@@ -2,6 +2,65 @@
 
 Newest first.
 
+## 2026-08-10 — every component forwards its caller's attributes
+
+`{...$attributes}` was on 9 of 64 components; the other 55 dropped `id`,
+`data-*`, `aria-*` and everything else the caller wrote, silently
+(`FJS-029`/`FJS-137`). `<Mono id="x">` rendered a bare `<code>`, so the caller
+could not address the element they had just written and `aria-describedby` had
+nothing to point at — basecamp worked around it with a wrapper `<span>`.
+
+`FJS-137` said `id` had to be declared as a prop on each of the 22 display
+components. It does not: the spread compiles to
+`restProps($option.props, declared)`, so an id the component does NOT declare
+passes through it. One fix, not two, and 22 props not written.
+
+**Where the spread lands is not uniform.** Display, layout, feedback and
+overlay put it where `{class}` already goes. A form control puts it on the
+CONTROL — the `<input>`, `<select>`, `<textarea>` — not the `.field-group`
+wrapper, because that is the element a `<label for>` and an `aria-describedby`
+have to reach. `FileUpload` uses its visible dropzone rather than the
+visually-hidden file input, and `DatePicker` uses the wrapper because its
+trigger is whatever the caller puts in the slot; both say so in the file.
+
+Where `id` is already a declared prop it means something else — `Toast`'s
+identity, the pairing `Tab`/`TabPanel`/`AccordionItem` render as
+`id="tab-{id}"`, the control a `Label` or `Field` points at, `Tooltip`'s
+generated id — and a caller addresses those with `data-*`.
+
+New `test/attributes.mjs` renders all 64 and holds three claims: an undeclared
+attribute reaches the DOM, `id` reaches it wherever it is not a declared prop,
+and the caller's value REPLACES the component's own rather than duplicating it.
+The six it cannot render are named with the reason instead of filtered out.
+
+**It found three Mesa defects on its first run** — it is the first thing in
+this repo that renders every component — and all three were fixed the same day.
+`FJS-146`: an `{@attach}` ran during SSR, where happy-dom has no `el.animate`,
+so `Toast` threw and took the whole render with it. `FJS-147`:
+`{#each { length: n }}` was not iterable, so **`DatePicker` had never rendered
+at all, anywhere**, in the whole life of the file. `FJS-148`: a `style:`
+directive resolving to `null` emitted the literal string `null` for some
+properties. With those closed, both components render, so neither is skipped
+here any more and `Toast` is a render case for the first time.
+
+64/64 compile, 26/26 render, 60/60 attributes (4 skipped, named), 7/7 form.
+`example`: `verify:ui` 27/27, `verify` 37/37, `verify:public` 21/21.
+
+## 2026-08-10 — two Mesa workarounds come out
+
+Mesa rewrites a destructuring assignment to reactive lets (`FJS-021`), so
+`DatePicker` writes its backwards-range swap as
+`[_startDate, _endDate] = [_endDate, _startDate]` rather than through a temp.
+
+`Breadcrumbs` still marks the last item in its script, but not for the reason
+its comment gave: a `{@const}` reading the loop index works (`FJS-022` closed
+as no longer real) — truncation is simply what decides which item IS last, and
+the template would be re-deriving it against a length that may already have
+been cut down. `Combobox` and `MultiSelect` were already reading the index in a
+`{@const}`, which is the evidence the gap had gone.
+
+64/64 compile, 25/25 render, 7/7 form.
+
 ## 2026-08-09 — `Pagination` follows the class rename
 
 `@frontierjs/css` v0.14.6 renamed `.page` → `.pagination-link` and

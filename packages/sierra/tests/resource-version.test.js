@@ -18,6 +18,9 @@
  */
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
+// Junction by relative path — `bun install` resolves workspace:* to a copy, so a
+// package-name import would test yesterday's Store.
+import { Store } from '../../junction/src/client/index.ts'
 
 // The fake service records what actually went over the wire, which is the only
 // thing worth asserting here: the version is not a property of the resource, it
@@ -41,10 +44,17 @@ vi.mock('@frontierjs/sierra/junction', () => ({
       },
       on: () => {},
     }),
-    resource: () => ({
-      store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
-      load: async () => [...rows.values()],
-    }),
+    // Junction's REAL Store, not a stub with a no-op set(): the versions this
+    // file asserts are recorded off the store's notifications now, so a stub
+    // that never notifies would pass every test here while an app read nothing.
+    // load() mirrors junction's — read rows, write them to the store.
+    resource: () => {
+      const store = new Store()
+      return {
+        store,
+        load: async () => { const list = [...rows.values()]; store.set(list); return list },
+      }
+    },
   }),
 }))
 
@@ -125,6 +135,19 @@ describe('the version rides the patch', () => {
     await r.service.patch(1, { note: 'a' })
     await r.service.patch(1, { note: 'b' })
     expect(lastPatch()).toEqual({ note: 'b', version: 4 })
+  })
+
+  // A second tab's patch arrives as a WS upsert into the store and never passes
+  // through a call result here, so this tab used to keep the version it read at
+  // load time and 409 on its next patch against a number nobody had read.
+  test('a push into the store moves the version with it', async () => {
+    const r = createResource('orders', { model: 'Order' })
+    await r.load()
+    expect(r.version(1)).toBe(3)
+    r.store.upsert({ id: 1, note: 'edited elsewhere', version: 4 })
+    expect(r.version(1)).toBe(4)
+    await r.service.patch(1, { note: 'mine' })
+    expect(lastPatch().version).toBe(4)
   })
 
   test('create records the version of the row it made', async () => {

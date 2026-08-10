@@ -25,8 +25,9 @@
 // database and the audit trail alike. Start the API from the package root or
 // they land somewhere surprising.
 
-import { createClient } from '@frontierjs/litestone'
+import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { env, DEV_ENCRYPTION_KEY } from './env.ts'
+import { basecampGateLevel }       from './gate.ts'
 
 export type BasecampDb = Awaited<ReturnType<typeof createClient>>
 
@@ -45,5 +46,11 @@ export async function createBasecampDb(): Promise<BasecampDb> {
   return createClient({
     path:          SCHEMA_PATH,
     encryptionKey: env.ENCRYPTION_KEY,
+    // Supplying a GatePlugin REPLACES the one a @@gate-carrying schema installs
+    // for itself. Supplying none does not turn gates off — the default resolver
+    // takes over, and it grades a session on standing that travels with the
+    // user, which cannot express *admin of THIS workspace*. Every caller here
+    // would grade USER(4) in every workspace, including ones they are not in.
+    plugins: [new GatePlugin({ getLevel: basecampGateLevel })],
   })
 }

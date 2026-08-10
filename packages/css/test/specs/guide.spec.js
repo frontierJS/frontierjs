@@ -67,7 +67,21 @@ var REPLACEABLE = {
   'sg-theme-trigger':   'btn',
   'sg-config-trigger':  'btn',
   'sg-search-trigger':  'btn',
-  'sg-theme-option':    'btn',
+  'sg-theme-option':    'item',
+
+  /*
+   * The Themes page picker. It is on the register despite being declared in
+   * instruments.css: that file is for classes that DRAW the system, and this
+   * one is an ordinary control sitting beside the preview that does. Being
+   * in the other file is exactly why it outlived the sweep that caught its
+   * twin in the topbar — the register is what the ratchet reads, not the
+   * filename.
+   */
+  'sg-theme-switcher':  'tiles',
+  'sg-theme-tab':       'tile',
+  'sg-theme-tab-text':  'item-text',
+  'sg-theme-tab-name':  'item-title',
+  'sg-theme-tab-desc':  'item-sub',
 
   /*
    * The Learn wizard. It hand-rolled 27 classes for a trail, two cards, an
@@ -126,7 +140,6 @@ var REPLACEABLE = {
  */
 var NOT_SHIPPED_OK = {
   tonal: 'an instrument class from instruments.css, unprefixed for historical reasons — see the note in that file',
-  active: 'the guide router\'s own state class on nav items. Replaced by aria-current when sg-nav-item goes',
   brand: 'the compare page\'s worked example — a deliberate live <style> demonstrating one --bg-mix rule',
 };
 
@@ -525,6 +538,224 @@ test('guide: no .sg-* class renders identically to a shipped term', function () 
       0,
       'a guide class renders identically to a term the package ships — ' +
         'write the term and keep only what differs:\n        ' + dupes.join('\n        ')
+    );
+  } finally {
+    sheet.remove();
+  }
+});
+
+/*
+ * ── 9. …and none is a shipped term plus a tweak ───────────────────────
+ *
+ * The check above demands a byte-identical signature, and that is exactly
+ * how the Themes page picker survived it: `.sg-theme-tab` was `.tile` plus a
+ * padding, so ONE differing property made it invisible. A term with a tweak
+ * on top is the normal way this debt appears — nobody hand-rolls an exact
+ * copy, they hand-roll a copy they then adjust.
+ *
+ * So this asks the weaker question — how CLOSE is the nearest term — and
+ * puts the answer in a register rather than a threshold. `%` is properties
+ * matched out of PROBE_PROPS; an entry in ACCEPTED_NEAR names the term and
+ * the properties that differ, so an exception is a specific claim that goes
+ * stale loudly when the class changes underneath it.
+ *
+ * ── Why the obvious gate does not work ────────────────────────────────
+ *
+ * Three terms produced 40 of the first run's 56 findings — `.feed`,
+ * `.skeleton` and `.spinner`. Each is defined by properties a <div> probe
+ * cannot read (background-image, animation, user-select, a border colour),
+ * so each sits 1–5 properties from a bare div and EVERY one-line guide
+ * class lands within 90% of it. `.sg-next-arrow` — a colour and a font-size
+ * — is not "90% of a skeleton" in any sense a reader would accept.
+ *
+ * The tempting fix is a threshold on how far the term itself sits from
+ * default. Measured, that is wrong: `.spinner` differs in 5 properties and
+ * `.tiles` in 4, so any cut that drops the noise drops `.tiles` with it —
+ * and `.tiles` is the term this whole check was written to find (three
+ * guide classes are a .tiles with a different track width). A threshold
+ * cannot separate them because SIZE is not what makes a match meaningful.
+ *
+ * What does is WHICH properties agree. A resemblance is only interesting if
+ * the two classes agree on how the box is BUILT — display, the flex/grid
+ * axes, gap, alignment. Agreeing on `border-radius` and `color` is a
+ * coincidence between any two styled boxes. So a term must set at least one
+ * STRUCTURAL property, and the near-miss must agree with it on all of them:
+ * `.tiles` (display+grid-template-columns) qualifies, `.spinner` (border,
+ * radius, height, width — no structure) does not, and no threshold has to
+ * guess.
+ *
+ * `list-style-type` is dropped from the diff for a related reason: a <div>
+ * cannot show a list reset, so every `ul`-based term differs from every
+ * guide class by it and it carries no signal.
+ *
+ * The floor is 0.90 — measured. At 0.85 the run fills with two unrelated
+ * flex boxes; at 0.95 it misses `.sg-wiz-opts`, a .tiles with a different
+ * track function, which is a real one.
+ */
+
+var NEAR_FLOOR = 0.9;
+
+/*
+ * How a box is built, as opposed to how it is painted or spaced.
+ *
+ * `display` is deliberately NOT here even though it is the most structural
+ * property there is: `.spinner` is an inline-block circle and nothing else
+ * the probe can read, so display alone would readmit it and every 16px box
+ * in the guide "nearly" is one. A term earns comparison by stating a LAYOUT
+ * — an axis, a track, an alignment — not merely by having a box type.
+ *
+ * The gaps are absent for the opposite reason: `.sg-card-grid` is a .tiles
+ * whose gap is 12px rather than 16px, which is the exact case this check
+ * exists to catch. A gap is a value inside a layout, not a different layout.
+ */
+var STRUCTURAL = [
+  'flex-direction', 'flex-wrap', 'grid-template-columns',
+  'align-items', 'justify-content', 'place-items',
+];
+
+/*
+ * A near miss that has been looked at and kept, `sg-class`: 'term: prop,prop'.
+ * The properties are the ones that MUST still differ — if the class drifts
+ * closer or further, the entry stops matching and the check reports it again
+ * rather than staying quietly muted.
+ */
+var ACCEPTED_NEAR = {
+  /*
+   * A wizard wireframe. `sk-*` is the one family that must NOT be built from
+   * the vocabulary — the instruments header states why: drawing a Button and
+   * a Link the same way would say the choice between them is visual, which is
+   * the thing the wizard exists to deny. That it resembles .items is the
+   * coincidence of two flex columns, not a copy.
+   */
+  'sg-sk-col': 'items: flex-grow,flex-basis',
+
+  /*
+   * Stack is `gap: var(--space-2xl)` between block-level page sections; this
+   * is a 12px column of preview rows that also stretches its children to full
+   * width. The near-miss names .steps, which it resembles for the same
+   * accidental reason. Taking a term and then overriding both the properties
+   * that make it that term says the term fits when it does not — the same
+   * argument the REPLACEABLE register already records for this class.
+   */
+  'sg-stack': 'steps: row-gap,column-gap,flex-direction',
+
+  /*
+   * Already `class="dialog sg-modal"` — the term is written and this is the
+   * skin on top. The near-miss names .rows because a flex column with no gap
+   * is what a Rows list also is; what it cannot see is that the match is with
+   * a term the element does not claim and would not want. The three
+   * properties left are the config viewer's own: a max-width, and the
+   * column+overflow that lets the <pre> take the remaining height instead of
+   * growing the dialog past its own max.
+   */
+  'sg-modal': 'rows: max-width,overflow-x,overflow-y',
+
+  /*
+   * Already `class="card sg-preview-center"`. A centred box with a minimum
+   * height, which is what a preview needs so single-chip samples do not sit
+   * in a 20px-tall card. .avatars is a flex row that centres — true of any
+   * centred row, and an avatar stack is not what this is.
+   */
+  'sg-preview-center': 'avatars: justify-content,min-height,height',
+};
+
+test('guide: no .sg-* class is a shipped term plus a tweak', function () {
+  var sheet = document.createElement('style');
+  sheet.textContent = window.__FJS_GUIDE_CSS__.replace(/@import[^;]+;/g, '') +
+    '\n' + window.__FJS_INSTRUMENTS_CSS__;
+  document.head.appendChild(sheet);
+
+  try {
+    var subjects = {};
+    allRules().forEach(function (rule) {
+      if (!(window.CSSStyleRule && rule instanceof CSSStyleRule)) return;
+      (rule.selectorText || '').split(',').forEach(function (one) {
+        var t = one.trim();
+        if (/^\.sg-[\w-]+$/.test(t)) subjects[t.slice(1)] = true;
+      });
+    });
+
+    var host = document.createElement('div');
+    host.className = 'app';
+    document.body.appendChild(host);
+
+    function vec(cls) {
+      var e = document.createElement('div');
+      e.className = cls;
+      e.textContent = 'Ag';
+      host.appendChild(e);
+      var cs = getComputedStyle(e);
+      return PROBE_PROPS.map(function (p) { return cs.getPropertyValue(p); });
+    }
+
+    var bareVec = vec('');
+    var bare = bareVec.join('|');
+
+    /* A term is comparable only if it says something about STRUCTURE. */
+    var termVec = {};
+    PROBE_TERMS.forEach(function (t) {
+      var v = vec(t);
+      var structural = PROBE_PROPS.some(function (p, i) {
+        return STRUCTURAL.indexOf(p) !== -1 && v[i] !== bareVec[i];
+      });
+      if (structural) termVec[t] = v;
+    });
+
+    /* Nearest term per class, so one finding names one fix. */
+    var near = [];
+    Object.keys(subjects).sort().forEach(function (sg) {
+      var v = vec(sg);
+      if (v.join('|') === bare) return;
+
+      var best = null;
+      Object.keys(termVec).forEach(function (t) {
+        var tv = termVec[t];
+        var diff = [];
+        for (var i = 0; i < v.length; i++) {
+          if (v[i] !== tv[i] && PROBE_PROPS[i] !== 'list-style-type') diff.push(PROBE_PROPS[i]);
+        }
+        var score = (v.length - diff.length) / v.length;
+        if (score === 1) return;   /* check 8 owns the exact case */
+
+        /*
+         * The structural properties the TERM states are the ones that make
+         * it that term. Differ on any of them and the guide class is built
+         * a different way, however much paint the two happen to share.
+         */
+        var sharesBuild = PROBE_PROPS.every(function (p, i) {
+          if (STRUCTURAL.indexOf(p) === -1) return true;
+          if (tv[i] === bareVec[i]) return true;
+          return v[i] === tv[i];
+        });
+        if (!sharesBuild) return;
+
+        if (score >= NEAR_FLOOR && (!best || score > best.score)) {
+          best = { term: t, score: score, diff: diff };
+        }
+      });
+      if (!best) return;
+
+      var claim = best.term + ': ' + best.diff.join(',');
+      if (ACCEPTED_NEAR[sg] === claim) return;
+
+      near.push(
+        '.' + sg + ' is ' + (best.score * 100).toFixed(0) + '% of .' + best.term +
+        ' — differs only in ' + best.diff.join(', ') +
+        (ACCEPTED_NEAR[sg]
+          ? '\n            (ACCEPTED_NEAR says "' + ACCEPTED_NEAR[sg] + '" — it has drifted)'
+          : '')
+      );
+    });
+
+    host.remove();
+
+    assert.equal(
+      near.length,
+      0,
+      'a guide class is a shipped term with a tweak on top. Write the term and\n' +
+      '        keep only the tweak — or, if the difference is the point, add it to\n' +
+      '        ACCEPTED_NEAR as "' + 'term: props' + '":\n        ' +
+      near.join('\n        ')
     );
   } finally {
     sheet.remove();

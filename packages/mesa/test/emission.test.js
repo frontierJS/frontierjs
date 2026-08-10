@@ -548,23 +548,6 @@ describe('a const holding a function that writes to a reactive let', () => {
     expect(result).toContain('$$set_open')
   })
 
-  it('CURRENT GAP: a destructuring assignment is not rewritten', async () => {
-    /*
-     * `[a, b] = [b, a]` to two reactive lets emits `$runtime.get(sig) = …`,
-     * the same invalid target the tests above cover — rewriteAssignments only
-     * recognises a bare Identifier on the left. Unlike those, this one is NOT
-     * fixed: it is pinned here so the gap is discoverable rather than found
-     * again by a module that throws on load. Write a temp-variable swap.
-     * If this is ever implemented, delete this test — do not adjust it.
-     */
-    const { result } = await compile(
-      `<script>let a = 1\nlet b = 2\nconst swap = () => { [a, b] = [b, a] }</script><b>{a}{b}</b>`)
-    // The reads are rewritten, the assignment target is not — so the emitted
-    // pattern is `[$runtime.get(…), $runtime.get(…)] = …`, which does not parse.
-    expect(result).toContain('[$runtime.get($$sig_a), $runtime.get($$sig_b)] =')
-    expect(() => parseJs(result, { ecmaVersion: 'latest', sourceType: 'module' })).toThrow()
-  })
-
   it('leaves a destructured declarator alone', async () => {
     // A pattern declarator is expanded into flat vars with no initNode, and
     // rewriteAssignments needs a real node for its source offset. Guarding that
@@ -572,6 +555,148 @@ describe('a const holding a function that writes to a reactive let', () => {
     const { result } = await compile(
       `<script>const { a, b } = { a: 1, b: 2 }</script><b>{a}{b}</b>`)
     expect(result).toBeTruthy()
+  })
+})
+
+describe('a destructuring assignment to reactive lets', () => {
+  /*
+   * `[a, b] = [b, a]` used to emit `[$runtime.get($$sig_a), …] = …` — the same
+   * invalid target the suite above covers, reached a different way: both
+   * rewriters recognised only a bare Identifier on the left, so a pattern fell
+   * through to the generic descent and every target was rewritten as a READ.
+   * Clean compile, empty analysis.errors, module dead on load. The kit's
+   * DatePicker used the swap idiom and threw before it rendered anything.
+   *
+   * The pattern is now mirrored into temps and each target written back
+   * through whatever it is, so the cases below are about the leaves: what a
+   * pattern can hold, and which half of it is reactive.
+   *
+   * Two paths, and each one broke on its own: a handler in the SCRIPT goes
+   * through rewriteAssignments, a handler written inline on the element goes
+   * through rewriteExpr. Every case here is driven inline for that reason.
+   */
+
+  /** Click the button, and report the <p> before and after. */
+  const drive = async (name, script, template) => {
+    const C = await build(`<script>${script}</script>${template}`, name)
+    const c = mount(C)
+    const p = c.querySelector('p')
+    const before = p.textContent
+    c.querySelector('button').click()
+    $rt.flushSync()
+    const after = p.textContent
+    c.remove()
+    return { before, after }
+  }
+
+  it('swaps two reactive lets', async () => {
+    expect(await drive('Swap.mesa',
+      `let a = 1\nlet b = 2`,
+      `<p>{a}{b}</p><button on:click={() => { [a, b] = [b, a] }}>go</button>`
+    )).toEqual({ before: '12', after: '21' })
+  })
+
+  it('swaps them from a const handler in the script', async () => {
+    expect(await drive('SwapScript.mesa',
+      `let a = 1\nlet b = 2\nconst swap = () => { [a, b] = [b, a] }`,
+      `<p>{a}{b}</p><button on:click={swap}>go</button>`
+    )).toEqual({ before: '12', after: '21' })
+  })
+
+  it('takes an object pattern, shorthand or keyed', async () => {
+    expect(await drive('Obj.mesa',
+      `let p = 1\nlet q = 2\nconst o = { p: 8, q: 9, r: 7 }`,
+      `<p>{p}{q}</p><button on:click={() => { ({ p } = o); ({ r: q } = o) }}>go</button>`
+    )).toEqual({ before: '12', after: '87' })
+  })
+
+  it('honours a default in the pattern', async () => {
+    // The default is an ordinary expression and may read a signal, so it is
+    // rewritten in place rather than carried across verbatim.
+    expect(await drive('Default.mesa',
+      `let fallback = 5\nlet a = 1\nlet b = 2`,
+      `<p>{a}{b}</p><button on:click={() => { ({ a = fallback } = {}); [b = fallback + 1] = [] }}>go</button>`
+    )).toEqual({ before: '12', after: '56' })
+  })
+
+  it('takes a hole, a rest element and a nested pattern', async () => {
+    expect(await drive('Shapes.mesa',
+      `let a = 0\nlet tail = []\nlet deep = 0`,
+      `<p>{a}{tail.join('-')}{deep}</p>` +
+      `<button on:click={() => { [, a, ...tail] = [1, 2, 3, 4]; [{ v: deep }] = [{ v: 9 }] }}>go</button>`
+    )).toEqual({ before: '00', after: '23-49' })
+  })
+
+  it('writes a plain local and a member target in the same pattern', async () => {
+    // Only one target being reactive is the case that decides the shape: the
+    // others cannot go through a setter and must still land.
+    expect(await drive('Mixed.mesa',
+      `let a = 0\nlet seen = ''\nconst o = { x: 0 }`,
+      `<p>{a}{seen}</p>` +
+      `<button on:click={() => { let plain = 0; [a, plain, o.x] = [1, 2, 3]; seen = plain + ':' + o.x }}>go</button>`
+    )).toEqual({ before: '0', after: '12:3' })
+  })
+
+  it('still evaluates to the right-hand value', async () => {
+    expect(await drive('Value.mesa',
+      `let a = 0\nlet seen = ''`,
+      `<p>{a}{seen}</p><button on:click={() => { seen = JSON.stringify(([a] = [3])) }}>go</button>`
+    )).toEqual({ before: '0', after: '3[3]' })
+  })
+
+  it('leaves a pattern that names nothing reactive exactly as written', async () => {
+    const { result } = await compile(
+      `<script>const o = { x: 0, y: 0 }\nconst f = () => { [o.x, o.y] = [1, 2] }</script><b>x</b>`)
+    expect(result).toContain('[o.x, o.y] = [1, 2]')
+    expect(result).not.toContain('$$dv')
+  })
+
+  it('emits JS that parses, whichever path rewrote it', async () => {
+    for (const src of [
+      `<script>let a = 1\nlet b = 2\nconst swap = () => { [a, b] = [b, a] }</script><b on:click={swap}>{a}{b}</b>`,
+      `<script>let a = 1\nlet b = 2</script><b on:click={() => { [a, b] = [b, a] }}>{a}{b}</b>`,
+      `<script>let a = 1\nlet o = {}\n$: { ({ a = 0, ...o } = { a: 3 }) }</script><b>{a}{o}</b>`,
+    ]) {
+      const { result, analysis } = await compile(src)
+      expect(analysis.errors).toEqual([])
+      expect(() => parseJs(result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+    }
+  })
+})
+
+describe('{@const} inside {#each} reading the loop index', () => {
+  /*
+   * `{@const isLast = idx === list.length - 1}` compiles to `idx()`, which was
+   * a defect while the index was a plain number and is correct now that it is
+   * a signal in its own right (2026-08-04, the fix for stale indices after a
+   * keyed move). The kit's Breadcrumbs still precomputes the flag in its
+   * script because of the old failure.
+   *
+   * Pinned here because the two halves are owned in different files — the
+   * compiler decides to CALL it, the runtime decides to hand over a getter —
+   * and either one moving alone brings back `idx is not a function`.
+   */
+  const row = (each, label) =>
+    `<script>let list = [{ id: 1, a: 'x' }, { id: 2, a: 'y' }]</script>` +
+    `<ul>{#each ${each}}{@const last = idx === list.length - 1}<li>{${label}}:{last}</li>{/each}</ul>` +
+    `<button on:click={() => { list = [...list, { id: 3, a: 'z' }] }}>go</button>`
+
+  it('reads the index in a plain, a keyed and a destructured each', async () => {
+    for (const [name, each, label] of [
+      ['Plain.mesa',    `list as item, idx`,           'item.a'],
+      ['Keyed.mesa',    `list as item, idx (item.id)`, 'item.a'],
+      ['Destruct.mesa', `list as { a }, idx`,          'a'],
+    ]) {
+      const C = await build(row(each, label), name)
+      const c = mount(C)
+      expect(c.querySelector('ul').textContent, name).toBe('x:falsey:true')
+      // …and after a rebind, which is where a plain index would have been
+      // written over the getter.
+      c.querySelector('button').click()
+      $rt.flushSync()
+      expect(c.querySelector('ul').textContent, name).toBe('x:falsey:falsez:true')
+      c.remove()
+    }
   })
 })
 

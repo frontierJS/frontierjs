@@ -35,6 +35,7 @@
 import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP }       from '../core/service.ts'
 import { unwrapResult }         from '../core/envelope.ts'
+import { wsSend }               from './outbox.ts'
 import type { ServiceContext } from './bridge.ts'
 import type { IAuth }          from '../auth/types.ts'
 import type { App, Plugin }    from '../core/app.ts'
@@ -51,8 +52,11 @@ export interface Connection {
 
 // Minimal interface used by Channel.send() broadcast loop.
 // Connection.socket is the raw WS — obtained from ctx.$ws in the handler.
+// `send` returns a number and that number is load-bearing: 0 means the frame
+// was DROPPED under backpressure. Typing it `void` is how five call sites came
+// to ignore it — every send here goes through wsSend (outbox.ts) instead.
 type BunWS = {
-  send:       (data: string | Buffer) => void
+  send:       (data: string) => number
   close:      (code?: number, reason?: string) => void
   readyState: number
 }
@@ -137,9 +141,7 @@ export class Channel {
   // serialize the payload once instead of once per channel.
   sendRaw(msg: string): void {
     for (const conn of this.connections) {
-      if (conn.socket.readyState === 1) {
-        try { conn.socket.send(msg) } catch {}
-      }
+      if (conn.socket.readyState === 1) wsSend(conn.socket, msg)
     }
   }
 
@@ -164,16 +166,12 @@ export function createChannelManager() {
     const msg = encodeEventFrame(event, data)
     for (const conn of ch.connections) {
       if (conn.id === excludeConnId) continue
-      if (conn.socket.readyState === 1) {
-        try { conn.socket.send(msg) } catch {}
-      }
+      if (conn.socket.readyState === 1) wsSend(conn.socket, msg)
     }
   }
 
   function sendToConn(conn: Connection, event: string, data: unknown): void {
-    if (conn.socket.readyState === 1) {
-      try { conn.socket.send(encodeEventFrame(event, data)) } catch {}
-    }
+    if (conn.socket.readyState === 1) wsSend(conn.socket, encodeEventFrame(event, data))
   }
 
   // ── Presence tracking — extracted to presence.ts ────────────────────
@@ -262,7 +260,7 @@ export function createChannelManager() {
 
       connections.set(conn.id, conn)
       // Send ack with connection id so the client can correlate responses
-      socket.send(JSON.stringify({ type: 'connection', id: conn.id }))
+      wsSend(socket, JSON.stringify({ type: 'connection', id: conn.id }))
 
       for (const handler of onConnectHandlers) {
         try { await handler(session, conn) } catch {}

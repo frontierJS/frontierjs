@@ -50,6 +50,7 @@
     tabindex="-1"
     class={cx('item', t)}
     {class}
+    {...$attributes}
     on:click={handleClick}
   >
     {#if icon}
@@ -70,6 +71,7 @@
     disabled={disabled}
     class={cx('item', t)}
     {class}
+    {...$attributes}
     on:click={handleClick}
   >
     {#if icon}
