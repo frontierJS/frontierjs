@@ -2,6 +2,42 @@
 
 **Date:** 2026-07-18 · **Version audited:** `@frontierjs/litestone` 1.0.6 · **Runtime:** Bun 1.3.13 (Linux x64)
 
+> **Re-verified 2026-08-06** on 1.1.0 / Bun 1.3.11 / 1443 tests — the first time
+> `bench/audit-bench.mjs` had been run since the audit itself. Nothing here is
+> revoked. What changed:
+>
+> - **Every fix still holds.** GatePlugin resolves `getLevel` **0** times across
+>   200 gated reads (H4), `autoMigrate` in-sync is 0.3 ms/call (H5), warm JSONL
+>   reads are ~0 ms (H6), `upsert()` issues **one** statement — confirmed with
+>   `$tapQuery`, not inferred (M1), and presign is 94 µs against the 291 µs
+>   pre-M2 baseline.
+> - **The bench had a broken case.** `gate-getlevel` used `scoped.posts` on
+>   `model Post` and died with *"posts" is not a table in this schema* — so the
+>   H4 measurement, the one that proves a security-relevant cache still works,
+>   had been silently skipped for three weeks. Accessor is singular
+>   (Invariant 2). Fixed.
+> - **Several annotations were fossils** describing the pre-fix behaviour of
+>   findings that had been fixed the same day — a reader saw `0.3 ms/call` next
+>   to *"runs full pristine build + 2x introspection"*. Each note now says which
+>   finding it verifies, or says **STILL OPEN**.
+> - **`bun run bench` and `bun run bench:core` exist now.** The file was
+>   discoverable only by knowing it was there, which is most of why three weeks
+>   passed.
+> - **Do not compare the absolute µs below across machines.** A first pass here
+>   read ~2x worse on the core path; interleaving the same bench against the
+>   pre-session tree, four rounds on one machine, showed run-to-run spread wider
+>   than the delta, and a later quiet run landed at 1.65 / 38.9 / 10.5 µs
+>   (`findUnique` / `findMany` 100 / `create`) against the audited 1.28 / 38.4 /
+>   9.2. **Only interleaved same-machine A/B means anything.**
+>
+> Cost of the attributes added since: `@@createdBy` + `@@updatedBy` is +21% on
+> create and +28% on update (partly two real FK columns, not only the stamp);
+> `@version` is +7% create / +35% update, which is the price of the lost-update
+> guarantee. Measured, not estimated.
+>
+> **The "still open" list at the end of the fixes section is now `FJS-112`** —
+> it had no id, so per `ISSUES.md`'s own rule nothing in it was open.
+
 ---
 
 ## FIXES APPLIED (same day)

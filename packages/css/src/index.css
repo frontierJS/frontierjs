@@ -2,13 +2,15 @@
  * index.css
  * Single entry point. Import this from your app root.
  *
- * Plain CSS, no build step, no UnoCSS.
+ * Plain CSS, no build step. UnoCSS is optional and supported — if you run
+ * it, `uno.css` goes in its own layer between `utilities` and `a11y`; see
+ * "Using it with UnoCSS" in README.md for the layer line and the reset trap.
  *
  * ── Layout ──────────────────────────────────────────────────────────
  *
  *   index.css        this file — the only thing most apps import
  *   utilities.css    the escape hatch; late layer, so it beats components
- *   foundation/      tokens, tones, and the two lineage bases
+ *   foundation/      reset, tokens, tones, and the two lineage bases
  *   themes/          the seven shipped themes
  *   components/      btn, card, field, table, dialog …
  *   patterns/        the Block tier: bar, list, feed, steps, tabs …
@@ -19,13 +21,7 @@
  * build input: there is no src/ and no dist/, because the file you read
  * here is the file that ships.
  *
- * Directories were tried once before and are why v0.6 exists: every
- * @import pointed at a ./themes/ and ./utilities/ that had never been
- * created, so the entry point resolved nothing and the package did not
- * load at all. A failed @import is silent — the rule stays in place with
- * a null styleSheet — so `meta: every @import in index.css resolved` in
- * the test suite is what makes this layout safe to have at all. If you
- * move a file, run `bun run test`.
+ * If you move a file, run `bun run test`.
  *
  * ── Cascade layers ──────────────────────────────────────────────────
  *
@@ -59,8 +55,14 @@
  *    `.bar` beat `.center` on the `display` property. See layout.css.
  */
 
-@layer tokens, themes, tones, base, layout, components, patterns, utilities, a11y;
+/*
+ * `reset` is first so it is the weakest thing in the cascade. A reset that
+ * can beat a component has stopped being a reset — and the only rule in it
+ * targets a bare element, which a `:where()` base would otherwise tie with.
+ */
+@layer reset, tokens, themes, tones, base, layout, components, patterns, utilities, a11y;
 
+@import './foundation/reset.css'  layer(reset);
 @import './foundation/tokens.css' layer(tokens);
 
 /* Themes */
@@ -71,6 +73,7 @@
 @import './themes/dark.css'     layer(themes);
 @import './themes/elite.css'    layer(themes);
 @import './themes/basecamp.css' layer(themes);
+@import './themes/notebook.css' layer(themes);
 
 /* Foundation — the rest of it; tokens.css is imported above */
 @import './foundation/tones.css'   layer(tones);
@@ -83,6 +86,7 @@
 
 /* Components */
 @import './components/typography.css' layer(components);
+@import './components/code.css'       layer(components);
 @import './components/icon.css'       layer(components);
 @import './components/buttons.css'    layer(components);
 @import './components/pills.css'      layer(components);
@@ -92,6 +96,7 @@
 @import './components/avatar.css'     layer(components);
 @import './components/feedback.css'   layer(components);
 @import './components/alerts.css'     layer(components);
+@import './components/overlays.css'   layer(components);
 @import './components/toasts.css'     layer(components);
 @import './components/popovers.css'   layer(components);
 @import './components/tooltips.css'   layer(components);
@@ -109,6 +114,7 @@
 @import './patterns/steps.css'      layer(patterns);
 @import './patterns/tabs.css'       layer(patterns);
 @import './patterns/nav.css'        layer(patterns);
+@import './patterns/prose.css'      layer(patterns);
 
 /*
  * The escape hatch — after every component and pattern, before a11y.

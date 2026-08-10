@@ -3,7 +3,7 @@ title: Job
 ---
 <script>
   import { page } from '@frontierjs/sierra/router'
-  import { jobs } from '../../../resources/jobs.mesa'
+  import { jobs } from '../../../resources/Job.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   $: page.params

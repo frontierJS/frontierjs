@@ -2,7 +2,7 @@
 // Basecamp-specific hooks — used across Basecamp services.
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
-import { BadRequest, Forbidden, authenticate } from '@frontierjs/junction'
+import { BadRequest, Forbidden, NotFound, authenticate } from '@frontierjs/junction'
 import type { Hook, ServiceContext }  from '@frontierjs/junction'
 import type { BasecampApp }                from '../basecamp.types.ts'
 
@@ -12,7 +12,12 @@ import type { BasecampApp }                from '../basecamp.types.ts'
 // Every one of those reads was undefined, which is why role checks silently
 // passed for everyone.
 
-interface Session { userId?: string; authMethod?: string; workspaceId?: string }
+interface Session {
+  userId?: string; authMethod?: string; workspaceId?: string
+  // Put here by basecampSessionFields (core/session-auth.ts) off this app's own
+  // User columns, not by @frontierjs/auth.
+  isSystemAdmin?: boolean; status?: string; kind?: string
+}
 
 function userOf(ctx: ServiceContext): Session | undefined {
   return ctx.auth?.user as Session | undefined
@@ -26,16 +31,28 @@ function userOf(ctx: ServiceContext): Session | undefined {
 //   2. ?workspace_id= query param
 //   3. the session's own default workspace
 
+/**
+ * Which workspace a request is for.
+ *
+ * Exported because two hooks need the answer and they must not each work it
+ * out: apiKeyGuard runs at app level, before any service hook has stamped
+ * ctx.locals, and a second copy of this precedence is a second thing to keep
+ * in step.
+ *
+ * Headers live on ctx.client.headers — Junction splits the context into
+ * auth / client / route / locals. There is NO ctx.params: the previous version
+ * read ctx.params.headers and wrote ctx.params.workspace_id, and both threw
+ * "undefined is not an object" on the first call.
+ */
+export function resolveWorkspaceId(ctx: ServiceContext): string | undefined {
+  return (ctx.client?.headers?.['x-workspace-id'] as string | undefined) ||
+         (ctx.query?.workspace_id as string | undefined)                 ||
+         (userOf(ctx)?.workspaceId as string | undefined)
+}
+
 export function requireWorkspace(): Hook {
   return (ctx: ServiceContext): void => {
-    // Headers live on ctx.client.headers — Junction splits the context into
-    // auth / client / route / locals. There is NO ctx.params: the previous
-    // version read ctx.params.headers and wrote ctx.params.workspace_id, and
-    // both threw "undefined is not an object" on the first call.
-    const workspaceId =
-      (ctx.client?.headers?.['x-workspace-id'] as string | undefined) ||
-      (ctx.query.workspace_id as string | undefined)          ||
-      (userOf(ctx)?.workspaceId as string | undefined)
+    const workspaceId = resolveWorkspaceId(ctx)
 
     if (!workspaceId)
       throw new BadRequest(
@@ -59,11 +76,26 @@ export function scopeToWorkspace(app: BasecampApp): Hook {
 
     // asSystem(): membership is what DECIDES the caller's access, so it cannot
     // be read through a client already scoped by that access.
-    const member = await app.data.asSystem().workspaceMember.findFirst({
-      where: { workspaceId, userId },
+    // `include`, not a second findUnique: this hook runs on every request to
+    // every workspace-scoped service, and the status is one join away from a
+    // row already being read.
+    const sys: any = app.data.asSystem()
+    const member = await sys.workspaceMember.findFirst({
+      where:   { workspaceId, userId },
+      include: { workspace: true },
     })
 
     if (!member) throw new Forbidden('You are not a member of this workspace')
+
+    // Suspension is enforced HERE, not in each service, because this is the one
+    // hook every workspace-scoped service already runs — nineteen of the
+    // twenty. A suspended workspace that only looked suspended on the hub
+    // screen would be a button that reports success and revokes nothing.
+    //
+    // Checked after membership, so a stranger still gets "not a member" rather
+    // than learning that a workspace they cannot see is suspended.
+    if (member.workspace?.status === 'suspended')
+      throw new Forbidden('This workspace is suspended. Ask a system administrator to restore it.')
 
     ctx.locals.memberRole = member.role
   }
@@ -104,6 +136,26 @@ export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook
       throw new Forbidden(
         `Requires ${roles.join(' or ')} role in this workspace (you have: ${role ?? 'none'})`
       )
+  }
+}
+
+// ─── requireSystemAdmin ──────────────────────────────────────────────────
+// The hub tier. One hook, one service — deliberately not a role a workspace
+// can grant.
+//
+// It reads `isSystemAdmin` off the session, which core/session-auth.ts puts
+// there from the User column of the same name. That name is the one
+// sessionGateLevel() grades SYSADMIN(7) on, so this hook and the @@gate that
+// eventually replaces it are asking the same question of the same field.
+//
+// 404, not 403: the hub is not a screen a workspace member is being refused,
+// it is a surface they have no business knowing exists. Same reason the
+// workspaces service answers 404 for a workspace you are not in.
+
+export function requireSystemAdmin(): Hook {
+  return (ctx: ServiceContext): void => {
+    authenticate(ctx)
+    if (userOf(ctx)?.isSystemAdmin !== true) throw new NotFound('Not found')
   }
 }
 

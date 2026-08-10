@@ -1,0 +1,21 @@
+<script module>
+  // src/resources/Dashboard.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
+  // named for the model and exporting the accessor (invariant 19). No markup:
+  // everything is module scope, which is what <script module> means.
+  //
+  // No `model:` — `dashboards` is the regular plural of `Dashboard`, which is
+  // what modelNameFor() resolves, so the schema's labels, required list and
+  // field rules arrive without restating any of them here.
+  //
+  // There is no resource for `DashboardWidget`. A widget has no endpoint of its
+  // own: the layout is managed through actions on the dashboard that owns it,
+  // which is what keeps "may this widget be placed" one answer.
+  import { createResource } from '@frontierjs/sierra/junction'
+  import { stampWorkspace } from '../session.js'
+
+  export const dashboards = createResource('dashboards', {
+    hooks: { before: { create: [stampWorkspace] } },
+  })
+</script>

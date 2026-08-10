@@ -284,14 +284,129 @@ describe('api keys', () => {
     expect(await h.auth.verifyApiKey!(key)).toBeNull()
   })
 
-  test('api key operations without an encryptionKey raise AuthConfigError', async () => {
+  test('ISSUING a key without an encryptionKey raises AuthConfigError', async () => {
     // Config failure, not a user failure — this one is meant to stay a 500.
+    // It is the ISSUE path deliberately: that is where a developer is, and
+    // where being told loudly is worth a 500.
     const bare = await makeAuth({ encryptionKey: undefined })
     try {
-      await rejectsWith(() => bare.auth.verifyApiKey!('fjs_x'), AuthConfigError)
+      await rejectsWith(() => bare.auth.createApiKey!('someone'), AuthConfigError)
     } finally {
       bare.cleanup()
     }
+  })
+
+  test('VERIFYING without an encryptionKey answers null, it does not throw', async () => {
+    // Verification runs on attacker-supplied input on every request, so a
+    // missing config must not be a 500 anyone can trigger by sending a
+    // Bearer token. verifySession also falls through to here for any token
+    // that missed, so an app with no API keys at all would have paid a throw
+    // for every expired session.
+    const bare = await makeAuth({ encryptionKey: undefined })
+    try {
+      expect(await bare.auth.verifyApiKey!('fjs_x')).toBeNull()
+      expect(await bare.auth.verifySession('fjs_x')).toBeNull()
+      expect(await bare.auth.verifySession('not-a-real-session')).toBeNull()
+    } finally {
+      bare.cleanup()
+    }
+  })
+
+  // ─── the transport only ever calls verifySession ────────────────────────
+  // http.ts resolves every Bearer token through auth.verifySession() and calls
+  // verifyApiKey nowhere. Until this landed, createApiKey() succeeded and the
+  // key it returned authenticated nothing: a key that could be issued and
+  // never used.
+
+  test('an API key authenticates through verifySession', async () => {
+    const u    = await freshUser('ak-session')
+    const user = await h.sys.user.findFirst({ where: { email: u.email } })
+    const { key } = await h.auth.createApiKey!(user.id, { name: 'ci' })
+
+    const ctx = await h.auth.verifySession(key)
+    expect(ctx).not.toBeNull()
+    expect(ctx!.userId).toBe(user.id)
+    expect(ctx!.authMethod).toBe('apiKey')
+  })
+
+  test('a revoked key stops authenticating through verifySession too', async () => {
+    const u    = await freshUser('ak-session-revoke')
+    const user = await h.sys.user.findFirst({ where: { email: u.email } })
+    const { key, id } = await h.auth.createApiKey!(user.id)
+
+    await h.auth.revokeApiKey!(id)
+    expect(await h.auth.verifySession(key)).toBeNull()
+  })
+
+  test('a session token still authenticates, and is not an api key', async () => {
+    const u = await freshUser('ak-not-session')
+    const { token } = await h.auth.login(u.email, u.password)
+
+    const ctx = await h.auth.verifySession(token)
+    expect(ctx!.authMethod).toBe('session')
+    expect(ctx!.credentialId).toBeUndefined()
+    expect(await h.auth.verifyApiKey!(token)).toBeNull()
+  })
+
+  // ─── what the key carries ───────────────────────────────────────────────
+
+  test('the scopes a key was issued with reach the session', async () => {
+    const u    = await freshUser('ak-scopes')
+    const user = await h.sys.user.findFirst({ where: { email: u.email } })
+    const { key } = await h.auth.createApiKey!(user.id, {
+      scopes: ['servers:read', 'projects:read'],
+    })
+
+    // createApiKey stores them space-joined and verifyApiKey used to drop them,
+    // so a key issued read-only authenticated with its owner's full standing
+    // and nothing downstream could tell.
+    const ctx = await h.auth.verifySession(key)
+    expect(ctx!.scopes).toEqual(['servers:read', 'projects:read'])
+  })
+
+  test('a key issued with no scopes carries none, rather than an empty list', async () => {
+    const u    = await freshUser('ak-noscopes')
+    const user = await h.sys.user.findFirst({ where: { email: u.email } })
+    const { key } = await h.auth.createApiKey!(user.id)
+
+    expect((await h.auth.verifySession(key))!.scopes).toBeUndefined()
+  })
+
+  test('the session names WHICH key proved it', async () => {
+    const u    = await freshUser('ak-which')
+    const user = await h.sys.user.findFirst({ where: { email: u.email } })
+    const a = await h.auth.createApiKey!(user.id, { name: 'one' })
+    const b = await h.auth.createApiKey!(user.id, { name: 'two' })
+
+    // Two keys on one user produce sessions that are otherwise identical, so
+    // per-key usage and per-key revocation have nothing else to key on.
+    const ctxA = await h.auth.verifySession(a.key)
+    const ctxB = await h.auth.verifySession(b.key)
+    expect(ctxA!.credentialId).toBe(String(a.id))
+    expect(ctxB!.credentialId).toBe(String(b.id))
+    expect(ctxA!.credentialId).not.toBe(ctxB!.credentialId)
+  })
+
+  // ─── revoke ─────────────────────────────────────────────────────────────
+
+  test('revoking an id that is not a key is refused, not silently accepted', async () => {
+    // revokeApiKey did Number(keyId) because this package's own schema
+    // fragment declares Credential.id as Int — but the fragments are a
+    // starting point apps edit, and an app with uuid ids got
+    // Number(uuid) === NaN: a delete matching nothing, throwing nothing.
+    // Revoke reported success and the key kept working.
+    await expect(h.auth.revokeApiKey!('9999999')).rejects.toThrow(/No API key/)
+  })
+
+  test('revoke cannot delete a password credential by id', async () => {
+    const u    = await freshUser('ak-wrongid')
+    const user = await h.sys.user.findFirst({ where: { email: u.email } })
+    const pw   = await h.sys.credential.findFirst({ where: { userId: user.id, type: 'password' } })
+
+    await expect(h.auth.revokeApiKey!(String(pw.id))).rejects.toThrow(/No API key/)
+    expect(await h.sys.credential.findUnique({ where: { id: pw.id } })).not.toBeNull()
+    // and the password still works
+    expect((await h.auth.login(u.email, u.password)).token).toBeTruthy()
   })
 })
 

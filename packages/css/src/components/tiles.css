@@ -27,15 +27,15 @@
 .tiles {
   display:               grid;
   grid-template-columns: repeat(auto-fit, minmax(var(--tile-min, 12rem), 1fr));
-  gap:                   1rem;
+  gap:                   var(--space-2xl);
 }
 
 .tile {
-  padding: 1rem 1.25rem;
+  padding: var(--space-2xl) var(--space-3xl);
 }
 
 .tile-label {
-  font-size:      0.8125rem;
+  font-size:      var(--text-sm);
   font-weight:    500;
   color:          var(--ink-mute);
   text-transform: uppercase;
@@ -43,7 +43,7 @@
 }
 
 .tile-value {
-  font-size:   1.75rem;
+  font-size:   var(--text-3xl);
   font-weight: 700;
   line-height: 1.15;
   color:       var(--surface-color);
@@ -59,8 +59,8 @@
 .tile-delta {
   display:     inline-flex;
   align-items: center;
-  gap:         0.25rem;
-  font-size:   0.8125rem;
+  gap:         var(--space-2xs);
+  font-size:   var(--text-sm);
   font-weight: 600;
   color:       var(--bg-mix, var(--ink-mute));
   font-variant-numeric: tabular-nums;

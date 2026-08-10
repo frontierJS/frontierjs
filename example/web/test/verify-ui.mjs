@@ -277,12 +277,19 @@ try {
 
   // The actions menu is the transitions table again — the same list the Moves
   // tab renders, so a mismatch here is a component bug and not a data one.
+  // Visible, not merely present. Every overlay in the kit fades in with
+  // el.animate(..., { fill: 'forwards' }) from an {@attach}, and an attachment
+  // used to run before the element was in the document — where that animation
+  // never starts and the element paints at keyframe 0. A menu, a toast and the
+  // palette were all fully transparent while every assertion about them passed
+  // (`FJS-110`). Opacity is now part of the claim.
   t('menu.items', await evaluate(`
     document.querySelector('#order-actions').click();
     await waitFor(() => document.querySelector('[role="menu"]'));
     return {
       expanded: document.querySelector('#order-actions').getAttribute('aria-expanded'),
       items: [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map(i => i.textContent.trim().split(/\\s+/)[0]),
+      opacity: getComputedStyle(document.querySelector('[role="menu"]')).opacity,
     };
   `))
 
@@ -431,6 +438,13 @@ try {
     await waitFor(() => document.querySelector('.toast'));
     return {
       toast: document.querySelector('.toast').textContent.trim(),
+      // Wait for the enter animation to finish rather than sampling mid-fade —
+      // the claim is that it ends up visible, not that it is visible instantly.
+      toastOpacity: await (async () => {
+        const el = document.querySelector('.toast');
+        await Promise.all(el.getAnimations().map(a => a.finished));
+        return getComputedStyle(el).opacity;
+      })(),
       stored: JSON.parse(localStorage.getItem('shop_prefs') ?? '{}').dense,
     };
   `))
@@ -446,7 +460,34 @@ try {
   `))
 
   // ─── 4. Command palette — the global one ─────────────────────────────────
+  //
+  // Opened by CLICKING the header button first. ⌘K and the button are two
+  // callers of one store and only the keyboard one was ever driven — which is
+  // how the palette could be a full-screen invisible backdrop that swallowed
+  // every click while this drive reported 26/26 (`FJS-110`). The user's report
+  // was "clicking Search does nothing and the app freezes".
   await goto('/')
+  t('palette.opensOnClick', await evaluate(`
+    document.getElementById('palette-open').click();
+    await waitFor(() => document.querySelector('.cp-panel'));
+    // The enter animation is 120ms; wait for it to finish rather than sampling
+    // mid-fade, and read the backdrop too — it is the thing that covers the page.
+    await Promise.all(document.querySelector('.cp-panel').getAnimations().map(a => a.finished));
+    const panel = document.querySelector('.cp-panel'), backdrop = document.querySelector('.cp-backdrop');
+    const box = panel.getBoundingClientRect();
+    return {
+      panelOpacity:    getComputedStyle(panel).opacity,
+      backdropOpacity: getComputedStyle(backdrop).opacity,
+      // A backdrop that covers the page and shows nothing is the failure being
+      // guarded against, so ask the page what is actually on top.
+      topmostIsPalette: !!document.elementFromPoint(innerWidth / 2, 140)?.closest('.cp-panel'),
+      hasSize: box.width > 200 && box.height > 100,
+    };
+  `))
+
+  await key('Escape', 'Escape', 27)
+  await evaluate(`await waitFor(() => !document.querySelector('.cp-panel'), 3000).catch(() => {}); return true`)
+
   await evaluate(`document.body.focus(); return true`)
   await key('k', 'KeyK', 75, 2 /* Ctrl */)
 
@@ -520,7 +561,7 @@ const expected = {
 
   // A pending order can be paid or cancelled — the schema's answer, reached
   // through a menu this time.
-  'menu.items':         { expanded: 'true', items: ['pay', 'cancel'] },
+  'menu.items':         { expanded: 'true', items: ['pay', 'cancel'], opacity: '1' },
   'menu.escapeCloses':  { open: false },
 
   'modal.opens':        { title: 'Confirm cancel', focusInside: true, body: true },
@@ -540,9 +581,10 @@ const expected = {
   'settings.accordion': { sections: ['Appearance', 'Lists', 'Order notes'], openAtStart: ['Appearance'] },
   'settings.expand':    { expanded: true, numberInput: true, radiogroup: true },
   'settings.switch':    { role: 'switch', toggled: true },
-  'settings.save':      { toast: 'Preferences saved', stored: true },
+  'settings.save':      { toast: 'Preferences saved', toastOpacity: '1', stored: true },
   'settings.densityApplies': { compact: true },
 
+  'palette.opensOnClick': { panelOpacity: '1', backdropOpacity: '1', topmostIsPalette: true, hasSize: true },
   'palette.opensOnCtrlK': { open: true, focused: 'INPUT' },
   'palette.filters':      { query: 'ord', options: ['Orders', 'New order'] },
   'palette.runsCommand':  { path: '/orders/', open: false },

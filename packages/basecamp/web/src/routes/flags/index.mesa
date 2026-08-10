@@ -1,0 +1,299 @@
+---
+title: Flags
+---
+<script>
+  // The mock's WorkspaceFlagsView, over real environments.
+  //
+  // The mock's per-environment state was a map keyed by TIER NAME —
+  // `production`, `staging`, `development`. That vocabulary already exists here
+  // as `model Environment`, one row per environment per project, so the string
+  // would have meant every project sharing one "production" belonging to none
+  // of them. An override points at the real row, which is why the toggle is a
+  // picker over this workspace's actual environments and not three fixed
+  // columns.
+  //
+  // **The resolution rule is not in this file.** What a flag is set to in an
+  // environment — the override if there is one, the flag's own default if not —
+  // is `resolveIn()` in the service, and it reaches here already applied, with
+  // `source` saying which it was. A screen that recomputed it would be a second
+  // owner of the only thing the service is for.
+  import { session } from '../../session.js'
+  import { flags }   from '../../resources/FeatureFlag.mesa'
+  import { environments } from '../../resources/Environment.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Form       from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows     = []
+  let envs     = []
+  let detail   = {}      // flagId → the flag with its resolved overrides
+  let picked   = {}      // flagId → the environment id the picker is showing
+  let error    = null
+  let loading  = true
+  let busy     = null
+  let creating = false
+  let draft    = flags.make()
+
+  // The kit's controls take a value and hand back an event; they are NOT bound
+  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
+  // let and a member expression is not one. Replacing the object rather than
+  // mutating it is what makes the change reactive.
+  function write(name, value) {
+    draft = { ...draft, [name]: value }
+  }
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows = (await flags.service.find({}, { limit: 200 })).data
+      // Every environment in the workspace, for the override picker. The
+      // service scopes an override to the workspace regardless — this is the
+      // affordance, not the boundary.
+      envs = (await environments.service.find({}, { limit: 200 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  const READS = new Set(['get', 'find', 'resolve'])
+  const off = flags.service.on('*', (method, row) => {
+    if (READS.has(method) || !row?.id) return
+    load()
+  })
+  $onDestroy(off)
+
+  // Loaded on demand: a flag overridden nowhere is the common case, and the
+  // list already carries the count that says so.
+  async function open(flag) {
+    busy = flag.id
+    try {
+      detail = { ...detail, [flag.id]: await flags.service.get(flag.id) }
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function create(data) {
+    error = null
+    try {
+      const created = await flags.service.create(data)
+      toasts.success(`${created.key} created`)
+      creating = false
+      draft = flags.make()
+      await load()
+    } catch (e) {
+      error = e.message
+      throw e
+    }
+  }
+
+  async function toggleDefault(flag) {
+    error = null; busy = flag.id
+    try {
+      const updated = await flags.service.patch(flag.id, { isEnabled: !flag.isEnabled })
+      const i = rows.findIndex(r => r.id === flag.id)
+      if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
+      if (detail[flag.id]) detail = { ...detail, [flag.id]: updated }
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function override(flag, environmentId, isEnabled) {
+    error = null; busy = flag.id
+    try {
+      const updated = await flags.service.action('setOverride', flag.id, { environmentId, isEnabled })
+      detail = { ...detail, [flag.id]: updated }
+      picked = { ...picked, [flag.id]: '' }
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function clear(flag, environmentId) {
+    error = null; busy = flag.id
+    try {
+      const updated = await flags.service.action('clearOverride', flag.id, { environmentId })
+      detail = { ...detail, [flag.id]: updated }
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove(flag) {
+    error = null; busy = flag.id
+    try {
+      await flags.service.remove(flag.id)
+      toasts.success(`${flag.key} deleted`)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // Options come from the schema's own enum, through the JSON Schema the build
+  // emits — never a list retyped here.
+  $: types = flags.fields?.type?.enum ?? ['boolean', 'variant']
+  const envLabel = (o) => o.environment?.name ?? o.environmentId
+</script>
+
+<div class="section-header">
+  <h1>Feature flags</h1>
+  <Button variant="primary" id="new-flag" onclick={() => creating = !creating}>
+    {creating ? 'Cancel' : 'New flag'}
+  </Button>
+</div>
+
+<Callout tone="info" title="Overrides point at real environments">
+  A flag carries a default for the whole workspace. An override is per environment —
+  this project's staging, not a tier called “staging” shared by every project.
+  Clearing an override is not the same as turning it off: it means follow the flag.
+</Callout>
+
+{#if error}
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if creating}
+  <Card>
+    <Form resource={flags} bind:record={draft} onsubmit={create}>
+      <Input name="key" id="key" hint="The name your code asks for — new-checkout-flow"
+             value={draft.key} oninput={(e) => write('key', e.target.value)} />
+      <Textarea name="description" id="description" rows="2" value={draft.description}
+                oninput={(e) => write('description', e.target.value)} />
+      <Select name="type" id="type" options={types}
+              value={draft.type} oninput={(e) => write('type', e.target.value)} />
+      <Button type="submit" variant="primary">Create flag</Button>
+    </Form>
+  </Card>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No flags">
+    Nothing in this workspace is behind a flag yet.
+  </EmptyState>
+{:else}
+  <div class="stack" id="flag-list">
+    {#each rows as flag}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4"><code>{flag.key}</code></h2>
+          <span class="cluster">
+            <Pill>{flag.type}</Pill>
+            {#if flag.isEnabled}
+              <Badge tone="success">on by default</Badge>
+            {:else}
+              <Badge tone="muted">off by default</Badge>
+            {/if}
+            {#if flag.override_count}
+              <Badge tone="warning">{flag.override_count} override(s)</Badge>
+            {/if}
+          </span>
+        </div>
+
+        {#if flag.description}
+          <p class="text-sm text-muted">{flag.description}</p>
+        {/if}
+
+        {#if detail[flag.id]}
+          {#if detail[flag.id].overrides?.length}
+            <div class="table-wrap">
+              <table class="table striped">
+                <thead>
+                  <tr>
+                    <th scope="col">Environment</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Rollout</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each detail[flag.id].overrides as o}
+                    <tr>
+                      <td>{envLabel(o)}</td>
+                      <td>
+                        {#if o.isEnabled}
+                          <Badge tone="success">on</Badge>
+                        {:else}
+                          <Badge tone="muted">off</Badge>
+                        {/if}
+                      </td>
+                      <td class="text-sm">{o.rollout}%</td>
+                      <td>
+                        <Button variant="ghost" disabled={busy === flag.id}
+                                aria-label={`Clear the ${envLabel(o)} override on ${flag.key}`}
+                                onclick={() => clear(flag, o.environmentId)}>Clear</Button>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {:else}
+            <p class="text-sm text-muted">Every environment follows the default.</p>
+          {/if}
+
+          {#if envs.length}
+            <div class="cluster">
+              <label class="visually-hidden" for={`env-${flag.id}`}>Override in an environment</label>
+              <Select id={`env-${flag.id}`} placeholder="Override in…"
+                      value={picked[flag.id] ?? ''}
+                      options={envs
+                        .filter(e => !(detail[flag.id].overrides ?? []).some(o => o.environmentId === e.id))
+                        .map(e => ({ value: e.id, label: e.name }))}
+                      onchange={(e) => picked = { ...picked, [flag.id]: e.target.value }} />
+              <Button variant="outlined" disabled={busy === flag.id || !picked[flag.id]}
+                      onclick={() => override(flag, picked[flag.id], true)}>Turn on here</Button>
+            </div>
+          {/if}
+        {/if}
+
+        <div class="cluster">
+          <Button variant="outlined" disabled={busy === flag.id}
+                  onclick={() => open(flag)}>Environments</Button>
+          <Button variant="ghost" disabled={busy === flag.id} onclick={() => toggleDefault(flag)}>
+            {flag.isEnabled ? 'Turn off by default' : 'Turn on by default'}
+          </Button>
+          <Button variant="ghost" disabled={busy === flag.id}
+                  aria-label={`Delete ${flag.key}`} onclick={() => remove(flag)}>Delete</Button>
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}

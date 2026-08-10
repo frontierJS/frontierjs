@@ -1,5 +1,209 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-07 — raw SQL could not write, and had never been able to
+
+`db.asSystem().sql` is the documented — and on any schema declaring access
+rules, the *only* — way to run a raw statement. **Every raw write through it
+failed**, with `SQLITE_READONLY: attempt to write a readonly database`: a
+message about a connection, naming nothing the caller wrote.
+
+`_runRawSql` sent every statement to `readDb`, which is opened `readonly` with
+`query_only = ON`. That is right for `SELECT` and wrong for everything else, and
+the three surfaces that call it (`db.sql`, `db.$setAuth(u).sql`,
+`db.asSystem().sql`) all inherited it — as did **the system client a JS
+migration is handed**, which is exactly the caller most likely to need a raw
+`ALTER`/`UPDATE` and least able to route around it.
+
+Statements now route by kind: `SELECT`/`EXPLAIN`/`VALUES` stay on the reader,
+everything else goes to the writer, which reads perfectly well. `WITH` counts as
+"everything else" on purpose — `WITH x AS (…) DELETE FROM …` is legal SQLite, so
+a CTE cannot be assumed to be a read. Leading comments are stripped before the
+test, so `-- why\nDELETE …` is not misread as an unrecognised statement.
+
+Found in `basecamp`, hard-deleting a row to prove an FK cascade fires — the one
+thing `.remove()` cannot do on a `@@softDelete` model. 3 tests; 1454 pass.
+
+## 2026-08-07 — `docs/jsonschema.md`, and `--stdout` that actually pipes
+
+The JSON Schema this package generates is the wire the other two realms are
+built on, and **nothing documented what it emits.** `x-messages`, `x-relations`,
+`x-gate`, `x-transitions` and `x-version` were described in the repo's bridge
+index because a consumer needed them; the other eight extensions were not
+described anywhere. `docs/jsonschema.md` is now the full reference — every
+standard keyword, every `x-`, which mode and audience produces it, and **who
+reads it**. That last column is the useful one: `x-litestone-policies`,
+`x-litestone-read-policy`, `x-litestone-from`, `x-litestone-secret` and
+`x-litestone-guarded` are emitted and read by nothing at all.
+
+Every snippet in it was generated, not written. The fixture that produced them
+is at the foot of the doc, because no app in the repo exercises the whole
+surface — `example` has no `File`, `Bytes`, `@from` or `@version` field, and
+`basecamp` declares no `@@gate`.
+
+Two things the writing found:
+
+**`litestone jsonschema --stdout > schema.json` produced invalid JSON.** The
+banner is printed with `console.log`, so `litestone jsonschema` landed at the
+top of the file being piped. `litestone types --stdout` had it too, writing the
+banner into the `.d.ts`. Both now suppress the header when `--stdout` is set.
+
+**`--include-computed` did nothing.** The CLI read the flag and passed
+`includeComputed` through; `generateJsonSchema` never destructured it. Derived
+fields are governed by `mode: 'full'` alone, so the flag was removed rather than
+implemented — the mode already means "everything readable". It is gone from the
+CLI help and from this package's `CLAUDE.md`, which had also listed it.
+
+## 2026-08-06 — `$checkWhere` on every client, not just the root one
+
+1451 tests (was 1450). `FJS-117`.
+
+It was written **inline in the top-level proxy's `get` trap**, so the three
+derived clients — `$setAuth`, `asSystem`, `$scopedBy` — did not have it. And a
+Litestone proxy *throws* on an unknown property rather than answering
+`undefined`, on purpose, so a typo'd accessor is loud:
+
+```js
+db.$checkWhere                    // → function
+db.$setAuth(user).$checkWhere     // → Error: "$checkWhere" is not a table in this schema
+```
+
+Junction hands a service the `$setAuth` client on `ctx.locals.db`, so its
+`autoFilter` hook could not even *ask whether* the method existed without
+throwing. **Every list read by a signed-in caller 500'd, in both apps**, naming a
+table nobody had written.
+
+It is now one function in `createClient` scope, handed to all four proxies and
+pinned to give identical answers on each. Which keys are filterable is a fact
+about the **schema**; auth and scope have no bearing on it, so there was never a
+reason for the root client to be the only one that could say.
+
+The shape of the mistake is worth more than the fix. Every test that touched
+`$checkWhere` held the root client, so 1450 of them passed over a seam no real
+request uses — and the browser symptom was **navigation**, not data: the page
+committed the redirect and then threw while fetching, which read as a router
+bug and was blamed on an unrelated change to another package.
+
+## 2026-08-06 — `$checkWhere`: ask before you query
+
+1450 tests (was 1443). The litestone half of `FJS-109`.
+
+The ORM validates where-keys already, and the read/write split is deliberate: a
+typo'd filter on a **write** is a mis-scoped destructive operation and throws,
+while on a **read** it warns and returns nothing. That is right for a caller
+holding the client. It is wrong one layer up, where the warning goes to the
+server's stderr and the HTTP caller gets `200 {"data":[],"total":0}` — a typo, a
+misplaced directive and an empty table wearing the same answer.
+
+Rather than let Junction grow a second definition of "is this a valid filter
+key" against JSON Schema — which would drift from this one on relation
+sub-filters, `$raw`, edges and the AND/OR/NOT descent — the client now answers
+the question:
+
+```js
+db.$checkWhere('product', { nme: 'a' })
+// → [{ key: 'nme', suggestion: 'name', allowed: ['id','name','price'] }]
+```
+
+Same rule, same Levenshtein hint, same descent, but it neither warns nor runs a
+query — pinned by a test that taps `$tapQuery` and `console.warn` and asserts
+both stay empty. An unknown accessor returns `[]` rather than throwing: a caller
+using this to reject a request must not reject what it failed to understand.
+
+Nothing about the ORM's own behaviour changed. `findMany` still warns, writes
+still throw.
+
+## 2026-08-06 — the benchmark harness works again
+
+No test change. `bun run bench` and `bun run bench:core` now exist; `FJS-112`
+filed.
+
+`bench/audit-bench.mjs` had not been run since the 2026-07-18 audit produced it,
+and it had a broken case:
+
+```
+gate-getlevel FAILED: "posts" is not a table in this schema. Tables: post
+```
+
+A plural accessor against `model Post`. So the one measurement that proves the H4
+fix — GatePlugin resolving `getLevel` once per scoped client rather than once per
+operation, a cache with security-relevant behaviour behind it — had been silently
+skipping for three weeks. It reports **0 calls across 200 gated reads**, which is
+the pass condition.
+
+Several annotations were fossils: they described the pre-fix behaviour of findings
+fixed the same day, so a reader saw `0.3 ms/call` beside *"runs full pristine build
++ 2x introspection"*. Each now names the finding it verifies, or says **STILL
+OPEN** — one does: JSONL `create()` is still `existsSync` + `statSync` +
+`appendFileSync` per row, confirmed against `drivers/jsonl.js`.
+
+Every fix from the audit still holds, re-verified rather than assumed —
+`upsert()` issues ONE statement, checked with `$tapQuery` instead of inferred
+from the timing.
+
+**On reading the numbers:** a first pass looked ~2x worse than the audit on the
+core path. It was not. Interleaving the same bench against the pre-session tree,
+four rounds on one machine, put run-to-run spread wider than the delta, and a
+later quiet run landed at 1.65 / 38.9 / 10.5 µs (`findUnique` / `findMany` 100 /
+`create`) against the audited 1.28 / 38.4 / 9.2. Absolute µs across machines mean
+nothing here; only an interleaved same-machine A/B does.
+
+Also measured, since nobody had it: `@@createdBy` + `@@updatedBy` costs +21% on
+create and +28% on update (partly two real FK columns, not only the stamp), and
+`@version` +7% create / +35% update.
+
+## 2026-08-06 — the client enumerates, and `asSystem()` stops lying
+
+1443 tests (was 1437). Closes `FJS-014`, open since 2026-08-02.
+
+`Object.keys(db)` threw. So did `Object.getOwnPropertyNames(db)`, `{...db}`,
+`for…in`, and — the one that actually hurt — `JSON.stringify(db)`, which meant
+logging a context blew up on a line that was not the bug.
+
+The cause was two strings. `$setAuth` and `$db` were on the proxy target *and*
+in the `ownKeys` trap's hand-written list, and a duplicate makes the **engine**
+throw:
+
+```
+TypeError: Proxy handler's 'ownKeys' trap result must not contain
+           any duplicate names
+```
+
+which names proxy internals and neither of the two responsible. All five traps
+now go through one `dedupeKeys()` rather than having the two names deleted — the
+literal lists have grown before, and the next property added to a target would
+reintroduce it with no test able to predict which one.
+
+### The quieter half, found by probing rather than by the report
+
+`asSystem()`'s proxy had a `get` trap **and nothing else**. So it did not throw;
+it answered wrongly:
+
+```js
+db.asSystem().user            // works
+'user' in db.asSystem()       // false
+Object.keys(db.asSystem())    // no tables at all
+```
+
+A guard reading `if ('user' in db)` silently skipped the table under a system
+client — a wrong answer rather than a loud one, which is the worse of the two.
+It now carries the same `ownKeys` / `has` / `getOwnPropertyDescriptor` traps as
+every other scoped client.
+
+### What it cost downstream
+
+Junction wrapped its own `Object.keys(db)` in a `try/catch` with a ten-line
+comment, because otherwise this replaced a *"your model name is wrong"*
+diagnostic with a stack trace about proxies. The catch stays — `db` is whatever
+the app handed to `createApp` — but the comment no longer describes a live bug,
+and the list turned out to be wrong the moment it started working: it offered
+`asSystem`, `sql` and `query` as model names. Junction now filters against
+`$schema.models`.
+
+Worth noting how it survived four days: every test of that message used a plain
+object as the client, so the one path that mattered — a real Proxy — was the one
+nothing exercised. There is now a test on each side, and junction's uses a real
+Litestone client.
+
 ## 2026-08-06 — `@version`: the lost update is now a 409
 
 1437 tests (was 1416). `IDEAS/declared-semantics.md` item 1, shipped.

@@ -10,7 +10,8 @@ title: Alerts
   // it in the browser would be a page-out fired from the client's idea of the
   // truth. So an event list that is empty is honest, and says so.
   import { session } from '../../session.js'
-  import { alerts } from '../../resources/alerts.mesa'
+  import { alerts }   from '../../resources/AlertRule.mesa'
+  import { channels } from '../../resources/NotificationChannel.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -28,15 +29,37 @@ title: Alerts
 
   let rows     = []
   let events   = {}      // ruleId → recent events
+  let delivery = {}      // ruleId → attached channel rows
+  let allChannels = []
+  let picked   = {}      // ruleId → the channel id the picker is showing
   let error    = null
   let loading  = true
   let busy     = null
   let creating = false
+  let draft    = alerts.make()
+
+  // The kit's controls take a value and hand back an event; they are NOT bound
+  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
+  // let and a member expression is not one. Replacing the object rather than
+  // mutating it is what makes the change reactive.
+  //
+  // `name` on each control is what lets <Form> route a server message back to
+  // it — the form reads `e.target.name` off its one input listener.
+  function write(name, value) {
+    draft = { ...draft, [name]: value }
+  }
 
   async function load() {
     error = null; loading = true
     try {
       rows = (await alerts.service.find({}, { limit: 100 })).data
+      // Where each rule delivers. `find` answers the rule rows; only `get`
+      // pays for the join, so the list is one request plus one per rule —
+      // acceptable at this size, and it is what makes "reaches nobody"
+      // sayable at a glance rather than after a click.
+      const full = await Promise.all(rows.map(r => alerts.service.get(r.id)))
+      delivery = Object.fromEntries(full.map(r => [r.id, r.channels ?? []]))
+      allChannels = (await channels.service.find({}, { limit: 200 })).data
     } catch (e) {
       error = e.message
     } finally {
@@ -68,6 +91,33 @@ title: Alerts
     }
   }
 
+  async function attach(rule) {
+    const channelId = picked[rule.id]
+    if (!channelId) return
+    error = null; busy = rule.id
+    try {
+      const updated = await alerts.service.action('attachChannel', rule.id, { channelId })
+      delivery = { ...delivery, [rule.id]: updated.channels ?? [] }
+      picked   = { ...picked, [rule.id]: '' }
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function detach(rule, channelId) {
+    error = null; busy = rule.id
+    try {
+      const updated = await alerts.service.action('detachChannel', rule.id, { channelId })
+      delivery = { ...delivery, [rule.id]: updated.channels ?? [] }
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   async function create(data) {
     error = null
     try {
@@ -80,6 +130,7 @@ title: Alerts
       })
       toasts.success(`${created.name} created`)
       creating = false
+      draft = alerts.make()
       await load()
     } catch (e) {
       error = e.message
@@ -125,6 +176,8 @@ title: Alerts
     }
   }
 
+  $: severities = alerts.fields?.severity?.enum ?? []
+
   const TONE = { critical: 'danger', warning: 'warning', info: 'info' }
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 </script>
@@ -143,18 +196,29 @@ title: Alerts
 </Callout>
 
 {#if error}
-  <article class="alert danger">
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
     <div class="alert-content">{error}</div>
   </article>
 {/if}
 
 {#if creating}
   <Card>
-    <Form resource={alerts} onsubmit={create}>
-      <Input name="name" id="name" />
-      <Input name="metricName" id="metricName" placeholder="memory" />
-      <Input name="threshold" id="threshold" type="number" label="Threshold (%)" />
-      <Select name="severity" options={['info', 'warning', 'critical']} />
+    <Form resource={alerts} bind:record={draft} onsubmit={create}>
+      <Input name="name" id="name" value={draft.name}
+             oninput={(e) => write('name', e.target.value)} />
+      <Input name="metricName" id="metricName" placeholder="memory" value={draft.metricName}
+             oninput={(e) => write('metricName', e.target.value)} />
+      <!-- `threshold` is not a column: the schema has `condition Json`, and a
+           person types a number rather than JSON. create() folds it in. -->
+      <Input name="threshold" id="threshold" type="number" label="Threshold (%)" value={draft.threshold}
+             oninput={(e) => write('threshold', e.target.value)} />
+      <!-- Options come from the schema's own enum, through the JSON Schema the
+           build emits — never a list retyped here. -->
+      <Select name="severity" id="severity" options={severities}
+              value={draft.severity} oninput={(e) => write('severity', e.target.value)} />
       <Button type="submit" variant="primary">Create rule</Button>
     </Form>
   </Card>
@@ -183,6 +247,41 @@ title: Alerts
           <dt>Condition</dt>
           <dd><code>{rule.condition?.operator ?? 'gt'} {rule.condition?.threshold ?? '—'}</code></dd>
         </dl>
+
+        <!-- Where this rule delivers. A rule with no channel fires into a
+             table nobody is watching, so it says so rather than showing an
+             empty row: that was the state EVERY rule was in until channels
+             existed, and `AlertRule.channels` was a Json array of ids that
+             could not have told you. -->
+        <div class="cluster" data-delivery={rule.id}>
+          <span class="text-sm text-muted">Delivers to</span>
+          {#if (delivery[rule.id] ?? []).length}
+            {#each delivery[rule.id] as link}
+              <span class="cluster">
+                <Pill>{link.channel?.name ?? link.channelId}</Pill>
+                <Button variant="ghost" disabled={busy === rule.id}
+                        aria-label={`Stop delivering ${rule.name} to ${link.channel?.name}`}
+                        onclick={() => detach(rule, link.channelId)}>Remove</Button>
+              </span>
+            {/each}
+          {:else}
+            <Badge tone="warning">nobody</Badge>
+          {/if}
+        </div>
+
+        {#if allChannels.length}
+          <div class="cluster">
+            <label class="visually-hidden" for={`attach-${rule.id}`}>Add a channel</label>
+            <Select id={`attach-${rule.id}`} placeholder="Add a channel…"
+                    value={picked[rule.id] ?? ''}
+                    options={allChannels
+                      .filter(c => !(delivery[rule.id] ?? []).some(l => l.channelId === c.id))
+                      .map(c => ({ value: c.id, label: c.name }))}
+                    onchange={(e) => picked = { ...picked, [rule.id]: e.target.value }} />
+            <Button variant="outlined" disabled={busy === rule.id || !picked[rule.id]}
+                    onclick={() => attach(rule)}>Attach</Button>
+          </div>
+        {/if}
 
         {#if events[rule.id]}
           {#if events[rule.id].length}

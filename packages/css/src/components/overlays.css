@@ -1,0 +1,157 @@
+/*
+ * overlays.css
+ * How an Overlay enters and leaves. One owner for the whole tier.
+ *
+ * Dialog, Drawer, Popover and Toast each animated themselves, or did not:
+ * three ran a @keyframes on entry, Dialog ran nothing, and none of the four
+ * had an exit — every one of them vanished on `display: none`. An exit is
+ * the half that used to need JavaScript, because a closing element is
+ * removed from the box tree before a transition can run.
+ *
+ * It does not any more. Three properties do it:
+ *
+ *   @starting-style          the value to animate FROM on first render
+ *   transition-behavior      `allow-discrete`, so display/overlay animate
+ *   overlay                  the top layer, held until the exit finishes
+ *
+ * Without `overlay` in the list a modal or popover leaves the top layer the
+ * instant it closes and the exit plays behind the rest of the page.
+ *
+ * ── What each file still owns ─────────────────────────────────────
+ *
+ * Only the direction: `--overlay-from` is the transform to enter from and
+ * leave to. Drawer sets it per edge, Popover drops down, Toast rises. The
+ * timing, the property list and the discrete-transition machinery are here
+ * and are not restated — getting `allow-discrete` wrong fails by doing
+ * nothing at all, which is indistinguishable from the bug it fixes.
+ *
+ * ── Why the selectors name the element ────────────────────────────
+ *
+ * `dialog.dialog`, not `.dialog`. The closed state is `opacity: 0`, and the
+ * guide renders `<div class="dialog">` as a static preview — matching those
+ * would make every example in the documentation invisible. The same reason
+ * `[popover].popover` carries the attribute: `.popover` is also usable as a
+ * plain element the app shows and hides itself.
+ *
+ * prefers-reduced-motion is handled globally in tokens.css, which crushes
+ * transition-duration for everything here.
+ */
+
+:root {
+  --overlay-time: 160ms;
+  /* Decelerating, so the element arrives rather than stops. */
+  --overlay-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/*
+ * background/border-color repeat surface.css's own transition because this
+ * declaration replaces it: a toned overlay would otherwise snap between
+ * tints while everything else on the page eases.
+ */
+dialog.dialog,
+dialog.drawer,
+[popover].popover,
+.toast {
+  transition:
+    opacity    var(--overlay-time) var(--overlay-ease),
+    transform  var(--overlay-time) var(--overlay-ease),
+    background 120ms,
+    border-color 120ms,
+    display    var(--overlay-time) allow-discrete,
+    overlay    var(--overlay-time) allow-discrete;
+}
+
+/* ── Dialog and Drawer — the open attribute is the state ──────── */
+
+dialog.dialog,
+dialog.drawer {
+  opacity:   0;
+  transform: var(--overlay-from, scale(0.97));
+}
+
+dialog.dialog[open],
+dialog.drawer[open] {
+  opacity:   1;
+  transform: none;
+}
+
+@starting-style {
+  dialog.dialog[open],
+  dialog.drawer[open] {
+    opacity:   0;
+    transform: var(--overlay-from, scale(0.97));
+  }
+}
+
+/*
+ * The backdrop is a separate box and inherits nothing, so it needs its own
+ * three states. Left out, a modal fades while the dim behind it cuts.
+ */
+dialog.dialog::backdrop,
+dialog.drawer::backdrop {
+  opacity:    0;
+  transition:
+    opacity var(--overlay-time) var(--overlay-ease),
+    display var(--overlay-time) allow-discrete,
+    overlay var(--overlay-time) allow-discrete;
+}
+
+dialog.dialog[open]::backdrop,
+dialog.drawer[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  dialog.dialog[open]::backdrop,
+  dialog.drawer[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+/* ── Popover — :popover-open is the state ─────────────────────── */
+
+[popover].popover {
+  opacity:   0;
+  transform: var(--overlay-from, translateY(-4px));
+}
+
+[popover].popover:popover-open {
+  opacity:   1;
+  transform: none;
+}
+
+@starting-style {
+  [popover].popover:popover-open {
+    opacity:   0;
+    transform: var(--overlay-from, translateY(-4px));
+  }
+}
+
+/* ── Toast — the hidden attribute is the state ────────────────── */
+
+/*
+ * A Toast has no open state of its own: it is added to the DOM and later
+ * taken out. @starting-style covers the arrival. For the exit the state is
+ * `hidden` — the attribute the platform already has for this, so a toast
+ * leaves with `el.hidden = true` and no class to remember.
+ */
+.toast {
+  opacity:   1;
+  transform: none;
+}
+
+@starting-style {
+  .toast {
+    opacity:   0;
+    transform: var(--overlay-from, translateY(8px));
+  }
+}
+
+/* `display: none` is what [hidden] already means; it is restated so the
+   transition list above has a declared endpoint to defer. Deferring it is
+   the whole trick — the box stays until the fade finishes. */
+.toast[hidden] {
+  display:   none;
+  opacity:   0;
+  transform: var(--overlay-from, translateY(8px));
+}

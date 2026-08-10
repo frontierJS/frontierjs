@@ -1,0 +1,33 @@
+<script module>
+  // web/src/resources/Order.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file with no markup:
+  // everything here is module scope, which is what `<script module>` means —
+  // it runs once at import, shared by every instance, and its named exports are
+  // importable by any other module (Mesa VISION §11, rule 30).
+  //
+  // **The file is named for the MODEL, not the service** — `Order.mesa`, not
+  // `orders.mesa` (repo Invariant 19). The export stays `orders`, because that
+  // is the accessor: the same split the Data realm already makes between
+  // `model Order` and `db.order`. It also puts the irregular cases in the
+  // filename, where they are visible — `AlertRule.mesa` exporting `alerts` says
+  // out loud that regular pluralisation does not bridge those two.
+  //
+  // Read this file next to db/schema.lite. Nothing here restates anything there:
+  // no field list, no types, no enum values, no required list, no relations, no
+  // gate levels. A resource names a model. That is the whole file.
+  //
+  // It used to name a model and turn on three flags — coerce, validate,
+  // blankToNull — with a paragraph each explaining why you would want them.
+  // Every resource in this app set all three, and so did eight of the nine in
+  // packages/basecamp, because each one answers something the DOM does that the
+  // schema has already said no to: every control hands back a string when
+  // `total` is a Float, and an untouched text box submits '' when SQLite will
+  // not treat that as the NULL a nullable column wants. A flag that every app
+  // turns on is a default, so as of 2026-08-06 they are on and the reasoning
+  // lives once, in createResource's own header.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const orders = createResource('orders')
+</script>

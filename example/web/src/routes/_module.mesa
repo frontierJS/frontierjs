@@ -17,7 +17,7 @@ siteName: Kitchen sink
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
   import { toasts }         from '@frontierjs/ui/stores/toastStore.js'
 
-  import { notifications, isUnread } from '../resources/notifications.mesa'
+  import { notifications, isUnread } from '../resources/Notification.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 

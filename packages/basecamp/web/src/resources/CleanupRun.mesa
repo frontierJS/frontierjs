@@ -1,0 +1,20 @@
+<script module>
+  // src/resources/CleanupRun.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
+  // named for the model and exporting the accessor (invariant 19). No markup:
+  // everything is module scope, which is what <script module> means.
+  //
+  // `model:` is stated because the service is `cleanup` — the verb, which is
+  // what the screen is about — and the model is `CleanupRun`. Nothing bridges
+  // those: modelNameFor() singularises English plurals, so it would look for
+  // `Cleanup`, miss, warn, and degrade to a bare make(), which silently stops
+  // labels, required fields and validation being schema-derived.
+  //
+  // There is no create hook and no `make()` caller, because a run is never
+  // authored from a form: `cleanup.run` writes the row and the engine finishes
+  // it. This resource exists for the reads and for the custom actions.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const cleanup = createResource('cleanup', { model: 'CleanupRun' })
+</script>

@@ -52,14 +52,14 @@ Seven, from the css package, and they work on everything:
 
 `primary` · `secondary` · `muted` · `info` · `success` · `warning` · `danger`
 
-```svelte
+```svelte +mesa
 <Button tone="danger">Delete</Button>
 <Badge tone="success">Paid</Badge>
 <Card tone="warning">Card expiring</Card>
 <Alert tone="info">Scheduled maintenance Sunday.</Alert>
 ```
 
-Fill and text colour are both derived from the tone's luminance, verified at
+Fill and text color are both derived from the tone's luminance, verified at
 zero WCAG AA failures across all 42 tone × theme combinations — so there is
 never a text colour to pick.
 
@@ -88,7 +88,7 @@ The old six-value `variant` conflated the two, which is why `outline` and
 
 ## What's in the box
 
-**forms** — `Form` `Button` `Btn` `Field` `Fieldset` `Label` `Input` `Textarea`
+**forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`
 `Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Combobox`
 `MultiSelect` `DatePicker` `FileUpload`
 

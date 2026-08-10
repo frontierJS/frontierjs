@@ -1,0 +1,274 @@
+---
+title: Hub users
+---
+<script>
+  // The mock's UsersView — every actor on the hub, human and machine.
+  //
+  // This is the screen `FJS-007` breaks first, and it is already written for
+  // that: `User` is the model auth's own schema fragment gates at level 8, one
+  // above SYSADMIN, so no caller-scoped client can ever read a user list. Every
+  // read behind this page goes through asSystem() on the server today, which is
+  // the shape it will still need afterwards.
+  //
+  // Three things a person does here and one they cannot:
+  //
+  //   Suspend / restore — refuses at login AND on every request an already
+  //     issued token makes, including an API key, which survives having the
+  //     Session rows deleted.
+  //   Grant / revoke the hub tier — `isSystemAdmin` on the User row. Two
+  //     guards live on the server, not here: you cannot revoke or suspend
+  //     yourself, and the last one cannot be taken away. The buttons are
+  //     rendered anyway — a refusal that only exists in the browser is a rule
+  //     nothing enforces.
+  //   Create a bot — an account with no password and no inbox, which exists to
+  //     own an API key. Until it existed, CI's key was a person's key.
+  //
+  //   Invite a human — NOT built. It is invite → accept, which needs a token
+  //     model, mail through conduit and a signed-out acceptance route the
+  //     navigation guard lets through (`FJS-032`). Minting a human here would
+  //     be an admin creating an account with a password only they know.
+  import { session } from '../../../session.js'
+  import { hub } from '../../../resources/Hub.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  let rows    = []
+  let error   = null
+  let loading = true
+  let busy    = null
+  let kind    = 'all'
+
+  // The bot form. Held open rather than in a dialog: it is four fields and the
+  // list it adds to is directly below it.
+  let creating   = false
+  let botName    = ''
+  let botRole    = 'developer'
+  let botWs      = ''
+  let workspaces = []
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const page = await hub.service.action('users', null, {}, kind === 'all' ? {} : { kind })
+      rows = page.data ?? []
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  // The bot form needs every workspace, which is the hub's list and not the
+  // switcher's: a sysadmin creating a bot for a tenant they are not a member of
+  // is the ordinary case.
+  async function loadWorkspaces() {
+    try {
+      const page = await hub.service.action('workspaces', null, {}, {})
+      workspaces = page.data ?? []
+      botWs ||= workspaces[0]?.id ?? ''
+    } catch { /* the list below is the screen; the form can wait for a reload */ }
+  }
+
+  load()
+  loadWorkspaces()
+
+  function setKind(value) { kind = value; load() }
+
+  async function act(user, method, data, ok) {
+    error = null; busy = user.id
+    try {
+      await hub.service.action(method, null, { userId: user.id, ...data })
+      toasts.success(ok.title, ok.body)
+      await load()
+    } catch (e) {
+      // 'Cannot revoke the last system administrator' and 'You cannot suspend
+      // your own account' both arrive here. Neither is guessable from the row,
+      // and both are the server's decision — see the header.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const setStatus = (u, status) => act(u, 'setUserStatus', { status }, {
+    title: status === 'suspended' ? `${label(u)} suspended` : `${label(u)} restored`,
+    body:  status === 'suspended'
+      ? 'Their sessions are gone and every token they hold stops resolving.'
+      : 'They can sign in again.',
+  })
+
+  const setAdmin = (u, isSystemAdmin) => act(u, 'setSystemAdmin', { isSystemAdmin }, {
+    title: isSystemAdmin ? `${label(u)} is a system administrator` : `${label(u)} is no longer a system administrator`,
+    body:  isSystemAdmin ? 'They can see and act on every workspace.' : 'The hub is no longer theirs to open.',
+  })
+
+  async function createBot() {
+    error = null; busy = 'bot'
+    try {
+      const bot = await hub.service.action('createBot', null, {
+        workspaceId: botWs, name: botName, role: botRole,
+      })
+      toasts.success(`${bot.displayName} created`, `Issue it a key from the API keys screen of that workspace.`)
+      botName = ''; creating = false
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const label = (u) => u.name || u.email
+  const when  = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
+
+  $: counts = {
+    human: rows.filter(u => u.kind === 'human').length,
+    bot:   rows.filter(u => u.kind === 'bot').length,
+    ai:    rows.filter(u => u.kind === 'ai').length,
+  }
+  $: suspended = rows.filter(u => u.status === 'suspended').length
+  $: me = session.user?.userId
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<p class="text-body">
+  Every actor across every workspace. A <strong>bot</strong> has no password and no inbox —
+  it exists so an API key can belong to something other than a person.
+</p>
+
+<div class="cluster" id="hub-user-stats">
+  <Badge tone="muted">{rows.length} shown</Badge>
+  <Badge tone="info">{counts.human} human</Badge>
+  <Badge tone="muted">{counts.bot} bot</Badge>
+  <Badge tone="muted">{counts.ai} ai</Badge>
+  <Badge tone={suspended ? 'danger' : 'muted'}>{suspended} suspended</Badge>
+</div>
+
+<div class="cluster" id="hub-user-filters">
+  {#each ['all', 'human', 'bot', 'ai'] as k}
+    <Button variant={kind === k ? 'primary' : 'ghost'} onclick={() => setKind(k)}>{k}</Button>
+  {/each}
+  <Button variant="outlined" id="new-bot" onclick={() => (creating = !creating)}>
+    {creating ? 'Cancel' : 'New bot account'}
+  </Button>
+</div>
+
+{#if creating}
+  <Card>
+    <h2 class="h4">New bot account</h2>
+    <p class="text-sm text-muted">
+      Its address is derived from the name at <code>bots.invalid</code> — a domain reserved by
+      RFC 2606, so it resolves nowhere and can never be mailed. It cannot be a workspace owner.
+    </p>
+    <div class="cluster">
+      <label class="visually-hidden" for="bot-name">Bot name</label>
+      <input class="field" id="bot-name" placeholder="CI deploy" value={botName}
+             on:input={(e) => (botName = e.target.value)} />
+
+      <label class="visually-hidden" for="bot-ws">Workspace</label>
+      <Select id="bot-ws" value={botWs} placeholder=""
+              options={workspaces.map(w => ({ value: w.id, label: w.name }))}
+              onchange={(e) => (botWs = e.target.value)} />
+
+      <label class="visually-hidden" for="bot-role">Role</label>
+      <Select id="bot-role" value={botRole} placeholder=""
+              options={['viewer', 'billing', 'developer', 'admin'].map(r => ({ value: r, label: r }))}
+              onchange={(e) => (botRole = e.target.value)} />
+
+      <Button id="create-bot" disabled={busy === 'bot' || !botName.trim() || !botWs}
+              onclick={createBot}>Create</Button>
+    </div>
+  </Card>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No actors">
+    Nothing matches that filter.
+  </EmptyState>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped">
+      <thead>
+        <tr>
+          <th scope="col">Actor</th>
+          <th scope="col">Kind</th>
+          <th scope="col">Workspaces</th>
+          <th scope="col">Status</th>
+          <th scope="col">Hub</th>
+          <th scope="col">Created</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="hub-user-rows">
+        {#each rows as u}
+          <tr>
+            <td>
+              {label(u)}
+              <span class="text-sm text-muted">{u.email}</span>
+            </td>
+            <td><Badge tone={u.kind === 'human' ? 'info' : 'muted'}>{u.kind}</Badge></td>
+            <td class="text-sm text-muted">
+              {#if u.memberships.length}
+                {u.memberships.map(m => `${m.workspace} (${m.role})`).join(', ')}
+              {:else}
+                none
+              {/if}
+            </td>
+            <td><Pill tone={u.status === 'active' ? 'success' : u.status === 'suspended' ? 'danger' : 'warning'}>{u.status}</Pill></td>
+            <td>
+              {#if u.isSystemAdmin}<Pill tone="warning">sysadmin</Pill>{:else}<span class="text-sm text-muted">—</span>{/if}
+            </td>
+            <td class="text-sm text-muted">{when(u.createdAt)}</td>
+            <td>
+              <span class="cluster">
+                {#if u.id === me}
+                  <span class="text-sm text-muted">you</span>
+                {:else}
+                  {#if u.status === 'suspended'}
+                    <Button variant="ghost" disabled={busy === u.id}
+                            aria-label={`Restore ${label(u)}`}
+                            onclick={() => setStatus(u, 'active')}>Restore</Button>
+                  {:else}
+                    <Button variant="ghost" tone="danger" disabled={busy === u.id}
+                            aria-label={`Suspend ${label(u)}`}
+                            onclick={() => setStatus(u, 'suspended')}>Suspend</Button>
+                  {/if}
+
+                  {#if u.kind === 'human'}
+                    <Button variant="ghost" disabled={busy === u.id}
+                            aria-label={u.isSystemAdmin ? `Revoke hub access for ${label(u)}` : `Grant hub access to ${label(u)}`}
+                            onclick={() => setAdmin(u, !u.isSystemAdmin)}>
+                      {u.isSystemAdmin ? 'Revoke hub' : 'Grant hub'}
+                    </Button>
+                  {/if}
+                {/if}
+              </span>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}
+
+<article class="alert info">
+  <div class="alert-content">
+    <strong>Inviting a human is not built.</strong> The route to a person is invite → accept, which
+    needs a token model, mail through conduit and a signed-out acceptance page. Creating one from
+    here would mean an administrator minting an account with a password only they know
+    (<code>FJS-032</code>).
+  </div>
+</article>

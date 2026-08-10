@@ -42,7 +42,11 @@ const PKG  = join(HERE, '../..')            // packages/basecamp
 const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
 const API_PORT = 3001
 const WEB_PORT = 5274
-const CDP_PORT = 9333
+// The fake Basecamp agent. `volumes.remove` refuses to forget a row until the
+// machine says the disk is gone, so proving the happy path needs something
+// that answers as an agent — the same reason the channels checks send a real
+// webhook at a URL that does not resolve, one step further along.
+const AGENT_PORT = 3011
 const BASE     = `http://localhost:${WEB_PORT}`
 const PROFILE  = '/tmp/fjs-basecamp-verify-profile'
 
@@ -81,7 +85,10 @@ async function portFree(port) {
   })
 }
 
-for (const [port, who] of [[API_PORT, 'API'], [WEB_PORT, 'web']]) {
+// Chrome's debugging port is NOT in this list — it is asked for as 0 and read
+// back, which is the only thing that makes two harnesses on one machine safe.
+// See the browser block below for what a fixed one cost.
+for (const [port, who] of [[API_PORT, 'API'], [WEB_PORT, 'web'], [AGENT_PORT, 'agent sink']]) {
   if (!(await portFree(port))) {
     console.error(`\n  Port ${port} (${who}) is in use — stop it first:\n\n    bun run stop\n`)
     process.exit(1)
@@ -100,6 +107,72 @@ if (process.argv.includes('--reset')) {
 // ─── Servers ──────────────────────────────────────────────────────────────
 children.push(spawn('bun', ['api/src/index.ts'], { cwd: PKG, stdio: 'ignore' }))
 children.push(spawn('bun', ['run', 'web'],       { cwd: PKG, stdio: 'ignore' }))
+
+// ─── The agent sink ───────────────────────────────────────────────────────
+// Stands in for the Basecamp agent on gateway-01. It records what it was asked
+// to do, which is the half a database check cannot see: a `remove` that deleted
+// the row and never left the process looks identical from the outside, and the
+// disk stays exactly as full.
+//
+// It is not asked to be a good agent — no HMAC verification, no real disk. What
+// it proves is that the request was MADE, and with which name.
+const agentSaw = { deleted: [], pruned: [], ran: [], swept: [] }
+{
+  const http  = await import('node:http')
+  const agent = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', c => { body += c })
+    req.on('end', () => {
+      res.setHeader('content-type', 'application/json')
+      if (req.method === 'DELETE' && req.url.startsWith('/volumes/')) {
+        agentSaw.deleted.push(decodeURIComponent(req.url.slice('/volumes/'.length)))
+        return res.end(JSON.stringify({ ok: true }))
+      }
+      // A recipe run. The command it was handed is the half nothing else can
+      // see: a run row saying `success` proves the engine wrote a row, not that
+      // a machine was ever asked to do anything.
+      if (req.method === 'POST' && req.url === '/exec') {
+        const command = JSON.parse(body || '{}').command ?? ''
+        agentSaw.ran.push(command)
+        return res.end(JSON.stringify({
+          exit_code: command.includes('exit 3') ? 3 : 0,
+          stdout:    'Filesystem      Size  Used Avail Use%\n/dev/vda1        79G   42G   34G  55%',
+          stderr:    command.includes('exit 3') ? 'du: permission denied' : '',
+        }))
+      }
+      // A reclaim sweep. It answers a fresh `usage` snapshot as well as what it
+      // freed, because it has just run `docker system df` to work that out —
+      // asking again a second later would be a second answer to one question.
+      if (req.method === 'POST' && req.url === '/system/prune') {
+        const sent = JSON.parse(body || '{}')
+        agentSaw.swept.push((sent.targets ?? []).join('+'))
+        return res.end(JSON.stringify({
+          freed_bytes: 3 * 1024 ** 3,
+          removed:     { images: 22, containers: 2, build_cache_bytes: 2 * 1024 ** 3 },
+          volumes:     [],
+          usage: {
+            images:      { total: 12, unused: 0, dangling: 0, size_bytes: 4 * 1024 ** 3, reclaimable_bytes: 0 },
+            containers:  { running: 4, stopped: 0, reclaimable_bytes: 0 },
+            build_cache: { size_bytes: 0, reclaimable_bytes: 0 },
+          },
+        }))
+      }
+      if (req.method === 'POST' && req.url === '/volumes/prune') {
+        const names = (JSON.parse(body || '{}').names ?? [])
+        agentSaw.pruned.push(...names)
+        // Answering the names back is the contract prune relies on: it forgets
+        // exactly what the agent says it removed, never what it asked for.
+        return res.end(JSON.stringify({ removed: names }))
+      }
+      res.statusCode = 404
+      res.end(JSON.stringify({ message: 'not an agent route' }))
+    })
+  })
+  agent.listen(AGENT_PORT)
+  // `children` is killed in cleanup(); a server is not a child process, so it
+  // gets a kill() of its own rather than a second teardown path to forget.
+  children.push({ kill: () => agent.close() })
+}
 
 let probe = null
 for (let i = 0; i < 60; i++) {
@@ -120,25 +193,47 @@ if (!probe.needs_setup) {
 }
 
 // ─── Browser ──────────────────────────────────────────────────────────────
+// The debugging port is asked for as 0 and read back off stderr, which is what
+// `example/`'s harnesses already do. A FIXED port is not merely a collision
+// risk: Chrome refuses to start a second browser on a bound one and exits
+// quietly, so the `/json/list` poll below finds the OTHER browser's tabs and
+// this file then drives those. It failed twice as `no field #workspace on
+// /packages/css/guide/index.html` — a page from another package, in another
+// session's Chrome, with every check up to that point green.
 await rm(PROFILE, { recursive: true, force: true })
-children.push(spawn(CHROME, [
+const chrome = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
-  `--remote-debugging-port=${CDP_PORT}`,
+  '--remote-debugging-port=0',
   `--user-data-dir=${PROFILE}`,
   '--window-size=1280,800',
   'about:blank',
-], { stdio: 'ignore' }))
+], { stdio: ['ignore', 'ignore', 'pipe'] })
+children.push(chrome)
+chrome.on('error', e => fail(`Could not launch ${CHROME}: ${e.message}. Set $FJS_CHROME.`))
 
+const browserWsUrl = await new Promise((resolve, reject) => {
+  let buf = ''
+  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15_000)
+  chrome.stderr.on('data', d => {
+    buf += d
+    const m = buf.match(/ws:\/\/[^\s]+/)
+    if (m) { clearTimeout(t); resolve(m[0]) }
+  })
+}).catch(e => fail(`${e.message}. Is ${CHROME} installed? Set $FJS_CHROME.`))
+
+// The port is in the browser's own WebSocket URL, so the page list is asked of
+// THIS browser rather than of whatever is listening on a number.
+const cdpPort = new URL(browserWsUrl).port
 let target = null
 for (let i = 0; i < 60; i++) {
   try {
-    const list = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json()
+    const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()
     target = list.find(t => t.type === 'page')
     if (target) break
   } catch {}
   await sleep(250)
 }
-if (!target) fail(`No Chrome debug target on :${CDP_PORT}. Is ${CHROME} installed? Set $FJS_CHROME.`)
+if (!target) fail(`No Chrome debug target on :${cdpPort}. Is ${CHROME} installed? Set $FJS_CHROME.`)
 
 const ws = new WebSocket(target.webSocketDebuggerUrl)
 await new Promise(r => ws.addEventListener('open', r))
@@ -236,14 +331,20 @@ await fill({
   password:  ACCOUNT.password,
 })
 await submit()
-await sleep(3500)
 
-check('setup lands on home', await path(), '/')
+// Polled, not slept. This was `sleep(3500)`, and a fixed sleep is a bet — the
+// harness says so about its own history. The shell now loads three resources at
+// mount for the notice bar, so the redirect lands later than it used to.
+check('setup lands on home',
+  await waitFor(`location.pathname`, p => p === '/'), '/')
 check('signed in as the new user', await evaluate('document.body.textContent'), t => t.includes(ACCOUNT.email))
 // The workspace tile names the workspace the page is scoped to. Empty or
 // 'none' means /auth/workspace answered nothing and every scoped request from
 // here would 400.
-check('workspace resolved', await badges(), t => t.includes('acme'))
+check('workspace resolved',
+  await waitFor(`[...document.querySelectorAll('.badge')].map(e => e.textContent.trim()).join('|')`,
+    t => t.includes('acme')),
+  t => t.includes('acme'))
 check('token persisted', await hasToken(), true)
 // The socket opens only once a token is stored, so this is also the proof that
 // storing it and handing it to the client happen together.
@@ -274,7 +375,8 @@ check('and stays on the form', await path(), '/login/')
 await fill({ email: ACCOUNT.email, password: ACCOUNT.password })
 await submit()
 await sleep(3000)
-check('login lands on home', await path(), '/')
+check('login lands on home',
+  await waitFor(`location.pathname`, p => p === '/'), '/')
 check('token stored again', await hasToken(), true)
 
 // 7. A reload is the real test of session restore — it re-runs the guard with
@@ -487,6 +589,69 @@ check('the app is listed',
   await evaluate(`document.getElementById('app-rows')?.textContent ?? ''`),
   t => t.includes('web') && t.includes('container'))
 
+// ── 9b. The App's own screen ─────────────────────────────────────────
+// The largest single gap in docs/SCREENS.md until 2026-08-06: an App could be
+// created from an Environment and then never looked at again.
+const appOwnerEnvPath = await path()
+await evaluate(`document.querySelector('#app-rows a[href^="/apps/"]').click()`)
+await sleep(2000)
+const appDetailPath = await path()
+check('an app has its own screen', await heading(), 'web')
+check('…opening in one request, with placement, releases and jobs',
+  await evaluate(`document.getElementById('app-overview')?.textContent ?? ''`),
+  t => t.includes('Placement') && t.includes('Serving'))
+
+// Domains & SSL — the tab the mock has and the schema could not describe until
+// `Domain` replaced `App.domain`, one nullable string.
+await evaluate(`[...document.querySelectorAll('#app-tabs button')].find(b => b.textContent.trim() === 'domains').click()`)
+await sleep(600)
+await click('Add hostname')
+await sleep(800)
+await fill({ hostname: 'app.acme.test' })
+await submit()
+check('the first hostname becomes the primary',
+  await waitFor(`document.getElementById('domain-list')?.textContent ?? ''`, t => t.includes('app.acme.test')),
+  t => t.includes('app.acme.test') && t.includes('primary'))
+check('…and reports having no certificate, rather than looking fine',
+  await evaluate(`document.getElementById('domain-list')?.textContent ?? ''`),
+  t => t.includes('none'))
+
+// A certificate goes in once. What comes back is metadata; the key is a Secret.
+await click('Upload certificate')
+await sleep(600)
+const CERT_CANARY = 'KEYCANARYzzz'
+await fill({
+  certPem:   '-----BEGIN CERTIFICATE-----CERTCANARYzzz',
+  keyPem:    `-----BEGIN PRIVATE KEY-----${CERT_CANARY}`,
+  expiresAt: new Date(Date.now() + 10 * 86400000).toISOString(),
+})
+await click('Store certificate')
+check('a stored certificate reports its condition, derived from the expiry',
+  await waitFor(`
+    (document.getElementById('screen-error')?.textContent ?? '')
+    + (document.getElementById('domain-list')?.textContent ?? '')`,
+    t => t.includes('expiring_soon')),
+  t => t.includes('expiring_soon'))
+check('the private key is not on the page',
+  await evaluate(`document.body.textContent.includes(${JSON.stringify(CERT_CANARY)})`), false)
+check('…nor in what the API answers for the domain',
+  await evaluate(`
+    fetch('/domains', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': ${JSON.stringify(secondWs.id)},
+    }}).then(r => r.text()).then(t => t.includes(${JSON.stringify(CERT_CANARY)}))`),
+  false)
+
+// The primary cannot be deleted while it is the only route to the app.
+await click('Delete')
+await sleep(1200)
+check('deleting the only primary hostname is allowed — it is the last one',
+  await evaluate(`document.getElementById('domain-list')?.textContent ?? ''`),
+  t => !t.includes('app.acme.test'))
+
+await goto(appOwnerEnvPath)
+
 // Record every push the browser receives, through the app's OWN module — the
 // same resource instance the screens use, so this observes the real socket
 // rather than a second connection made for the test.
@@ -497,7 +662,7 @@ check('the app is listed',
 // actual claim, and the thing that was broken.
 await evaluate(`
   (async () => {
-    const m = await import('/src/resources/deployments.mesa')
+    const m = await import('/src/resources/Deployment.mesa')
     window.__pushes = []
     m.deployments.service.on('patched', r => window.__pushes.push(r.status))
   })()
@@ -811,17 +976,35 @@ await evaluate(`
     sel.value = [...sel.options].find(o => o.value)?.value
     sel.dispatchEvent(new Event('change', { bubbles: true }))
   })()`)
+// The Attach button follows the picker. It is a kit <Button> immediately
+// followed by another one, and until `FJS-110` two components separated only by
+// whitespace shared a compiled anchor: the second registration replaced the
+// first in the component registry, so Attach never received another prop push
+// and stayed disabled forever — while a plain <button> carrying the identical
+// expression followed the pick. Nothing about the DOM looked wrong, which is
+// exactly why it needs an assertion rather than a glance.
+check('the Attach button follows the picker',
+  await waitFor(`(() => {
+    const b = [...document.querySelectorAll('#network-list button')]
+      .find(x => x.textContent.trim() === 'Attach')
+    return b ? String(b.disabled) : 'no Attach button'
+  })()`, v => v === 'false'), 'false')
+
 await click('Attach')
+// Poll on the MEMBER COUNT, not on the server's name: the name is also the text
+// of the <option> in the picker, so a predicate looking for it passes before
+// anything has been attached and the poll exits on its own setup. Nor on
+// `.alert.danger` — the shell's notice bar is one, permanently.
 check('a server joins the network',
-  await waitFor(`document.getElementById('network-list')?.textContent ?? ''`, t => t.includes('gateway-01')),
-  t => t.includes('gateway-01') && t.includes('1 attached'))
+  await waitFor(`document.getElementById('network-list')?.textContent ?? ''`, t => t.includes('1 attached')),
+  t => t.includes('1 attached'))
 
 // Deleting is refused while anything is on it — the service's judgement, shown
 // rather than pre-empted by a disabled button.
 await click('Delete')
 await sleep(1200)
 check('a populated network refuses to be deleted, in words',
-  await evaluate(`document.querySelector('.alert.danger')?.textContent ?? ''`),
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('detach')),
   t => t.includes('detach'))
 
 await goto('/alerts/')
@@ -831,14 +1014,165 @@ check('…and says plainly that nothing evaluates the rules yet',
 await click('New rule')
 await sleep(800)
 await fill({ name: 'DB memory high', metricName: 'memory', threshold: '85' })
+// severity is left untouched on purpose: it must arrive from the schema's own
+// `@default(warning)`. Until 2026-08-06 the schema defaulted to "medium" and
+// the service refused that value — a vocabulary owned in two places.
 await submit()
 check('an alert rule is created',
-  await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('DB memory high')),
+  await waitFor(`
+    (document.getElementById('alert-list')?.textContent ?? '')
+    + (document.getElementById('screen-error')?.textContent ?? '')
+    + [...document.querySelectorAll('.field-error, .field-group')].map(e => e.textContent).join(' ')`,
+    t => t.includes('DB memory high')),
   t => t.includes('DB memory high'))
 await click('History')
 check('a rule that never fired says so, rather than showing an empty box',
   await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('never fired')),
   t => t.includes('never fired'))
+
+// ── 13c-ii. Channels — where an alert actually goes ──────────────────
+// `AlertRule.channels` was `Json @default("[]")`, an array of ids pointing at
+// rows no model declared. These checks are that the pointer now lands
+// somewhere: a channel exists, a rule reaches it, and the credential it holds
+// is nowhere a browser can see.
+await goto('/channels/')
+check('channels renders', await heading(), 'Notification channels')
+check('…and an alert rule with nowhere to go is visible as such',
+  await evaluate(`document.body.textContent`), t => t.includes('where alerts get delivered'))
+
+await click('New channel')
+await sleep(800)
+// The kind picker decides which fields the form asks for, so it is set before
+// the rest is filled: `url` does not exist as a control until kind is webhook.
+await evaluate(`
+  (() => {
+    const sel = document.getElementById('kind')
+    sel.value = 'webhook'
+    sel.dispatchEvent(new Event('input',  { bubbles: true }))
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+await sleep(500)
+await fill({ name: 'Ops webhook', configValue: 'https://hooks.invalid.test/basecamp', secret: 'WEBHOOKTOKENCANARY' })
+await submit()
+check('a channel is created',
+  await waitFor(`document.getElementById('channel-rows')?.textContent ?? ''`, t => t.includes('Ops webhook')),
+  t => t.includes('Ops webhook') && t.includes('active'))
+
+// The credential went into a Secret (@encrypted). Not masked — absent.
+check('the token it was given is nowhere on the page',
+  await evaluate(`document.body.textContent.includes('WEBHOOKTOKENCANARY')`), false)
+check('…nor in what the channels API answers',
+  await evaluate(`
+    fetch('/channels', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': ${JSON.stringify(secondWs.id)},
+    }}).then(r => r.text()).then(t => t.includes('WEBHOOKTOKENCANARY'))`),
+  false)
+
+// A test really sends. Nothing answers on .invalid.test, so it must FAIL —
+// and say so. A test that reported success here would be the exact failure
+// this screen exists to rule out.
+await click('Send test')
+check('a test that could not be delivered says so',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('Delivery failed')),
+  t => t.includes('Delivery failed'))
+check('…and does not mark the channel as tested',
+  await evaluate(`document.getElementById('channel-rows')?.textContent ?? ''`),
+  t => t.includes('never'))
+
+// Attach it to the rule created above, from the alerts screen.
+await goto('/alerts/')
+check('a rule with no channel reports that it reaches nobody',
+  await waitFor(`document.body.textContent`, t => t.includes('Delivers to')),
+  t => t.includes('nobody'))
+
+await evaluate(`
+  (() => {
+    const sel = [...document.querySelectorAll('select')].find(s => s.id.startsWith('attach-'))
+    sel.value = [...sel.options].find(o => o.value)?.value
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+await sleep(400)
+await click('Attach')
+check('attaching a channel is reflected on the rule',
+  await waitFor(`document.getElementById('alert-list')?.textContent ?? ''`, t => t.includes('Ops webhook')),
+  t => t.includes('Ops webhook'))
+
+// The refusal is the server's: a channel with a rule attached cannot be
+// deleted. The mock made that call in the browser over an array it happened
+// to have loaded.
+await goto('/channels/')
+check('…and the channel now counts the rule',
+  await waitFor(`document.getElementById('channel-rows')?.textContent ?? ''`, t => t.includes('Ops webhook')),
+  t => t.includes('Ops webhook'))
+await click('Delete')
+check('a channel a rule delivers through refuses to be deleted, in words',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('detach')),
+  t => t.includes('detach'))
+
+// ── 13c-iii. Flags — a default, and a real environment overriding it ──
+// The mock kept per-environment state in a map keyed by TIER NAME. That
+// vocabulary already exists as `model Environment`, one row per environment
+// per project, so the string would have meant every project sharing one
+// "production" belonging to none of them. These checks are that an override
+// points at the real row — and that the resolution rule lives in the service.
+await goto('/flags/')
+check('flags renders', await heading(), 'Feature flags')
+
+await click('New flag')
+await sleep(800)
+await fill({ key: 'new-checkout-flow', description: 'One-page summary' })
+await submit()
+check('a flag is created',
+  await waitFor(`
+    (document.getElementById('flag-list')?.textContent ?? '')
+    + (document.getElementById('screen-error')?.textContent ?? '')`,
+    t => t.includes('new-checkout-flow')),
+  t => t.includes('new-checkout-flow'))
+// `type` and `isEnabled` were left untouched: both must arrive from the
+// schema's own defaults. A String[] with `@default("[]")` used to reach the
+// browser as `"default": "[]"` — a JSON Schema whose own default failed its
+// own type check — so every create that omitted `tags` 400'd naming a field
+// nobody sent.
+check('…defaulting to off, and to boolean, from the schema',
+  await evaluate(`document.getElementById('flag-list')?.textContent ?? ''`),
+  t => t.includes('off by default') && t.includes('boolean'))
+
+await click('Environments')
+check('with no override, every environment follows the default',
+  await waitFor(`document.getElementById('flag-list')?.textContent ?? ''`, t => t.includes('follows the default')),
+  t => t.includes('follows the default'))
+
+await evaluate(`
+  (() => {
+    const sel = [...document.querySelectorAll('select')].find(s => s.id.startsWith('env-'))
+    sel.value = [...sel.options].find(o => o.value)?.value
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+// Assert the button followed the picker BEFORE clicking it. A disabled button
+// swallows `.click()` silently, so without this a failure downstream cannot be
+// told apart from a request that was made and refused — which is exactly the
+// ambiguity `FJS-110` hid behind for a day.
+check('the override button follows the picker',
+  await waitFor(`(() => {
+    const b = [...document.querySelectorAll('#flag-list button')]
+      .find(x => x.textContent.trim() === 'Turn on here')
+    return b ? String(b.disabled) : 'no button'
+  })()`, v => v === 'false'), 'false')
+
+await click('Turn on here')
+check('an override names a real environment, not a tier',
+  await waitFor(`
+    (document.getElementById('flag-list')?.textContent ?? '')
+    + (document.getElementById('screen-error')?.textContent ?? '')`,
+    t => t.includes('override(s)')),
+  t => t.includes('override(s)') && t.includes('Production'))
+
+await click('Clear')
+check('clearing it returns that environment to the default',
+  await waitFor(`document.getElementById('flag-list')?.textContent ?? ''`, t => t.includes('follows the default')),
+  t => t.includes('follows the default'))
 
 await goto('/secrets/')
 check('secrets renders', await heading(), 'Secrets')
@@ -863,6 +1197,377 @@ check('…nor in what the API answers',
     }}).then(r => r.text()).then(t => t.includes('PLAINTEXTCANARY'))`),
   false)
 
+// ── 13c-bis. API keys — the token this app ISSUES ─────────────────────
+// Two halves, and the second is the one worth having. The screen is easy to
+// check; what matters is that the token it hands you AUTHENTICATES A REQUEST
+// and is refused everywhere it was not scoped for. Until 2026-08-09 it could
+// not: @frontierjs/auth's verifySession never fell through to verifyApiKey, so
+// createApiKey() succeeded and the key it returned was anonymous on every
+// call. A screen that mints unusable tokens looks identical to one that works.
+await goto('/api-keys/')
+check('api keys render', await heading(), 'API keys')
+check('the scope list comes from the server, not a copy in the page',
+  await waitFor(`document.getElementById('new-key') ? '1' : ''`, t => t === '1'), '1')
+
+await click('New key')
+await sleep(800)
+await fill({ name: 'ci-bot production' })
+// Scope ids are the checkbox ids with the colon swapped — see the screen.
+await evaluate(`
+  (() => {
+    for (const id of ['scope-servers-read', 'scope-projects-read']) {
+      const el = document.getElementById(id)
+      if (!el) throw new Error('no scope checkbox #' + id)
+      el.click()
+    }
+  })()
+`)
+await submit()
+
+const minted = await waitFor(
+  `document.getElementById('minted-token')?.textContent?.trim() ?? ''`,
+  t => t.startsWith('fjs_'))
+check('the token is shown once, in full', minted, t => t.startsWith('fjs_') && t.length > 20)
+check('…with a warning that it will not be shown again',
+  await evaluate(`document.getElementById('minted-key')?.textContent ?? ''`),
+  t => t.includes('shown once'))
+
+// The list stores a hint, never the token. Asserted against the API as well as
+// the page: a screen can mask what a response leaked.
+check('the list shows a hint, not the key',
+  await waitFor(`document.getElementById('key-rows')?.textContent ?? ''`, t => t.includes('ci-bot')),
+  t => t.includes('ci-bot') && t.includes('…') && !t.includes(minted))
+check('…and the API never answers the token again',
+  await evaluate(`
+    fetch('/api-keys', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': ${JSON.stringify(secondWs.id)},
+    }}).then(r => r.text()).then(t => t.includes(${JSON.stringify(minted)}))`),
+  false)
+
+// ── the half that is not a screen ────────────────────────────────────
+// Called with fetch rather than through apiCall(), because apiCall carries the
+// SESSION token and the whole question here is what the KEY can do. Relative
+// URLs, through vite's proxy — the page's own origin is :5274, so an absolute
+// http://localhost:3001 is cross-origin and dies as `TypeError: Failed to
+// fetch` with no status to assert on.
+const asKey = (path, method = 'GET') => evaluate(`
+  fetch(${JSON.stringify(path)}, {
+    method: ${JSON.stringify(method)},
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + ${JSON.stringify(minted)},
+      'x-workspace-id': ${JSON.stringify(secondWs.id)},
+    },
+    ${method === 'GET' ? '' : 'body: JSON.stringify({ name: "from-a-key" }),'}
+  }).then(r => r.status)
+`)
+
+check('the key authenticates a real request', await asKey('/servers'), 200)
+check('a scope it does not hold is refused by name',
+  await evaluate(`
+    fetch('/secrets', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + ${JSON.stringify(minted)},
+      'x-workspace-id': ${JSON.stringify(secondWs.id)},
+    }}).then(r => r.json()).then(j => j.message)`),
+  t => typeof t === 'string' && t.includes("'secrets:read' scope"))
+check('read does not imply write', await asKey('/servers', 'POST'), 403)
+check('a key cannot manage keys', await asKey('/api-keys'), 403)
+check('a key cannot be pointed at another workspace',
+  await evaluate(`
+    fetch('/servers', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + ${JSON.stringify(minted)},
+      'x-workspace-id': ${JSON.stringify(firstWs.id)},
+    }}).then(r => r.status)`),
+  403)
+
+// Usage is attributed to the key, and only for what it was allowed to do —
+// one allowed call above, four refusals.
+check('usage is counted against the key that made the call',
+  await waitFor(`
+    fetch('/api-keys', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': ${JSON.stringify(secondWs.id)},
+    }}).then(r => r.json()).then(j => String(j.data[0].totalUses))`,
+    t => Number(t) >= 1),
+  t => Number(t) === 1)
+
+await goto('/api-keys/')
+await click('Revoke')
+check('revoking says so on the row',
+  await waitFor(`document.getElementById('key-rows')?.textContent ?? ''`, t => t.includes('revoked')),
+  t => t.includes('revoked'))
+check('…and the token stops working immediately', await asKey('/servers'), 401)
+check('a revoked key is still listed — revocation is a state, not a deletion',
+  await evaluate(`document.getElementById('key-rows')?.textContent ?? ''`),
+  t => t.includes('ci-bot'))
+
+// ── 13c-ter. Volumes — the first thing here that is OBSERVED ─────────
+// Every other model in this app is something a person created and Basecamp then
+// acted on. A volume is the other direction, and that changes what is worth
+// checking: not "can I make one" but "does the picture match the machine, and
+// does deleting the record delete the disk".
+//
+// The server is gateway-01 in Skunkworks — the browser switched workspaces back
+// in the switcher checks and that choice persists, so this is the workspace the
+// screen is showing.
+const REPORT = (volumes) => fetch(`http://localhost:${API_PORT}/volumes`, {
+  method:  'POST',
+  // No authorization header, deliberately. An agent holds no session; if
+  // `report` were not exempted from sessionScope this 401s, which is exactly
+  // how every server check-in failed once.
+  headers: { 'content-type': 'application/json', accept: 'application/json',
+             'x-service-method': 'report' },
+  body:    JSON.stringify({ server_id: serverId, volumes }),
+}).then(r => r.json())
+
+const created = await fetch(`http://localhost:${API_PORT}/volumes`, {
+  method:  'POST',
+  headers: { accept: 'application/json', authorization: `Bearer ${token}`,
+             'content-type': 'application/json', 'x-workspace-id': secondWs.id },
+  body:    JSON.stringify({ name: 'invented', serverId }),
+})
+check('a volume cannot be created — there is no disk to correspond to it', created.status, 405)
+
+const report = await REPORT([
+  { name: 'pg-data',     mountpoint: '/var/lib/docker/volumes/pg-data/_data',
+    size_bytes: 5 * 1024 ** 3, in_use: true, containers: ['pg-data-svc'] },
+  { name: 'build-cache', mountpoint: '/var/lib/docker/volumes/build-cache/_data',
+    size_bytes: 2 * 1024 ** 3, in_use: false, containers: [] },
+  { name: 'orphan-tmp',  mountpoint: '/var/lib/docker/volumes/orphan-tmp/_data',
+    size_bytes: 100 * 1024 ** 2, in_use: false, containers: [] },
+])
+check('an agent with no session can report what it found', report.added, 3)
+
+await goto('/volumes/')
+check('volumes render', await heading(), 'Volumes')
+// Read the page, not the badge strip: when the strip is missing the failure
+// message is the empty string, and the reason it is missing — a refusal in
+// `#screen-error` — is the only thing worth printing.
+check('the totals are the fleet\'s, not the page\'s',
+  await waitFor(`document.body.textContent`, t => t.includes('3 volumes')),
+  t => t.includes('3 volumes') && t.includes('1 in use') && t.includes('2 unused'))
+// Bytes in the column, a sentence on the screen. 100 MB stored as 0.1 GB is a
+// number nothing can un-round.
+check('…and a size reads in the unit that suits it, from bytes',
+  await evaluate(`document.getElementById('volume-list')?.textContent ?? ''`),
+  t => t.includes('5.0 GB') && t.includes('100 MB'))
+
+// The refusal that stops somebody deleting a database. Named containers, not a
+// count — "stop the container first" is only actionable if it says which.
+await evaluate(`[...document.querySelectorAll('#volume-list button')]
+  .find(b => b.getAttribute('aria-label') === 'Delete pg-data').click()`)
+check('a mounted volume refuses to be deleted, naming what holds it',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('mounted by')),
+  t => t.includes('pg-data-svc') && t.includes('stop the container first'))
+
+// No agent has registered yet: gateway-01's heartbeats have carried no URL. The
+// row must SURVIVE, because forgetting it would leave the disk full and the
+// fleet's picture wrong in the one direction nothing can detect.
+await evaluate(`[...document.querySelectorAll('#volume-list button')]
+  .find(b => b.getAttribute('aria-label') === 'Delete build-cache').click()`)
+check('with no agent to ask, the record is left alone and it says so',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('agent')),
+  t => t.includes('No agent is registered'))
+check('…and the volume is still listed',
+  await evaluate(`document.getElementById('volume-list')?.textContent ?? ''`),
+  t => t.includes('build-cache'))
+
+// Register the agent, the only way one ever is: a heartbeat carrying a URL.
+// gateway-01 is already online, so this exercises the half that used to sit
+// inside the status transition and therefore never ran for a live machine.
+await apiCall(`/servers/${serverId}`, {
+  method: 'POST', workspace: secondWs.id,
+  body: { agent_version: '0.4.1', health: { cpu: 12, memory: 41 },
+          agent_url: `http://localhost:${AGENT_PORT}` },
+  header: { 'x-service-method': 'heartbeat' },
+})
+
+await goto('/volumes/')
+await evaluate(`[...document.querySelectorAll('#volume-list button')]
+  .find(b => b.getAttribute('aria-label') === 'Delete build-cache').click()`)
+check('with an agent, the row goes',
+  await waitFor(`document.getElementById('volume-list')?.textContent ?? ''`, t => !t.includes('build-cache')),
+  t => !t.includes('build-cache'))
+// The check that makes the one above mean anything. A remove that deleted the
+// row without leaving the process looks identical from the browser.
+check('…because the disk was deleted on the machine first',
+  agentSaw.deleted.join(','), 'build-cache')
+check('…and the reclaimable total went down with it',
+  await evaluate(`document.getElementById('volume-usage')?.textContent ?? ''`),
+  t => t.includes('2 volumes') && t.includes('1 unused'))
+
+await click('Prune unused')
+check('prune says how many it took',
+  await waitFor(`document.querySelector('.toast-stack')?.textContent ?? ''`, t => t.includes('Pruned')),
+  t => t.includes('Pruned 1 volume(s)'))
+check('…having asked the agent, and forgotten only what it confirmed',
+  agentSaw.pruned.join(','), 'orphan-tmp')
+check('…leaving nothing reclaimable',
+  await waitFor(`document.getElementById('volume-usage')?.textContent ?? ''`, t => t.includes('0 unused')),
+  t => t.includes('1 volumes') && t.includes('0 unused'))
+
+// A report is the whole truth about one machine at one moment, so a volume
+// missing from it is a volume that no longer exists. Nothing here reloads: the
+// report published to the workspace channel and the open page took the push,
+// which is the whole reason an agent endpoint announces at all.
+const second = await REPORT([
+  { name: 'pg-data', size_bytes: 6 * 1024 ** 3, in_use: true, containers: ['pg-data-svc'] },
+  { name: 'metrics', size_bytes: 512 * 1024 ** 2, in_use: false, containers: [] },
+])
+check('a report adds what is new', second.added, 1)
+check('a new disk appears with no reload',
+  await waitFor(`document.getElementById('volume-list')?.textContent ?? ''`, t => t.includes('metrics')),
+  t => t.includes('metrics'))
+
+await REPORT([{ name: 'pg-data', size_bytes: 6 * 1024 ** 3, in_use: true, containers: ['pg-data-svc'] }])
+// Reloaded, not watched. The push arrives and the screen starts its reload, and
+// that reload does not settle — `FJS-138`, which this is the only reproduction
+// of. The claim being tested here is the report's replace-semantics, and it is
+// tested against a fresh read rather than left to a live update that is
+// currently unreliable; the live path has its own check above.
+await goto('/volumes/')
+// Read the whole page, not `#volume-list`: an empty list renders an EmptyState
+// and no list at all, so scoping the read to the list cannot tell "the row went"
+// from "everything went".
+check('…and one the machine no longer has is forgotten',
+  await waitFor(`document.body.textContent`, t => t.includes('pg-data')),
+  t => !t.includes('metrics') && t.includes('pg-data'))
+
+// Only pg-data is left and it is mounted, so filtering to unused must empty the
+// screen. Asserted on the EMPTY STATE rather than on the absence of a name: a
+// screen still saying "Loading…" also lacks the name, and would pass a check
+// written the other way round while proving nothing.
+await evaluate(`[...document.querySelectorAll('#volume-filters button')]
+  .find(b => b.textContent.trim() === 'Unused').click()`)
+check('the unused filter is the service\'s answer, not the browser\'s',
+  await waitFor(`document.body.textContent`, t => t.includes('No volumes')),
+  t => t.includes('No volumes') && !t.includes('/var/lib/docker/volumes/pg-data'))
+
+// ── 13c-quater. Dashboards — a vocabulary, not a stored query ────────
+// The phase's whole question was whether a widget's data source is declared or
+// free-form. It is declared, so what is worth checking is the two halves of
+// that: the picker cannot offer a kind the service would refuse, and a widget
+// cannot be made to carry a query even by a caller that does not use the UI.
+//
+// The browser is in Skunkworks here — the workspace the volumes checks left it
+// in — which is the one with `gateway-01` in it, so the subject checks below
+// have a real server to point at.
+
+await goto('/dashboards/')
+check('dashboards render', await heading(), 'Dashboards')
+
+await click('New dashboard')
+await sleep(800)
+await fill({ name: 'Ops overview', description: 'morning check' })
+await submit()
+check('creating a board opens it',
+  await waitFor(`location.pathname`, p => p.startsWith('/dashboards/') && p !== '/dashboards/'),
+  p => /^\/dashboards\/[0-9a-f-]+\/$/.test(p))
+const boardPath = await path()
+check('and the board is named on its own screen', await heading(), t => t.includes('Ops overview'))
+
+await click('Add widget')
+await sleep(800)
+// Nine, and from the SERVICE: the picker is built from the `kinds` action, so a
+// kind that exists in the schema and not in the service — or the other way
+// round — cannot be offered. A hardcoded list in the bundle would pass this
+// check while being exactly the drift it is here to catch.
+check('the picker is the service\'s own vocabulary',
+  await evaluate(`document.querySelectorAll('#widget-kinds button').length`), 9)
+
+const pick = label => evaluate(`
+  [...document.querySelectorAll('#widget-kinds button')]
+    .find(b => b.textContent.includes(${JSON.stringify(label)})).click()`)
+
+await pick('Server fleet')
+await sleep(500)
+await click('Add to dashboard')
+check('a widget is added and renders its own data',
+  await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`, t => t.includes('Server fleet')),
+  t => t.includes('Server fleet') && t.includes('gateway-01'))
+
+// A kind with a required subject, added with none. The refusal is the
+// service's, in words — the screen does not pre-empt it, because which kinds
+// need a subject is not a fact the browser owns.
+await click('Add widget')
+await sleep(600)
+await pick('Server health')
+await sleep(500)
+await click('Add to dashboard')
+check('a widget that needs a subject says so rather than being placed',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('needs a server')),
+  t => t.includes('needs a server'))
+
+await evaluate(`
+  (() => {
+    const sel = document.getElementById('widget-subject')
+    sel.value = [...sel.options].find(o => o.value)?.value
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+await sleep(400)
+await click('Add to dashboard')
+check('…and placed once it has one, with the subject named on the card',
+  await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`, t => t.includes('Server health')),
+  t => t.includes('Server health') && t.includes('gateway-01'))
+// The card says what it cannot show. `Server.health` is the last heartbeat, not
+// a series, and the sentence comes from the service's vocabulary rather than
+// from the component — so it changes when the gap closes, in one place.
+check('a thin card states what is missing instead of drawing it',
+  await evaluate(`document.getElementById('widget-grid')?.textContent ?? ''`),
+  t => t.includes('metric store'))
+
+// A counter counts. The mock's version is a number typed in when the widget is
+// added, which is a dashboard displaying whatever it was told.
+await click('Add widget')
+await sleep(600)
+await pick('Counter')
+await sleep(500)
+await click('Add to dashboard')
+const fleetSize = (await apiCall('/servers', { workspace: secondWs.id })).total
+check('a counter reads a real total, not a value typed into the widget',
+  await waitFor(`document.getElementById('widget-grid')?.textContent ?? ''`, t => t.includes('Servers')),
+  t => t.includes(String(fleetSize)))
+
+// The picker cannot express a query — so this is asked of the API directly,
+// the way a caller who skipped the UI would. Both halves matter: an unknown
+// kind, and a config key nothing reads. A widget accepting either is a stored
+// read that no policy graded.
+const boardId = boardPath.split('/').filter(Boolean)[1]
+const refuse = (body) => fetch(`http://localhost:${API_PORT}/dashboards/${boardId}`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json',
+             authorization: `Bearer ${token}`, 'x-workspace-id': secondWs.id,
+             'x-service-method': 'addWidget' },
+  body: JSON.stringify(body),
+}).then(async r => ({ status: r.status, body: await r.text() }))
+
+const badKind = await refuse({ kind: 'sql_query' })
+check('a kind outside the vocabulary is refused, and named', badKind.status, 400)
+check('…with the vocabulary in the message', badKind.body, t => t.includes('server_fleet'))
+
+const badConfig = await refuse({ kind: 'stat_counter', config: { source: 'servers', where: '1=1' } })
+check('a widget cannot be given a query to run', badConfig.status, 400)
+check('…and the key it refused is named', badConfig.body, t => t.includes('where'))
+
+// Layout is the board's, and reordering rewrites every position rather than
+// swapping two — so the check is that the first card CHANGED, which a partial
+// write would leave alone.
+await goto(boardPath)
+await click('Edit layout')
+await sleep(500)
+const firstBefore = await evaluate(`document.querySelector('#widget-grid h2')?.textContent.trim() ?? ''`)
+await evaluate(`[...document.querySelectorAll('#widget-grid button')]
+  .find(b => (b.getAttribute('aria-label') ?? '').startsWith('Move') && b.textContent.trim() === '→').click()`)
+check('reordering moves the card',
+  await waitFor(`document.querySelector('#widget-grid h2')?.textContent.trim() ?? ''`, t => t && t !== firstBefore),
+  t => t !== firstBefore)
+
 // ── 13d. Activity — the trail as a narrative ─────────────────────────
 // The point of this check is not the table. It is that the trail now records
 // ACTIONS: before 2026-08-06 the audit hook ran on create/patch/remove only,
@@ -875,6 +1580,15 @@ check('the trail records custom actions, not only CRUD',
 check('…and an actor id is resolved to a person',
   await evaluate(`document.getElementById('activity-rows')?.textContent ?? ''`),
   t => t.includes('sam@example.com') || t.includes('Sam'))
+
+// Two sources, one feed. `AuditEvent` is what people did; `ServerEvent` is what
+// the machines did — and until `servers.feed` landed the second was readable
+// per-server only, so a fleet view meant one request per server merged in the
+// browser (`FJS-104`). The drain above wrote both: an audit row for the person
+// and a server event for the transition.
+check('the fleet\'s own events are in the feed, not only the human trail',
+  await waitFor(`document.getElementById('activity-rows')?.textContent ?? ''`, t => t.includes('agent')),
+  t => t.includes('agent'))
 
 const kindCount = await evaluate(`document.querySelectorAll('#activity-kinds button').length`)
 check('the kind filter is built from what happened, not declared', kindCount, n => n > 1)
@@ -893,7 +1607,400 @@ check('and the project is gone',
   await evaluate(`document.getElementById('project-rows')?.textContent ?? ''`),
   t => !t.includes('Checkout rewrite'))
 
+// ── 13e. Recipes and reclaim — the two ways to act on a machine ──────
+// One screen runs arbitrary code and one names declared targets, and the pair
+// is the phase. What is worth checking is therefore not "does a row appear" but
+// the two things a database read cannot see: that a MACHINE was actually asked,
+// and with what.
+//
+// The browser is in Skunkworks — the workspace the volumes checks left it in —
+// where `gateway-01` has a registered agent and the sink above is answering as
+// it. That is what makes both screens reachable without inventing a second one.
+
+await goto('/recipes/')
+check('recipes render', await heading(), 'Recipes')
+
+// The refusal comes from the SCHEMA, in the browser, before a request is made:
+// `script` is required on Recipe, and createResource validates by default.
+await click('New recipe')
+await sleep(600)
+await fill({ name: 'Nameless', description: 'no script at all' })
+await submit()
+await sleep(800)
+// Refused by the SCHEMA, in the browser, before a request is made. The message
+// is the length rule rather than "required" because `make()` seeds every field
+// — an empty string is present, so `script @length(1, 20000)` is what catches
+// it, and that is the sentence a person sees.
+// The kit renders a field's message as `.field-hint.danger` with role=alert —
+// there is no `.field-error` class, which is worth knowing before writing a
+// selector against a form anywhere in this app.
+check('a recipe with no script is refused before the request is made',
+  await evaluate(`[...document.querySelectorAll('[role=alert]')].map(e => e.textContent.trim()).join(' | ')`),
+  t => t.includes('script'))
+
+await fill({ script: '#!/bin/bash\ndf -h /\n' })
+await submit()
+check('a recipe is saved and listed',
+  await waitFor(`document.getElementById('recipe-list')?.textContent ?? ''`, t => t.includes('Nameless')),
+  t => t.includes('Nameless'))
+
+// A machine with no agent is refused AT THE CLICK, naming the machine — not
+// queued and failed a minute later where nobody is looking.
+const agentless = await apiCall('/servers', {
+  method: 'POST', workspace: secondWs.id, body: { name: 'no-agent-01' },
+})
+await goto('/recipes/')
+await evaluate(`(() => {
+  const sel = document.getElementById('run-target')
+  sel.value = ${JSON.stringify(agentless.id)}
+  sel.dispatchEvent(new Event('input',  { bubbles: true }))
+  sel.dispatchEvent(new Event('change', { bubbles: true }))
+})()`)
+await evaluate(`[...document.querySelectorAll('#recipe-list button')]
+  .find(b => b.getAttribute('aria-label') === 'Run Nameless').click()`)
+check('running on a machine with no agent is refused, naming it',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('agent')),
+  t => t.includes('no-agent-01') && t.includes('No agent is registered'))
+
+// Now the machine that has one. The queue carries it, the engine sends it, and
+// the run row fills in from a channel push with nothing polling.
+await goto('/recipes/')
+await evaluate(`(() => {
+  const sel = document.getElementById('run-target')
+  sel.value = ${JSON.stringify(serverId)}
+  sel.dispatchEvent(new Event('input',  { bubbles: true }))
+  sel.dispatchEvent(new Event('change', { bubbles: true }))
+})()`)
+await evaluate(`[...document.querySelectorAll('#recipe-list button')]
+  .find(b => b.getAttribute('aria-label') === 'Run Nameless').click()`)
+check('a run finishes and the exit code is on screen',
+  await waitFor(`document.getElementById('recipe-runs')?.textContent ?? ''`, t => t.includes('success')),
+  t => t.includes('success') && t.includes('gateway-01'))
+// The check that makes the one above mean anything: a run row saying success
+// proves the engine wrote a row, not that any machine was asked.
+check('…because the script really reached the agent',
+  agentSaw.ran.join('|'), t => t.includes('df -h /'))
+check('…and its output is the machine\'s, not the recipe\'s text',
+  await evaluate(`document.getElementById('recipe-detail')?.textContent ?? ''`),
+  t => t.includes('/dev/vda1'))
+
+// The one property that survives editing: a run keeps the script it ran, so
+// output and script cannot silently stop matching. Asked of the API because the
+// screen shows the recipe's current text — which is the point.
+const recipeId = await evaluate(`(async () => {
+  const res = await fetch('/recipes', { headers: {
+    accept: 'application/json',
+    authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+    'x-workspace-id': ${JSON.stringify(secondWs.id)},
+  }})
+  const j = await res.json()
+  return j.data.find(r => r.name === 'Nameless').id
+})()`)
+await apiCall(`/recipes/${recipeId}`, {
+  method: 'PATCH', workspace: secondWs.id, body: { script: '#!/bin/bash\nrm -rf /tmp/nothing\n' },
+})
+// A single read unwraps its envelope and a list keeps one, so this is the row
+// itself — `.data` here is the LIST shape and would be undefined.
+const kept = await apiCall(`/recipes/${recipeId}`, { workspace: secondWs.id })
+check('editing a recipe does not rewrite what already ran',
+  kept.runs[0].script, t => t.includes('df -h /'))
+
+// ── The declared half ────────────────────────────────────────────────
+await goto('/cleanup/')
+check('disk cleanup renders', await heading(), 'Disk cleanup')
+// From the service, not the bundle: the checkboxes are the `targets` action's
+// answer, so this screen cannot offer something the API would refuse.
+check('the targets are the service\'s own vocabulary',
+  await evaluate(`document.querySelectorAll('#cleanup-targets input[type=checkbox]').length`), 5)
+check('…and the one that destroys data is off by default',
+  await evaluate(`[...document.querySelectorAll('#cleanup-targets label')]
+    .find(l => l.textContent.includes('Unused volumes'))?.querySelector('input').checked`), false)
+check('a machine that has never reported says so, rather than showing zeroes',
+  await evaluate(`document.getElementById('cleanup-list')?.textContent ?? ''`),
+  t => t.includes('never reported'))
+
+// The agent's endpoint — no session, like the volume report and the heartbeat.
+const disk = await fetch(`http://localhost:${API_PORT}/cleanup`, {
+  method:  'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json',
+             'x-service-method': 'report' },
+  body: JSON.stringify({
+    server_id: serverId,
+    images:      { total: 58, unused: 9, dangling: 22, size_bytes: 18 * 1024 ** 3, reclaimable_bytes: 9 * 1024 ** 3 },
+    containers:  { running: 1, stopped: 2, reclaimable_bytes: 40 * 1024 ** 2 },
+    build_cache: { size_bytes: 8 * 1024 ** 3, reclaimable_bytes: 8 * 1024 ** 3 },
+  }),
+})
+check('an agent with no session can report a disk', disk.status, 200)
+
+await goto('/cleanup/')
+check('the figures on screen are the ones Docker measured',
+  await waitFor(`document.getElementById('cleanup-list')?.textContent ?? ''`, t => t.includes('58 images')),
+  t => t.includes('22 dangling') && t.includes('2 stopped'))
+
+// Both image targets draw on ONE reclaimable figure, and Docker reports no
+// split. Ticking the second must not double the estimate — the mock added
+// invented per-category numbers and would have promised twice what a sweep
+// could deliver.
+const estimateBefore = await evaluate(`document.getElementById('cleanup-list')?.textContent ?? ''`)
+await evaluate(`[...document.querySelectorAll('#cleanup-targets input[type=checkbox]')][0].click()`)
+await sleep(400)
+check('two image targets do not add up to twice the images',
+  await evaluate(`document.getElementById('cleanup-list')?.textContent ?? ''`),
+  t => t.match(/(\d+\.\d) GB by these targets/)?.[1] === estimateBefore.match(/(\d+\.\d) GB by these targets/)?.[1])
+
+await evaluate(`[...document.querySelectorAll('#cleanup-list button')]
+  .find(b => b.getAttribute('aria-label') === 'Clean gateway-01').click()`)
+check('a sweep records what the machine says it freed',
+  await waitFor(`document.getElementById('cleanup-history')?.textContent ?? ''`, t => t.includes('3.0 GB')),
+  t => t.includes('3.0 GB') && t.includes('success'))
+check('…having asked the agent for exactly the targets that were ticked',
+  agentSaw.swept.join('|'), t => t.includes('unused_images') && !t.includes('unused_volumes'))
+// The agent answers a fresh picture with what it freed, written through the
+// same path the report endpoint uses — so the screen is not left showing what
+// was there before the sweep.
+check('…and the picture is the one the agent left behind',
+  await waitFor(`document.getElementById('cleanup-summary')?.textContent ?? ''`, t => t.includes('0 B')),
+  t => t.includes('0 B reclaimable'))
+
+// Two refusals the UI never offers, asked of the API directly.
+const unknownTarget = await fetch(`http://localhost:${API_PORT}/cleanup`, {
+  method: 'POST',
+  headers: { accept: 'application/json', authorization: `Bearer ${token}`,
+             'content-type': 'application/json', 'x-workspace-id': secondWs.id,
+             'x-service-method': 'run' },
+  body: JSON.stringify({ serverId, targets: ['everything'] }),
+})
+check('a target outside the vocabulary is refused by name', unknownTarget.status, 400)
+check('…and the refusal says what it does know',
+  await unknownTarget.text(), t => t.includes('everything') && t.includes('dangling_images'))
+
+const inventedRun = await fetch(`http://localhost:${API_PORT}/cleanup`, {
+  method: 'POST',
+  headers: { accept: 'application/json', authorization: `Bearer ${token}`,
+             'content-type': 'application/json', 'x-workspace-id': secondWs.id },
+  body: JSON.stringify({ serverId, status: 'success', freedBytes: 999 }),
+})
+check('a sweep that never happened cannot be recorded from the wire', inventedRun.status, 405)
+
+// ── 13f. The platform hub — the one tier that is not a workspace ──────
+//
+// Everything else in this file is scoped to a workspace by a header. These
+// four screens are not: they read across every tenant behind `isSystemAdmin`,
+// a column on User, and the whole point of the section is that the flag is
+// enforced on the SERVER — the topbar link and the router redirect are
+// affordances that could both be deleted without changing who can read what.
+//
+// The section leaves the world as it found it: both suspensions are undone
+// before the a11y pass, which drives every screen as this same user.
+
+await goto('/hub/')
+check('the hub opens', await heading(), 'Platform hub')
+check('the shell offers it to a system administrator',
+  await evaluate(`[...document.querySelectorAll('.topbar .navlink')].map(a => a.textContent.trim()).join('|')`),
+  t => t.includes('Hub'))
+
+// Read at request time from the things that own them — SQLite for its own
+// version, Caravan for the queues. Nothing here is stored, so there is nothing
+// that can be stale.
+check('the runtime is measured, not declared',
+  await evaluate(`document.getElementById('hub-runtime')?.textContent ?? ''`),
+  t => /\d+\.\d+/.test(t) && t.includes('basecamp.db'))
+check('every configured queue is listed, including the one added last',
+  await evaluate(`document.getElementById('hub-queues')?.textContent ?? ''`),
+  t => t.includes('fleet') && t.includes('deployments'))
+// The mock shows a subscriber COUNT the in-process bus cannot produce. The
+// screen states that rather than printing a number nothing measured.
+check('…and the two figures that cannot be measured say so',
+  await evaluate(`document.body.textContent`),
+  t => t.includes('cannot produce') && t.includes('CPU'))
+
+// ── Workspaces: a cross-tenant read the workspaces service refuses to do ──
+await goto('/hub/workspaces/')
+check('every tenant is listed, not the caller\'s memberships',
+  await evaluate(`document.getElementById('hub-workspace-rows')?.textContent ?? ''`),
+  t => t.includes('Acme') && t.includes('Skunkworks'))
+check('…with the counts nothing else joins up',
+  await evaluate(`document.getElementById('hub-ws-stats')?.textContent ?? ''`),
+  t => t.includes('2 workspaces') && t.includes('2 active'))
+
+// Suspension is the action worth proving, and proving it means proving it bites
+// somewhere else: a status column nothing reads is a button that reports
+// success and revokes nothing.
+await evaluate(`[...document.querySelectorAll('#hub-workspace-rows button')]
+  .find(b => b.getAttribute('aria-label') === 'Suspend Skunkworks').click()`)
+check('suspending a workspace is visible where it was done',
+  await waitFor(`document.getElementById('hub-ws-stats')?.textContent ?? ''`, t => t.includes('1 suspended')),
+  t => t.includes('1 suspended'))
+
+let suspendedRead = null
+try {
+  await apiCall('/projects', { workspace: secondWs.id })
+  suspendedRead = 'answered'
+} catch (e) { suspendedRead = String(e.message) }
+check('…and a suspended workspace is refused by every scoped service',
+  suspendedRead, t => t.includes('403') && t.includes('suspended'))
+check('…while the hub itself stays reachable',
+  (await apiCall('/hub', { method: 'POST', header: { 'x-service-method': 'overview' } })).runtime.pid,
+  n => Number.isInteger(n))
+
+await evaluate(`[...document.querySelectorAll('#hub-workspace-rows button')]
+  .find(b => b.getAttribute('aria-label') === 'Reinstate Skunkworks').click()`)
+check('reinstating gives it back',
+  await waitFor(`(async () => {
+    const r = await fetch('/projects', { headers: { accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': ${JSON.stringify(secondWs.id)} } })
+    return r.status
+  })()`, s => s === 200), 200)
+
+// ── Users and bots ───────────────────────────────────────────────────
+await goto('/hub/users/')
+check('the actor list is there',
+  await evaluate(`document.getElementById('hub-user-rows')?.textContent ?? ''`),
+  t => t.includes(ACCOUNT.email))
+// /setup is the only place a system administrator is CREATED rather than
+// granted — without it the tier would exist and nobody could ever reach it.
+check('the bootstrap user is the first system administrator',
+  await evaluate(`document.getElementById('hub-user-rows')?.textContent ?? ''`),
+  t => t.includes('sysadmin'))
+check('…and is not offered a way to lock themselves out',
+  await evaluate(`document.getElementById('hub-user-rows')?.textContent ?? ''`),
+  t => t.includes('you'))
+
+await evaluate(`document.getElementById('new-bot').click()`)
+await sleep(400)
+await fill({ 'bot-name': 'CI deploy' })
+// The workspace is CHOSEN, not left at the form's default — the picker is
+// ordered newest-first, so the default is Skunkworks, and a bot in the wrong
+// tenant fails later as "not a member of this workspace" rather than here.
+await evaluate(`(() => {
+  const sel = document.getElementById('bot-ws')
+  const opt = [...sel.options].find(o => o.textContent.trim() === 'Acme')
+  if (!opt) throw new Error('no Acme in the bot workspace picker')
+  sel.value = opt.value
+  sel.dispatchEvent(new Event('change', { bubbles: true }))
+})()`)
+await evaluate(`document.getElementById('create-bot').click()`)
+check('a bot account can be created',
+  await waitFor(`document.getElementById('hub-user-rows')?.textContent ?? ''`, t => t.includes('CI deploy')),
+  t => t.includes('CI deploy'))
+// RFC 2606 reserves .invalid, so the address resolves nowhere — `User.email`
+// is required and unique, and a plausible one would eventually be mailed.
+check('…at an address that can never receive mail',
+  await evaluate(`document.getElementById('hub-user-rows')?.textContent ?? ''`),
+  t => t.includes('ci-deploy@bots.invalid'))
+
+// The gap this closes, recorded in api-keys.service.ts since Phase 6: a key
+// belonged to whoever pressed the button, so CI's key was a person's key.
+const botId = (await apiCall('/hub', { method: 'POST', header: { 'x-service-method': 'users' } }))
+  .data.find(u => u.kind === 'bot').id
+const botKey = await apiCall('/api-keys', {
+  method: 'POST', workspace: firstWs.id,
+  body: { name: 'ci-pipeline', userId: botId, scopes: ['servers:read'] },
+})
+check('a key can now belong to a bot rather than to a person', botKey.userId, botId)
+
+let humanKey = null
+try {
+  await apiCall('/api-keys', {
+    method: 'POST', workspace: firstWs.id,
+    body: { name: 'not-mine', userId: firstWs.ownerId + 'x', scopes: ['servers:read'] },
+  })
+  humanKey = 'accepted'
+} catch (e) { humanKey = String(e.message) }
+check('…and only to a bot — naming anyone else is refused',
+  humanKey, t => t.includes('400') && t.includes('bot account'))
+
+// A bot with the run of every tenant is a credential, not a revocable human.
+let botAdmin = null
+try {
+  await apiCall('/hub', {
+    method: 'POST', header: { 'x-service-method': 'setSystemAdmin' },
+    body: { userId: botId, isSystemAdmin: true },
+  })
+  botAdmin = 'accepted'
+} catch (e) { botAdmin = String(e.message) }
+check('a bot cannot be made a system administrator', botAdmin, t => t.includes('403'))
+
+// ── Suspension of a person, at the door they come in through ─────────
+// Done at the API rather than through the screen because it needs a SECOND
+// human, and the browser is signed in as the first — swapping sessions costs
+// two logins against auth's 10-per-15-minutes limit, which every later check
+// then pays for.
+const pat = await fetch(`http://localhost:${API_PORT}/auth/register`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json' },
+  body: JSON.stringify({ email: 'pat@example.com', name: 'Pat', password: 'hunter2hunter2' }),
+}).then(r => r.json())
+
+const patLogin = () => fetch(`http://localhost:${API_PORT}/auth/login`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json' },
+  body: JSON.stringify({ email: 'pat@example.com', password: 'hunter2hunter2' }),
+})
+check('a second human can sign in', (await patLogin()).status, 200)
+
+// `User.status` was a free String nothing read until this phase — @frontierjs/auth
+// never looks at it, so "suspended" was a word with no enforcement anywhere.
+await apiCall('/hub', {
+  method: 'POST', header: { 'x-service-method': 'setUserStatus' },
+  body: { userId: pat.user.userId, status: 'suspended' },
+})
+const refused = await patLogin()
+check('a suspended account cannot sign in', refused.status, 403)
+check('…and is told why, rather than reading as a wrong password',
+  await refused.text(), t => t.includes('suspended'))
+
+// The token issued BEFORE the suspension is the other half: deleting the
+// Session rows does not cover an API key, which is a Credential.
+const stale = await fetch(`http://localhost:${API_PORT}/workspaces`, {
+  headers: { accept: 'application/json', authorization: `Bearer ${pat.token}` },
+})
+check('…and a token issued before it stops working too', stale.status, s => s === 401 || s === 403)
+
+await apiCall('/hub', {
+  method: 'POST', header: { 'x-service-method': 'setUserStatus' },
+  body: { userId: pat.user.userId, status: 'active' },
+})
+check('restoring lets them back in', (await patLogin()).status, 200)
+
+// The tier is enforced on the server. Everything above ran as a sysadmin; this
+// is the same API asked by somebody who is not one.
+const patToken = await patLogin().then(r => r.json()).then(r => r.token)
+const patHub = await fetch(`http://localhost:${API_PORT}/hub`, {
+  method:  'POST',
+  headers: { accept: 'application/json', authorization: `Bearer ${patToken}`,
+             'x-service-method': 'overview' },
+})
+// 404, not 403: the hub is not a screen somebody is being refused, it is a
+// surface they have no business knowing exists.
+check('the hub is invisible to a non-administrator', patHub.status, 404)
+
+// ── Flags at hub scope ───────────────────────────────────────────────
+await goto('/hub/flags/')
+// The flag was authored above while the switcher was on Skunkworks, and the
+// workspace it belongs to is named on the row — which is the whole reason this
+// screen exists. Reading it across tenants is useless if you cannot tell whose
+// killswitch you are about to flip.
+check('a workspace-scoped model, read across every tenant',
+  await evaluate(`document.getElementById('hub-flag-groups')?.textContent ?? ''`),
+  t => t.includes('new-checkout-flow') && t.includes('Skunkworks'))
+// Grouped by the prefix convention in the key. A flag that follows none is in
+// `ungrouped` rather than dropped — the convention is a grouping, not a filter.
+check('…grouped by the convention in the key, with a home for keys that follow none',
+  await evaluate(`document.getElementById('hub-flag-groups')?.textContent ?? ''`),
+  t => t.includes('ungrouped'))
+
+const flagBefore = await evaluate(`document.getElementById('hub-flag-groups')?.textContent ?? ''`)
+await evaluate(`[...document.querySelectorAll('#hub-flag-groups button')][0].click()`)
+check('toggling one from the hub changes the flag\'s own default',
+  await waitFor(`document.getElementById('hub-flag-groups')?.textContent ?? ''`, t => t !== flagBefore),
+  t => t !== flagBefore)
+
 // ── 14. Accessibility, on every screen ────────────────────────────────
+// The app detail screen is a dynamic route, so it is audited by its captured
+// path after the static loop rather than being left out of the pass.
 // Not a substitute for using the thing with a keyboard and a screen reader —
 // it is the subset a machine can settle, run everywhere so a new screen cannot
 // quietly drop a label or a table header.
@@ -922,10 +2029,12 @@ const AUDIT = `(() => {
   return out
 })()`
 
-for (const route of ['/', '/projects/', '/projects/create/', '/servers/', '/servers/create/',
-                     '/deployments/', '/jobs/', '/networks/', '/alerts/', '/secrets/',
-                     '/activity/', '/portal/',
-                     '/admin/', '/admin/audit/', '/admin/adapters/']) {
+for (const route of [appDetailPath, boardPath, '/', '/dashboards/', '/projects/', '/projects/create/', '/servers/', '/servers/create/',
+                     '/deployments/', '/jobs/', '/networks/', '/volumes/', '/cleanup/', '/recipes/',
+                     '/alerts/', '/channels/', '/flags/', '/secrets/',
+                     '/api-keys/', '/activity/', '/portal/',
+                     '/admin/', '/admin/audit/', '/admin/adapters/',
+                     '/hub/', '/hub/workspaces/', '/hub/users/', '/hub/flags/']) {
   await goto(route)
   const issues = await evaluate(AUDIT)
   check(`a11y: ${route}`, Array.isArray(issues) ? issues.join(' | ') : String(issues), '')

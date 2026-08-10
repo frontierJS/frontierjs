@@ -16,9 +16,9 @@ siteName: Basecamp
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
 
   import NoticeBar from '../components/NoticeBar.mesa'
-  import { servers }     from '../resources/servers.mesa'
-  import { deployments } from '../resources/deployments.mesa'
-  import { jobs }        from '../resources/jobs.mesa'
+  import { servers }     from '../resources/Server.mesa'
+  import { deployments } from '../resources/Deployment.mesa'
+  import { jobs }        from '../resources/Job.mesa'
   import { computeNotices } from '../notices.js'
 
   $: (page.siteName, page.route)
@@ -61,23 +61,45 @@ siteName: Basecamp
   // the Servers and Workspace groups are built from live rows.
   $: COMMANDS = [
     { id: 'go-home',        group: 'Navigate', label: 'Overview',    action: () => goto('/') },
+    { id: 'go-dashboards',  group: 'Navigate', label: 'Dashboards',  sub: 'saved views',        action: () => goto('/dashboards/') },
     { id: 'go-projects',    group: 'Navigate', label: 'Projects',    action: () => goto('/projects/') },
     { id: 'go-servers',     group: 'Navigate', label: 'Servers',     action: () => goto('/servers/') },
     { id: 'go-deployments', group: 'Navigate', label: 'Deployments', action: () => goto('/deployments/') },
     { id: 'go-jobs',        group: 'Navigate', label: 'Jobs',        action: () => goto('/jobs/') },
     { id: 'go-networks',    group: 'Navigate', label: 'Networking',  sub: 'private networks',   action: () => goto('/networks/') },
+    { id: 'go-volumes',     group: 'Navigate', label: 'Volumes',     sub: 'disks the fleet has', action: () => goto('/volumes/') },
+    { id: 'go-cleanup',     group: 'Navigate', label: 'Disk cleanup', sub: 'what can be reclaimed', action: () => goto('/cleanup/') },
+    { id: 'go-recipes',     group: 'Navigate', label: 'Recipes',     sub: 'scripts to run on a server', action: () => goto('/recipes/') },
     { id: 'go-alerts',      group: 'Navigate', label: 'Alerts',      sub: 'rules and firings',  action: () => goto('/alerts/') },
+    { id: 'go-channels',    group: 'Navigate', label: 'Channels',    sub: 'where alerts land',  action: () => goto('/channels/') },
+    { id: 'go-flags',       group: 'Navigate', label: 'Flags',       sub: 'feature flags',      action: () => goto('/flags/') },
     { id: 'go-secrets',     group: 'Navigate', label: 'Secrets',     sub: 'machine credentials', action: () => goto('/secrets/') },
+    { id: 'go-api-keys',    group: 'Navigate', label: 'API keys',    sub: 'tokens we issue',    action: () => goto('/api-keys/') },
     { id: 'go-activity',    group: 'Navigate', label: 'Activity',    sub: 'what happened here', action: () => goto('/activity/') },
     { id: 'go-portal',      group: 'Navigate', label: 'Portal',      sub: 'shared appliances',  action: () => goto('/portal/') },
     { id: 'go-admin',       group: 'Navigate', label: 'Admin',       action: () => goto('/admin/') },
     { id: 'go-audit',       group: 'Navigate', label: 'Audit trail', sub: 'Admin', action: () => goto('/admin/audit/') },
     { id: 'go-adapters',    group: 'Navigate', label: 'Adapters',    sub: 'Admin', action: () => goto('/admin/adapters/') },
 
+    // Spread, not a conditional entry: a falsy item in the list renders as a
+    // blank row in the palette rather than as nothing.
+    ...(session.user?.isSystemAdmin ? [
+      { id: 'go-hub',        group: 'Navigate', label: 'Platform hub',   sub: 'every workspace', action: () => goto('/hub/') },
+      { id: 'go-hub-ws',     group: 'Navigate', label: 'Hub workspaces', sub: 'Hub', action: () => goto('/hub/workspaces/') },
+      { id: 'go-hub-users',  group: 'Navigate', label: 'Hub users & bots', sub: 'Hub', action: () => goto('/hub/users/') },
+      { id: 'go-hub-flags',  group: 'Navigate', label: 'Hub flags',      sub: 'Hub', action: () => goto('/hub/flags/') },
+      { id: 'new-bot',       group: 'Create',   label: 'New bot account', action: () => goto('/hub/users/') },
+    ] : []),
+
     { id: 'new-project', group: 'Create', label: 'New project',    action: () => goto('/projects/create/') },
+    { id: 'new-dashboard', group: 'Create', label: 'New dashboard', action: () => goto('/dashboards/') },
     { id: 'new-server',  group: 'Create', label: 'Provision server', action: () => goto('/servers/create/') },
     { id: 'new-network', group: 'Create', label: 'New network',       action: () => goto('/networks/') },
     { id: 'new-alert',   group: 'Create', label: 'New alert rule',    action: () => goto('/alerts/') },
+    { id: 'new-channel', group: 'Create', label: 'New channel',       action: () => goto('/channels/') },
+    { id: 'new-flag',    group: 'Create', label: 'New feature flag',  action: () => goto('/flags/') },
+    { id: 'new-api-key', group: 'Create', label: 'New API key',       action: () => goto('/api-keys/') },
+    { id: 'new-recipe',  group: 'Create', label: 'New recipe',        action: () => goto('/recipes/') },
 
     // A server the palette can reach is a server the fleet actually has —
     // the rows are the ones already loaded for the notice engine, so this
@@ -144,6 +166,8 @@ siteName: Basecamp
       <nav class="cluster" aria-label="Main">
         <a class="navlink" href="/"
            aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Overview</a>
+        <a class="navlink" href="/dashboards/"
+           aria-current={(page.route, isActive('/dashboards/')) ? 'page' : null}>Dashboards</a>
         <a class="navlink" href="/projects/"
            aria-current={(page.route, isActive('/projects/')) ? 'page' : null}>Projects</a>
         <a class="navlink" href="/servers/"
@@ -154,16 +178,36 @@ siteName: Basecamp
            aria-current={(page.route, isActive('/jobs/')) ? 'page' : null}>Jobs</a>
         <a class="navlink" href="/networks/"
            aria-current={(page.route, isActive('/networks/')) ? 'page' : null}>Networking</a>
+        <a class="navlink" href="/volumes/"
+           aria-current={(page.route, isActive('/volumes/')) ? 'page' : null}>Volumes</a>
+        <a class="navlink" href="/cleanup/"
+           aria-current={(page.route, isActive('/cleanup/')) ? 'page' : null}>Cleanup</a>
+        <a class="navlink" href="/recipes/"
+           aria-current={(page.route, isActive('/recipes/')) ? 'page' : null}>Recipes</a>
         <a class="navlink" href="/alerts/"
            aria-current={(page.route, isActive('/alerts/')) ? 'page' : null}>Alerts</a>
+        <a class="navlink" href="/channels/"
+           aria-current={(page.route, isActive('/channels/')) ? 'page' : null}>Channels</a>
+        <a class="navlink" href="/flags/"
+           aria-current={(page.route, isActive('/flags/')) ? 'page' : null}>Flags</a>
         <a class="navlink" href="/secrets/"
            aria-current={(page.route, isActive('/secrets/')) ? 'page' : null}>Secrets</a>
+        <a class="navlink" href="/api-keys/"
+           aria-current={(page.route, isActive('/api-keys/')) ? 'page' : null}>API keys</a>
         <a class="navlink" href="/activity/"
            aria-current={(page.route, isActive('/activity/')) ? 'page' : null}>Activity</a>
         <a class="navlink" href="/portal/"
            aria-current={(page.route, isActive('/portal/')) ? 'page' : null}>Portal</a>
         <a class="navlink" href="/admin/"
            aria-current={(page.route, isActive('/admin/')) ? 'page' : null}>Admin</a>
+        <!-- The hub tier is not a workspace role, so it is not in the switcher
+             and it is not offered to people who do not hold it. `isSystemAdmin`
+             rides on the session; the service answers 404 to anyone else
+             regardless, which is where the refusal actually is. -->
+        {#if session.user.isSystemAdmin}
+          <a class="navlink" href="/hub/"
+             aria-current={(page.route, isActive('/hub/')) ? 'page' : null}>Hub</a>
+        {/if}
       </nav>
     {/if}
 

@@ -31,19 +31,42 @@
   box-shadow:    var(--shadow-lg);
 }
 
+/*
+ * A column, so a .surface-body between a header and a footer takes the
+ * remaining height rather than only as much as its content.
+ *
+ * Keyed off [open] rather than declared on .drawer, and that is not a
+ * style: an author `display: flex` on a <dialog> beats the UA's
+ * `display: none` and the drawer would be on screen shut. Only an open
+ * <dialog> has the attribute, so a closed one keeps the UA's answer —
+ * pinned by `overlay: a closed <dialog> stays closed` in components.spec.
+ *
+ * @frontierjs/ui carried this rule locally until the file that owns
+ * .drawer had it.
+ */
+.drawer[open] {
+  display:        flex;
+  flex-direction: column;
+}
+
 .drawer::backdrop {
   background:      rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(2px);
 }
 
-/* ── Edge variants ──────────────────────────────────────────── */
+/* ── Edge variants ──────────────────────────────────────────────
+ *
+ * Each edge declares only where it comes from. overlays.css owns the
+ * transition, so the same value carries the drawer back out again —
+ * which is what the four @keyframes here could never do.
+ */
 .drawer.from-right {
-  margin-left: auto;
-  animation:   drawer-slide-from-right 200ms ease-out;
+  margin-left:   auto;
+  --overlay-from: translateX(100%);
 }
 .drawer.from-left {
-  margin-right: auto;
-  animation:    drawer-slide-from-left 200ms ease-out;
+  margin-right:  auto;
+  --overlay-from: translateX(-100%);
 }
 .drawer.from-top,
 .drawer.from-bottom {
@@ -54,26 +77,15 @@
 }
 .drawer.from-top {
   margin-bottom: auto;
-  animation:     drawer-slide-from-top 200ms ease-out;
+  --overlay-from: translateY(-100%);
 }
 .drawer.from-bottom {
-  margin-top: auto;
-  animation:  drawer-slide-from-bottom 200ms ease-out;
+  margin-top:    auto;
+  --overlay-from: translateY(100%);
 }
 
-@keyframes drawer-slide-from-right {
-  from { transform: translateX(100%); }
-  to   { transform: translateX(0); }
-}
-@keyframes drawer-slide-from-left {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(0); }
-}
-@keyframes drawer-slide-from-top {
-  from { transform: translateY(-100%); }
-  to   { transform: translateY(0); }
-}
-@keyframes drawer-slide-from-bottom {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
+/* A drawer with no edge stated slides from the right, the default the
+   four keyframes used to imply by being listed first. */
+.drawer {
+  --overlay-from: translateX(100%);
 }

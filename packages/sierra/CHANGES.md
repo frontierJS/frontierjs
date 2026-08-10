@@ -1,5 +1,43 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-08 — `action()` can address a collection, and carry a query
+
+`resource.service.action(name, id, data, query)`: `id` may be null for an
+action about the whole collection, and the fourth argument travels as the
+request's query string. Both were reachable on the server and neither was
+expressible here — see junction's note for why. The hook pipeline, and the
+deliberate absence of coercion and validation on an action payload, are
+unchanged. 809 tests; `test:safety` 5/5.
+
+## 2026-08-06 — a prerendered page is the app, not a fragment of it
+
+809 tests (was 805). Closes `FJS-108`.
+
+A `target: 'static'` page shipped every `@frontierjs/css` class name the app
+uses and **not one rule behind them**. A prerendered document is assembled by
+`wrapDocument` rather than by Vite's HTML transform, so the stylesheet the same
+build emits had no way into it, and the theme — one class on `<body>`, stated in
+`index.html` for the SPA — had none either. The SPA built from the same source
+looked right, which is why nobody had seen it.
+
+`wrapDocument` now takes `stylesheets` and `bodyClass`:
+
+```js
+// sierra.static.config.js
+document: { bodyClass: 'app theme-default' },
+```
+
+The stylesheets are the CSS assets of that build, discovered rather than
+configured, and they are linked BEFORE the page's own scoped `<style>` blocks —
+a component's own rules are the more specific statement and must win.
+
+**Read in `writeBundle`, not `generateBundle`.** Vite's CSS plugin emits the
+stylesheet in its own `generateBundle`, which runs after Sierra's, so reading the
+bundle one hook earlier saw an empty asset list and linked nothing, silently.
+
+Driven end to end by `example/`'s new `verify:public`, which asserts the link,
+the body class, and a theme token resolving in a real browser.
+
 ## 2026-08-06 — `@version` works from the browser, not just at the boundary
 
 805 tests (was 789). Closes `FJS-105`.

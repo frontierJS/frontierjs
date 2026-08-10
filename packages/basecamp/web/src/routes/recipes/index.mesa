@@ -1,0 +1,299 @@
+---
+title: Recipes
+---
+<script>
+  // The mock's RecipesView — saved shell scripts, run on real machines.
+  //
+  // This is the screen where the app does something it cannot make safe by
+  // declaring a vocabulary. A dashboard widget names a KIND and a cleanup names
+  // TARGETS; a recipe is a script, and once an agent has it there is no model
+  // to grade and no policy to apply. So this screen states the two things that
+  // do hold — authoring is an admin act, and every run keeps the script it ran
+  // — rather than dressing the danger up as a control.
+  //
+  // What is on screen is never simulated. The mock streams invented output line
+  // by line from a fixed table; here a run row goes `pending → running →` an
+  // exit code, pushed from the engine, and a machine with no agent is refused
+  // at the click with the name of the machine in the sentence.
+  import { session } from '../../session.js'
+  import { recipes } from '../../resources/Recipe.mesa'
+  import { servers } from '../../resources/Server.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Form       from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows      = []
+  let fleet     = []
+  let selected  = null      // the recipe with its runs, as `get` answers it
+  let error     = null
+  let loading   = true
+  let busy      = null
+  let creating  = false
+  let target    = ''        // '' = every server with an agent
+  let draft     = recipes.make()
+
+  // The kit's controls take a value and hand back an event; they are NOT bound
+  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
+  // let and a member expression is not one. Replacing the object rather than
+  // mutating it is what makes the change reactive.
+  function write(name, value) { draft = { ...draft, [name]: value } }
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows  = (await recipes.service.find({}, { limit: 200 })).data
+      fleet = (await servers.service.find({}, { limit: 200 })).data
+      // Keep whatever is open open, and refresh it: a run finishing is the one
+      // update this screen exists to show, and reloading the list alone would
+      // leave the pane showing the run as it was queued.
+      if (selected) selected = await recipes.service.get(selected.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // The engine pushes 'recipes patched' as each run starts and finishes, so a
+  // fleet run fills in machine by machine with nothing polling. `runs` is a
+  // read and would otherwise reload the screen for having looked at it.
+  const READS = new Set(['get', 'find', 'runs'])
+  const off = recipes.service.on('*', (method) => {
+    if (READS.has(method)) return
+    load()
+  })
+  $onDestroy(off)
+
+  async function create(data) {
+    error = null
+    try {
+      const created = await recipes.service.create(data)
+      toasts.success(`${created.name} saved`)
+      creating = false
+      draft    = recipes.make()
+      selected = created
+      await load()
+    } catch (e) {
+      error = e.message
+      throw e   // <Form> renders per-field messages from the throw
+    }
+  }
+
+  async function open(recipe) {
+    error = null; busy = recipe.id
+    try {
+      selected = await recipes.service.get(recipe.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function run(recipe) {
+    error = null; busy = recipe.id
+    try {
+      const res = await recipes.service.action('run', recipe.id, target ? { serverId: target } : {})
+      selected  = { ...res, runs: res.runs }
+      toasts.success(
+        `${recipe.name} queued on ${res.queued} server(s)`,
+        res.unreachable.length ? `No agent on ${res.unreachable.join(', ')}` : 'Output appears as each machine answers',
+      )
+      await load()
+    } catch (e) {
+      // 'No agent is registered for …' arrives here, naming the machines. The
+      // button is never pre-emptively disabled for it: whether an agent has
+      // checked in is the server's answer, not something this screen knows.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove(recipe) {
+    error = null; busy = recipe.id
+    try {
+      await recipes.service.remove(recipe.id)
+      toasts.success(`${recipe.name} deleted`)
+      if (selected?.id === recipe.id) selected = null
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  function statusTone(status) {
+    if (status === 'success') return 'success'
+    if (status === 'failed')  return 'danger'
+    if (status === 'timeout') return 'warning'
+    return 'muted'
+  }
+
+  function when(iso) {
+    if (!iso) return 'never'
+    const mins = Math.floor((Date.now() - new Date(iso)) / 60_000)
+    if (mins < 1)  return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+  }
+</script>
+
+<div class="section-header">
+  <h1>Recipes</h1>
+  <Button variant="primary" id="new-recipe" onclick={() => creating = !creating}>
+    {creating ? 'Cancel' : 'New recipe'}
+  </Button>
+</div>
+
+<Callout tone="warning" title="A recipe is arbitrary code on a real machine">
+  Nothing here can bound what a script does: the agent runs it with the privileges the agent
+  has, whoever asked. Writing one is an admin act, running one is recorded against you, and
+  every run keeps the script it actually ran — an output read against a script that has since
+  been edited is not evidence.
+</Callout>
+
+{#if error}
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if creating}
+  <Card>
+    <Form resource={recipes} bind:record={draft} onsubmit={create}>
+      <Input name="name" id="name" hint="Restart nginx"
+             value={draft.name} oninput={(e) => write('name', e.target.value)} />
+      <Input name="description" id="description" hint="Briefly what this script does"
+             value={draft.description} oninput={(e) => write('description', e.target.value)} />
+      <Textarea name="script" id="script" rows="8" hint="Runs as the agent's user — there is no sandbox"
+                value={draft.script} oninput={(e) => write('script', e.target.value)} />
+      <Button type="submit" variant="primary">Save recipe</Button>
+    </Form>
+  </Card>
+{/if}
+
+<div class="cluster" id="recipe-target">
+  <label class="visually-hidden" for="run-target">Where to run</label>
+  <Select id="run-target" value={target} placeholder="Every server with an agent"
+          options={fleet.map(s => ({ value: s.id, label: s.name }))}
+          oninput={(e) => target = e.target.value}
+          onchange={(e) => target = e.target.value} />
+  <span class="text-sm text-muted">
+    A run writes one row per machine, so a fleet run has one exit code each.
+  </span>
+</div>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No recipes">
+    Nothing saved yet. A recipe is a script an admin has vetted, so anyone on the
+    pager can run it without writing one.
+  </EmptyState>
+{:else}
+  <div class="stack" id="recipe-list">
+    {#each rows as recipe}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">{recipe.name}</h2>
+          <span class="cluster">
+            <Badge tone="muted">{recipe.runCount} run(s)</Badge>
+            <Badge tone="muted">last {when(recipe.lastRunAt)}</Badge>
+            <Badge tone="muted">{recipe.timeoutSeconds}s timeout</Badge>
+          </span>
+        </div>
+
+        {#if recipe.description}
+          <p class="text-sm text-muted">{recipe.description}</p>
+        {/if}
+
+        <div class="cluster">
+          <Button variant="primary" disabled={busy === recipe.id}
+                  aria-label={`Run ${recipe.name}`}
+                  onclick={() => run(recipe)}>Run</Button>
+          <Button variant="outlined" disabled={busy === recipe.id}
+                  onclick={() => open(recipe)}>Script and history</Button>
+          <Button variant="ghost" disabled={busy === recipe.id}
+                  aria-label={`Delete ${recipe.name}`}
+                  onclick={() => remove(recipe)}>Delete</Button>
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}
+
+{#if selected}
+  <Card id="recipe-detail">
+    <div class="section-header">
+      <h2 class="h4">{selected.name}</h2>
+      <Button variant="ghost" onclick={() => selected = null}>Close</Button>
+    </div>
+
+    <pre class="code" id="recipe-script"><code>{selected.script}</code></pre>
+
+    {#if !(selected.runs ?? []).length}
+      <p class="text-sm text-muted">This recipe has never been run.</p>
+    {:else}
+      <div class="table-wrap">
+        <table class="table striped" id="recipe-runs">
+          <thead>
+            <tr>
+              <th scope="col">Server</th>
+              <th scope="col">Status</th>
+              <th scope="col">Exit</th>
+              <th scope="col">When</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each selected.runs as r}
+              <tr>
+                <td>{r.serverName ?? r.serverId}</td>
+                <td><Pill tone={statusTone(r.status)}>{r.status}</Pill></td>
+                <td class="text-sm">{r.exitCode ?? '—'}</td>
+                <td class="text-sm text-muted">{when(r.finishedAt ?? r.createdAt)}</td>
+              </tr>
+              {#if r.stdout || r.stderr || r.error}
+                <tr>
+                  <td colspan="4">
+                    <!-- The run's own output, not the recipe's script: the two
+                         differ the moment somebody edits a recipe, and the run
+                         is the one that happened. -->
+                    <pre class="code"><code>{r.error ?? ''}{r.stdout ?? ''}{r.stderr ?? ''}</code></pre>
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  </Card>
+{/if}
+
+<p class="text-sm text-muted">
+  Not built: a schedule. A recipe on a timer is a <a href="/jobs/">Job</a> with a cron
+  expression, and giving this screen its own scheduler would be a second owner of one
+  fact — which of the two ran last would then depend on which screen you asked.
+</p>

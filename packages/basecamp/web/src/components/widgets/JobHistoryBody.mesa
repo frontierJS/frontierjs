@@ -1,0 +1,52 @@
+<script>
+  // job_history — scheduled and one-shot jobs, with the outcome of their last
+  // run.
+  //
+  // `Job.lastRunAt` / `lastRunStatus` are columns the job engine stamps, so this
+  // is one read rather than a run query per job — the same pair the jobs screen
+  // renders in its table.
+  import { jobs } from '../../resources/Job.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+
+  let rows    = []
+  let error   = null
+  let loading = true
+
+  const TONE = { success: 'success', failed: 'danger', timeout: 'danger', running: 'info', pending: 'muted' }
+
+  async function load() {
+    error = null
+    try {
+      rows = (await jobs.service.find({}, { limit: 6 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(onWrite(jobs.service, load))
+
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never run'
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else if !rows.length}
+  <p class="text-sm text-muted">No jobs in this workspace.</p>
+{:else}
+  <ul class="stack" style="list-style: none; padding: 0">
+    {#each rows as job}
+      <li class="cluster">
+        <Badge tone={TONE[job.lastRunStatus] ?? 'muted'}>{job.lastRunStatus ?? job.status}</Badge>
+        <a href={`/jobs/${job.id}/`}>{job.name}</a>
+        <span class="text-xs text-muted">{when(job.lastRunAt)}</span>
+      </li>
+    {/each}
+  </ul>
+{/if}

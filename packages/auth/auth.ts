@@ -14,6 +14,7 @@ import {
   generateToken,
   generateSessionToken,
   expiresAt,
+  API_KEY_PREFIX,
 } from './crypto.ts'
 import type { LitestoneAuthOptions } from './types.ts'
 import {
@@ -39,6 +40,7 @@ export function createLitestoneAuth(
     emailVerificationTtl = '24 hours',
     onPasswordResetRequested,
     onEmailVerificationRequested,
+    sessionFields,
   } = opts
 
   const sys = db.asSystem()
@@ -68,6 +70,11 @@ export function createLitestoneAuth(
       ...(user.emailVerified === false ? { verifiedAt: null } : {}),
 
       authMethod,
+
+      // Last: an app that states a field wins. Spreading it first would mean
+      // adding any key above here silently overrides what the app asked for,
+      // which is a breaking change nobody would see.
+      ...(sessionFields ? sessionFields(user) : {}),
     }
   }
 
@@ -81,6 +88,44 @@ export function createLitestoneAuth(
       )
     }
     return encryptionKey
+  }
+
+  // A named function rather than only a method, because verifySession has to
+  // call it: the transport resolves every Bearer token through verifySession,
+  // so a key that is only reachable via auth.verifyApiKey() is a key nothing
+  // ever presents.
+  async function verifyApiKeyImpl(rawKey: string): Promise<SessionContext | null> {
+    // Issuing is the loud path — createApiKey throws AuthConfigError without a
+    // key, which is where a developer finds out. Verifying is the quiet one: it
+    // runs on attacker-supplied input on every request, so a missing config
+    // answers "not authenticated" rather than throwing a 500 anyone can
+    // trigger. verifySession also reaches here as a fallback for any token that
+    // missed, and an app with no API keys at all must not pay a throw for that.
+    if (!encryptionKey) return null
+    const hash = hashApiKey(rawKey, encryptionKey)
+
+    const cred = await sys.credential.findFirst({
+      where: { type: 'apiKey', value: hash }
+    })
+    if (!cred) return null
+
+    // Check credential-level expiry if set
+    if (cred.tokenExpiresAt && new Date(cred.tokenExpiresAt) < new Date()) return null
+
+    const user = await sys.user.findUnique({ where: { id: cred.userId } })
+    if (!user) return null
+
+    return {
+      ...toContext(user, 'apiKey'),
+      // createApiKey stores the scopes and this dropped them, so a key issued
+      // with `servers:read` authenticated with the full standing of its owner
+      // and nothing downstream could tell the difference. `scope` is stored
+      // space-joined, the same shape OAuth uses.
+      ...(cred.scope ? { scopes: cred.scope.split(/\s+/).filter(Boolean) } : {}),
+      // Which key this was. An app that records per-key usage, or revokes one
+      // key without touching the others, has no other way to ask.
+      credentialId: String(cred.id),
+    }
   }
 
   // ─── IAuth ────────────────────────────────────────────────────────────────
@@ -98,18 +143,27 @@ export function createLitestoneAuth(
     // set at login is final. Intentional: avoids a write on every request.
 
     async verifySession(token: string): Promise<SessionContext | null> {
+      // An API key is a Bearer token too, and the transport has one door:
+      // http.ts calls verifySession and nothing else. Without this branch
+      // createApiKey() succeeds and every request carrying the key it returned
+      // is anonymous — a key that can be issued and never used. The prefix is
+      // ours (crypto.ts), so it routes without costing a session lookup.
+      if (token.startsWith(API_KEY_PREFIX)) return verifyApiKeyImpl(token)
+
       const session = await sys.session.findFirst({
         where: {
           token,
           expiresAt: { gt: new Date() },
         }
       })
-      if (!session) return null
+      if (session) {
+        const user = await sys.user.findUnique({ where: { id: session.userId } })
+        return user ? toContext(user, 'session') : null
+      }
 
-      const user = await sys.user.findUnique({ where: { id: session.userId } })
-      if (!user) return null
-
-      return toContext(user, 'session')
+      // A key issued before the prefix existed, or by an app that generates its
+      // own. One extra query, and only on a token that already missed.
+      return verifyApiKeyImpl(token)
     },
 
     // ── login ────────────────────────────────────────────────────────────
@@ -325,27 +379,20 @@ export function createLitestoneAuth(
     // ── revokeApiKey ─────────────────────────────────────────────────────
 
     async revokeApiKey(keyId: string): Promise<void> {
-      await sys.credential.delete({ where: { id: Number(keyId) } })
+      // Not Number(keyId). schema.ts ships `Credential.id Int`, but the
+      // fragments are a starting point apps edit, and an app whose ids are
+      // uuids got Number(uuid) === NaN — a delete that matches nothing and
+      // does not throw. Revoke reported success and the key kept working.
+      // Litestone coerces a where-value to the column type either way, so
+      // passing it through is correct for both shapes.
+      // `type: 'apiKey'` as well as the id: revoke must not be able to delete
+      // somebody's password because a caller passed the wrong id.
+      const { count } = await sys.credential.deleteMany({ where: { id: keyId, type: 'apiKey' } })
+      if (!count) throw new InvalidTokenError(`No API key with id ${keyId}`)
     },
 
     // ── verifyApiKey ─────────────────────────────────────────────────────
 
-    async verifyApiKey(rawKey: string): Promise<SessionContext | null> {
-      const secret = requireEncryptionKey('verifyApiKey')
-      const hash   = hashApiKey(rawKey, secret)
-
-      const cred = await sys.credential.findFirst({
-        where: { type: 'apiKey', value: hash }
-      })
-      if (!cred) return null
-
-      // Check credential-level expiry if set
-      if (cred.tokenExpiresAt && new Date(cred.tokenExpiresAt) < new Date()) return null
-
-      const user = await sys.user.findUnique({ where: { id: cred.userId } })
-      if (!user) return null
-
-      return toContext(user, 'apiKey')
-    },
+    verifyApiKey: verifyApiKeyImpl,
   }
 }

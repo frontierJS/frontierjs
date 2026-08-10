@@ -1,0 +1,56 @@
+<script>
+  // service_health — one shared infrastructure adapter, pinged live.
+  //
+  // `portal.get` pings the adapter, so the status is real and current. What the
+  // mock draws beside it — a latency figure and a sparkline — needs readings
+  // kept over time, and nothing here keeps them: the ping answers now and the
+  // answer is thrown away. The frame says so.
+  //
+  // The id is in `config.serviceId`, validated against the portal registry when
+  // the widget was placed. It can still 404 later — an adapter removed from the
+  // registry — which is a state, not an error.
+  import { portal } from '../../resources/Portal.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+
+  export let widget = null
+
+  let entry   = null
+  let error   = null
+  let missing = false
+  let loading = true
+
+  const TONE = { healthy: 'success', degraded: 'warning', unreachable: 'danger', unconfigured: 'muted' }
+
+  async function load() {
+    error = null; missing = false
+    const id = widget?.config?.serviceId
+    if (!id) { loading = false; missing = true; return }
+    try {
+      entry = await portal.service.get(id)
+    } catch (e) {
+      if (e.status === 404) missing = true
+      else error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(onWrite(portal.service, load))
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Pinging…</p>
+{:else if missing}
+  <p class="text-sm text-muted">This widget points at an adapter this hub no longer offers.</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else}
+  <div class="cluster">
+    <Badge tone={TONE[entry.status] ?? 'muted'}>{entry.status}</Badge>
+    <a href={`/portal/${entry.id}/`}>{entry.name}</a>
+  </div>
+  <p class="text-xs text-muted">{entry.description}</p>
+{/if}

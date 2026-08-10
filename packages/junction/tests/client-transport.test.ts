@@ -80,6 +80,38 @@ describe('with no socket, everything falls back to HTTP and settles', () => {
     await client().service('orders').restore(3)
     expect(seen).toEqual([{ method: 'PUT', path: '/orders/3', action: 'restore' }])
   })
+
+  // A COLLECTION-level action — one about the whole service rather than a row.
+  // The bridge has always dispatched on the X-Service-Method header BEFORE it
+  // looks at params.id, so the server could always take one; this client
+  // interpolated the id unconditionally, so the only way to reach it was to
+  // invent a throwaway id and post to `/orders/null`. Found writing basecamp's
+  // fleet-wide event feed, where there is no subject row to name.
+  it('an action with no id posts to the service root', async () => {
+    const seen = traceHttp()
+    await client().service('orders').action('summary')
+    expect(seen).toEqual([{ method: 'POST', path: '/orders', action: 'summary' }])
+  })
+
+  it('an explicit null id is the same thing', async () => {
+    const seen = traceHttp()
+    await client().service('orders').action('summary', null)
+    expect(seen).toEqual([{ method: 'POST', path: '/orders', action: 'summary' }])
+  })
+
+  it('a collection action carries its own query, plainly', async () => {
+    // Plainly: `?limit=50`, not the `$`-prefixed directive syntax
+    // buildQueryString emits. An action declares its own query vocabulary.
+    const seen = traceHttp()
+    await client().service('orders').action('summary', null, null, { limit: 50, status: 'paid' })
+    expect(seen).toEqual([{ method: 'POST', path: '/orders?limit=50&status=paid', action: 'summary' }])
+  })
+
+  it('an unset filter is dropped, not sent as the string "null"', async () => {
+    const seen = traceHttp()
+    await client().service('orders').action('summary', null, null, { limit: 50, kind: null })
+    expect(seen).toEqual([{ method: 'POST', path: '/orders?limit=50', action: 'summary' }])
+  })
 })
 
 describe('with a socket, the socket wins', () => {

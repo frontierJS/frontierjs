@@ -43,8 +43,16 @@
       e.target.style.height = 'auto'
       e.target.style.height = `${e.target.scrollHeight}px`
     }
+    // The caller's hook runs AFTER the internal write and the autogrow, so a
+    // handler that re-renders cannot cancel either.
+    oninput?.(e)
   }
-  // Native event callbacks
+  // Native event callbacks. `oninput` was missing while <Input> and <Select>
+  // both had it — and an undeclared prop is silently ignored, so a caller
+  // writing `oninput={…}` on a Textarea got no handler, no warning, and an
+  // empty field at submit. Found filing a certificate through <Form> in
+  // packages/basecamp (FJS-116).
+  export let oninput  = undefined
   export let onchange = undefined
   export let onblur   = undefined
   export let onfocus  = undefined

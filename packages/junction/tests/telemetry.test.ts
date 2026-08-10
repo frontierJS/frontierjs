@@ -9,6 +9,7 @@
 //   7. No telemetry when emitter not passed
 //   8. Dev-mode anonymous hook warning
 
+import { DERIVED_HOOKS } from '../src/core/service.ts'
 import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { createService, callService }               from '../src/core/service.ts'
 import { bridge }                                   from '../src/transport/bridge.ts'
@@ -245,7 +246,7 @@ describe('junction.hook events', () => {
     // the user's hooks by name rather than on the total, which is a framework
     // detail this test does not own.
     const hooks = hookEvents(captured).filter(e => e.data.phase === 'before')
-    const userHooks = hooks.filter(e => e.data.hookName !== 'gateAuth')
+    const userHooks = hooks.filter(e => !DERIVED_HOOKS.has(e.data.hookName as string))
     expect(userHooks).toHaveLength(2)
     expect(userHooks[0].data.hookName).toBe('validateInput')
     expect(userHooks[1].data.hookName).toBe('stampTimestamp')

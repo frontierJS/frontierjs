@@ -256,14 +256,14 @@
                   </span>
                 {/if}
 
-                <!-- Label + sub -->
-                <span class="cp-row-text">
-                  <span class="cp-row-label {isActive ? 'cp-row-label--active' : ''}">
+                <!-- Label + sub. item-text/-title/-sub ship in lists.css. -->
+                <span class="item-text">
+                  <span class="item-title cp-row-label {isActive ? 'cp-row-label--active' : ''}">
                     {item.label}
                   </span>
                   {#if item.sub}
                     <span
-                      class="cp-row-sub"
+                      class="item-sub"
                       style:color={item.color || undefined}
                     >{item.sub}</span>
                   {/if}
@@ -504,35 +504,34 @@
 
   .cp-row-icon--active { color: var(--cp-active-text); }
 
-  .cp-row-text {
-    flex:      1;
-    min-width: 0;
-  }
-
-  .cp-row-label {
-    font-size:     var(--cp-font-size);
-    color:         var(--cp-sec);
-    font-weight:   400;
-    display:       block;
+  /*
+   * The stacked text block is `.item-text` / `.item-title` / `.item-sub`
+   * from @frontierjs/css lists.css. What stays here is the palette's own:
+   * one line each, ellipsed, and the active row's colour shift.
+   *
+   * A palette row is fixed-height by design — the list is navigated with
+   * arrow keys, and a row that grows to two lines moves every row under it
+   * while the reader is aiming at one. So these clamp to `nowrap` rather
+   * than reaching for `.clamp-*`, which is the opposite decision from a
+   * search snippet and is made here because the reason is the keyboard.
+   */
+  .cp-row .item-title,
+  .cp-row .item-sub {
     overflow:      hidden;
     text-overflow: ellipsis;
     white-space:   nowrap;
-    transition:    color 0.07s;
+  }
+
+  .cp-row-label {
+    font-size:   var(--cp-font-size);
+    color:       var(--cp-sec);
+    font-weight: 400;
+    transition:  color 0.07s;
   }
 
   .cp-row-label--active {
     color:       var(--cp-text);
     font-weight: 500;
-  }
-
-  .cp-row-sub {
-    font-size:     11px;
-    color:         var(--cp-muted);
-    display:       block;
-    margin-top:    1px;
-    overflow:      hidden;
-    text-overflow: ellipsis;
-    white-space:   nowrap;
   }
 
   .cp-badge {

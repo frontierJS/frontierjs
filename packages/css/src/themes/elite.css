@@ -33,7 +33,13 @@
   /* Slightly more pronounced shadow */
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
 
-  /* Typography */
+  /*
+   * Typography — one face, stated twice. --font-display is what h1–h6 read
+   * and it does not fall back through a theme: a theme that sets only
+   * --font-primary leaves headings in whatever display face the host page
+   * declared, which in the guide is its own serif.
+   */
   --font-primary: 'Montserrat', system-ui, sans-serif;
+  --font-display: 'Montserrat', system-ui, sans-serif;
   --font-mono:    'IBM Plex Mono', monospace;
 }

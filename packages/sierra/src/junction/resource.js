@@ -735,7 +735,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         // WS-or-nothing by name, and with no socket it recursed inside the
         // client and never settled. `call` is still on the proxy below for a
         // caller that wants to force the socket.
-        default:        ctx.result = await proxy.action(method, ctx.id, ctx.data); break
+        default:        ctx.result = await proxy.action(method, ctx.id, ctx.data, ctx.query); break
       }
 
       // Record before the after-hooks, so a hook that reads the version off the
@@ -804,12 +804,23 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
      *   orders.service.action('pay', 3)
      *   → POST /api/orders/3   X-Service-Method: pay
      *
+     * `id` may be null for an action about the whole COLLECTION rather than one
+     * row, which posts to the service root:
+     *
+     *   servers.service.action('feed', null, null, { limit: 50 })
+     *   → POST /api/servers?limit=50   X-Service-Method: feed
+     *
+     * The server has always supported that — the bridge dispatches on the
+     * X-Service-Method header before it looks at `params.id` — but this layer
+     * interpolated the id unconditionally, so the only way to reach one was to
+     * invent a throwaway id and post to `/{service}/null`.
+     *
      * Runs the resource's hook pipeline like any other call. Coercion,
      * blank-stripping and validation are deliberately NOT applied: those are
      * defined against the model's own fields for create/patch payloads, and an
      * action's body is whatever that action declares.
      */
-    action: (name, id, data) => _call(name, id, data ?? null, {}),
+    action: (name, id, data, query) => _call(name, id ?? null, data ?? null, query ?? {}),
 
     /** real-time push event subscription */
     on:   (event, fn) => client.service(serviceName).on(event, fn),

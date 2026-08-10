@@ -1,0 +1,455 @@
+/* Default theme variables */
+.code-editor {
+  --code-caret-color: #374151;
+
+  --code-bg-color: transparent;
+
+  --code-base-color: #374151;
+
+  --code-primary-color: var(--color-primary);
+
+  --code-secondary-color: #841bda;
+
+  --code-accent-color: #7423b6;
+
+  --code-char-color: #374151;
+
+  --code-comment-color: #9ca3a5;
+
+  --code-special-color: #374151;
+
+  --code-counter-color: #475569;
+
+  --code-error-color: red;
+
+  --code-marked-color: #2dd4bf26;
+
+  --code-line-color: 50, 180, 250;
+
+  --code-del-color: 250, 110, 130;
+
+  --code-ins-color: 50, 210, 190;
+
+  --code-line-opacity: 0.15;
+
+  --code-padding: 1.5em;
+}
+
+/* Container styling */
+.code-editor {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  border-radius: 4px;
+  max-width: 1600px;
+}
+
+/* Style the textarea to overlay the preview */
+.textarea.code {
+  @apply absolute top-0 left-0 w-full h-full overflow-hidden;
+  color: transparent;
+  // color: #ff0000;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: var(--glow-padding, 1.5em);
+  z-index: 2;
+  caret-color: var(--code-caret-color);
+  box-shadow: none;
+  &.numbered {
+    @apply pl-70px; // TODO: need to figure out
+  }
+  &::selection {
+    background: rgba(var(--code-line-color), 0.2);
+  }
+}
+
+.textarea.code,
+.code-preview * {
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+/* The preview layer */
+.code-preview {
+  position: relative;
+  z-index: 1;
+  pointer-events: none; /* Prevent interaction with preview */
+  // padding: var(--glow-padding, 1.5em);
+  overflow: auto;
+  // NOTE: This handles empty lines
+  box-shadow: 0 1.7rem 0px 0px var(--code-bg-color);
+  margin-bottom: 1.7rem;
+  pre {
+    margin: 0;
+    // background-color: var(--code-bg-color);
+    color: var(--code-base-color);
+    padding: var(--code-padding);
+    counter-reset: line-counter 0;
+    overflow-x: auto;
+    // white-space: pre;
+    // border-radius: 0.375rem;
+    text-wrap: inherit;
+    border: 1px solid #e5e7eb;
+  }
+}
+
+.textarea.code,
+.code-preview * {
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+/* Apply all the code styling */
+.code-preview pre * {
+  font-weight: 400;
+  font-style: inherit;
+  text-decoration: inherit;
+}
+.code-preview pre b {
+  color: var(--code-primary-color);
+}
+.code-preview pre em {
+  color: var(--code-secondary-color);
+}
+.code-preview pre strong {
+  color: var(--code-accent-color);
+}
+.code-preview pre i {
+  color: var(--code-char-color);
+}
+.code-preview pre u {
+  text-decoration: underline wavy var(--code-error-color);
+  text-decoration-thickness: 0.15em;
+  text-underline-offset: 0.5em;
+}
+.code-preview pre sup {
+  color: var(--code-comment-color);
+  font-size: inherit;
+  vertical-align: inherit;
+  top: inherit; // normalize-reset affects this
+}
+.code-preview pre label {
+  color: var(--code-special-color);
+  font-weight: 700;
+}
+.code-preview pre mark {
+  background-color: var(--code-marked-color);
+  color: unset;
+  border-radius: 0.2em;
+  margin: -0.3em -0.4em;
+  padding: 0.3em 0.4em;
+}
+.code-preview pre span {
+  counter-increment: line-counter 1;
+}
+.code-preview pre span:before {
+  color: var(--code-counter-color);
+  content: counter(line-counter);
+  display: inline-block;
+  text-align: right;
+  width: 2.5em;
+  margin-right: 1em;
+  padding-right: 1em;
+}
+.code-preview pre span:has(u):before {
+  background-color: var(--code-error-color);
+  color: #fff;
+  border-radius: 0.2em;
+  font-weight: 700;
+}
+.code-preview pre ins {
+  min-width: calc(100% + calc(var(--code-padding) * 2));
+  margin-left: calc(var(--code-padding) * -1);
+  padding-left: var(--code-padding);
+  display: inline-block;
+  position: relative;
+  border-left: 0.2em solid #fff;
+  width: 100%;
+}
+.code-preview pre ins:before {
+  position: absolute;
+  left: 95%;
+}
+.code-preview pre span :is(ins) {
+  margin-left: calc(-3.5em - var(--code-padding));
+  padding-left: calc(3.5em + var(--code-padding));
+}
+.code-preview pre del {
+  min-width: calc(100% + calc(var(--code-padding) * 2));
+  margin-left: calc(var(--code-padding) * -1);
+  padding-left: var(--code-padding);
+  display: inline-block;
+  position: relative;
+  border-left: 0.2em solid #fff;
+  width: 100%;
+}
+.code-preview pre del:before {
+  position: absolute;
+  left: 95%;
+}
+.code-preview pre span :is(del) {
+  margin-left: calc(-3.5em - var(--code-padding));
+  padding-left: calc(3.5em + var(--code-padding));
+}
+.code-preview pre dfn {
+  min-width: calc(100% + calc(var(--code-padding) * 2));
+  margin-left: calc(var(--code-padding) * -1);
+  padding-left: var(--code-padding);
+  display: inline-block;
+  position: relative;
+  border-left: 0.2em solid #fff;
+  width: 100%;
+}
+.code-preview pre dfn:before {
+  position: absolute;
+  left: 95%;
+}
+.code-preview pre span :is(dfn) {
+  margin-left: calc(-3.5em - var(--code-padding));
+  padding-left: calc(3.5em + var(--code-padding));
+}
+.code-preview pre ins {
+  border-color: rgb(var(--code-ins-color));
+  background-color: rgba(var(--code-ins-color), var(--code-line-opacity));
+}
+.code-preview pre ins:before {
+  content: '+';
+  color: rgb(var(--code-ins-color));
+}
+.code-preview pre del {
+  border-color: rgb(var(--code-del-color));
+  background-color: rgba(var(--code-del-color), var(--code-line-opacity));
+  border-radius: 0;
+}
+.code-preview pre del:before {
+  content: '-';
+  color: rgb(var(--code-del-color));
+}
+.code-preview pre dfn {
+  border-color: rgb(var(--code-line-color));
+  background-color: rgba(var(--code-line-color), var(--code-line-opacity));
+}
+
+/* 🌊 Ocean Deep Theme */
+.code-editor.ocean-deep {
+  --code-bg-color: #0f1419;
+  --code-base-color: #bfdbfe;
+  --code-primary-color: #00d4ff;
+  --code-secondary-color: #ff6b9d;
+  --code-accent-color: #00ffa1;
+  --code-char-color: #fbbf24;
+  --code-comment-color: #64748b;
+  --code-special-color: #c084fc;
+  --code-counter-color: #475569;
+  --code-error-color: #ef4444;
+  --code-marked-color: #00d4ff1a;
+  --code-line-color: 0, 212, 255;
+  --code-del-color: 239, 68, 68;
+  --code-ins-color: 0, 255, 161;
+  --code-line-opacity: 0.12;
+  --code-padding: 1.5em;
+}
+
+/* 🔥 Neon Cyber Theme */
+.code-editor.neon-cyber {
+  --code-bg-color: #0a0a0f;
+  --code-base-color: #e0e7ff;
+  --code-primary-color: #ff0080;
+  --code-secondary-color: #00ff41;
+  --code-accent-color: #ffff00;
+  --code-char-color: #ff8c00;
+  --code-comment-color: #666699;
+  --code-special-color: #ff1493;
+  --code-counter-color: #4b5563;
+  --code-error-color: #ff073a;
+  --code-marked-color: #ff008026;
+  --code-line-color: 255, 0, 128;
+  --code-del-color: 255, 7, 58;
+  --code-ins-color: 0, 255, 65;
+  --code-line-opacity: 0.18;
+  --code-padding: 1.5em;
+}
+
+/* 🌙 Midnight Purple Theme */
+.code-editor.midnight-purple {
+  --code-bg-color: #1a1625;
+  --code-base-color: #d8b4fe;
+  --code-primary-color: #a855f7;
+  --code-secondary-color: #06b6d4;
+  --code-accent-color: #f59e0b;
+  --code-char-color: #10b981;
+  --code-comment-color: #6b7280;
+  --code-special-color: #ec4899;
+  --code-counter-color: #9ca3af;
+  --code-error-color: #ef4444;
+  --code-marked-color: #a855f720;
+  --code-line-color: 168, 85, 247;
+  --code-del-color: 239, 68, 68;
+  --code-ins-color: 16, 185, 129;
+  --code-line-opacity: 0.14;
+  --code-padding: 1.5em;
+}
+
+/* ☀️ Warm Sunset Theme */
+.code-editor.warm-sunset {
+  --code-bg-color: #2d1b0e;
+  --code-base-color: #fef3c7;
+  --code-primary-color: #f59e0b;
+  --code-secondary-color: #ef4444;
+  --code-accent-color: #06b6d4;
+  --code-char-color: #10b981;
+  --code-comment-color: #a3a3a3;
+  --code-special-color: #ec4899;
+  --code-counter-color: #78716c;
+  --code-error-color: #dc2626;
+  --code-marked-color: #f59e0b1a;
+  --code-line-color: 245, 158, 11;
+  --code-del-color: 220, 38, 38;
+  --code-ins-color: 16, 185, 129;
+  --code-line-opacity: 0.13;
+  --code-padding: 1.5em;
+}
+
+/* 🌿 Forest Night Theme */
+.code-editor.forest-night {
+  --code-bg-color: #0f1f0f;
+  --code-base-color: #d1fae5;
+  --code-primary-color: #22c55e;
+  --code-secondary-color: #06b6d4;
+  --code-accent-color: #f59e0b;
+  --code-char-color: #a855f7;
+  --code-comment-color: #6b7280;
+  --code-special-color: #ec4899;
+  --code-counter-color: #65a30d;
+  --code-error-color: #dc2626;
+  --code-marked-color: #22c55e1a;
+  --code-line-color: 34, 197, 94;
+  --code-del-color: 220, 38, 38;
+  --code-ins-color: 6, 182, 212;
+  --code-line-opacity: 0.12;
+  --code-padding: 1.5em;
+}
+
+/* 🍇 Grape Soda Theme */
+.code-editor.grape-soda {
+  --code-bg-color: #1e1b2e;
+  --code-base-color: #e2e8f0;
+  --code-primary-color: #8b5cf6;
+  --code-secondary-color: #f97316;
+  --code-accent-color: #06b6d4;
+  --code-char-color: #84cc16;
+  --code-comment-color: #64748b;
+  --code-special-color: #f43f5e;
+  --code-counter-color: #a1a1aa;
+  --code-error-color: #ef4444;
+  --code-marked-color: #8b5cf620;
+  --code-line-color: 139, 92, 246;
+  --code-del-color: 239, 68, 68;
+  --code-ins-color: 132, 204, 22;
+  --code-line-opacity: 0.15;
+  --code-padding: 1.5em;
+}
+
+/* ❄️ Arctic Ice Theme */
+.code-editor.arctic-ice {
+  --code-bg-color: #0c1420;
+  --code-base-color: #f0f9ff;
+  --code-primary-color: #38bdf8;
+  --code-secondary-color: #a855f7;
+  --code-accent-color: #06b6d4;
+  --code-char-color: #10b981;
+  --code-comment-color: #64748b;
+  --code-special-color: #ec4899;
+  --code-counter-color: #475569;
+  --code-error-color: #ef4444;
+  --code-marked-color: #38bdf81a;
+  --code-line-color: 56, 189, 248;
+  --code-del-color: 239, 68, 68;
+  --code-ins-color: 16, 185, 129;
+  --code-line-opacity: 0.11;
+  --code-padding: 1.5em;
+}
+
+/* 🌋 Volcano Theme */
+.code-editor.volcano {
+  --code-bg-color: #1c1917;
+  --code-base-color: #fed7aa;
+  --code-primary-color: #ea580c;
+  --code-secondary-color: #dc2626;
+  --code-accent-color: #f59e0b;
+  --code-char-color: #65a30d;
+  --code-comment-color: #78716c;
+  --code-special-color: #c2410c;
+  --code-counter-color: #a3a3a3;
+  --code-error-color: #b91c1c;
+  --code-marked-color: #ea580c1a;
+  --code-line-color: 234, 88, 12;
+  --code-del-color: 185, 28, 28;
+  --code-ins-color: 101, 163, 13;
+  --code-line-opacity: 0.16;
+  --code-padding: 1.5em;
+}
+
+/* 🎮 Retro Gaming Theme */
+.code-editor.retro-gaming {
+  --code-bg-color: #1a1a2e;
+  --code-base-color: #00ff00;
+  --code-primary-color: #ff6b35;
+  --code-secondary-color: #ffff00;
+  --code-accent-color: #00bfff;
+  --code-char-color: #ff69b4;
+  --code-comment-color: #7f8c8d;
+  --code-special-color: #ff1493;
+  --code-counter-color: #95a5a6;
+  --code-error-color: #ff0000;
+  --code-marked-color: #ff6b3526;
+  --code-line-color: 255, 107, 53;
+  --code-del-color: 255, 0, 0;
+  --code-ins-color: 0, 255, 0;
+  --code-line-opacity: 0.2;
+  --code-padding: 1.5em;
+}
+
+/* 🌸 Sakura Blossom Theme */
+.code-editor.sakura-blossom {
+  --code-bg-color: #1f1625;
+  --code-base-color: #fce7f3;
+  --code-primary-color: #ec4899;
+  --code-secondary-color: #a855f7;
+  --code-accent-color: #06b6d4;
+  --code-char-color: #f59e0b;
+  --code-comment-color: #9ca3af;
+  --code-special-color: #f97316;
+  --code-counter-color: #d1d5db;
+  --code-error-color: #ef4444;
+  --code-marked-color: #ec48991a;
+  --code-line-color: 236, 72, 153;
+  --code-del-color: 239, 68, 68;
+  --code-ins-color: 168, 85, 247;
+  --code-line-opacity: 0.13;
+  --code-padding: 1.5em;
+}
+.code-editor.cyber {
+  --code-bg-color: #0e0e16; /* deep midnight purple */
+  --code-base-color: #e4e4ef; /* light lavender-gray for default text */
+  --code-primary-color: #ff77ff; /* hot pink for keywords */
+  --code-secondary-color: #00fff7; /* neon aqua for secondary elements */
+  --code-accent-color: #ffd400; /* bright amber for accents */
+  --code-char-color: #c5c6ff; /* pale violet for characters */
+  --code-comment-color: #636379; /* muted gray-purple for comments */
+  --code-special-color: #ffffff; /* pure white for specials */
+  --code-counter-color: #303045; /* dark bluish for line numbers */
+  --code-error-color: #ff3b3b; /* vivid red for errors */
+  --code-marked-color: rgba(255, 215, 0, 0.15); /* soft gold highlight */
+  --code-line-color: 255, 255, 255; /* white for active line */
+  --code-del-color: 255, 85, 85; /* coral red for removed text */
+  --code-ins-color: 0, 255, 170; /* minty green for inserted text */
+  --code-line-opacity: 0.1; /* subtle active line highlight */
+  --code-padding: 1.5em;
+}

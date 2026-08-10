@@ -1,0 +1,159 @@
+---
+title: Hub overview
+---
+<script>
+  // The mock's SysOverviewView — what this process is actually doing.
+  //
+  // Every number here is read at request time from the thing that owns it:
+  // Caravan for queue depths, Conduit for registered targets, the channel
+  // manager for live sockets, SQLite for its own version and file size. None
+  // of it is stored, so there is nothing to go stale and nothing to reconcile.
+  //
+  // Two of the mock's four stat tiles do not survive contact with the runtime,
+  // and both say so on the card rather than showing a plausible number:
+  // "Event subscribers" is a count the in-process bus cannot produce
+  // (`FJS-143`), and adapter health belongs to /portal/, which pings them —
+  // repeating it here would be a second answer to one question.
+  import { hub } from '../../resources/Hub.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+
+  let info    = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // An action, not `find`. The browser client normalises every `find`
+      // answer into a list envelope and turns anything that is not a list into
+      // an EMPTY one — so this object arrived as `{ data: [] }` with a 200 and
+      // this screen rendered nothing at all (`FJS-144`).
+      info = await hub.service.action('overview', null)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  function size(bytes) {
+    const n = Number(bytes) || 0
+    if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
+    if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
+    if (n >= 1024)      return `${Math.round(n / 1024)} KB`
+    return `${n} B`
+  }
+
+  function uptime(seconds) {
+    const s = Number(seconds) || 0
+    const d = Math.floor(s / 86_400)
+    const h = Math.floor((s % 86_400) / 3_600)
+    const m = Math.floor((s % 3_600) / 60)
+    if (d) return `${d}d ${h}h`
+    if (h) return `${h}h ${m}m`
+    return `${m}m ${s % 60}s`
+  }
+
+  // Rendered from the reply rather than from a written list, so a queue added
+  // to core/app.ts appears here without this file being edited. `fleet` was
+  // the fifth and nothing had to change.
+  $: queues = Object.entries(info?.queues?.queues ?? {})
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if info}
+  <div class="cluster" id="hub-stats">
+    <Badge tone="success">up {uptime(info.runtime.uptimeSeconds)}</Badge>
+    <Badge tone="muted">{info.wsConnections} live sockets</Badge>
+    <Badge tone="muted">{info.conduitTargets} conduit targets</Badge>
+    <Badge tone={info.eventBusActive ? 'success' : 'muted'}>
+      event bus {info.eventBusActive ? 'has listeners' : 'idle'}
+    </Badge>
+  </div>
+
+  <div class="stack">
+    <Card>
+      <div class="section-header">
+        <h2 class="h4">Runtime</h2>
+        <Pill tone={info.runtime.nodeEnv === 'production' ? 'danger' : 'muted'}>
+          {info.runtime.nodeEnv}
+        </Pill>
+      </div>
+      <dl class="stack" id="hub-runtime">
+        <div class="cluster"><dt class="text-sm text-muted">Bun</dt><dd><code>{info.runtime.bunVersion ?? 'unknown'}</code></dd></div>
+        <div class="cluster"><dt class="text-sm text-muted">SQLite</dt><dd><code>{info.runtime.sqliteVersion ?? 'unknown'}</code></dd></div>
+        <div class="cluster"><dt class="text-sm text-muted">PID</dt><dd><code>{info.runtime.pid}</code></dd></div>
+        <div class="cluster"><dt class="text-sm text-muted">Database</dt><dd><code>{info.runtime.dbPath}</code></dd></div>
+        <!-- The main file plus its write-ahead log. In WAL mode the main file
+             alone reads 4 KB for a database with half a megabyte pending. -->
+        <div class="cluster"><dt class="text-sm text-muted">Database size</dt><dd>{size(info.runtime.dbSizeBytes)}</dd></div>
+        <div class="cluster"><dt class="text-sm text-muted">Memory</dt><dd>{info.runtime.memoryMb} MB resident · {info.runtime.heapUsedMb} MB heap</dd></div>
+      </dl>
+    </Card>
+
+    <Card>
+      <h2 class="h4">Queue depths</h2>
+      <div class="table-wrap">
+        <table class="table striped">
+          <thead>
+            <tr>
+              <th scope="col">Queue</th>
+              <th scope="col">Pending</th>
+              <th scope="col">Running</th>
+              <th scope="col">Failed</th>
+            </tr>
+          </thead>
+          <tbody id="hub-queues">
+            {#each queues as [name, q]}
+              <tr>
+                <td><code>{name}</code></td>
+                <td>{q.pending}</td>
+                <td>{q.running}</td>
+                <td>{q.failed}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+
+    <Card>
+      <h2 class="h4">Across every workspace</h2>
+      <div class="cluster" id="hub-counts">
+        <Badge tone="muted">{info.counts.workspaces} workspaces</Badge>
+        <Badge tone="muted">{info.counts.users} actors</Badge>
+        <Badge tone="muted">{info.counts.projects} projects</Badge>
+        <Badge tone="muted">{info.counts.servers} servers</Badge>
+        <Badge tone="muted">{info.counts.apps} apps</Badge>
+      </div>
+    </Card>
+
+    <Card>
+      <h2 class="h4">Not shown here</h2>
+      <p class="text-body">
+        <strong>Adapter health</strong> lives on <a href="/portal/">the portal</a>, which pings each
+        appliance. Repeating it here would be a second answer to one question.
+      </p>
+      <p class="text-body">
+        <strong>Event-bus subscribers</strong> is a number the in-process bus cannot produce — it
+        answers whether anything is listening, not how much. The badge above is the true half.
+      </p>
+      <p class="text-body">
+        <strong>CPU</strong> is not measured. Nothing in this process samples it, and a figure
+        derived from one reading would be noise printed beside numbers that are real.
+      </p>
+    </Card>
+  </div>
+{/if}

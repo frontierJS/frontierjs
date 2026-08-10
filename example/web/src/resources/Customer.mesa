@@ -1,0 +1,14 @@
+<script module>
+  // web/src/resources/Customer.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa.
+  //
+  // Populates the picker for Order.customerId. That this is the resource that
+  // does so is not written down here either — orders/create.mesa derives it
+  // from `orders.relations.customer.model`, so the relation is declared once,
+  // in the schema.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const customers = createResource('customers')
+</script>

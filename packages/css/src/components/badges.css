@@ -4,15 +4,24 @@
  *
  * Default (no tone class) renders muted via the var fallback.
  * Use for categorical status ("active", "pending", "archived").
+ *
+ * ── Not the count ─────────────────────────────────────────────────────
+ *
+ * A count or short datum ("12", "99+") is a Pill. This is the word the
+ * industry disagrees about: Atlassian's Badge and Material's Badge are both
+ * the COUNT — their status words are Lozenge and Chip — and Bootstrap uses
+ * `badge` for both. Only Polaris agrees with the sense used here.
+ *
+ * The failure is silent: a count in a badge renders perfectly, so nothing
+ * catches it. See DECISIONS.md for the comparison table.
  */
 
 .badge {
-  /* Box — was the `badge` Uno shortcut. Chip layout comes from chip.css. */
-  padding:       0.125rem 0.5rem;
+  padding:       var(--space-3xs) var(--space-sm);
   /* Follows --btn-radius unless a theme sets --badge-radius; the fallback
      must resolve here, on the badge, to see .theme-* overrides. */
   border-radius: var(--badge-radius, var(--btn-radius));
-  font-size:     0.75rem;
+  font-size:     var(--text-xs);
   line-height:   1rem;
 
   /* Skin. --fill is the effective background; chip.css derives readable

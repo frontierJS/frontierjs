@@ -321,8 +321,9 @@ export class ServiceProxy<
 
   async action(
     name: string,
-    id: string | number,
-    data?: Record<string, unknown> | null
+    id?: string | number | null,
+    data?: Record<string, unknown> | null,
+    query?: Record<string, unknown>
   ): Promise<unknown> {
     // Same rule as CRUD: the socket when it is there, HTTP when it is not.
     // This used to be unconditionally HTTP, which made a custom action the only
@@ -333,11 +334,24 @@ export class ServiceProxy<
     // socket, so a payload carrying one goes over HTTP exactly as create and
     // patch do.
     if (this._client._wsReady && !_hasFiles(data ?? {})) {
-      return this._client._wsCall(this.name, name, id, data ?? null)
+      return this._client._wsCall(this.name, name, id ?? null, data ?? null, query)
     }
+    // A COLLECTION-level action — `id` omitted or null — posts to the service
+    // root. The server has always supported it: the bridge dispatches on the
+    // X-Service-Method header before it looks at `params.id`, so a method that
+    // is about the whole collection needs no id and never did. This client
+    // interpolated `id` unconditionally, so the only way to reach one was to
+    // invent a throwaway id and post to `/{service}/null` — found writing
+    // basecamp's fleet-wide event feed, where there IS no subject row.
+    const path = id == null ? this._base : `${this._base}/${id}`
+    // A plain filter map, NOT FindParams — so it is serialised plainly rather
+    // than through buildQueryString, which exists to turn {limit, orderBy, …}
+    // into the `$`-prefixed directive syntax. An action declares its own query
+    // vocabulary; the bridge still splits `$` keys off as directives if the
+    // caller uses them.
     return this._client._request(
       'POST',
-      `${this._base}/${id}`,
+      `${path}${_plainQuery(query)}`,
       data ?? {},
       { header: { 'X-Service-Method': name } }
     )
@@ -927,6 +941,20 @@ function buildWsQuery(params: FindParams): Record<string, unknown> {
     q['$select'] = Array.isArray(params.select) ? params.select.join(',') : params.select
   }
   return q
+}
+
+/** A filter map → `?a=1&b=2`, or '' when there is nothing to say. Values that
+ *  are null/undefined are dropped rather than sent as the strings "null" and
+ *  "undefined", which is what an unset optional filter would otherwise become. */
+function _plainQuery(query?: Record<string, unknown> | null): string {
+  if (!query) return ''
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(query)) {
+    if (v == null) continue
+    p.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
+  }
+  const qs = p.toString()
+  return qs ? `?${qs}` : ''
 }
 
 function buildQueryString(params: FindParams): string {

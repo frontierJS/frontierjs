@@ -2,7 +2,7 @@
 title: Orders
 ---
 <script>
-  import { orders } from '../../resources/shop.mesa'
+  import { orders } from '../../resources/Order.mesa'
   import { session } from '../../session.js'
   import { prefs } from '../../prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'

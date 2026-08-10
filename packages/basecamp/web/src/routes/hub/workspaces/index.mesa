@@ -1,0 +1,157 @@
+---
+title: Hub workspaces
+---
+<script>
+  // The mock's WorkspacesView — every tenant, not the caller's.
+  //
+  // The workspaces service cannot answer this and should not learn to: its
+  // `find` is deliberately "workspaces I am a member of", and widening it with
+  // a scope parameter would put the tenancy decision in a query string. This
+  // reads through /hub, which is behind requireSystemAdmin and nothing else.
+  //
+  // Suspension is the action worth understanding. It is NOT deletion — the rows
+  // stay, the servers keep running — and it bites in scopeToWorkspace, the one
+  // hook every workspace-scoped service already runs, so a suspended tenant is
+  // refused everywhere rather than merely labelled here.
+  import { hub } from '../../../resources/Hub.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  let rows    = []
+  let error   = null
+  let loading = true
+  let busy    = null
+  let q       = ''
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // A collection-level action: no subject row, so it posts to /hub rather
+      // than /hub/{id}. `null` as the id is what expresses that (FJS-122).
+      const page = await hub.service.action('workspaces', null, {}, q ? { q } : {})
+      rows = page.data ?? []
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  function search(value) { q = value; load() }
+
+  async function setStatus(ws, status) {
+    error = null; busy = ws.id
+    try {
+      await hub.service.action('setWorkspaceStatus', null, { workspaceId: ws.id, status })
+      toasts[status === 'suspended' ? 'warning' : 'success'](
+        status === 'suspended' ? `${ws.name} suspended` : `${ws.name} reinstated`,
+        status === 'suspended'
+          ? 'Its members are refused by every scoped service until it is restored.'
+          : 'Its members can reach the API again.',
+      )
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const when = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
+
+  $: active    = rows.filter(w => w.status === 'active').length
+  $: suspended = rows.length - active
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<p class="text-body">
+  Every workspace on this hub. Suspending one leaves its data and its servers alone and
+  refuses its members at the API — it is not a delete, and there is no undo to need.
+</p>
+
+<div class="cluster" id="hub-ws-stats">
+  <Badge tone="muted">{rows.length} workspaces</Badge>
+  <Badge tone="success">{active} active</Badge>
+  <Badge tone={suspended ? 'danger' : 'muted'}>{suspended} suspended</Badge>
+</div>
+
+<div class="cluster">
+  <label class="visually-hidden" for="ws-search">Filter workspaces</label>
+  <input class="field" id="ws-search" type="search" placeholder="Filter workspaces…"
+         value={q} on:input={(e) => search(e.target.value)} />
+</div>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No workspaces">
+    Nothing matched. A workspace is created by whoever signs up, or from the Projects
+    screen inside one — the hub reads them, it does not mint them.
+  </EmptyState>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped">
+      <thead>
+        <tr>
+          <th scope="col">Workspace</th>
+          <th scope="col">Type</th>
+          <th scope="col">Status</th>
+          <th scope="col">Members</th>
+          <th scope="col">Servers</th>
+          <th scope="col">Projects</th>
+          <th scope="col">Owner</th>
+          <th scope="col">Created</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="hub-workspace-rows">
+        {#each rows as w}
+          <tr>
+            <td>
+              {w.name}
+              <span class="text-sm text-muted"><code>{w.slug}</code></span>
+            </td>
+            <td><Badge tone="muted">{w.type}</Badge></td>
+            <td><Pill tone={w.status === 'active' ? 'success' : 'danger'}>{w.status}</Pill></td>
+            <td>{w.members}</td>
+            <td>{w.servers}</td>
+            <td>{w.projects}</td>
+            <td class="text-sm text-muted">{w.owner?.email ?? '—'}</td>
+            <td class="text-sm text-muted">{when(w.createdAt)}</td>
+            <td>
+              {#if w.status === 'active'}
+                <Button variant="ghost" tone="danger" disabled={busy === w.id}
+                        aria-label={`Suspend ${w.name}`}
+                        onclick={() => setStatus(w, 'suspended')}>Suspend</Button>
+              {:else}
+                <Button variant="ghost" disabled={busy === w.id}
+                        aria-label={`Reinstate ${w.name}`}
+                        onclick={() => setStatus(w, 'active')}>Reinstate</Button>
+              {/if}
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}
+
+<article class="alert info">
+  <div class="alert-content">
+    The mock also offers <strong>Impersonate</strong>. It is not built: minting a session as
+    somebody else needs a trail that keeps saying who is really acting, a way back that cannot
+    be forgotten, and a rule for what an impersonator may not do. A half-built one is
+    credential sharing with a button (<code>FJS-142</code>).
+  </div>
+</article>

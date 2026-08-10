@@ -8,9 +8,9 @@
 
 .btn {
   /* Box — was the `btn` Uno shortcut. Chip layout comes from chip.css. */
-  padding:       0.375rem 0.875rem;
+  padding:       var(--space-xs) var(--space-xl);
   border-radius: var(--btn-radius);
-  font-size:     0.875rem;
+  font-size:     var(--text-md);
   line-height:   1.25rem;
   cursor:        pointer;
   transition:    background-color 150ms, border-color 150ms, color 150ms,
@@ -48,10 +48,6 @@
  * has to honour all three too, or the claim is false — this is the same
  * rule as "a tone consumer takes all seven tones or it's a bug".
  *
- * Through v0.8 only .outlined was here, so `.btn.ghost` and `.btn.raised`
- * were silent no-ops: a toolbar of ghost icon buttons rendered as a wall
- * of solid primary blue. The demo app found it by reaching for the
- * obvious class.
  */
 .btn.outlined {
   background:   var(--surface);

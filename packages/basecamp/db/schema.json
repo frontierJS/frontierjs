@@ -56,7 +56,7 @@
           ]
         },
         "scopes": {
-          "default": "[]"
+          "default": []
         }
       },
       "additionalProperties": false,
@@ -89,6 +89,15 @@
         {
           "field": "deployments",
           "model": "Deployment",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "apiKeys",
+          "model": "ApiKey",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -295,7 +304,7 @@
           "type": "string"
         },
         "settings": {
-          "default": "{}"
+          "default": {}
         }
       },
       "additionalProperties": false,
@@ -356,6 +365,15 @@
           "optional": false
         },
         {
+          "field": "apiKeys",
+          "model": "ApiKey",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
           "field": "jobs",
           "model": "Job",
           "type": "hasMany",
@@ -367,6 +385,24 @@
         {
           "field": "alertRules",
           "model": "AlertRule",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "channels",
+          "model": "NotificationChannel",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "flags",
+          "model": "FeatureFlag",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -513,6 +549,127 @@
         }
       ]
     },
+    "ApiKey": {
+      "type": "object",
+      "title": "ApiKey",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "credentialId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "tokenHint": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalUses": {
+          "type": "integer",
+          "default": 0
+        },
+        "usageDate": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "usesOnDate": {
+          "type": "integer",
+          "default": 0
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "userId",
+        "name",
+        "tokenHint"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "user",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "userId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
     "Server": {
       "type": "object",
       "title": "Server",
@@ -610,7 +767,7 @@
           ]
         },
         "plan": {
-          "default": "{}"
+          "default": {}
         },
         "actualSpecs": {
           "anyOf": [
@@ -637,7 +794,7 @@
           ]
         },
         "labels": {
-          "default": "{}"
+          "default": {}
         }
       },
       "additionalProperties": false,
@@ -663,6 +820,15 @@
         {
           "field": "events",
           "model": "ServerEvent",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "volumes",
+          "model": "Volume",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -703,7 +869,7 @@
           "type": "string"
         },
         "metadata": {
-          "default": "{}"
+          "default": {}
         }
       },
       "additionalProperties": false,
@@ -711,6 +877,84 @@
         "serverId",
         "kind",
         "message"
+      ],
+      "x-relations": [
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Volume": {
+      "type": "object",
+      "title": "Volume",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "driver": {
+          "type": "string",
+          "default": "local"
+        },
+        "mountPoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "inUse": {
+          "type": "boolean",
+          "default": false
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "createdOnServer": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discoveredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId",
+        "name"
       ],
       "x-relations": [
         {
@@ -754,7 +998,7 @@
           "default": "netbird"
         },
         "config": {
-          "default": "{}"
+          "default": {}
         }
       },
       "additionalProperties": false,
@@ -867,10 +1111,10 @@
           "default": "active"
         },
         "tags": {
-          "default": "[]"
+          "default": []
         },
         "metadata": {
-          "default": "{}"
+          "default": {}
         }
       },
       "additionalProperties": false,
@@ -933,7 +1177,7 @@
           "default": false
         },
         "variables": {
-          "default": "[]"
+          "default": []
         }
       },
       "additionalProperties": false,
@@ -983,6 +1227,15 @@
           "references": [],
           "onDelete": null,
           "optional": false
+        },
+        {
+          "field": "flagOverrides",
+          "model": "FlagOverride",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
         }
       ]
     },
@@ -1015,16 +1268,10 @@
           "default": "unknown"
         },
         "source": {
-          "default": "{}"
+          "default": {}
         },
         "config": {
-          "default": "{}"
-        },
-        "domain": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "default": {}
         },
         "port": {
           "type": [
@@ -1092,6 +1339,109 @@
           "fields": [],
           "references": [],
           "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "domains",
+          "model": "Domain",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Domain": {
+      "type": "object",
+      "title": "Domain",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "appId": {
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "isPrimary": {
+          "type": "boolean",
+          "default": false
+        },
+        "redirectTo": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "type": "integer",
+          "default": 443
+        },
+        "proxied": {
+          "type": "boolean",
+          "default": false
+        },
+        "sslMode": {
+          "type": "string",
+          "default": "full_strict"
+        },
+        "certSecretId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "certKind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "certIssuedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certExpiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "appId",
+        "hostname"
+      ],
+      "x-relations": [
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
           "optional": false
         }
       ]
@@ -1315,7 +1665,7 @@
           ]
         },
         "configSnapshot": {
-          "default": "{}"
+          "default": {}
         },
         "triggeredBy": {
           "type": [
@@ -1542,7 +1892,7 @@
           "default": "manual"
         },
         "triggerConfig": {
-          "default": "{}"
+          "default": {}
         },
         "timeoutSeconds": {
           "type": "integer",
@@ -1638,7 +1988,7 @@
           "type": "string"
         },
         "status": {
-          "$ref": "#/$defs/JobRunStatus",
+          "$ref": "#/$defs/RunStatus",
           "default": "pending"
         },
         "trigger": {
@@ -1679,7 +2029,7 @@
           ]
         },
         "output": {
-          "default": "{}"
+          "default": {}
         }
       },
       "additionalProperties": false,
@@ -1698,6 +2048,601 @@
             "id"
           ],
           "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Recipe": {
+      "type": "object",
+      "title": "Recipe",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "script": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 3600,
+          "default": 300
+        },
+        "lastRunAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runCount": {
+          "type": "integer",
+          "default": 0
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name",
+        "slug",
+        "script"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "runs",
+          "model": "RecipeRun",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "RecipeRun": {
+      "type": "object",
+      "title": "RecipeRun",
+      "properties": {
+        "recipeId": {
+          "type": "string"
+        },
+        "serverId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus",
+          "default": "pending"
+        },
+        "script": {
+          "type": "string"
+        },
+        "requestedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exitCode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stdout": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stderr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "recipeId",
+        "serverId",
+        "script"
+      ],
+      "x-relations": [
+        {
+          "field": "recipe",
+          "model": "Recipe",
+          "type": "belongsTo",
+          "fields": [
+            "recipeId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "DiskUsage": {
+      "type": "object",
+      "title": "DiskUsage",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "imagesTotal": {
+          "type": "integer",
+          "default": 0
+        },
+        "imagesUnused": {
+          "type": "integer",
+          "default": 0
+        },
+        "imagesDangling": {
+          "type": "integer",
+          "default": 0
+        },
+        "imageBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "imagesReclaimableBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "containersRunning": {
+          "type": "integer",
+          "default": 0
+        },
+        "containersStopped": {
+          "type": "integer",
+          "default": 0
+        },
+        "containersReclaimableBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "buildCacheBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "buildCacheReclaimableBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "reportedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId"
+      ],
+      "x-relations": [
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "CleanupRun": {
+      "type": "object",
+      "title": "CleanupRun",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus",
+          "default": "pending"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "keepImages": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50,
+          "default": 3
+        },
+        "requestedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "freedBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "detail": {
+          "default": {}
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId"
+      ],
+      "x-relations": [
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "FeatureFlag": {
+      "type": "object",
+      "title": "FeatureFlag",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "$ref": "#/$defs/FlagType",
+          "default": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "variants": {
+          "default": []
+        },
+        "isEnabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "rollout": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 0
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "key"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "overrides",
+          "model": "FlagOverride",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "FlagOverride": {
+      "type": "object",
+      "title": "FlagOverride",
+      "properties": {
+        "flagId": {
+          "type": "string"
+        },
+        "environmentId": {
+          "type": "string"
+        },
+        "isEnabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "rollout": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 0
+        },
+        "variantKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "flagId",
+        "environmentId"
+      ],
+      "x-relations": [
+        {
+          "field": "flag",
+          "model": "FeatureFlag",
+          "type": "belongsTo",
+          "fields": [
+            "flagId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "environment",
+          "model": "Environment",
+          "type": "belongsTo",
+          "fields": [
+            "environmentId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "NotificationChannel": {
+      "type": "object",
+      "title": "NotificationChannel",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "kind": {
+          "$ref": "#/$defs/ChannelKind"
+        },
+        "config": {
+          "default": {}
+        },
+        "secretId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "isActive": {
+          "type": "boolean",
+          "default": true
+        },
+        "lastTestAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastDeliveryAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name",
+        "kind"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "rules",
+          "model": "AlertRuleChannel",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
           "optional": false
         }
       ]
@@ -1721,17 +2666,14 @@
           ]
         },
         "severity": {
-          "type": "string",
-          "default": "medium"
+          "$ref": "#/$defs/AlertSeverity",
+          "default": "warning"
         },
         "metricName": {
           "type": "string"
         },
         "condition": {
-          "default": "{}"
-        },
-        "channels": {
-          "default": "[]"
+          "default": {}
         },
         "isActive": {
           "type": "boolean",
@@ -1766,6 +2708,60 @@
           "references": [],
           "onDelete": null,
           "optional": false
+        },
+        {
+          "field": "channels",
+          "model": "AlertRuleChannel",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "AlertRuleChannel": {
+      "type": "object",
+      "title": "AlertRuleChannel",
+      "properties": {
+        "ruleId": {
+          "type": "string"
+        },
+        "channelId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ruleId",
+        "channelId"
+      ],
+      "x-relations": [
+        {
+          "field": "rule",
+          "model": "AlertRule",
+          "type": "belongsTo",
+          "fields": [
+            "ruleId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "channel",
+          "model": "NotificationChannel",
+          "type": "belongsTo",
+          "fields": [
+            "channelId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
         }
       ]
     },
@@ -1781,7 +2777,7 @@
           "default": "firing"
         },
         "severity": {
-          "type": "string"
+          "$ref": "#/$defs/AlertSeverity"
         },
         "subjectType": {
           "type": "string"
@@ -1850,6 +2846,164 @@
           ],
           "onDelete": "Cascade",
           "optional": false
+        }
+      ]
+    },
+    "Dashboard": {
+      "type": "object",
+      "title": "Dashboard",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "slug": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 8
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "isPinned": {
+          "type": "boolean",
+          "default": false
+        },
+        "createdBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name",
+        "slug"
+      ],
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "widgets",
+          "model": "DashboardWidget",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "DashboardWidget": {
+      "type": "object",
+      "title": "DashboardWidget",
+      "properties": {
+        "dashboardId": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/WidgetKind"
+        },
+        "serverId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "appId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "config": {
+          "default": {}
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "default": 1
+        },
+        "position": {
+          "type": "integer",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "dashboardId",
+        "kind"
+      ],
+      "x-relations": [
+        {
+          "field": "dashboard",
+          "model": "Dashboard",
+          "type": "belongsTo",
+          "fields": [
+            "dashboardId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        },
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
         }
       ]
     },
@@ -1957,6 +3111,7 @@
         "provider_key",
         "registry_auth",
         "tls_cert",
+        "notification",
         "generic"
       ],
       "title": "SecretKind"
@@ -2069,7 +3224,7 @@
       ],
       "title": "JobStatus"
     },
-    "JobRunStatus": {
+    "RunStatus": {
       "type": "string",
       "enum": [
         "pending",
@@ -2078,7 +3233,49 @@
         "failed",
         "timeout"
       ],
-      "title": "JobRunStatus"
+      "title": "RunStatus"
+    },
+    "AlertSeverity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "warning",
+        "critical"
+      ],
+      "title": "AlertSeverity"
+    },
+    "ChannelKind": {
+      "type": "string",
+      "enum": [
+        "slack",
+        "pagerduty",
+        "email",
+        "webhook"
+      ],
+      "title": "ChannelKind"
+    },
+    "FlagType": {
+      "type": "string",
+      "enum": [
+        "boolean",
+        "variant"
+      ],
+      "title": "FlagType"
+    },
+    "WidgetKind": {
+      "type": "string",
+      "enum": [
+        "server_fleet",
+        "server_health",
+        "app_status",
+        "deploy_feed",
+        "job_history",
+        "activity_feed",
+        "alert_status",
+        "service_health",
+        "stat_counter"
+      ],
+      "title": "WidgetKind"
     }
   }
 }

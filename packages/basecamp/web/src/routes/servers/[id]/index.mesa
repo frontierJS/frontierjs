@@ -3,7 +3,7 @@ title: Server
 ---
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
-  import { servers } from '../../../resources/servers.mesa'
+  import { servers } from '../../../resources/Server.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
 

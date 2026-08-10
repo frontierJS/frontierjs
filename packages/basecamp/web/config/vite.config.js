@@ -25,11 +25,21 @@ const sierra = createSierraViteConfig(sierraConfig)
 // If this ever gets fragile, the durable fix is to give the API an apiPrefix
 // ('/api') and match it in sierra.config.js — one proxy rule, no ambiguity.
 // The prefix was removed deliberately; this is the cost of that, written down.
+// One entry per mounted service, plus the non-service routes. It is a hand-kept
+// copy of the registry and it HAS gone stale: `audit`, `channels`, `flags` and
+// `api-keys` were each missing for a phase or more. Nothing failed loudly,
+// because the Junction client is configured with the API's own origin and never
+// uses this proxy — what breaks is anything fetching a relative URL from the
+// page, which is every check in web/test/verify.mjs, and it breaks as a 404
+// from Vite rather than as a refusal from the API.
 const API_PATHS = [
   '/auth', '/setup', '/health', '/metrics', '/conduit-targets',
   '/workspaces', '/projects', '/environments', '/apps',
   '/servers', '/deployments', '/jobs', '/portal',
-  '/alerts', '/networks', '/secrets',
+  '/alerts', '/networks', '/secrets', '/domains',
+  '/audit', '/channels', '/flags', '/api-keys',
+  '/volumes', '/dashboards', '/recipes', '/cleanup',
+  '/hub',
 ]
 
 const proxy = Object.fromEntries(API_PATHS.map(path => [path, {

@@ -67,3 +67,61 @@
 .success   { --bg-mix: var(--color-success);   }
 .warning   { --bg-mix: var(--color-warning);   }
 .danger    { --bg-mix: var(--color-danger);    }
+
+/*
+ * ── The tint ramp ───────────────────────────────────────────────────
+ *
+ * Three named steps, each the tone mixed into one of the three neutral
+ * tokens. This is the only place the percentages live — surface.css reads
+ * them rather than restating them, so a toned Card, a toned Alert and an
+ * app's own `<div class="danger">` are tinted by one set of numbers.
+ *
+ *   --tint-surface   10%  into --surface   the fill of a toned block
+ *   --tint-rule      30%  into --rule      its border
+ *   --tint-ink       55%  into --ink       its text
+ *
+ * The names say which token each one tints, so there is nothing to look
+ * up: --tint-ink is --ink pulled toward the tone.
+ *
+ * They mix toward --surface and --ink, not toward white and black, so one
+ * set of percentages is correct in light and dark alike. A fixed
+ * "lighten 90%" is a light-theme assumption wearing a neutral name, which
+ * is why these are not named for a lighten scale.
+ *
+ * ── Why the universal selector ──────────────────────────────────────
+ *
+ * Listing the seven tone classes again would make adding an eighth tone two
+ * edits in this file instead of one. There is no selector for "any element
+ * with --bg-mix set", so the derivation is declared everywhere and the
+ * cascade decides: --bg-mix is registered `inherits: false` with no
+ * initial-value, so on an untoned element it is guaranteed-invalid, which
+ * makes each color-mix() below invalid at computed-value time and leaves
+ * the token unset. Its var() fallbacks then fire.
+ *
+ * The same mechanism is why there is no leak: every element computes these
+ * from its own --bg-mix, so an untoned child inside a danger Card gets
+ * nothing rather than its parent's red. Registering them `inherits: false`
+ * pins that even where this rule is overridden.
+ */
+@property --tint-surface {
+  syntax:   "*";
+  inherits: false;
+}
+
+@property --tint-rule {
+  syntax:   "*";
+  inherits: false;
+}
+
+@property --tint-ink {
+  syntax:   "*";
+  inherits: false;
+}
+
+*,
+*::before,
+*::after {
+  --tint-surface: color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
+  --tint-rule:    color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
+  --tint-ink:     color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
+}

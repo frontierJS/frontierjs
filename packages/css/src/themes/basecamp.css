@@ -20,6 +20,15 @@
    */
   color-scheme: dark;
 
+  /*
+   * The lightness window for syntax highlighting, inverted. On a light
+   * surface a code token is clamped DARK; here it has to be clamped light,
+   * and nothing in CSS can work that out — see tokens.css and code.css.
+   * Any theme that sets `color-scheme: dark` needs this pair too.
+   */
+  --code-l-min: 0.74;
+  --code-l-max: 1;
+
   /* ── Accents ───────────────────────────────────────────────────────
    * Taken verbatim from the prototype's T object. They need no contrast
    * correction: chip.css derives chip text from the fill's luminance, so a

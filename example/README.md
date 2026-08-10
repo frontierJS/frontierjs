@@ -27,10 +27,12 @@ tables.
 | `bun run api` | the API realm |
 | `bun run web` | the UI realm |
 | `bun run verify` | drive the app in headless Chrome and assert what happened (both servers must be up) |
-| `bun run verify:ui` | drive the kit's behavioural components — tabs, menus, a dialog, a palette — 26 assertions |
+| `bun run verify:ui` | drive the kit's behavioural components — tabs, menus, a dialog, a palette — 27 assertions |
 | `bun run verify:live` | open a watcher tab that never acts, change rows from outside it, and assert what crossed the socket — 14 assertions |
 | `bun run verify:jobs` | the deferred-work realm over HTTP, no browser — 8 assertions |
 | `bun run verify:notify` | the outbound boundary: mail at a real server, and who can see what — 9 assertions |
+| `bun run build:public` | the PUBLIC site: prerender `src/public-site/` to `web/dist/public/` |
+| `bun run verify:public` | serve that build and prove its two islands come alive in a real browser — 21 assertions |
 | `bun run email:preview` | render the transactional emails to files you can open |
 | `bun run build` | production build to `web/dist/client/` |
 | `bun run verify:build` | build, then drive **the built app** with the same 37 assertions (needs `bun run api`) |
@@ -81,7 +83,7 @@ app root, so Sierra's auto-detection finds `../db/schema.lite` — the same file
 | [`api/gate.ts`](api/gate.ts) | the role → level mapping, and why it cannot be skipped |
 | [`api/db.ts`](api/db.ts) | how auth's models join the schema without a second copy |
 | [`api/services/orders.service.ts`](api/services/orders.service.ts) | 3 lines. CRUD, 401s, 403s and 400s are all derived |
-| [`web/src/resources/shop.mesa`](web/src/resources/shop.mesa) | names three models, turns three flags on |
+| [`web/src/resources/Order.mesa`](web/src/resources/Order.mesa) | names one model, and nothing else — one Resource per file, named for its noun (Invariant 19) |
 | [`web/src/routes/orders/create.mesa`](web/src/routes/orders/create.mesa) | a form with no field list in it |
 
 ---
@@ -222,19 +224,27 @@ That route did not exist until this app needed it.
 Nothing in this file is asserted from reading the source. `bun run verify`
 drives the app in headless Chrome — navigating, signing in, typing into fields
 and leaving them, filling the form, submitting, deleting, signing out — and
-asserts 37 facts about what a real browser ended up showing. Four sibling drives
-add 56 more — the kit's behavioural components, real-time from a second client,
-deferred work, and the outbound boundary. Last run:
+asserts 37 facts about what a real browser ended up showing. Five sibling drives
+add 79 more — the kit's behavioural components, real-time from a second client,
+deferred work, the outbound boundary, and the prerendered public site. Last run:
 
 ```
 all 37 assertions passed        (dev AND the production build, 0 console errors)
-all 26 assertions passed        bun run verify:ui
+all 27 assertions passed        bun run verify:ui
 all 14 assertions passed        bun run verify:live
 all  8 assertions passed        bun run verify:jobs
 all  9 assertions passed        bun run verify:notify
+all 21 assertions passed        bun run verify:public   (the built static site)
 
-94 assertions, five drives, twice consecutively against one database.
+116 assertions, six drives, twice consecutively against one database.
 ```
+
+`verify:public` is the one with no application in it. `web/dist/public/catalog/
+index.html` is a file with the whole catalogue already in it and one module
+script; the drive asserts that a crawler sees every product, that nothing gated
+is in the file, that typing in the search box filters rows **after** the island
+mounts, that the below-the-fold island's chunk is not fetched until it is
+scrolled to, and that it then asks the running API what can be sold today.
 
 `verify:live` is the one that watches a client which did **not** make the
 change — a signed-out tab on `/orders/`, while node changes rows over HTTP:
@@ -315,11 +325,16 @@ An example is only worth having if it can fail. Nine things this one settled,
 eight the day it grew a job queue, an outbound boundary and a watcher tab that
 never acts,
 five more the day its markup moved onto `@frontierjs/ui`, eight more from the
-screens built to use the components a render test cannot reach, and four the day
-its order form was rewritten onto `<Form>`:
+screens built to use the components a render test cannot reach, four the day
+its order form was rewritten onto `<Form>`, three the day its public page
+grew an island, and one the day somebody clicked ⌘K:
 
 | | |
 | --- | --- |
+| **Every overlay in the kit was invisible, and the palette froze the app.** | `{@attach}` ran when an element was BUILT rather than when it mounted, so the attachment saw a detached node — and `el.animate(…, { fill: 'forwards' })` on a disconnected element returns an animation that never starts, even once it is connected. Every kit overlay painted at keyframe 0. CommandPalette is `position: fixed; inset: 0; z-index: 9000`, so clicking **Search ⌘K** put an invisible sheet over the page that swallowed every click: "nothing happens and the app is unresponsive". Reported by the owner, not by a drive — `verify:ui` was 26/26 green against it, because every assertion asked whether the DOM was there. It now opens the palette by clicking the button and asserts opacity, hit-testing and size. `FJS-114`. |
+| **A `.mesa` route was compiled as MARKDOWN — but only by the prerenderer.** | Mesa routed any source beginning with `---` to its Markdown compiler, and a `---` block is how every Sierra route states its title. Markdown escapes what it does not recognise, so `<CatalogList client:load products={…} />` came out as a paragraph of ESCAPED TEXT with the props stringified into it, while `<LiveStock />` beside it compiled as a component and mounted correctly. Sierra's Vite path strips frontmatter first, so dev and the SPA build were right and the static build was wrong **for the same file**. The extension decides the language now. `FJS-106`. |
+| **Every prerendered `<input>` carried `formaction="http://localhost/"`.** | happy-dom's `cloneNode` re-derives an input's attributes from default properties, so each instance of a template gained the build machine's own URL. `formaction` overrides its form's action — a prerendered form would post to whoever built the site. Mesa parses per instance on the server now. `FJS-107`. |
+| **A prerendered page linked no stylesheet and had no theme.** | It shipped every `@frontierjs/css` class name in the app and not one rule behind them, because a static document is assembled by Sierra and Vite's HTML transform never runs on it. The SPA built from the same source looked right, which is why nobody had seen it. `document: { bodyClass }` plus automatic linking of the build's CSS assets. `FJS-108`. |
 | **A prerendered page could publish gated data, and nothing checked.** | Adding one `render: static` route to this app found a fail-OPEN hole in the check being built to stop exactly that. `importCompanion` swallows an import error and returns null, so a `.meta.js` that *throws on import* was indistinguishable from a route with no companion and was waved through as "reads nothing" — which is what happened on the first `bun run build:public`, run under Node, where the companion's db import died on `bun:sqlite`. The page was emitted anyway. A companion that exists but could not be read is now UNKNOWN, which is the one case the check exists to refuse. `ISSUES.md` FJS-081; `web/src/public-site/catalog/` is the route. |
 | **Every row policy in the framework matched nothing.** | `@@allow('read', userId == auth().id)` is the shape `@frontierjs/notifications`' own README ships. It returned an empty list for every signed-in caller, and the rows were plainly there under `asSystem()`. Junction's `SessionContext` names the caller `userId`; Litestone's policy language reads `auth().id` — its documented spelling — and nothing bridged the two, so the predicate compared a column to `undefined`. **Gates were fine**, because `sessionGateLevel()` was written against Junction's shape; the half that was translated worked and the half that was not failed in silence, which is why an app with `@@gate` and no `@@allow` would never notice. `FJS-097`. |
 | **Fixing that broke the audit log, which is how it was found twice.** | With a real `id` on the principal, the audit trail finally had an actor to record — and its `actorId` column was declared `Int` while `@frontierjs/auth` issues uuids. The first audited write after signing in threw `cannot store TEXT value in INTEGER column auditLogs_idx.actorId` and took the request with it. It had been unreachable for exactly as long as the bug above existed: no id meant a null actor, and NULL fits an INTEGER column. Two defects, one masking the other, both in one afternoon. `FJS-098`. |

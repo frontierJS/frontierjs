@@ -19,10 +19,14 @@ import { env }                       from './env.ts'
 import { buildInfra }                from '../infra/index.ts'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './db.ts'
+import { createSecretResolver }          from './credentials.ts'
 import { basecampAuditLog }               from './hooks.ts'
+import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './session-auth.ts'
+import { apiKeyGuard, apiKeyUsage }       from '../services/api-keys/scopes.ts'
 import { slugify }                        from './resource.ts'
 import { createDeploymentEngine }    from '../engine/deployment.engine.ts'
 import { createJobEngine }           from '../engine/job.engine.ts'
+import { createFleetEngine }         from '../engine/fleet.engine.ts'
 
 import type { BasecampApp } from '../basecamp.types.ts'
 
@@ -57,10 +61,16 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   // @frontierjs/auth over the Litestone client. It owns User / Credential /
   // Session / Verification — the same four models db/schema.lite declares,
   // which is why the model names there are load-bearing.
-  const auth = createLitestoneAuth(db, {
+  //
+  // `sessionFields` is how this app's OWN User columns reach the session.
+  // auth owns the model and knows nothing about `isSystemAdmin`, `status` or
+  // `kind`; without this seam the only way to read one per request is to fetch
+  // the user again after auth already has. See core/session-auth.ts.
+  const auth = refuseSuspendedLogin(createLitestoneAuth(db, {
     encryptionKey: env.ENCRYPTION_KEY,
     sessionTtl:    '7 days',
-  })
+    sessionFields: basecampSessionFields,
+  }), db)
 
   // ── Config ───────────────────────────────────────────────────────────
   // Load config but clear database.url — we own the DB, not the framework.
@@ -105,6 +115,11 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
     store:       createSQLiteStore(rawDb),
     timeout_ms:  10_000,
     retry_limit: 3,
+    // Conduit's default resolver reads process.env, which cannot see a
+    // credential a person typed into a form five seconds ago. Notification
+    // channels put theirs in a Secret (@encrypted), so the ref is `secret:<id>`
+    // and the material never leaves the send path — see core/credentials.ts.
+    credentials: createSecretResolver(db),
     // Conduit refuses to register management routes without an explicit access
     // decision — GET|DELETE /conduit-targets is an operational endpoint.
     // NB: `authenticate`, not `authenticate()` — it IS the hook, not a factory.
@@ -127,6 +142,10 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
       deployments: { concurrency: 3 },
       jobs:        { concurrency: 5 },
       sync:        { concurrency: 2 },
+      // Recipes and disk sweeps. Held low on purpose: both run a command on a
+      // real machine through its agent, and twenty at once is twenty machines
+      // busy at the same moment rather than a fleet that stays serving.
+      fleet:       { concurrency: 2 },
     },
   })
   app.configure(queue)
@@ -201,12 +220,34 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
         logger.debug(`${ctx.service}.${ctx.method}`, { ms: Date.now() - t })
       }],
     },
+    before: {
+      // App level, not per service: a key that is scoped on fifteen services
+      // and unscoped on the sixteenth is not scoped. A session passes through
+      // untouched — this only has an opinion about authMethod 'apiKey'.
+      //
+      // refuseSuspended is the second door on the same rule: login refuses a
+      // suspended account, this refuses a token issued before the suspension —
+      // including an API key, which is a Credential and survives having every
+      // Session row deleted. It costs no query, because `status` is on the
+      // session already (sessionFields above).
+      all: [apiKeyGuard(app), refuseSuspended()],
+    },
     after: {
       // `all`, not the three CRUD verbs: a custom action is a mutation too, and
       // drain / cancel / deploy / trigger are most of what an operator does.
       // The hook itself decides what counts (find/get and dispatch:false are
       // out) and takes the exceptions by name.
-      all: [basecampAuditLog(app, { except: ['servers.heartbeat'] })],
+      all: [
+        // Both exceptions are an agent on a timer. Fifty machines reporting
+        // their disks every minute buries every action a person took, and an
+        // audit trail nobody can read is an audit trail nobody reads.
+        // Deliberately NOT `ctx.dispatch = false` — that would also silence the
+        // channel, and both screens are fed by exactly that publish.
+        basecampAuditLog(app, { except: ['servers.heartbeat', 'volumes.report', 'cleanup.report'] }),
+        // Only fires when apiKeyGuard stamped a key id, so a session request
+        // pays nothing for it.
+        apiKeyUsage(app),
+      ],
     },
     error: {
       all: [(ctx) => {
@@ -218,6 +259,7 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   // ── Engines ───────────────────────────────────────────────────────────
   createDeploymentEngine(app).register()
   createJobEngine(app).register()
+  createFleetEngine(app).register()
 
   // ── Custom routes — wrapped in configure() ────────────────────────────
   // Must be inside configure() so they register during start() Phase 1,
@@ -287,9 +329,16 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
         // it here by hand is what made the old setup route and the old login
         // route disagree about where the hash lived.
         const session = await auth.createUser({ email: email.trim(), name: name.trim(), password })
+        // The first user is the system administrator, and this is the only
+        // place one is created rather than granted. It has to be: the hub is
+        // the screen that grants the flag, requireSystemAdmin refuses anyone
+        // without it, and an app whose only route in is /setup would otherwise
+        // ship with a tier nobody could ever reach. Every subsequent one is
+        // granted from /hub/users/ by someone who already holds it.
         const user    = await tx.user.update({
           where: { id: session.userId },
-          data:  { accountId: account.id, status: 'active', displayName: name.trim(), emailVerified: true },
+          data:  { accountId: account.id, status: 'active', displayName: name.trim(),
+                   emailVerified: true, isSystemAdmin: true },
         })
         const workspace = await tx.workspace.create({
           data: { accountId: account.id, name: wsName, slug, type: 'team', ownerId: user.id },

@@ -1,0 +1,58 @@
+<script>
+  // The frame every widget is drawn in — title, edit controls, and the one
+  // sentence saying what this card cannot show.
+  //
+  // The frame is separate from the nine bodies because it is the part that must
+  // be identical: a card that renders its own header is a card that eventually
+  // renders it slightly differently, and on a board of sixty that reads as a
+  // broken layout rather than as a style drift.
+  //
+  // `needs` comes from the service's `kinds` vocabulary, not from this file.
+  // What a widget cannot show changes when the app grows a metric store, and
+  // the sentence should change with it in one place.
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let title    = ''
+  export let subtitle = ''
+  export let needs    = ''
+  export let editing  = false
+  export let cols     = 1
+  export let onremove = null
+  export let onresize = null
+  export let onmove   = null
+</script>
+
+<article class="card stack" style="height: 100%">
+  <header class="section-header">
+    <h2 class="h5">{title}</h2>
+    {#if subtitle}
+      <span class="text-xs text-muted">{subtitle}</span>
+    {/if}
+  </header>
+
+  <slot />
+
+  {#if needs}
+    <!-- Stated on the card rather than drawn as a plausible line. The mock
+         draws a sparkline here from data nothing in this app keeps. -->
+    <p class="text-xs text-muted">Not shown: {needs}.</p>
+  {/if}
+
+  {#if editing}
+    <footer class="cluster">
+      <!-- Thirds of a row. The buttons say the fraction rather than a number
+           of columns, because the grid is what the reader sees. -->
+      {#each [1, 2, 3] as n}
+        <Button variant={cols === n ? 'outlined' : 'ghost'}
+                aria-label={`Make ${title} ${n} of 3 wide`}
+                onclick={() => onresize?.(n)}>{n}/3</Button>
+      {/each}
+      <Button variant="ghost" aria-label={`Move ${title} earlier`}
+              onclick={() => onmove?.(-1)}>←</Button>
+      <Button variant="ghost" aria-label={`Move ${title} later`}
+              onclick={() => onmove?.(1)}>→</Button>
+      <Button variant="ghost" aria-label={`Remove ${title} from this dashboard`}
+              onclick={() => onremove?.()}>Remove</Button>
+    </footer>
+  {/if}
+</article>

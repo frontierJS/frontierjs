@@ -84,23 +84,14 @@
   </button>
 {/if}
 
-<style>
-  /* .item is a list row in the package; as a <button> or <a> it also needs the
-     control reset and full width. Nothing here restates the row's own look. */
-  .item {
-    display:         flex;
-    align-items:     center;
-    gap:             0.625rem;
-    inline-size:     100%;
-    background:      none;
-    border:          none;
-    font:            inherit;
-    color:           inherit;
-    text-decoration: none;
-    cursor:          pointer;
-  }
-  .item:disabled {
-    opacity: 0.4;
-    cursor:  not-allowed;
-  }
-</style>
+<!--
+  No <style>. `@frontierjs/css` owns every rule this component needs:
+  `.item` is the row's layout, `.items :is(button, a).item` is the control
+  reset a <button> or an <a> needs on top of it, and the disabled pair is
+  scoped through `.items` so it outranks the `.items.menu .item` hover.
+
+  The copy that used to live here is why that rule exists — and it had
+  already drifted: it hardcoded `gap: 0.625rem` where `.item` reads
+  `var(--space-sm)`, so every menu row in the kit sat a rung wide and did
+  not move inside a `.dense` region.
+-->

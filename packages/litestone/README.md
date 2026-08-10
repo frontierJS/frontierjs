@@ -312,9 +312,11 @@ model User {
 @accept("mime/type")             on File / File[]: validate content type before upload
 @markdown                        semantic annotation — field contains Markdown (no validation)
 @hardDelete                      force hard delete even on @@softDelete models
-@from(relation, count: true)     derived count from a relation (not stored in DB)
-@from(relation, sum: field)      derived sum/max/min/first/last/exists from a relation
-@from(relation, count: true, where: "sql")  filtered derived field
+@from(Model, count: true)        derived count from a relation (not stored in DB) — Int
+@from(Model, sum: field)         derived sum/max/min from a relation — sum/max/min take a field
+@from(Model, last: true)         first/last related ROW — field is typed Model?
+@from(Model, exists: true)       Boolean
+@from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered derived field
 
 // Validators — run on every create + update
 @email  @url  @date  @datetime  @phone  @regex(pattern)
@@ -894,16 +896,38 @@ Computed aggregates and lookups from related models — evaluated at query time,
 
 ```prisma
 model Account {
-  id           Int  @id
-  name         String
-  userCount    Int  @from(users, count: true)
-  revenue      Float     @from(orders, sum: amount)
-  lastOrderAt  DateTime @from(orders, last: true)   // last related object
-  hasOverdue   Boolean  @from(invoices, exists: true, where: "due_at < date('now') AND paid = 0")
+  id         Int      @id
+  name       String
+  orders     Order[]                                   // the relation @from reads
+  orderCount Int      @from(Order, count: true)
+  revenue    Float    @from(Order, sum: amount)
+  biggest    Float    @from(Order, max: amount)
+  lastOrder  Order?   @from(Order, last: true)         // the whole row, not a column
+  hasBig     Boolean  @from(Order, exists: true, where: "amount > 100")
+}
+
+model Order {
+  id        Int     @id
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id])
+  amount    Float
 }
 ```
 
-Derived fields are read-only — they appear in query results automatically. Supported aggregations: `count`, `sum`, `max`, `min`, `first`, `last`, `exists`. All accept an optional `where` SQL fragment for filtering.
+**The first argument is the target model name, PascalCase** — `@from(Order, …)`, not the relation
+field name; `@from(orders, …)` is *"unknown model 'orders'"*. **`first:`/`last:` return the whole
+related row**, so the field is typed as that model (`Order?`), not as one of its columns.
+
+Exactly one operation is required: `count: true` (field must be `Int`), `sum: field` /
+`max: field` / `min: field`, `first: true` / `last: true` (field typed as the target model),
+`exists: true` (field must be `Boolean`). Options are `where: "sql"` and `orderBy: field`
+(what `first`/`last` order by — defaults to `id`).
+
+Derived fields are read-only and appear in query results automatically. `sum` coalesces to `0`
+on an empty set while `max`/`min` stay `null`. The declared relation is what `@from` joins on,
+and a schema without one is a parse error naming the relation you need.
+
+See `docs/relations.md` for the full table.
 
 ---
 

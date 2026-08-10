@@ -1,0 +1,22 @@
+{
+  "name": "@orion/engine",
+  "version": "0.1.0",
+  "description": "Developer-first workflow automation engine — DAG execution, typed expressions, event-driven triggers",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/server.ts",
+    "start": "bun run src/server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/sql.js": "^1.4.9",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1"
+  }
+}

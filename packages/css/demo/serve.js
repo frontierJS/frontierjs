@@ -6,16 +6,48 @@
  * resolves fine over file://), but a server is what you want for
  * DevTools, responsive testing and a phone on the same network.
  *
- * Serves the package root, not demo/, because index.html links
- * ../src/index.css — the real stylesheet, not a copy. That is the whole point:
- * the demo cannot drift from the package.
+ * Serves a root ABOVE demo/, because index.html links ../src/index.css — the
+ * real stylesheet, not a copy. That is the whole point: the demo cannot drift
+ * from the package.
+ *
+ * Inside the monorepo the root is the workspace, not the package, because the
+ * guide imports glow from @frontierjs/utils by relative path. A browser clamps
+ * `..` at the origin, so serving only packages/css would 404 that request
+ * while the same page opened over file:// worked — the kind of split where
+ * the guide looks fine until someone runs the server.
  */
 
 import { file } from 'bun';
-import { join, normalize, extname } from 'node:path';
+import { join, normalize, extname, dirname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const pkgRoot = normalize(join(fileURLToPath(import.meta.url), '..', '..'));
+
+/* Walk up for the package.json that declares workspaces. Outside a checkout
+   — an installed copy — there is none, and the package root is the root. */
+function findWorkspaceRoot(from) {
+  let dir = from;
+  for (;;) {
+    const manifest = join(dir, 'package.json');
+    if (existsSync(manifest)) {
+      try {
+        if (JSON.parse(readFileSync(manifest, 'utf8')).workspaces) return dir;
+      } catch {
+        /* an unreadable manifest is not a workspace root; keep walking */
+      }
+    }
+    const up = dirname(dir);
+    if (up === dir) return null;
+    dir = up;
+  }
+}
+
+const root = findWorkspaceRoot(pkgRoot) || pkgRoot;
+/* Where packages/css sits inside whatever root we settled on, as a URL path. */
+const base = pkgRoot.slice(root.length).split(/[\\/]/).filter(Boolean).join('/');
+const prefix = base ? '/' + base : '';
+
 const port = Number(process.env.PORT || 5173);
 
 const TYPES = {
@@ -39,18 +71,21 @@ const server = Bun.serve({
      * stylesheet is not an error, just an unstyled page. Redirecting moves
      * the base URL too.
      */
-    if (path === '/') {
-      return Response.redirect('/demo/', 302);
+    if (path === '/' || path === '/demo' || path === '/demo/') {
+      return Response.redirect(`${prefix}/demo/`, 302);
     }
-    if (path === '/demo' || path === '/demo/') path = '/demo/index.html';
+    if (path === '/guide' || path === '/guide/') {
+      return Response.redirect(`${prefix}/guide/`, 302);
+    }
+    if (path.endsWith('/')) path += 'index.html';
 
     /*
-     * Contain the served path to the package root. `normalize` collapses
-     * any ../ before the check, so a request for /../../etc/passwd
-     * resolves and is then rejected for leaving the root.
+     * Contain the served path to the root. `normalize` collapses any ../
+     * before the check, so a request for /../../etc/passwd resolves and is
+     * then rejected for leaving the root.
      */
-    const target = normalize(join(pkgRoot, path));
-    if (!target.startsWith(pkgRoot)) {
+    const target = normalize(join(root, path));
+    if (!target.startsWith(root)) {
       return new Response('Forbidden', { status: 403 });
     }
 
@@ -69,6 +104,7 @@ const server = Bun.serve({
   },
 });
 
-console.log(`\n  @frontierjs/css demo → http://localhost:${server.port}\n`);
-console.log(`  serving ${pkgRoot}`);
+console.log(`\n  @frontierjs/css demo  → http://localhost:${server.port}${prefix}/demo/`);
+console.log(`  @frontierjs/css guide → http://localhost:${server.port}${prefix}/guide/\n`);
+console.log(`  serving ${root}`);
 console.log(`  ctrl-c to stop\n`);

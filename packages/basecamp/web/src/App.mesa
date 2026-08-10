@@ -20,6 +20,16 @@
 
     if (!session.user) return path === '/login/' ? undefined : '/login/'
     if (path === '/login/') return '/'
+
+    // The hub tier. `isSystemAdmin` reaches the browser on the SessionContext
+    // (core/session-auth.ts puts it there from the User column of the same
+    // name), so this is a redirect rather than a screen full of refusals.
+    //
+    // It is an affordance, not the boundary: the hub service answers 404 to
+    // anyone without the flag whatever the router does, which is what the
+    // refusal actually is. Deleting these two lines changes nothing about who
+    // can read another tenant.
+    if (path.startsWith('/hub/') && !session.user.isSystemAdmin) return '/'
   })
 </script>
 

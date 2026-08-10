@@ -1,0 +1,44 @@
+---
+title: Hub
+---
+<script>
+  // A layout, not a page. Every /hub/* route renders inside it, so the sub-nav
+  // and the one sentence explaining what this tier IS are written once.
+  //
+  // The tier is not a workspace role. Nothing in the switcher changes what is
+  // on these four screens: they read across every tenant, and the guard is
+  // `isSystemAdmin` on the User row — the same field sessionGateLevel() grades
+  // SYSADMIN(7) on, so this navigation and the @@gate that eventually replaces
+  // the service hook are asking one question.
+  import { page, isActive } from '@frontierjs/sierra/router'
+
+  $: page.route
+</script>
+
+<div class="section-header">
+  <h1>Platform hub</h1>
+  <span class="text-sm text-muted">every workspace</span>
+</div>
+
+<!--
+  .navlink, not .tabs — these are routes with their own URLs, so they are links
+  carrying aria-current="page". `.tabs` in this design system is a real ARIA tab
+  widget and borrowing its classes announces a widget that is not here. Same
+  reasoning as /admin/_module.mesa.
+
+  The leading `page.route` read in each expression is load-bearing: isActive()
+  reads it internally, but Mesa decides what an expression depends on from the
+  expression's own text, so without it the highlight never moves.
+-->
+<nav class="cluster" aria-label="Platform hub">
+  <a class="navlink" href="/hub/"
+     aria-current={(page.route, isActive('/hub/', { exact: true })) ? 'page' : null}>Overview</a>
+  <a class="navlink" href="/hub/workspaces/"
+     aria-current={(page.route, isActive('/hub/workspaces/')) ? 'page' : null}>Workspaces</a>
+  <a class="navlink" href="/hub/users/"
+     aria-current={(page.route, isActive('/hub/users/')) ? 'page' : null}>Users &amp; bots</a>
+  <a class="navlink" href="/hub/flags/"
+     aria-current={(page.route, isActive('/hub/flags/')) ? 'page' : null}>Flags</a>
+</nav>
+
+<slot />

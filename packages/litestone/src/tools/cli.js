@@ -2368,7 +2368,9 @@ async function cmdStudio(cfg) {
 // ─── JSON Schema ──────────────────────────────────────────────────────────────
 
 async function cmdTypes(outArg, cfg) {
-  header('litestone types')
+  // --stdout means the output is being piped into a file. The banner goes to
+  // stdout, so printing it first put "litestone types" at the top of the .d.ts.
+  if (!flag('stdout')) header('litestone types')
 
   const { generateTypeScript } = await import('./typegen.js')
   // statSync already imported at top level
@@ -2413,7 +2415,9 @@ async function cmdTypes(outArg, cfg) {
 }
 
 async function cmdJsonSchema(cfg) {
-  header('litestone jsonschema')
+  // Same trap as cmdTypes: `litestone jsonschema --stdout > schema.json` wrote
+  // the banner into the file, so the JSON did not parse.
+  if (!flag('stdout')) header('litestone jsonschema')
 
   const { generateJsonSchema } = await import('../jsonschema.js')
   const parseResult = loadSchema(cfg.schema)
@@ -2424,7 +2428,6 @@ async function cmdJsonSchema(cfg) {
   const toStdout          = flag('stdout')
   const includeTimestamps = flag('include-timestamps')
   const includeDeletedAt  = flag('include-deleted-at')
-  const includeComputed   = flag('include-computed')
   const allModes          = flag('all-modes')
 
   if (!['definitions','flat'].includes(format))
@@ -2433,7 +2436,10 @@ async function cmdJsonSchema(cfg) {
     fatal(`--mode must be "create", "update", or "full"`)
 
   const schemaName = resolve(cfg.schema).replace(/\.lite(stone)?$/, '')
-  const opts       = { format, includeTimestamps, includeDeletedAt, includeComputed }
+  // No includeComputed here on purpose: generateJsonSchema never read such an
+  // option, so the flag that used to be advertised did nothing. Computed,
+  // generated and @from fields are a property of mode:'full'.
+  const opts       = { format, includeTimestamps, includeDeletedAt }
 
   if (toStdout) {
     const schema = generateJsonSchema(parseResult.schema, { ...opts, mode })
@@ -2476,7 +2482,6 @@ async function cmdJsonSchema(cfg) {
   console.log(`  ${dim('--format=definitions|flat')}  ${dim('(default: definitions)')}`)
   console.log(`  ${dim('--include-timestamps')}       ${dim('include createdAt/updatedAt')}`)
   console.log(`  ${dim('--include-deleted-at')}       ${dim('include deletedAt')}`)
-  console.log(`    ${cyan('--include-computed')}         ${dim('include computed/generated fields')}`)
   console.log()
 }
 

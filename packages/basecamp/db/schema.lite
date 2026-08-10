@@ -89,7 +89,21 @@ enum AccountType    { individual organization }
 enum WorkspaceType  { personal team enterprise }
 enum WorkspaceRole  { viewer billing developer admin owner }
 enum UserKind       { human bot ai }
-enum SecretKind     { ssh_key provider_key registry_auth tls_cert generic }
+
+// Whether a principal or a tenant may act at all. Two enums rather than one
+// shared word, following the ServerStatus / AppStatus / JobStatus convention
+// already in this file: a status is a fact about ONE model, and the sets are
+// genuinely different — a workspace is never `pending_verification`.
+//
+// `suspended` is the value with teeth. It was a free `String` on User until
+// Phase 10, which meant nothing held the column and the word it wanted to hold
+// was one nothing enforced — the same shape that let AlertRule default to a
+// severity its own API refused. Enforcement is core/session-auth.ts (a
+// suspended user cannot sign in and their live tokens stop resolving) and
+// scopeToWorkspace (a suspended workspace refuses every scoped service).
+enum UserStatus      { pending_verification active suspended }
+enum WorkspaceStatus { active suspended }
+enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
 enum ServerStatus   { pending provisioning installing ready online unreachable draining stopped destroyed }
 enum ServerRole     { general build database gateway worker }
 enum EnvironmentTier { development test preview staging production }
@@ -99,7 +113,61 @@ enum DeployStatus   { pending building pushing deploying success failed cancelle
 enum StepStatus     { pending running success failed skipped }
 enum JobKind        { one_shot scheduled triggered workflow }
 enum JobStatus      { pending running failed cancelled }
-enum JobRunStatus   { pending running success failed timeout }
+// One run of anything a machine does on an operator's behalf — a job, a recipe
+// on a server, a reclaim sweep. Three models, one set of five states, because
+// three copies of the same five words drift apart one value at a time and the
+// screens then disagree about what "finished" looks like.
+enum RunStatus      { pending running success failed timeout }
+
+// Alert severity. Was `String @default("medium")` on both models — a default
+// the alerts service refused, because the vocabulary lived in the service and
+// the schema knew nothing about it. The schema is the seed: declaring it here
+// gives the column its CHECK, the API its validation and the UI its options,
+// from one place (2026-08-06).
+enum AlertSeverity  { info warning critical }
+
+// Where an alert is delivered. Each kind reads a different shape out of
+// NotificationChannel.config and a different credential out of its Secret —
+// which is why the kind is an enum and not a free string: the UI builds its
+// form from it, and a kind nothing can deliver is a channel that silently
+// never fires.
+enum ChannelKind    { slack pagerduty email webhook }
+
+// A flag is either on/off or one of several named variants. The distinction
+// decides what `variants` means and what an override may pin, so it is a
+// declared vocabulary rather than a boolean called `isExperiment`.
+enum FlagType       { boolean variant }
+
+// What a dashboard widget shows. A DECLARED VOCABULARY, not a stored query —
+// ruled 2026-08-10, `DECISIONS.md`.
+//
+// A widget kind names one read this app already answers, through the service
+// that owns it, so nothing is readable on a dashboard that was not readable on
+// its own screen. The alternative — a widget holding `{ accessor, where }` —
+// puts a read in a row and asks the server to run it for whoever opens the
+// page; a row travels and a policy does not.
+//
+// Being an enum is what makes the picker honest: the vocabulary reaches the
+// browser as a `$def` on the model's JSON Schema, the same path every other
+// enum here takes, so the Add-widget list cannot offer a kind the column would
+// refuse. Adding a kind is a migration, which is the cost of that.
+//
+// All nine read something real. What none of them can draw is a TREND:
+// nothing here stores a time series, so a heartbeat's CPU is the last reading
+// rather than a line, and `service_health` is a live ping with no latency
+// behind it. `alert_status` has rules and events but nothing evaluating a
+// threshold (`FJS-123`). Each of those three says so on the card.
+enum WidgetKind {
+  server_fleet
+  server_health
+  app_status
+  deploy_feed
+  job_history
+  activity_feed
+  alert_status
+  service_health
+  stat_counter
+}
 
 // ============================================================
 // IDENTITY — owned by @frontierjs/auth
@@ -136,12 +204,27 @@ model User {
   account        Account?  @relation(fields: [accountId], references: [id])
 
   // ── Basecamp additions ──
-  kind           UserKind  @default(human)
-  status         String    @default("pending_verification")
-  username       String?   @trim
-  displayName    String?   @trim
+  kind           UserKind   @default(human)
+  status         UserStatus @default(pending_verification)
+  username       String?    @trim
+  displayName    String?    @trim
   avatarUrl      String?
-  scopes         Json      @default("[]")
+  scopes         Json       @default("[]")
+
+  // The hub tier — who may read across workspaces and suspend a tenant.
+  //
+  // NOT `role` above. That column is auth's, it defaults to "user", and
+  // nothing in this app has ever read it; leaving the privileged bit there
+  // would mean the word that grants the hub and the word auth writes are the
+  // same column with two owners. The cost of a second column, accepted, is
+  // that two fields next to each other look like they mean privilege — this
+  // is the one this app enforces on, `role` is enforced nowhere.
+  //
+  // The NAME is load-bearing beyond this app: `isSystemAdmin` is what
+  // sessionGateLevel() grades SYSADMIN(7) on (junction core/litestone.ts), so
+  // the column that fills this screen is the one @@gate will read when
+  // FJS-007 lands. core/session-auth.ts is what puts it on the session.
+  isSystemAdmin  Boolean    @default(false)
 
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now()) @updatedAt
@@ -149,6 +232,7 @@ model User {
 
   memberships    WorkspaceMember[]
   deployments    Deployment[]
+  apiKeys        ApiKey[]
 
   @@softDelete
   @@log(audit)
@@ -241,6 +325,13 @@ model Workspace {
   ownerId   String
   settings  Json          @default("{}")
 
+  // Suspension, which is NOT deletion. `deletedAt` means the tenant is gone
+  // and @@softDelete(cascade) stamps every child with it; `suspended` means the
+  // rows stay, the servers keep running and nobody in the workspace can reach
+  // the API. Only the hub sets it, and scopeToWorkspace is where it bites — the
+  // one hook every workspace-scoped service already runs.
+  status    WorkspaceStatus @default(active)
+
   createdAt DateTime      @default(now())
   updatedAt DateTime      @default(now()) @updatedAt
   deletedAt DateTime?
@@ -249,8 +340,11 @@ model Workspace {
   projects    Project[]
   servers     Server[]
   secrets     Secret[]
+  apiKeys     ApiKey[]
   jobs        Job[]
   alertRules  AlertRule[]
+  channels    NotificationChannel[]
+  flags       FeatureFlag[]
   auditEvents AuditEvent[]
 
   @@softDelete(cascade)
@@ -310,6 +404,72 @@ model Secret {
   @@unique([workspaceId, name])
 }
 
+// A token Basecamp ISSUES — the third direction, and the one the two models
+// above do not cover. A Credential is how a person proves identity TO
+// Basecamp; a Secret is how Basecamp proves identity to a provider; an ApiKey
+// is how a machine acting FOR a person proves identity to Basecamp.
+//
+// The token itself is not here and is not anywhere in this app.
+// @frontierjs/auth holds an HMAC of it in a Credential row and is the only
+// thing that can verify one; this model owns the operational half — which
+// workspace, which scopes, when it was last used, whether it is revoked — so
+// that a key can be listed, audited and taken away without auth needing to
+// know what a workspace is.
+//
+// Which means a revoked key is a row whose credential is gone, and that is
+// deliberate: revoking must stop the token working immediately, and the row
+// has to survive so the operator can still see what was revoked and when.
+model ApiKey {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Whose permissions the key carries. A key is never more than its owner.
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // The auth Credential holding the HMAC. A bare id, no @relation — the same
+  // shape as Domain.certSecretId — because auth owns that table's lifecycle
+  // and revoking DELETES the row this points at. A foreign key would either
+  // block the revoke or cascade away the record of it.
+  credentialId String?
+
+  name         String    @trim @length(1, 200)
+
+  // The whole of what a list can show. Nothing in this app can reproduce the
+  // token, so the mock's `reveal` button is not a feature that was skipped —
+  // it is one that cannot exist without storing the token, which is the entire
+  // thing an API key is designed not to do.
+  tokenHint    String
+
+  scopes       String[]  @default("[]")
+
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  lastUsedAt   DateTime?
+  totalUses    Int       @default(0)
+
+  // "Uses today" is the number the screen leads with, and it needs somewhere
+  // to live: a counter plus the day it counts. Deriving it would mean a row
+  // per call, which is an access log — a different thing, with a different
+  // retention problem.
+  usageDate    String?
+  usesOnDate   Int       @default(0)
+
+  createdBy    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  // No @@softDelete. Revocation is this model's soft delete and it is a
+  // visible state, not a hidden row; delete means the operator is done looking
+  // at it. A second, invisible deleted state on top would make "revoked" and
+  // "gone" four combinations instead of two.
+  @@log(audit)
+  @@unique([workspaceId, name])
+  @@index([credentialId])
+  @@index([userId])
+}
+
 // ============================================================
 // SERVERS
 // ============================================================
@@ -351,6 +511,7 @@ model Server {
   deletedAt        DateTime?
 
   events           ServerEvent[]
+  volumes          Volume[]
   appServers       AppServer[]
   serverNetworks   ServerNetwork[]
 
@@ -372,6 +533,57 @@ model ServerEvent {
   metadata  Json     @default("{}")
   createdAt DateTime @default(now())
 
+  @@index([serverId])
+}
+
+// A persistent volume on a server. **Observed, not declared.**
+//
+// Every other model here is something a person created and Basecamp then acts
+// on. A volume is the other direction: Docker made it, the agent found it, and
+// this table is Basecamp's picture of what is out there. So there is no
+// `create` — a row appears because a server reported it, and disappears when a
+// report no longer mentions it.
+//
+// Which is also why deleting a row is not deleting a volume. The volume lives
+// on the server; removing the record would leave the disk exactly as full and
+// the fleet one row less honest. `volumes.remove` asks the agent, through
+// Conduit, and only then forgets the row.
+//
+// No `workspaceId`, for the reason ServerEvent has none: a volume is
+// meaningless without its server, and denormalising the tenancy fact onto it
+// would make two owners of one answer. Scope is the join — the same two
+// indexed queries `servers.feed` runs.
+model Volume {
+  id           String    @id @default(uuid())
+  serverId     String
+  server       Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  name         String    @trim @length(1, 255)
+  driver       String    @default("local")
+  mountPoint   String?
+
+  // Bytes, not gigabytes. The agent reports bytes, the screen decides whether
+  // that reads better as MB or GB, and a rounded number stored is a number
+  // nothing can un-round — `0.01 GB` in the mock is 10.7 MB.
+  sizeBytes    Int       @default(0)
+
+  // What the agent last saw mounting it. Container NAMES, not App ids: mapping
+  // a container back to an App is a guess, and a wrong join here would put a
+  // volume under the wrong app on the app screen.
+  inUse        Boolean   @default(false)
+  containers   String[]  @default("[]")
+
+  // Three different times, and they are not interchangeable. `createdOnServer`
+  // is Docker's, and is the only one that answers "how long has this been
+  // lying around"; `discoveredAt` is when this row appeared; `lastSeenAt` is
+  // how stale the picture is, which is the difference between "no volumes" and
+  // "no agent".
+  createdOnServer DateTime?
+  discoveredAt    DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+
+  @@log(audit)
+  @@unique([serverId, name])
   @@index([serverId])
 }
 
@@ -461,6 +673,7 @@ model Environment {
   apps        App[]
   deployments Deployment[]
   jobs        Job[]
+  flagOverrides FlagOverride[]
 
   @@softDelete(cascade)
   @@log(audit)
@@ -489,7 +702,6 @@ model App {
 
   source        Json        @default("{}")
   config        Json        @default("{}")
-  domain        String?
   port          Int?
   isPublic      Boolean     @default(false)
 
@@ -501,6 +713,7 @@ model App {
   jobs          Job[]
   appServers    AppServer[]
   appNetworks   AppNetwork[]
+  domains       Domain[]
 
   @@softDelete(cascade)
   @@log(audit)
@@ -508,6 +721,48 @@ model App {
   @@index([workspaceId])
   @@index([environmentId])
   @@index([status])
+}
+
+// A hostname the App answers on, and the certificate that terminates it.
+//
+// Replaces `App.domain`, which was one nullable string and could therefore
+// describe exactly one hostname with no certificate, no redirect and no
+// primary. An app with an apex and a www is the ordinary case.
+//
+// **The certificate MATERIAL is not here.** `certSecretId` points at a
+// `Secret` of kind `tls_cert`, whose `data` is `@encrypted` — so the private
+// key is written once, never read back, and never lands in a column a list
+// query returns. The columns here are the metadata an operator reads.
+//
+// `certStatus` is deliberately NOT a column: it is derived from
+// `certExpiresAt` on read, because a stored status and a stored expiry are two
+// owners of one fact and the stored one is the one that goes stale overnight.
+model Domain {
+  id            String    @id @default(uuid())
+  workspaceId   String
+  appId         String
+  app           App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  hostname      String    @trim @length(1, 253)
+  isPrimary     Boolean   @default(false)
+  redirectTo    String?
+  port          Int       @default(443)
+  proxied       Boolean   @default(false)
+  sslMode       String    @default("full_strict")
+
+  certSecretId  String?
+  certKind      String?
+  certIssuedAt  DateTime?
+  certExpiresAt DateTime?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+  deletedAt     DateTime?
+
+  @@softDelete
+  @@log(audit)
+  @@unique([workspaceId, hostname])
+  @@index([appId])
 }
 
 // Placement — which servers an App's replicas actually landed on.
@@ -646,7 +901,7 @@ model JobRun {
   jobId      String
   job        Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  status     JobRunStatus @default(pending)
+  status     RunStatus    @default(pending)
   trigger    String       @default("manual")
   startedAt  DateTime     @default(now())
   finishedAt DateTime?
@@ -661,8 +916,310 @@ model JobRun {
 }
 
 // ============================================================
+// FLEET ACTIONS — recipes and reclaim
+// ============================================================
+// Two ways to act on a machine, and they need opposite safeguards.
+//
+// A RECIPE is a stored shell script. The dashboards ruling — a saved view
+// names a declared KIND, never a stored query — does not transfer, and the
+// reason it does not is worth stating: a stored query is dangerous because the
+// Data boundary grades a CALLER against a MODEL, and a string cannot be
+// graded, so the row would be run at whoever opened it. A script is not run
+// here at all. It is handed to an agent and run on a machine, where there is
+// no model, no caller and no grade — it runs at whatever the agent has, every
+// time, for everyone. A vocabulary buys nothing against that.
+//
+// So the safeguard is the record instead. Authoring a recipe is an admin act,
+// running one is attributed, and every run keeps the script it actually ran
+// (`RecipeRun.script`) — because a recipe is editable, and output read against
+// a script that has since changed is not evidence.
+//
+// A CLEANUP is the other half: it never carries a command. It names targets
+// from a fixed list, so the destructive path on a machine is the one an
+// operator reaches for daily and the arbitrary path is the one they need a
+// role for.
+//
+// That list is NOT an enum here, and that is a limitation rather than a
+// preference: `targets ReclaimTarget[]` does not parse — *array [] is only
+// supported for Text, Integer, File, or a model name for many-to-many*. A
+// declared enum plus a `String[]` column would be two homes with no CHECK
+// joining them, which is exactly the shape that let `AlertRule.severity`
+// default to a value its own API refused. One home instead:
+// `api/src/services/cleanup/targets.ts`, which the API validates against and
+// the screen fetches rather than copies.
+
+model Recipe {
+  id             String     @id @default(uuid())
+  workspaceId    String
+  workspace      Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name           String     @trim @length(1, 120)
+  slug           String     @trim
+  description    String?    @length(0, 500)
+
+  // The script itself. Bounded so a paste cannot become a row nothing can
+  // render; the agent's own limits are stricter than anything declarable here.
+  script         String     @length(1, 20000)
+
+  // Per recipe, not per run: how long a script may take is a property of the
+  // script. The agent is told, and the run is stamped `timeout` if it exceeds.
+  timeoutSeconds Int        @default(300) @gte(5) @lte(3600)
+
+  // Bookkeeping the list reads, written by the engine. `runCount` is a counter
+  // rather than a COUNT(*) because the runs it counts are pruned and the
+  // number of times a script has been let loose on the fleet is not.
+  lastRunAt      DateTime?
+  runCount       Int        @default(0)
+
+  createdBy      String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @default(now()) @updatedAt
+  deletedAt      DateTime?
+
+  runs           RecipeRun[]
+
+  @@softDelete
+  @@log(audit)
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+// One row per SERVER, not per invocation. Running a recipe across the fleet is
+// N executions with N exit codes, and a single row for all of them has to pick
+// one status for "three succeeded and two failed" — which is the answer an
+// operator most needs and the one that shape cannot give.
+model RecipeRun {
+  id          String    @id @default(uuid())
+  recipeId    String
+  recipe      Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  serverId    String
+  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  status      RunStatus @default(pending)
+
+  // The script AS RUN, copied at dispatch. The recipe is editable; an output
+  // read against a script that has since changed is not evidence of anything.
+  script      String
+
+  requestedBy String?
+  exitCode    Int?
+  stdout      String?
+  stderr      String?
+  error       String?
+
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  durationMs  Int?
+  createdAt   DateTime  @default(now())
+
+  @@index([recipeId])
+  @@index([serverId])
+}
+
+// What the agent last saw about a machine's disk. OBSERVED, like Volume: a row
+// exists because a server reported it, and there is no way to author one.
+//
+// Two things a reclaim screen wants are deliberately absent, both because
+// something else already owns them:
+//
+//   Unused VOLUMES. `Volume` is one row per disk with its size and what mounts
+//   it, so a count here would be a second answer to a question already
+//   answered, and the two would disagree the first time a report was missed.
+//
+//   The last cleanup. `CleanupRun` records when a sweep ran and what it freed;
+//   a stamp here would go stale the first time one failed.
+// The columns are `docker system df`'s own: a size and a RECLAIMABLE figure per
+// category, because how much of an image store can go is a question about
+// shared layers that only Docker can answer. The mock multiplied a count by an
+// average and printed the result as a number of gigabytes; a made-up estimate
+// beside a real one is worse than no estimate, since nothing on screen says
+// which is which.
+//
+// There is no total column. It is the three reclaimable figures plus what
+// `Volume` says about unused disks, and a stored sum is a fourth number to keep
+// in step with three that already move.
+model DiskUsage {
+  id                         String   @id @default(uuid())
+  serverId                   String
+  server                     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  imagesTotal                Int      @default(0)
+  imagesUnused               Int      @default(0)
+  imagesDangling             Int      @default(0)
+  imageBytes                 Int      @default(0)
+  imagesReclaimableBytes     Int      @default(0)
+
+  containersRunning          Int      @default(0)
+  containersStopped          Int      @default(0)
+  containersReclaimableBytes Int      @default(0)
+
+  buildCacheBytes            Int      @default(0)
+  buildCacheReclaimableBytes Int      @default(0)
+
+  reportedAt                 DateTime @default(now())
+
+  @@unique([serverId])
+}
+
+// A reclaim sweep on ONE server — queued, then carried out by an agent.
+//
+// It is a record of what was actually freed, which is why it is a row rather
+// than a toast: "we cleaned the fleet last Tuesday" is the question a disk
+// filling up again asks, and nothing else here can answer it.
+model CleanupRun {
+  id          String    @id @default(uuid())
+  serverId    String
+  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  status      RunStatus @default(pending)
+
+  // The vocabulary is owned by api/src/services/cleanup/targets.ts — see the
+  // section note above for why it cannot be an enum here.
+  targets     String[]  @default("[]")
+
+  // How many images per repository survive an `unused_images` sweep. On the
+  // run rather than in a setting, because it is what THIS sweep did.
+  keepImages  Int       @default(3) @gte(0) @lte(50)
+
+  requestedBy String?
+
+  // What the agent said it freed, never what was estimated before it ran. The
+  // screen shows an estimate; only this is what happened.
+  freedBytes  Int       @default(0)
+  detail      Json      @default("{}")
+  error       String?
+
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  durationMs  Int?
+  createdAt   DateTime  @default(now())
+
+  @@log(audit)
+  @@index([serverId])
+}
+
+// ============================================================
+// FEATURE FLAGS
+// ============================================================
+
+// A flag is declared once for the workspace and OVERRIDDEN per environment.
+//
+// The mock keyed its per-environment state by tier name — `production`,
+// `staging`, `development` — which is a vocabulary that already exists here as
+// `model Environment`, one row per environment per project. Keying by the
+// string would have meant every project in the workspace sharing one
+// "production" that belongs to none of them, and no way to say "on in THIS
+// project's staging". `FlagOverride` points at the real row.
+//
+// The flag row therefore carries the DEFAULT — what an environment with no
+// override gets — and nothing else about rollout lives on it.
+model FeatureFlag {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // The name an SDK asks for. Slug-shaped because it is an identifier in
+  // somebody else's source code, not a title: `new-checkout-flow`.
+  key         String    @trim @slug @length(1, 120)
+  description String?
+  type        FlagType  @default(boolean)
+  tags        String[]  @default("[]")
+
+  // Only meaningful for type=variant: [{ key, name, weight }]. Left as Json
+  // rather than a model because a variant has no identity outside its flag —
+  // nothing references one, and the whole set is rewritten as a unit.
+  variants    Json      @default("[]")
+
+  isEnabled   Boolean   @default(false)
+  rollout     Int       @default(0) @gte(0) @lte(100)
+
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  overrides   FlagOverride[]
+
+  @@softDelete
+  @@log(audit)
+  @@unique([workspaceId, key])
+  @@index([workspaceId])
+}
+
+model FlagOverride {
+  id            String      @id @default(uuid())
+  flagId        String
+  flag          FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  environmentId String
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  isEnabled     Boolean     @default(false)
+  rollout       Int         @default(0) @gte(0) @lte(100)
+  // Which variant this environment is pinned to, for a type=variant flag. Null
+  // means "weighted as declared" rather than "off".
+  variantKey    String?
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @default(now()) @updatedAt
+
+  @@log(audit)
+  @@unique([flagId, environmentId])
+  @@index([environmentId])
+}
+
+// ============================================================
 // ALERTS
 // ============================================================
+
+// Where alerts are delivered — Slack, PagerDuty, email, a webhook.
+//
+// Two things are deliberately NOT columns here:
+//
+//   The credential. A Slack webhook URL and a PagerDuty integration key are
+//   both bearer credentials — anyone holding one can post as the workspace —
+//   so they live in a `Secret` (`@encrypted`, written once, never read back)
+//   and this model keeps only the reference. Same ruling as Domain's
+//   certificate material. `config` therefore holds routing only: the channel
+//   override, the recipient list, the HTTP method. Nothing in it is a secret,
+//   which is why the whole column comes back on a read.
+//
+//   How many alerts went out today. The mock shows a per-channel count, and a
+//   counter on this row would be a second owner of a fact that belongs to the
+//   deliveries — which do not exist yet, because delivery needs an outbound
+//   adapter this app does not have. `lastTestAt` and `lastDeliveryAt` are
+//   stamps of things that actually happened; a count with no rows behind it
+//   would be a number nothing could reconcile.
+model NotificationChannel {
+  id          String      @id @default(uuid())
+  workspaceId String
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String      @trim @length(1, 200)
+  kind        ChannelKind
+  config      Json        @default("{}")
+
+  // Bare id, no @relation — the same shape as Domain.certSecretId. Secret is
+  // @@softDelete, so the row a channel points at is never actually removed,
+  // and a channel whose secret was retired should say so rather than vanish
+  // with it.
+  secretId    String?
+
+  isActive    Boolean     @default(true)
+  lastTestAt      DateTime?
+  lastDeliveryAt  DateTime?
+  createdBy   String?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  rules       AlertRuleChannel[]
+
+  @@softDelete
+  @@log(audit)
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
 
 model AlertRule {
   id          String    @id @default(uuid())
@@ -671,19 +1228,39 @@ model AlertRule {
 
   name        String    @trim @length(1, 200)
   description String?
-  severity    String    @default("medium")
+  severity    AlertSeverity @default(warning)
   metricName  String
   condition   Json      @default("{}")
-  channels    Json      @default("[]")
   isActive    Boolean   @default(true)
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
 
   events      AlertEvent[]
+  channels    AlertRuleChannel[]
 
   @@log(audit)
   @@index([workspaceId])
+}
+
+// Which channels a rule delivers to.
+//
+// Was `AlertRule.channels Json @default("[]")` — an array of ids pointing at
+// rows that did not exist, because NotificationChannel did not exist. A foreign
+// key with no constraint and no reader: nothing could tell a live channel id
+// from a typo, and deleting a channel left every rule holding it silently
+// pointing at nothing. The join is the constraint.
+model AlertRuleChannel {
+  id        String              @id @default(uuid())
+  ruleId    String
+  rule      AlertRule           @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  channelId String
+  channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime            @default(now())
+
+  @@unique([ruleId, channelId])
+  @@index([channelId])
 }
 
 // Fired by the system; acknowledged by a person — hence the split gate.
@@ -692,8 +1269,8 @@ model AlertEvent {
   ruleId         String
   rule           AlertRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
-  status         String     @default("firing")
-  severity       String
+  status         String        @default("firing")
+  severity       AlertSeverity
   subjectType    String
   subjectId      String
   valueAtTrigger Float      @default(0)
@@ -705,6 +1282,94 @@ model AlertEvent {
 
   @@index([ruleId])
   @@index([status])
+}
+
+// ============================================================
+// DASHBOARDS
+// ============================================================
+// A dashboard is a saved arrangement of widgets over data this app already
+// has. Two things are deliberately NOT here:
+//
+//   A query. A widget names a KIND, and the kind decides what is read — see
+//   WidgetKind above. Storing a query would put the read in a row: the row
+//   travels (it is seeded, exported, shared across a workspace) and the policy
+//   does not, so whoever opened the dashboard would run a query nobody graded.
+//   @@gate and @@allow grade a caller against a model, never against a string.
+//
+//   A colour. The mock stores a hex per dashboard; @frontierjs/css styles by
+//   tone, and a stored colour is one the theme cannot follow. The icon is an
+//   emoji, which is content rather than styling.
+
+model Dashboard {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String    @trim @length(1, 120)
+  slug        String    @trim
+  description String?
+
+  // An emoji, so it is stored as text with a length bound rather than as a
+  // name from an icon set this app does not ship.
+  icon        String?   @length(0, 8)
+
+  // The WORKSPACE's pin, not the reader's. A per-person pin needs a per-person
+  // preferences store, which is the model UserSettingsView is waiting on; one
+  // boolean here would be a shared switch that reads as a personal one.
+  isPinned    Boolean   @default(false)
+
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  deletedAt   DateTime?
+
+  widgets     DashboardWidget[]
+
+  @@softDelete
+  @@log(audit)
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model DashboardWidget {
+  id          String     @id @default(uuid())
+  dashboardId String
+  dashboard   Dashboard  @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  kind        WidgetKind
+
+  // The subject, as a real relation rather than an id inside `config`. Same
+  // ruling AlertRule.channels got: a Json array pointing at rows no model
+  // declares is a reference nothing can follow and nothing can clean up.
+  // Which subject a kind takes — and whether it is required — is declared once
+  // in api/src/services/dashboards/kinds.ts, and a data test holds the two
+  // together.
+  //
+  // SetNull rather than Cascade: a widget whose server is gone is a widget
+  // that says so, not a widget that disappears with the machine. It is only
+  // the hard-delete path — Server and App are @@softDelete, so the common case
+  // is a row still present and excluded from every read, which the screen
+  // resolves the same way.
+  serverId    String?
+  server      Server?    @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  appId       String?
+  app         App?       @relation(fields: [appId], references: [id], onDelete: SetNull)
+
+  // Knobs, never a query: a portal service id, a stat_counter's source and
+  // label. The keys each kind accepts are declared in kinds.ts and everything
+  // else is rejected at the boundary.
+  config      Json       @default("{}")
+
+  // Thirds of a row, which is the grid the detail screen lays out. Bounded
+  // here so the column cannot hold a width no layout has.
+  cols        Int        @default(1) @gte(1) @lte(3)
+  position    Int        @default(0)
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+
+  @@log(audit)
+  @@index([dashboardId])
 }
 
 // ============================================================

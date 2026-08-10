@@ -3,7 +3,7 @@ title: New project
 ---
 <script>
   import { goto } from '@frontierjs/sierra/router'
-  import { projects } from '../../resources/projects.mesa'
+  import { projects } from '../../resources/Project.mesa'
   import { ResourceValidationError } from '@frontierjs/sierra/junction'
 
   // make() builds the record from the SCHEMA's defaults — status 'active',

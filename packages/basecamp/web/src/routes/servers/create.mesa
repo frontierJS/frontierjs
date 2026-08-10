@@ -3,7 +3,7 @@ title: Add server
 ---
 <script>
   import { goto } from '@frontierjs/sierra/router'
-  import { servers } from '../../resources/servers.mesa'
+  import { servers } from '../../resources/Server.mesa'
   import { ResourceValidationError } from '@frontierjs/sierra/junction'
 
   // Importing an existing machine, not provisioning a new one — Basecamp's

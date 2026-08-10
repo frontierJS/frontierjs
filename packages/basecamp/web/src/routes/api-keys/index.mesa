@@ -1,0 +1,312 @@
+---
+title: API keys
+---
+<script>
+  // The mock's ApiKeysView + CreateApiKeyModal, with one deliberate absence.
+  //
+  // **There is no `reveal` button.** The mock has one, and it works there
+  // because the token is a string in a React array. Here nothing holds it:
+  // @frontierjs/auth keeps an HMAC and this app keeps a hint. The token is on
+  // screen exactly once — in the panel below, in the response to the call that
+  // minted it — and a page reload loses it for good. Building the mock's
+  // button would mean storing the token, which is the one thing an API key
+  // exists not to do.
+  //
+  // The scope list is NOT a copy of the server's. It is fetched from the
+  // `scopes` action, which derives it from the service registry — so a service
+  // added tomorrow is grantable tomorrow, and a checkbox can never offer a
+  // scope the guard does not recognise.
+  import { session } from '../../session.js'
+  import { apiKeys } from '../../resources/ApiKey.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Form       from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Mono       from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows     = []
+  let scopes   = []
+  let expiries = []
+  let error    = null
+  let loading  = true
+  let busy     = null
+  let creating = false
+  let filter   = 'all'
+  let picked   = []
+  let expiry   = 'never'
+  let minted   = null
+  let draft    = apiKeys.make()
+
+  // The kit's controls take a value and hand back an event; they are NOT bound
+  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
+  // let and a member expression is not one. Replacing the object rather than
+  // mutating it is what makes the change reactive.
+  function write(name, value) {
+    draft = { ...draft, [name]: value }
+  }
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const query = filter === 'all' ? {} : { status: filter }
+      rows = (await apiKeys.service.find(query, { limit: 200 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  async function loadScopes() {
+    try {
+      // Collection-level: no id. The vocabulary is a fact about the server,
+      // not about one key.
+      const answer = await apiKeys.service.action('scopes', null, {}, {})
+      scopes   = answer.scopes ?? []
+      expiries = answer.expiry ?? []
+    } catch (e) {
+      // A screen that cannot list scopes cannot mint a key, and saying so is
+      // better than rendering an empty checkbox list that looks like "none".
+      error = `Could not load the scope list — ${e.message}`
+    }
+  }
+
+  load()
+  loadScopes()
+  $: session.workspaceId, () => { load(); loadScopes() }
+
+  const READS = new Set(['get', 'find'])
+  const off = apiKeys.service.on('*', (method, row) => {
+    if (READS.has(method) || !row?.id) return
+    load()
+  })
+  $onDestroy(off)
+
+  function toggleScope(id, on) {
+    picked = on ? [...new Set([...picked, id])] : picked.filter(s => s !== id)
+  }
+
+  async function create(data) {
+    error = null
+    try {
+      const created = await apiKeys.service.create({ ...data, scopes: picked, expiresIn: expiry })
+      // The one moment this value exists here. Held in a variable, never in
+      // the row list — a re-fetch would wipe it, and it must survive one.
+      minted   = created
+      creating = false
+      picked   = []
+      expiry   = 'never'
+      draft    = apiKeys.make()
+      await load()
+    } catch (e) {
+      error = e.message
+      throw e
+    }
+  }
+
+  async function revoke(key) {
+    error = null; busy = key.id
+    try {
+      await apiKeys.service.action('revoke', key.id)
+      toasts.success(`${key.name} revoked`, 'It stops working on the next request.')
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove(key) {
+    error = null; busy = key.id
+    try {
+      await apiKeys.service.remove(key.id)
+      toasts.success(`${key.name} deleted`)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // Grouped for the picker the way the server groups them: by the service the
+  // scope names. `admin` is its own group and reads as the exception it is.
+  $: groups = Object.entries(
+    scopes.reduce((acc, s) => ({ ...acc, [s.group]: [...(acc[s.group] ?? []), s] }), {})
+  )
+
+  $: active   = rows.filter(r => r.status === 'active')
+  $: revoked  = rows.filter(r => r.status === 'revoked')
+  $: usesToday = rows.reduce((n, r) => n + (r.usesOnDate ?? 0), 0)
+  $: distinct  = new Set(rows.flatMap(r => r.scopes ?? [])).size
+
+  const when = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
+  const TONE = { active: 'success', expired: 'warning', revoked: 'muted' }
+</script>
+
+<div class="section-header">
+  <h1>API keys</h1>
+  <Button variant="primary" id="new-key" onclick={() => creating = !creating}>
+    {creating ? 'Cancel' : 'New key'}
+  </Button>
+</div>
+
+<div class="tiles" id="key-stats">
+  <StatCard label="Active"      value={active.length}  sub="can authenticate" tone="success" />
+  <StatCard label="Revoked"     value={revoked.length} sub="access removed" />
+  <StatCard label="Uses today"  value={usesToday}      sub="authenticated calls" />
+  <StatCard label="Scopes used" value={distinct}       sub="distinct, across all keys" />
+</div>
+
+<Callout tone="info" title="A key carries its owner's permissions">
+  Every key here belongs to the person who created it and can do no more than they can.
+  There are no bot accounts yet, so a key in a CI pipeline is a person's access running
+  unattended — scope it down to what the pipeline actually needs.
+</Callout>
+
+{#if error}
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if minted}
+  <Card>
+    <article class="alert warning" id="minted-key">
+      <div class="alert-content">
+        <strong>Copy this token now.</strong>
+        It is shown once. Nothing in Basecamp can read it back — if you lose it,
+        revoke this key and issue another.
+      </div>
+    </article>
+    <div class="cluster">
+      <!-- The id is on a wrapper, not on <Mono>. A kit display component
+           forwards `class` and drops `id` — all 22 of them, FJS-137 — so a
+           harness cannot address one, and the failure is a selector that finds
+           nothing rather than an error. -->
+      <span id="minted-token"><Mono>{minted.token}</Mono></span>
+      <CopyButton text={minted.token} label="Copy" />
+    </div>
+    <p class="text-sm text-muted">
+      {minted.name} · {(minted.scopes ?? []).join(', ')} ·
+      {minted.expiresAt ? `expires ${when(minted.expiresAt)}` : 'no expiry'}
+    </p>
+    <Button id="minted-done" onclick={() => minted = null}>Done — I have saved it</Button>
+  </Card>
+{/if}
+
+{#if creating}
+  <Card>
+    <Form resource={apiKeys} bind:record={draft} onsubmit={create}>
+      <Input name="name" id="name" value={draft.name}
+             hint="What uses this key — 'GitHub Actions deploy', not 'key 2'."
+             oninput={(e) => write('name', e.target.value)} />
+
+      <label class="field-label" for="key-expiry">Expiration</label>
+      <Select id="key-expiry" value={expiry} options={expiries}
+              onchange={(e) => expiry = e.target.value} />
+
+      <fieldset>
+        <legend>Scopes</legend>
+        <p class="field-hint">
+          A key with no scopes is refused. Read is <code>find</code> and <code>get</code>;
+          everything else — including actions like drain and deploy — is write.
+        </p>
+        <div id="scope-picker" class="stack">
+          {#each groups as [group, items]}
+            <div class="stack" style:gap="0.25rem">
+              <span class="text-2xs text-muted">{group}</span>
+              {#each items as s}
+                <Checkbox id={`scope-${s.id.replace(':', '-')}`}
+                          label={s.id} description={s.label}
+                          checked={picked.includes(s.id)}
+                          onchange={(on) => toggleScope(s.id, on)} />
+              {/each}
+            </div>
+          {/each}
+        </div>
+      </fieldset>
+
+      <Button type="submit" variant="primary" id="issue-key">Generate key</Button>
+    </Form>
+  </Card>
+{/if}
+
+<div class="cluster">
+  <label class="visually-hidden" for="key-status">Filter by status</label>
+  <Select id="key-status" value={filter}
+          options={['all', 'active', 'expired', 'revoked']}
+          onchange={(e) => { filter = e.target.value; load() }} />
+</div>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No API keys">
+    Nothing in this workspace authenticates as a machine yet.
+  </EmptyState>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped hover">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Token</th>
+          <th scope="col">Scopes</th>
+          <th scope="col">Used</th>
+          <th scope="col">Expires</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="key-rows">
+        {#each rows as k}
+          <tr>
+            <td>
+              <div class="cluster">
+                <span>{k.name}</span>
+                <Badge tone={TONE[k.status] ?? 'muted'}>{k.status}</Badge>
+              </div>
+            </td>
+            <td><Mono>{k.tokenHint}</Mono></td>
+            <td>
+              <div class="cluster">
+                {#each (k.scopes ?? []) as s}<Pill>{s}</Pill>{/each}
+              </div>
+            </td>
+            <td class="text-sm text-muted">
+              {k.totalUses ?? 0} total · {k.lastUsedAt ? when(k.lastUsedAt) : 'never'}
+            </td>
+            <td class="text-sm text-muted">{k.expiresAt ? when(k.expiresAt) : 'never'}</td>
+            <td>
+              <div class="cluster">
+                {#if k.status === 'active'}
+                  <Button variant="ghost" disabled={busy === k.id}
+                          aria-label={`Revoke ${k.name}`} onclick={() => revoke(k)}>Revoke</Button>
+                {/if}
+                <Button variant="ghost" disabled={busy === k.id}
+                        aria-label={`Delete ${k.name}`} onclick={() => remove(k)}>Delete</Button>
+              </div>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

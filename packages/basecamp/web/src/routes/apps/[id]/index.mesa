@@ -1,0 +1,397 @@
+---
+title: App
+---
+<script>
+  // The mock's AppDetailView — 820 lines and the largest single gap in the
+  // inventory, because until now an App had no screen of its own at all: you
+  // could create one from an Environment and then never look at it again.
+  //
+  // The mock has seven tabs (http, configs, deploy, build, logs, log-analysis,
+  // advanced). Four of them are backed by something real and are here. The
+  // other three are named at the bottom of this file as gaps rather than
+  // rendered as empty boxes — a tab that always says "no data" reads as a
+  // broken screen, not as an honest one.
+  //
+  // One request feeds the whole page: `apps.get` returns the app with its
+  // environment, its domains, where its replicas landed, its last ten releases
+  // and its jobs. The alternative was five round trips for one question.
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { apps } from '../../../resources/App.mesa'
+  import { domains } from '../../../resources/Domain.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Form       from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: page.params
+
+  let app     = null
+  let error   = null
+  let loading = true
+  let busy    = null
+  let tab     = 'overview'
+  let adding  = false
+  let certFor = null                 // domain id whose upload form is open
+  let draft     = domains.make()
+  let certDraft = { certPem: '', keyPem: '', expiresAt: '' }
+
+  function write(name, value) { draft = { ...draft, [name]: value } }
+  function writeCert(name, value) { certDraft = { ...certDraft, [name]: value } }
+
+  async function load() {
+    error = null
+    try {
+      app = await apps.service.get(page.params.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: page.params.id, () => load()
+
+  // Live. A deployment finishing, or somebody adding a hostname in another tab,
+  // changes this page without anyone touching it. Reads are filtered out or the
+  // handler answers its own refetch, forever.
+  const READS = new Set(['get', 'find'])
+  const offApps = apps.service.on('*', (method, row) => {
+    if (READS.has(method) || row?.id !== page.params.id) return
+    load()
+  })
+  // A domain write names the DOMAIN, not the app, so this one reloads whenever
+  // the changed row belongs to the app on screen.
+  const offDomains = domains.service.on('*', (method, row) => {
+    if (READS.has(method) || row?.appId !== page.params.id) return
+    load()
+  })
+  $onDestroy(() => { offApps(); offDomains() })
+
+  async function addDomain() {
+    error = null; busy = 'domain'
+    try {
+      await domains.service.create({ ...draft, appId: app.id })
+      toasts.success(`${draft.hostname} added`)
+      draft = domains.make()
+      adding = false
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function makePrimary(domain) {
+    error = null; busy = domain.id
+    try {
+      await domains.service.action('makePrimary', domain.id)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function removeDomain(domain) {
+    error = null; busy = domain.id
+    try {
+      await domains.service.remove(domain.id)
+      await load()
+    } catch (e) {
+      // 'That is the primary hostname — make another one primary first' lands
+      // here. The button is not disabled: the refusal is the service's to make.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function uploadCert(domain) {
+    error = null; busy = domain.id
+    try {
+      await domains.service.action('uploadCert', domain.id, certDraft)
+      toasts.success(`Certificate stored for ${domain.hostname}`)
+      certDraft = { certPem: '', keyPem: '', expiresAt: '' }
+      certFor = null
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const STATUS_TONE = {
+    running: 'success', deploying: 'info', starting: 'info',
+    error: 'danger', stopped: 'muted', unknown: 'muted', stopping: 'warning',
+  }
+  const CERT_TONE = {
+    active: 'success', expiring_soon: 'warning', expired: 'danger', none: 'muted',
+  }
+  const DEPLOY_TONE = {
+    success: 'success', failed: 'danger', rolled_back: 'warning', cancelled: 'muted',
+  }
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+
+  // Only the tabs with something behind them. See the note at the foot.
+  const TABS = ['overview', 'domains', 'config', 'releases']
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if app}
+  <nav aria-label="Breadcrumb" class="cluster">
+    <a class="navlink" href={`/environments/${app.environmentId}/`}>← {app.environment?.name ?? 'Environment'}</a>
+  </nav>
+
+  <div class="section-header">
+    <h1>{app.name}</h1>
+    <span class="cluster">
+      <Pill tone={STATUS_TONE[app.status] ?? 'muted'} id="app-status">{app.status}</Pill>
+      <Badge tone="muted">{app.type}</Badge>
+      {#if app.isPublic}<Badge tone="info">public</Badge>{/if}
+    </span>
+  </div>
+
+  <!-- Tabs as buttons with aria-selected, not links: they are one screen's
+       panels rather than four routes, and a screen reader is told which is
+       current by the attribute the stylesheet already keys off. -->
+  <div class="cluster" role="tablist" aria-label="App sections" id="app-tabs">
+    {#each TABS as t}
+      <Button variant={tab === t ? 'outlined' : 'ghost'} role="tab"
+              aria-selected={tab === t ? 'true' : 'false'}
+              onclick={() => tab = t}>{t}</Button>
+    {/each}
+  </div>
+
+  {#if tab === 'overview'}
+    <div class="tiles" style="--tile-min: 15rem" id="app-overview">
+      <Card>
+        <h2 class="h4">Placement</h2>
+        <p class="text-sm text-muted">Where the replicas actually landed — written by the deployment engine, never by a person.</p>
+        {#if app.placement?.length}
+          <ul class="stack">
+            {#each app.placement as p}
+              <li class="cluster">
+                <a href={`/servers/${p.serverId}/`}>{p.server?.name ?? p.serverId}</a>
+                <Badge tone="muted">replica {p.replicaIndex}</Badge>
+                <Pill>{p.status}</Pill>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="text-sm text-muted">Not placed on any server yet.</p>
+        {/if}
+      </Card>
+
+      <Card>
+        <h2 class="h4">Serving</h2>
+        <dl class="facts">
+          <dt>Port</dt><dd><code>{app.port ?? 'not set'}</code></dd>
+          <dt>Primary hostname</dt>
+          <dd><code>{app.domains?.find(d => d.isPrimary)?.hostname ?? 'none'}</code></dd>
+          <dt>Environment</dt>
+          <dd><a href={`/environments/${app.environmentId}/`}>{app.environment?.name ?? '—'}</a></dd>
+        </dl>
+      </Card>
+
+      <Card>
+        <h2 class="h4">Scheduled work</h2>
+        {#if app.jobs?.length}
+          <ul class="stack">
+            {#each app.jobs as j}
+              <li class="cluster">
+                <a href={`/jobs/${j.id}/`}>{j.name}</a>
+                <Pill>{j.status}</Pill>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="text-sm text-muted">No jobs belong to this app.</p>
+        {/if}
+      </Card>
+    </div>
+  {/if}
+
+  {#if tab === 'domains'}
+    <div class="section-header">
+      <h2 class="h4">Domains &amp; SSL</h2>
+      <Button variant="primary" id="add-domain" onclick={() => adding = !adding}>
+        {adding ? 'Cancel' : 'Add hostname'}
+      </Button>
+    </div>
+
+    <Callout tone="info" title="The private key is written once">
+      A certificate uploaded here is stored as a <a href="/secrets/">Secret</a> whose value is
+      encrypted at rest and never returned by the API. What stays on the domain is the metadata
+      an operator reads — and its status is derived from the expiry, not stored beside it.
+    </Callout>
+
+    {#if adding}
+      <Card>
+        <Form resource={domains} bind:record={draft} onsubmit={addDomain}>
+          <Input name="hostname" id="hostname" value={draft.hostname}
+                 oninput={(e) => write('hostname', e.target.value)} />
+          <Input name="redirectTo" id="redirectTo" label="Redirect to (optional)"
+                 value={draft.redirectTo} oninput={(e) => write('redirectTo', e.target.value)} />
+          <Button type="submit" variant="primary" disabled={busy === 'domain'}>Add hostname</Button>
+        </Form>
+      </Card>
+    {/if}
+
+    {#if !app.domains?.length}
+      <EmptyState title="No hostnames">
+        This app answers on no domain yet. The first one added becomes the primary.
+      </EmptyState>
+    {:else}
+      <div class="stack" id="domain-list">
+        {#each app.domains as d}
+          <Card>
+            <div class="section-header">
+              <h3 class="h4"><code>{d.hostname}</code></h3>
+              <span class="cluster">
+                {#if d.isPrimary}<Badge tone="success">primary</Badge>{/if}
+                <Pill tone={CERT_TONE[d.cert_status] ?? 'muted'}>{d.cert_status ?? 'none'}</Pill>
+              </span>
+            </div>
+
+            <dl class="facts">
+              <dt>Port</dt><dd><code>{d.port}</code></dd>
+              {#if d.redirectTo}
+                <dt>Redirects to</dt><dd><code>{d.redirectTo}</code></dd>
+              {/if}
+              <dt>Certificate expires</dt>
+              <dd>
+                {when(d.certExpiresAt)}
+                {#if d.cert_days_remaining !== null && d.cert_days_remaining !== undefined}
+                  <span class="text-sm text-muted">({d.cert_days_remaining} days)</span>
+                {/if}
+              </dd>
+            </dl>
+
+            {#if certFor === d.id}
+              <Card>
+                <!-- Fixed ids, not per-domain ones: only one upload form is
+                     open at a time (`certFor === d.id`), so they stay unique in
+                     the document and a caller can address them by name. -->
+                <Textarea id="certPem" name="certPem" label="Certificate (PEM)" rows="3"
+                          value={certDraft.certPem} oninput={(e) => writeCert('certPem', e.target.value)} />
+                <Textarea id="keyPem" name="keyPem" label="Private key (PEM)" rows="3"
+                          value={certDraft.keyPem} oninput={(e) => writeCert('keyPem', e.target.value)} />
+                <Input id="expiresAt" name="expiresAt" label="Expires at"
+                       value={certDraft.expiresAt} oninput={(e) => writeCert('expiresAt', e.target.value)} />
+                <div class="cluster">
+                  <Button variant="primary" disabled={busy === d.id} onclick={() => uploadCert(d)}>Store certificate</Button>
+                  <Button variant="ghost" onclick={() => certFor = null}>Cancel</Button>
+                </div>
+              </Card>
+            {:else}
+              <div class="cluster">
+                <Button variant="outlined" onclick={() => certFor = d.id}>
+                  {d.cert_status === 'none' ? 'Upload certificate' : 'Replace certificate'}
+                </Button>
+                {#if !d.isPrimary}
+                  <Button variant="ghost" disabled={busy === d.id} onclick={() => makePrimary(d)}>Make primary</Button>
+                {/if}
+                <Button variant="ghost" disabled={busy === d.id}
+                        aria-label={`Delete ${d.hostname}`} onclick={() => removeDomain(d)}>Delete</Button>
+              </div>
+            {/if}
+          </Card>
+        {/each}
+      </div>
+    {/if}
+  {/if}
+
+  {#if tab === 'config'}
+    <Card>
+      <h2 class="h4">Source</h2>
+      <p class="text-sm text-muted">What gets built and run. Written by whatever triggers the release.</p>
+      <pre class="code" id="app-source">{JSON.stringify(app.source ?? {}, null, 2)}</pre>
+    </Card>
+
+    <Card>
+      <h2 class="h4">Config</h2>
+      <pre class="code" id="app-config">{JSON.stringify(app.config ?? {}, null, 2)}</pre>
+    </Card>
+
+    <Callout tone="info" title="Environment variables live on the Environment">
+      The mock puts them on the app. Here they are
+      <a href={`/environments/${app.environmentId}/`}>the environment's</a>, shared by every app in
+      it — the schema has no per-app override, so this screen does not pretend to offer one.
+    </Callout>
+  {/if}
+
+  {#if tab === 'releases'}
+    {#if !app.recent_deployments?.length}
+      <EmptyState title="Never released">This app has no deployment history.</EmptyState>
+    {:else}
+      <div class="table-wrap">
+        <table class="table striped hover">
+          <thead>
+            <tr>
+              <th scope="col">Queued</th>
+              <th scope="col">Status</th>
+              <th scope="col">Commit</th>
+              <th scope="col">Trigger</th>
+            </tr>
+          </thead>
+          <tbody id="app-releases">
+            {#each app.recent_deployments as d}
+              <tr>
+                <td class="text-sm text-muted">{when(d.queuedAt)}</td>
+                <td><a href={`/deployments/${d.id}/`}><Pill tone={DEPLOY_TONE[d.status] ?? 'info'}>{d.status}</Pill></a></td>
+                <td><code>{d.commitSha?.slice(0, 7) ?? '—'}</code></td>
+                <td class="text-sm text-muted">{d.trigger}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  {/if}
+{:else}
+  <!--
+    A screen whose record is gone still needs a heading. Without this branch the
+    page rendered the error alert and NOTHING else — no `<h1>`, so a screen
+    reader landed on a document with no heading at all and the only statement of
+    what had happened was styled as a decoration. Reached in the ordinary way: a
+    deleted project cascades to its apps, and any bookmark or back button then
+    lands here.
+  -->
+  <div class="section-header"><h1>App not found</h1></div>
+  <p class="text-sm text-muted">
+    It may have been deleted, or it belongs to another workspace.
+    <a class="navlink" href="/projects/">Back to projects</a>
+  </p>
+{/if}
+
+<!--
+  The mock's other three tabs, and why they are not here:
+
+    logs / log-analysis — nothing stores or streams a log line. That is an
+      observability adapter (docs/SCREENS.md § D), not a screen.
+    build — build output and history need a build record; `Deployment` carries
+      `builtImage` and no log, so "Build history" would be the releases table
+      under a second name.
+    advanced — restart policy, health check and the nginx template are all
+      config the schema does not describe. They would be `App.config` keys, and
+      inventing the key names here would make this screen their only definition.
+-->

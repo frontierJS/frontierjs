@@ -112,14 +112,13 @@ model Lead {              // PascalCase, singular — always. Accessor: db.lead
 // api/server.ts — Data → API connection
 
 const db         = await createClient({          // one options object, never positional
-  db:      './db/app.db',
   schema:  './db/schema.lite',
   plugins: [gatePlugin],
 })
 const jsonSchema = generateJsonSchema(db.$schema)
 
 app.services.register(createService({
-  name:    'leads',      // the URL: /api/leads
+  name:    'leads',      // the URL: /leads
   model:   'lead',       // the accessor: db.lead
   schema:  jsonSchema,   // 400s derived from the schema's own rules
   channel: 'leads',      // declare the broadcast target — no publish hook needed

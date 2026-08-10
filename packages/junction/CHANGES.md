@@ -1,5 +1,137 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-09 — `SessionContext.credentialId`
+
+One additive field on the interface, for the auth-provider side of `FJS-135`.
+An API-key session says which user it is and, now, which credential proved it.
+Without it two keys belonging to one person produce sessions that are
+identical, so nothing can record per-key usage, show a key's last-used time, or
+hold one key to a limit the other does not have.
+
+Set on the `apiKey` path only; a session token leaves it absent.
+`@frontierjs/auth` fills it in — see that package's CHANGES for the three
+defects this was part of fixing, none of which were in Junction.
+
+Also worth knowing, and not changed here: **the HTTP transport resolves every
+Bearer token through `auth.verifySession()` and calls `IAuth.verifyApiKey`
+nowhere.** That is why an issued key authenticated nothing until a provider
+learned to fall through. If a third provider is ever written, that fall-through
+is its job too — `transport/http.ts:385` is the only door.
+
+## 2026-08-08 — a collection-level custom action was unreachable from the browser
+
+The bridge dispatches on the `X-Service-Method` header **before** it looks at
+`params.id`, so the server has always accepted an action about a whole service
+rather than one row. The browser client interpolated the id unconditionally, so
+the only way to reach one was to invent a throwaway id and post to
+`/{service}/null`.
+
+`action(name, id?, data?, query?)` now posts to the service root when `id` is
+null or omitted, and carries a plain filter query: `?limit=50`, not the
+`$`-prefixed directive syntax `buildQueryString` emits. An action declares its
+own query vocabulary; the bridge still splits `$` keys off as directives if a
+caller uses them. Values that are null are dropped rather than sent as the
+string `"null"`.
+
+Found writing basecamp's fleet-wide event feed (`servers.feed`) and its flag
+`resolve` — neither has a subject row to name. 4 tests; 884 pass.
+
+## 2026-08-06 — a capability probe must survive a client that throws
+
+880 tests (was 879). The junction half of `FJS-117`.
+
+`autoFilter` guarded itself with
+
+```ts
+if (typeof client?.$checkWhere !== 'function') return
+```
+
+which reads as a safe feature test and is not one here. **A Litestone client
+throws on an unknown property** rather than answering `undefined` — deliberately,
+so a typo'd accessor is loud — so that line is a throwing expression, and it sat
+just *outside* the `try` guarding the call it protects. When `$checkWhere` turned
+out to be missing from the scoped proxies, every list read by a signed-in caller
+became a 500 complaining about a table nobody had written.
+
+Litestone was fixed (it now answers on every flavour of client). This side is
+fixed too, and independently: `db` is whatever the app handed `createApp`, and a
+stand-in that cannot answer the question must **no-op**, not take down the
+request. The probe now reads inside a `try`, and the call goes through the
+captured reference rather than a second property read.
+
+## 2026-08-06 — an unknown filter key is a 400
+
+879 tests (was 871). Closes `FJS-109`.
+
+```
+GET /products?bogusColumn=7   →  200 {"data":[],"total":0}
+GET /products?limit=100       →  200 {"data":[],"total":0}     ← belongs on $limit
+GET /products                 →  200 {"data":[],"total":0}     ← genuinely empty
+```
+
+Three situations, one answer, no error. It cost an hour in `example/`'s
+prerendered catalogue, which fetched, resolved, rendered "0 of 0 products" and
+reported nothing wrong.
+
+**Litestone knew the whole time.** It validates where-keys, rejects them on
+writes, and on reads prints `Unknown field 'bogusColumn' … Valid fields: id,
+name` — to the server's stderr, invisible to whoever typed it.
+
+So `autoFilter` asks rather than re-deriving: `db.$checkWhere(accessor, where)`
+keeps one definition of the rule, and Junction contributes only the status code.
+Exactly the division `gateAuth` already makes with `@@gate`. Re-deriving it here
+against JSON Schema would have drifted on relation sub-filters, `$raw`, edges and
+the AND/OR/NOT descent.
+
+The message names **every** bad key, not the first — a caller fixing a filter one
+round trip at a time is what the silent 200 already put them through — plus the
+typo suggestion, the filterable fields, and the directives it was probably meant
+to be:
+
+```
+Unknown filter key 'nme' — did you mean 'name'?. Filterable fields on product:
+id, name, price. Paging and sorting are directives, not filters — use $limit,
+$offset, $orderBy, $select.
+```
+
+What does NOT trip it: `$or`/`$and`/`$not` (structure), a real directive (the
+bridge has already split those off, Invariant 10), and an operator filter — the
+browser client serializes `{price:{$gte:1}}` as `?price={"$gte":1}`, so the key
+stays a column. A client without `$checkWhere` no-ops: *I cannot judge this* is
+not *this is wrong*.
+
+Two existing tests asserted on the **length** of a compiled `before` list and
+broke on the second derived hook. Both now filter the exported `DERIVED_HOOKS`,
+which is what their own comments already said they wanted — one of them in as
+many words.
+
+Worth knowing: `?price[$gte]=1` now 400s. It never worked — `rawQuery` is flat,
+Junction has no bracket parsing — it just used to fail as an empty page.
+
+## 2026-08-06 — the "model not found" message lists models
+
+871 tests (was 869).
+
+`getTable`'s failure message ends with *Available: …*, and it had never once
+printed a list. It built one with `Object.keys(scopedDb)`, and a real Litestone
+client's proxy threw on that (`FJS-014`, fixed the same day) — so the `try/catch`
+around it swallowed the throw and the message silently degraded to no list, at
+the moment a caller most needs one.
+
+With enumeration working the list appeared and was **wrong**: `Available:
+asSystem, author, post, query, sql`. Dropping `$`-prefixed names cannot tell a
+model from a method. It now filters against `$schema.models`, using Invariant 2 —
+the accessor is the model name with a lowercase first letter — so the test is
+exact rather than a guess about which names look like tables.
+
+The `try/catch` stays. `db` is whatever the app handed to `createApp`, and a
+stand-in that refuses to enumerate must not turn *your model name is wrong* into
+a stack trace. Its comment no longer claims Litestone is the reason.
+
+Two tests, and they use a **real** Litestone client: every existing test in that
+file used a plain object, which is precisely why the list went unverified for
+four days.
+
 ## 2026-08-06 — `retryable` reaches the client
 
 869 tests (was 866).

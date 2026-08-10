@@ -34,6 +34,15 @@
 }
 
 :root {
+  /*
+   * Lets a keyword be interpolated, which is what makes `height: 0` to
+   * `height: auto` animatable at all — the thing CSS could not do for
+   * twenty years and every accordion measured in JavaScript instead. It
+   * inherits, so declaring it once here covers every element; a rule that
+   * animates to a keyword without it simply snaps, with nothing to say why.
+   */
+  interpolate-size: allow-keywords;
+
   /* ── Semantic colors ──────────────────────────────────────── */
   --color-primary:   #0d83dd;
   --color-secondary: #1f2937;
@@ -51,7 +60,7 @@
   --ink-soft:       #5a564e;
   /*
    * --ink-mute is the lightest step of the ink ramp, and it is still body
-   * text: placeholders, table headers, field hints, nav labels, .page-gap,
+   * text: placeholders, table headers, field hints, nav labels, .pagination-gap,
    * .empty — all at 11–13px, so AA's 4.5:1 applies, not the 3:1 large-text
    * threshold.
    *
@@ -116,6 +125,22 @@
   --sidebar-width:  15rem;
   --screen-pad:     1.5rem;
 
+  /*
+   * ── Syntax highlighting ───────────────────────────────────
+   *
+   * The lightness window a code token may occupy, in oklch. The tones are
+   * tuned as fills behind white text and mostly fail as text on a surface,
+   * so components/code.css clamps each one into this range before using
+   * it — a no-op where the tone already reads.
+   *
+   * These are the LIGHT-surface bounds. A dark theme must invert them,
+   * because CSS cannot work it out: relative colour syntax exposes the
+   * channels of the tone being transformed, never those of the surface it
+   * will land on. dark.css and basecamp.css do; see code.css's header.
+   */
+  --code-l-min: 0;
+  --code-l-max: 0.46;
+
   /* ── Shadows ──────────────────────────────────────────────── */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -152,9 +177,181 @@
    * Set --ring in a theme only to diverge from --color-primary.
    */
 
-  /* ── Fonts ────────────────────────────────────────────────── */
+  /*
+   * ── Fonts ─────────────────────────────────────────────────
+   *
+   * --font-display is what h1–h6 read. It defaults to --font-primary, so an
+   * app that sets one face still has one face and this token is invisible.
+   * Set it to diverge — a serif over a sans body is the common case, and
+   * without a name for it the only way to say so was to restate the family
+   * on every heading rule, which is what the guide did in four places.
+   *
+   * A literal, not `var(--font-primary)`: substituting here would resolve
+   * once against :root and inherit past any scoped --font-primary override.
+   * The heading rule reads `var(--font-display, var(--font-primary))` at the
+   * USE site instead, which is the form that follows a scope. Same trap as
+   * --ring, documented above.
+   */
   --font-primary: system-ui, sans-serif;
   --font-mono:    ui-monospace, monospace;
+
+  /*
+   * ── Type scale ────────────────────────────────────────────
+   *
+   * One ladder for the whole package. --text-md is the body size and the
+   * rung everything else is measured from. `.text-*` in utilities.css and
+   * h1–h6 in typography.css read the SAME rungs, which is why .text-xl and
+   * h4 are the same size.
+   *
+   * Every rung is rem. A px size ignores the reader's raised base font, so
+   * a px and a rem spelling of the same nominal size are accessible in one
+   * place and not the other. No component declares a literal font-size;
+   * test/specs/type.spec.js fails if one appears.
+   *
+   * Values are literal here — never `--text-sm: var(--text-md)`. A var() at
+   * :root resolves once against :root's own value, so a theme that retunes
+   * --text-md would not move a rung defined in terms of it, and nothing
+   * would say so. Same trap as --ring and --badge-radius above.
+   *
+   * An app running UnoCSS that prefers Uno's 4px scale retunes these and
+   * gets one scale across both — see "Using it with UnoCSS" in README.md.
+   */
+  --text-2xs: 0.6875rem;  /* 11px — the uppercase overline: table head, nav group label */
+  --text-xs:  0.75rem;    /* 12px — badge, pill, tooltip, field hint */
+  --text-sm:  0.8125rem;  /* 13px — caption, meta, table cell, help */
+  --text-md:  0.875rem;   /* 14px — BODY. nav, tab, button, label */
+  --text-lg:  1rem;       /* 16px — lead paragraph, h5, alert icon */
+  --text-xl:  1.125rem;   /* 18px — subhead, h4, empty-state title */
+  --text-2xl: 1.375rem;   /* 22px — h3, dialog title */
+  --text-3xl: 1.75rem;    /* 28px — h2, tile figure */
+  --text-4xl: 2.25rem;    /* 36px — h1 */
+
+  /*
+   * Line height rides with the size: small text needs proportionally more
+   * leading to stay readable, a display heading needs less or it looks
+   * gappy. Unitless, so a nested element multiplies its OWN font-size
+   * rather than inheriting a computed pixel leading.
+   */
+  --leading-display: 1.1;   /* h1 */
+  --leading-heading: 1.2;   /* h2–h6 */
+  --leading-snug:    1.45;
+  --leading-normal:  1.5;
+  --leading-body:    1.55;  /* the body default */
+  --leading-relaxed: 1.6;
+
+}
+
+/*
+ * ── Density ───────────────────────────────────────────────────
+ *
+ * The third free-standing axis, and the exact mirror of a tone.
+ *
+ * A tone is registered `inherits: false` because it is a fact about ONE
+ * element — a danger Card must not make the button inside it red. Density
+ * is a fact about a REGION, so it inherits: set it on a Pane and every
+ * Card, Row, Field and Table inside tightens, with no component told
+ * anything and no per-component `-sm` name.
+ *
+ * That is the difference from every other framework's answer to this.
+ * Bootstrap has `.btn-sm`, `.table-sm`, `.form-control-sm`; Bulma has
+ * `is-small` per component; Radix and MUI take a prop on each component.
+ * All of them name the combination. This names the axis.
+ *
+ * Registered with an initial-value so the multiplication below always
+ * resolves. Unregistered, --density would be guaranteed-invalid wherever
+ * nobody set it and every rung's calc() would fall over, taking all
+ * padding with it. `<number>` also means it interpolates as a number
+ * rather than flipping at the halfway point, so density can animate.
+ */
+@property --density {
+  syntax:        "<number>";
+  inherits:      true;
+  initial-value: 1;
+}
+
+.dense { --density: 0.8; }
+.roomy { --density: 1.25; }
+
+/*
+ * ── Derived density ───────────────────────────────────────────
+ *
+ * The same axis, answered by the box instead of by you: a Card in a narrow
+ * sidebar should be tighter than the identical Card in the main column,
+ * and nobody should have to remember to type that.
+ *
+ * ── Why this is opt-in and not on .card ───────────────────────
+ *
+ * `container-type: inline-size` is not free. It applies inline-size
+ * containment, so the element can no longer be sized by its contents —
+ * measured here, a .card in a .cluster went from 83px to 42px, the width
+ * of its own padding, and the same in an auto-sized grid track and inside
+ * an inline-block. It also makes the box a containing block for
+ * position: fixed descendants, so an app's toast rendered inside one
+ * drifts. (Dialog and Popover are unaffected: the top layer escapes
+ * containment.) Shipping that on a component would break layouts nobody
+ * changed.
+ *
+ * So the app names the box and the package owns the response:
+ *
+ *   .my-sidebar { container: fjs / inline-size; }
+ *
+ * The name is required, so this fires only where it was asked for — an
+ * unnamed query would react to any container an app happened to create.
+ *
+ * `*` is (0,0,0), so a stated `.dense` or `.roomy` inside a narrow box
+ * still wins: DECLARED BEATS DERIVED, which is the only rule worth
+ * remembering here.
+ */
+@container fjs (inline-size < 30rem) {
+  * { --density: 0.9; }
+}
+
+@container fjs (inline-size < 20rem) {
+  * { --density: 0.8; }
+}
+
+/*
+ * ── The space ladder ──────────────────────────────────────────
+ *
+ * The other half of the type scale, and it did not exist: padding was
+ * written as a literal rem in every file, which is why size leaked out as
+ * scoped modifiers instead — `table.compact`, `bar.narrow`, `bar.wide`.
+ * Each of those is a density decision wearing a component's name, and
+ * there was nowhere else for it to live.
+ *
+ * Rungs are on a 2px grid to 16px and coarser above. 10px and 14px are
+ * rungs because the package genuinely uses them; rounding them into a
+ * prettier ladder would move real layout to flatter a table.
+ *
+ * ── Why the universal selector ────────────────────────────────
+ *
+ * This is the same mechanism tones.css uses for the tint ramp, and for the
+ * same reason. `--space-sm: calc(0.5rem * var(--density))` at :root would
+ * substitute --density ONCE, against :root, and inherit that fixed length
+ * past every .dense — the alias trap ruled on 2026-08-02, which is silent
+ * because the token still has a perfectly good value. Declared on every
+ * element, each one recomputes the rung from the density it inherits.
+ *
+ * The knob is --density, not the rungs. An app that wants everything
+ * roomier sets `html { --density: 1.15 }`; one that wants a different
+ * ladder SHAPE redeclares these rungs on `*` too, because a redeclaration
+ * on :root would lose to this rule everywhere except <html> itself.
+ */
+*,
+*::before,
+*::after {
+  --space-3xs: calc(0.125rem * var(--density));  /*  2px */
+  --space-2xs: calc(0.25rem  * var(--density));  /*  4px */
+  --space-xs:  calc(0.375rem * var(--density));  /*  6px */
+  --space-sm:  calc(0.5rem   * var(--density));  /*  8px */
+  --space-md:  calc(0.625rem * var(--density));  /* 10px */
+  --space-lg:  calc(0.75rem  * var(--density));  /* 12px */
+  --space-xl:  calc(0.875rem * var(--density));  /* 14px */
+  --space-2xl: calc(1rem     * var(--density));  /* 16px */
+  --space-3xl: calc(1.25rem  * var(--density));  /* 20px */
+  --space-4xl: calc(1.5rem   * var(--density));  /* 24px */
+  --space-5xl: calc(2rem     * var(--density));  /* 32px */
+  --space-6xl: calc(3rem     * var(--density));  /* 48px */
 }
 
 /* ── Respect prefers-reduced-motion ─────────────────────────── */

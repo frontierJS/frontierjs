@@ -160,6 +160,35 @@ describe('wrapDocument', () => {
   test('escapes the title', () => {
     expect(wrapDocument('', { title: 'a<b>&"' })).toContain('<title>a&lt;b&gt;&amp;&quot;</title>')
   })
+
+  // A prerendered page is assembled here, not by Vite's HTML transform, so the
+  // app's own stylesheet had no way in: `target: 'static'` shipped pages
+  // carrying every @frontierjs/css class name and none of the rules behind
+  // them. The <body> class is the other half — a theme is one class on an
+  // ancestor, and index.html is where the SPA states it.
+  test('links the stylesheets the build emitted', () => {
+    const out = wrapDocument('<p></p>', { stylesheets: ['/assets/style-abc.css'] })
+    expect(out).toContain('<link rel="stylesheet" href="/assets/style-abc.css">')
+  })
+
+  test('app stylesheets come before the page\'s own scoped styles', () => {
+    const out = wrapDocument('<p></p>', {
+      stylesheets: ['/assets/style-abc.css'],
+      styles: [{ id: 'mhash', css: '.a{color:red}' }],
+    })
+    expect(out.indexOf('style-abc.css')).toBeLessThan(out.indexOf('<style id="mhash">'))
+  })
+
+  test('carries the configured body class', () => {
+    expect(wrapDocument('<p></p>', { bodyClass: 'app theme-default' }))
+      .toContain('<body class="app theme-default">')
+  })
+
+  test('a page with neither keeps a bare body and no link', () => {
+    const out = wrapDocument('<p></p>', {})
+    expect(out).toContain('<body>')
+    expect(out).not.toContain('<link')
+  })
 })
 
 describe('pathsForRoute', () => {

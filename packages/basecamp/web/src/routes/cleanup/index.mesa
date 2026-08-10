@@ -1,0 +1,295 @@
+---
+title: Disk cleanup
+---
+<script>
+  // The mock's DiskCleanupView — the DECLARED way to act on a machine.
+  //
+  // The pair to /recipes/. A recipe is a script and nothing can bound it; a
+  // sweep names targets from a list the API owns, so the destructive thing an
+  // operator does weekly needs no arbitrary code. The checkboxes are fetched
+  // from `cleanup.targets` rather than typed here, which is what stops this
+  // screen offering something the service would refuse.
+  //
+  // **Every number on this page was measured by Docker.** The mock multiplied a
+  // count by an average — `s.images.dangling * 0.08` — and printed the result
+  // as gigabytes beside figures that were real. An invented estimate next to a
+  // measured one is worse than none, because nothing on screen says which is
+  // which. Where a machine has never reported, this says so rather than
+  // rendering zeroes that read as "nothing to reclaim".
+  import { session } from '../../session.js'
+  import { cleanup } from '../../resources/CleanupRun.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let targets = []          // the vocabulary, as the service declares it
+  let picked  = []          // the target names currently ticked
+  let usage   = null
+  let history = []
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  // Every load is numbered and only the newest may write to the screen. This is
+  // one of the two screens fed by a machine on a timer rather than by a person
+  // clicking: several agents reporting at once start several loads, and a
+  // slower earlier one landing last shows the fleet as it was two reports ago.
+  const inflight = { seq: 0 }
+
+  async function load() {
+    const mine = ++inflight.seq
+    error = null; loading = true
+    try {
+      // The vocabulary is fetched once and then reused — it is a property of
+      // the deployment, not of the workspace.
+      if (!targets.length) {
+        targets = (await cleanup.service.action('targets', null)).targets
+        picked  = targets.filter(t => t.defaultOn).map(t => t.target)
+      }
+      const [u, h] = await Promise.all([
+        cleanup.service.action('usage', null),
+        cleanup.service.find({}, { limit: 10 }),
+      ])
+      if (mine !== inflight.seq) return
+      usage   = u
+      history = h.data
+    } catch (e) {
+      if (mine === inflight.seq) error = e.message
+    } finally {
+      if (mine === inflight.seq) loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // A report from any agent, and every step of a sweep, land here as a push.
+  const READS = new Set(['get', 'find', 'usage', 'targets'])
+  const off = cleanup.service.on('*', (method) => {
+    if (READS.has(method)) return
+    load()
+  })
+  $onDestroy(off)
+
+  function toggle(name, on) {
+    picked = on ? [...new Set([...picked, name])] : picked.filter(p => p !== name)
+  }
+
+  // Sum by unique ESTIMATE SOURCE, not by target. Docker reports one
+  // reclaimable figure for images, and both image targets draw on it — adding
+  // them would count the same bytes twice and promise double what a sweep can
+  // deliver. Which source a target draws on is declared in the vocabulary, so
+  // this is arithmetic rather than a second opinion about what frees what.
+  function estimate(server) {
+    const sources = new Set(
+      picked.map(name => targets.find(t => t.target === name)?.estimate).filter(Boolean))
+    let total = 0
+    for (const source of sources) {
+      const target = targets.find(t => t.estimate === source && !t.partial) ?? targets.find(t => t.estimate === source)
+      const cell   = server.reclaimable?.[target?.target]
+      total += cell?.bytes ?? 0
+    }
+    return total
+  }
+
+  async function sweep(serverId) {
+    error = null; busy = serverId ?? 'fleet'
+    try {
+      const res = await cleanup.service.action('run', null, {
+        ...(serverId ? { serverId } : {}),
+        targets: picked,
+      })
+      toasts.success(
+        `Cleanup queued on ${res.queued} server(s)`,
+        res.unreachable.length ? `No agent on ${res.unreachable.join(', ')}` : 'Each machine reports what it freed',
+      )
+      await load()
+    } catch (e) {
+      // 'No agent is registered …' and 'Unknown reclaim target(s) …' both arrive
+      // here. Neither is guessable from the card.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // Bytes in, a sentence out — the same decision `/volumes/` makes, for the
+  // same reason: a number rounded on the way into the database cannot be
+  // un-rounded on the way out, so nothing stores gigabytes.
+  function size(bytes) {
+    const n = Number(bytes) || 0
+    if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
+    if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
+    if (n >= 1024)      return `${Math.round(n / 1024)} KB`
+    return `${n} B`
+  }
+
+  function when(iso) {
+    if (!iso) return 'never'
+    const mins = Math.floor((Date.now() - new Date(iso)) / 60_000)
+    if (mins < 1)  return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+  }
+
+  function statusTone(status) {
+    if (status === 'success') return 'success'
+    if (status === 'failed')  return 'danger'
+    if (status === 'timeout') return 'warning'
+    return 'muted'
+  }
+</script>
+
+<div class="section-header">
+  <h1>Disk cleanup</h1>
+  <Button variant="primary" id="sweep-fleet" disabled={busy === 'fleet' || !picked.length}
+          onclick={() => sweep(null)}>Sweep the fleet</Button>
+</div>
+
+<Callout tone="info" title="A sweep names targets, never a command">
+  What a cleanup may delete is a list this API owns, so nobody needs a shell script to
+  reclaim a disk — that is what <a href="/recipes/">Recipes</a> is for, and why it asks
+  for an admin. Unused volumes are off by default: they are the one thing here no registry
+  can hand back.
+</Callout>
+
+{#if error}
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<Card id="cleanup-targets">
+  <h2 class="h4">What to reclaim</h2>
+  {#each targets as t}
+    <Checkbox label={t.label} description={t.description + (t.partial ? ' Part of the images figure — Docker reports no separate number.' : '')}
+              checked={picked.includes(t.target)}
+              onchange={(on) => toggle(t.target, on)} />
+  {/each}
+  {#if !picked.length}
+    <p class="text-sm text-muted">Nothing ticked — a sweep with no targets would delete nothing.</p>
+  {/if}
+</Card>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !usage?.servers?.length}
+  <EmptyState title="No servers">
+    There is nothing in this workspace to clean up yet.
+  </EmptyState>
+{:else}
+  <div class="cluster" id="cleanup-summary">
+    <Badge tone="muted">{usage.reported} of {usage.servers.length} reporting</Badge>
+    <Badge tone={usage.totalReclaimableBytes ? 'warning' : 'muted'}>
+      {size(usage.totalReclaimableBytes)} reclaimable across the fleet
+    </Badge>
+  </div>
+
+  <div class="stack" id="cleanup-list">
+    {#each usage.servers as s}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4"><a href={`/servers/${s.serverId}/`}>{s.serverName}</a></h2>
+          <span class="cluster">
+            {#if s.reported}
+              <Badge tone={estimate(s) ? 'warning' : 'muted'}>{size(estimate(s))} by these targets</Badge>
+              <Badge tone="muted">reported {when(s.reportedAt)}</Badge>
+            {:else}
+              <Badge tone="muted">never reported</Badge>
+            {/if}
+          </span>
+        </div>
+
+        {#if s.reported}
+          <div class="cluster">
+            <span class="text-sm text-muted">
+              {s.images.total} images ({s.images.dangling} dangling, {s.images.unused} unused) · {size(s.images.sizeBytes)}
+            </span>
+            <span class="text-sm text-muted">
+              {s.containers.running} running, {s.containers.stopped} stopped
+            </span>
+            <span class="text-sm text-muted">{size(s.buildCacheBytes)} build cache</span>
+            <!-- Volumes come from the volumes table, which owns per-disk sizes.
+                 A count kept here as well would be a second answer, and the two
+                 would part company the first time a report was missed. -->
+            <a class="text-sm" href={`/volumes/?serverId=${s.serverId}`}>
+              {s.unusedVolumes.count} unused volume(s) · {size(s.unusedVolumes.bytes)}
+            </a>
+          </div>
+        {:else}
+          <p class="text-sm text-muted">
+            No agent has reported this machine's disk. An empty picture is not an empty disk —
+            an agent reports on its first check-in.
+          </p>
+        {/if}
+
+        <div class="cluster">
+          {#if s.lastCleanup}
+            <span class="text-sm text-muted">
+              last swept {when(s.lastCleanup.finishedAt)} · freed {size(s.lastCleanup.freedBytes)}
+            </span>
+          {:else}
+            <span class="text-sm text-muted">never swept</span>
+          {/if}
+          <Button variant="outlined" disabled={busy === s.serverId || !picked.length}
+                  aria-label={`Clean ${s.serverName}`}
+                  onclick={() => sweep(s.serverId)}>Clean</Button>
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}
+
+{#if history.length}
+  <h2 class="h4">Recent sweeps</h2>
+  <div class="table-wrap">
+    <table class="table striped" id="cleanup-history">
+      <thead>
+        <tr>
+          <th scope="col">Server</th>
+          <th scope="col">Status</th>
+          <th scope="col">Freed</th>
+          <th scope="col">Targets</th>
+          <th scope="col">When</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each history as run}
+          <tr>
+            <td>{run.serverName ?? run.serverId}</td>
+            <td><Pill tone={statusTone(run.status)}>{run.status}</Pill></td>
+            <!-- What the agent said it freed, never what was estimated before
+                 it ran. The two differ, and only one of them happened. -->
+            <td class="text-sm">{size(run.freedBytes)}</td>
+            <td class="text-sm text-muted">{(run.targets ?? []).join(', ')}</td>
+            <td class="text-sm text-muted">{when(run.finishedAt ?? run.createdAt)}</td>
+          </tr>
+          {#if run.error}
+            <tr><td colspan="5" class="text-sm">{run.error}</td></tr>
+          {/if}
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}
+
+<p class="text-sm text-muted">
+  Not built: the mock's nightly schedule. A sweep on a cron is a <a href="/jobs/">Job</a>,
+  and a second scheduler on this screen would be a second owner of when the fleet gets
+  cleaned — which is exactly the split that let an alert rule default to a severity its own
+  API refused.
+</p>

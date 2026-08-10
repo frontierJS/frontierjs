@@ -52,12 +52,12 @@
 
   display:               grid;
   grid-template-columns: fit-content(var(--fact-label-max)) minmax(0, 1fr);
-  gap:                   0.625rem 1.25rem;
+  gap:                   var(--space-md) var(--space-3xl);
   align-items:           baseline;
 
   margin:      0;
   font-family: var(--font-primary);
-  font-size:   0.875rem;
+  font-size:   var(--text-md);
   line-height: 1.5;
 }
 
@@ -96,12 +96,12 @@
   column-gap: 0;
 }
 .facts.divided > dt {
-  padding-inline-end: 1.25rem;
+  padding-inline-end: var(--space-3xl);
 }
 
 .facts.divided > dt,
 .facts.divided > dd {
-  padding-block-start: 0.625rem;
+  padding-block-start: var(--space-md);
   border-block-start:  1px solid var(--rule);
 }
 .facts.divided > :nth-child(-n + 2) {
@@ -125,10 +125,10 @@
     gap: 0;
   }
   .facts > dt {
-    padding-block-start: 0.625rem;
+    padding-block-start: var(--space-md);
   }
   .facts > dd {
-    padding-block-end: 0.125rem;
+    padding-block-end: var(--space-3xs);
   }
   .facts.divided > dd {
     border-block-start: none;

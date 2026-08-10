@@ -14,6 +14,14 @@ export interface SessionContext {
   scopes?:      string[]
   authMethod:   'session' | 'apiKey' | 'oauth' | 'created' | 'verified'
 
+  /**
+   * Which credential proved this session — set on the `apiKey` path.
+   * An app that records per-key usage, or shows a key's last-used time, has no
+   * other way to ask: two keys belonging to one user produce two sessions that
+   * are otherwise identical.
+   */
+  credentialId?: string
+
   // ── Standing, for @@gate ──────────────────────────────────────────────
   // Read by sessionGateLevel() (core/litestone.ts) to grade a caller on
   // Litestone's 0–7 scale. All optional, and the distinction between

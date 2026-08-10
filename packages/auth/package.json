@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/auth",
   "version": "1.0.0",
-  "description": "FJS native authentication \u2014 createLitestoneAuth + createAuthPlugin",
+  "description": "FJS native authentication — createLitestoneAuth + createAuthPlugin",
   "type": "module",
   "main": "./index.ts",
   "exports": {
@@ -26,6 +26,6 @@
   "_built": "2026-05-07",
   "scripts": {
     "test": "bun test tests/",
-    "typecheck": "node ../../scripts/typecheck.mjs --baseline 4"
+    "typecheck": "node ../../scripts/typecheck.mjs"
   }
 }

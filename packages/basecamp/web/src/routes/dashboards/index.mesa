@@ -1,0 +1,183 @@
+---
+title: Dashboards
+---
+<script>
+  // The mock's DashboardsView — the boards this workspace has saved.
+  //
+  // A dashboard is a view over data this app already answers, so there is
+  // nothing here that a member could not have opened for themselves; what a
+  // board saves is the arrangement. The list is deliberately thin — name, what
+  // it is for, how many cards — because the answer to "which board do I want"
+  // is the name, and rendering sixty widgets nine times over would be the
+  // slowest screen in the app.
+  //
+  // The pin is the WORKSPACE's, not the reader's: one boolean on a shared row
+  // cannot be personal, and saying so is better than a control that looks
+  // private and is not. A per-person pin needs the preferences store
+  // UserSettingsView is waiting on.
+  import { session } from '../../session.js'
+  import { dashboards } from '../../resources/Dashboard.mesa'
+  import { goto } from '@frontierjs/sierra/router'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Form       from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows     = []
+  let error    = null
+  let loading  = true
+  let busy     = null
+  let creating = false
+  let draft    = dashboards.make()
+
+  // The kit's controls take a value and hand back an event; they are NOT bound
+  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
+  // let and a member expression is not one.
+  function write(name, value) { draft = { ...draft, [name]: value } }
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows = (await dashboards.service.find({}, { limit: 100 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  const READS = new Set(['get', 'find', 'kinds'])
+  const off = dashboards.service.on('*', (method) => {
+    if (READS.has(method)) return
+    load()
+  })
+  $onDestroy(off)
+
+  async function create(data) {
+    error = null
+    try {
+      const created = await dashboards.service.create(data)
+      toasts.success(`${created.name} created`)
+      creating = false
+      draft = dashboards.make()
+      // Straight to the board: a dashboard with no widgets is not a thing to
+      // look at in a list, it is a thing to fill in.
+      goto(`/dashboards/${created.id}/`)
+    } catch (e) {
+      error = e.message
+      throw e
+    }
+  }
+
+  async function togglePin(dashboard) {
+    error = null; busy = dashboard.id
+    try {
+      await dashboards.service.patch(dashboard.id, { isPinned: !dashboard.isPinned })
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove(dashboard) {
+    error = null; busy = dashboard.id
+    try {
+      await dashboards.service.remove(dashboard.id)
+      toasts.success(`${dashboard.name} deleted`)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+</script>
+
+<div class="section-header">
+  <h1>Dashboards</h1>
+  <Button variant="primary" id="new-dashboard" onclick={() => creating = !creating}>
+    {creating ? 'Cancel' : 'New dashboard'}
+  </Button>
+</div>
+
+<p class="text-body">
+  A board is an arrangement of widgets over what this workspace already has — the fleet,
+  releases, jobs, the trail. Every card is read with your own session, so a dashboard
+  shows exactly what you could have opened yourself.
+</p>
+
+{#if error}
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice. -->
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if creating}
+  <Card>
+    <Form resource={dashboards} bind:record={draft} onsubmit={create}>
+      <Input name="name" id="name" hint="What this board is for — Ops overview"
+             value={draft.name} oninput={(e) => write('name', e.target.value)} />
+      <Input name="description" id="description"
+             value={draft.description} oninput={(e) => write('description', e.target.value)} />
+      <Input name="icon" id="icon" hint="An emoji, if you want one"
+             value={draft.icon} oninput={(e) => write('icon', e.target.value)} />
+      <Button type="submit" variant="primary">Create and open</Button>
+    </Form>
+  </Card>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No dashboards">
+    Nothing saved yet. A board is worth making once you are checking the same three
+    screens every morning.
+  </EmptyState>
+{:else}
+  <div class="tiles" style="--tile-min: 18rem" id="dashboard-list">
+    {#each rows as dashboard}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">
+            <a href={`/dashboards/${dashboard.id}/`}>{dashboard.icon ?? ''} {dashboard.name}</a>
+          </h2>
+          {#if dashboard.isPinned}
+            <Badge tone="info">pinned</Badge>
+          {/if}
+        </div>
+
+        {#if dashboard.description}
+          <p class="text-sm text-muted">{dashboard.description}</p>
+        {/if}
+
+        <p class="text-sm text-muted">{dashboard.widget_count} widget(s)</p>
+
+        <div class="cluster">
+          <Button variant="ghost" disabled={busy === dashboard.id}
+                  aria-label={`${dashboard.isPinned ? 'Unpin' : 'Pin'} ${dashboard.name} for the workspace`}
+                  onclick={() => togglePin(dashboard)}>
+            {dashboard.isPinned ? 'Unpin' : 'Pin'}
+          </Button>
+          <Button variant="ghost" disabled={busy === dashboard.id}
+                  aria-label={`Delete ${dashboard.name}`}
+                  onclick={() => remove(dashboard)}>Delete</Button>
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}

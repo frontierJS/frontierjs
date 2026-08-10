@@ -1,0 +1,20 @@
+<script module>
+  // src/resources/Hub.mesa — the Resource layer for the hub tier.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
+  // and it is named for its noun singular even though the service is `hub`
+  // either way (invariant 19).
+  //
+  // Like Portal, the hub has NO model: it reads across every tenant and answers
+  // shapes assembled per screen, not rows of one table. modelNameFor('hub')
+  // misses, Sierra warns once, and it degrades to a bare make() — correct here,
+  // because there is nothing in db/schema.lite for it to derive from.
+  //
+  // It is also the only resource in this app that sends NO X-Workspace-Id. The
+  // client stamps it globally, and the hub service ignores it: `requireSystemAdmin`
+  // is the whole guard, and the workspace a sysadmin happens to be looking at
+  // has no bearing on which tenants they can see.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const hub = createResource('hub', {})
+</script>

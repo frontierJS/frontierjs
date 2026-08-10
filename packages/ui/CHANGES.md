@@ -2,6 +2,56 @@
 
 Newest first.
 
+## 2026-08-09 — `Pagination` follows the class rename
+
+`@frontierjs/css` v0.14.6 renamed `.page` → `.pagination-link` and
+`.page-gap` → `.pagination-gap`. `Pagination.mesa` is the only consumer in
+the repo, so this is markup-only — the props, the sliding window and the
+ellipsis compression are untouched.
+
+Why the package renamed it: `Page` is already a tier in the vocabulary
+(Screen, Pane, View, Tabs), and `Previous`/`Next` carried a class calling
+them pages. Ruled in `DECISIONS.md`.
+
+An app that wrote the old class by hand keeps the markup and loses the
+style — there is no alias, and none is planned.
+
+## 2026-08-08 — the kit stops styling the package's own terms
+
+Two local `<style>` blocks deleted. Both styled a class `@frontierjs/css` owns,
+which is the only way a kit component can silently change how the package
+behaves for an app that never imports the kit.
+
+**`DropdownItem` (`FJS-126`).** Eight declarations, four of which restated
+`.item`'s own layout. One of those four — `gap: 0.625rem` — disagreed with the
+`var(--space-sm)` every other Item reads, so a menu row's icon sat a rung
+further from its label than an identical row outside a menu, **and could not
+move inside a `.dense` region**, because a literal has no density. `lists.css`
+has owned the control reset since the day this copy was reported
+(`.items :is(button, a).item`), and `DropdownMenu` renders
+`<div class="items menu">`, so the descendant selector matches and the disabled
+pair keeps the `.items` scoping that lets it outrank the `(0,3,0)` hover.
+
+**`Drawer` (`FJS-127`).** Four lines making the drawer a flex column so a
+`.surface-body` between a header and a footer takes the remaining height.
+Moved into `drawers.css`, which owns `.drawer`. The `[open]` scoping is the
+whole subtlety and travelled with a comment: an author `display: flex` beats
+the UA's `display: none`, so declared on `.drawer` the drawer would render on
+screen while shut — the trap `overlay: a closed <dialog> stays closed` already
+records. A new css test asserts both halves and was proven to fail; dropping
+`[open]` turns two tests red.
+
+Verified in a real browser, not by compiling: `example`: `verify:ui` **27/27**
+including `menu.items` and `menu.escapeCloses`, and `verify` **37/37**. The
+kit's own suite is unchanged at 64/64 compile, 25/25 render, 7/7 form.
+
+**Two components still ship their own design system** — `DatePicker`
+(468 lines, 107 custom properties, 47 of them defined without reading a design
+token) and `CommandPalette` (276 lines, its own `--cp-*` namespace). Between
+them that is 69% of all the CSS in the kit. `FJS-128` and `FJS-129`; neither is
+a name collision, both are token divergence, and a theme switch reaches them
+partially at best.
+
 ## 2026-08-06 (later) — `<Form>` in a real browser, and three defects it found
 
 `example/web/src/routes/orders/create.mesa` was rewritten onto `<Form>`. About

@@ -411,16 +411,30 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     // repeated the name the caller already wrote and named no alternative,
     // which is the least useful moment to be terse.
     //
-    // Enumerating is best-effort ON PURPOSE. A real Litestone client is a
-    // Proxy whose ownKeys trap can return duplicate names, which makes
-    // Object.keys() throw `TypeError: Proxy handler's 'ownKeys' trap result
-    // must not contain any duplicate names`. Letting that escape would replace
-    // this diagnostic with a stack trace about proxy internals — at exactly
-    // the moment the caller needs to be told their model name is wrong.
+    // The try/catch is still here, but no longer for Litestone: its client used
+    // to be a Proxy whose ownKeys trap returned `$setAuth` and `$db` twice, so
+    // Object.keys() threw about proxy internals and buried this diagnostic
+    // (`FJS-014`, fixed 2026-08-06 — all five traps dedupe now, pinned by tests).
+    // What remains is that `db` is whatever the app handed to createApp, and a
+    // stand-in that refuses to enumerate must not turn "your model name is
+    // wrong" into a stack trace.
     let available: string[] = []
     try {
+      // Prefer the schema: it says which accessors are MODELS. Enumerating the
+      // client and dropping `$` names was the old approach and it could not tell
+      // `post` from `sql`, `query` or `asSystem` — a list that offers `asSystem`
+      // as a model name is worse than no list. It never showed, because the
+      // enumeration threw before anyone read it.
+      const models = (scopedDb as { $schema?: { models?: { name: string }[] } })?.$schema?.models
+      const declared = Array.isArray(models)
+        ? new Set(models.map(m => m.name.charAt(0).toLowerCase() + m.name.slice(1)))
+        : null
       available = Object.keys(scopedDb)
         .filter(k => !k.startsWith('$') && k !== 'constructor')
+        // Keep a key only if it IS a declared model. Invariant 2 fixes the
+        // accessor as the model name with a lowercase first letter, so this is
+        // an exact test rather than a guess about which names look like tables.
+        .filter(k => declared === null || declared.has(k))
         .sort()
     } catch { /* client won't enumerate — the rest of the message still helps */ }
 
@@ -846,6 +860,73 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
     ctx.data = Array.isArray(ctx.data)
       ? partitionBulk(ctx, ctx.data, row => compiled[mode].parse(row) as Record<string, unknown>)
       : compiled[mode].parse(ctx.data)
+  }
+}
+
+// ─── Filter keys derived from the model ─────────────────────────────────────
+//
+// `GET /products?bogusColumn=7` answered `200 {"data":[],"total":0}`. So did a
+// misplaced directive (`?limit=100`, where limit belongs on `$limit`), and so
+// did a genuinely empty table. Three different situations, one answer, no error
+// — it cost an hour in `example/`'s prerendered catalogue, which fetched,
+// resolved, rendered "0 of 0 products" and reported nothing wrong (`FJS-109`).
+//
+// Litestone knew the whole time. It validates where-keys already, rejects them
+// on writes, and on reads prints
+//
+//   [litestone] Unknown field 'bogusColumn' in where for Product.findManyAndCount.
+//               Valid fields: id, name
+//
+// to the SERVER'S stderr — invisible to the caller who typed it. That split is
+// right for the ORM (a typo'd filter on a write is a mis-scoped destructive
+// operation; on a read it is merely empty) and wrong at a boundary that can
+// answer 400.
+//
+// So this asks rather than re-deriving: `db.$checkWhere` keeps one definition of
+// "is this a valid where key", including the typo hint and the AND/OR/NOT
+// descent, and Junction contributes only the status code — the same division as
+// gateAuth. A client without $checkWhere (a stand-in, a non-Litestone db)
+// resolves to no problems and this no-ops.
+
+interface WhereKeyProblem { key: string, suggestion: string | null, allowed: string[] }
+
+export function autoFilter(accessorOpt: string | undefined) {
+  // Named for the same reason as gateAuth — see the note there.
+  return function autoFilter(ctx: ServiceContext): void {
+    const accessor = accessorOpt ?? ctx.service
+    const client = ctx.locals.db as {
+      $checkWhere?: (a: string, w: unknown) => WhereKeyProblem[]
+    } | undefined
+    // Reading an unknown property off a Litestone client THROWS — the proxy
+    // answers `"foo" is not a table in this schema` rather than `undefined`,
+    // deliberately, so a typo'd accessor is loud. That makes the capability
+    // probe itself a throwing expression, and it must be caught: when
+    // `$checkWhere` was missing from the scoped proxies this line took down
+    // every list read in both apps with a message about a table nobody named.
+    let check: ((a: string, w: unknown) => WhereKeyProblem[]) | undefined
+    try { check = client?.$checkWhere } catch { return }
+    if (typeof check !== 'function') return
+    if (!ctx.query || typeof ctx.query !== 'object') return
+
+    // parseWhere runs later and owns `$or`/`$and`/`$not`; the bridge has already
+    // taken the `$` directives out (Invariant 10). What is left should be columns.
+    const { $or: _o, $and: _a, $not: _n, ...plain } = ctx.query as Record<string, unknown>
+
+    let problems: WhereKeyProblem[] = []
+    try { problems = check.call(client, accessor, plain) ?? [] } catch { return }
+    if (!problems.length) return
+
+    // Name every bad key, not just the first — a caller fixing a filter one
+    // round trip at a time is the thing the silent 200 already put them through.
+    const detail = problems.map(p =>
+      `'${p.key}'${p.suggestion ? ` — did you mean '${p.suggestion}'?` : ''}`).join(', ')
+    const valid = problems[0].allowed.join(', ')
+    throw new BadRequest(
+      `Unknown filter ${problems.length > 1 ? 'keys' : 'key'} ${detail}. ` +
+      `Filterable fields on ${accessor}: ${valid}. ` +
+      `Paging and sorting are directives, not filters — use $limit, $offset, $orderBy, $select.`,
+      problems.map(p => ({ field: p.key, message: `Unknown filter key '${p.key}'` })),
+    )
   }
 }
 

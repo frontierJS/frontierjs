@@ -4,7 +4,7 @@ title: Deployment
 <script>
   import { page } from '@frontierjs/sierra/router'
   import { status } from '@frontierjs/sierra/junction'
-  import { deployments } from '../../../resources/deployments.mesa'
+  import { deployments } from '../../../resources/Deployment.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   $: page.params

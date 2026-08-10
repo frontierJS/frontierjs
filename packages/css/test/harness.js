@@ -200,18 +200,23 @@
    * duck-typing on it walks phantom groups. Grouping rules are identified
    * by constructor instead.
    */
+  /*
+   * Every rule in every sheet, flattened.
+   *
+   * A CSSStyleRule can itself hold rules — that is CSS nesting, which
+   * surface.css uses for `&.raised` and `&.outlined`. Not descending into
+   * one made those rules invisible to every spec that reads the CSSOM:
+   * `.raised` and `.outlined` looked like classes the package does not
+   * ship. Nesting is styling, not grouping, so it is easy to miss when the
+   * walk is written around @layer and @media.
+   */
   window.allRules = function () {
     var out = [];
     function walk(list) {
       for (var i = 0; i < list.length; i++) {
         var r = list[i];
         out.push(r);
-        var isGroup =
-          (window.CSSLayerBlockRule && r instanceof CSSLayerBlockRule) ||
-          (window.CSSMediaRule && r instanceof CSSMediaRule) ||
-          (window.CSSSupportsRule && r instanceof CSSSupportsRule) ||
-          (window.CSSContainerRule && r instanceof CSSContainerRule);
-        if (isGroup && r.cssRules) walk(r.cssRules);
+        if (r.cssRules) walk(r.cssRules);
         if (r.styleSheet && r.styleSheet.cssRules) walk(r.styleSheet.cssRules);
       }
     }
@@ -222,6 +227,58 @@
         throw new Error('stylesheet ' + s + ' unreadable: ' + e.message);
       }
     }
+    return out;
+  };
+
+  /*
+   * The same rules, but with every selector resolved against its nesting
+   * parents so it can be handed to element.matches().
+   *
+   * A nested rule's own selectorText is relative — `&.raised` — which
+   * matches() rejects outright. Substituting the parent inside :is() keeps
+   * the meaning and makes it a standalone selector.
+   */
+  window.allSelectors = function () {
+    var out = [];
+    function walk(list, parent) {
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i];
+        var sel = null;
+        if (window.CSSStyleRule && r instanceof CSSStyleRule) {
+          sel = r.selectorText || '';
+          if (parent) {
+            sel = sel.indexOf('&') !== -1
+              ? sel.replace(/&/g, ':is(' + parent + ')')
+              : ':is(' + parent + ') ' + sel;
+          }
+          out.push(sel);
+        }
+        if (r.cssRules) walk(r.cssRules, sel || parent);
+        if (r.styleSheet && r.styleSheet.cssRules) walk(r.styleSheet.cssRules, parent);
+      }
+    }
+    for (var s = 0; s < document.styleSheets.length; s++) {
+      walk(document.styleSheets[s].cssRules, null);
+    }
+    return out;
+  };
+
+  /*
+   * Every class the stylesheet MENTIONS in a selector, as a set.
+   *
+   * A ruler rather than a spec helper because two specs now ask it the same
+   * question from opposite ends — vocabulary.spec.js for "is every term's
+   * class real", anatomy.spec.js for "is every real class claimed by
+   * something". Two copies of the walk would drift the day one of them
+   * started counting nested rules and the other did not.
+   */
+  window.declaredClasses = function () {
+    var out = {};
+    allRules().forEach(function (rule) {
+      if (!(window.CSSStyleRule && rule instanceof CSSStyleRule)) return;
+      var found = (rule.selectorText || '').match(/\.[a-zA-Z][a-zA-Z0-9_-]*/g) || [];
+      found.forEach(function (c) { out[c.slice(1)] = true; });
+    });
     return out;
   };
 

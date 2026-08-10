@@ -83,7 +83,7 @@
   top:            0.5rem;
   left:           0.5rem;
   z-index:        1000;
-  padding:        0.5rem 1rem;
+  padding:        var(--space-sm) var(--space-2xl);
   background:     var(--surface);
   color:          var(--ink);
   border:         1px solid var(--rule-strong);
@@ -97,7 +97,7 @@
    */
   box-shadow:     none;
   font-family:    var(--font-primary);
-  font-size:      0.875rem;
+  font-size:      var(--text-md);
   font-weight:    600;
   text-decoration: none;
 

@@ -27,7 +27,7 @@
 }
 
 .feed > li {
-  padding-bottom: 1.25rem;
+  padding-bottom: var(--space-3xl);
 }
 .feed > li:last-child {
   padding-bottom: 0;
@@ -36,7 +36,7 @@
 .feed-item {
   display:               grid;
   grid-template-columns: 0.625rem 1fr;
-  gap:                   0.75rem;
+  gap:                   var(--space-lg);
   position:              relative;
 }
 

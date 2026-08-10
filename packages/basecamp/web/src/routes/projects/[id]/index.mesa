@@ -3,8 +3,8 @@ title: Project
 ---
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
-  import { projects } from '../../../resources/projects.mesa'
-  import { environments } from '../../../resources/environments.mesa'
+  import { projects } from '../../../resources/Project.mesa'
+  import { environments } from '../../../resources/Environment.mesa'
 
   $: page.params
 

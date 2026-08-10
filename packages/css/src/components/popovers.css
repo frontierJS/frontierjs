@@ -1,14 +1,20 @@
 /*
  * popovers.css
- * Popover = surface + floating positioning + slide-in animation.
- *
- * Positioning is the consumer's job — use Uno utilities like
- *   class="popover absolute top-12 left-0"
- * or anchor positioning (the native [popover] attribute also works).
+ * Popover = surface + floating positioning. overlays.css owns the motion.
  *
  * Visual treatment (bg, border, radius, tones) comes from surface.css.
  *
- * Two ways to use:
+ * ── Positioning is the consumer's job ─────────────────────────────
+ *
+ * The one positioning utility this package ships is `.relative`, which
+ * establishes a containing block and places nothing — and against a native
+ * `[popover]` even that means nothing, because the top layer escapes every
+ * positioning context. So there is nothing here to reach for: place it with
+ * anchor positioning, a style attribute, or whatever your app already uses.
+ *
+ *   <div class="popover" style="top: 3rem; left: 0">…</div>
+ *
+ * ── Two ways to use ───────────────────────────────────────────────
  *
  *   1) As a plain element with manual show/hide:
  *      <div class="popover" hidden>…</div>
@@ -16,16 +22,32 @@
  *   2) Via the native Popover API (Chrome 114+, Safari 17+, Firefox 125+):
  *      <button popovertarget="menu">Open</button>
  *      <div id="menu" popover class="popover">…</div>
+ *
+ * ── A dropdown menu is this plus a list ───────────────────────────
+ *
+ * There is no Menu term and no .menu component. A menu is the popover as
+ * the surface, `.items.menu` as the list inside it, and role="menu" /
+ * role="menuitem" supplied by whatever owns the keyboard — none of which
+ * is CSS. Naming it here would promise arrow-key movement this file
+ * cannot keep (Principle 6, the same reason Bar and Toolbar are two
+ * terms). @frontierjs/ui's DropdownMenu is that composition.
  */
 
 .popover {
   position:   absolute;
   max-width:  280px;
-  padding:    10px 12px;
+  padding:    var(--space-md) var(--space-lg);
   box-shadow: var(--shadow-md);
-  font-size:  13px;
+  font-size:  var(--text-sm);
   z-index:    50;
-  animation:  popover-in 120ms ease-out;
+  --overlay-from: translateY(-4px);
+}
+
+/* Used as a plain element the app shows and hides itself, there is no
+   state for a transition to key on, so entry stays a keyframe. With the
+   attribute, overlays.css transitions it both ways. */
+.popover:not([popover]) {
+  animation: popover-in 120ms ease-out;
 }
 
 /* Native [popover] attribute support — kill the default UA styling */

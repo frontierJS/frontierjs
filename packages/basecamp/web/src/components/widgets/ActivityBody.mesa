@@ -1,0 +1,62 @@
+<script>
+  // activity_feed — the audit trail, most recent first.
+  //
+  // The trail is admin/owner. A developer with this card on their board gets
+  // told so rather than an empty feed: "you cannot read this" is a correct
+  // answer, and the one that does not read as a broken widget. Same posture the
+  // /activity/ screen takes.
+  //
+  // Actor ids are not resolved to names here. That costs a second request per
+  // card for the whole member list, which the full screen pays and a card three
+  // inches wide should not — this is the catch-up glance, and the screen is the
+  // narrative.
+  import { audit } from '../../resources/AuditEvent.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Pill from '@frontierjs/ui/components/display/Pill.mesa'
+
+  let rows    = []
+  let error   = null
+  let denied  = false
+  let loading = true
+
+  const TONE = { create: 'success', remove: 'danger', drain: 'warning', cancel: 'muted' }
+  const verbOf = (action) => String(action).split('.')[1] ?? action
+
+  async function load() {
+    error = null; denied = false
+    try {
+      rows = (await audit.service.find({}, { limit: 5 })).data
+    } catch (e) {
+      if (e.status === 403 || e.status === 404) denied = true
+      else error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(onWrite(audit.service, load))
+
+  const when = (iso) => iso ? new Date(iso).toLocaleTimeString() : '—'
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if denied}
+  <p class="text-sm text-muted">The activity trail is readable by admins and owners.</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else if !rows.length}
+  <p class="text-sm text-muted">Nothing has happened here yet.</p>
+{:else}
+  <ul class="stack" style="list-style: none; padding: 0">
+    {#each rows as row}
+      <li class="cluster">
+        <Pill tone={TONE[verbOf(row.action)] ?? ''}>{verbOf(row.action)}</Pill>
+        <span class="text-sm">{row.subjectType}</span>
+        <span class="text-xs text-muted">{when(row.createdAt)}</span>
+      </li>
+    {/each}
+  </ul>
+{/if}

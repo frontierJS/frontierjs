@@ -1614,6 +1614,33 @@ describe('retry policy', () => {
     } finally { s.stop() }
   })
 
+  it('a 200 with a text/plain body succeeds, carrying the text', async () => {
+    // A Slack incoming webhook answers `200 text/plain: ok`. The HTML check
+    // above used to be spelled "not JSON", so every one of those was reported
+    // as a server_error for a notification that had already been delivered —
+    // found wiring basecamp's notification channels through conduit. Only
+    // markup where a payload was expected is evidence of a broken target.
+    const s = recorder(() => new Response('ok', {
+      status: 200, headers: { 'content-type': 'text/plain;charset=utf-8' },
+    }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 3 })
+
+      const result = await t.send({ target: target.id, method: 'POST', path: '/hook', body: { a: 1 } })
+
+      expect(result.error).toBe(null)
+      expect(result.data).toBe('ok')
+      expect(result.meta.status).toBe(200)
+    } finally { s.stop() }
+  })
+
+  // Not tested: a response with NO content-type at all and a non-JSON body,
+  // which falls through to the JSON.parse failure below. `new Response(…, {
+  // headers: { 'content-type': '' } })` does not produce it — Bun normalises
+  // the header back to text/plain — and a test that cannot construct its own
+  // premise is theatre.
+
   it('malformed JSON under a JSON content-type is not retried either', async () => {
     let hits = 0
     const s = recorder(() => {

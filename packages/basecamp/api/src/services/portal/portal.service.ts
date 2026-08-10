@@ -44,6 +44,17 @@ const SERVICES: Array<{
   { id: 'integrations',  name: 'Nango',      description: '3rd-party OAuth & integrations',  config_key: 'infra.integrations.nango_url',    ui_port: 3003 },
 ]
 
+/**
+ * The adapters a caller may name, for anything that stores one.
+ *
+ * A `service_health` widget holds a portal id in its config, and a widget
+ * pointing at an adapter that does not exist is a card that can only ever say
+ * "not found". The dashboards service validates against this rather than
+ * keeping a second list, which is the same reason an API key's scopes are
+ * derived from the service registry.
+ */
+export const PORTAL_SERVICE_IDS: string[] = SERVICES.map(s => s.id)
+
 function getConfigValue(config: unknown, path: string): string | undefined {
   return path.split('.').reduce(
     (obj: unknown, key: string) => (obj as Record<string, unknown>)?.[key],

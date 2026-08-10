@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ksite Design System — @frontierjs/css style guide</title>
+<title>FrontierJS Design System — @frontierjs/css style guide</title>
 
 <!--
   The interactive reference. Plain HTML + one plain .js file, no build step,
@@ -15,6 +15,12 @@
 -->
 <link rel="stylesheet" href="../src/index.css">
 <link rel="stylesheet" href="./guide.css">
+<!--
+  The classes that DRAW the system — tonal ramps, the space ladder, wizard
+  wireframes — kept apart from the chrome so the chrome's remaining debt is
+  countable. instruments.css states the test for which file a class is in.
+-->
+<link rel="stylesheet" href="./instruments.css">
 </head>
 
 <body>
@@ -24,9 +30,32 @@
   switcher has to write custom properties onto .sg-app, and the 45 pages are
   one map in JS rather than 45 hidden sections in the DOM.
 -->
-<div class="sg-app" id="app"></div>
+<!--
+  Both classes on purpose. `.app` is the package's App term and does the
+  work; `.sg-app` is the theming hook the switcher writes tokens onto, and
+  carries the two things the guide wants differently (paper background, a
+  document-sized line height).
+-->
+<div class="app sg-app" id="app"></div>
 
-<script src="./guide.js"></script>
+<!--
+  The vocabulary first: package data, not guide chrome, and the test suite
+  reads the same file, which is why it stays a classic script rather than a
+  module — test/run.js inlines its source into the generated page.
+
+  A classic script's top-level `const` lands in the global lexical scope,
+  which a module can read, so guide.js still sees VOCAB despite being
+  deferred until after every classic script has run.
+-->
+<script src="../vocabulary.js"></script>
+<script src="./decisions.js"></script>
+<!--
+  Also a classic script, and for the same reason: guide.js is a module the
+  test suite cannot inline, so the ranker lives where a spec can reach it.
+  It reads VOCAB, so it must come after it.
+-->
+<script src="./search.js"></script>
+<script type="module" src="./guide.js"></script>
 
 </body>
 </html>

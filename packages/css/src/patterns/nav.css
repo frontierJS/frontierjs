@@ -36,17 +36,17 @@
   display:     flex;
   flex-wrap:   wrap;
   align-items: center;
-  gap:         0.375rem;
+  gap:         var(--space-xs);
   list-style:  none;
   margin:      0;
   padding:     0;
-  font-size:   0.875rem;
+  font-size:   var(--text-md);
 }
 
 .breadcrumb li {
   display:     inline-flex;
   align-items: center;
-  gap:         0.375rem;
+  gap:         var(--space-xs);
 }
 
 /*
@@ -70,31 +70,36 @@
  * ── Pagination ──────────────────────────────────────────────────────
  *
  *   <nav class="pagination" aria-label="Pagination">
- *     <a class="page" href="?p=1" rel="prev">Previous</a>
- *     <a class="page" href="?p=1">1</a>
- *     <a class="page" href="?p=2" aria-current="page">2</a>
- *     <span class="page-gap" aria-hidden="true">…</span>
- *     <a class="page" href="?p=9">9</a>
- *     <a class="page" href="?p=3" rel="next">Next</a>
+ *     <a class="pagination-link" href="?p=1" rel="prev">Previous</a>
+ *     <a class="pagination-link" href="?p=1">1</a>
+ *     <a class="pagination-link" href="?p=2" aria-current="page">2</a>
+ *     <span class="pagination-gap" aria-hidden="true">…</span>
+ *     <a class="pagination-link" href="?p=9">9</a>
+ *     <a class="pagination-link" href="?p=3" rel="next">Next</a>
  *   </nav>
  *
- * `.page` is in the chip lineage (chip.css), so it gets inline-flex
- * centering and the auto-contrast machinery for free — the current page
- * is a solid fill, and its text color is derived from that fill's
- * luminance like any other filled thing in the system.
+ * The control is a link, not a page. Shortening the class to `.page` puts
+ * one word on two subjects: `Page` is a tier in the vocabulary (Screen,
+ * Pane, View, Tabs), and `Previous`/`Next` carry this class while being
+ * neither a page nor numbered.
+ *
+ * `.pagination-link` is in the chip lineage (chip.css), so it gets
+ * inline-flex centering and the auto-contrast machinery for free — the
+ * current page is a solid fill, and its text color is derived from that
+ * fill's luminance like any other filled thing in the system.
  */
 .pagination {
   display:     flex;
   flex-wrap:   wrap;
   align-items: center;
-  gap:         0.25rem;
+  gap:         var(--space-2xs);
 }
 
-.page {
+.pagination-link {
   min-inline-size: 2rem;
-  padding:         0.375rem 0.625rem;
+  padding:         var(--space-xs) var(--space-md);
   border-radius:   var(--btn-radius);
-  font-size:       0.875rem;
+  font-size:       var(--text-md);
   font-weight:     600;
   color:           var(--ink-soft);
   text-decoration: none;
@@ -102,27 +107,27 @@
   transition:      background 120ms, color 120ms;
 }
 
-.page:hover:not([aria-current="page"]):not([aria-disabled="true"]) {
+.pagination-link:hover:not([aria-current="page"]):not([aria-disabled="true"]) {
   background: var(--surface-sunken);
   color:      var(--ink);
 }
 
 /* Focus ring: focus.css. */
 
-.page[aria-current="page"] {
+.pagination-link[aria-current="page"] {
   --tone-fill: var(--bg-mix, var(--color-primary));
   background:  var(--fill, var(--tone-fill));
   color:       var(--on-fill, white);
   cursor:      default;
 }
 
-.page[aria-disabled="true"] {
+.pagination-link[aria-disabled="true"] {
   opacity: 0.45;
   cursor:  not-allowed;
 }
 
-.page-gap {
-  padding:     0.375rem 0.25rem;
+.pagination-gap {
+  padding:     var(--space-xs) var(--space-2xs);
   color:       var(--ink-mute);
   user-select: none;
 }
@@ -147,7 +152,7 @@
 .navlist {
   display:        flex;
   flex-direction: column;
-  gap:            0.125rem;
+  gap:            var(--space-3xs);
   list-style:     none;
   margin:         0;
   padding:        0;
@@ -156,10 +161,10 @@
 .navlink {
   display:         flex;
   align-items:     center;
-  gap:             0.5rem;
-  padding:         0.4375rem 0.625rem;
+  gap:             var(--space-sm);
+  padding:         0.4375rem var(--space-md);
   border-radius:   var(--btn-radius);
-  font-size:       0.875rem;
+  font-size:       var(--text-md);
   font-weight:     500;
   color:           var(--ink-soft);
   text-decoration: none;
@@ -187,8 +192,8 @@
 }
 
 .navlist-label {
-  padding:        0.75rem 0.625rem 0.25rem;
-  font-size:      0.6875rem;
+  padding:        var(--space-lg) var(--space-md) var(--space-2xs);
+  font-size:      var(--text-2xs);
   font-weight:    700;
   text-transform: uppercase;
   letter-spacing: 0.06em;

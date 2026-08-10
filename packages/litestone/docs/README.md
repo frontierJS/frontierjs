@@ -9,6 +9,7 @@
 - [schema.md](schema.md) — .lite DSL: types, field attributes, model attributes, enums, functions
 - [migrations.md](migrations.md) — autoMigrate, file migrations, JS migrations, CLI
 - [typescript.md](typescript.md) — litestone types, generated .d.ts, WhereBase, WindowSpec
+- [jsonschema.md](jsonschema.md) — generateJsonSchema: every key it emits, modes, audience, who reads each
 
 ## Querying
 - [querying.md](querying.md) — findMany, findFirst, findUnique, count, exists, pagination, writes, multi-model `db.query()` batch

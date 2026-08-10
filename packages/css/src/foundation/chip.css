@@ -6,13 +6,13 @@
  * Adding a new composite = add its class name to the list.
  *
  *   chip
- *   ├── pill    chip + full radius + xs text
- *   ├── badge   chip + small radius + xs text + uppercase
- *   ├── btn     chip + button chrome
- *   ├── page         chip + pagination link
- *   ├── tooltip      chip + attached bubble
- *   ├── avatar       chip + fixed square + initials
- *   └── step-marker  chip + numbered circle
+ *   ├── pill             chip + full radius + xs text
+ *   ├── badge            chip + small radius + xs text + uppercase
+ *   ├── btn              chip + button chrome
+ *   ├── pagination-link  chip + one control in a pager
+ *   ├── tooltip          chip + attached bubble
+ *   ├── avatar           chip + fixed square + initials
+ *   └── step-marker      chip + numbered circle
  *
  * step-marker is the odd one — it is an Anatomy class, not an Element. It
  * is here because "solid tone fill with text on it" is exactly the problem
@@ -62,7 +62,7 @@
  * The consumer-side fallbacks keep pre-2024 browsers (no relative color
  * syntax) on the old behaviour rather than unstyled.
  */
-:where(.chip, .btn, .pill, .badge, .page, .tooltip, .avatar, .step-marker) {
+:where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker) {
   --fill: color(from var(--tone-fill) xyz-d65
     calc(x * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
     calc(y * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
@@ -77,13 +77,13 @@
   display:         inline-flex;
   align-items:     center;
   justify-content: center;
-  gap:             0.375rem;
+  gap:             var(--space-xs);
   white-space:     nowrap;
   text-align:      center;
 
   /*
    * A chip composite is just as often an <a> as a <button> — "New lead" that
-   * navigates, a .pill that filters, a .page in a pager — and the UA underlines
+   * navigates, a .pill that filters, a .pagination-link in a pager — and the UA underlines
    * anchors. Without this, every link-shaped button ships with an underline
    * through it, which is not a treatment anyone chose. Found by the Sierra
    * example, the package's first real consumer.

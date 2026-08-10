@@ -1,8 +1,8 @@
-# FrontierJS CSS — Project State (v0.12)
+# FrontierJS CSS — Project State (v0.14)
 
 > A minimal, composable, semantics-first CSS framework. Plain CSS, no build
-> step, no UnoCSS. Drop this whole doc + the source files into a fresh chat
-> to continue.
+> step; UnoCSS optional and supported alongside (ruled 2026-08-08). Drop this
+> whole doc + the source files into a fresh chat to continue.
 
 ---
 
@@ -15,9 +15,6 @@ The ~68 client marketing sites (cleaning services, landscaping, pools) and the
 `ksite` static-site generator are **downstream consumers of a subset** of the
 system, not the primary target.
 
-> Naming note: this was called **ksite-styles** through v0.4. It was renamed to
-> FrontierJS CSS during the v0.5 cycle. Old references to "ksite" as the design
-> system mean this package; "ksite" now refers only to the static-site generator.
 
 The system is **two halves, equally weighted**:
 
@@ -68,15 +65,16 @@ mattered. Before it, `.muted` on a card silently did nothing, because each
 component decided which tones it accepted. That's component thinking, and it
 made the utility claim false.
 
-### Three kinds of class
+### Four kinds of class
 
-Only two of the three compose freely, and the system reads better once they're
+Only two of them compose freely, and the system reads better once they're
 named apart:
 
 | Kind | Composes | What it is |
 |---|---|---|
 | **Element** | onto valid markup | Names *what a thing is* — `.btn` `.pill` `.badge` `.card` `.alert` `.field` `.link` `.table` `.dialog` `.drawer` `.popover` `.toast` `.feed` `.rows` `.items` `.bar` `.disclosure` `.steps` `.facts` `.avatar` `.avatars` `.kbd` `.code` `.icon` |
 | **Treatment** | onto anything | Orthogonal, element-agnostic — the 7 tones, `.raised` `.outlined` `.ghost`, `.text-*`, `.stack` `.cluster` `.center` `.split` |
+| **Density** | onto a region | The third axis and the only kind that **inherits** — `.dense` `.roomy`, or any `--density` number. A fact about a box, obeyed by everything inside it |
 | **Anatomy** | no — names a slot | Names *a position inside* an Element — `.alert-icon` `.alert-content`, `.feed-item` `.feed-dot` `.feed-content`, `.list-row` `.row-actions`, `.disclosure-summary` `.disclosure-body`, `.surface-header` `-body` `-footer`, `.field-group` `.field-hint` `.pill-close`, `.step-marker` `.step-label` `.step-hint` |
 
 Element and Anatomy are two ends of one relationship: several Element classes
@@ -88,13 +86,20 @@ Chaining is for Treatments; Anatomy nests.
 rather than prose. If you're wondering whether something belongs in the
 Vocabulary, the test is whether it carries an anatomy contract.
 
-There is a fourth group worth being honest about: **scoped modifiers** that read
+There is a fifth group worth being honest about: **scoped modifiers** that read
 like Treatment but aren't. `.square` only works on `.btn`, `.removable` only on
 `.pill`, `.striped`/`.compact` only on `.table`, `.divided`/`.hover` only on
 `.rows`, `.menu` only on `.items`. They're legitimate, but they're component
 modifiers living in a utility system, so they need a naming convention of their
 own or they'll be read as free-standing utilities and applied where they do
 nothing.
+
+**Density exists because three of them should never have been modifiers.**
+`.compact` on a Table, `.narrow` and `.wide` on a Bar are size decisions
+wearing a component's name — the exact shape this package criticises
+`btn-sm` for — and they took that shape because there was no space scale for
+them to live in. There is one now; retiring the three is a change to markup
+people have already written, so they still work.
 
 > **Consequence for naming.** Because Treatment classes are *meant* to be
 > applied broadly, generic unprefixed names are a bigger liability here than in
@@ -185,8 +190,8 @@ disclosure          native <details> expand/collapse
 tabs / tablist / tab  switching between Views          (NEW v0.6)
   + .pills / .stretch / .vertical (v0.8), selected keyed off aria-selected
 breadcrumb          hierarchy trail, separator via ::before   (NEW v0.6)
-pagination / page   page links, current = solid fill          (NEW v0.6)
-  + page-gap
+pagination          page links, current = solid fill          (NEW v0.6)
+  + pagination-link / pagination-gap        (renamed from .page v0.14.6)
 navlist / navlink   sidebar links, current = tinted           (NEW v0.6)
   + navlist-label
 steps / step        multi-stage flow, current = aria-current  (NEW v0.8)
@@ -227,9 +232,7 @@ table (tabular)    — own structure, tones on <tr> for row tinting
    colors, and now the only place naming them at all. Every consumer derives its
    tint from `--bg-mix` with an untoned fallback, so no component enumerates tone
    classes. Adding a tone really is one line in tones.css and zero component
-   edits; until v0.6 it took edits in four files, and surface.css, form-core.css,
-   tables.css and dialogs.css each supported a *different subset* of the seven
-   tones (`.secondary` and `.muted` were silent no-ops on every surface).
+   edits; 
 4. **`color-mix()` for derivation** — surface tints and row tinting all derive
    from `--bg-mix`. No manual color math.
 5. **Cascade layers** — index.css declares
@@ -265,7 +268,7 @@ table (tabular)    — own structure, tones on <tr> for row tinting
 ## Half 1 in detail — Structure
 
 The structural half of the system: six principles that decide element choice,
-and a vocabulary of 35 terms that fixes the answer for each concept. Where a
+and a vocabulary of 54 terms that fixes the answer for each concept. Where a
 term needs CSS to hold its shape, that CSS is an Anatomy class.
 
 ### Six principles
@@ -282,16 +285,25 @@ term needs CSS to hold its shape, that CSS is an Anatomy class.
 6. **Components only for behavior.** Visual treatment = class; keyboard/focus/
    ARIA behavior = component. Most "components" are class-only.
 
-### Vocabulary — six tiers, 35 terms
+### Vocabulary — eight tiers, 54 terms
+
+Grew from six/35 on **2026-08-08**. The additions were not new design: the CSS
+already shipped every one of them and the vocabulary simply did not say so. The
+guide had claimed "all 35 vocabulary terms ship CSS" for four versions, which
+was true and was half the question — the reverse had never been asked, and it
+was false eighteen times. `test/specs/vocabulary.spec.js` asks it now, from the
+real CSSOM, in both directions.
 
 | Tier | Terms |
 |---|---|
+| **Base** | Chip `<span>`, Surface `<div>`/`<article>` — the two lineages, at `:where()` specificity |
 | **Frame** | App `<body>`, Topbar `<header>`, Sidebar `<nav>`, Shell |
-| **Page** | Screen `<main>`, Pane `<section aria-labelledby>`, View `<article role=tabpanel>` |
-| **Region** | Section (`<section>` or `<article>` when nested), Group `<div>`, Bar `<div>`, Divider `<hr>` |
-| **Block** | Card `<article>`, Tile, Item `<li>`, Row `<li>`/`<tr>`, Feed `<ol>`+`<li><article>`, Alert `<article>`, Steps `<ol>`+`<li>`, Facts `<dl>`+`<dt>`/`<dd>`, Code `<pre>`+`<code>` |
-| **Inline** | Button, Link, Pill, Badge, Field, Heading, Text, Icon, Avatar `<img>`/`<span>`, Kbd `<kbd>` |
+| **Page** | Screen `<main>`, Pane `<section aria-labelledby>`, View `<article role=tabpanel>`, Tabs `<div role=tablist>` |
+| **Region** | Section (`<section>` or `<article>` when nested), Group `<div>`, Bar `<div>`, Toolbar `<div role=toolbar>`, Divider `<hr>`, Nav `<ul>`+`<a>`, Breadcrumb `<nav>`+`<ol>`, Pagination `<nav>` |
+| **Block** | Card `<article>`, Tile, Item `<li>`, Row `<li>`/`<tr>`, Feed `<ol>`+`<li><article>`, Alert `<article>`, Steps `<ol>`+`<li>`, Facts `<dl>`+`<dt>`/`<dd>`, Code `<pre>`+`<code>`, Table `<table>`, Disclosure `<details>`+`<summary>`, Empty `<div>` |
+| **Inline** | Button, Link, Pill, Badge, Field, Switch `<input role=switch>`, Heading, Text, Icon, Avatar `<img>`/`<span>`, Kbd `<kbd>`, Progress `<progress>`, Spinner, Skeleton |
 | **Overlay** | Dialog `<dialog>`, Drawer `<dialog>`, Popover `<article>`, Tooltip `<div>`, Toast `<article>` |
+| **Layout** | Stack, Cluster, Center, Split, Container — Every Layout's names, deliberately |
 
 The **article-vs-div line** is now a real diagnostic: a term with `<article>` is
 a self-contained unit you could lift out; `<div>` is structural infrastructure.
@@ -399,9 +411,11 @@ is a convenience artifact, not the product.
     ├── focus.css                  ← THE focus ring — one recipe, all of it (NEW v0.7)
     └── a11y.css                   ← .visually-hidden, .skip-link          (NEW v0.6)
 
-   guide/                          ← the interactive reference (49 pages)
+   guide/                          ← the interactive reference (52 pages)
    ├── index.html                  ← shell; <link>s the real ../index.css
-   ├── guide.js                    ← data, page builders, hash router
+   ├── guide.js                    ← data, page builders, hash router, ⌘K palette
+   ├── decisions.js                ← the Learn wizard's routing tree      (v0.13)
+   ├── search.js                   ← the search ranker + slugify          (NEW)
    └── guide.css                   ← chrome only (.sg-*)
 
    demo/                           ← a realistic SaaS admin, the first consumer
@@ -409,7 +423,9 @@ is a convenience artifact, not the product.
    ├── run.js                      ← driver: builds a page, runs Chrome, reports
    ├── harness.js                  ← in-page assertions + computed-style rulers
    └── specs/*.spec.js             ← meta · focus · tables · tones · contrast ·
-                                     layers · components · core-gaps
+                                     layers · components · core-gaps · code ·
+                                     decisions · overlays · search · space ·
+                                     type · vocabulary · anatomy
 ```
 
 > **In the repo:** all 36 `*.css` files, `package.json`, `README.md`,
@@ -437,7 +453,7 @@ is a convenience artifact, not the product.
   - Foundation: CSS Variables, Tonal, Themes, Colors
   - Structure: Vocabulary (29 terms, 6 groups)
   - Components: Buttons, Links, Headings, Cards, Alerts, Toasts, Popovers,
-    Drawers, Tables, Dialogs, Inputs, Tags & Pills, Icons
+    Drawers, Tables, Dialogs, Inputs, Badges & Pills, Icons
   - Patterns (NEW v0.5): Bar, Section Header, Items, Rows, Feed, Disclosure, Divider
   - Utilities: Layouts, Spacing, Typography
   - Reference: Cheat sheet
@@ -501,6 +517,29 @@ it finds: `.btn.square` sets `1.15em` on a child `<svg>` or any class starting
 
 (Note: Panel.svelte still uses `<i>`; docs prefer `<span>`. Unresolved, accepted
 either way.)
+
+### Type scale (tokens, one ladder — 2026-08-08)
+```
+--text-2xs 11 · xs 12 · sm 13 · md 14 (body) · lg 16 · xl 18 · 2xl 22 · 3xl 28 · 4xl 36
+--leading-display 1.1 · heading 1.2 · snug 1.45 · normal 1.5 · body 1.55 · relaxed 1.6
+```
+The `.text-*` utilities and `h1`–`h6` read the **same** rungs, which is why
+`.text-xl` and an `<h4>` are the same size — one number, not two that agree by
+hand. Only `xs…xl` have a class; the other four are heading material, and
+reaching for one directly means you wanted a heading.
+
+Before this, 53 sizes were literal across 20 files and four of them existed in
+**two spellings at once** — `13px` and `0.8125rem`, `14px` and `0.875rem`,
+`11px` and `0.6875rem`, `22px` and `1.375rem`. The px half does not scale when
+a reader raises their browser's base font, so the same nominal size was
+accessible in a table cell and not in a popover, in one package, by accident.
+Every substitution was pixel-identical except `.empty-title` (17→18px), which
+was off the ladder entirely. `test/specs/type.spec.js` now fails on any literal
+`font-size` outside `tokens.css` — `em`, `calc()` and `inherit` stay legal
+because each is deliberately relative to something.
+
+Rungs are **literal values**, never `--text-sm: var(--text-md)`: the alias trap
+that cost every focus ring its theme colour applies here identically.
 
 ### Breakpoints (literals, not tokens)
 ```
@@ -580,7 +619,6 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
 - ✅ Alerts, Toasts (v0.3); Popovers, Drawers (v0.4); shared sub-regions
 
 ### Repositioning + contract layer (v0.5)
-- ✅ Renamed ksite-styles → FrontierJS CSS (`@frontierjs/css`)
 - ✅ Repositioned: SaaS/tooling primary, marketing sites downstream
 - ✅ Principles page (6 principles)
 - ✅ Vocabulary page (6 tiers, 29 terms, two-level sidebar TOC)
@@ -623,6 +661,610 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   token if the separation turns out to matter
 
 ---
+
+### Syntax highlighting — `components/code.css` (2026-08-08)
+- ✅ Code blocks are highlighted, by `glow()` in `@frontierjs/utils` — the
+  first export that package has ever had. `css` takes it as a **devDependency**
+  for the guide and the suite; nothing shipped imports it
+- ✅ **The theme ships no class.** glow marks a token with the element that
+  already means it (`<em>` a value, `<sup>` a comment) and wraps the block in
+  `<code language="css">`, so the whole theme is `code[language] em { … }` —
+  nothing for `vocabulary.js` to name, nothing for a consumer to import
+- ✅ `code`, `.code`, `pre code` and `kbd` moved out of `typography.css` into
+  the new file, so a code block has one owner. Verified behaviour-neutral: nine
+  computed-style subjects byte-identical to HEAD
+- ✅ **The tones needed correcting before they could be text.** A tone is tuned
+  as a fill behind white text; measured as text on `--surface-sunken` across
+  the eight themes the raw values ran as low as 1.65:1, and only one theme had
+  all six roles above AA. Each now passes through a lightness window in oklch
+  (`--code-l-min`/`--code-l-max`), hue and chroma untouched — a no-op wherever
+  the tone already reads, so a well-tuned theme is not flattened. A blend
+  toward `--ink` also works, at 55%, and muddies everything equally
+- ⚠️ The window cannot be derived: relative colour syntax exposes the channels
+  of one origin colour, and the origin is the tone, not the surface. **A dark
+  theme must invert it**; `dark.css` and `basecamp.css` do, and `code: every
+  token clears AA in theme-*` catches one that forgets
+- ✅ `code.spec.js` — 25 assertions against **real glow output**, injected by
+  `test/run.js`. **251 passing** (was 226)
+- ⚠️ `theme-notebook`'s `--ink-mute` is 2.67:1 and fails AA wherever it is
+  text — nine files use it. Pre-existing, not caused here, and not compensated
+  for: `FJS-125`
+
+### The Learn wizard — `guide/decisions.js` (2026-08-08)
+- ✅ A **decision wizard** as the first page of the guide, in a new `Learn`
+  nav group above Start Here. The other 48 pages answer "how does Badge work";
+  this one answers the question that comes first — of 54 terms, which one is
+  the thing you are about to build
+- ✅ 16 questions, **52 outcomes**. An outcome gives the term, its element, its
+  class, its tier, a live preview, copy-ready markup (highlighted by glow), the
+  tone and treatment chips that actually apply to it, what carries its state,
+  and the **near misses** — Pill/Badge, Bar/Toolbar, Alert/Toast/Dialog,
+  Item/Row, Popover/Tooltip, Switch/Field. That last part is the teaching; a
+  reference page cannot state a distinction it only owns half of
+- ✅ **Nothing about a term is written twice.** The wizard names a term; the
+  element, class, tier and meaning come from `vocabulary.js` at render time
+- ✅ `decisions.spec.js` — 10 assertions, both directions. The one that earns
+  its place: **every shipped term must be reachable by some path**, or the page
+  whose whole job is completeness is silently incomplete. Verified to fail by
+  deleting a path
+- ✅ **Found 8 real errors in the first draft of the data**, none visible by
+  reading it: `.pill.outlined` and `.badge.outlined` do not exist (outlined is
+  a Button treatment); `menu`, `hover` and `divided` go on the list CONTAINER,
+  not the entry; `pills`/`stretch` and the tone go on `.tablist`, not `.tabs`;
+  `.disclosure.bordered` does not exist. Each would have rendered a control
+  that did nothing and taught that treatments are decorative
+- ⚠️ **`allRules()` never descended into CSS nested rules.** `surface.css`
+  declares `&.raised` and `&.outlined` by nesting, and the walk was built around
+  `@layer`/`@media`, so those rules were invisible to every spec reading the
+  CSSOM. Fixed; `allSelectors()` is the same walk with `&` resolved for
+  `matches()`. **261 passing** (was 251)
+
+### Menus and dropdowns — the answer is composition (2026-08-08)
+- ✅ **No Menu term, ruled.** A dropdown menu is `.popover` (surface) +
+  `.items.menu` (list) + `role="menu"` and arrow keys, and the third is not
+  CSS. Naming it would promise a keyboard contract the package cannot keep —
+  the Bar/Toolbar reasoning. `@frontierjs/ui`'s `DropdownMenu` is that exact
+  composition, which is the evidence rather than the argument
+- ✅ A route to it: the wizard's `anchored` question names menus, the Popover
+  outcome states the three parts, and the Popovers page has a **Dropdown menu**
+  section with a live anchored menu
+- ✅ **`.item` on a `<button>`/`<a>` now gets a control reset.** The documented
+  way to build a menu row is to put a real control in it, and then the control
+  arrives with a UA background, border, font and width the row cannot
+  override. Everyone who followed the advice wrote the same eight lines; the
+  kit's copy also drifted the row gap to `0.625rem` — deleted 2026-08-08, `FJS-126` closed, verified by `example`: `verify:ui` 27/27. Scoped through
+  `.items` for specificity — `.items.menu .item` is (0,3,0), so a bare rule
+  loses the cursor on a disabled row. 3 tests
+- ⚠️ **`popovers.css` was still telling people to position with Uno
+  utilities** — `class="popover absolute top-12 left-0"` — which the package
+  does not ship and, since the UnoCSS ruling, may not require. Replaced with
+  anchor positioning. `[popover]` is in the top layer, so a `position:
+  relative` parent means nothing and an un-positioned menu opens in the corner
+  of the viewport
+- ✅ The wizard's own Popover markup had been teaching the anti-pattern
+  `lists.css` warns about — a clickable-looking `<li>` with no control in it.
+  **264 passing** (was 261)
+
+### The comparison audit — `Why this one` (2026-08-08)
+- ✅ Second Learn page: an audit against **Tailwind v4, Bootstrap 5.3,
+  Bulma 1.0, Pico 2, Open Props, Radix Themes and Web Awesome**, checked
+  against each project's own documentation rather than from memory
+- ✅ It carries a *What the others do better* section — a comparison page
+  nobody can lose is a comparison page nobody believes. It also had a *Do not
+  use this if…* section leading with zero production consumers; **removed on
+  request 2026-08-08.** The README still states the alpha position, and
+  `## Where this is` below is the register for it
+- ✅ The real claim is stated as **multiplication**: Bootstrap needs 17 button
+  variant classes because it names each combination (9 solid + 8 outline,
+  from its own docs); this needs 7 tones + 5 treatments because the axes stay
+  separate, and those 7 tones then work on cards, rows, fields, badges and
+  alerts as well
+- ⚠️ **`contrast-color()` shipped in browsers around March 2026**, which does
+  the black-or-white pick natively in one line. The page says so. What is
+  left of the claim is narrower and still true: where white cannot reach
+  4.5:1 this dims the FILL rather than flipping the text, so the hue survives
+- ✅ Every number about this package is **counted at render time** from
+  `VOCAB` and the live CSSOM — 54 terms, 8 tiers, 164 classes shipped. A
+  comparison page is the easiest place in a repo to leave a stale number
+- ✅ Credit where the ideas came from, including the collision worth knowing:
+  Every Layout's `Frame` is an aspect-ratio box and ours is the app shell
+  tier; their `Sidebar` is a layout primitive and ours is the nav column
+- ✅ `code(src, 'txt')` now skips glow — a plain diagram was being coloured as
+  if "Bootstrap" and "Props" were identifiers
+
+### The worked example — one button, three times (2026-08-08)
+- ✅ *The classic example: a button* replaces the one-line five-way sample.
+  Every framework looks alike on a button until it needs a second variant,
+  and alike again until you need a colour it did not ship, so the section
+  walks one button through all three
+- ✅ Step 2 is a set — solid / outlined / small / disabled / busy — against
+  **Bootstrap only**, the closest of the three and the one most readers know.
+  Tailwind has no row: there is no set, which is the trade it makes on purpose
+- ✅ Step 3 is the payoff. A client's purple, `#6d28d9`: **thirteen
+  declarations and four shades you choose** in Bootstrap's own docs' shape,
+  a ramp plus the chain at every call site in Tailwind, a Sass map and a
+  recompile in Bulma — against `.brand { --bg-mix: #6d28d9 }` here. The four
+  *your call* comments are the point: each is a shade somebody picks, and
+  picking it wrong is how a system ends up with two purples
+- ✅ Step 4 renders that rule **live on the page**, unscoped, so the sample
+  and the thing it renders are the same declaration — button, badge, pill,
+  field, alert. `comparePage.init` then measures the filled button in the
+  reader's browser and writes the ratio into the prose: **7.10:1**,
+  independently confirmed by a standalone probe. Nobody wrote that text
+  colour down; `#6d28d9` was the only value in the rule
+- ⚠️ The measurement goes through a canvas, not a regex. Chrome serialises
+  the derived fill as `color(xyz-d65 …)` and parsing those floats as 8-bit
+  channels gives a plausible wrong answer for every colour
+- ✅ One concession stated in the open: **Pico needs no class for a spinner**
+  — `aria-busy="true"` draws it — where this wants the attribute *and*
+  `loading`, because the attribute announces and the class draws
+
+### The third axis — density, space and exits (2026-08-08, v0.13)
+
+- ✅ **A space ladder.** The type scale had been tokens for four versions
+  and space had never been a scale at all: padding was a literal `rem` in
+  whichever file needed it. `--space-3xs … --space-6xl`, twelve rungs on a
+  2px grid to 16px and coarser above. **82 declarations across 26 files**
+  converted, and 27 of 27 rendered components are **byte-identical** to
+  HEAD at density 1 — measured, not assumed
+- ✅ **`--density` is the third free-standing axis**, and the exact mirror
+  of a tone: a tone is registered `inherits: false` because it is a fact
+  about one element; density is `inherits: true` because it is a fact about
+  a region. `.dense` (0.8) and `.roomy` (1.25) set it, and every Card, Row,
+  Field and Table inside follows with no component told anything
+- ⚠️ **The ladder is declared on `*`, not on `:root`.** At `:root` the
+  `var(--density)` inside each rung substitutes ONCE, against `:root`, and
+  the resulting fixed length inherits straight past every `.dense` — the
+  alias trap ruled 2026-08-02, silent because the token still holds a
+  perfectly good value. Same mechanism `tones.css` uses for the tint ramp.
+  A test moves the ladder back to `:root` and three assertions go red
+- ✅ **Density can be derived.** `container: fjs / inline-size` on the app's
+  own box, and under 30rem/20rem the package steps density to 0.9/0.8. The
+  container rules are on `*` — zero specificity — so **declared beats
+  derived**: a stated `.roomy` inside a narrow box stays roomy
+- ⚠️ **The package ships no `container-type` of its own, and a test
+  enforces that.** Inline-size containment means a box can no longer be
+  sized by its contents: measured, a Card inside a Cluster went from
+  **83px to 42px**, the width of its own padding, and the same in an
+  auto-sized grid track. It also makes the box the containing block for
+  `position: fixed` descendants. Dialog and Popover are unaffected — the
+  top layer escapes containment
+- ✅ **Overlays can leave.** All four vanished on `display: none`; Dialog
+  had no entry animation either. `components/overlays.css` owns the tier's
+  motion — `@starting-style` + `transition-behavior: allow-discrete` +
+  `overlay` — and each component states only its direction via
+  `--overlay-from`. The four drawer `@keyframes` are gone. **A Toast leaves
+  with `el.hidden = true`**: the exit is a transition on the `hidden`
+  attribute, so there is no dismissing class to remember
+- ⚠️ **The overlay spec reads rules, not computed styles**, and says why:
+  measured, headless Chrome under `--virtual-time-budget` runs almost none
+  of the transition lifecycle for a top-layer element — `transitionrun` and
+  `transitionend` never fire at all, not even for the entry that
+  demonstrably runs. A Toast, which is not in the top layer, reports the
+  whole lifecycle both ways
+- ✅ **A Disclosure animates open.** `interpolate-size: allow-keywords` at
+  the root plus `::details-content` make `height: 0` → `auto` animatable —
+  the thing CSS could not do for twenty years and every accordion measures
+  in JavaScript instead
+- ✅ `text-wrap: balance` on headings, `pretty` on the two prose surfaces
+  the package owns (`alert-content > p`, `.empty-text`). The package styles
+  no bare `p` — it is not classless
+- ✅ **Card bleed margins are the card's own rung**, not a literal that
+  happens to match: `.card > .surface-header` used `-1.25rem`, which would
+  have stayed put while the padding moved and misaligned every card inside
+  a `.dense` region
+- ✅ 281 tests (was 264): `space.spec.js` 11, `overlays.spec.js` 6. Both new
+  files were proved to fail — the ladder moved to `:root`, a literal put
+  back, `allow-discrete` removed, an `@starting-style` deleted
+- ✅ Guide: **51 pages**. New `Foundation → Density & space`; *Kinds of
+  class* is four kinds; the compare page's list is five things, and its
+  platform-state item now covers exits
+
+### How things behave — the page the vocabulary could not be (2026-08-08)
+
+- ✅ **`Spacing` is retired and `How things behave` takes its slot.** The old
+  page documented a 4px numeric scale the package never had and a set of
+  `p-*` / `m-*` / `gap-*` margin utilities it does not ship — on a page whose
+  real subject was who *owns* the space. `#spacing` rewrites to `#behaviour`
+  through the existing `RENAMED` map
+- ✅ Built out of a 2026-05 design note rather than invented. Three
+  principles, all of which the package already obeyed silently:
+  **the parent owns the space between children**; **pad the child first out
+  of context, then decide the gap in context**; **does the child shape the
+  parent (flex) or the parent constrain the child (grid)?**
+- ✅ The third one **predicted the container-query trap** before it was
+  measured. `container-type: inline-size` means precisely *this box no
+  longer takes its shape from its children*, so it broke the flex case
+  (83px → 42px) and an auto-sized grid track, and left a fixed track alone
+- ✅ The ownership claim **counts itself at render time**: 43 gap
+  declarations, 5 negative margins (the documented exception — a child
+  pulling out of its parent's padding) and **10 ordinary margins left over**,
+  stated on the page as the honest count of places the rule is not followed
+  yet. An earlier grep said "4" and was too narrow
+- ✅ Two more sections the guide had nowhere for: **what is making the
+  width** (the diagnostic — delete all the whitespace, what is the longest
+  row and why) and **when a wrapper div is justified** (is there a
+  background, a border or a shadow? otherwise it is a Layout term, or the
+  plural of what it holds)
+- ⚠️ **Three pages were quoting source that had moved.** Layouts showed
+  `gap: 1rem` for rules that now read `var(--space-2xl)`; Headings showed
+  literal rems for `font-size`; Spacing's whole scale. All three now render
+  through `ruleText(selector)`, which reads the live CSSOM — a page that
+  documents source has to read the source, not remember it
+- ⚠️ `ruleText()` reads **authored `cssText`**, never `rule.style`. Iterating
+  `rule.style` expands `gap: var(--space-sm)` into `row-gap` and
+  `column-gap` and then answers `""` for both, so the first version printed
+  `row-gap: ;` and looked like a broken stylesheet. Same trap
+  `space.spec.js` hit, in a different place
+
+### The demo, brought up to date (2026-08-08)
+
+- ⚠️ **The demo was defeating the new toast exit.** `demo.js` did
+  `setTimeout(() => el.remove(), 4000)` — taking the node out of the DOM
+  skips the transition entirely, so the toast blinked out of existence. It
+  now sets `el.hidden = true` and reclaims the node afterwards
+- ⚠️ **That reclaim is a timeout, not a `transitionend` listener**, and
+  deliberately: a transition that never starts never ends, and a listener
+  that never fires leaks the node forever. Measured in this harness, neither
+  `transitionend` nor `animation.finished` resolves for a hidden Toast. The
+  delay is read from the package's own `--overlay-time` so the two cannot
+  drift
+- ✅ **A density control in the invoices toolbar** — the fastest way to see
+  the third axis is real, and a genuine SaaS affordance rather than a
+  demonstration. Driven in a browser: table cell padding 6px → 4.8px →
+  7.5px → 6px, and **the badges in the bar above the table follow too**
+  (8px → 6.4px → 10px). One number on the Pane; nothing is told which
+  components exist. ~4 lines of JS
+- ✅ Disclosure needed nothing — the demo already has one, and it animates
+  open for free
+- ✅ `demo.css` is unchanged and still one rule. It is the package's gap
+  measurement, and nothing shipped this week added to it
+
+### Wireframes on the wizard's first question (2026-08-08)
+
+- ✅ Each of the eight options on *What are you reaching for?* now carries a
+  small wireframe: an inline chip inside a line of text, a block owning a
+  row, a scrim with a panel over it, a persistent top strip, a label and a
+  field, three dashed boxes with no fill, a heading over its paragraph, and
+  a shell with a rail
+- ✅ **Eleven of the sixteen questions**, not just the first — the earlier
+  claim that everything below the root asks what a thing *does* was too
+  broad. Drawn wherever the answer is a SHAPE: the shell part by part, the
+  five arrangements, the eleven kinds of block, the six kinds of wayfinding,
+  Card/Tile, Item/Row, Section/Group, Dialog/Drawer, Heading/prose.
+  **50 of 69 options carry one**
+- ✅ **Five questions are deliberately undrawn, and each omission is the
+  point.** `inline` — a Button and a Link are the same shape, and drawing
+  them would say the choice is visual in the one place this wizard most
+  needs to say it is not. `waiting` — its own note says picking wrong is an
+  accessibility bug rather than a style choice, and a picture invites
+  picking by look. `strip` — Toolbar and Bar are the same shape BY DESIGN,
+  so two identical drawings would teach that the question is meaningless.
+  `anchored` and `form` — two of three options each resolve to the same
+  term, so a set would show one drawing twice
+- ✅ Built from divs and theme tokens — no SVG, no asset — so the drawings
+  follow the theme switcher. Widths arrive on `--w`, a token assignment
+  rather than a style override, the same convention the demo uses for
+  `--avatar-size`
+- ✅ Kept in `guide.js` as `WIZ_SKETCH`, keyed by the option's `to` id, not
+  in `decisions.js`: that file is routing data with a spec guarding it
+  against the vocabulary in both directions, and a drawing is chrome
+- ⚠️ A coverage probe walks every question by clicking through the wizard
+  and flags any sketch part with zero area. It found five — `flex: 0`
+  written inline on a row that already declares `flex: 0 0 auto`, which
+  re-expands to `flex: 0 1 0%`: a zero basis with no grow, so the row
+  measured 0 tall. The probe's own first version called `location.reload()`
+  to reset between paths, which tore down the document it was measuring and
+  reported every part as collapsed
+- ⚠️ Two things had to be measured rather than eyeballed. `align-items:
+  center` on a sketch row collapsed every `flex: 1` box to a hairline, so
+  the arrangement sketch rendered as one dashed rule. And the fills were
+  mixed into `--rule`, which is tuned as a hairline divider and vanishes
+  against `--surface-sunken` — the shell's content area read as empty and
+  its rail as a stray nub. Both now mix into `--ink`; checked across all
+  eight themes, the weakest is 3.02:1 against the sketch surface
+
+### Search — the corpus is harvested, not written down (2026-08-08)
+
+- ✅ **`⌘K` / `Ctrl+K` anywhere, `/` when the caret is not in a field.** One
+  box over the whole guide: the 54 vocabulary terms, 51 page titles, every
+  section heading, and every word of body text — which is what makes a class
+  name work as a query. `surface-header` typed out of an app's markup lands on
+  the four sections that document it; `.list-row` lands on the term Row
+- ✅ **`buildSearchIndex()` renders all 51 pages into a detached node** at idle
+  after boot (~150ms measured) and reads the sections back out of the markup.
+  A written index of a 51-page guide goes stale on the first heading anyone
+  edits, and goes stale *silently* — a missing entry looks like a page with
+  less in it. The one thing that had to be shared rather than reimplemented is
+  the section id: harvesting calls the same `tagSections()` the live render
+  calls, so a result's href and the id it lands on are one function, including
+  how both number a duplicated heading
+- ✅ **The ranker is `guide/search.js`, a classic script, so a spec can hold
+  it.** Same split as `decisions.js` and for the same reason: `guide.js` is an
+  ES module that imports glow, so the suite cannot inline it, and a search box
+  whose ranking nothing checks goes subtly wrong in silence. `search.spec.js`
+  is 8 tests over a corpus of the real 54 terms plus one deliberate decoy — a
+  body-text entry naming every term three times, which is what a long guide
+  page actually is
+- ✅ **Both directions, again.** Every term must be the first hit for its own
+  name *and* for its class name — and the second is the one that matters,
+  because the class is nowhere in the term for eleven of the 54 (`btn`,
+  `list-row`, `navlist`). Proven by mutation: removing the class lookup, or
+  splitting tokens on `-`, or letting a title score what body text scores, each
+  turns the suite red
+- ✅ **A title outranks any weight of body text**, because a guide repeats its
+  own vocabulary constantly — rank mentions near titles and the answer to
+  "card" is whichever page talks about cards the most. Frequency only breaks
+  ties, capped at +5. Adding it was measured, not assumed: without it "dense"
+  answered with a table's Variants section, which says the word once, above the
+  three sections of the Density page that are about nothing else
+- ✅ **`vocabClass(row)` now lives in `vocabulary.js`.** Which class a row names
+  is a two-branch rule with a trap in it — an absent fourth element means the
+  lowercased term, an explicit `null` means the term has no class — and it was
+  being applied in two places about to become three. A truthiness reading turns
+  Heading into `.heading`, a class the stylesheet does not ship
+- ⚠️ **Five deliberate non-features.** No fuzzy matching (a CSS guide is
+  searched with exact class names, and fuzz on 400 entries returns noise); no
+  stemming; no search-as-you-type debounce (the corpus is in memory, a keystroke
+  costs under a millisecond); no result count (a number nobody acts on); no
+  history (the palette is a jump, not a session)
+- ⚠️ Driven in a real browser, not eyeballed: 15 checks over the palette —
+  opens, focuses, ranks, arrows wrap, Enter navigates *and* closes, Escape
+  restores focus to the trigger, `/` is inert inside a field, and every section
+  href a query produces resolves to a real id on its own page
+
+### Anatomy — the half of Structure that was prose (2026-08-08, v0.14)
+
+- ✅ **`ANATOMY` in `vocabulary.js`: which children each term expects.** VOCAB
+  has answered "which element, which class" for all 54 terms since v0.12, in
+  both directions against the real CSSOM. It never answered "which children" —
+  that lived in **seven guide pages as hand-written markup**, one sentence on
+  the taxonomy page, and a convention. **25 terms have an anatomy, 42 named
+  parts, one canonical markup block each**; the other 29 are a single element,
+  which is itself the answer
+- ✅ **A part is OWNED once and BORROWED after.** Card, Dialog, Drawer and
+  Popover all take the Surface sub-regions; listing them on four terms would
+  say there are four headers with four meanings, which is the claim the whole
+  lineage denies. `parts` vs `uses` makes the sharing a statement rather than
+  a repetition, and `anatomy: every class it borrows is owned by some other
+  term` is what keeps it true
+- ✅ **A part need not be a class.** Facts ships none on purpose — the `<dl>`
+  styles its own `<dt>`/`<dd>` — and declaring that is what stops someone
+  adding `.fact-label` to make the pattern look like the others
+- ⚠️ **The convention it replaces was wrong five times.**
+  `vocabulary.spec.js` treats any hyphenated class as Anatomy and skips it.
+  That accepts `.alert-anything`, and it mislabels `.code-inline` (an alias
+  for the `<code>` element), `.sidebar-first` (a modifier on Shell),
+  `.skip-link` and `.visually-hidden` (a11y utilities) and `.list-row` (the
+  Row term's own class). `NOT_ANATOMY` names all five, plus the three
+  families — eight themes, eleven `text-*`, four `from-*` — **by name rather
+  than by prefix**, because a prefix rule is exactly how `.alert-anything`
+  gets in
+- ⚠️ **It caught the vocabulary lying about an element on its first run.**
+  VOCAB said Tooltip is a `<div role="tooltip">`. Four places ship a
+  `<span>`: `tooltips.css`'s own anatomy comment, the guide twice, and
+  `@frontierjs/ui`'s `Tooltip.mesa` — and they have to, because `.tooltip` is
+  chip lineage and `.tooltip-anchor` is an inline-flex `<span>`, so a `<div>`
+  inside it is not phrasing content. The one element the vocabulary named was
+  the one element its own anatomy could not legally contain. `tooltips.css`
+  had said both things in the same file header for four versions
+- ✅ **`anatomy.spec.js`, 10 tests, and the last three are the ones nothing
+  else could do.** Every markup block must render every part it claims;
+  the element carrying the term class must be the tag VOCAB names — asked of
+  the term, not the root, because Table's canonical markup opens `.table-wrap`
+  and Field's opens `.field-group`; and **every part must match a rule where
+  the markup puts it**, which is the `.items.menu .item` failure asked as a
+  question. Computed styles cannot answer the last one: several parts only
+  differ on `:hover` or `[aria-current]`
+- ✅ **`declaredClasses()` moved into the harness.** Two specs now ask it the
+  same question from opposite ends — vocabulary for *is every term's class
+  real*, anatomy for *is every real class claimed* — and two copies of the
+  CSSOM walk would drift the day one started counting nested rules
+- ✅ **A new guide page reads all of it**: Structure → Anatomy, 27 sections,
+  25 live previews, nothing written by hand. **The seven pages that carried
+  the markup keep it** — they are not duplication, they are demonstrations
+  with the edge cases in them (a label long enough to wrap, an avatar inside
+  a value, a page control that is present and unavailable), and swapping them
+  for the canonical block would have cost coverage
+
+### A copy button on every code block (2026-08-08)
+
+- ✅ **178 blocks, 178 buttons, on all 52 pages** — every sample, every
+  `Source` section showing the real CSS, every canonical markup block on the
+  Anatomy page. `code()` wraps its own output, so a block gets one by
+  existing rather than by being remembered
+- ✅ **The control is a SIBLING of the `<pre>`, not a child.** `.code`
+  declares `overflow-x: auto`, so a button inside it rides off the edge with
+  the first line long enough to scroll
+- ✅ **Dimmed at rest (0.55), not hidden.** A button that appears on hover is
+  unreachable on a touch screen and invisible without a pointer, and at 178
+  blocks the affordance has to be discoverable once rather than per block
+- ⚠️ **It copies the authored source, held by index, not `pre.textContent`.**
+  `mark: true` turns `•x•` into a `<mark>` and REMOVES the bullets; glow's
+  diff markers go the same way. Measured, **all 178 blocks round-trip
+  identically today**, so textContent would work and this is correct by
+  construction rather than a fix for a live corruption — kept because the
+  Code page documents `•text•` as the way to mark a line, so the guide
+  teaches the one syntax that breaks the cheaper implementation, and the
+  failure is silent on both sides of the clipboard
+- ⚠️ **`navigator.clipboard` is secure-context only and `file://` is not
+  one** — and opening `guide/index.html` off disk is a documented way to read
+  the guide. The off-screen `<textarea>` + `execCommand` path is a fallback
+  the guide needs, not a legacy branch. A refused clipboard says
+  *Press ⌘C* rather than reporting failure
+- ⚠️ `CODE_SRC` is reset per render. `buildSearchIndex()` renders all 52
+  pages into a detached node and pushes a few hundred throwaway entries, so
+  it truncates back to the mark it found — verified by copying after the
+  index builds and getting the live block's own source
+
+### The two axes — the guide's one diagram (2026-08-08)
+
+- ✅ **A Foundation page whose centrepiece is a hand-built inline SVG.** The
+  argument it makes is that a tone and a density are the same idea pointed at
+  different problems — one variable in, a whole system out — and that what
+  separates them is one line of `@property`. Left half: `--bg-mix` → three
+  tints → a text colour branched on luminance, inside a boundary that stops.
+  Right half: `--density` → twelve rungs → the same rung at three densities,
+  inside boundaries that are crossed
+- ✅ **Every number is read or measured at render time.** The mix percentages
+  and the two luminance constants come out of the authored CSS; the twelve
+  rungs and the three densities are measured off probe elements appended to
+  this document, because a rung is `calc(rem × var(--density))` and the only
+  honest way to know what one IS here is to give an element that width and
+  ask. A diagram is the easiest thing in a repo to leave stale — nothing
+  renders wrong when it rots, the picture still looks like a picture — so
+  this one goes wrong visibly instead
+- ✅ **Inline SVG, no chart library.** `var(--…)` inside it resolves against
+  the live theme, so the drawing follows the switcher: measured, the source
+  chip moves from `rgb(244,64,58)` to `rgb(185,28,28)` between default and
+  forest, and under `theme-dark` the tint swatches re-mix into the dark
+  `--surface` rather than staying pale
+- ✅ **Both halves report a VALUE at each level**, which is what makes the
+  mirror land: the left says `--bg-mix stated` on the Card and
+  `--bg-mix unset` on its Button, the right says `--density: 0.8 stated` on
+  the Pane and `0.8 inherited` on the Card and the Row inside it
+- ⚠️ **`tokenValue()` looks a property up by PROPERTY, not by selector.** The
+  first version asked for the selector as authored — `*, *::before, *::after`
+  — and got nothing, because the CSSOM serialises that as
+  `*, ::before, ::after`, dropping the redundant `*`. The tint ramp read as
+  absent and the three swatches it feeds rendered as nothing at all, on a page
+  whose whole claim is that its numbers are live
+- ⚠️ **Three collisions the assertions could not see.** The `roomy` bar landed
+  on top of the `inherits: true` box, an arrow ran through the word it was
+  meant to point at, and the two halves' boundary blocks did not line up.
+  Numbers passing is not a diagram that looks right — it took screenshots at
+  three sizes and two themes, and the fix for the third was to drop the arrow
+  entirely for the per-level values above
+- ⚠️ **The 11px SVG labels are unreadable at a phone width**, which is why the
+  page carries the same facts as tables underneath rather than as a caption.
+  The `<desc>` is a real description, not a filename
+
+### Every class, searchable — the cheat sheet's class index (2026-08-08)
+
+- ✅ **All 166 classes the stylesheet ships, read out of the live CSSOM**, each
+  with its kind, one line saying what it is, and which files declare it —
+  `.surface-header` names four. Typing `header` returns `.surface-header`,
+  `.section-header`, `.dialog-close`, `.surface-body` and `.topbar`; typing
+  `tables.css` returns the six classes that file declares. Every token is
+  required to land, same rule as the ⌘K palette, so a second word narrows
+- ✅ **The kinds are read, not assigned**: 50 terms from VOCAB, 42 parts from
+  ANATOMY with their owner named, 28 excused by NOT_ANATOMY, and 7 tones /
+  4 treatments / 2 densities / 23 scoped modifiers / 4 containers / 6 heading
+  classes from NOT_A_TERM. **The table is therefore a test result** — a row
+  reading `unclassified` means a class nothing names, which
+  `vocabulary.spec.js` and `anatomy.spec.js` refuse to allow. Currently zero
+- ✅ **`NOT_A_TERM` moved from `vocabulary.spec.js` into `vocabulary.js`**,
+  where the guide can read it. A register of decisions that only the tests
+  can see is one the documentation has to guess at — the same reason ANATOMY
+  and `vocabClass` live there. The spec's copy had to go in the same edit:
+  both files are inlined into one page as classic scripts, so two
+  declarations of the name is a SyntaxError that takes the suite with it
+- ✅ **Twelve kinds, not eight.** `not a part` had become a bin: it held the
+  eleven `text-*` utilities, the eight themes, the a11y layer and four
+  Drawer directions, and calling all of them *not a part* said nothing.
+  Split into **utility** (12), **theme** (8), **a11y** (2) and a residue of
+  **6** — `.code-inline`, `.sidebar-first` and the four `.from-*`, which is
+  a short enough list to actually read
+- ⚠️ **The a11y group is identified by where a class SHIPS, not by name**, so
+  a third class added to `a11y/` joins it without anyone remembering. But the
+  test runs after the `NOT_A_TERM` loop, deliberately: `.focusable` ships in
+  `a11y/a11y.css` and the register calls it a scoped modifier, and a display
+  rule that quietly overruled the register would make the guide and the suite
+  disagree about what a class is with nothing to say which was right. It
+  stays a modifier and reads *only on `.visually-hidden`*
+- ✅ **Every note is specific to its class, and derived.** The first version
+  wrote one sentence per KIND, so twenty-three modifiers all read *reads like
+  a treatment, only works on one Element* and both densities read *the density
+  axis*. True, and useless — the badge beside it had already said the kind.
+  Now: `.dense` reports `--density: 0.8 — tightens every space rung by 20%`
+  (measured off a probe), `.striped` reports `only on .table — sets
+  --row-base: var(--surface-sunken)` (its own scope and declaration, out of
+  its own selectors), `.narrow` and `.wide` are told apart by their values,
+  `.from-left` says which edge it slides from, `.text-lg` reports 16px here,
+  and each theme reports its measured `--color-primary` and how many tokens
+  it overrides
+- ✅ **Zero rows share a note with another row of the same kind**, down from
+  five groups covering 26 classes — a property worth stating because it is
+  checkable, and it is what "the column is useful" actually means. The last
+  group to fall was four themes that genuinely override the same NUMBER of
+  tokens; they differ in which, so the row shows the colour instead
+- ⚠️ **A one- or two-declaration summary shows the VALUE, three or more shows
+  only names, and there is no `+N` remainder.** A rule is attributed to every
+  class its selector mentions — `.items` collects what `.items.menu .item`
+  sets — so a count would read as complete when the attribution is
+  deliberately loose
+- ✅ **Kind toggles above the table**, one per kind with its count, plus
+  `All`. Several selected is a union; `All` clears the kinds and deliberately
+  leaves the text box alone, because the two are separate filters and
+  resetting one should not silently reset the other. Text AND kind, never
+  either alone — kind-only would make typing do nothing while a filter is on,
+  which is the version people report as broken
+- ✅ **Pressed is `[aria-pressed]`, never a class** — the convention the
+  package keys every other state off, because a control that LOOKS pressed
+  while announcing itself unpressed is a divergence a class makes possible and
+  an attribute makes unrepresentable. **The package ships no `aria-pressed`
+  styling at all**, so this is guide chrome; being unlayered is what lets it
+  beat `.btn.outlined` with no specificity fight
+- ✅ **The pressed fill is not chosen, it is derived.** The rule sets
+  `--bg-mix` and lets `chip.css` do the rest: measured, a pressed toggle's
+  background lands at `color(xyz-d65 … 0.1783 …)` — exactly the luminance
+  constant the contrast system targets — with white text the package computed
+  rather than the guide picking one
+- ⚠️ **A measurement said the pressed styling was backwards, and it was
+  lying.** Reading `getComputedStyle` after clicking a toggle reported the
+  unpressed colours, because computed styles go stale after an attribute
+  change in this harness — the trap this package's own notes record. Measuring
+  a freshly-rendered pressed button showed the rule was right all along. The
+  fix was to the probe, not the CSS
+- ⚠️ **The prose promised a search the markup could not do.** It said typing
+  `tables.css` finds that file's classes, and the row's haystack held only
+  the name, kind and note — not the file. Caught by asserting the promise
+  rather than the mechanism: the probe searched `tables.css` and got nothing
+
+### Item grows an anatomy, and `.clamp-*` ships (v0.14.6, 2026-08-10)
+
+Prompted by reading one line of the guide's own ⌘K markup and asking why a
+search hit needed seven bespoke classes when it looks like a list of cards.
+
+- ✅ **`.item` had no named parts at all**, which is why the same four classes
+  existed twice in the repo: the guide's ⌘K wrote `.sg-search-text/-title/-sub`
+  and `@frontierjs/ui`'s CommandPalette wrote `.cp-row-text/-label/-sub` in a
+  local `<style>`. Two private solutions to one shape, neither reusable, and
+  the kit's copy in literals no token or `.dense` could reach (`FJS-129`).
+  Now `.item-text` / `.item-title` / `.item-sub` / `.item-lead` in `lists.css`
+- ✅ **All four parts are optional**, so a one-line Item is untouched. The
+  anatomy is additive — nothing that already writes `.item` has to change
+- ⚠️ **`.item` is `align-items: center` and a stacked Item must not be.** A
+  gutter centred against a three-line block sits opposite the SUBTITLE, not
+  the title it labels. Keyed `.item:has(.item-lead)`, so the switch is paid
+  for only by rows that have a gutter. A bare `.item { align-items: baseline }`
+  would fix the palette and quietly misalign every badge-and-text row in the
+  package — both directions are held by a test
+- ✅ **`.clamp-1/2/3` is a utility, not anatomy on Item.** The need is
+  orthogonal to what the text sits in: a card description and a table cell
+  want it too. The reason it ships at all is that a snippet which grows makes
+  a list JUMP as a query narrows — the failure belongs to the list, not to the
+  paragraph
+- ⚠️ **The prefixed clamp is the floor and the modern one wins, and the order
+  is load-bearing.** `display: -webkit-box` is a whole box model, so the
+  `@supports (line-clamp: 2)` block puts `display` back to `flow-root` where
+  it is understood. Measured in Chrome 150: 40px against an unclamped 120px,
+  computing `flow-root`, so the modern path is the one running. Reversing the
+  two blocks still clamps here, which is what would make the lost fallback
+  silent
+- ⚠️ **The first shrink test passed against a build with the declaration
+  deleted.** It measured the ROW, and an `<li>` is block-level so it takes its
+  container's width either way — the broken build reported 200px exactly like
+  the working one. Two things were wrong: the title has to be `nowrap` for the
+  question to exist (wrapping text never exceeds its container), and the
+  overflowing CHILD is where the failure is visible (409px inside a 200px
+  row). Verified by breaking the CSS three ways and confirming each break goes
+  red
+- ✅ **Guide chrome down from seven classes to two.** `.sg-search-hit` keeps
+  only the active/focus states, and the kind gutter keeps only what is about
+  search — mono, uppercase, and the one tone. `.sg-principles` went the same
+  way in the same pass: `display: grid; gap: 12px` is `.stack.gap-lg`, and
+  `--space-lg` is 12px exactly, so nothing moved
 
 ## Known constraints / quirks
 
@@ -870,7 +1512,8 @@ than CSS — it belongs in the style guide, not the package.
    **Now 49 pages.** Added: Avatar, Facts, Steps, Code & Kbd. Rewritten: Icons
    (for `.icon` / `--icon-size` / the three-way drift it replaced) and the
    Typography type scale. Extended: Tabs gained a vertical section. The
-   Vocabulary table lists all 35 terms and every one has a page.
+   Vocabulary table lists all 35 terms and every one has a page. *(54 since
+   2026-08-08; see the Vocabulary section above.)*
 
    Four claims were false rather than merely missing, and are fixed:
    - The type scale table listed **eight** Tailwind-shaped tokens
@@ -957,7 +1600,7 @@ move the utilities import above the first components import and rebuild, and
 `.btn.text-lg` goes 16px → 14px in the bundle while the source stays 16px.
 `build.js` reads the statement out of `index.css`, prepends it, and refuses to
 write a bundle without it.
-`guide/` is the interactive reference (49 pages, all 35 vocabulary terms) and `<link>`s the real
+`guide/` is the interactive reference (48 pages, all 54 vocabulary terms) and `<link>`s the real
 `index.css`, so it can never drift from the source again.
 
 **Verification is empirical here.** Do not trust a claim in this doc — including
@@ -1062,8 +1705,9 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
   with **no JavaScript and no class to toggle**. `.field-check` now derives
   `--check-accent` so a tone on the label reaches the input — `--bg-mix` is
   element-scoped and could not cross that boundary on its own.
-- **v0.6 nav** — `.breadcrumb`, `.pagination` / `.page`, and `.navlist` /
-  `.navlink` for the sidebar. All three take their current item from
+- **v0.6 nav** — `.breadcrumb`, `.pagination` / `.page` (the link renamed to
+  `.pagination-link` in v0.14.6), and `.navlist` / `.navlink` for the
+  sidebar. All three take their current item from
   `[aria-current="page"]`. `.page` joined the chip lineage — one edit — so the
   current page gets the auto-contrast fill machinery for free. The breadcrumb
   separator uses the `content: "/" / ""` alt-text form so screen readers do
@@ -1326,11 +1970,11 @@ Fixed in `foundation/chip.css`, in the `:where()` base so it stays at zero
 specificity:
 
 ```css
-:where(.chip, .btn, .pill, .badge, .page, .tooltip, .avatar, .step-marker) {
+:where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker) {
   text-decoration: none;
 }
 ```
 
 `.btn.link` (buttons.css) and `.link:hover` (typography.css) still turn the
 underline back on — those are deliberate, this is a default. Affects `.pill` and
-`.page` identically, which is why it belongs on the base rather than on `.btn`.
+`.pagination-link` identically, which is why it belongs on the base rather than on `.btn`.

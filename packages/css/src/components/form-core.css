@@ -27,8 +27,8 @@
    */
   display:     block;
   inline-size: var(--field-inline-size, 100%);
-  padding:     0.5rem 0.75rem;
-  font-size:   0.875rem;
+  padding:     var(--space-sm) var(--space-lg);
+  font-size:   var(--text-md);
   line-height: 1.25rem;
 
   background:    var(--field-bg);
@@ -76,26 +76,26 @@ select.field {
 .field-group {
   display:        flex;
   flex-direction: column;
-  gap:            6px;
+  gap:            var(--space-xs);
 }
 .field-group > label {
-  font-size:   13px;
+  font-size:   var(--text-sm);
   font-weight: 500;
   color:       var(--ink-soft);
 }
 
 /* Tone class colors the hint; untoned stays muted. No tone-name list. */
 .field-hint {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color:     var(--bg-mix, var(--ink-mute));
 }
 
 .field-check {
   display:     inline-flex;
   align-items: center;
-  gap:         8px;
+  gap:         var(--space-sm);
   cursor:      pointer;
-  font-size:   14px;
+  font-size:   var(--text-md);
   color:       var(--ink);
 }
 /*
@@ -261,11 +261,11 @@ select.field {
 .field-addon {
   display:     inline-flex;
   align-items: center;
-  padding-inline: 0.75rem;
+  padding-inline: var(--space-lg);
   background:  var(--surface-sunken);
   border:      1px solid var(--rule-strong);
   color:       var(--ink-soft);
   font-family: var(--font-primary);
-  font-size:   0.875rem;
+  font-size:   var(--text-md);
   white-space: nowrap;
 }

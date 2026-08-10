@@ -3,9 +3,9 @@ title: Environment
 ---
 <script>
   import { page } from '@frontierjs/sierra/router'
-  import { environments } from '../../../resources/environments.mesa'
-  import { apps } from '../../../resources/apps.mesa'
-  import { deployments } from '../../../resources/deployments.mesa'
+  import { environments } from '../../../resources/Environment.mesa'
+  import { apps } from '../../../resources/App.mesa'
+  import { deployments } from '../../../resources/Deployment.mesa'
   import { goto } from '@frontierjs/sierra/router'
 
   $: page.params
@@ -172,7 +172,9 @@ title: Environment
         <tbody id="app-rows">
           {#each appRows as app}
             <tr>
-              <td>{app.name}</td>
+              <!-- An App has its own screen now: placement, hostnames and
+                   certificates, config, release history. -->
+              <td><a href={`/apps/${app.id}/`}>{app.name}</a></td>
               <td><code>{app.type}</code></td>
               <!-- The tone is derived from the value, not chosen per row: a
                    status is a fact, and 'error' is the only one that is bad
@@ -181,7 +183,10 @@ title: Environment
                 <span class="pill" class:success={app.status === 'running'}
                                    class:danger={app.status === 'error'}>{app.status}</span>
               </td>
-              <td>{app.domain ?? '—'}</td>
+              <!-- The primary hostname, from the app's `domains`. `App.domain`
+                   was one nullable string and is gone — an apex and a www is
+                   the ordinary case, and one column could not hold both. -->
+              <td><code>{app.domains?.find(d => d.isPrimary)?.hostname ?? '—'}</code></td>
               <td>
                 <button class="btn outlined" disabled={deploying === app.id}
                         on:click={() => deploy(app)}>

@@ -1,0 +1,22 @@
+{
+  "name": "@frontierjs/utils",
+  "version": "0.1.0",
+  "description": "FrontierJS pure functions — zero dependencies, no I/O, importable from any package",
+  "type": "module",
+  "scripts": {
+    "test": "bun test/run.js",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "exports": {
+    "./glow": "./src/glow/glow.js"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "frontierjs",
+    "utils",
+    "syntax-highlighting"
+  ],
+  "license": "MIT"
+}

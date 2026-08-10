@@ -1,0 +1,1295 @@
+/*
+ * instruments.css — the classes that DRAW the design system.
+ *
+ * ── The test ─────────────────────────────────────────────────────────
+ *
+ *   Does this class render the design system, or is it a UI the design
+ *   system should be able to build?
+ *
+ * The first belongs here. A tonal ramp, a space ladder, a lineage diagram
+ * and a wizard wireframe are instruments: they measure or illustrate the
+ * system, so building them OUT of the system would make the measurement
+ * depend on the thing being measured — a broken component would then draw
+ * a broken picture of itself instead of showing the fault.
+ *
+ * The second belongs in guide.css, and if @frontierjs/css ships a term for
+ * it, the hand-rolled version is debt. That distinction is the whole reason
+ * these are two files: in one file, "the guide needs 286 classes" is a fact
+ * nobody can act on. Split, the debt is a number that goes down.
+ *
+ * guide/AUDIT.md is the register — every .sg-* class, its verdict, and the
+ * shipped term that replaces it where one exists.
+ *
+ * ── Why these specifically ───────────────────────────────────────────
+ *
+ *   lineage / basis   the chip and surface families, drawn as a tree
+ *   resolve           how a cascade resolves, drawn as columns
+ *   tonal / color     the tone recipe and the ramps it produces
+ *   palette / theme   a theme's tokens, previewed
+ *   scale / pad / gap the space ladder, drawn as bars
+ *   typescale/weight  the type ladder and its weights
+ *   matrix            tone x treatment, as a grid
+ *   cheat-*           the cheat sheet's miniatures and swatch tables
+ *   sk-*              wizard wireframes. NOT real components on purpose:
+ *                     drawing a Button and a Link the same way would say
+ *                     the choice between them is visual, which is the one
+ *                     thing the wizard exists to deny
+ *   ax-*              SVG text in the two-axes figure. No CSS class applies
+ *                     to SVG text, so there is no shipped term to use
+ *
+ * ── Two traps, both measured ─────────────────────────────────────────
+ *
+ * `align-items: center` on a sketch row collapses a `flex: 1` box to a
+ * hairline. And a fill mixed into --rule disappears against
+ * --surface-sunken: --rule is tuned as a hairline divider, so area fills
+ * mix into --ink instead. Both are recorded where they bite, below.
+ *
+ * Loaded after guide.css by index.html. Nothing here is published —
+ * package.json ships "files": ["*.css"] from the package root, and this is
+ * in guide/.
+ */
+
+/* Lineage diagram */
+.sg-lineage {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(220px, 1.3fr);
+  gap: 28px;
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 28px 24px;
+  margin-bottom: 16px;
+}
+/* Vertical variant — used by surface lineage (base → many children) */
+.sg-lineage:has(.sg-lineage-base) {
+  grid-template-columns: 1fr;
+  gap: 12px;
+  justify-items: center;
+}
+.sg-lineage-base {
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 14px 18px;
+  background: var(--surface);
+  text-align: center;
+  min-width: 240px;
+  box-shadow: 0 0 0 3px rgba(13, 131, 221, 0.08);
+}
+.sg-lineage-arrow-line {
+  width: 1px;
+  height: 24px;
+  background: var(--rule-strong);
+}
+.sg-lineage-arrow-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-mute);
+  font-weight: 500;
+}
+.sg-lineage-children {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+.sg-lineage-col {
+  display: grid;
+  gap: 12px;
+}
+.sg-lineage-card {
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  padding: 12px 14px;
+  background: var(--surface);
+}
+.sg-lineage-root {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(13, 131, 221, 0.08);
+}
+.sg-lineage-name {
+  font-family: 'Geist Mono', monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.sg-lineage-role {
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+.sg-lineage-preview {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--rule);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+}
+.sg-lineage-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-mute);
+  font-weight: 500;
+  position: relative;
+}
+.sg-lineage-arrow::before {
+  content: '';
+  width: 32px;
+  height: 1px;
+  background: var(--rule-strong);
+}
+.sg-lineage-arrow::after {
+  content: '→';
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ink-mute);
+}
+
+.sg-resolve {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 16px;
+  align-items: stretch;
+  margin: 0 0 18px;
+}
+.sg-resolve-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sg-resolve-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+  font-weight: 500;
+}
+.sg-code-inline {
+  margin: 0;
+  flex: 1;
+  font-size: 12px;
+}
+.sg-resolve-arrow {
+  align-self: center;
+  font-size: 18px;
+  color: var(--ink-mute);
+}
+
+.sg-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.sg-card-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: inherit;
+  opacity: 0.85;
+}
+.sg-card-text code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.9em;
+  background: rgba(0,0,0,0.05);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Themes page */
+.sg-theme-switcher {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.sg-theme-tab {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.sg-theme-tab:hover {
+  border-color: var(--rule-strong);
+}
+.sg-theme-tab.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(13, 131, 221, 0.12);
+}
+.sg-theme-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+.sg-theme-tab-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sg-theme-tab-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.sg-theme-tab-desc {
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+
+.sg-theme-preview {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  transition: background 200ms;
+  font-family: var(--font-primary);
+}
+.sg-theme-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sg-theme-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+  font-weight: 500;
+}
+.sg-theme-ramp {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.sg-theme-ramp .tonal {
+  border-radius: 0;
+  min-height: 44px;
+  font-size: 10px;
+  padding: 6px 2px;
+}
+
+/* Colors page */
+.sg-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sg-palette-tile {
+  border-radius: 8px;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 96px;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.sg-palette-name {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+}
+.sg-palette-hex {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 24px;
+}
+
+.sg-color-ramps {
+  display: grid;
+  gap: 12px;
+}
+.sg-color-ramp {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.sg-color-ramp-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.sg-color-ramp-name {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: transparent;
+  padding: 0;
+}
+.sg-color-ramp-role {
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+.sg-color-ramp-strip {
+  display: grid;
+  grid-template-columns: repeat(11, 1fr);
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+}
+.sg-color-ramp-strip .tonal {
+  border-radius: 0;
+  min-height: 38px;
+  font-size: 10px;
+  padding: 6px 2px;
+}
+
+/* Tonal mixing */
+.tonal {
+  background: var(--bg);
+  color: var(--color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px;
+  border-radius: 4px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  min-height: 44px;
+  text-align: center;
+}
+
+.sg-tonal-strip {
+  display: grid;
+  grid-template-columns: repeat(11, 1fr);
+  gap: 0;
+  margin-bottom: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+}
+.sg-tonal-strip .tonal {
+  border-radius: 0;
+  min-height: 56px;
+  font-size: 10px;
+  padding: 8px 4px;
+}
+.sg-tonal-raw {
+  background: var(--sg-ramp) !important;
+  color: white !important;
+}
+
+.sg-tonal-chip {
+  min-width: 110px;
+}
+
+.sg-tonal-strip-row {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 4px;
+}
+.sg-tonal-step {
+  min-height: 42px;
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 6px 2px;
+}
+
+.sg-tonal-matrix {
+  display: grid;
+  gap: 4px;
+}
+.sg-tonal-matrix-row {
+  display: grid;
+  grid-template-columns: 70px repeat(9, 1fr);
+  gap: 4px;
+  align-items: stretch;
+}
+.sg-tonal-matrix-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 8px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: transparent;
+}
+.sg-tonal-cell {
+  min-height: 36px;
+  font-size: 10px;
+  border-radius: 3px;
+  padding: 4px 2px;
+}
+
+/* Stack helper for previews */
+.sg-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+.sg-stack > * { width: 100%; }
+/* An <hr>, so bars.css draws it. Only the margin differs: this separates rows
+   INSIDE a preview box, where the term's 1.5rem is page-level rhythm. */
+.sg-stack-divider { margin-block: var(--space-3xs); }
+.sg-prose-preview p {
+  margin: 0;
+  color: var(--ink);
+}
+
+/* Spacing page */
+.sg-scale {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.sg-scale-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 80px 60px;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.sg-scale-token {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  padding: 0;
+  text-align: center;
+}
+.sg-scale-track {
+  display: flex;
+  align-items: center;
+  height: 18px;
+}
+.sg-scale-bar {
+  height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+  min-width: 0;
+}
+.sg-scale-val,
+.sg-scale-px {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-mute);
+  background: transparent;
+  padding: 0;
+  text-align: right;
+}
+
+.sg-pad-demo {
+  background: rgba(13, 131, 221, 0.08);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+}
+.sg-gap-demo {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px dashed var(--rule-strong);
+  border-radius: 6px;
+}
+
+/* Typography page */
+.sg-typescale {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sg-typescale-row {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  align-items: baseline;
+  gap: 18px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.sg-typescale-token {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: transparent;
+  padding: 0;
+}
+.sg-typescale-sample {
+  color: var(--ink);
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.sg-typescale-meta {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-mute);
+  background: transparent;
+  padding: 0;
+  text-align: right;
+  align-self: center;
+}
+
+.sg-weights {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.sg-weight-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 18px;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.sg-weight-token {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: transparent;
+  padding: 0;
+}
+.sg-weight-sample {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.sg-color-grid {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.sg-color-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 100px;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.sg-color-token {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: transparent;
+  padding: 0;
+}
+.sg-color-sample {
+  font-weight: 500;
+  font-size: 15px;
+}
+.sg-color-note {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-mute);
+  background: transparent;
+  padding: 0;
+  text-align: right;
+}
+
+/* Cheat sheet */
+.sg-cheat-bases {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 0 0 12px;
+}
+.sg-cheat-base {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+.sg-cheat-base-preview {
+  flex-shrink: 0;
+  min-width: 56px;
+  display: flex;
+  justify-content: center;
+}
+.sg-cheat-base-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.sg-cheat-name {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+  background: transparent;
+  padding: 0;
+}
+.sg-cheat-shortcut {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-mute);
+  background: var(--code-bg);
+  padding: 4px 6px;
+  border-radius: 4px;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/*
+ * The file that declares the class. Deliberately quieter than the summary
+ * beside it — it is the answer to "where do I go to change this", which you
+ * want present and do not want competing with the class name.
+ */
+.sg-cheat-file {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  color: var(--ink-mute);
+  opacity: 0.75;
+  letter-spacing: 0.02em;
+}
+
+/*
+ * ── The two lineages ──────────────────────────────────────────────
+ *
+ * The base is drawn as the thing the members hang off, because that IS the
+ * relationship and the old flat grid could not show it: thirteen equal
+ * cards where two of them happened to be the base every other one was built
+ * from, and the only clue was the word "chip" starting a sentence in the
+ * description column.
+ *
+ * The base sits in a sticky column on the left with the members listed to
+ * its right, each one prefixed by the base it inherits — so the inheritance
+ * is read before the class name rather than after it.
+ */
+.sg-basis {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) 1fr;
+  gap: 16px;
+  align-items: start;
+  margin: 0 0 20px;
+  padding: 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+}
+
+.sg-basis-base {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+.sg-basis-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sg-basis-base .sg-cheat-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.sg-basis-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+
+/*
+ * One column, deliberately, and not an auto-fit grid.
+ *
+ * auto-fit was the first attempt and it cannot work here: the track floor
+ * is measured against this grid's own width, which is whatever is left
+ * beside the base — around 490px at desktop — so a floor wide enough to
+ * hold `.surface + .pagination-link` and a sentence never fits twice, and
+ * auto-fit answers with one per row anyway. Asking for one is the same
+ * result stated honestly, and it keeps every `.base + .member` line
+ * starting at the same x, which is the whole point of the page: the
+ * repetition of the prefix is what shows the lineage.
+ */
+.sg-basis-members {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/*
+ * A fixed preview column, so every specimen sits on the same axis and the
+ * eye can run down the lineage without re-finding it on each row. `center`
+ * on the row would collapse the meta column, so alignment is per-cell.
+ */
+.sg-basis-member {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+.sg-basis-member .sg-cheat-base-preview {
+  justify-content: center;
+}
+/* The name and its summary side by side, not stacked: the row is wide and
+   stacking them doubled the height of the block for no added information. */
+.sg-basis-member .sg-cheat-base-meta {
+  display: grid;
+  grid-template-columns: minmax(170px, auto) 1fr;
+  align-items: center;
+  gap: 4px 14px;
+}
+.sg-basis-member .sg-cheat-file {
+  grid-column: 1 / -1;
+}
+
+/*
+ * The base name repeated in front of every member. Dimmed on purpose: the
+ * point is that it is always there, not that you should read it fourteen
+ * times.
+ */
+.sg-basis-inherit {
+  color: var(--ink-mute);
+  opacity: 0.7;
+}
+
+/* Where the numbers on this page come from. */
+.sg-cheat-source,
+.sg-cheat-note {
+  font-size: 13px;
+  color: var(--ink-mute);
+}
+.sg-cheat-note {
+  margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .sg-basis {
+    grid-template-columns: 1fr;
+  }
+  .sg-basis-base {
+    position: static;
+  }
+}
+
+.sg-cheat-tones {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.sg-cheat-tone {
+  display: grid;
+  grid-template-columns: 24px auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.sg-cheat-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.sg-cheat-token {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: transparent;
+  padding: 0;
+}
+.sg-cheat-val {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-mute);
+  background: transparent;
+  padding: 0;
+}
+
+/* A .tile — Surface lineage plus padding, which is the whole of what this
+   was declaring by hand. Nothing left to add. */
+.sg-matrix-head,
+.sg-matrix-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 1fr;
+  gap: 16px;
+  align-items: center;
+}
+.sg-matrix-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+}
+.sg-matrix-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  padding-bottom: 8px;
+  font-weight: 500;
+}
+.sg-matrix-label code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: transparent;
+  padding: 0;
+}
+
+.sg-cheat-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  padding: 16px 20px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+.sg-cheat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sg-cheat-row-inline {
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  align-items: center;
+}
+
+.sg-cheat-vars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.sg-cheat-var-group {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.sg-cheat-var-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.sg-cheat-var {
+  display: block;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding: 3px 0;
+  background: transparent;
+}
+
+.sg-cheat-mini-card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  min-width: 50px;
+}
+.sg-cheat-mini-field {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink);
+  min-width: 50px;
+}
+.sg-cheat-mini-table {
+  display: inline-block;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  border-top: 3px double var(--rule-strong);
+  min-width: 50px;
+  text-align: center;
+}
+.sg-cheat-mini-dialog {
+  display: inline-block;
+  background: var(--surface-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  box-shadow: var(--shadow-md);
+  min-width: 50px;
+  text-align: center;
+}
+
+.sg-cheat-card-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sg-cheat-card {
+  padding: 12px;
+  font-size: 12px;
+}
+.sg-cheat-card > strong {
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.sg-cheat-card .sg-card-text {
+  font-size: 11px;
+  margin: 0;
+}
+
+.sg-cheat-tonal-strip {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+}
+.sg-cheat-tonal-strip .tonal {
+  border-radius: 0;
+  min-height: 40px;
+  font-size: 10px;
+  padding: 6px 2px;
+}
+
+.sg-cheat-themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px;
+}
+.sg-cheat-theme {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.sg-cheat-theme-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.sg-cheat-theme-desc {
+  font-size: 11px;
+  color: var(--ink-mute);
+  margin-left: auto;
+}
+
+
+/* ── Wizard sketches ─────────────────────────────────────────────────
+ *
+ * A small wireframe on each option of the FIRST question, which asks where
+ * a thing lives on the page. It is the one question whose answer is
+ * spatial, so it is the one worth drawing — the questions after it ask what
+ * a thing DOES, and a picture of that is decoration.
+ *
+ * Built from divs and theme tokens rather than an SVG or an image: the
+ * guide ships no assets, and a drawing made of --rule and --color-primary
+ * follows the theme switcher for free. Widths come in on --w, which is a
+ * token assignment rather than a style override — the same convention the
+ * demo uses for --avatar-size.
+ */
+
+.sg-sk {
+  position: relative;
+  block-size: 58px;
+  padding: 6px;
+  border-radius: 5px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--rule);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* A placeholder bar. `on` is the thing the option is actually about. */
+.sg-sk-bar {
+  block-size: 4px;
+  inline-size: var(--w, 100%);
+  border-radius: 2px;
+  background: var(--rule);
+  flex-shrink: 0;
+}
+.sg-sk-bar.on { background: var(--color-primary); }
+
+/*
+ * Stretch, not centre. A box inside a row is `flex: 1` on the INLINE axis;
+ * on the block axis it has nothing to size against, so `align-items: center`
+ * collapsed it to a hairline and the three-box arrangement sketch rendered
+ * as one dashed rule. `.mid` is for the one row that really is a line of
+ * text.
+ */
+.sg-sk-row { display: flex; align-items: stretch; gap: 4px; flex: 1; min-block-size: 0; }
+.sg-sk-row.mid { align-items: center; flex: 0 0 auto; }
+.sg-sk-col { display: flex; flex-direction: column; gap: 4px; flex: 1; min-block-size: 0; }
+
+.sg-sk-box {
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  border-radius: 3px;
+  /* Mixed into --ink rather than --rule: --rule is tuned as a hairline
+     divider and at any strength it disappears against --surface-sunken, so
+     the content area of a sketch read as empty and the rail beside it read
+     as a stray nub. */
+  background: color-mix(in srgb, var(--ink) 11%, transparent);
+}
+.sg-sk-box.on { background: color-mix(in srgb, var(--color-primary) 22%, transparent); border: 1px solid var(--color-primary); }
+/* Arrangement with no skin — the one sketch that must not look like a surface. */
+.sg-sk-box.ghost { background: none; border: 1px dashed var(--color-primary); }
+
+.sg-sk-rail {
+  inline-size: 12px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  flex-shrink: 0;
+}
+.sg-sk-rail.on { background: var(--color-primary); }
+
+.sg-sk-top {
+  block-size: 9px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  flex-shrink: 0;
+}
+.sg-sk-top.on { background: var(--color-primary); }
+
+/* The scrim and the panel, for the overlay sketch. */
+.sg-sk-dim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink) 28%, transparent);
+}
+.sg-sk-float {
+  position: absolute;
+  inset-inline: 22%;
+  inset-block: 26%;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
+/* An inline thing sits IN a line of text, so the sketch has to show the line. */
+.sg-sk-field {
+  block-size: 12px;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+.sg-sk-field.on {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--surface));
+}
+
+.sg-sk-chip {
+  block-size: 8px;
+  inline-size: 22px;
+  border-radius: 4px;
+  background: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.sg-wiz-opt .sg-sk { margin-block-end: 8px; }
+
+/* Extra sketch primitives, for the drill-down questions. */
+
+.sg-sk-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  flex-shrink: 0;
+}
+.sg-sk-dot.on { background: var(--color-primary); }
+
+/* A small square — a pagination page, a tab, a cell. */
+.sg-sk-sq {
+  inline-size: 11px;
+  block-size: 9px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+  flex-shrink: 0;
+}
+.sg-sk-sq.on { background: var(--color-primary); }
+
+/* A panel pinned to one edge, for Drawer. */
+.sg-sk-edge {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: 38%;
+  background: var(--surface);
+  border-inline-start: 1px solid var(--color-primary);
+}
+
+/* A panel in the corner, for Toast. */
+.sg-sk-corner {
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-end: 6px;
+  inline-size: 48%;
+  block-size: 14px;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 1px solid var(--color-primary);
+}
+
+/* A panel hanging off whatever opened it. */
+.sg-sk-attach {
+  position: absolute;
+  inset-block-start: 22px;
+  inset-inline-start: 30%;
+  inline-size: 46%;
+  block-size: 24px;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 1px solid var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
+/* The dashed seams of a grid, for Shell — the thing holding parts apart. */
+.sg-sk-seam { outline: 1px dashed var(--color-primary); outline-offset: -1px; }
+
+.sg-sk-fill { flex: 1; min-block-size: 0; min-inline-size: 0; }
+/* .center owns the grid and place-items; the flex sizing is what makes it a
+   sketch ROW cell rather than a standalone box. */
+.sg-sk-center { flex: 1; min-block-size: 0; }
+
+/* ── The two axes diagram ──────────────────────────────────────────────
+ *
+ * Inline SVG, so `var(--…)` inside it resolves against the live theme and
+ * the drawing follows the switcher. Sizes are in viewBox units and scale
+ * with the figure; the type below 11 units is why the page also carries
+ * the same facts as a table.
+ */
+.sg-axes {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  margin-block-end: 16px;
+}
+
+.sg-ax-eyebrow {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  fill: var(--accent);
+}
+.sg-ax-head {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.sg-ax-label {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 12px;
+  fill: var(--ink);
+}
+.sg-ax-mono {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11.5px;
+  fill: var(--ink);
+}
+.sg-ax-dim  { font-size: 11px; fill: var(--ink-mute); }
+.sg-ax-mid  { text-anchor: middle; }
+.sg-ax-end  { text-anchor: end; }
+.sg-ax-strong { font-weight: 600; fill: var(--accent); }
+/* The label sitting ON a tone fill. The two source chips use --color-danger
+   and --color-primary, both of which take white text at every shipped
+   theme; this is the one place the diagram states a contrast rather than
+   deriving it. */
+.sg-ax-on { fill: #fff; }
+
+.sg-ax-rule  { stroke: var(--rule); stroke-width: 1; }
+.sg-ax-flow  { stroke: var(--rule-strong); stroke-width: 1.5; fill: none; }
+.sg-ax-cross { stroke: var(--ink-mute); stroke-width: 1.5; fill: none; }
+.sg-ax-dash  { fill: none; stroke: var(--rule-strong); stroke-width: 1; stroke-dasharray: 5 4; }
+.sg-ax-nest  { fill: none; stroke: var(--rule-strong); stroke-width: 1; }
+/* White at reduced opacity, for the secondary line on a toned chip. */
+.sg-ax-ondim { fill: #fff; opacity: 0.8; font-size: 11px; }
+/* The value a nesting level reports — the payload of the right-hand block. */
+.sg-ax-said { fill: var(--accent); font-size: 11px; }
+
+/*
+ * The cheat sheet's class index — the search box only. The scroll box and
+ * the rows themselves are in guide.css: the index is a UI over the
+ * vocabulary, not a drawing of it.
+ */
+.sg-class-search { max-inline-size: 420px; margin-block-end: 14px; }

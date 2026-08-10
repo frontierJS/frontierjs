@@ -3,7 +3,7 @@ title: Members
 ---
 <script>
   import { session } from '../../session.js'
-  import { workspaces } from '../../resources/workspaces.mesa'
+  import { workspaces } from '../../resources/Workspace.mesa'
 
   $: (session.workspaceId, session.user)
 

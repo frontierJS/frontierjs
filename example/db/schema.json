@@ -125,6 +125,14 @@
           "x-messages": {
             "required": "Please select a customer from the list"
           }
+        },
+        "trackingCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Written by a JOB, not by a request. `ship` books a courier, that call is slow and can fail, so it happens after the response: the action queues `book-courier` (@frontierjs/caravan) and the job patches this column when the courier answers. Nullable because between the move and the booking there is a real window where a shipped order has no tracking yet.  It is the field that proves deferred work reaches the browser — the job writes through the orders SERVICE, so the write announces on the channel and a tab nobody touched fills this cell in seconds later.",
+          "title": "Tracking"
         }
       },
       "additionalProperties": false,
@@ -186,6 +194,55 @@
           "optional": false
         }
       ]
+    },
+    "Notification": {
+      "type": "object",
+      "title": "Notification",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "data": {},
+        "contextType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contextId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "type",
+        "data"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 0,
+        "create": 8,
+        "update": 4,
+        "delete": 8
+      }
     },
     "OrderStatus": {
       "type": "string",

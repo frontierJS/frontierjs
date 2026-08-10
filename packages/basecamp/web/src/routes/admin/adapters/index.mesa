@@ -2,7 +2,7 @@
 title: Adapters
 ---
 <script>
-  import { portal } from '../../../resources/portal.mesa'
+  import { portal } from '../../../resources/Portal.mesa'
 
   let rows    = []
   let error   = null

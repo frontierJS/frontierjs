@@ -3,7 +3,7 @@ title: Projects
 ---
 <script>
   import { session } from '../../session.js'
-  import { projects } from '../../resources/projects.mesa'
+  import { projects } from '../../resources/Project.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 

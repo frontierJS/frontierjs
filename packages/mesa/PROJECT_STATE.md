@@ -65,7 +65,7 @@ frontierjs/packages/
 | Effect phase | 5 | `test/effect-phase.test.js` |
 | **Total** | **946** | |
 
-Run: `bun run test` → **1015 pass / 0 fail / 0 skipped** across 16 files
+Run: `bun run test` → **1027 pass / 0 fail / 0 skipped** across 16 files
 (verified 2026-08-04).
 
 Nothing is skipped any more. The 27 that were are gone with `email-kit.test.js`,
@@ -323,7 +323,7 @@ Add a new item to `../../ISSUES.md`, not here.
 | `example/index.html` | REPL |
 | `test/repl.test.js` | 9 REPL tests — module-graph link check, examples compile + emit valid JS, feature-coverage ratchet, preview interactivity |
 | `example/examples.js` | 66 REPL examples across 22 groups |
-| `test/compiler.test.js` | 426 compiler tests, incl. 9 pinning the `<mesa:boundary>` watch set — it watches the async values its body reads, not every one in the component |
+| `test/compiler.test.js` | 432 compiler tests, incl. 6 pinning that the file EXTENSION decides the language (a `.mesa` route with frontmatter is Mesa, not Markdown — `FJS-106`) and 9 pinning the `<mesa:boundary>` watch set — it watches the async values its body reads, not every one in the component |
 | `test/runtime.test.js` | 286 runtime tests |
 | `test/emission.test.js` | 17 tests — the compiler must emit JS that parses (component `bind:`, multi-line attrs, `bind:` to a member expression, and the component function name colliding with a reserved word or a `<script module>` binding) |
 | `test/css-inliner.test.js` | 36 CSS inliner tests |

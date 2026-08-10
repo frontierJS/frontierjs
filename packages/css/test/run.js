@@ -29,6 +29,7 @@ import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { glow } from '@frontierjs/utils/glow';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = join(here, '..');
@@ -122,6 +123,126 @@ function collectCss(dir, base = '') {
 
 const shippedCss = collectCss(srcDir).sort();
 
+/*
+ * ../vocabulary.js, inlined into the page the same way harness.js is.
+ *
+ * It declares a top-level `const VOCAB` and nothing else, so injecting the
+ * source hands the specs the global directly. The guide loads the identical
+ * file with a plain <script src>, so there is one definition and neither
+ * reader can drift.
+ *
+ * It cannot be `require`d — the package is "type": "module", so a CJS export
+ * would not load. It cannot be an ES module either: injecting the source of
+ * one into a classic <script> throws on the `export`, and giving it its own
+ * module script would defer it past the suite.
+ */
+const vocabulary = readFileSync(join(pkg, 'vocabulary.js'), 'utf8');
+
+/*
+ * guide/decisions.js — the Learn wizard's routing tree, inlined like
+ * vocabulary.js.
+ *
+ * It is guide chrome rather than package data, so it is not in "files" and
+ * no consumer ever sees it. It is tested here anyway because the property
+ * worth holding is a relationship between the two files: the wizard names
+ * vocabulary terms, and neither a renamed term nor a newly shipped one
+ * announces itself to the other side.
+ */
+const decisions = readFileSync(join(pkg, 'guide', 'decisions.js'), 'utf8');
+
+/*
+ * guide/search.js — the guide's ranker, inlined for the same reason.
+ *
+ * It is split out of guide.js precisely so it can be tested: guide.js is an
+ * ES module that imports glow, so injecting its source into a classic
+ * <script> throws on the import and giving it a module script would defer it
+ * past the suite. Everything in search.js is a plain function over data, and
+ * a search box whose ranking nothing checks goes subtly wrong in silence —
+ * a term that stops being findable looks like a term nobody wanted.
+ *
+ * It reads VOCAB, so it is injected after it.
+ */
+const search = readFileSync(join(pkg, 'guide', 'search.js'), 'utf8');
+
+/*
+ * demo/index.html — the flagship consumer's markup, as a string.
+ *
+ * The demo is tooling and its CSS is deliberately outside the package (see
+ * SKIP_DIRS above), but its MARKUP is the one place that claims to speak
+ * the vocabulary fluently, and nothing checked that it did. It wrote
+ * `class="page"` on every pagination control — a class the package does
+ * not ship and whose absence nav.css documents by name — so the demo's
+ * pagination rendered as raw UA links (measured: `rgb(0,0,238)`, no
+ * padding, no radius) for as long as it existed.
+ *
+ * Handed over as text rather than parsed here: the page can put it in a
+ * detached node and ask the real CSSOM, which is what every other spec in
+ * this suite does.
+ *
+ * It is escaped even though JSON.stringify already quoted it. The demo is
+ * an HTML document and carries its own `</script>` tags — the parser ends
+ * the inline block at the first one, whatever the JavaScript around it
+ * means, so the assignment never completes and the spec reads `undefined`.
+ * The other payloads here are .js files that happen not to contain the
+ * sequence.
+ */
+const demoHtml = readFileSync(join(pkg, 'demo', 'index.html'), 'utf8');
+
+/*
+ * guide/guide.css, guide/instruments.css and guide/guide.js — as TEXT.
+ *
+ * The guide is the package's reference implementation, and until 2026-08-09
+ * nothing in this suite loaded any part of it: SKIP_DIRS keeps guide/ out of
+ * the shipped-stylesheet collection, which is right, and the consequence was
+ * that the guide could name anything at all. It did. It hand-rolled a shell
+ * while frame.css shipped one, restated 28 tokens tokens.css already
+ * declares, and wrote `--ring: var(--color-primary)` — the alias trap
+ * tokens.css forbids by name.
+ *
+ * Text rather than a <link>, and that is not a shortcut. Loading guide.css
+ * into this page would apply it: it is unlayered, so it would beat every
+ * layer of the package and quietly change what all 300 other assertions
+ * measure. guide.spec.js parses these strings instead, and asks the real
+ * CSSOM only about the package's own rules.
+ *
+ * The split is the thing being held. instruments.css is the classes that
+ * DRAW the system — ramps, ladders, wireframes — and guide.css is chrome
+ * plus whatever debt is left; guide/AUDIT.md is the register. Two files
+ * make the debt countable, and a spec is what stops the boundary rotting
+ * back into one.
+ */
+const guideCss = readFileSync(join(pkg, 'guide', 'guide.css'), 'utf8');
+const instrumentsCss = readFileSync(join(pkg, 'guide', 'instruments.css'), 'utf8');
+const guideJs = readFileSync(join(pkg, 'guide', 'guide.js'), 'utf8');
+
+/*
+ * Real glow output, rendered here and handed to the page as data.
+ *
+ * components/code.css themes markup this package does not produce, so the
+ * only honest way to test it is against the highlighter that does. Markup
+ * written by hand to look like glow's would pass while glow emitted
+ * something else — the stand-in failure this repo has paid for before.
+ *
+ * It is injected rather than imported in the browser because the specs run
+ * as classic scripts and glow is an ES module: a module script would be
+ * deferred until after the suite had already reported.
+ *
+ * Between them the three samples produce every element the theme styles:
+ * sup i b em strong label · del ins dfn mark u · span.
+ */
+const glowSamples = {
+  css: glow(
+    `/* the whole contract */
+.card { --bg-mix: var(--color-danger); color: #f4403a !important; }`,
+    { language: 'css', prefix: false }
+  ),
+  marked: glow(
+    ['- gone', '+ added', '> noted •marked• and ••wrong••'].join('\n'),
+    { language: 'js', prefix: true }
+  ),
+  numbered: glow('one\ntwo\nthree', { language: 'js', numbered: true }),
+};
+
 const specBlocks = specFiles
   .map((f) => {
     const src = readFileSync(join(specDir, f), 'utf8');
@@ -161,6 +282,20 @@ const page = `<!doctype html>
 </head>
 <body class="theme-default">
 <script>window.__FJS_SHIPPED_CSS__ = ${JSON.stringify(shippedCss)};</script>
+<script>window.__FJS_GLOW__ = ${JSON.stringify(glowSamples)};</script>
+<script>window.__FJS_DEMO_HTML__ = ${escapeForInlineScript(JSON.stringify(demoHtml))};</script>
+<!--
+  The guide's own source, as strings. Escaped for the same reason the demo
+  is: guide.js is 11k lines of markup builders and carries a closing script
+  tag in its own page HTML, which would end the inline block wherever it
+  appeared and leave the spec reading nothing at all.
+-->
+<script>window.__FJS_GUIDE_CSS__ = ${escapeForInlineScript(JSON.stringify(guideCss))};</script>
+<script>window.__FJS_INSTRUMENTS_CSS__ = ${escapeForInlineScript(JSON.stringify(instrumentsCss))};</script>
+<script>window.__FJS_GUIDE_JS__ = ${escapeForInlineScript(JSON.stringify(guideJs))};</script>
+<script>${escapeForInlineScript(vocabulary)}</script>
+<script>${escapeForInlineScript(decisions)}</script>
+<script>${escapeForInlineScript(search)}</script>
 <script>${escapeForInlineScript(harness)}</script>
 ${specBlocks}
 <script>

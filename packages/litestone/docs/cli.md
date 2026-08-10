@@ -66,9 +66,16 @@ litestone introspect <db> [--out schema.lite] [--no-camel]
 Reverse-engineer a live SQLite database into a `.lite` schema. Reconstructs column types, FK relations, indexes, `@@softDelete`, enum CHECK constraints.
 
 ```bash
-litestone jsonschema [--out=./schemas/] [--format=flat]
+litestone jsonschema [--out=<path>] [--stdout] [--mode=create|update|full] [--all-modes]
+                     [--format=definitions|flat] [--include-timestamps] [--include-deleted-at]
 ```
-Generate JSON Schema from your `.lite` schema. `--format=flat` emits one file per model instead of a definitions object.
+Generate JSON Schema from your `.lite` schema. Writes `./schema.json` beside the schema by default; `--out` pointed at a directory writes `schema.json` into it, and `--all-modes` writes `schema.create.json` / `.update.json` / `.full.json`.
+
+`--format=flat` puts every definition at the document root instead of under `$defs` — still one file, not one per model. `--mode` decides which fields exist: `create` omits `@id`, `update` drops `required[]`, `full` adds ids plus the read-only computed/generated/`@from`/`@version` fields.
+
+`--stdout` prints the document with no banner, so `litestone jsonschema --stdout > schema.json` parses.
+
+[jsonschema.md](jsonschema.md) is the full key reference.
 
 ## Data commands
 

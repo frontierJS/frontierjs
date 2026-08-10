@@ -3336,8 +3336,22 @@ export function buildBlock(data, option = {}) {
           // (where it becomes a comment node inside the element for append() to use).
           // Without this, non-root components resolve to the parent *element* as
           // anchor, making append(el, dom) = el.before(dom) a no-op on detached nodes.
-          if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true }))
+          //
+          // And it must be a comment of the component's OWN, never a text node it
+          // happens to sit beside. A pending label is otherwise satisfied by the
+          // next text node (see the text branch above), and `tpl` keeps those as
+          // separate entries while the emitted template is one STRING — where
+          // adjacent text parses as a single DOM Text node. So two components
+          // separated only by whitespace, inside a block, both resolved their
+          // anchor to that one node. The DOM was right (each inserts before the
+          // same node, in order) and nothing looked wrong, but the component
+          // registry is keyed BY ANCHOR: the second registration replaced the
+          // first, and the first component never received another prop push for
+          // the life of the page. `FJS-110` — a kit <Button disabled={…}> beside
+          // a <Button>Cancel</Button> stayed disabled forever while a plain
+          // <button> with the identical expression followed it.
           const label = requireLabel(true, true)  // noParent=true so resolve() also pushes if needed
+          label.set(tpl.push(xNode.nodeComment({ label: true })))
           const component = ctx.makeComponent(n)
           binds.push(insertComponent(component, label))
           return

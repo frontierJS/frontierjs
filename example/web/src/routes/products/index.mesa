@@ -2,7 +2,7 @@
 title: Products
 ---
 <script>
-  import { products } from '../../resources/shop.mesa'
+  import { products } from '../../resources/Product.mesa'
   import { session } from '../../session.js'
   import { prefs } from '../../prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'

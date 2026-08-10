@@ -1,0 +1,75 @@
+<script>
+  // stat_counter — one number: how many of a thing this workspace has.
+  //
+  // The mock's counter is a value TYPED IN when the widget is added, which is a
+  // dashboard displaying whatever it was told — the one thing a dashboard must
+  // not do. This one counts: `source` names a service, and the number is that
+  // service's own `total` for the reader's session, so a viewer who cannot read
+  // servers gets a refusal instead of a fleet size.
+  //
+  // The count comes off a one-row page rather than the whole list. `total` in
+  // the envelope is the count of what matched, which is the number, and asking
+  // for two hundred rows to length them would be the same answer paid for
+  // twice.
+  import { servers } from '../../resources/Server.mesa'
+  import { apps } from '../../resources/App.mesa'
+  import { deployments } from '../../resources/Deployment.mesa'
+  import { jobs } from '../../resources/Job.mesa'
+  import { volumes } from '../../resources/Volume.mesa'
+  import { alerts } from '../../resources/AlertRule.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Stat from '@frontierjs/ui/components/display/Stat.mesa'
+
+  export let widget = null
+
+  // The browser's half of STAT_SOURCES. The service refuses anything not in its
+  // own list, so a source arriving here that this map does not know is a
+  // vocabulary that has grown on one side only — said out loud rather than
+  // rendered as a zero.
+  const SOURCES = {
+    servers:     { resource: servers,     label: 'Servers',     href: '/servers/' },
+    apps:        { resource: apps,        label: 'Apps',        href: null },
+    deployments: { resource: deployments, label: 'Deployments', href: '/deployments/' },
+    jobs:        { resource: jobs,        label: 'Jobs',        href: '/jobs/' },
+    volumes:     { resource: volumes,     label: 'Volumes',     href: '/volumes/' },
+    alerts:      { resource: alerts,      label: 'Alert rules', href: '/alerts/' },
+  }
+
+  let total   = null
+  let error   = null
+  let loading = true
+
+  // `const`, not `$:` — the subscription below is registered once at init, and
+  // a derived read that has not run yet at that point subscribes to nothing.
+  // A widget whose source changes is re-rendered by the page, not mutated here.
+  const source = SOURCES[widget?.config?.source]
+
+  async function load() {
+    error = null
+    if (!source) { loading = false; return }
+    try {
+      total = (await source.resource.service.find({}, { limit: 1 })).total
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(source ? onWrite(source.resource.service, load) : () => {})
+</script>
+
+{#if !source}
+  <p class="text-sm text-muted">This counter names a source this build does not know how to count.</p>
+{:else if loading}
+  <p class="text-sm text-muted">Counting…</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else}
+  <Stat label={widget?.config?.label || source.label} value={String(total)} />
+  {#if source.href}
+    <p class="text-xs"><a href={source.href}>Open {source.label.toLowerCase()}</a></p>
+  {/if}
+{/if}

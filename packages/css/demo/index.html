@@ -79,6 +79,8 @@
     <ul class="navlist">
       <li><a class="navlink" href="#settings" data-nav="settings">
         <svg aria-hidden="true"><use href="#i-cog"></use></svg> Settings</a></li>
+      <li><a class="navlink" href="#reference" data-nav="reference">
+        <svg aria-hidden="true"><use href="#i-info"></use></svg> Reference</a></li>
     </ul>
   </nav>
 
@@ -173,28 +175,46 @@
         <article class="card">
           <div class="surface-body">
             <ol class="feed">
-              <li class="feed-item">
-                <span class="feed-dot success" aria-hidden="true"></span>
-                <div class="feed-content">
-                  <strong>INV-1042 paid</strong> — $4,200 from Acme Corporation
-                  <div class="text-sm text-muted">2 hours ago</div>
-                </div>
+              <li>
+                <article class="feed-item">
+                  <span class="feed-dot success" aria-hidden="true"></span>
+                  <div class="feed-content">
+                    <strong>INV-1042 paid</strong> — $4,200 from Acme Corporation
+                    <div class="text-sm text-muted">2 hours ago</div>
+                  </div>
+                </article>
               </li>
-              <li class="feed-item">
-                <span class="feed-dot info" aria-hidden="true"></span>
-                <div class="feed-content">
-                  <strong>INV-1048 sent</strong> to Globex Inc.
-                  <div class="text-sm text-muted">Yesterday</div>
-                </div>
+              <li>
+                <article class="feed-item">
+                  <span class="feed-dot info" aria-hidden="true"></span>
+                  <div class="feed-content">
+                    <strong>INV-1048 sent</strong> to Globex Inc.
+                    <div class="text-sm text-muted">Yesterday</div>
+                  </div>
+                </article>
               </li>
-              <li class="feed-item">
-                <span class="feed-dot danger" aria-hidden="true"></span>
-                <div class="feed-content">
-                  <strong>INV-1031 went overdue</strong> — 14 days past due
-                  <div class="text-sm text-muted">3 days ago</div>
-                </div>
+              <li>
+                <article class="feed-item">
+                  <span class="feed-dot danger" aria-hidden="true"></span>
+                  <div class="feed-content">
+                    <strong>INV-1031 went overdue</strong> — 14 days past due
+                    <div class="text-sm text-muted">3 days ago</div>
+                  </div>
+                </article>
               </li>
             </ol>
+
+            <!--
+              A plain Divider between the stream and what closes it. The
+              labelled form is on the Settings screen; this is the bare
+              rule, which is an <hr> with the term's class rather than a
+              styled <div> — an <hr> is a real semantic break.
+            -->
+            <hr class="divider">
+            <div class="split">
+              <span class="text-sm text-muted">Showing the last 3 events</span>
+              <button class="btn ghost" data-route-to="invoices">Full history</button>
+            </div>
           </div>
         </article>
         </div>
@@ -214,13 +234,33 @@
           </div>
         </div>
 
+        <!--
+          A Toolbar, not a Bar. The distinction is the whole reason both
+          terms exist: role="toolbar" promises ONE tab stop and arrow-key
+          movement, and demo.js owes it (Principle 6). The status filters
+          below are toggle buttons, so the promise is keepable here; the
+          selects further along stay in a Bar, because they are not.
+        -->
+        <div class="toolbar bordered" role="toolbar" aria-label="Filter invoices" id="status-toolbar">
+          <button class="btn ghost" aria-pressed="true">All 24</button>
+          <button class="btn ghost" aria-pressed="false">Paid 18</button>
+          <button class="btn ghost" aria-pressed="false">Overdue 4</button>
+          <button class="btn ghost square" aria-label="Export">
+            <svg aria-hidden="true"><use href="#i-download"></use></svg>
+          </button>
+        </div>
+
         <div class="bar bordered">
           <div class="cluster">
-            <span class="badge">All 24</span>
-            <span class="badge success">Paid 18</span>
-            <span class="badge danger">Overdue 4</span>
+            <span class="text-sm text-muted">Press <kbd class="kbd">/</kbd> to search</span>
           </div>
           <div class="cluster">
+            <span class="text-sm text-muted">Density</span>
+            <select class="field" id="density-select" aria-label="Row density" style="--field-inline-size: auto">
+              <option value="">Comfortable</option>
+              <option value="0.8">Compact</option>
+              <option value="1.25">Roomy</option>
+            </select>
             <span class="text-sm text-muted">Rows</span>
             <select class="field" aria-label="Rows per page" style="--field-inline-size: auto">
               <option>10</option><option>25</option><option>50</option>
@@ -303,13 +343,13 @@
         </div>
 
         <nav class="pagination" aria-label="Pagination">
-          <a class="page" href="#invoices" aria-label="Previous page"><svg aria-hidden="true"><use href="#i-chev-l"></use></svg></a>
-          <a class="page" href="#invoices" aria-current="page">1</a>
-          <a class="page" href="#invoices">2</a>
-          <a class="page" href="#invoices">3</a>
-          <span class="page-gap">…</span>
-          <a class="page" href="#invoices">9</a>
-          <a class="page" href="#invoices" aria-label="Next page"><svg aria-hidden="true"><use href="#i-chev-r"></use></svg></a>
+          <a class="pagination-link" href="#invoices" rel="prev" aria-label="Previous page"><svg aria-hidden="true"><use href="#i-chev-l"></use></svg></a>
+          <a class="pagination-link" href="#invoices" aria-current="page">1</a>
+          <a class="pagination-link" href="#invoices">2</a>
+          <a class="pagination-link" href="#invoices">3</a>
+          <span class="pagination-gap" aria-hidden="true">…</span>
+          <a class="pagination-link" href="#invoices">9</a>
+          <a class="pagination-link" href="#invoices" rel="next" aria-label="Next page"><svg aria-hidden="true"><use href="#i-chev-r"></use></svg></a>
         </nav>
         </div>
       </section>
@@ -371,21 +411,36 @@
           <article class="view" role="tabpanel" id="v-history" aria-labelledby="t-history" tabindex="0" hidden>
             <article class="card">
               <div class="surface-body">
+                <!--
+                  The <article> inside the <li> is not ceremony. The
+                  connecting line is drawn by
+                  `.feed > li:not(:last-child) .feed-item::after` — a
+                  DESCENDANT selector, so collapsing the two elements into
+                  `<li class="feed-item">` matches nothing and the feed
+                  renders as a column of dots with no timeline between
+                  them. Measured: content `none`, zero height.
+                -->
                 <ol class="feed">
-                  <li class="feed-item">
-                    <span class="feed-dot success" aria-hidden="true"></span>
-                    <div class="feed-content"><strong>Payment received</strong> — $4,200.00
-                      <div class="text-sm text-muted">28 Jul 2026</div></div>
+                  <li>
+                    <article class="feed-item">
+                      <span class="feed-dot success" aria-hidden="true"></span>
+                      <div class="feed-content"><strong>Payment received</strong> — $4,200.00
+                        <div class="text-sm text-muted">28 Jul 2026</div></div>
+                    </article>
                   </li>
-                  <li class="feed-item">
-                    <span class="feed-dot info" aria-hidden="true"></span>
-                    <div class="feed-content"><strong>Reminder sent</strong> to billing@acme.example
-                      <div class="text-sm text-muted">21 Jul 2026</div></div>
+                  <li>
+                    <article class="feed-item">
+                      <span class="feed-dot info" aria-hidden="true"></span>
+                      <div class="feed-content"><strong>Reminder sent</strong> to billing@acme.example
+                        <div class="text-sm text-muted">21 Jul 2026</div></div>
+                    </article>
                   </li>
-                  <li class="feed-item">
-                    <span class="feed-dot" aria-hidden="true"></span>
-                    <div class="feed-content"><strong>Invoice issued</strong>
-                      <div class="text-sm text-muted">02 Jul 2026</div></div>
+                  <li>
+                    <article class="feed-item">
+                      <span class="feed-dot" aria-hidden="true"></span>
+                      <div class="feed-content"><strong>Invoice issued</strong>
+                        <div class="text-sm text-muted">02 Jul 2026</div></div>
+                    </article>
                   </li>
                 </ol>
               </div>
@@ -416,7 +471,28 @@
       <section class="pane" aria-labelledby="h-customers">
         <div class="section-header">
           <h2 id="h-customers" class="h4">Customers</h2>
-          <button class="btn primary"><svg aria-hidden="true"><use href="#i-plus"></use></svg> Add customer</button>
+          <div class="cluster">
+            <!--
+              A Popover is an ARTICLE, not a [popover] element here — the
+              native top layer would escape this positioning context
+              entirely, and the package ships no anchor positioning, so an
+              un-positioned one opens in the corner of the viewport. The
+              anchor is `position: relative` in demo.css, which is the one
+              thing the consumer owes.
+            -->
+            <span class="demo-anchor">
+              <button class="btn ghost square" id="help-btn" aria-expanded="false" aria-controls="help-pop" aria-label="About lifetime value">
+                <svg aria-hidden="true"><use href="#i-info"></use></svg>
+              </button>
+              <article class="popover" id="help-pop" hidden>
+                <div class="surface-header"><strong>Lifetime value</strong></div>
+                <div class="surface-body text-sm">
+                  Every invoice ever settled by this customer, net of refunds.
+                </div>
+              </article>
+            </span>
+            <button class="btn primary"><svg aria-hidden="true"><use href="#i-plus"></use></svg> Add customer</button>
+          </div>
         </div>
 
         <article class="card">
@@ -457,7 +533,82 @@
                 <button class="btn ghost">Open</button>
               </span>
             </li>
+
+            <!--
+              The page that is still arriving. A Skeleton is aria-hidden and
+              the CONTAINER carries aria-busy, so a screen reader is told
+              "busy" once rather than reading three grey boxes.
+            -->
+            <li class="list-row" aria-busy="true">
+              <span class="cluster">
+                <!--
+                  .skeleton.circle is aspect-ratio: 1, so it takes its size
+                  from the box it is given — it does not read --avatar-size.
+                  A skeleton is put on the shape of the thing that is
+                  coming, which here is the 2.25rem avatar above it.
+                -->
+                <span class="skeleton circle" style="inline-size:2.25rem" aria-hidden="true"></span>
+                <span class="stack">
+                  <span class="skeleton text" style="inline-size:9rem" aria-hidden="true"></span>
+                  <span class="skeleton text" style="inline-size:14rem" aria-hidden="true"></span>
+                </span>
+              </span>
+              <span class="row-actions">
+                <span class="spinner" aria-hidden="true"></span>
+                <span class="visually-hidden" role="status">Loading more customers</span>
+              </span>
+            </li>
           </ul>
+        </article>
+
+        <article class="card">
+          <div class="surface-header"><strong>How to reach Acme</strong></div>
+          <div class="surface-body">
+            <!--
+              Items, not Rows. A Row is a record with trailing actions; an
+              Item is the lightweight entry with no column alignment
+              implied — which is what a list of contact methods is.
+            -->
+            <ul class="items">
+              <li class="item">
+                <span class="icon" aria-hidden="true"><svg><use href="#i-doc"></use></svg></span>
+                billing@acme.example
+              </li>
+              <li class="item">
+                <span class="icon" aria-hidden="true"><svg><use href="#i-users"></use></svg></span>
+                Dana Ortiz, accounts payable
+              </li>
+              <li class="item">
+                <span class="icon" aria-hidden="true"><svg><use href="#i-home"></use></svg></span>
+                1 Innovation Way, Springfield
+              </li>
+            </ul>
+          </div>
+        </article>
+
+        <!--
+          Empty and Skeleton are the two nothing-to-show states and they are
+          opposites: Skeleton means content IS coming, Empty means there is
+          none. Showing both on one screen is the clearest way to say so.
+        -->
+        <article class="card">
+          <div class="surface-header"><strong>Archived customers</strong></div>
+          <!--
+            Center is one child, dead centre in both axes — a grid with
+            place-items: center and nothing else. The Empty state below is
+            already centred by its own rules; what Center does here is own
+            the HEIGHT, so the card does not collapse around it.
+          -->
+          <div class="surface-body center" style="min-block-size: 16rem">
+            <div class="empty">
+              <div class="empty-icon" aria-hidden="true"><svg><use href="#i-users"></use></svg></div>
+              <h3 class="empty-title">Nothing archived</h3>
+              <p class="empty-text">Customers you archive are kept here for 90 days.</p>
+              <div class="empty-actions">
+                <button class="btn outlined">Learn about archiving</button>
+              </div>
+            </div>
+          </div>
         </article>
       </section>
     </div>
@@ -562,16 +713,202 @@
               </div>
             </article>
 
+            <article class="card">
+              <div class="surface-header"><strong>Usage this period</strong></div>
+              <div class="surface-body stack">
+                <!--
+                  Split, not a Bar: two-up, first item start, last item end,
+                  and nothing in between. A Bar would work and would be
+                  saying something weaker — Split is the arrangement itself.
+                -->
+                <div class="split">
+                  <span>Seats</span>
+                  <span class="text-sm text-muted">5 of 10</span>
+                </div>
+                <progress class="progress" value="5" max="10">5 of 10 seats</progress>
+
+                <div class="split">
+                  <span>Invoices sent</span>
+                  <span class="text-sm text-muted">824 of 1,000</span>
+                </div>
+                <progress class="progress warning" value="824" max="1000">824 of 1,000 invoices</progress>
+
+                <div class="split">
+                  <span>API calls</span>
+                  <span class="text-sm text-muted">61,402 of 62,000</span>
+                </div>
+                <progress class="progress danger" value="61402" max="62000">61,402 of 62,000 API calls</progress>
+              </div>
+            </article>
+
             <h3 class="h6">API access</h3>
             <pre class="code"><code>curl https://api.northwind.example/v1/invoices \
   -H "Authorization: Bearer $NORTHWIND_KEY"</code></pre>
+
+            <!--
+              A labelled Divider, and the reason <hr> is not enough: an <hr>
+              cannot hold text, so the labelled form is a <div>.
+            -->
+            <div class="divider-label"><span>Danger zone</span></div>
+
+            <!--
+              Container is a max-width column with responsive padding — the
+              measure constraint. Prose that runs the full width of a wide
+              Screen is unreadable, and this is the term that says so.
+            -->
+            <div class="container">
+              <p class="text-sm text-muted">
+                Deleting a workspace removes every invoice, customer and
+                payment record in it. Exports stay available for 30 days,
+                after which the data is unrecoverable.
+              </p>
+              <div class="bar start">
+                <button class="btn danger outlined">Delete workspace</button>
+              </div>
+            </div>
           </article>
         </div>
       </section>
     </div>
 
+    <!-- ══ Reference ══════════════════════════════════════════════
+      The one route that is a specimen rather than a screen, and it says
+      so out loud.
+
+      The other five put the vocabulary under the pressure of a screen
+      that has to work, which is the whole point of this demo and the
+      reason it is not a component catalogue — ../guide/ already is one.
+      Two terms cannot survive that treatment, because they are not
+      choices: you never decide to write `class="chip"`, you choose a
+      Button and get the chip lineage with it. A realistic screen has no
+      honest place for them, and putting them in one anyway would teach
+      that they are ordinary components.
+
+      So they are here, labelled. Anything that needs a caption to belong
+      on a screen does not belong on a screen.
+    -->
+    <div data-route="reference" hidden>
+      <section class="pane" aria-labelledby="h-reference">
+        <div class="section-header">
+          <h2 id="h-reference" class="h4">Reference</h2>
+          <span class="badge muted">Not a screen</span>
+        </div>
+
+        <article class="alert info">
+          <span class="alert-icon" aria-hidden="true"><svg><use href="#i-info"></use></svg></span>
+          <div class="alert-content">
+            <strong>Everything else in this demo is a working screen.</strong>
+            <p>
+              This page is the exception: the two lineages below are not
+              components you choose, so no realistic screen can demonstrate
+              them without lying about what they are.
+            </p>
+          </div>
+        </article>
+
+        <h3 class="h6">The two lineages</h3>
+        <div class="stack">
+          <!--
+            Surface is the block lineage: background, border, radius and the
+            tonal tint recipe. Every Card, Alert, Toast, Popover, Drawer and
+            Dialog is one — this is what they all start as.
+          -->
+          <article class="surface bordered">
+            <div class="surface-header"><strong>Surface — the block lineage</strong></div>
+            <div class="surface-body stack">
+              <p class="text-sm text-muted">
+                Every Card, Alert, Toast, Popover, Drawer and Dialog is a
+                Surface underneath. Written bare it is a bounded box with no
+                term of its own, which is the one case where reaching for it
+                directly is right.
+              </p>
+              <div class="cluster">
+                <article class="card">A Card</article>
+                <article class="alert success">An Alert</article>
+              </div>
+            </div>
+          </article>
+
+          <!--
+            Chip is the inline lineage: layout and alignment, no skin. It is
+            also where the auto-contrast machinery lives, which is why a
+            toned Badge gets readable text without anyone choosing a colour.
+          -->
+          <article class="surface bordered">
+            <div class="surface-header"><strong>Chip — the inline lineage</strong></div>
+            <div class="surface-body stack">
+              <p class="text-sm text-muted">
+                Every Button, Pill, Badge and Avatar is a Chip underneath —
+                inline-flex centring, plus the machinery that derives a
+                readable text colour from whatever fill a composite asks
+                for. Chip is <em>layout only</em>: the bare form below takes
+                a tone and stays transparent, because the skin lives in each
+                composite's own file. That split is the point — the three
+                after it request the fill and get the contrast for free.
+              </p>
+              <div class="cluster">
+                <span class="chip">bare chip</span>
+                <span class="chip primary">a tone on a bare chip — still no fill</span>
+                <button class="btn outlined">Button</button>
+                <span class="badge success">Badge</span>
+                <span class="pill danger">7</span>
+                <span class="avatar info" style="--avatar-size:1.75rem" aria-hidden="true">DO</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <!--
+          Prose is here for the same reason the two lineages are: an
+          invoicing app has no long-form copy, so no realistic screen can
+          demonstrate it without inventing a page that would not exist.
+
+          It is the one term whose demonstration is the ABSENCE of classes.
+          Every paragraph and list below is bare — that is the whole claim,
+          and a class on any of them would disprove it.
+        -->
+        <h3 class="h6">Prose</h3>
+        <div class="prose stack">
+          <p>
+            A region of authored copy. The package styles no bare paragraph
+            anywhere else — it is not classless — so this is the scoped
+            exception, and it only reaches inside a box that opted in by
+            name.
+          </p>
+          <ul>
+            <li>Measure, so a paragraph and the list under it wrap at one column.</li>
+            <li>The muted ink body copy is set in.</li>
+            <li>List indentation, from the space ladder rather than a literal.</li>
+          </ul>
+          <p>
+            It sets nothing a term already owns, which is what lets it wrap
+            a whole region without arguing with the components inside. The
+            space between these blocks is the Stack's, not the Prose's.
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <!--
+      What this page demonstrates.
+
+      Empty on purpose — demo.js fills it by reading the live DOM of the
+      active route and matching it against the vocabulary in
+      ../vocabulary.js. A hand-written list here would be a second copy of
+      a package fact, and it would already be wrong: a static scan of this
+      file misses Toast and Progress, which JS creates, and Kbd and Text,
+      which are carried by an element and have no class to find.
+    -->
+    <footer id="legend" aria-labelledby="legend-h">
+      <div class="divider-label"><span>On this page</span></div>
+      <h2 id="legend-h" class="visually-hidden">Vocabulary terms on this page</h2>
+      <div id="legend-body"></div>
+    </footer>
+
   </main>
 </div>
+
+<script src="../vocabulary.js"></script>
 
 <!-- ── Overlays ────────────────────────────────────────────────── -->
 
@@ -627,6 +964,7 @@
       <li><a class="navlink" href="#invoices" data-nav="invoices">Invoices</a></li>
       <li><a class="navlink" href="#customers" data-nav="customers">Customers</a></li>
       <li><a class="navlink" href="#settings" data-nav="settings">Settings</a></li>
+      <li><a class="navlink" href="#reference" data-nav="reference">Reference</a></li>
     </ul>
   </div>
 </dialog>

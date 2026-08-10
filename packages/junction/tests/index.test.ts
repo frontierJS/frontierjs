@@ -1462,7 +1462,7 @@ describe('EventBus', () => {
 
 // ─── Service custom methods tests ───────────────────────────────────────────
 
-import { createService, callService } from '../src/core/service.ts'
+import { createService, callService, DERIVED_HOOKS } from '../src/core/service.ts'
 import { bridge }                      from '../src/transport/bridge.ts'
 
 describe('Service custom methods', () => {
@@ -2691,11 +2691,14 @@ describe('_compiledPipelines', () => {
 
     expect(svc._compiledPipelines).toBeDefined()
     expect(svc._compiledPipelines!['find']).toBeDefined()
-    // The app hook plus the derived gateAuth every service now carries — a
-    // model-less one included, where it resolves no gate levels and returns.
-    // What this test is pinning is that the pipeline was compiled at all.
-    expect(svc._compiledPipelines!['find'].before.length).toBe(2)
-    expect(svc._compiledPipelines!['find'].before.some(h => h.name === 'gateAuth')).toBe(true)
+    // What this test pins is that the pipeline was compiled at all, and that
+    // the app's own hook survived alongside the derived ones. It used to assert
+    // `.length === 2` and broke the day a second derived hook was added
+    // (autoFilter) — the count is a framework detail this test does not own,
+    // exactly as tests/telemetry.test.ts already says about the same list.
+    const before = svc._compiledPipelines!['find'].before
+    expect(before.some(h => h.name === 'gateAuth')).toBe(true)
+    expect(before.filter(h => !DERIVED_HOOKS.has(h.name)).length).toBe(1)
   })
 
   it('compiled pipelines are used in callService instead of re-merging', async () => {

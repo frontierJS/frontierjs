@@ -142,9 +142,11 @@ See [access-control.md](./access-control.md).
 ```
 @computed                        app-layer derived field (implement in computed.js)
 @generated("sql expr")           SQL GENERATED ALWAYS AS column (STORED)
-@from(relation, count: true)     derived count from relation (not stored)
-@from(relation, sum: field)      derived sum/max/min/first/last/exists
-@from(relation, count: true, where: "sql")  filtered
+@from(Model, count: true)        derived count from relation (not stored) — field must be Int
+@from(Model, sum: field)         derived sum/max/min — take a field name
+@from(Model, first|last: true)   the whole related ROW — field must be typed Model?
+@from(Model, exists: true)       field must be Boolean
+@from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered
 ```
 
 ### File storage

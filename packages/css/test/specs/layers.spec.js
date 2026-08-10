@@ -14,6 +14,12 @@
  */
 
 var EXPECTED_ORDER = [
+  /*
+   * First, and it has to be: the only rule in reset.css targets a bare
+   * element, so a `:where()` base at zero specificity would otherwise tie
+   * with it and win on source order.
+   */
+  'reset',
   'tokens',
   'themes',
   'tones',
@@ -289,7 +295,7 @@ test('layers: every composite is actually enrolled in its base', function () {
   });
 
   var LINEAGES = {
-    'chip.css': ['.btn', '.pill', '.badge', '.page', '.tooltip', '.avatar', '.step-marker'],
+    'chip.css': ['.btn', '.pill', '.badge', '.pagination-link', '.tooltip', '.avatar', '.step-marker'],
     'surface.css': ['.card', '.tile', '.alert', '.toast', '.dialog', '.popover', '.drawer'],
   };
 

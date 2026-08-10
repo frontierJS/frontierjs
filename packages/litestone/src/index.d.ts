@@ -782,8 +782,9 @@ export interface JsonSchemaOptions {
   audience?:          'client' | 'system'
   includeTimestamps?: boolean
   includeDeletedAt?:  boolean
-  includeComputed?:   boolean
   inlineEnums?:       boolean
+  /** Top-level document title. No CLI flag reaches this. */
+  title?:             string
 }
 
 export declare function generateJsonSchema(schema: LitestoneSchema, options?: JsonSchemaOptions): Record<string, unknown>

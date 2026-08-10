@@ -217,6 +217,8 @@
     "dev": "npm run watch",
     "package": "vsce package",
     "publish": "vsce publish",
+    "test": "npm run build && node test/lsp.test.js",
+    "test:nobuild": "node test/lsp.test.js",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {

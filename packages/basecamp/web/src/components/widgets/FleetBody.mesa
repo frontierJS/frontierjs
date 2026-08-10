@@ -1,0 +1,57 @@
+<script>
+  // server_fleet — every server in the workspace, by status.
+  //
+  // Reads the servers service with the reader's own session, which is the whole
+  // shape of a widget here: a card can show exactly what the person could have
+  // opened for themselves, and a refusal arrives as a refusal rather than as an
+  // empty grid.
+  import { servers } from '../../resources/Server.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Dot from '@frontierjs/ui/components/display/Dot.mesa'
+
+  let rows    = []
+  let error   = null
+  let loading = true
+
+  const TONE = {
+    online: 'success', ready: 'success', draining: 'warning',
+    unreachable: 'danger', destroyed: 'danger', stopped: 'muted',
+  }
+
+  async function load() {
+    error = null
+    try {
+      rows = (await servers.service.find({}, { limit: 200 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(onWrite(servers.service, load))
+
+  $: online = rows.filter(s => s.status === 'online').length
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else if !rows.length}
+  <p class="text-sm text-muted">No servers in this workspace.</p>
+{:else}
+  <p class="text-sm text-muted">{online} of {rows.length} online</p>
+  <ul class="cluster" style="list-style: none; padding: 0">
+    {#each rows as server}
+      <li>
+        <a class="pill" href={`/servers/${server.id}/`}>
+          <Dot tone={TONE[server.status] ?? ''} />
+          {server.name}
+        </a>
+      </li>
+    {/each}
+  </ul>
+{/if}

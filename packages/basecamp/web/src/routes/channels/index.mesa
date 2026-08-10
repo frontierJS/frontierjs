@@ -1,0 +1,271 @@
+---
+title: Channels
+---
+<script>
+  // The mock's NotificationChannelsView + ChannelModal.
+  //
+  // A channel is where an alert is delivered. The mock's version pauses,
+  // deletes and "sends a test" against a hardcoded array; all four of those are
+  // real here, and the test genuinely leaves the process — `channels.test` goes
+  // out through app.conduit and fails loudly if nothing answers.
+  //
+  // **The credential is never on this page.** It is written once into a
+  // `Secret` (`@encrypted`) and the only path back out is conduit's resolver at
+  // send time — so a channel row has a `secretId` and no material, and this
+  // file contains no masking code. The one control that accepts a credential
+  // sends it and forgets it; rotating means typing a new one.
+  //
+  // The delete refusal is the server's, not this screen's: a channel with rules
+  // attached answers 409 with the count. The mock made that call in the
+  // browser, over an array of rules it happened to have loaded.
+  import { session } from '../../session.js'
+  import { channels } from '../../resources/NotificationChannel.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Form       from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows     = []
+  let error    = null
+  let loading  = true
+  let busy     = null
+  let creating = false
+  let draft    = channels.make()
+  let secret   = ''
+
+  // Per-kind form shape. The KINDS list itself is NOT written here — it comes
+  // from the schema through the resource (`channels.fields.kind.enum`), the
+  // same way the alerts screen gets its severities. What is here is what each
+  // kind ASKS FOR, which is a UI fact and belongs to a UI file.
+  const ASKS = {
+    slack:     { secret: 'Slack webhook URL',  hint: 'https://hooks.slack.com/services/…', config: 'channel',  configLabel: 'Channel override', configHint: '#ops-alerts — optional' },
+    pagerduty: { secret: 'Integration key',    hint: 'Events API v2 integration key',      config: null },
+    email:     { secret: null,                 config: 'to',  configLabel: 'Recipients', configHint: 'Comma-separated' },
+    webhook:   { secret: 'Shared token',       hint: 'Optional — sent as X-Basecamp-Token', config: 'url', configLabel: 'Endpoint URL', configHint: 'https://hooks.example.com/…' },
+  }
+  const KIND_LABEL = { slack: 'Slack', pagerduty: 'PagerDuty', email: 'Email', webhook: 'Webhook' }
+
+  $: kinds = channels.fields?.kind?.enum ?? Object.keys(ASKS)
+  $: asks  = ASKS[draft.kind] ?? {}
+
+  // The kit's controls take a value and hand back an event; they are NOT bound
+  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
+  // let and a member expression is not one. Replacing the object rather than
+  // mutating it is what makes the change reactive.
+  function write(name, value) {
+    draft = { ...draft, [name]: value }
+  }
+
+  // config is one Json column and each kind puts a different key in it, so the
+  // form writes through a single helper rather than declaring four shapes.
+  function writeConfig(key, value) {
+    const next = { ...(draft.config ?? {}) }
+    if (key === 'to') next.to = value.split(',').map(s => s.trim()).filter(Boolean)
+    else if (value)   next[key] = value
+    else              delete next[key]
+    draft = { ...draft, config: next }
+  }
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows = (await channels.service.find({}, { limit: 200 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  const READS = new Set(['get', 'find'])
+  const off = channels.service.on('*', (method, row) => {
+    if (READS.has(method) || !row?.id) return
+    load()
+  })
+  $onDestroy(off)
+
+  async function create(data) {
+    error = null
+    try {
+      // `secret` is wire-only — it is not a column, so it is not on the record
+      // the form validates. It rides alongside and the server lifts it into a
+      // Secret; sending it as part of `draft` would only have it stripped.
+      const created = await channels.service.create(secret ? { ...data, secret } : data)
+      toasts.success(`${created.name} created`)
+      creating = false
+      draft  = channels.make()
+      secret = ''
+      await load()
+    } catch (e) {
+      error = e.message
+      throw e
+    }
+  }
+
+  async function toggle(channel) {
+    error = null; busy = channel.id
+    try {
+      const updated = await channels.service.patch(channel.id, { isActive: !channel.isActive })
+      toasts.success(updated.isActive ? `${channel.name} resumed` : `${channel.name} paused`)
+      const i = rows.findIndex(r => r.id === channel.id)
+      if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function test(channel) {
+    // `busy` is what says "in flight" — the kit's toasts are fire-and-forget
+    // (`add/success/error/warning/info`), with no updatable handle. The mock's
+    // `toast.loading(…).update(…)` is React state in a 12k-line file, not an
+    // API this kit has; calling it here threw from the click handler before the
+    // try even opened, so a failed delivery reported NOTHING. `FJS-119`.
+    error = null; busy = channel.id
+    try {
+      const updated = await channels.service.action('test', channel.id)
+      toasts.success(`Test delivered to ${channel.name}`)
+      const i = rows.findIndex(r => r.id === channel.id)
+      if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
+    } catch (e) {
+      // Shown, not swallowed. A test that fails silently is the one failure
+      // mode this whole screen exists to rule out.
+      toasts.error(`Test failed: ${e.message}`)
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function remove(channel) {
+    error = null; busy = channel.id
+    try {
+      await channels.service.remove(channel.id)
+      toasts.success(`${channel.name} deleted`)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  $: active = rows.filter(r => r.isActive).length
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
+</script>
+
+<div class="section-header">
+  <h1>Notification channels</h1>
+  <Button variant="primary" id="new-channel" onclick={() => creating = !creating}>
+    {creating ? 'Cancel' : 'New channel'}
+  </Button>
+</div>
+
+<p class="text-sm text-muted" id="channel-summary">
+  {active} active · {rows.length} total · where alerts get delivered
+</p>
+
+<Callout tone="info" title="A test really sends">
+  Testing a channel makes a live request to the third party under this workspace's
+  name. It is not a stored flag: the channel is marked tested only when something
+  answered, and the failure is shown as it came back.
+</Callout>
+
+{#if error}
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if creating}
+  <Card>
+    <Form resource={channels} bind:record={draft} onsubmit={create}>
+      <Input name="name" id="name" value={draft.name}
+             oninput={(e) => write('name', e.target.value)} />
+      <Select name="kind" id="kind" value={draft.kind}
+              options={kinds.map(k => ({ value: k, label: KIND_LABEL[k] ?? k }))}
+              oninput={(e) => write('kind', e.target.value)} />
+
+      {#if asks.config}
+        <Input id="configValue" name="configValue" label={asks.configLabel} hint={asks.configHint}
+               value={asks.config === 'to' ? ((draft.config?.to ?? []).join(', ')) : (draft.config?.[asks.config] ?? '')}
+               oninput={(e) => writeConfig(asks.config, e.target.value)} />
+      {/if}
+
+      {#if asks.secret}
+        <Input id="secret" name="secret" type="password" label={asks.secret} hint={asks.hint}
+               value={secret} oninput={(e) => secret = e.target.value} />
+      {/if}
+
+      <Button type="submit" variant="primary">Create channel</Button>
+    </Form>
+  </Card>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No channels">
+    Nothing in this workspace can deliver an alert yet. An alert rule with no channel
+    fires into a table nobody is watching.
+  </EmptyState>
+{:else}
+  <div class="table-wrap">
+    <table class="table striped hover">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Kind</th>
+          <th scope="col">Rules</th>
+          <th scope="col">State</th>
+          <th scope="col">Last test</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody id="channel-rows">
+        {#each rows as c}
+          <tr>
+            <td>{c.name}</td>
+            <td><Pill>{KIND_LABEL[c.kind] ?? c.kind}</Pill></td>
+            <td class="text-sm">{c.rule_count}</td>
+            <td>
+              {#if c.isActive}
+                <Badge tone="success">active</Badge>
+              {:else}
+                <Badge tone="muted">paused</Badge>
+              {/if}
+            </td>
+            <td class="text-sm text-muted">{when(c.lastTestAt)}</td>
+            <td>
+              <div class="cluster">
+                <Button variant="ghost" disabled={busy === c.id}
+                        aria-label={`Send a test to ${c.name}`} onclick={() => test(c)}>Send test</Button>
+                <Button variant="ghost" disabled={busy === c.id}
+                        onclick={() => toggle(c)}>{c.isActive ? 'Pause' : 'Resume'}</Button>
+                <Button variant="ghost" disabled={busy === c.id}
+                        aria-label={`Delete ${c.name}`} onclick={() => remove(c)}>Delete</Button>
+              </div>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/if}

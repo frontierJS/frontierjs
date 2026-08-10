@@ -17,10 +17,33 @@ shows every class in isolation; the point of this one is the opposite — to put
 the vocabulary under the pressure of a screen that has to actually work, and
 see what breaks.
 
-Five routes: Dashboard, Invoices, Invoice detail, Customers, Settings. Between
+That rule has exactly one exception, and it is quarantined to its own route
+rather than allowed to soften the other five. See **Reference** below: two of
+the 54 terms are not components at all, and the honest way to show them is to
+say so rather than to stage a screen around them. Anything that needs a
+caption to belong on a screen does not belong on a screen.
+
+Five screens: Dashboard, Invoices, Invoice detail, Customers, Settings. Between
 them they exercise the full Frame and Page tiers, both tab orientations, the
 table with striped + toned rows composing, forms with native validation,
-dialogs and drawers, toasts, and all seven themes.
+dialogs and drawers, toasts, and all seven themes. The invoices toolbar has a
+density control — one number set on the Pane — which is the fastest way to see
+that the third axis is real.
+
+A sixth route, **Reference**, is the exception and says so on the page. It
+holds the two terms a realistic screen cannot demonstrate honestly: Chip and
+Surface are the two *lineages*, and you never choose them — you choose a
+Button and get the chip lineage with it, or a Card and get Surface. The
+guide's wizard refuses to offer them for the same reason. Putting them on a
+working screen would teach that they are ordinary components.
+
+It earns its place rather than being a dumping ground, and that is
+measurable: with the Reference route removed, coverage across the five
+screens is 52 of 54, and the two missing are exactly Chip and Surface.
+
+**All 54 vocabulary terms appear across the six routes**, and each route's
+footer says which of them are on it. That number is *derived* — see below —
+so it cannot claim coverage the page does not have.
 
 Three files:
 
@@ -29,6 +52,32 @@ Three files:
 | `index.html` | markup only — the structural half of the system, followed strictly |
 | `demo.js` | the behaviour the package refuses to ship (Principle 6) |
 | `demo.css` | **a measurement.** Every rule in it is a gap in the package |
+
+## The footer counts itself
+
+Each route ends with *On this page* — the terms that route demonstrates,
+grouped by tier, with a count. It is built by reading the live DOM and
+matching it against `../vocabulary.js`, the same file the guide and the test
+suite read.
+
+A written list was the alternative and would have been wrong immediately. A
+static scan of `index.html` misses **Toast** and **Progress** (created by
+`demo.js` at runtime) and **Kbd**, **Text**, **Heading**, **Section** and
+**Group** (carried by an element, with no class to search for) — seven terms
+the page demonstrates and a hand-count does not see.
+
+Two things in the derivation are judgement, and both were measured rather
+than assumed:
+
+- **The Frame tier is credited to every route.** App, Shell, Topbar, Sidebar
+  and Screen are persistent by definition — scoping the scan to the active
+  route would credit no route with the frame every route renders in.
+- **Scanning `.shell` is the trap.** The Shell *contains* the Screen, so a
+  scan of it sweeps up every route including the hidden ones, and all five
+  pages report the whole vocabulary. Measured at 54/54 on every route, which
+  reads as success. The frame roots are the ones *beside* the Screen; App,
+  Shell and Screen are tested as ancestors instead. Correct behaviour is
+  28–35 per route, union 54.
 
 ## The behaviour half
 
@@ -42,7 +91,8 @@ too demanding.
 |---|---|
 | Tabs — roving tabindex, arrows, Home/End, both orientations | ~30 lines, shared by horizontal and vertical |
 | Dialog + drawer open/close | ~15 lines — `showModal()` supplies the focus trap, Escape, inertness and backdrop |
-| Toasts | ~15 lines |
+| Toasts | ~15 lines — the exit is a transition on `hidden`, so the JS sets the attribute and reclaims the node afterwards |
+| Density | **~4 lines.** One `--density` on the Pane; the table, its cells, the bar above it and every badge in that bar follow, because it inherits |
 | Routing + `aria-current` | ~20 lines |
 | Theme switching | 1 line |
 | Form validation | **0 lines.** `.field:user-invalid` is the whole implementation |
@@ -136,19 +186,47 @@ promoted:
     two vocabularies for "which edge" is worse. Folds into the scoped-modifier
     naming decision that is already open.
 
+**Found by covering the whole vocabulary:**
+
+12. **Both Feeds rendered with no timeline.** The demo wrote
+    `<li class="feed-item">`, collapsing the two elements ANATOMY keeps
+    apart. The connecting line is drawn by
+    `.feed > li:not(:last-child) .feed-item::after` — a *descendant*
+    selector — so the collapsed form matches nothing: measured at
+    `content: none`, zero height, a column of dots and no line between
+    them. The same defect was in the guide's Learn wizard (`FJS-130`), and
+    neither could be seen by any check that asks whether a class is
+    present. The `<article>` inside the `<li>` is load-bearing.
+
+13. **A Popover needs two rules before the term is usable, and the package
+    ships neither.** `.popover` is `position: absolute` with no inset, so
+    without a positioned ancestor it anchors to the page, and without an
+    offset it resolves to its static position centred *on* its trigger —
+    measured at 265px tall, y = −39, hanging off the top of the viewport.
+    `.tooltip-anchor` ships in the package and solves exactly this for
+    Tooltip; Popover has no counterpart. These are the two rules now in
+    `demo.css`, and unlike the sprite rule they are arguably a real gap:
+    every consumer of a named term has to write them.
+
 ## What came out of the box
 
 Worth stating, because the list above is all failures: after the v0.10 review,
-`demo.css` is **one rule** — collapsing the SVG sprite, which is specific to
+`demo.css` was **one rule** — collapsing the SVG sprite, which is specific to
 the sprite-and-`<use>` technique and deliberately stayed out of the package.
+Covering the full vocabulary added **two more**, both Popover positioning
+(finding 13). Three rules total, and the count is the point: it is what the
+package makes a consumer write.
 
 No layout scaffolding, no spacing utilities, no color, no component CSS, no
 responsive work, no icon sizing, no type scale. The frame, panes, cards, tiles,
 table, feed, steps, facts, forms, overlays, navigation and all seven themes come
 out of the package as-is, and the markup in `index.html` follows the vocabulary
-without fighting it. The inline `style=` attributes that remain are all token
+without fighting it. Most inline `style=` attributes that remain are token
 assignments — `--avatar-size`, `--field-inline-size` — which is the intended
-API rather than a workaround.
+API rather than a workaround. The exceptions are the Skeletons, which take an
+`inline-size` because a skeleton is shaped like the content it stands in for
+and only the consumer knows that shape, and one `min-block-size` giving the
+Center something to centre within.
 
 The one place the vocabulary came up short is that it has **no term for a
 route** — the switchable top-level content of a Screen. `Pane` is a labelled

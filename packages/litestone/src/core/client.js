@@ -9,7 +9,7 @@ import { Database }     from 'bun:sqlite'
 import { resolve, join, dirname, extname } from 'path'
 import { tmpdir } from 'os'
 import { existsSync, mkdirSync, mkdtempSync, statSync } from 'fs'
-import { parse, parseFile } from './parser.js'
+import { parse, parseFile, inferFromFk } from './parser.js'
 import { isSoftDelete, isSoftDeleteCascade, modelToTableName, modelToAccessor } from './ddl.js'
 import { detectM2MPairs, buildEdgeMap } from './ddl.js'
 import {
@@ -379,6 +379,26 @@ function buildUpdatedByMap(schema) {
 // putting the column in the payload. Skipped entirely when ctx.auth is null,
 // which is what lets asSystem() seeders and backfills carry authorship in.
 
+// ─── ownKeys ──────────────────────────────────────────────────────────────────
+// Every client proxy answers ownKeys by concatenating the target's real keys
+// with the tables, the views and a hand-written list of `$` accessors — and a
+// proxy whose ownKeys returns the same name twice makes the ENGINE throw:
+//
+//   TypeError: Proxy handler's 'ownKeys' trap result must not contain
+//              any duplicate names
+//
+// `$setAuth` and `$db` were on the target AND in the literal list, so
+// Object.keys(db), Object.getOwnPropertyNames(db), {...db}, `for…in` and
+// JSON.stringify(db) all threw on the top-level client. Two strings, and the
+// symptom named proxy internals rather than either of them — Junction ended up
+// wrapping its own Object.keys(db) in a try/catch to stop the noise replacing a
+// "model not found" diagnostic (`FJS-014`).
+//
+// Route every trap through this rather than fixing the two names: the literal
+// lists have grown before, and the next property added to a target would
+// reintroduce the same failure with no test able to predict which one.
+const dedupeKeys = (...groups) => [...new Set(groups.flat())]
+
 // ─── @version map ─────────────────────────────────────────────────────────────
 // { modelName: fieldName } — at most one per model, enforced in the parser.
 
@@ -734,8 +754,8 @@ function buildGeneratedMap(schema) {
 // subquerySql: the correlated subquery string to inject into SELECT
 // isObject: true for last/first (returns JSON-encoded row), false for scalars
 //
-// FK inference: finds the field on the target model whose type is this model
-// and has @relation(fields: [...]) — that's the FK field pointing back.
+// FK inference lives in the parser as inferFromFk() — the same call validate()
+// makes, so a schema that parses always produces a subquery here.
 
 function buildFromMap(schema, pluralize = false) {
   const map = {}
@@ -755,32 +775,11 @@ function buildFromMap(schema, pluralize = false) {
       if (!targetModel) continue
       const targetTable = modelToTableName(targetModel, pluralize)
 
-      // Infer FK: find field on targetModel with @relation pointing back to model
-      const fkField = targetModel.fields.find(f => {
-        const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
-        if (!rel) return false
-        return f.type.name === model.name
-      })
-
       // FK column on the target table + the column it references on THIS model.
-      // The referenced column is usually the @id, but relations can reference a
-      // non-PK @unique column (e.g. Translation.verseId references Verse.verseId).
-      // Correlating on the actual referenced column — not the assumed PK — is
-      // what makes @from work for those reverse relations.
+      const fk = inferFromFk(model, targetModel)
+      if (!fk) continue  // unreachable for a validated schema; see inferFromFk
+      const { fkCol, refCol } = fk
       const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-      let fkCol = null
-      let refCol = idField
-      if (fkField) {
-        const rel = fkField.attributes.find(a => a.kind === 'relation')
-        fkCol  = Array.isArray(rel.fields)     ? rel.fields[0]     : rel.fields
-        refCol = (Array.isArray(rel.references) ? rel.references[0] : rel.references) ?? idField
-      } else {
-        // Fallback: look for a field named <modelName>Id
-        const fallback = targetModel.fields.find(f => f.name === `${model.name}Id`)
-        if (fallback) fkCol = fallback.name
-      }
-
-      if (!fkCol) continue  // can't infer FK — skip (validation catches this)
 
       const whereParts = [`"${fkCol}" = "${selfTable}"."${refCol}"`]
       if (where) whereParts.push(`(${where})`)
@@ -1077,6 +1076,33 @@ function suggestKey(unknown, allowed) {
 // pointer to limit/offset. AND/OR/NOT are descended into; relation
 // sub-filters are not (their keys belong to the related model).
 const _whereWarnOnce = new Set()
+
+// Collect the same problems checkWhereKeys reports, without warning, throwing,
+// or running the query.
+//
+// The warn-on-read / throw-on-write split above is right for the ORM — a typo'd
+// filter on a write is a mis-scoped destructive operation, while a read is
+// merely empty. It is wrong over HTTP, where the warning goes to the server's
+// stderr and the caller gets `200 {"data":[],"total":0}`: a typo, a misplaced
+// directive and a genuinely empty table become the same answer (`FJS-109`).
+//
+// So the boundary that CAN say 400 asks first, and this is how. Litestone keeps
+// the one definition of "is this a valid where key" — including the typo hint
+// and the AND/OR/NOT descent — rather than Junction growing a second one that
+// drifts. Returns [] when the where is fine, so `if (problems.length)` reads
+// naturally at the call site.
+function collectWhereKeyProblems(where, allowed, out = []) {
+  if (!where || typeof where !== 'object' || Array.isArray(where)) return out
+  for (const [k, v] of Object.entries(where)) {
+    if (k === 'AND' || k === 'OR' || k === 'NOT') {
+      for (const w of Array.isArray(v) ? v : [v]) collectWhereKeyProblems(w, allowed, out)
+      continue
+    }
+    if (k === '$raw' || allowed.has(k)) continue
+    out.push({ key: k, suggestion: suggestKey(k, allowed), allowed: [...allowed].sort() })
+  }
+  return out
+}
 
 function checkWhereKeys(where, allowed, modelName, method, isWrite) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return
@@ -6566,7 +6592,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return Reflect.has(target, prop) || (typeof prop === 'string' && prop in scopeMap)
       },
       ownKeys(target) {
-        return [...Reflect.ownKeys(target), ...Object.keys(scopeMap)]
+        return dedupeKeys(Reflect.ownKeys(target), Object.keys(scopeMap))
       },
       getOwnPropertyDescriptor(target, prop) {
         if (typeof prop === 'string' && scopeMap[prop]) {
@@ -6619,6 +6645,33 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Apply scopes to the main tables. Auth/system proxies install their own
   // scope wrappers below using their own ctxResolver.
   const scopedTables = installScopes(tables, () => ctx)
+
+  // ─── $checkWhere ────────────────────────────────────────────────────────
+  //
+  // $checkWhere(accessor, where) → [{ key, suggestion, allowed }]
+  //
+  // Ask before you query. For a boundary that can answer 400 — see
+  // collectWhereKeyProblems. Unknown accessor → [] rather than a throw: "I
+  // cannot judge this" is not "this is wrong", and a caller using it to reject
+  // must not reject what it failed to understand.
+  //
+  // Defined ONCE here and handed to every proxy below. It lived inline in the
+  // root proxy's get trap until 2026-08-06, which meant `$setAuth`, `asSystem`
+  // and `$scopedBy` clients did not have it — and because a Litestone proxy
+  // THROWS on an unknown property rather than returning undefined, even asking
+  // `typeof db.$checkWhere` blew up. Junction puts a `$setAuth` client on
+  // `ctx.locals.db`, so its autoFilter hook threw on every list read by a
+  // signed-in caller, in every app, with a message about a table nobody named.
+  // Which filter keys are valid is a question about the SCHEMA — auth and scope
+  // have no bearing on it, so every flavour of client answers it identically.
+  function $checkWhere(accessor, where) {
+    const model = ctx.models?.[accessor]
+      ?? schema.models.find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
+    if (!model?.fields) return []
+    const allowed = new Set(model.fields.map(f => f.name))
+    for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) allowed.add(d.as)
+    return collectWhereKeyProblems(where, allowed)
+  }
 
   // $transaction — wraps async callback in BEGIN IMMEDIATE / COMMIT
   let clientProxy
@@ -6691,6 +6744,15 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // to bypass, so `db.sql` there is unchanged.
   const _hasAccessRules = schemaDeclaresAccessRules(schema)
 
+  // Statements that are unambiguously reads. Everything else — including WITH,
+  // because `WITH x AS (…) DELETE FROM …` is legal SQLite — goes to the write
+  // connection, which reads perfectly well. Getting this wrong in the other
+  // direction is the expensive one: the read connection is opened `readonly`
+  // with `query_only = ON`, so a write sent there fails with SQLITE_READONLY,
+  // "attempt to write a readonly database" — a message about the connection
+  // that names nothing the caller wrote.
+  const _RAW_READ = /^(SELECT|EXPLAIN|VALUES)\b/i
+
   /** The one raw runner. There were three byte-identical copies of this. */
   function _runRawSql(strings, values) {
     let query = ''
@@ -6698,7 +6760,12 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       query += strings[i]
       if (i < values.length) query += '?'
     }
-    return readDb.query(query.trim()).all(...values)
+    query = query.trim()
+    // Leading comments are stripped before the test, so `-- why\nDELETE …`
+    // still routes as a write rather than as an unrecognised statement.
+    const head = query.replace(/^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)+/, '')
+    const conn = _RAW_READ.test(head) ? readDb : writeDb
+    return conn.query(query).all(...values)
   }
 
   async function sql(strings, ...values) {
@@ -6981,9 +7048,27 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop in sysTables)  return sysTables[prop]
         if (prop === '$close')  return () => _closeAll()
         if (prop === '$schema') return schema
+        if (prop === '$checkWhere') return $checkWhere
         if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         throw new Error(`"${prop}" is not a table in this schema.`)
-      }
+      },
+      // This proxy had a `get` trap and nothing else, which made it lie rather
+      // than throw: `'user' in db.asSystem()` was FALSE while
+      // `db.asSystem().user` worked, and enumeration listed no tables at all.
+      // Same family as `FJS-014` and the quieter half of it — a guard reading
+      // `if ('user' in db)` silently skipped the table under a system client.
+      ownKeys(target) {
+        return dedupeKeys(
+          Reflect.ownKeys(target),
+          Object.keys(sysTables),
+          ['$close', '$schema', '$checkWhere', '$enums'],
+        )
+      },
+      has(target, prop) { return prop in target || prop in sysTables },
+      getOwnPropertyDescriptor(target, prop) {
+        if (prop in sysTables) return { configurable: true, enumerable: true, writable: false }
+        return Reflect.getOwnPropertyDescriptor(target, prop)
+      },
     })
     return _systemProxy
   }
@@ -7061,12 +7146,17 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$close')          return () => _closeAll()
         if (prop === '$schema')         return schema
         if (prop === '$auth')           return user
+        if (prop === '$checkWhere')     return $checkWhere
         if (prop === '$cacheSize')      return _cacheSize()
         if (prop === '$enums')          return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(authTables).join(', ')}`)
       },
       ownKeys(target) {
-        return [...Reflect.ownKeys(target), ...Object.keys(authTables), '$close', '$schema', '$auth', '$cacheSize', '$enums']
+        return dedupeKeys(
+          Reflect.ownKeys(target),
+          Object.keys(authTables),
+          ['$close', '$schema', '$auth', '$checkWhere', '$cacheSize', '$enums'],
+        )
       },
       has(target, prop) { return prop in target || prop in authTables },
       getOwnPropertyDescriptor(target, prop) {
@@ -7107,10 +7197,11 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$schema') return schema
         if (prop === '$scope')  return overrides.scopedBy ?? {}
         if (prop === '$auth')   return overrides.auth ?? null
+        if (prop === '$checkWhere') return $checkWhere
         if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(tables).join(', ')}`)
       },
-      ownKeys(t)   { return [...Reflect.ownKeys(t), ...Object.keys(tables)] },
+      ownKeys(t)   { return dedupeKeys(Reflect.ownKeys(t), Object.keys(tables)) },
       has(t, prop) { return prop in t || prop in tables },
     })
   }
@@ -7165,6 +7256,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$attached')       return $attachedDatabases()
       if (prop === '$schema')         return schema
       if (prop === '$relations')      return relationMap
+      if (prop === '$checkWhere')     return $checkWhere
       if (prop === '$softDelete')     return softDeleteMap
       if (prop === '$cacheSize')      return _cacheSize()
       if (prop === '$config') {
@@ -7185,12 +7277,12 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     },
     ownKeys(target) {
       const viewNames = (schema.views ?? []).map(v => v.name)
-      return [
-        ...Reflect.ownKeys(target),
-        ...Object.keys(scopedTables),
-        ...viewNames,
-        '$close', '$attached', '$schema', '$relations', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$enums', '$setAuth', '$scopedBy', '$lock', '$locks', '$db',
-      ]
+      return dedupeKeys(
+        Reflect.ownKeys(target),
+        Object.keys(scopedTables),
+        viewNames,
+        ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$enums', '$setAuth', '$scopedBy', '$lock', '$locks', '$db'],
+      )
     },
     has(target, prop) {
       return prop in target || prop in scopedTables

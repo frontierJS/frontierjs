@@ -141,6 +141,26 @@ This is what goes back in with a working resolver. Minimum level to **read**:
 | `OWNER` (6) | `Account` |
 | `SYSTEM` (8) | `User` `Credential` `Session` `Verification` |
 
+The fleet-action models, added 2026-08-10, and the one thing about them that is
+not obvious: **reading a recipe means reading its script**, which is the whole
+payload, so it sits a level above the machine facts around it.
+
+| read requires | models |
+|---|---|
+| `USER` (4) | `DiskUsage` `CleanupRun` `RecipeRun` |
+| `ADMIN` (5) | `Recipe` |
+
+Writes follow the split the services already enforce: `Recipe` create/update/
+delete are ADMIN (authoring is the privileged act), `RecipeRun` and `CleanupRun`
+are SYSTEM on every verb (only the engine writes one), and `DiskUsage` is SYSTEM
+throughout — a row exists because an agent reported it, and nobody authors one.
+
+*The models added in phases 4–8 — `Domain`, `NotificationChannel`,
+`AlertRuleChannel`, `FeatureFlag`, `FlagOverride`, `ApiKey`, `Volume`,
+`Dashboard`, `DashboardWidget` — are not in these tables yet. Whoever lands
+`FJS-007` writes their levels; the services' `requireWorkspaceRole` calls are
+the current evidence of what each was intended to be.*
+
 Writes are stricter than reads wherever the action is operational rather than
 editorial — a few worth knowing:
 

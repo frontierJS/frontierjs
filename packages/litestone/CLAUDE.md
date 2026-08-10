@@ -166,9 +166,10 @@ Type?      — optional (nullable)
 @gte @gt @lte @lt                numeric validators
 @regex("pattern")                regex validator
 @minItems @maxItems              array validators
-@from(relation, count: true)     derived count from relation
-@from(relation, sum: field)      derived sum/max/min/first/last/exists from relation
-@from(relation, count: true, where: "sql")  filtered derived field
+@from(Model, count: true)        derived count from relation — first arg is the MODEL, not the
+@from(Model, sum: field)         relation field. sum/max/min take a field; count needs Int,
+@from(Model, last: true)         exists needs Boolean, first/last are typed Model? (whole row)
+@from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered derived field
 ```
 
 Every validator above takes an optional trailing message —
@@ -711,10 +712,20 @@ const schema = generateJsonSchema(db.$schema, {
   audience:          'client',        // 'client' (default) | 'system'
   includeTimestamps: false,
   includeDeletedAt:  false,
-  includeComputed:   false,
   inlineEnums:       false,
+  title:             undefined,       // top-level title, API-only (no CLI flag)
 })
 ```
+
+There is no `includeComputed` — it was listed here and passed by the CLI, and
+the generator never read it. Computed / generated / `@from` / `@version` fields
+are a property of `mode: 'full'`.
+
+**`docs/jsonschema.md` is the full key reference** — every standard keyword and
+every `x-` extension this emits, which mode and audience produces it, and which
+package reads it. Several extensions (`x-litestone-policies`,
+`x-litestone-read-policy`, `x-litestone-from`, `x-litestone-secret`) currently
+have no reader anywhere.
 
 ---
 
@@ -937,3 +948,40 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 **Concurrent deploys + shared WAL** — blue-green with overlapping containers sharing the same SQLite file can cause WAL contention. Mitigations: Litestream WAL replication, `wal_autocheckpoint` pragma (both implemented).
 
 **`kamal app exec` memory spikes** — each exec container adds ~500MB RAM. Run `litestone studio` on the host.
+
+---
+
+## Proving a change
+
+`bun run test` (bun; `test:smoke` is the CLI only). Then, because this is the
+realm every other package sits on: `example`: `bun run verify` and `basecamp`:
+`bun run verify`, plus `sierra`: `bun run test:safety` — the five checks that run
+against a real client rather than a stand-in.
+
+**Traps that cost time here, all verified by running:**
+
+- **Raw SQL requires `asSystem()`** once a schema declares access rules — `db.sql`
+  and `db.$setAuth(u).sql` both throw. Raw statements enforce no `@@gate`,
+  `@@allow`, `@guarded`, `@scoped` or `@@softDelete`; they all live above SQLite.
+  ``where: { $raw: sql`…` }`` keeps every policy and is the escape hatch to reach
+  for. A JS migration is exempt — the runner hands it the system client.
+- **`$setAuth(user)` RETURNS a scoped client, it does not mutate.** `db.$setAuth(u)`
+  then `db.thing.create(…)` grades as anonymous, silently.
+- **A schema declaring any `@@gate` auto-installs `GatePlugin`.** You cannot run
+  without gates; installing your own replaces the default, installing none does
+  not disable it. Absent ≠ null in the lifecycle: absent means the app does not
+  model that stage, only `null` grades down.
+- **`sessionGateLevel()` is duplicated in Junction** (which this package may not
+  import). Change one, change both.
+- **`createClient({ db })` is ignored when the schema declares `database main`** —
+  the declaration wins, so a test that believes it is in-memory is writing the
+  declared file and accumulating state across runs.
+- **Columns are emitted verbatim camelCase; `DateTime` is ISO-8601 TEXT.** Hand-
+  written SQL assuming snake_case or epoch-ms will not match.
+- **The audit logger buffers ~1s and flushes on exit** — a read straight after a
+  write returns 0 rows and the `.jsonl` may not exist yet. `path` resolves against
+  process CWD, not the schema file.
+- **`@guarded` is not a level** — it takes only `(all)`; `@guarded(5)` does not
+  parse. Per-role column access is field-level `@allow`.
+- **`encryptionKey` is parsed as hex**, so a 64-*character* key is not necessarily
+  a 32-byte one.

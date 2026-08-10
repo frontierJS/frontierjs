@@ -6,11 +6,25 @@
  * Use for counts and very short data ("12", "99+", "v2").
  */
 
+/*
+ * ── The name ──────────────────────────────────────────────────────────
+ *
+ * A Pill holds a COUNT or a very short datum — "12", "99+", "v2". The
+ * categorical status ("active", "pending") is a Badge, next door.
+ *
+ * Elsewhere the words land differently. Atlassian and Material both call
+ * the count a Badge (their status word is Lozenge / Chip), and Bootstrap
+ * uses `badge` for both while `pill` is only a shape (`rounded-pill`). So a
+ * reader arriving with muscle memory reaches for `badge` to hold a number —
+ * it renders fine, nothing complains, and the distinction erodes. See
+ * DECISIONS.md for the comparison table.
+ */
+
 .pill {
   /* Box — was the `pill` Uno shortcut. Chip layout comes from chip.css. */
-  padding:       0.125rem 0.5rem;
+  padding:       var(--space-3xs) var(--space-sm);
   border-radius: var(--pill-radius);
-  font-size:     0.75rem;
+  font-size:     var(--text-xs);
   line-height:   1rem;
 
   /* Skin. --fill is the effective background; chip.css derives readable
@@ -39,7 +53,7 @@
  */
 .pill.removable {
   padding-right: 3px;
-  gap:           4px;
+  gap:           var(--space-2xs);
 }
 .pill-close {
   display:         inline-flex;

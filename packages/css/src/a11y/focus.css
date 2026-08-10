@@ -95,7 +95,7 @@
 :where(
   .btn,
   .link,
-  .page,
+  .pagination-link,
   .view,
   .switch,
   .tab,

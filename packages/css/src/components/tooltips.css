@@ -2,9 +2,14 @@
  * tooltips.css
  * Tooltip — the last term in the vocabulary to get CSS. All 29 now ship.
  *
- * A Tooltip stays a <div role="tooltip"> rather than becoming an <article>,
- * because it is an *attachment* to a control, not a self-contained unit you
- * could lift out (Principle 2, and the article-vs-div test).
+ * A Tooltip is a <span role="tooltip"> rather than an <article>, because it
+ * is an *attachment* to a control, not a self-contained unit you could lift
+ * out (Principle 2, and the article-vs-div test).
+ *
+ * A span rather than a div because .tooltip is chip lineage — inline — and
+ * .tooltip-anchor is an inline-flex <span>. A <div> inside a <span> is not
+ * phrasing content, so the one element the vocabulary named was the one
+ * element the anatomy below could not legally contain.
  *
  * Anatomy — the anchor owns the positioning context:
  *
@@ -55,12 +60,12 @@
   inset-inline-start: 50%;
   translate: -50% 0;
 
-  padding:       0.375rem 0.5rem;
+  padding:       var(--space-xs) var(--space-sm);
   border-radius: var(--btn-radius);
   background:    var(--fill, var(--tone-fill));
   color:         var(--on-fill, white);
   font-family:   var(--font-primary);
-  font-size:     0.75rem;
+  font-size:     var(--text-xs);
   line-height:   1.35;
   white-space:   nowrap;
   box-shadow:    var(--shadow-md);

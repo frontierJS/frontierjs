@@ -54,9 +54,9 @@ var FOCUSABLE = [
     find: '.navlink',
   },
   {
-    name: '.page',
-    html: '<nav class="pagination" aria-label="Pagination"><a class="page" href="#x">2</a></nav>',
-    find: '.page',
+    name: '.pagination-link',
+    html: '<nav class="pagination" aria-label="Pagination"><a class="pagination-link" href="#x">2</a></nav>',
+    find: '.pagination-link',
   },
   { name: '.link', html: '<a class="link" href="#x">Read more</a>' },
   { name: '.view', html: '<article class="view" tabindex="0">panel</article>' },

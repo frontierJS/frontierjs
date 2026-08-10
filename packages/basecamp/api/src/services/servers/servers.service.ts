@@ -43,9 +43,10 @@
 import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
 import {
-  dbOf, actorOf,
+  dbOf, wsOf, actorOf,
   findScoped, getScoped, assertSlugFree, stampWorkspace, narrowPatch,
 } from '../../core/resource.ts'
+import { envRef }                from '../../core/credentials.ts'
 import type { BasecampApp }      from '../../basecamp.types.ts'
 import type { ServiceContext }   from '@frontierjs/junction'
 import type { TargetDescriptor } from '@frontierjs/conduit'
@@ -192,6 +193,49 @@ export function createServersService(app: BasecampApp) {
       })
     },
 
+    // ── feed — POST /servers  X-Service-Method: feed ──────────────────
+    // The whole fleet's event stream, in one request.
+    //
+    // `events` above is per-server, which is right for a server's own screen
+    // and wrong for everything else: any screen wanting what the FLEET has been
+    // doing had to make one request per server and merge them in the browser
+    // (`FJS-104`). `/activity/` therefore covered the audit trail only — a
+    // record of what PEOPLE did — while the mock's feed is mostly what the
+    // machines did.
+    //
+    // `ServerEvent` has no `workspaceId` of its own, deliberately: an event is
+    // meaningless without its server, and denormalising the workspace onto it
+    // would be a second owner of the tenancy fact. So the scope is a join —
+    // the server ids in this workspace, then the events on them. Two queries,
+    // both indexed, instead of N+1 over the network.
+    async feed(ctx: ServiceContext) {
+      ctx.dispatch = false   // read-shaped
+      const { limit, offset } = getPagination(ctx, { limit: 50, max: 200 })
+      const kind = ctx.query.kind as string | undefined
+
+      const servers = await dbOf(ctx).server.findMany({
+        where:  { workspaceId: wsOf(ctx) },
+        select: { id: true, name: true },
+        limit:  500,
+      })
+      if (!servers.length) return { total: 0, limit, offset, data: [] }
+
+      const byId = new Map(servers.map((s: { id: string; name: string }) => [s.id, s.name]))
+      const { rows, total } = await dbOf(ctx).serverEvent.findManyAndCount({
+        where:   { serverId: { in: [...byId.keys()] }, ...(kind ? { kind } : {}) },
+        orderBy: { createdAt: 'desc' },
+        limit, offset,
+      })
+
+      // The server's NAME, resolved here rather than by the browser. A feed of
+      // "server 4f3a-… rebooted" is a feed nobody reads, and the alternative
+      // is an `include` that ships the whole server row per event.
+      return {
+        total, limit, offset,
+        data: rows.map((e: Record<string, unknown>) => ({ ...e, serverName: byId.get(e.serverId as string) ?? null })),
+      }
+    },
+
     // ── reboot / drain / undrain ──────────────────────────────────────
     reboot: (ctx: ServiceContext) => transition(ctx, {
       from: ['online', 'unreachable'], to: 'pending',
@@ -310,27 +354,40 @@ export function createServersService(app: BasecampApp) {
           data: { serverId: id, kind: 'came_online', message: 'Agent connected',
                   metadata: { agent_version: data.agent_version } },
         })
-
-        // Register the agent as a Conduit target on first heartbeat / IP change
-        if (data.agent_url) {
-          const agentSecret = (app.config as Record<string, unknown>).agentSecret as string ?? 'agent-secret'
-          await app.conduit.register({
-            id:            `agent:${id}`,
-            kind:          'agent',
-            protocol:      'http',
-            address:       data.agent_url,
-            auth:          { type: 'hmac', secret: agentSecret },
-            registered_at: Date.now(),
-            last_seen_at:  Date.now(),
-          } as TargetDescriptor)
-          app.logger.info('conduit: agent registered', { server_id: id, url: data.agent_url })
-        }
       }
 
-      // Touch last_seen_at in the Conduit registry on every heartbeat (non-critical)
-      app.conduit.resolve(`agent:${id}`).then(target => {
-        if (target) app.conduit.register({ ...target, last_seen_at: Date.now() }).catch(() => {})
-      }).catch(() => {})
+      // The agent as a Conduit target — the address anything outbound reaches
+      // this machine at, and what `volumes.remove` refuses to act without.
+      //
+      // Keyed on the URL, NOT on the status transition it used to sit inside.
+      // A machine that is already online when its agent first reports a URL —
+      // or that moves address without going unreachable in between — never
+      // transitions, so it was never registered, and every outbound call to it
+      // failed as `target_not_found` while the server screen showed it healthy.
+      const target = `agent:${id}`
+      const known  = await app.conduit.resolve(target).catch(() => null)
+
+      if (data.agent_url && known?.address !== data.agent_url) {
+        await app.conduit.register({
+          id:            target,
+          kind:          'agent',
+          protocol:      'http',
+          address:       data.agent_url,
+          // A REF, resolved at send time. This carried the secret itself
+          // (`{ secret: … }`) until 2026-08-09, which was wrong twice: conduit's
+          // hmac signer reads `ref` and nothing else, so every outbound call to
+          // an agent failed `auth_failed` naming credential `undefined`; and the
+          // material was written into the registry, where `GET /conduit-targets`
+          // hands it back. Nothing had ever sent to an agent, so neither showed.
+          auth:          { type: 'hmac', ref: envRef('AGENT_SECRET') },
+          registered_at: Date.now(),
+          last_seen_at:  Date.now(),
+        } as TargetDescriptor)
+        app.logger.info('conduit: agent registered', { server_id: id, url: data.agent_url })
+      } else if (known) {
+        // Touch last_seen_at on every other heartbeat (non-critical).
+        app.conduit.register({ ...known, last_seen_at: Date.now() }).catch(() => {})
+      }
 
       return updated
     },

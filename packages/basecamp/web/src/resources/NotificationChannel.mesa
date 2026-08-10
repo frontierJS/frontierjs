@@ -1,0 +1,21 @@
+<script module>
+  // src/resources/NotificationChannel.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
+  // named for the model and exporting the accessor (invariant 19). No markup:
+  // everything is module scope, which is what <script module> means.
+  //
+  // `model:` is stated because this is the irregular case the registry warns
+  // about: the service is `channels` and the model is `NotificationChannel`,
+  // which regular English pluralisation does not bridge. Without it
+  // modelNameFor() looks for `Channel`, misses, warns, and degrades to a bare
+  // make() — validation, labels and field rules all silently stop being
+  // schema-derived.
+  import { createResource } from '@frontierjs/sierra/junction'
+  import { stampWorkspace } from '../session.js'
+
+  export const channels = createResource('channels', {
+    model: 'NotificationChannel',
+    hooks: { before: { create: [stampWorkspace] } },
+  })
+</script>

@@ -8,6 +8,15 @@
    */
   color-scheme: dark;
 
+  /*
+   * The lightness window for syntax highlighting, inverted. On a light
+   * surface a code token is clamped DARK; here it has to be clamped light,
+   * and nothing in CSS can work that out — see tokens.css and code.css.
+   * Any theme that sets `color-scheme: dark` needs this pair too.
+   */
+  --code-l-min: 0.74;
+  --code-l-max: 1;
+
   --surface:        #1a1a1a;
   --surface-raised: #252525;
   --surface-sunken: #0f0f0f;

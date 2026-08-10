@@ -1,0 +1,10 @@
+<script module>
+  // web/src/resources/Product.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor — see Order.mesa for why, and
+  // for what a resource deliberately does not restate.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const products = createResource('products')
+</script>

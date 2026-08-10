@@ -16,13 +16,13 @@
 .alert {
   display:     flex;
   align-items: flex-start;
-  gap:         12px;
-  padding:     12px 16px;
+  gap:         var(--space-lg);
+  padding:     var(--space-lg) var(--space-2xl);
 }
 
 .alert-icon {
   flex-shrink: 0;
-  font-size:   16px;
+  font-size:   var(--text-lg);
   line-height: 1.4;
 }
 
@@ -31,4 +31,6 @@
   line-height: 1.5;
 }
 .alert-content > strong { display: block; margin-bottom: 2px; }
-.alert-content > p      { margin: 0; }
+/* `pretty` avoids a one-word last line; an alert is short enough that
+   a widow is a large share of it. */
+.alert-content > p      { margin: 0; text-wrap: pretty; }

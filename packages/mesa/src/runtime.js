@@ -1481,25 +1481,62 @@ export function attach(el, getFn) {
   createEffect(() => {
     const fn = getFn()           // tracked — re-runs when expression deps change
     if (!fn) return
-    // Run the attachment fn itself untracked so reads inside it (e.g. signal reads
-    // in logging helpers) don't subscribe and cause the effect to re-fire.
-    const result = untrack(() => fn(el))
-    if (typeof result === 'function') {
+
+    let result
+    let disposed = false
+
+    const invoke = () => {
+      if (disposed) return
+      // Run the attachment fn itself untracked so reads inside it (e.g. signal
+      // reads in logging helpers) don't subscribe and cause the effect to re-fire.
+      result = untrack(() => fn(el))
+      // attachment fn itself returned a Promise (less common pattern)
+      if (result && typeof result.then === 'function') el.__mesa_exit = result
+    }
+
+    // Cleanup is registered SYNCHRONOUSLY, whether or not the attachment has run
+    // yet: it must land on this effect's owner, and the deferral below can
+    // outlive the effect body.
+    onCleanup(() => {
+      disposed = true
+      if (typeof result !== 'function') return
       // Sync cleanup — runs on element exit, may start an exit animation.
       // If the cleanup returns a Promise, store it on the element so _removeBlock
       // can hold the DOM alive until the animation completes.
-      onCleanup(() => {
-        const exitResult = result()
-        if (exitResult && typeof exitResult.then === 'function') {
-          // Mark element as exiting — _removeBlock will re-insert it if needed
-          // and wait for this Promise before doing final DOM removal.
-          el.__mesa_exit = exitResult
-        }
-      })
-    } else if (result && typeof result.then === 'function') {
-      // attachment fn itself returned a Promise (less common pattern)
-      el.__mesa_exit = result
-    }
+      const exitResult = result()
+      if (exitResult && typeof exitResult.then === 'function') {
+        // Mark element as exiting — _removeBlock will re-insert it if needed
+        // and wait for this Promise before doing final DOM removal.
+        el.__mesa_exit = exitResult
+      }
+    })
+
+    // ── The attachment runs when the element MOUNTS (VISION §10.6) ──────────
+    //
+    // It used to run the moment the element was BUILT, which is before anything
+    // inserts it: a component builds its tree and appends it afterwards, so
+    // `el.isConnected` was false and `el.parentNode` was null in every
+    // attachment in the repo. Everything an attachment is for needs a connected
+    // node — `focus()` is a no-op, `getBoundingClientRect()` is all zeros, an
+    // IntersectionObserver never fires — and one case is worse than useless:
+    //
+    //   el.animate([{ opacity: 0 }, { opacity: 1 }], { fill: 'forwards' })
+    //
+    // on a detached element returns an animation with `startTime: null` that
+    // NEVER starts, even once the element is connected, and is not even listed
+    // in `el.getAnimations()`. The element is then painted at keyframe 0 —
+    // opacity 0 — forever. That is what `@frontierjs/ui`'s CommandPalette was:
+    // a `position: fixed; inset: 0; z-index: 9000` backdrop, fully invisible,
+    // swallowing every click on the page. ⌘K "did nothing" and froze the app.
+    //
+    // Deferred on a microtask, which is the same queue `$onMount` uses, so an
+    // attachment now sees exactly what `$onMount` sees. An element that is
+    // already connected keeps running synchronously, so nothing that was
+    // ordered correctly before is reordered now — and a detached element that
+    // never gets inserted still runs, one tick later, rather than silently
+    // never running at all.
+    if (!_isClient || el.isConnected) invoke()
+    else _resolved.then(invoke)
   })
 }
 

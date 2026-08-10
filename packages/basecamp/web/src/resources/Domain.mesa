@@ -1,0 +1,16 @@
+<script module>
+  // src/resources/Domain.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
+  // No markup: everything is module scope, which is what <script module> means.
+  //
+  // No `model:` — `domains` is the regular plural of `Domain`, which is what
+  // modelNameFor() resolves, so the schema's labels, required list and field
+  // rules arrive without restating any of them here.
+  import { createResource } from '@frontierjs/sierra/junction'
+  import { stampWorkspace } from '../session.js'
+
+  export const domains = createResource('domains', {
+    hooks: { before: { create: [stampWorkspace] } },
+  })
+</script>

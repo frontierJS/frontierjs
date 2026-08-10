@@ -3,7 +3,7 @@ title: Deployments
 ---
 <script>
   import { session } from '../../session.js'
-  import { deployments } from '../../resources/deployments.mesa'
+  import { deployments } from '../../resources/Deployment.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   $: session.workspaceId

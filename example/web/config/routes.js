@@ -6,19 +6,70 @@
 export const tree = {
   id: "root",
   path: "/",
-  file: null,
+  file: "src/routes/index.mesa",
   companion: null,
-  layout: null,
-  meta: {},
+  layout: "src/routes/_module.mesa",
+  meta: {"siteName":"Kitchen sink","title":"Home","isIndex":true},
   params: [],
   children: [
   {
-      id: "catalog",
-      path: "/catalog/",
-      file: "src/public-site/catalog/index.mesa",
-      companion: "src/public-site/catalog/index.meta.js",
-      layout: null,
-      meta: {"title":"Catalog","render":"static","isIndex":true},
+      id: "customers",
+      path: "/customers/",
+      file: "src/routes/customers/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Customers","isIndex":true},
+      params: [],
+      children: [],
+    },
+  {
+      id: "orders",
+      path: "/orders/",
+      file: "src/routes/orders/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Orders","isIndex":true},
+      params: [],
+      children: [
+      {
+          id: "orders.create",
+          path: "/orders/create/",
+          file: "src/routes/orders/create.mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"New order"},
+          params: [],
+          children: [],
+        },
+      {
+          id: "orders.[id]",
+          path: "/orders/:id/",
+          file: "src/routes/orders/[id].mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"Order","dynamic":true},
+          params: ["id"],
+          children: [],
+        }
+      ],
+    },
+  {
+      id: "products",
+      path: "/products/",
+      file: "src/routes/products/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Products","isIndex":true},
+      params: [],
+      children: [],
+    },
+  {
+      id: "settings",
+      path: "/settings/",
+      file: "src/routes/settings/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Settings","isIndex":true},
       params: [],
       children: [],
     }
@@ -27,33 +78,56 @@ export const tree = {
 
 // Component factory map — resolved lazily by the router on navigation
 export const components = {
-  'catalog': () => import('../src/public-site/catalog/index.mesa'),
+  'root': () => import('../src/routes/index.mesa'),
+  'customers': () => import('../src/routes/customers/index.mesa'),
+  'orders': () => import('../src/routes/orders/index.mesa'),
+  'orders.create': () => import('../src/routes/orders/create.mesa'),
+  'orders.[id]': () => import('../src/routes/orders/[id].mesa'),
+  'products': () => import('../src/routes/products/index.mesa'),
+  'settings': () => import('../src/routes/settings/index.mesa'),
 }
 
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
-  'catalog': () => import('../src/public-site/catalog/index.meta.js'),
+
 }
 
 // Layout factory map — keyed by file path (same as node.layout in the tree).
 // All layouts are loaded eagerly by initRouter on boot so resolveChain()
 // always has the component factory available when rendering the chain.
 export const layouts = {
-
+  "src/routes/_module.mesa": () => import('../src/routes/_module.mesa'),
 }
 
 // Flat URL arrays for manifest consumers (sitemap, llms.txt, deploys)
 export const all = [
-  "/catalog/"
+  "/",
+  "/customers/",
+  "/orders/",
+  "/orders/create/",
+  "/orders/:id/",
+  "/products/",
+  "/settings/"
 ]
 
 export const published = [
-  "/catalog/"
+  "/",
+  "/customers/",
+  "/orders/",
+  "/orders/create/",
+  "/orders/:id/",
+  "/products/",
+  "/settings/"
 ]
 
 export const indexed = [
-  "/catalog/"
+  "/",
+  "/customers/",
+  "/orders/",
+  "/orders/create/",
+  "/products/",
+  "/settings/"
 ]
 
 export const redirects = []

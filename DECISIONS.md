@@ -10,6 +10,62 @@ Format: **decision — why — where it lives.**
 
 ## Naming & vocabulary
 
+**2026-08-08 · A resource file is named for its noun — PascalCase, singular —
+one Resource per file.** `App.mesa`, not `apps.mesa`. Repo Invariant 19.
+
+The three realms are already **Model → Service → Resource**, and two of them
+had settled naming: `model App` is PascalCase singular (2026-08-01) and the
+accessor derived from it is `db.app`. The UI realm was the one that had not —
+`web/src/resources/` was named after the *service* (`apps.mesa`), so the same
+noun was spelled three ways across three files and only one of them matched the
+declaration it came from.
+
+**The export does not change.** `App.mesa` exports `apps`, and call sites still
+read `apps.find()`. That is the same split the Data realm makes: the
+declaration is PascalCase singular, the accessor is lowercase — a Resource is
+one noun, the binding is a handle on many.
+
+What the rename bought beyond consistency: **the irregular cases became visible
+in the file tree.** `AlertRule.mesa` exporting `alerts` states, at a glance,
+that `modelNameFor()` cannot bridge those two and `model:` has to be given —
+which was previously a paragraph inside the file that you had to open to find.
+`AuditEvent.mesa` is the same shape. A resource over no model at all keeps its
+service noun, singularised: `Portal.mesa`.
+
+Applied repo-wide the same day. `packages/basecamp`: 13 files renamed, 36 call
+sites. `example/`: `shop.mesa` — three resources in one file — split into
+`Order.mesa` / `Product.mesa` / `Customer.mesa`, and `notifications.mesa` →
+`Notification.mesa`. One Resource per file is half the rule; a grouped file has
+no single noun to be named for.
+*Lives in:* `CLAUDE.md` Invariant 19, `packages/basecamp/web/src/resources/`,
+`example/web/src/resources/`.
+
+**2026-08-09 · A pagination control is `.pagination-link`, not `.page`.**
+The gap beside it is `.pagination-gap`. `@frontierjs/css` v0.14.6, breaking.
+
+`Page` is already a tier in the vocabulary — *what changes when you navigate*:
+Screen, Pane, View, Tabs. So `.page` put one word on two subjects one file
+apart, and `.page[aria-current="page"]` spelled it twice in a single selector
+meaning different things each time: the class named a destination, the
+attribute named the current one.
+
+The clinching case is `Previous` and `Next`. Both carry this class and
+neither is a page, so the old name was not merely ambiguous — it was wrong on
+the two controls in a pager that get clicked most.
+
+Chose the long form over `.pagelink` (which mirrors `.navlink`) because
+`term-part` is what every other Anatomy class already does — `surface-header`,
+`pill-close`, `navlist-label` — and it retires an exception rather than
+growing one: `NOT_A_TERM.anatomy` in `vocabulary.js` is the register of parts
+that carry no hyphen and therefore need naming by hand, and it drops from five
+entries to four. `.pagination-gap` follows so one term does not ship two
+prefixes.
+
+Cheap to do now and never cheaper: no application in the repo used the class.
+The only consumer was `@frontierjs/ui`'s `Pagination.mesa`.
+*Lives in:* `packages/css/src/patterns/nav.css`, `vocabulary.js` (`ANATOMY`),
+`packages/ui/components/display/Pagination.mesa`.
+
 **2026-08-06 · The email component kit is `@frontierjs/email-kit`.**
 Closes `FJS-D15`; fixes `FJS-051`. Not `@frontierjs/mesa-email`. Every other
 package's npm name matches its directory, and `email-kit` is the directory —
@@ -71,6 +127,105 @@ for derived — if it has no independent existence, it is not a Projection.
 *Lives in:* `ARCHITECT.md` §2 (to add); `IDEAS/scoped-sql.md`.
 
 ## Access control
+
+**2026-08-10 · A tier above every tenant is a SEPARATE service, and the bit
+that grants it is a column named for the standing it grants.**
+
+Basecamp's four sysadmin screens read across every workspace. Nineteen of its
+twenty services take `X-Workspace-Id` and refuse without it, so there were two
+ways to answer them, and only one of them scales down to being wrong safely:
+
+| | |
+| --- | --- |
+| Widen the existing services with `?scope=hub` | The tenancy decision moves into a **query string**, on nineteen services, each of which has to get it right. Nineteen chances to leak every tenant, and the one that forgets looks exactly like the eighteen that did not |
+| One new service behind one hook | One place to be wrong. `requireSystemAdmin` is the whole guard, and `/hub` is greppable |
+
+The second. What makes it hold is that the hub service takes **no workspace at
+all** — there is nothing for a caller to widen. It reads through `asSystem()`,
+not as a convenience but because `User` is the model auth's own fragment gates
+at level 8, which even SYSADMIN(7) does not reach: once `FJS-007` lands there is
+no caller-scoped client that can read a user list, so writing those reads any
+other way today means rewriting them then.
+
+**The privileged bit is `User.isSystemAdmin Boolean`, and the name is
+load-bearing.** Not auth's `role` — that column defaults to `"user"`, nothing in
+the app reads it, and putting the grant there would give one column two owners.
+Not an env allowlist, which cannot be granted or revoked by the people who need
+to. The name is the one `sessionGateLevel()` already grades **SYSADMIN(7)** on
+(`junction/src/core/litestone.ts`), so the column filling these screens today is
+the column `@@gate` will read tomorrow. The cost, accepted: two fields beside
+each other that both look like privilege, so the schema comment says which one
+this app enforces on.
+
+**Refusal is 404, not 403.** The hub is not a screen someone is being refused;
+it is a surface they have no business knowing exists — the same reasoning the
+workspaces service already uses for a workspace you are not a member of.
+
+*Lives in:* `packages/basecamp/api/src/services/hub/hub.service.ts`,
+`api/src/core/hooks.ts` (`requireSystemAdmin`); 4 data tests, 25 browser checks.
+
+**2026-08-10 · A status column that nothing reads is not a state, and
+suspension needs a door on each side.**
+
+`User.status` had been a free `String` since the schema was written, and
+@frontierjs/auth — which owns the model — never looks at it. So "suspended" was
+a word the app could store and nothing anywhere would honour: a Suspend button
+would have reported success and revoked nothing. The same would have been true
+of a new `Workspace.status`.
+
+Three things together make it real, and none of them is sufficient alone:
+
+1. **The vocabulary is an enum** (`UserStatus`, `WorkspaceStatus`), so the
+   column carries a CHECK and the service's copy of the list is held against it
+   by a test in both directions. A free string beside a service that invents
+   values is the shape that let `AlertRule.severity` default to a value its own
+   API refused.
+2. **The front door refuses.** A suspended user cannot sign in — checked AFTER
+   the password, so the refusal does not tell an unauthenticated caller which
+   addresses are suspended accounts.
+3. **The already-open door refuses.** A token issued before the suspension stops
+   resolving, at an app-level `before: all` hook. Deleting the `Session` rows is
+   not enough on its own: an API key is a `Credential` and survives that.
+
+For a workspace the one door is `scopeToWorkspace`, the hook every scoped
+service already runs — so suspension bites in nineteen places by being written
+in one. And it is **not** deletion: `@@softDelete(cascade)` stamps every child,
+a status change stamps nothing, and conflating them would make a reversible-
+sounding action unrecoverable.
+
+*Lives in:* `packages/basecamp/api/src/core/session-auth.ts`,
+`api/src/core/hooks.ts`; pinned by db tests and by `verify.mjs` § 13f.
+
+**2026-08-10 · A machine account is created from an admin screen. A human is
+not.**
+
+The hub's Users screen creates `UserKind.bot` accounts and deliberately ships
+without the mock's Invite button. The asymmetry is the whole point: creating a
+bot hands nobody anything — it has no password credential, so there is no way
+for it to sign in, and its only route in is an API key issued to it separately.
+Creating a human from the same screen would be an administrator minting an
+account with a password only they know, which is why the human path is
+invite → accept and stays unbuilt (`FJS-032`).
+
+Three rules fall out of it, each refused by name at the API:
+
+- **A bot's address is at `bots.invalid`** — RFC 2606 reserves the TLD, so it
+  resolves nowhere. `User.email` is required and unique and a bot has no inbox;
+  a plausible-looking address would eventually be mailed.
+- **A bot may not own a workspace.** An owner is the one member `removeMember`
+  refuses to remove and the one role that can delete the tenant.
+- **A bot may not hold the hub tier.** `isSystemAdmin` is a revocable human —
+  the point of it is that somebody can be asked why they used it.
+
+It also closes a gap `api-keys.service.ts` had recorded in its own comment since
+Phase 6: a key was always minted for the caller, because nothing else existed to
+own one, so CI's key was a person's key and revoking it when they left broke the
+pipeline. A key may now name a bot — and only a bot, only in this workspace, and
+only one that does not outrank you.
+
+*Lives in:* `packages/basecamp/api/src/services/hub/hub.service.ts`
+(`createBot`), `api/src/services/api-keys/api-keys.service.ts`
+(`assertBotOwner`).
 
 **2026-08-06 · Raw SQL is available through `asSystem()` only, on any schema
 that declares access rules.** Fixes `FJS-005`.
@@ -193,6 +348,192 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+**2026-08-10 · An app's own User columns reach the session through one hook, at
+the point the row is already in hand.** `createLitestoneAuth(db, {
+sessionFields })`.
+
+@frontierjs/auth OWNS `model User`; every app that uses it EXTENDS that model,
+and until this existed there was no way to get an app's own column onto the
+`SessionContext`. Basecamp needed three (`isSystemAdmin`, `status`, `kind`) and
+the only route was to wrap `verifySession` and re-read the user — a **third
+query on the hottest path in the app, forever**, for a row auth had just
+fetched.
+
+`sessionFields(user)` is called from `toContext()`, which is the single place
+every issued session is built, so one hook covers login, `verifySession`, an API
+key and `createUser` alike. Two kinds of thing belong in it: the **standing**
+`sessionGateLevel()` grades on (`isAdmin` / `isOwner` / `isSystemAdmin` /
+`activatedAt` / `verifiedAt`) — which is how an app whose privileged bit is its
+own column reaches `@@gate` at all — and the app's own keys, which travel on the
+session untouched and which only the app's hooks read.
+
+It is spread **last**, so an app that states a field wins. The other order would
+mean adding any key to `toContext` silently overrides what an app asked for,
+which is a breaking change nobody would see.
+
+*Lives in:* `packages/auth/auth.ts` (`toContext`), `packages/auth/types.ts`;
+consumed at `packages/basecamp/api/src/core/session-auth.ts`. 83 auth tests
+green, `example/` 37/37 unchanged (the option is additive).
+
+**2026-08-10 · A saved view names a declared kind. It never stores a query.**
+Ruled while building basecamp's `Dashboard` + `DashboardWidget`; the question
+had been open since the screen inventory was written.
+
+A dashboard widget has to say what it shows. The two candidates were a
+free-form query stored on the row — `{ accessor, where, orderBy }`, one renderer
+for everything — and a declared vocabulary, where a widget names one of a fixed
+set of kinds and carries only a subject and a few knobs.
+
+**A stored query is a read that no policy graded.** The row travels: it is
+seeded, exported, copied between workspaces, and read by everyone who opens the
+board. The policy does not travel with it — `@@gate` and `@@allow` grade a
+CALLER against a MODEL, and neither can say anything about a string. So the
+server would end up running a query one person wrote on behalf of another, at
+the second person's privilege, with nothing in the schema able to see it. The
+generous version of the same idea — validate the stored query at read time — is
+`IDEAS/scoped-sql.md`, deliberately unbuilt for the reason recorded there: a
+wrong validator grants a *false* guarantee.
+
+**A declared kind reads through the service that owns the data.** Each kind
+names a read this app already answers, and the browser makes that call with the
+reader's own session — so a dashboard shows exactly what its reader could have
+opened for themselves, and a card they may not read refuses in words rather
+than quietly appearing for everybody. Nothing new is readable because a widget
+exists.
+
+**The vocabulary is an enum in the schema, which is what makes the picker
+honest.** It reaches the browser as a `$def` on the model's JSON Schema — the
+path every other enum already takes — so the Add-widget list is built from the
+same declaration the column's CHECK constraint is, and cannot offer a kind the
+write would refuse. What the schema cannot express (which kinds need a server,
+which need an app, which config keys each reads) is one table in the service,
+fetched by the screen through a `kinds` action rather than copied into the
+bundle. A data test holds enum and table together in both directions.
+
+The cost is real and accepted: **adding a widget kind is a migration.** That is
+the honest price of a kind that cannot be added without something being able to
+draw it — a widget nothing renders is a blank rectangle on somebody's morning
+screen.
+
+The same reasoning applies to anything else that saves *what to look at*:
+a report, a filter preset, a scheduled digest. Name the shape; do not store the
+query.
+
+**2026-08-10 · Where a declared vocabulary cannot bound the act, the RECORD
+bounds it — and the two live on separate screens with separate roles.** Ruled
+while building basecamp's `/recipes/` and `/cleanup/`, the day after the saved-view
+ruling above, because the obvious move was to apply that ruling again and it
+does not apply.
+
+A recipe is a saved shell script run on a machine. It looks like the same
+question — something stored on a row that later decides what happens — but the
+argument above turns on a fact that is not true here. **A stored query is
+dangerous because it is executed at the Data boundary, where `@@gate` and
+`@@allow` grade a caller against a model and a string cannot be graded.** A
+script is not executed at that boundary at all: it is handed to an agent and run
+on a machine, where there is no model, no caller and no grade. It runs at
+whatever the agent has, for everyone, every time. A vocabulary of allowed
+scripts would buy nothing — the danger is not *which read it stands for*, it is
+that it is code.
+
+So the safeguards are different in kind:
+
+| | `/cleanup/` — declared | `/recipes/` — arbitrary |
+| --- | --- | --- |
+| What is stored | target names from a fixed list | a script |
+| Refusal | an unknown target, by name | none possible |
+| Authoring | developer | **admin or owner** |
+| Running | developer | developer |
+| Record | what the agent said it freed | the script AS RUN, per server |
+
+**Authoring and running split, and that split is the point.** Writing the script
+is the privileged act; running a vetted one is the ordinary act somebody on the
+pager does at 3am. Collapsing them would make recipes admin-only in practice,
+which is how people end up pasting the script into a terminal instead — the
+thing this screen exists to stop.
+
+**A run keeps the script it ran.** `RecipeRun.script` is a copy, not a foreign
+key: a recipe is editable, so output read against a script that has since
+changed is not evidence of anything. Same reason the run row is per SERVER —
+a fleet run is N executions with N exit codes, and one row would have to pick a
+single status for *three succeeded and two failed*.
+
+**The declared half is declared as far as the tooling allows, and no further.**
+`enum ReclaimTarget` is not in the schema, because `targets ReclaimTarget[]`
+does not parse — *array [] is only supported for Text, Integer, File, or a model
+name for many-to-many* (`FJS-141`). A declared enum beside a `String[]` column
+would be two homes with no CHECK joining them, which is exactly the shape that
+let `AlertRule.severity` default to a value its own API refused. So the list has
+one home in the service, the API refuses anything outside it by name, the screen
+fetches it rather than copying it, and a data test asserts the schema declares no
+competing enum.
+*Lives in:* `packages/basecamp/api/src/services/cleanup/targets.ts`,
+`api/src/services/recipes/recipes.service.ts`, `api/src/engine/fleet.engine.ts`,
+`db/schema.lite` § FLEET ACTIONS; tests in `db/test/schema.test.ts` § Recipe and
+CleanupRun.
+
+**2026-08-08 · A field that is accepted on the wire but is not a column is
+captured in a BEFORE hook, never read from the method body.** Ruled while
+building `channels`; the open half is `FJS-D23`.
+
+Some payloads carry a value the model does not — and should not — declare. A
+notification channel is created with the plaintext credential in `secret`, which
+is deliberately not a column: the service lifts it into a `Secret` row
+(`@encrypted`) and keeps only `secretId`. The same shape shows up wherever the
+API takes something *about* a write rather than *part of* one — a confirmation
+token, a "notify the owner" flag, a raw value that is stored somewhere else.
+
+**Junction's derived `autoValidate(model, method)` deletes every key the model
+does not declare, and user hooks run BEFORE the derived ones.** That ordering is
+not incidental — it is what lets a hook shape `ctx.data` before validation sees
+it, which is how `stampWorkspace` supplies a required column the client was
+never meant to send. The consequence for a wire-only field is the mirror image:
+**a before-hook is the only place it still exists.**
+
+```ts
+// The rule.
+function captureCredential(ctx: ServiceContext): void {
+  const data = ctx.data as Record<string, unknown>
+  if (!data) return
+  if (typeof data.secret === 'string' && data.secret) ctx.locals.credential = data.secret
+  delete data.secret          // explicit, so the intent is not "autoValidate got it"
+}
+
+hooks: { before: { create: [requireWorkspaceRole(…), captureCredential, stampChannel] } }
+```
+
+`ctx.locals` and not `ctx.data`: locals is per-call scratch that nothing
+serialises, which is exactly what a value on its way somewhere else should be.
+The `delete` is written out even though `autoValidate` would strip the key
+anyway — a reader should see the field leave the payload on purpose, and the
+hook must behave the same if it is ever reused on a service with no model.
+
+**Why the obvious alternatives are refused:**
+
+- **Reading it in the method body.** This is what was written first, and it is
+  silent: the service answered *Slack needs a credential — send it as `secret`*
+  about a request that carried exactly that. The failure names the caller for
+  the framework's behaviour, which is the worst kind.
+- **Declaring the field on the model so it survives validation.** That puts a
+  plaintext credential in the schema, in the DDL, in `x-`whatever reaches the
+  browser, and in the audit trail. The whole point is that it is not stored.
+- **`{ validate: false }` on the resource, or dropping `model:` from the
+  service.** Both disable schema-derived validation for the *entire* service to
+  admit one key — the coercion, the labels, the field rules and the required
+  list go with it.
+- **A second endpoint that takes only the credential.** Two writes where the
+  user made one, and a channel that exists for a moment with no credential.
+
+**The cost, stated:** nothing enforces this. A wire-only field is a convention
+held by a hook and a comment; the framework cannot tell one from a typo, and the
+symptom of getting it wrong is a message about the field being missing. `FJS-095`
+is the same seam from the other side — *nothing can say "this column is written
+by the system, not by a user"* — and the two want one answer, not two.
+*Lives in:* `packages/basecamp/api/src/services/channels/channels.service.ts`
+(`captureCredential`), `packages/basecamp/CLAUDE.md` § What bites here,
+`CLAUDE.md` § Live hazards.
+
 
 **2026-08-06 · A custom action announces like any other write, under its own
 name.** Closes `FJS-D21`; fixes `FJS-033`. `callService`'s one announcement
@@ -527,6 +868,329 @@ hash is the only thing keeping one component's rules off another's markup.
 ---
 
 ## Design system (`@frontierjs/css`)
+
+**2026-08-08 · There is no Menu term. A dropdown menu is Popover + Items.menu
++ a keyboard contract, and the third one is not CSS.**
+
+Asked while building the wizard: does the vocabulary need Menu or Dropdown?
+
+It does not, and the reason is the same one that made Bar and Toolbar two
+terms rather than one with a variant. **A role is a promise the app owes.**
+`role="menu"` tells a screen reader the list is one tab stop and the arrow
+keys move within it; a stylesheet cannot implement any of that. A term named
+Menu would advertise a contract the package has no way to keep, and the
+person who trusted it would ship a menu harder to use than a plain list of
+links.
+
+The composition already exists and is what everything real uses:
+`.popover` is the surface, `.items.menu` is the list, and the behaviour comes
+from whatever opens it. `@frontierjs/ui`'s `DropdownMenu` is exactly that —
+`.popover`, `.items.menu`, `role="menu"`, focus management — which is the
+evidence rather than the argument.
+
+**What was missing was a route, not a term.** Nothing could get you from "I
+want a dropdown menu" to Popover unless you already knew the answer, so the
+wizard's `anchored` question now names it, the Popover outcome states the
+three parts, and the Popovers page has a Dropdown menu section with a live one.
+
+**Three defects fell out of asking:**
+
+- The wizard's own Popover markup taught the anti-pattern `lists.css` warns
+  about in its header — `<li class="item">Rename</li>`, a row styled to look
+  clickable with no control in it.
+- `popovers.css` told you to position it with `class="popover absolute
+  top-12 left-0"`, Uno utilities the package does not ship and, since the
+  UnoCSS ruling, may not require. Replaced with anchor positioning, which is
+  the platform's answer and needs no JavaScript. `[popover]` is in the top
+  layer, so a `position: relative` parent means nothing and the menu opens in
+  the corner of the viewport — worth stating, because it looks like a bug.
+- **`.item` on a `<button>` or `<a>` needed a control reset nobody shipped.**
+  The documented-correct way to build a menu row is to put a real control in
+  it, and then the control arrives with a UA background, border, font and
+  width the row cannot override — so everyone who followed the advice wrote
+  the same eight lines. `lists.css` owns it now, scoped through `.items`
+  because `.items.menu .item` is (0,3,0) and a bare rule loses the cursor on
+  a disabled row. The copy in the kit is gone (`FJS-126`, closed 2026-08-08) — deleting it also removed a `gap: 0.625rem` literal that disagreed with `.item`'s own rung and could not move with density.
+
+---
+
+**2026-08-08 · The guide gets a decision wizard, and its tree names terms
+only.** `guide/decisions.js`, first page of the guide, new `Learn` nav group.
+
+The guide was 48 reference pages and no entry point. Every one of them answers
+"how does Badge work" for somebody who has already decided they want a Badge —
+and nothing answered the question that comes first, which of the 54 terms the
+thing in front of you actually is. That question is where the mental model
+lives: Pill or Badge, Bar or Toolbar, Alert or Toast or Dialog, Item or Row.
+
+**A wizard rather than a lesson**, chosen deliberately over a linear
+first-principles walkthrough. A lesson is read once; a decision tree is
+returned to, and the near-miss pairs are the thing people get wrong repeatedly
+rather than the thing they fail to learn initially.
+
+**Questions are about behaviour, placement and promise — never about looks.**
+That ordering IS the system. Pick the term first and the look is three further
+decisions that all compose; pick the look first and you get
+`class="card-small-blue-bordered"`.
+
+**The tree holds no facts about a term.** An outcome names one, and the
+element, class, tier and meaning are read out of `vocabulary.js` at render
+time. What lives in `decisions.js` is only what the reference cannot hold: the
+question that reaches a term, and the near misses. A distinction like
+Pill-versus-Badge belongs to neither page alone, which is why neither page
+could ever state it.
+
+**Both directions are tested**, the same insight that made `vocabulary.spec.js`
+worth having. Forward — every outcome names a real term — would eventually be
+noticed by somebody copying dead markup. Reverse — **every shipped term is
+reachable by some path** — never would: a component ships, the teacher does not
+mention it, and the one page whose job is completeness is quietly incomplete.
+`Chip` and `Surface` are the only exclusions, and they take a reason: they are
+the two lineages, so you never choose them.
+
+Writing it found **eight errors in the first draft that reading it could not**:
+`.pill.outlined` and `.badge.outlined` do not exist, `menu`/`hover`/`divided`
+belong on the list container rather than the entry, and `pills`/`stretch` and
+the tone belong on `.tablist` rather than `.tabs`. Each would have rendered a
+control that did nothing, which teaches that treatments are decorative. The
+test that catches them asks whether the generated markup matches a rule it did
+not match without the class — not whether the class exists, which it does.
+
+---
+
+**2026-08-08 · Syntax highlighting is `glow()` in `@frontierjs/utils`, and its
+theme is element selectors in `@frontierjs/css`. Neither side knows a class.**
+
+The guide had 137 code samples and no highlighting. The obvious shape — a
+highlighter that emits `<span class="token keyword">` and a stylesheet that
+styles those classes — was rejected on both halves of the split.
+
+**The output is elements, not classes.** glow marks a token with the HTML
+element that already means it: `<em>` a value, `<sup>` a comment, `<b>` an
+identifier, `<strong>` a keyword, `<label>` an at-rule, `<i>` punctuation. The
+whole theme is therefore `code[language] em { … }`, which means the package
+ships **no new class** — nothing to add to `vocabulary.js`, nothing for a
+consumer to import, and any other highlighter emitting the same shape is themed
+for free. The wrapper carries the language as an attribute so a theme can key
+on it without the caller adding anything.
+
+**The function lives in `@frontierjs/utils`, not in `css`.** `glow(source,
+opts)` is a string in and a string out with no clock, no I/O and no framework
+import — the exact rule that package was created around, and its first export.
+`@frontierjs/css` stays what it claims to be: CSS, no build step, `main` is a
+stylesheet. `css` takes `utils` as a **devDependency** for the guide and the
+test suite; nothing it ships imports it.
+
+**The guide imports the sibling package's real file** — `../../utils/src/glow/
+glow.js` — rather than vendoring a copy. A browser clamps `..` at the origin,
+so `demo/serve.js` now serves the workspace root; over `file://` the path just
+resolves. That is also why `guide.js` became an ES module. `vocabulary.js`
+stays a classic script, because `test/run.js` inlines its source.
+
+**The tone palette is clamped, not blended.** A tone is tuned as a *fill behind
+white text*; as text on a surface it mostly fails. Measured across the eight
+shipped themes the raw tones came in as low as 1.65:1, and only one theme had
+all six roles above AA. Blending each tone toward `--ink` fixes it at 55% but
+flattens every well-tuned theme equally. Instead each tone passes through a
+lightness window in oklch — hue and chroma untouched — which is a **no-op
+wherever the tone already reads**, so a theme that was fine stays looking like
+itself.
+
+The window is two tokens (`--code-l-min`, `--code-l-max`) rather than a
+derivation because CSS cannot derive it: relative colour syntax exposes the
+channels of one origin colour, and the origin is the tone, not the surface it
+will land on. So a dark theme has to declare the inverted window, the way it
+already declares `color-scheme: dark`. `code: every token clears AA in
+theme-*` pins all eight.
+
+Comments and punctuation are deliberately **not** derived — they are the
+theme's own `--ink-mute` and `--ink-soft` verbatim, so retuning a theme's ink
+ramp moves them, and a theme whose muted ink does not read is visible as a
+theme defect rather than absorbed here (`FJS-125`).
+
+---
+
+**2026-08-08 · The tint ramp is three named tokens, and `tones.css` is the only place the percentages live.**
+`--tint-surface` (10% into `--surface`), `--tint-rule` (30% into `--rule`),
+`--tint-ink` (55% into `--ink`). The names say which token each one tints, so
+there is nothing to look up.
+
+Those three numbers already existed — inside `surface.css`, private to the
+block lineage. An app that wanted a strip tinted like a toned Card had to
+re-derive them by hand and then promise to keep them equal forever.
+`surface.css` now *reads* the ramp instead of restating it, so there is one
+definition and a test that fails if that stops being true.
+
+**Not `lighten-N` / `darken-N`, and the difference is the reason.** A lighten
+scale mixes toward **white**; these mix toward `--surface` and `--ink`, which a
+theme redefines — so one set of percentages is correct in light and dark alike.
+A fixed "lighten 90%" is a light-theme assumption wearing a neutral name. (The
+v0.5 `lighten-N`/`darken-N` Uno shortcuts wrote `--bg`/`--color`, which no rule
+ever read; they never worked and were removed in v0.6. These are not their
+replacement.)
+
+**Declared on the universal selector, deliberately.** Listing the seven tone
+classes again would make adding an eighth tone *two* edits in `tones.css`, and
+that file's whole promise is that it is one line. There is no selector for "any
+element where `--bg-mix` is set", so the derivation is declared everywhere and
+the cascade decides: `--bg-mix` is registered `inherits: false` with no
+initial-value, so on an untoned element it is guaranteed-invalid, each
+`color-mix()` becomes invalid at computed-value time, and the token stays unset
+— which is what makes `var(--tint-rule, var(--rule))` degrade on its own. The
+same mechanism means every element computes from its **own** tone, so nothing
+leaks into an untoned child.
+
+Every rendered colour in the package is byte-identical after the change —
+verified in a browser against a captured baseline (toned/untoned Card, nested,
+dark theme, both lineages), not assumed. Five tests in `tones.spec.js` pin it,
+including one that overrides `--tint-surface` and asserts a Card follows.
+*Lives in:* `packages/css/src/foundation/tones.css`; read by `surface.css`;
+`guide/guide.js` → *Tones & contrast* → "The tint ramp".
+
+**2026-08-08 · `Bar` and `Toolbar` are two terms. The difference is a promise, not a pixel.**
+They render identically. `Bar` is a horizontal strip and nothing else — no
+role, no keyboard contract, contents are whatever you put there. `Toolbar` is a
+strip whose contents are *controls*, presented to assistive tech as one widget
+with **one tab stop**.
+
+Splitting them rather than renaming Bar, because both things are real and the
+package already had both: this file's own comments used the word "toolbar"
+three times to describe what `Bar` was doing. The word was load-bearing and had
+nowhere to live, which is the definition of a missing term.
+
+**`role="toolbar"` is the reason this needed a decision.** It is a composite
+widget: Tab enters and leaves once, arrow keys move between the controls
+inside. CSS cannot supply that, and this package ships no JS — so the same
+split as `tabs.css` applies (Principle 6): *visual treatment is a class,
+keyboard behaviour is a component*. The app owes a roving `tabindex`,
+Left/Right, and Home/End.
+
+The rule that follows, and the reason `Bar` is not deprecated: **a toolbar that
+announces itself and then ignores an arrow key is worse than a plain Bar**,
+because it has told the user a lie about how to operate it. If you are not
+providing the keys, use `.bar` — same strip, promises nothing.
+
+Layout is shared through `:where(.bar, .toolbar)` at zero specificity; defaults
+differ because they follow the meaning (a Bar splits, a Toolbar packs to the
+start). Bar's five rendered variants are unchanged — verified in a browser
+against the previous computed values, not assumed.
+*Lives in:* `packages/css/src/patterns/bars.css`; `vocabulary.js`;
+`guide/guide.js` → *Bar* → "Bar or Toolbar?".
+
+**2026-08-08 · The vocabulary covers everything the stylesheet ships, and a test says so.**
+Six tiers / 35 terms → **eight tiers / 53 terms**. Nothing was designed: the CSS
+already shipped every addition and the vocabulary simply did not name it.
+
+The guide had claimed *"all 35 vocabulary terms ship CSS"* since v0.6. True, and
+half the question — **the reverse was never asked, and it was false eighteen
+times.** `table` had its own guide page and no term. `tabs`, `disclosure`,
+`switch`, `progress`, `spinner`, `skeleton`, `empty`, `breadcrumb`, `pagination`
+and the nav list all shipped unnamed. `stack`/`cluster`/`center`/`split`/
+`container` were documented on their own page and absent from the list. And
+**`chip` and `surface` — the two lineages every other term extends — were not
+in the vocabulary at all**, while the Composition page taught nothing else.
+
+Two new tiers, because neither fits the containment ladder: **Base** (Chip,
+Surface) and **Layout** (Stack, Cluster, Center, Split, Container — Every
+Layout's names, kept deliberately: it is the vocabulary people already have).
+
+**The vocabulary moved out of the guide** into `vocabulary.js`, because a
+vocabulary only the documentation knows about is one nothing can check. One
+file, two readers: the guide loads it with `<script src>`, the runner inlines
+the same source into its page. It is a classic script and cannot become a
+module — the guide needs it to run *before* `guide.js`, and module scripts are
+deferred past every classic one.
+
+`test/specs/vocabulary.spec.js` asks both directions **against the real CSSOM,
+not the source files** — the two disagree, because `.chip` and `.surface` never
+appear as their own rule and exist only inside a `:where()` group, so a grep
+concludes they are not shipped. A class containing `-` is Anatomy by the
+package's own convention and is skipped; everything else must be a term or be
+listed in `NOT_A_TERM` under tone / treatment / modifier / container / anatomy /
+heading, with a reason. Shipping something unnamed now fails the suite, and the
+fix is a decision rather than an edit that makes red go away.
+*Lives in:* `packages/css/vocabulary.js`; `test/specs/vocabulary.spec.js`;
+`guide/index.html` loads it.
+
+**2026-08-08 · `Pill` is the count and `Badge` is the status. Kept, against the industry.**
+The distinction is right and every large system draws it. Nobody agrees on
+which word goes where, and **`badge` is the word they disagree about** — it
+names the *count* in more systems than it names the *status*:
+
+| System | The count | The status |
+|---|---|---|
+| **FrontierJS** | **Pill** | **Badge** |
+| Atlassian | Badge | Lozenge |
+| Material 3 | Badge | Chip |
+| Primer | Counter label | Label |
+| Polaris | — | Badge (Tag = a removable keyword) |
+| Bootstrap | Badge for both; `rounded-pill` is a *shape* |  |
+
+So FrontierJS agrees with Polaris and contradicts Atlassian, Material and
+Bootstrap on the one word an arriving reader is most likely to have opinions
+about. And `pill` is a shape word nearly everywhere else — Bootstrap's
+`rounded-pill`, Uno's `rounded-full` — so it reads as a modifier rather than a
+noun.
+
+**Kept regardless.** The pair is internally consistent, both words are short,
+and the shape carries the meaning rather than only the name: a rounded end
+reads as a value, a square uppercase box reads as a label. Renaming buys
+agreement with an industry that does not agree with itself, at the cost of
+every app in the repo.
+
+**What the decision obliges instead.** The failure mode is silent — a count in
+a `badge` renders fine, nothing complains, and the vocabulary stops meaning
+anything. So the collision is documented where a reader meets it, not only
+here: the guide's *Badges & Pills* page carries the comparison table, and both
+stylesheet headers state it. If a third place starts explaining this, that is
+the signal the name lost.
+*Lives in:* `packages/css/src/components/pills.css`, `badges.css`;
+`guide/guide.js` → *Badges & Pills* → "What these words mean elsewhere".
+
+**2026-08-08 · UnoCSS is supported alongside `@frontierjs/css`, not banned.**
+Amends Invariant 13, which previously read "No UnoCSS, no utility classes,
+anywhere." The semantic half of the invariant stands unchanged and is the part
+that matters: style with a **tone** and a **treatment**, never a colour. What
+is withdrawn is the ban on an app *also* running Uno.
+
+The ban never described the package anyway. `packages/css/README.md` has
+carried a measured §Using it with UnoCSS since v0.10.1 — layer position for
+`uno.css`, the unlayered-reset trap that silently zeroes `.btn` padding and
+`h1` size, and the three colliding class names — all verified against UnoCSS
+66.7.5 with `presetWind3`. A repo-level invariant said "never" while the
+package shipped the instructions, so the two documents contradicted each
+other and the README was the one that had been run.
+
+**The boundary that replaces it:** a package in *this* repo ships no utility
+classes. `@frontierjs/ui`, `example/` and `basecamp` must render correctly with
+Uno absent, because a component that needs Uno to look right cannot be used by
+an app that does not run it. Uno is a consuming app's choice, one layer, opt in.
+
+The `text-*` collision is now a third option rather than a fork: the scale is
+`--text-*` tokens, so an app that prefers Uno's 4px grid retunes the tokens and
+gets *one* scale under both sets of class names, instead of blocklisting.
+*Lives in:* root `CLAUDE.md` Invariant 13; `packages/css/README.md`
+§Using it with UnoCSS; `packages/css/src/foundation/tokens.css`.
+
+**2026-08-08 · The type scale is tokens. No literal `font-size` in a component.**
+`--text-2xs … --text-4xl` (11 → 36px) plus six unitless `--leading-*`, declared
+once in `tokens.css`. The `.text-*` utilities and `h1`–`h6` read the **same**
+rungs, which is why `.text-xl` and `<h4>` are one number rather than two that
+agreed by hand.
+
+Before this, 53 sizes were literal across 20 files, and 4 of them were written
+in two spellings at once: `13px` **and** `0.8125rem`, `14px` **and**
+`0.875rem`, `11px` **and** `0.6875rem`, `22px` **and** `1.375rem`. The px half
+does not scale when a reader raises their browser's base font — so the same
+nominal size was accessible in a table cell and not in a popover, in one
+package, by accident. Every substitution was pixel-identical except
+`.empty-title` (17 → 18px), which was off the ladder entirely.
+
+Values are **literal** in `:root`, never `--text-sm: var(--text-md)` — the
+2026-08-02 alias ruling above applies to this ladder exactly as it does to
+`--ring`.
+*Lives in:* `packages/css/src/foundation/tokens.css`; every file under
+`src/components/` and `src/patterns/`.
 
 **2026-08-02 · An alias token declared in `:root` is always wrong.**
 If token A should follow token B, write the fallback at the *use site* —

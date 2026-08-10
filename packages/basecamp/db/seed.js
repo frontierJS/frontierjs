@@ -191,17 +191,47 @@ class SecretFactory extends Factory {
   }
 }
 
+class VolumeFactory extends Factory {
+  model = 'Volume'
+  // The only model here whose rows a person never authors — a volume exists
+  // because an agent reported it, so what this factory imitates is a report.
+  // Sizes are BYTES, the column's own unit: seeding gigabytes would put a
+  // number in the database that the screen then divides again.
+  definition(_seq, rng) {
+    const n     = uid()
+    const names = ['pg-data', 'redis-data', 'uploads', 'build-cache', 'grafana-storage', 'orphan-tmp']
+    const name  = `${names[n % names.length]}-${n}`
+    const inUse = rng ? rng.bool(0.65) : true
+    return {
+      name,
+      driver:     'local',
+      mountPoint: `/var/lib/docker/volumes/${name}/_data`,
+      sizeBytes:  rng ? rng.int(8 * 1024 ** 2, 12 * 1024 ** 3) : 512 * 1024 ** 2,
+      inUse,
+      // Container NAMES, not App ids — mapping a container back to an App is a
+      // guess, and a wrong join puts a volume under the wrong app.
+      containers: inUse ? [`${names[n % names.length]}-svc`] : [],
+      createdOnServer: new Date(Date.now() - (n % 90) * 86_400_000).toISOString(),
+      lastSeenAt:      new Date(Date.now() - 4 * 60_000).toISOString(),
+    }
+  }
+}
+
 class AlertRuleFactory extends Factory {
   model = 'AlertRule'
   definition() {
     const seq = uid()
     const specs = [
-      { name: 'Disk above 85%',      metricName: 'disk.used_percent', severity: 'high',   condition: { op: '>', value: 85 } },
-      { name: 'Memory above 90%',    metricName: 'mem.used_percent',  severity: 'high',   condition: { op: '>', value: 90 } },
+      { name: 'Disk above 85%',      metricName: 'disk.used_percent', severity: 'warning', condition: { op: '>', value: 85 } },
+      { name: 'Memory above 90%',    metricName: 'mem.used_percent',  severity: 'warning', condition: { op: '>', value: 90 } },
       { name: 'Agent silent 10m',    metricName: 'agent.heartbeat',   severity: 'critical', condition: { op: 'stale', minutes: 10 } },
     ]
     const spec = specs[seq % specs.length]
-    return { ...spec, channels: ['email'], isActive: true }
+    // No `channels` here. It was a `Json` array of ids for rows no model
+    // declared, and it is now the `AlertRuleChannel` join — a rule reaches
+    // nobody until somebody attaches a real NotificationChannel to it, which
+    // is what the alerts screen says out loud.
+    return { ...spec, isActive: true }
   }
 }
 
@@ -243,12 +273,29 @@ export class BasecampSeeder extends Seeder {
             status:        'active',
             displayName:   person.name,
             emailVerified: true,
+            // The hub tier, on the first person only — the same rule /setup
+            // follows. A seeded fleet where everyone can suspend everyone else
+            // would make the hub screens untestable by eye.
+            isSystemAdmin: person.role === 'owner',
           },
         })
         users.push({ ...user, seedRole: person.role })
       }
 
       const owner = users[0]
+
+      // ── A bot ─────────────────────────────────────────────────────────
+      // No password Credential, so it cannot sign in; it exists to own an API
+      // key. Written here because the seed is the only thing that writes every
+      // model, and a `kind` the seed never produces is a column no screen is
+      // ever seen with (`bun run db:seed` had drifted eleven models behind the
+      // schema once already).
+      const bot = await sys.user.create({
+        data: {
+          email: 'ci-deploy@bots.invalid', name: 'CI deploy', displayName: 'CI deploy',
+          kind: 'bot', status: 'active', accountId: account.id, emailVerified: false,
+        },
+      })
 
       // ── Workspaces ────────────────────────────────────────────────────
       const workspaces = []
@@ -269,6 +316,17 @@ export class BasecampSeeder extends Seeder {
               role:        user.id === owner.id ? 'owner' : user.seedRole,
               acceptedAt:  new Date().toISOString(),
             },
+          })
+        }
+
+        // The bot is in the first workspace only, as a developer — the role a
+        // pipeline needs and the highest a bot may hold anywhere near an owner
+        // (the hub refuses `owner` outright: an owner cannot be removed and can
+        // delete the tenant).
+        if (slug === 'acme-platform') {
+          await sys.workspaceMember.create({
+            data: { workspaceId: ws.id, userId: bot.id, role: 'developer',
+                    acceptedAt: new Date().toISOString() },
           })
         }
         workspaces.push(ws)
@@ -308,6 +366,15 @@ export class BasecampSeeder extends Seeder {
 
         for (const server of servers) await auditFor(ws.id, 'servers.create', 'servers', server.id)
 
+        // Volumes hang off a server, never off the workspace — the model has no
+        // workspaceId, and its scope is this join. Not every machine has disks:
+        // a fleet where all of them do makes the per-server filter pointless.
+        for (const server of servers.slice(0, Math.max(1, servers.length - 1))) {
+          await new VolumeFactory(sys)
+            .seed(RNG_SEED + servers.indexOf(server))
+            .create(3, { serverId: server.id })
+        }
+
         await new SecretFactory(sys)
           .seed(RNG_SEED + index)
           .create(3, { workspaceId: ws.id, createdBy: owner.id })
@@ -315,6 +382,33 @@ export class BasecampSeeder extends Seeder {
         await new AlertRuleFactory(sys)
           .seed(RNG_SEED + index)
           .create(3, { workspaceId: ws.id })
+
+        // API keys are not a Factory. Each one needs a REAL credential from
+        // auth — the row is only the operational half, and a key pointing at no
+        // credential is refused by apiKeyGuard as "no record in Basecamp",
+        // which would make the seeded fleet demonstrate the failure path.
+        // The plaintext is dropped here on purpose: nothing can read it back,
+        // which is the whole property, and a seed that printed one would be
+        // teaching the opposite lesson.
+        for (const [name, scopes, revoked] of [
+          ['ci-bot production',   ['deployments:write', 'projects:read', 'servers:read'], false],
+          ['read-only monitoring', ['servers:read', 'jobs:read'],                          false],
+          ['old staging bot',      ['deployments:write'],                                  true],
+        ]) {
+          const { key, id } = await auth.createApiKey(owner.id, { name, scopes })
+          await sys.apiKey.create({
+            data: {
+              workspaceId: ws.id, userId: owner.id, name, scopes,
+              credentialId: revoked ? null : id,
+              tokenHint:   `fjs_${key.replace(/^fjs_/, '').slice(0, 4)}…${key.slice(-4)}`,
+              revokedAt:   revoked ? new Date(Date.now() - 14 * 86_400_000).toISOString() : null,
+              lastUsedAt:  revoked ? null : new Date(Date.now() - 3 * 60_000).toISOString(),
+              totalUses:   revoked ? 203 : 842,
+              createdBy:   owner.id,
+            },
+          })
+          if (revoked) await auth.revokeApiKey(id)
+        }
 
         for (const project of projects) {
           const environments = []
@@ -359,6 +453,132 @@ export class BasecampSeeder extends Seeder {
             for (const job of jobs) await seedRuns(sys, job)
           }
         }
+
+        // ── A dashboard ───────────────────────────────────────────────
+        // One board per workspace, holding a card of each SHAPE — a fleet grid
+        // with no subject, a counter with a config source, and two cards
+        // pointing at a real server and a real app. A seeded board of six
+        // identical widgets would prove nothing about the subject rules.
+        //
+        // The app is read back rather than threaded down from the loop above:
+        // it is created three environments deep, and carrying it out would mean
+        // a variable that exists only to be seeded.
+        const someApp = await sys.app.findFirst({ where: { workspaceId: ws.id } })
+        const board = await sys.dashboard.create({
+          data: {
+            workspaceId: ws.id,
+            name:        'Ops overview',
+            slug:        'ops-overview',
+            description: 'What is running, what shipped, what broke',
+            icon:        '🏢',
+            isPinned:    true,
+            createdBy:   owner.id,
+          },
+        })
+
+        const cards = [
+          { kind: 'server_fleet',  cols: 3, config: {} },
+          { kind: 'stat_counter',  cols: 1, config: { source: 'servers', label: 'Servers' } },
+          { kind: 'deploy_feed',   cols: 2, config: {} },
+          { kind: 'server_health', cols: 1, config: {}, serverId: servers[0]?.id ?? null },
+          { kind: 'app_status',    cols: 1, config: {}, appId: someApp?.id ?? null },
+          { kind: 'job_history',   cols: 2, config: {} },
+        ]
+        for (const [position, card] of cards.entries()) {
+          // A subject-required card with nothing to point at is left out rather
+          // than seeded null: the service would refuse that payload, and a seed
+          // that writes rows the API would not is a seed that hides a bug.
+          if (card.kind === 'server_health' && !card.serverId) continue
+          if (card.kind === 'app_status'    && !card.appId)    continue
+          await sys.dashboardWidget.create({ data: { dashboardId: board.id, position, ...card } })
+        }
+
+        // ── Recipes, and what they did ────────────────────────────────
+        // Three scripts and a history, because a recipe with no runs cannot
+        // show the thing this screen is for: the run keeps the script it ran,
+        // so an edited recipe and its old output disagree on purpose.
+        const recipes = []
+        for (const [name, description, script] of [
+          ['Update system packages', 'apt-get update && apt-get upgrade on the target.',
+           '#!/bin/bash\nset -e\napt-get update\napt-get upgrade -y\necho "Done."'],
+          ['Restart nginx', 'Reloads the nginx config and restarts the service.',
+           '#!/bin/bash\nnginx -t && systemctl reload nginx\necho "nginx reloaded."'],
+          ['Check disk usage', 'df and du for / and /var.',
+           '#!/bin/bash\ndf -h /\ndu -sh /var/* 2>/dev/null | sort -rh | head -10'],
+        ]) {
+          recipes.push(await sys.recipe.create({
+            data: { workspaceId: ws.id, name, slug: slugify(name), description, script, createdBy: owner.id },
+          }))
+        }
+
+        // Runs on real machines, one row per server — which is the shape a
+        // fleet run has, and the reason a single status could not describe it.
+        for (const [index, server] of servers.slice(0, 2).entries()) {
+          const failed = index === 1
+          const at     = Date.now() - (index + 1) * 3_600_000
+          await sys.recipeRun.create({
+            data: {
+              recipeId:    recipes[2].id,
+              serverId:    server.id,
+              script:      recipes[2].script,
+              status:      failed ? 'failed' : 'success',
+              requestedBy: owner.id,
+              exitCode:    failed ? 1 : 0,
+              stdout:      failed ? null : 'Filesystem      Size  Used Avail Use%\n/dev/vda1        79G   42G   34G  55%',
+              stderr:      failed ? 'du: cannot read directory /var/lib/docker: Permission denied' : null,
+              error:       failed ? 'exited 1' : null,
+              startedAt:   new Date(at).toISOString(),
+              finishedAt:  new Date(at + 4_000).toISOString(),
+              durationMs:  4_000,
+            },
+          })
+        }
+        await sys.recipe.update({
+          where: { id: recipes[2].id },
+          data:  { lastRunAt: new Date(Date.now() - 3_600_000).toISOString(), runCount: 2 },
+        })
+
+        // ── What the agents said about the disks ──────────────────────
+        // `docker system df`'s own figures, and only for the machines whose
+        // agent has reported: a fleet where every server has a picture makes
+        // "never reported" — the state that means no agent rather than no
+        // rubbish — impossible to see on the screen.
+        for (const [index, server] of servers.slice(0, Math.max(1, servers.length - 1)).entries()) {
+          const heavy = index === 0        // one build runner, and it shows
+          await sys.diskUsage.create({
+            data: {
+              serverId:                   server.id,
+              imagesTotal:                heavy ? 58 : 24,
+              imagesUnused:               heavy ? 9  : 3,
+              imagesDangling:             heavy ? 22 : 8,
+              imageBytes:                 heavy ? 18_400_000_000 : 4_200_000_000,
+              imagesReclaimableBytes:     heavy ?  9_100_000_000 : 1_100_000_000,
+              containersRunning:          heavy ? 1 : 6,
+              containersStopped:          heavy ? 2 : 1,
+              containersReclaimableBytes: heavy ? 42_000_000 : 8_000_000,
+              buildCacheBytes:            heavy ? 8_200_000_000 : 1_100_000_000,
+              buildCacheReclaimableBytes: heavy ? 8_000_000_000 : 900_000_000,
+              reportedAt:                 new Date(Date.now() - 4 * 60_000).toISOString(),
+            },
+          })
+        }
+
+        // One sweep that already happened, so the history table and the
+        // per-server "last swept" line have something true behind them.
+        await sys.cleanupRun.create({
+          data: {
+            serverId:    servers[0].id,
+            status:      'success',
+            targets:     ['dangling_images', 'stopped_containers', 'build_cache'],
+            keepImages:  3,
+            requestedBy: owner.id,
+            freedBytes:  3_400_000_000,
+            detail:      { removed: { images: 22, containers: 2, build_cache_bytes: 2_100_000_000 }, volumes: [] },
+            startedAt:   new Date(Date.now() - 3 * 86_400_000).toISOString(),
+            finishedAt:  new Date(Date.now() - 3 * 86_400_000 + 41_000).toISOString(),
+            durationMs:  41_000,
+          },
+        })
 
         // One server left deliberately unhealthy per workspace, so the alert
         // and the drain paths have something real to point at.
@@ -446,14 +666,29 @@ if (import.meta.main) {
     // Children before parents — foreign keys are ON. Account and Workspace
     // cascade, but the seed-history row has to go or once() will skip.
     const sys = db.asSystem()
+    // Every model, children before parents — foreign keys are ON. It is the
+    // whole list rather than the seeded subset on purpose: a model added later
+    // and left out here survives a --force, and the next run collides with a
+    // row it cannot see. Six had already been left out this way.
     for (const model of [
-      'jobRun', 'job', 'deploymentStep', 'deployment', 'appServer', 'app',
-      'environment', 'project', 'alertRule', 'secret', 'serverNetwork', 'server',
-      'auditEvent', 'workspaceMember', 'workspace', 'session', 'credential',
-      'verification', 'user', 'account',
+      'jobRun', 'job', 'deploymentStep', 'deployment', 'appNetwork', 'appServer',
+      'dashboardWidget', 'dashboard', 'recipeRun', 'recipe', 'cleanupRun', 'diskUsage',
+      'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',
+      'alertEvent', 'alertRuleChannel', 'alertRule', 'notificationChannel',
+      'apiKey', 'secret', 'serverNetwork', 'network', 'volume', 'serverEvent',
+      'server', 'auditEvent', 'workspaceMember', 'workspace', 'session',
+      'credential', 'verification', 'user', 'account',
     ]) await sys[model].deleteMany({})
 
-    db.$rawDbs?.main?.run('DELETE FROM "_litestone_seeds" WHERE key = ?', 'basecamp:example-fleet')
+    // Asked for first, because SQLite resolves the table at PREPARE time: a
+    // `DELETE … WHERE EXISTS (SELECT … FROM sqlite_master)` guard still throws.
+    // The seed-history table is created by the first seeder run, so `--force`
+    // on a database that has never been seeded — which is every database
+    // `bun run verify --reset` leaves behind — died with `no such table:
+    // _litestone_seeds` before it had reseeded anything.
+    const raw = db.$rawDbs?.main
+    const seeded = raw?.query(`SELECT 1 FROM sqlite_master WHERE name = '_litestone_seeds'`).get()
+    if (seeded) raw.run('DELETE FROM "_litestone_seeds" WHERE key = ?', 'basecamp:example-fleet')
     console.log('cleared previous data')
   }
 
@@ -462,8 +697,10 @@ if (import.meta.main) {
   const sys = db.asSystem()
   const counts = {}
   for (const model of ['user', 'workspace', 'project', 'environment', 'app',
-                       'server', 'deployment', 'deploymentStep', 'job', 'jobRun',
-                       'secret', 'alertRule', 'auditEvent']) {
+                       'server', 'volume', 'deployment', 'deploymentStep', 'job', 'jobRun',
+                       'secret', 'apiKey', 'alertRule', 'dashboard', 'dashboardWidget',
+                       'recipe', 'recipeRun', 'diskUsage', 'cleanupRun',
+                       'auditEvent']) {
     counts[model] = await sys[model].count()
   }
 

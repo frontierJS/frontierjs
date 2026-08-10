@@ -1,0 +1,53 @@
+<script>
+  // alert_status — the workspace's alert rules and their severity.
+  //
+  // The mock's card is "what is firing right now". Nothing here evaluates a
+  // threshold (`FJS-123`), so that card would be permanently empty and read as
+  // "all clear" — which is the one wrong answer a monitoring widget can give.
+  // What is real is the rules themselves and whether they are active, which is
+  // what this shows; the frame says what is missing.
+  import { alerts } from '../../resources/AlertRule.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+
+  let rows    = []
+  let error   = null
+  let loading = true
+
+  const TONE = { critical: 'danger', warning: 'warning', info: 'info' }
+
+  async function load() {
+    error = null
+    try {
+      rows = (await alerts.service.find({}, { limit: 6 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(onWrite(alerts.service, load))
+
+  $: active = rows.filter(r => r.isActive).length
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else if !rows.length}
+  <p class="text-sm text-muted">No alert rules in this workspace.</p>
+{:else}
+  <p class="text-sm text-muted">{active} of {rows.length} active</p>
+  <ul class="stack" style="list-style: none; padding: 0">
+    {#each rows as rule}
+      <li class="cluster">
+        <Badge tone={rule.isActive ? (TONE[rule.severity] ?? 'muted') : 'muted'}>{rule.severity}</Badge>
+        <span class="text-sm">{rule.name}</span>
+      </li>
+    {/each}
+  </ul>
+{/if}

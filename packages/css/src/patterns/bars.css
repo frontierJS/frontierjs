@@ -6,30 +6,73 @@
  * with surface classes (.raised, .outlined) if you want a contained toolbar.
  */
 
-/* ── Bar — a strip of action controls ─────────────────────────────
- * Default is split (groups pushed to both edges) since action bars
- * usually carry navigation on one side and actions on the other.
- * Modifiers re-align for toolbar-style (left) or centered strips.
+/* ── Bar and Toolbar — two strips, one layout ──────────────────────
+ *
+ * They look identical and they are not the same thing.
+ *
+ *   Bar      a horizontal strip. Layout, nothing else. Its contents are
+ *            whatever you put there — a heading, a count, a search box, a
+ *            group of buttons. No role, no keyboard contract.
+ *
+ *   Toolbar  a strip whose contents are CONTROLS, presented to assistive
+ *            tech as one widget with ONE tab stop. `role="toolbar"` is not
+ *            decoration: it makes a promise about the keyboard, and the
+ *            promise has to be kept.
+ *
+ * Default alignment differs because the defaults follow the meaning: a Bar
+ * usually carries navigation on one side and actions on the other, so it
+ * splits; a Toolbar's controls belong together, so it packs to the start.
  *
  *   <div class="bar">
  *     <div class="cluster"> … left group … </div>
  *     <div class="cluster"> … right group … </div>
  *   </div>
+ *
+ *   <div class="toolbar" role="toolbar" aria-label="Formatting">
+ *     <button class="btn ghost square" aria-label="Bold">…</button>
+ *     <button class="btn ghost square" aria-label="Italic">…</button>
+ *   </div>
+ *
+ * ── What this file does not do (Principle 6) ────────────────────────
+ *
+ * Same split as tabs.css: visual treatment is a class, keyboard behaviour
+ * is a component. `role="toolbar"` obliges the app to provide
+ *
+ *   - roving tabindex — one control tabindex="0", the rest tabindex="-1"
+ *   - Left/Right (Up/Down when vertical) move between controls
+ *   - Home/End jump to first/last
+ *
+ * A toolbar that announces itself and then does not answer an arrow key is
+ * worse than a plain Bar, because it has told the user a lie about how to
+ * operate it. If you are not providing the keys, use `.bar` — it is the
+ * same strip and it promises nothing.
+ *
+ * NOTE on `.bar.center`: `center` here is a Bar-scoped alignment modifier
+ * (the flexbox value), not the Center layout term. Writing both on one
+ * element happens to be harmless — Center's `place-items` lands on a flex
+ * container where `.bar` already centres, and patterns beats layout on
+ * `display` — but they are two different words that share three letters.
  */
-.bar {
-  display:         flex;
-  align-items:     center;
-  justify-content: space-between;
-  gap:             0.75rem;
-  padding:         0.5rem 0;
-}
-.bar.start  { justify-content: flex-start; }
-.bar.center { justify-content: center; }
-.bar.end    { justify-content: flex-end; }
 
-/* Bordered variant — a contained toolbar with a bottom rule */
-.bar.bordered {
-  padding:       0.5rem 0.75rem;
+/* Shared layout at zero specificity, so either class's own rules win. */
+:where(.bar, .toolbar) {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-lg);
+  padding:     var(--space-sm) 0;
+}
+
+.bar     { justify-content: space-between; }
+.toolbar { justify-content: flex-start; }
+
+.bar.start,  .toolbar.start  { justify-content: flex-start; }
+.bar.center, .toolbar.center { justify-content: center; }
+.bar.end,    .toolbar.end    { justify-content: flex-end; }
+
+/* Bordered variant — a contained strip with a bottom rule */
+.bar.bordered,
+.toolbar.bordered {
+  padding:       var(--space-sm) var(--space-lg);
   border-bottom: 1px solid var(--rule);
 }
 
@@ -46,7 +89,7 @@
   display:         flex;
   align-items:     center;
   justify-content: space-between;
-  gap:             0.5rem;
+  gap:             var(--space-sm);
   margin-bottom:   0.5rem;
 }
 
@@ -79,10 +122,10 @@ hr, .divider {
 .divider-label {
   display:     flex;
   align-items: center;
-  gap:         0.75rem;
+  gap:         var(--space-lg);
   margin:      0.5rem 0;
   color:       var(--ink-mute);
-  font-size:   0.8125rem;
+  font-size:   var(--text-sm);
 }
 .divider-label::before,
 .divider-label::after {

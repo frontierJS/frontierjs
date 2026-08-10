@@ -18,9 +18,9 @@ This file describes what it currently does.
 
 | Realm | State |
 | --- | --- |
-| **Data** (`db/`) | **Real.** `schema.lite` is the seed — 24 models, 15 enums, 0 errors / 0 warnings; the migration is generated from it and verified against a fresh database |
-| **API** (`api/`) | **Real.** 9 services + 2 engines on Litestone accessors, zero raw SQL |
-| **UI** (`web/`) | **Real.** Sierra SPA over every service — 19 route files, driven end to end in a browser by `bun run verify` (**110 checks**) |
+| **Data** (`db/`) | **Real.** `schema.lite` is the seed — 37 models, 21 enums, 0 errors / 0 warnings; the migration is generated from it and verified against a fresh database |
+| **API** (`api/`) | **Real.** **21 services** + 3 engines on Litestone accessors, zero raw SQL. Twenty are workspace-scoped; `hub` is the one that is not — it takes no workspace at all and sits behind `requireSystemAdmin` |
+| **UI** (`web/`) | **Real.** Sierra SPA over every service — 39 route files, driven end to end in a browser by `bun run verify`, and the BUILT output probed by `bun run verify:build` |
 
 ## How to run it
 
@@ -286,6 +286,304 @@ write is now `actorType: 'system'` rather than the `'user'` default.
 ordered next steps. `/activity/` is the one screen already written against it:
 the trail is admin/owner, and it renders the refusal rather than an empty table.
 
+## Three sets of models finally have an API (2026-08-06)
+
+Phase 3 of the rebuild. `AlertRule`+`AlertEvent`, `Network`+`ServerNetwork`+
+`AppNetwork` and `Secret` had all been in `db/schema.lite` since the Data realm
+was rebuilt **with no API surface at all**. They now have `alerts`, `networks`
+and `secrets`, and three mock screens sit on them: `/alerts/`, `/networks/`,
+`/secrets/`. **`bun run verify` is 125 checks**, green twice consecutively.
+Full write-up in `docs/SCREENS.md` § Phase 3.
+
+Each service was probed over HTTP before any UI existed — create, the refusals,
+the join, and the 409 on deleting a populated network — and the secret was
+proved absent from both the API response and `strings db/basecamp.db`.
+
+**What it found: a vocabulary owned in two places, disagreeing.**
+`AlertRule.severity` was `String @default("medium")` while the service accepted
+only `info | warning | critical` — so **the schema's own default was a value the
+API refused**, unnoticed because nothing could reach the model. Now
+`enum AlertSeverity { info warning critical }` with `@default(warning)`, the
+migration regenerated, the service's hand-written list **deleted**, and the UI's
+`<Select>` fed from `alerts.fields.severity.enum`. One declaration, three
+consumers — which is the whole claim the framework makes.
+
+Still open from the phase: **`FJS-110`**, a kit `<Button disabled={…}>` that
+stopped following its prop while a plain `<button>` with the identical
+expression kept following it. Seven isolation probes in mesa's own harness all
+pass, so the trigger is not yet named. Worked around at the call site.
+
+## The App has a screen (2026-08-06)
+
+Phase 4, and the largest single gap in `docs/SCREENS.md` closed: an App could be
+created from an Environment and then never looked at again. `/apps/[id]/` is 4
+of the mock's 7 tabs — overview, domains & SSL, config, releases — and the other
+three are named in the screen as data gaps rather than rendered empty. One
+request feeds the page: `apps.get` answers the app with its environment, its
+domains, its placement, its last ten releases and its jobs.
+
+**`App.domain` became `model Domain`** with a `domains` service
+(`uploadCert` · `makePrimary`). One nullable string could hold exactly one
+hostname with no certificate, no redirect and no primary. Two things are
+deliberately not columns on the new model:
+
+- **The certificate material.** `uploadCert` writes the PEM pair into a `Secret`
+  of kind `tls_cert` and keeps only the reference. `Secret.data` is
+  `@encrypted`, so the private key is written once and never read back — proved
+  0 occurrences in the API's answer and 0 in `strings db/basecamp.db`.
+- **`certStatus`** — derived from `certExpiresAt` by one exported function. A
+  stored status and a stored expiry are two owners of one fact.
+
+Two things it found: **`<Textarea>` silently ignored `oninput`** while `<Input>`
+and `<Select>` honoured it, so the PEM fields stayed empty and the service
+refused the upload with nothing explaining why (`FJS-116`, fixed in the kit).
+And **a derived field needs its owner imported** — `apps.get` includes `domains`,
+an include returns raw rows, and the screen rendered every hostname as "no
+certificate" until `apps.service.ts` imported `certStatusOf` instead of
+recomputing it.
+
+## Where an alert goes, and what is behind a flag (2026-08-08)
+
+Phase 5 of the rebuild — two screens from the "needs new models" pile, each one
+chosen because it closed a hole in something already built. `bun run verify` is
+**156 checks**. Full write-up in `docs/SCREENS.md` § Phase 5.
+
+- **`/channels/`** — `NotificationChannel` is the model `AlertRule.channels` was
+  already pointing at. That column was `Json @default("[]")`, an array of ids
+  for rows **no model declared**: a foreign key with no constraint and no
+  reader. It is now `AlertRuleChannel`, a real join, with three data tests over
+  what the Json array could not answer. The credential is not on the row — a
+  Slack webhook URL is a bearer credential, so it goes into a `Secret`
+  (`@encrypted`) and only the reference is kept, the same ruling as Domain's
+  certificate material. **`test` really sends**, through `app.conduit` with the
+  credential resolved from its Secret at send time; proved against a local sink,
+  and the token proved absent from the database file, conduit's registry and the
+  API's answer.
+- **`/flags/`** — `FeatureFlag` + `FlagOverride`. The mock keyed per-environment
+  state by TIER NAME, a vocabulary that already exists here as `model
+  Environment`; the string would have meant every project sharing one
+  "production" belonging to none of them. An override points at the real row,
+  and `resolveIn()` is the one definition of what a flag is set to in an
+  environment — exported, so `flags.resolve` and the screen cannot disagree.
+
+**Two gaps closed on the way**, both of which had been open since the trail and
+the fleet were built:
+
+- **`FJS-104`** — `servers.feed`, the fleet's whole event stream in one request.
+  Server events were per-server only, so `/activity/` covered `AuditEvent`
+  alone — what PEOPLE did — while most of what happens here is what the machines
+  did. Both sources now merge by time.
+- **`FJS-085`** — `bun run verify:build`. `verify` drives the DEV server, where
+  Vite injects nothing, so the one artefact that reaches a user was the one
+  artefact nothing tested. It cost this app a blank page once. Two layers:
+  comments stripped from `dist/index.html` before requiring the tags to survive
+  (a regex over the raw file passes on exactly the broken output), then the page
+  loaded in a real browser and required to render, to have fetched its own JS
+  and CSS, and to log nothing.
+
+### What building it found — five defects, four of them framework
+
+- **Litestone emitted a JSON Schema `default` of the wrong type** (`FJS-120`).
+  `tags String[] @default("[]")` reached the boundary as
+  `{"type":"array","default":"[]"}`, so `autoValidate` filled in the default and
+  then refused it: every create that OMITTED the field 400'd naming a field the
+  caller never sent, while sending it explicitly worked.
+- **Raw SQL could not write** (`FJS-118`) — `_runRawSql` always used the
+  readonly connection, so `db.asSystem().sql`, the only escape hatch on a schema
+  with access rules, had never been able to run a write.
+- **Conduit refused any non-JSON response** (`FJS-121`), so a Slack webhook —
+  `200 text/plain: ok` — could never succeed.
+- **A collection-level action was unreachable from the browser** (`FJS-122`).
+  Both `servers.feed` and `flags.resolve` are about a whole service; the client
+  interpolated an id unconditionally.
+- **`autoValidate` strips a wire-only field before the method body runs.** Not a
+  defect — documented behaviour — but silent: the channels service reported
+  "Slack needs a credential" about a request carrying exactly that. A field that
+  is not a column has to be captured in a BEFORE hook.
+
+Still open from the phase: **nothing evaluates a rule and nothing delivers to a
+channel** (`FJS-123`) — both halves are real, the thing between them needs a
+metric source — and **a flag's rollout percentage is stored and never applied**
+(`FJS-124`), because the bucketing decision belongs where the user is.
+
+## The token this app issues (2026-08-09)
+
+Phase 6 — `/api-keys/`, the last self-contained screen in the "needs new models"
+pile. Full write-up in `docs/SCREENS.md` § Phase 6.
+
+**`ApiKey` is the third direction.** A `Credential` is how a person proves
+identity *to* Basecamp; a `Secret` is how Basecamp proves identity *to* a
+provider; an `ApiKey` is a token Basecamp *issues*. The same noun in three
+places, three different directions, and only the third had no model.
+
+The token is nowhere in this app: `@frontierjs/auth` mints it and holds an HMAC
+in a `Credential`, and `ApiKey` holds the operational half — workspace, owner,
+scopes, usage, revocation — plus a hint. It is shown once and a reload loses it,
+so the mock's `reveal` button cannot be built without storing the token, which
+is the one thing an API key exists not to do. A data test asserts against the
+generated DDL that no column could hold one.
+
+**A scope is `<service>:<read|write>`, derived from the service registry rather
+than declared** — no mapping table to drift, and a service added tomorrow is
+grantable tomorrow. Two are off limits to a key at all: `api-keys` itself (a key
+that can mint keys escalates past its own scopes) and conduit's management
+service. Enforcement is an app-level before hook, because a key scoped on
+sixteen services and unscoped on the seventeenth is not scoped.
+
+### What building it found — three defects, all in @frontierjs/auth
+
+The API-key half of `IAuth` was implemented, unit-tested, and had never been
+used end to end. Every one of the three fails towards looking correct.
+
+- **An issued key authenticated nothing** (`FJS-134`). Junction's transport
+  resolves a Bearer token through `verifySession()` and calls `verifyApiKey`
+  nowhere; the native provider never fell through. `createApiKey()` returned a
+  token that was anonymous on every request, and the symptom is *bad token*
+  rather than *missing code path*.
+- **A key's scopes were dropped on verification** (`FJS-135`). Stored on the
+  credential, but the session was built from the USER row, so every key carried
+  its owner's full standing and the scope picker would have been decoration.
+- **`revokeApiKey` revoked nothing here** (`FJS-136`). It coerced
+  `Number(keyId)` because auth's own fragment declares `Credential.id Int`; this
+  schema uses uuids, so `NaN` matched no row and threw nothing. Revoke reported
+  success and the key kept working.
+
+And one gap in the seam rather than in a package (`FJS-095`): **a required
+column that only the server can fill cannot be created from the browser.**
+`createResource` validates by default and `ApiKey`'s create schema is
+`required: ["workspaceId", "userId", "name", "tokenHint"]`, three of them
+server-written — so every create was refused before the request was made, with
+the documented symptom that the button does nothing. `{ validate: false }` is
+the only escape today, which turns a whole resource off to describe three
+columns. Nothing in the schema can say *the system writes this* — `FJS-D22`.
+
+Still open from the phase: **there are no bot accounts.** The mock tells you to
+use a dedicated `bot` user for CI and this app cannot create one, so a key
+belongs to whoever made it and carries their access. The screen says so rather
+than implying otherwise; it needs the sysadmin `UsersView`.
+
+## A saved view names a kind (2026-08-10)
+
+Phase 8 — `/dashboards/` and `/dashboards/[id]/`, over `Dashboard` and
+`DashboardWidget`. Full write-up in `docs/SCREENS.md` § Phase 8; the ruling is
+in the repo's `DECISIONS.md`.
+
+The phase existed to settle one question: **is a widget's data source a declared
+vocabulary or a free-form query?** It is declared.
+
+A widget holding `{ accessor, where }` is a read stored in a row. The row
+travels — seeded, copied, opened by everyone in the workspace — and the policy
+does not travel with it, because `@@gate` and `@@allow` grade a caller against a
+model and neither can say anything about a string. The server would run one
+person's query at another person's privilege with nothing in the schema able to
+see it.
+
+So `enum WidgetKind` is the vocabulary, and one declaration does three jobs: the
+column's CHECK constraint, `autoValidate`'s answer at the API, and the
+Add-widget picker — which reads it as a `$def` on the model's JSON Schema, the
+path every other enum here already takes, so the list cannot offer a kind the
+write would refuse. What the schema cannot express — which kinds take a server,
+which take an app, which config keys each reads — is one table in
+`api/src/services/dashboards/kinds.ts`, fetched through a collection-level
+`kinds` action rather than copied into the bundle, and a data test holds the two
+lists together in both directions.
+
+**Nothing on a board reads on the board's behalf.** Each card calls the service
+that owns its data with the reader's own session, so a dashboard shows exactly
+what its reader could have opened for themselves; the activity card tells a
+developer the trail is admin-only instead of rendering empty. The cost of the
+ruling is stated rather than hidden: adding a widget kind is a migration.
+
+All nine of the mock's widget types ship, and three say what they cannot show
+from the same vocabulary the picker is built from — nothing here stores a time
+series, so `server_health` is the last heartbeat rather than a trend,
+`service_health` is a live ping with no latency, and `alert_status` has rules
+but no evaluator (`FJS-123`).
+
+### What building it found
+
+**A custom action that answers `data` plus anything else loses the anything
+else** (`FJS-140`). `kinds` returned `{ total, data, statSources, portalServices }`
+and `wrapResult` rebuilt the envelope from the first two keys alone, so the
+picker got nine widget kinds and neither of the vocabularies needed to configure
+them — 200, no warning, no error. Three named keys instead makes it a `single`,
+which unwraps whole. `volumes.usage` documents the same trap from the other
+side.
+
+### Still open
+
+**Nobody can put a board on the home screen.** `isPinned` orders the list and
+does nothing else, and it is the WORKSPACE's pin rather than the reader's — a
+per-person pin needs the preferences store `UserSettingsView` is waiting on. The
+screen says so rather than offering a control that looks private.
+
+## The two ways to act on a machine (2026-08-10)
+
+Phase 9 — `/recipes/` and `/cleanup/`, over `Recipe` + `RecipeRun` and
+`DiskUsage` + `CleanupRun`. Full write-up in `docs/SCREENS.md` § Phase 9; the
+ruling is in the repo's `DECISIONS.md`.
+
+They were built together because each is the other's argument. **A vocabulary
+cannot bound a script, so the record does.** Yesterday's saved-view ruling does
+not transfer: a stored query is dangerous because it is executed at the Data
+boundary, where `@@gate` and `@@allow` grade a caller against a model and a
+string cannot be graded. A script is handed to an agent and run on a machine —
+no model, no caller, no grade, at whatever privilege the agent has. A vocabulary
+of allowed scripts buys nothing against that.
+
+So the safeguards are opposite. A cleanup stores target NAMES from a fixed list
+and refuses anything else by name; a recipe stores code, **authoring it is
+admin-or-owner and running it is developer**, because writing the script is the
+privileged act and running a vetted one is what somebody on the pager does at
+3am. Collapsing those makes recipes admin-only in practice, which is how people
+end up pasting the script into a terminal instead.
+
+- **One run row per SERVER**, and each keeps the script it ran. A fleet run is N
+  executions with N exit codes; a recipe is editable, and output read against a
+  script that has since changed is not evidence.
+- **Neither screen executes anything.** Both queue on Caravan's new `fleet`
+  queue, and `api/src/engine/fleet.engine.ts` asks the agent through
+  `app.conduit` — one file for both, because the shape is one shape and only the
+  safeguards differ. A non-zero exit is recorded and never retried; a timeout is
+  its own state.
+- **Every number on the cleanup screen was measured by Docker.** `DiskUsage`
+  carries `docker system df`'s own reclaimable figures per category, the
+  estimate sums by source rather than by target (both image targets draw on one
+  figure), and a machine that has never reported says so rather than rendering
+  zeroes. Unused volumes are off by default — the one target no registry can
+  undo.
+- **Nothing is stored twice.** `DiskUsage` counts no volumes (`Volume` owns
+  per-disk sizes) and stamps no last-cleanup (`CleanupRun` owns when a sweep
+  ran). A sweep's answer carries the agent's fresh `usage` snapshot, written
+  through the same function the report endpoint uses.
+
+### What building it found
+
+**A set-valued vocabulary has no home in the schema** (`FJS-141`).
+`targets ReclaimTarget[]` does not parse — *array [] is only supported for Text,
+Integer, File, or a model name for many-to-many* — so a declared enum beside a
+`String[]` column would be two homes with nothing joining them, exactly the
+shape that let `AlertRule.severity` default to a value its own API refused. The
+list has one home in `api/src/services/cleanup/targets.ts`, and a data test
+asserts the schema declares no competing enum.
+
+**`stampWorkspace` on a resource is not optional bookkeeping.** `Recipe.mesa`
+shipped without it, on the reasoning that the service stamps `workspaceId`
+itself — but browser-side validation runs first, so every save was refused in
+the form with *workspace is required*, naming a field the form does not show.
+Only the browser drive can see this; the API was correct throughout.
+
+Also: `enum JobRunStatus` became `enum RunStatus`, shared by `JobRun`,
+`RecipeRun` and `CleanupRun`, with a data test naming all three.
+
+### Still open
+
+**Nothing here is scheduled**, and both screens say why: a sweep or a recipe on
+a timer is a `Job` with a cron expression, and a second scheduler on either
+screen would be a second owner of when the fleet gets touched. The mock's
+per-server disk BARS are also not built — they need free space on `/`, which is
+a different reading from `docker system df`.
+
 ## The old UI mock, for reference
 
 `docs/mock/BasecampUI.jsx` is one **12,557-line** file: `import { useState } from
@@ -330,24 +628,44 @@ revisiting, the sysadmin Users screen most of all, since `User` is meant to be
 3. **Narrow channel publishing to mutations.** Every service publishes after
    every method, reads included, so a `GET` broadcasts the row to everyone
    connected to the workspace. Noise rather than a leak, but the wrong default.
-4. **`litestone types`** — 78 of this package's typecheck diagnostics are the
+4. **`litestone types`** — 77 of this package's typecheck diagnostics are the
    untyped-accessor class and would go with generated types.
-5. **Build the remaining 27 screens** — `FJS-101`, phased in `docs/SCREENS.md`
-   §What the order should be. Phase 1 (shell chrome) and Phase 2 (Portal,
-   Activity) are **done**. Next is the phase that is API-realm work rather than
-   UI: **services over models that already exist** — `AlertRule`+`AlertEvent`,
-   `Network`+`ServerNetwork`+`AppNetwork`, and `Secret`, three sets of models
-   currently carrying no API surface at all. Then `AppDetailView`, the largest
-   single gap: an App has no detail screen.
+5. **Build the remaining 16 screens** — `FJS-101`, phased in `docs/SCREENS.md`
+   §What the order should be. Phases 1–8 are **done**: shell chrome; Portal and
+   Activity; services over `AlertRule`/`Network`/`Secret`; `AppDetailView`;
+   Channels and Flags; `ApiKey`; `Volume` — the first screen over a model nobody
+   here authors; then `Dashboard` + `DashboardWidget`, where a widget names a
+   declared kind and never carries a query.
+
+   Phase 9 is **done**: `RecipesView` and `DiskCleanupView`, the two ways this
+   app acts on a machine, both queued through Caravan's `fleet` queue.
+
+   **Phase 10 is the sysadmin tier — `WorkspacesView`, `UsersView`, `FlagsView`
+   (hub scope) and `SysOverviewView`.** They are the last group whose blocker is
+   an API rather than a model, and `UsersView` is the one `FJS-007` breaks
+   first: `User` is meant to be `@@gate("8")`, which even SYSADMIN does not
+   pass, so any member list must go through `asSystem()`. Building it is
+   therefore also the sensible run-up to gating.
+
+   **Two things ruled before it starts** (2026-08-10, written up in
+   `../../HANDOFF.md` § Next): a sysadmin is a COLUMN — `isSystemAdmin Boolean
+   @default(false)` on `User`, not auth's `role` and not an env allowlist — and
+   the phase covers the four screens plus **bot accounts** (`UserKind.bot`,
+   which closes Phase 6's "a key belongs to whoever made it"). Invitations stay
+   `FJS-032`: they need a token model, mail through conduit and a signed-out
+   acceptance route. `Blueprint` and `Backup` are
+   the last two models with no screen; adapters (D) stay last — they need real
+   credentials and cost real money.
 
 ## Verification
 
 | | |
 |---|---|
-| `bun run test` | 19 data-layer tests — schema, gates, encryption, auth compatibility |
-| `bun run verify` | **110** browser checks across all three realms, incl. an a11y pass on every screen |
+| `bun run test` | 45 data-layer tests — schema, gates, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
+| `bun run verify` | **230** browser checks across all three realms, incl. an a11y pass on every screen |
+| `bun run verify:build` | the PRODUCTION build — the tags survive comment-stripping, and the page comes up in a real browser |
 | `bun run db:check` | fails if the migration has drifted from `db/schema.lite` |
-| `bun run typecheck` | 78 diagnostics, all the untyped-accessor class (`litestone types` pending) |
+| `bun run typecheck` | 77 diagnostics, all the untyped-accessor class (`litestone types` pending) |
 
 Nothing in this file was established by reading. The data claims were verified
 against a live database, the API claims over HTTP, and the UI claims by driving

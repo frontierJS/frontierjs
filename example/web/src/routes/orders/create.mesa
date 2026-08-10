@@ -18,7 +18,7 @@ title: New order
   //
   // What is left below is the part that IS about orders: which control a field
   // gets, and that the foreign key gets a picker.
-  import { orders } from '../../resources/shop.mesa'
+  import { orders } from '../../resources/Order.mesa'
   import { createResource } from '@frontierjs/sierra/junction'
   import { goto } from '@frontierjs/sierra/router'
   import { session } from '../../session.js'

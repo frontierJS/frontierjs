@@ -7,8 +7,20 @@
  * because they don't carry their own padding.
  */
 
-.card { padding: 1.25rem; }
+.card { padding: var(--space-3xl); }
 
-/* Bleed sub-regions to card edges */
-.card > .surface-header { margin: -1.25rem -1.25rem 1rem; }
-.card > .surface-footer { margin: 1rem -1.25rem -1.25rem; }
+/*
+ * Bleed sub-regions to card edges.
+ *
+ * The negative margin has to be the card's own padding, which is why it is
+ * the same rung rather than a literal that happens to match today. Written
+ * as a number it would keep the value the card had at density 1 and drift
+ * out of alignment the moment anything set a density — a bug that only
+ * appears inside a `.dense` region and looks like a broken card.
+ */
+.card > .surface-header {
+  margin: calc(var(--space-3xl) * -1) calc(var(--space-3xl) * -1) var(--space-2xl);
+}
+.card > .surface-footer {
+  margin: var(--space-2xl) calc(var(--space-3xl) * -1) calc(var(--space-3xl) * -1);
+}

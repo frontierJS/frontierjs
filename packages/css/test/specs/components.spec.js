@@ -52,6 +52,27 @@ test('overlay: an open <dialog> still renders', function () {
   assert.notEqual(style(drawer, 'display'), 'none', 'an open .drawer is hidden');
 });
 
+test('overlay: an open drawer is a column, and a closed one is still closed', function () {
+  /*
+   * The rule that lets a .surface-body between a header and a footer take
+   * the remaining height instead of only its content's. It moved here from
+   * a local <style> in @frontierjs/ui's Drawer.mesa, which is the file that
+   * owns .drawer having the rule about .drawer.
+   *
+   * Both halves are the test, and the second is the one that matters: the
+   * rule has to key off [open], because an author `display: flex` beats
+   * the UA's `display: none` and the drawer would be on screen shut. That
+   * is the same trap `a closed <dialog> stays closed` above records, and
+   * it is one word away from being made again.
+   */
+  var open = el('<dialog class="drawer" open><p>Filters</p></dialog>');
+  assert.equal(style(open, 'display'), 'flex', 'an open .drawer is not a flex box');
+  assert.equal(style(open, 'flex-direction'), 'column', 'an open .drawer is not a column');
+
+  var shut = el('<dialog class="drawer"><p>Filters</p></dialog>');
+  assert.equal(style(shut, 'display'), 'none', 'the column rule unhid a closed drawer');
+});
+
 test('overlay: the guard does not hide a non-dialog .dialog', function () {
   /*
    * Scoped to the element, not the class: `[open]` means nothing on a
@@ -537,6 +558,41 @@ test('divider: <hr> loses the UA bevel', function () {
   assert.differentColor(style(hr, 'background-color'), 'rgba(0, 0, 0, 0)', '<hr> draws no line');
 });
 
+/* ── Pane composes with the layout primitives ────────────────────────*/
+
+test('pane: a layout class on a Pane is not overridden', function () {
+  /*
+   * `components` is a later layer than `layout` and both selectors are
+   * (0,1,0), so any `display` on .pane beats every layout primitive
+   * outright — `class="pane stack"` laid out as a block with the gap
+   * silently doing nothing. It is the collision layout.css documents for
+   * `.bar.center`, and .pane is the case where the component must yield:
+   * a Pane is a semantic subdivision, so it states no display at all.
+   *
+   * Both directions. A bare Pane must still be block — it is a <section>,
+   * so the UA supplies that and nothing needs to restate it.
+   */
+  var bare = el('<section class="pane">body</section>');
+  assert.equal(style(bare, 'display'), 'block', 'a bare Pane is not a block');
+  cleanup();
+
+  var stacked = el('<section class="pane stack">body</section>');
+  assert.equal(style(stacked, 'display'), 'flex', '.pane beat .stack — the gap does nothing');
+  assert.equal(
+    style(stacked, 'flex-direction'),
+    'column',
+    'a stacked Pane is not laying its children out in a column'
+  );
+  assert.ok(
+    parseFloat(style(stacked, 'row-gap')) > 0,
+    'a stacked Pane has no gap between its children'
+  );
+  cleanup();
+
+  var clustered = el('<section class="pane cluster">body</section>');
+  assert.equal(style(clustered, 'display'), 'flex', '.pane beat .cluster');
+});
+
 /* ── Vertical tabs ───────────────────────────────────────────────────*/
 
 var TABS =
@@ -605,4 +661,81 @@ test('tabs: vertical selection still comes from aria-selected', function () {
     unselected,
     'an .active class faked selection on a vertical tab'
   );
+});
+
+test('code: a <code> inside any <pre> drops the inline treatment', function () {
+  /*
+   * `code` is styled by element, so the inline background reached
+   * `<pre><code>` — the markup every markdown renderer emits — whenever the
+   * <pre> carried a class other than `.code`. An inline box that wraps
+   * paints one fragment per line, so a code block came out with a darker
+   * stripe behind each line and read as a rendering fault.
+   */
+  ['highlight', 'code', ''].forEach(function (cls) {
+    var pre = el('<pre' + (cls ? ' class="' + cls + '"' : '') + '><code id="k">a\nb</code></pre>');
+    var k = pre.querySelector('#k');
+    assert.equal(style(k, 'background-color'), 'rgba(0, 0, 0, 0)', 'pre.' + cls + ' > code kept a background');
+    assert.equal(style(k, 'padding-left'), '0px', 'pre.' + cls + ' > code kept padding');
+    cleanup();
+  });
+});
+
+test('code: inline <code> still carries its own box', function () {
+  /* The other side of the rule above — the reset must not be global. */
+  var p = el('<p>an inline <code id="k">identifier</code> here</p>');
+  var k = p.querySelector('#k');
+  assert.differentColor(style(k, 'background-color'), 'rgba(0, 0, 0, 0)', 'inline code lost its background');
+  assert.ok(parseFloat(style(k, 'padding-left')) > 0, 'inline code lost its padding');
+});
+
+/* ── An Item that is itself the control ────────────────────────────── */
+
+test('items: a <button class="item"> is reset to the row, not to a button', function () {
+  /*
+   * `.items.menu` styles a row to look clickable, and an <li> is not
+   * focusable and takes no keyboard — so the documented way to build a menu
+   * is to put a real control INSIDE the row. Then the control arrives with a
+   * UA background, border, font-size and shrink-to-fit width that the row's
+   * own look cannot override, and everyone who followed the advice wrote the
+   * same reset by hand. @frontierjs/ui's DropdownItem carried eight lines of
+   * it, and drifted the row's gap while it was there.
+   */
+  var box = el(
+    '<ul class="items menu" style="inline-size: 300px; font-size: 20px">' +
+      '<li><button class="item" type="button">Rename</button></li>' +
+      '</ul>'
+  );
+  var btn = box.querySelector('button.item');
+
+  assert.equal(style(btn, 'background-color'), 'rgba(0, 0, 0, 0)', 'the UA background survived');
+  assert.equal(style(btn, 'border-top-style'), 'none', 'the UA border survived');
+  assert.equal(style(btn, 'font-size'), '20px', 'the button did not inherit the list type');
+  assert.equal(style(btn, 'text-align'), 'start', 'a button centres its text by default');
+  assert.equal(style(btn, 'cursor'), 'pointer');
+
+  /* Full width, so the hover background covers the row rather than the word. */
+  assert.ok(
+    btn.getBoundingClientRect().width > 250,
+    'the control did not fill the row (' + Math.round(btn.getBoundingClientRect().width) + 'px of 300)'
+  );
+});
+
+test('items: the row keeps its own layout — the reset does not restate it', function () {
+  /*
+   * The reset is deliberately only the control parts. `.item` already owns
+   * display/align/gap, and a second copy is what drifted in the kit.
+   */
+  var box = el('<ul class="items"><li class="item">a</li></ul>');
+  var li = box.querySelector('.item');
+  var gap = style(li, 'gap');
+
+  var box2 = el('<ul class="items"><li><button class="item" type="button">a</button></li></ul>');
+  assert.equal(style(box2.querySelector('button.item'), 'gap'), gap, 'a control row has a different gap');
+});
+
+test('items: a disabled control row reads as disabled', function () {
+  var box = el('<ul class="items menu"><li><button class="item" type="button" disabled>x</button></li></ul>');
+  var btn = box.querySelector('button.item');
+  assert.equal(style(btn, 'cursor'), 'not-allowed');
+  assert.ok(Number(style(btn, 'opacity')) < 1, 'a disabled row is not dimmed');
 });

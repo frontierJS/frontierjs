@@ -46,6 +46,29 @@ export interface LitestoneAuthOptions {
   //     })
   //   }
   onEmailVerificationRequested?: (email: string, token: string) => Promise<void>
+
+  // Extra fields to put on every SessionContext this instance issues, read off
+  // the User row that produced it.
+  //
+  // The gap it closes: auth OWNS the User model but an app EXTENDS it, and
+  // until this existed there was no way to get an app's own column onto the
+  // session. The workaround is a wrapper around verifySession that re-reads the
+  // user — a third query on the hottest path in the app, forever, for a row
+  // this function already has in hand.
+  //
+  // It is called from one place (toContext), so it covers every path that
+  // issues a session: login, verifySession, an API key, createUser.
+  //
+  // Two kinds of thing belong here:
+  //   • STANDING sessionGateLevel() grades on — isAdmin / isOwner /
+  //     isSystemAdmin / activatedAt / verifiedAt. This is how an app whose
+  //     privileged bit is its own column reaches @@gate at all.
+  //   • The app's own keys. They travel on the session object untouched;
+  //     nothing in the framework reads them, and an app's hooks can.
+  //
+  // Returning a key auth itself sets (userId, email, authMethod, …) overwrites
+  // it. Don't — the caller identity is not the app's to restate.
+  sessionFields?: (user: Record<string, any>) => Record<string, unknown>
 }
 
 // ─── createAuthPlugin options ─────────────────────────────────────────

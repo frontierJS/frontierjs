@@ -761,6 +761,7 @@ Everything in `sierra.config.js`:
 | `outDir` | `'dist/client'` | build output |
 | `base` | `'/'` | public base path |
 | `trailingSlash` | `'always'` | `'always'` \| `'never'` \| `'preserve'` |
+| `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, lang }`. The build's own CSS assets are linked automatically |
 | `manifest.output` | `'config/routes.js'` | where the generated manifest is written |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, auth, services, debug, onConnect, … }` |
@@ -804,6 +805,21 @@ SPA.
 > origin, so `sierraFetch` throws and directs you to `getStaticPaths()`. When a render
 > does fail, the summary still reports "no route declares `render: static`", which is
 > misleading — read the `prerender:` warning above it.
+
+### The document around a prerendered page
+
+Sierra assembles it — Vite's HTML transform never runs on these files, so what
+`index.html` gives the SPA has to be stated here:
+
+- **The stylesheets the build emitted are linked automatically.** Without that a
+  prerendered page carries every class name the app uses and none of the rules
+  (fixed 2026-08-06; before it, a `static` page was unstyled and the SPA built
+  from the same source was not). They come before the page's own scoped
+  `<style>` blocks, so a component's rules win.
+- **`document: { bodyClass, lang }`** is the rest of it. A theme in
+  `@frontierjs/css` is one class on an ancestor, so `bodyClass: 'app
+  theme-default'` is what makes a prerendered page look like the app. `lang`
+  defaults to `en`, and a route may override it with `lang:` in its frontmatter.
 
 ### Islands — making a static page interactive
 

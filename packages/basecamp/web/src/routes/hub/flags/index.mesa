@@ -1,0 +1,133 @@
+---
+title: Hub flags
+---
+<script>
+  // The mock's sysadmin FlagsView — the same model /flags/ shows, read across
+  // every tenant instead of inside one.
+  //
+  // It exists for one flag in three: a killswitch is the only flag whose
+  // audience is the operator of the platform rather than the team that shipped
+  // the feature, and finding it means knowing which workspace it is in. Here
+  // it is grouped by prefix the way the mock groups it, which is a CONVENTION
+  // in the key rather than a column — `FeatureFlag.type` distinguishes boolean
+  // from variant and nothing in the schema says "killswitch". Reading the
+  // prefix is honest as a grouping and would not be as a permission.
+  //
+  // What toggles here is the flag's own default, never an override: an
+  // override belongs to an Environment inside a workspace, and this screen has
+  // no environment in hand. That is also what a killswitch is — the default,
+  // flipped, for everyone.
+  import { hub } from '../../../resources/Hub.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  let rows    = []
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const page = await hub.service.action('flags', null, {}, {})
+      rows = page.data ?? []
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  async function toggle(flag) {
+    error = null; busy = flag.id
+    const next = !flag.isEnabled
+    try {
+      await hub.service.action('setFlag', null, { flagId: flag.id, isEnabled: next })
+      const kill = flag.key.startsWith('killswitch.')
+      toasts[kill && next ? 'warning' : next ? 'success' : 'info'](
+        kill ? (next ? 'Killswitch activated' : 'Killswitch deactivated')
+             : (next ? 'Flag enabled' : 'Flag disabled'),
+        `${flag.key} in ${flag.workspace ?? 'an unnamed workspace'}`,
+      )
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // Grouped by the prefix the key already carries. The fourth group is
+  // everything that carries none, and it is named for what it is rather than
+  // hidden — a flag whose key does not follow the convention is still a flag.
+  const GROUPS = ['killswitch.', 'experiment.', 'feature.']
+  $: groups = [
+    ...GROUPS.map(prefix => ({
+      name: prefix.replace('.', ''),
+      flags: rows.filter(f => f.key.startsWith(prefix)),
+    })),
+    { name: 'ungrouped', flags: rows.filter(f => !GROUPS.some(p => f.key.startsWith(p))) },
+  ].filter(g => g.flags.length)
+</script>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<p class="text-body">
+  Every feature flag on the hub, grouped by the prefix in its key. Toggling one here changes the
+  flag's <strong>default</strong> for its workspace — per-environment overrides are set on that
+  workspace's own <a href="/flags/">flags screen</a>, where the environments are.
+</p>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No flags anywhere">
+    Nothing has declared one yet. A flag is authored inside a workspace, on its own flags screen.
+  </EmptyState>
+{:else}
+  <div class="stack" id="hub-flag-groups">
+    {#each groups as group}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">{group.name}</h2>
+          <Badge tone="muted">{group.flags.length}</Badge>
+        </div>
+
+        <div class="stack">
+          {#each group.flags as f}
+            <div class="section-header">
+              <span class="stack">
+                <span class="cluster">
+                  <code>{f.key}</code>
+                  <Badge tone="muted">{f.workspace ?? f.workspaceId}</Badge>
+                  {#if f.type === 'variant'}<Badge tone="muted">variant</Badge>{/if}
+                  {#if f.rollout}<Badge tone="muted">{f.rollout}%</Badge>{/if}
+                </span>
+                {#if f.description}
+                  <span class="text-sm text-muted">{f.description}</span>
+                {/if}
+              </span>
+              <span class="cluster">
+                <Pill tone={f.isEnabled ? 'success' : 'muted'}>{f.isEnabled ? 'enabled' : 'disabled'}</Pill>
+                <Button variant="ghost" disabled={busy === f.id}
+                        aria-label={`${f.isEnabled ? 'Disable' : 'Enable'} ${f.key}`}
+                        onclick={() => toggle(f)}>{f.isEnabled ? 'Disable' : 'Enable'}</Button>
+              </span>
+            </div>
+          {/each}
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}

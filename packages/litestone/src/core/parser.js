@@ -2328,6 +2328,41 @@ function resolveTransitions(schema) {
   }
 }
 
+const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1)
+
+/**
+ * How a `@from(Target, …)` on `model` correlates its subquery to the outer row.
+ *
+ * The ONE owner of that rule: `validate()` rejects an `@from` this cannot
+ * resolve, and `buildFromMap()` in client.js builds the subquery from what it
+ * returns. They used to be one inline block in the SQL builder guarded by
+ * `if (!fkCol) continue  // validation catches this` — validation did not, so a
+ * derived field with no relation behind it was silently absent from every row.
+ *
+ * Returns `{ fkCol, refCol }` — the FK column on the target table and the
+ * column it references on `model` — or `null` when no relation joins them.
+ */
+export function inferFromFk(model, targetModel) {
+  const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+
+  // A field on the target whose type is this model and which owns the FK.
+  for (const f of targetModel.fields) {
+    if (f.type.name !== model.name) continue
+    const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
+    if (!rel) continue
+    return {
+      fkCol:  Array.isArray(rel.fields)     ? rel.fields[0]     : rel.fields,
+      // Relations may reference a non-PK @unique column, so read it rather than
+      // assuming the primary key.
+      refCol: (Array.isArray(rel.references) ? rel.references[0] : rel.references) ?? idField,
+    }
+  }
+
+  // Fallback: a column named after the model, e.g. Account → AccountId.
+  const fallback = targetModel.fields.find(f => f.name === `${model.name}Id`)
+  return fallback ? { fkCol: fallback.name, refCol: idField } : null
+}
+
 function validate(schema) {
   const errors   = []
   const warnings = []
@@ -2746,6 +2781,12 @@ function validate(schema) {
         if (!targetField)
           errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ${op}: ${opValue}) — field '${opValue}' does not exist on '${target}'`)
       }
+      // A relation must actually join the two models. Same inference the SQL
+      // builder runs, so the two cannot disagree: if this passes, buildFromMap
+      // produces a subquery; if it fails, buildFromMap would have skipped the
+      // field and the column would be absent from every row with no error.
+      if (targetModel && !inferFromFk(model, targetModel))
+        errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ...) — no relation from '${target}' back to '${model.name}'. Declare '${target}.${lowerFirst(model.name)} ${model.name} @relation(fields: [...], references: [...])'`)
       // Can't mix with other virtual attributes
       if (field.attributes.some(a => a.kind === 'computed'))
         errors.push(`Model '${model.name}', field '${field.name}': @from conflicts with @computed`)

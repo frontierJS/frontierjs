@@ -52,11 +52,13 @@ type ParseResult = {
   valid:    boolean
   errors:   string[]
   warnings: string[]
+  // null on any parse failure — which is the normal state mid-keystroke.
+  // Every read of this must go through `?.`; see callParser().
   schema: {
     models:    any[]
     enums:     any[]
     functions: any[]
-  }
+  } | null
 }
 
 let _parse: ((src: string) => ParseResult) | null = null
@@ -234,8 +236,22 @@ connection.onCompletion((pos: TextDocumentPositionParams): CompletionItem[] => {
   const line   = lines[pos.position.line] ?? ''
   const result = parseCache.get(pos.textDocument.uri)
   const trimmed    = line.trimStart()
-  const atTrigger  = trimmed.includes('@') && !trimmed.includes('@@')
-  const aatTrigger = trimmed.includes('@@')
+
+  // Everything left of the caret. Attribute detection reads THIS, not the whole
+  // line: `includes('@')` over the line meant that on `status OrderStatus
+  // @default(pending)` — the shape of most real field lines — editing the type
+  // offered attributes and never a type or enum name.
+  const prefix = line.slice(0, pos.position.character)
+
+  // Typing an attribute NAME: the caret sits at the end of `@x` / `@@x`.
+  const attrToken  = /(@@?)(\w*)$/.exec(prefix)
+  const atTrigger  = attrToken?.[1] === '@'
+  const aatTrigger = attrToken?.[1] === '@@'
+
+  // Inside an attribute's ARGUMENT list: `@relation(Us|`, `@from(customer|`.
+  // [1] is the attribute name; null when the caret is not between its parens.
+  const inArgsOf = /@@?(\w+)\([^)]*$/.exec(prefix)?.[1] ?? null
+
   const inModel    = isInsideBlock(lines, pos.position.line, 'model')
   const inDatabase = isInsideBlock(lines, pos.position.line, 'database')
   const inFunction = isInsideBlock(lines, pos.position.line, 'function')
@@ -260,15 +276,17 @@ connection.onCompletion((pos: TextDocumentPositionParams): CompletionItem[] => {
 
   const items: CompletionItem[] = []
 
-  // Field types + enum names (when not typing an attribute)
-  if (inModel && !atTrigger && !aatTrigger) {
+  // Field types + enum names — only in type position: not while typing an
+  // attribute name, and not inside an attribute's arguments (a gate level or a
+  // database name is not a field type).
+  if (inModel && !atTrigger && !aatTrigger && !inArgsOf) {
     for (const t of SCALAR_TYPES) {
       items.push({ label: t, kind: CompletionItemKind.TypeParameter, detail: 'scalar type' })
     }
-    for (const e of result?.schema.enums ?? []) {
+    for (const e of result?.schema?.enums ?? []) {
       items.push({ label: e.name, kind: CompletionItemKind.EnumMember, detail: 'enum' })
     }
-    for (const m of result?.schema.models ?? []) {
+    for (const m of result?.schema?.models ?? []) {
       items.push({ label: m.name, kind: CompletionItemKind.Class, detail: 'model (relation)' })
     }
   }
@@ -279,7 +297,7 @@ connection.onCompletion((pos: TextDocumentPositionParams): CompletionItem[] => {
       items.push({ label: a, kind: CompletionItemKind.Property, detail: 'field attribute' })
     }
     // Named schema function calls — @funcName(...)
-    for (const fn of result?.schema.functions ?? []) {
+    for (const fn of result?.schema?.functions ?? []) {
       const params = fn.params.map((p: any) => p.name).join(', ')
       items.push({
         label:         `@${fn.name}`,
@@ -300,38 +318,43 @@ connection.onCompletion((pos: TextDocumentPositionParams): CompletionItem[] => {
 
   // @@gate level completions — numeric string form "R.C.U.D"
   const GATE_LEVELS = ['STRANGER', 'VISITOR', 'READER', 'CREATOR', 'USER', 'ADMINISTRATOR', 'OWNER', 'SYSADMIN', 'SYSTEM', 'LOCKED']
-  if (inModel && line.includes('@@gate')) {
+  if (inModel && inArgsOf === 'gate') {
     for (const l of GATE_LEVELS) {
       items.push({ label: l, kind: CompletionItemKind.EnumMember, detail: `level ${GATE_LEVELS.indexOf(l)}` })
     }
   }
 
   // @@db — database name completions from parsed schema
-  if (inModel && line.includes('@@db')) {
+  if (inModel && inArgsOf === 'db') {
     const dbs = extractDatabaseNames(text)
     for (const db of dbs) {
       items.push({ label: db, kind: CompletionItemKind.Module, detail: 'database' })
     }
   }
 
-  // @log / @@log — database name completions
-  if (inModel && (line.includes('@log') || line.includes('@@log'))) {
+  // @log / @@log — database name completions (inArgsOf strips both @ forms)
+  if (inModel && inArgsOf === 'log') {
     const dbs = extractDatabaseNames(text)
     for (const db of dbs) {
       items.push({ label: db, kind: CompletionItemKind.Module, detail: 'logger database' })
     }
   }
 
-  // @from — relation name completions when inside @from(...)
-  if (inModel && line.includes('@from')) {
-    for (const m of result?.schema.models ?? []) {
-      items.push({ label: m.name.toLowerCase(), kind: CompletionItemKind.Field, detail: 'relation name' })
+  // @from — the first argument is the MODEL name, PascalCase. Verified against
+  // the parser: @from(Lead, count: true) parses, @from(lead|leads, …) is
+  // "unknown model". This used to offer m.name.toLowerCase(), i.e. only forms
+  // that cannot parse. (litestone's own docs show the lowercase form too —
+  // relations.md:141 and README.md:899 are wrong the same way.)
+  if (inModel && inArgsOf === 'from') {
+    for (const m of result?.schema?.models ?? []) {
+      items.push({ label: m.name, kind: CompletionItemKind.Class, detail: 'related model' })
     }
   }
 
-  // @relation model references
-  if (inModel && atTrigger && line.includes('@relation')) {
-    for (const m of result?.schema.models ?? []) {
+  // @relation model references. Keyed off inArgsOf, not atTrigger: the caret is
+  // past the `(` by then, so it is no longer typing an attribute name.
+  if (inModel && inArgsOf === 'relation') {
+    for (const m of result?.schema?.models ?? []) {
       items.push({ label: m.name, kind: CompletionItemKind.Class, detail: 'model' })
     }
   }
@@ -533,8 +556,13 @@ connection.onHover((pos: TextDocumentPositionParams): Hover | null => {
   const word = wordAt(line, col)
   if (!word) return null
 
-  // Attribute hover — try longest match first (e.g. @omit(all) before @omit)
-  const candidates = [word, '@' + word, '@@' + word]
+  // Attribute hover — try longest match first (e.g. @omit(all) before @omit).
+  // Only for a word the caret actually reads as an attribute: wordAt() scans
+  // back through `@`, so an attribute always arrives already prefixed. Adding
+  // the prefixes here instead made every bare identifier collide with the
+  // attribute table — `function slug(...)` hovered as the @slug transform,
+  // and so would a model or field named trim, lower, email, url…
+  const candidates = word.startsWith('@') ? [word] : []
   // Also check for @omit(all), @guarded(all) etc. by looking at surrounding context
   const lineWord = (() => {
     const start = line.slice(0, col).search(/@@?\w+/)
@@ -560,7 +588,7 @@ connection.onHover((pos: TextDocumentPositionParams): Hover | null => {
 
   // Model hover — show field summary
   const result = parseCache.get(doc.uri)
-  if (result) {
+  if (result?.schema) {
     const model = result.schema.models.find((m: any) => m.name === word)
     if (model) {
       const fields = model.fields
@@ -739,14 +767,30 @@ function wordAt(line: string, col: number): string {
   return start !== -1 ? line.slice(start, end) : ''
 }
 
+/**
+ * Is `lineIdx` inside an open `blockKeyword` block?
+ *
+ * Tracks a stack of ALL block kinds, not a per-keyword depth counter. The
+ * counter version only incremented on the asked-for keyword but decremented on
+ * every `}`, so any earlier block drove the count negative and every later
+ * block read as "not inside" — an `enum` above the models (i.e. every real
+ * schema) silently killed field, type and attribute completion.
+ *
+ * A one-line block (`enum Status { a b c }`) opens and closes on the same line
+ * and is correctly neither pushed nor popped.
+ */
 function isInsideBlock(lines: string[], lineIdx: number, blockKeyword: string): boolean {
-  let depth = 0
+  const stack: string[] = []
   for (let i = 0; i <= lineIdx; i++) {
     const t = lines[i].trim()
-    if (t.startsWith(blockKeyword + ' ') && t.endsWith('{')) depth++
-    if (t === '}') depth--
+    if (t.startsWith('//')) continue
+    if (t.endsWith('{') && !t.includes('}')) {
+      stack.push(t.match(/^(\w+)\b/)?.[1] ?? '')
+    } else if (t.startsWith('}')) {
+      stack.pop()
+    }
   }
-  return depth > 0
+  return stack.includes(blockKeyword)
 }
 
 function findDeclaration(text: string, keyword: string, name: string): number | null {

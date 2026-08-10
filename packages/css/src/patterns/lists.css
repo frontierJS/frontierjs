@@ -21,7 +21,7 @@
 .items {
   display:        flex;
   flex-direction: column;
-  gap:            0.25rem;
+  gap:            var(--space-2xs);
   list-style:     none;
   margin:         0;
   padding:        0;
@@ -29,7 +29,42 @@
 .item {
   display:     flex;
   align-items: center;
-  gap:         0.5rem;
+  gap:         var(--space-sm);
+}
+
+/*
+ * An Item that IS the control.
+ *
+ * The advice below is to put a real <button> or <a> in the row rather than
+ * hang a hover state on an <li> — and a control arrives with a UA
+ * background, border, font and width that the row's own look cannot
+ * override. So everyone who took the advice wrote the same reset by hand:
+ * @frontierjs/ui's DropdownItem carried eight lines of it in a local
+ * <style>, and drifted the row's gap while it was there.
+ *
+ * Only the control parts. `.item` above already owns the layout, and
+ * restating it is how the two copies diverge.
+ */
+.items :is(button, a).item {
+  inline-size:     100%;
+  background:      none;
+  border:          none;
+  font:            inherit;
+  color:           inherit;
+  text-align:      start;
+  text-decoration: none;
+  cursor:          pointer;
+}
+/*
+ * Scoped through .items rather than written bare, for specificity: the
+ * hover variant below is `.items.menu .item` at (0,3,0), so a bare
+ * `:is(button,a).item:disabled` at (0,2,1) loses and a disabled row keeps
+ * the pointer cursor. Through .items this is (0,3,1) and wins.
+ */
+.items :is(button, a).item:disabled,
+.items :is(button, a).item[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor:  not-allowed;
 }
 
 /*
@@ -45,12 +80,72 @@
  * role="menu" / role="menuitem" behavior (Principle 6).
  */
 .items.menu .item {
-  padding:       0.375rem 0.625rem;
+  padding:       var(--space-xs) var(--space-md);
   border-radius: var(--btn-radius);
   cursor:        pointer;
 }
 .items.menu .item:hover {
   background: var(--surface-sunken);
+}
+
+/*
+ * ── An Item with more than one line ────────────────────────────────
+ *
+ *   <li class="item">
+ *     <span class="item-lead">section</span>
+ *     <span class="item-text">
+ *       <span class="item-title">Below 640px it stacks</span>
+ *       <span class="item-sub">Facts</span>
+ *     </span>
+ *   </li>
+ *
+ * `.item` alone is one line of text, and that covered the entries it was
+ * written for. It does not cover a search result, a command palette row or
+ * a picker option — a title with a category under it, sometimes a snippet
+ * under that — and two packages hand-rolled the same four classes to get
+ * there: this guide's ⌘K wrote `.sg-search-text/-title/-sub`, and
+ * @frontierjs/ui's CommandPalette wrote `.cp-row-text/-label/-sub` in a
+ * local <style> where no token and no `.dense` could reach them.
+ *
+ * `.item-text` is the part that does the work. Without `min-inline-size: 0`
+ * a flex child refuses to shrink below its content, so a long title pushes
+ * the trailing controls off the row instead of ellipsing — the reason the
+ * two copies both carry that line.
+ */
+.item-text {
+  flex:           1;
+  min-inline-size: 0;
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3xs);
+}
+.item-title {
+  color: var(--ink);
+}
+.item-sub {
+  font-size: var(--text-xs);
+  color:     var(--ink-mute);
+}
+
+/*
+ * A fixed gutter before the text — a kind label, a category, a shortcut.
+ * Sized in `ch` so the column fits the words rather than a guessed pixel
+ * count.
+ *
+ * The row switches to baseline alignment when it holds one, and only then.
+ * `.item` is `align-items: center`, which is right for one line of text
+ * beside a control and wrong the moment the text stacks: a gutter centred
+ * against a three-line block sits opposite the SUBTITLE, not the title it
+ * labels. Keyed on `:has(.item-lead)` so an ordinary Item is untouched.
+ */
+.item:has(.item-lead) {
+  align-items: baseline;
+}
+.item-lead {
+  flex:        0 0 auto;
+  inline-size: var(--item-lead-size, 7ch);
+  font-size:   var(--text-xs);
+  color:       var(--ink-mute);
 }
 
 /* ── Rows ──────────────────────────────────────────────────────────
@@ -74,8 +169,8 @@
   display:         flex;
   align-items:     center;
   justify-content: space-between;
-  gap:             0.75rem;
-  padding:         0.5rem 0.25rem;
+  gap:             var(--space-lg);
+  padding:         var(--space-sm) var(--space-2xs);
 }
 
 /* Divided variant — hairline rules between rows */
@@ -93,6 +188,6 @@
 .row-actions {
   display:     flex;
   align-items: center;
-  gap:         0.25rem;
+  gap:         var(--space-2xs);
   flex-shrink: 0;
 }

@@ -2,7 +2,7 @@
 title: Customers
 ---
 <script>
-  import { customers } from '../../resources/shop.mesa'
+  import { customers } from '../../resources/Customer.mesa'
   import { session } from '../../session.js'
   import { prefs } from '../../prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'

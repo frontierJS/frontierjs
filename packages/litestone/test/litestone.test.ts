@@ -4498,6 +4498,47 @@ describe('raw SQL and the access rules it cannot enforce', () => {
     open.$close()
   })
 
+  test('the bypass can WRITE — a raw statement is not a raw read', async () => {
+    // FJS-118. `_runRawSql` always ran on the read connection, which is opened
+    // `readonly` with `query_only = ON` — so every raw write, through every
+    // surface, failed with SQLITE_READONLY: "attempt to write a readonly
+    // database". A message about a connection, naming nothing the caller
+    // wrote. `db.asSystem().sql` is the documented and ONLY escape hatch on a
+    // schema with access rules, so this made raw writes unreachable outright.
+    // Found in basecamp, hard-deleting a row to prove an FK cascade.
+    await db.asSystem().sql`UPDATE invoice SET total = ${99} WHERE id = ${2}`
+    const [row] = await db.asSystem().sql`SELECT total FROM invoice WHERE id = 2`
+    expect(row.total).toBe(99)
+
+    await db.asSystem().sql`DELETE FROM invoice WHERE id = ${2}`
+    expect((await db.asSystem().sql`SELECT id FROM invoice`).length).toBe(1)
+
+    // Put it back — later tests in this describe read this table.
+    await db.asSystem().invoice.create({ data: { id: 2, ownerId: 2, total: 20, ssn: 'BBB' } })
+  })
+
+  test('a leading comment does not send a write to the reader', async () => {
+    // The routing test strips comments first. Without that, `-- why\nDELETE …`
+    // reads as an unrecognised statement — which is fine, since anything
+    // unrecognised goes to the writer, but a comment before a SELECT must not
+    // do the reverse and quietly move every commented read onto the writer.
+    const open = await makeDb(`model Memo { id Int @id  body String }`, 'raw-sql-comment')
+    await open.asSystem().memo.create({ data: { id: 1, body: 'x' } })
+    await open.sql`-- housekeeping\nDELETE FROM memo WHERE id = 1`
+    expect((await open.sql`/* count */ SELECT id FROM memo`).length).toBe(0)
+    open.$close()
+  })
+
+  test('a WITH goes to the writer — a CTE can be a DELETE', async () => {
+    // `WITH x AS (…) DELETE FROM …` is legal SQLite, so a CTE cannot be
+    // assumed to be a read. It runs on the write connection, which reads fine.
+    const open = await makeDb(`model Item { id Int @id  n Int }`, 'raw-sql-cte')
+    await open.asSystem().item.createMany({ data: [{ id: 1, n: 1 }, { id: 2, n: 5 }] })
+    await open.sql`WITH big AS (SELECT id FROM item WHERE n > 3) DELETE FROM item WHERE id IN (SELECT id FROM big)`
+    expect((await open.sql`SELECT id FROM item`).length).toBe(1)
+    open.$close()
+  })
+
   test('@guarded alone is enough to trigger it', async () => {
     // Each declaration family is its own reason. A schema whose only rule is a
     // withheld column still must not hand that column over raw.
@@ -10810,6 +10851,50 @@ describe('generateJsonSchema — x-gate', () => {
     const js = generateJsonSchema(schema)
     const users = js['$defs']?.User
     expect(users['x-gate']).toEqual({ read: 2, create: 4, update: 4, delete: 6 })
+  })
+})
+
+
+describe('generateJsonSchema — a default must be a value of its own type', () => {
+  // An ARRAY or Json field spells its default as a STRING in the .lite source,
+  // because that is how it is stored. Emitted verbatim that produced
+  // `{"type":"array","default":"[]"}` — a schema whose own default fails its
+  // own type check. Junction's autoValidate fills the default in and then
+  // refuses it, so every create that OMITTED the field 400'd with "tags must
+  // be an array", naming a field the caller never sent. Found declaring
+  // basecamp's feature flags.
+  const S = `
+    model Flag {
+      id       Int      @id
+      tags     String[] @default("[]")
+      config   Json     @default("{}")
+      counts   Int[]    @default("[1,2]")
+      label    String   @default("[]")
+      broken   Json     @default("{not json")
+    }`
+
+  test('an array default is emitted as an array, not the source string', () => {
+    const js = generateJsonSchema(parse(S).schema, { mode: 'create' })
+    expect(js['$defs'].Flag.properties.tags.default).toEqual([])
+    expect(js['$defs'].Flag.properties.counts.default).toEqual([1, 2])
+  })
+
+  test('a Json default is emitted as its value', () => {
+    const js = generateJsonSchema(parse(S).schema, { mode: 'create' })
+    expect(js['$defs'].Flag.properties.config.default).toEqual({})
+  })
+
+  test('a String field keeps its string default — "[]" is a legal string', () => {
+    // The parse is keyed on the FIELD's type, not on the literal looking like
+    // JSON. A String column defaulting to the two characters `[]` means those
+    // two characters.
+    const js = generateJsonSchema(parse(S).schema, { mode: 'create' })
+    expect(js['$defs'].Flag.properties.label.default).toBe('[]')
+  })
+
+  test('a structured default that does not parse is dropped, not emitted wrong', () => {
+    const js = generateJsonSchema(parse(S).schema, { mode: 'create' })
+    expect('default' in js['$defs'].Flag.properties.broken).toBe(false)
   })
 })
 
@@ -17719,5 +17804,177 @@ describe('@version — schema output', () => {
     expect(block('OrderCreate')).not.toContain('version')
     expect(block('OrderUpdate')).toContain('version: number')
     expect(block('OrderUpdate')).not.toContain('version?')
+  })
+})
+
+// ─── The client enumerates (FJS-014) ──────────────────────────────────────────
+//
+// A proxy whose ownKeys trap returns one name twice makes the ENGINE throw, and
+// the message names proxy internals rather than the two strings responsible.
+// `$setAuth` and `$db` were on the target AND in the trap's literal list, so
+// every enumeration of the top-level client threw — including JSON.stringify,
+// which meant logging a context blew up on a line that was not the bug.
+
+describe('client enumeration', () => {
+  const SCHEMA = `
+    model User { id Int @id  name String }
+    model Post { id Int @id  title String }
+  `
+
+  test('every way of enumerating the client works', async () => {
+    const db = await makeDb(SCHEMA, 'ownkeys')
+    expect(() => Object.keys(db)).not.toThrow()
+    expect(() => Object.getOwnPropertyNames(db)).not.toThrow()
+    expect(() => ({ ...db })).not.toThrow()
+    expect(() => { for (const _ in db) { /* noop */ } }).not.toThrow()
+    expect(() => JSON.stringify(db)).not.toThrow()
+    db.$close()
+  })
+
+  test('no trap returns a duplicate — the engine only throws on the first one', async () => {
+    const db = await makeDb(SCHEMA, 'ownkeys-dupes')
+    const noDupes = (obj: any) => {
+      const keys = Object.getOwnPropertyNames(obj)
+      expect(keys.length).toBe(new Set(keys).size)
+    }
+    noDupes(db)
+    noDupes(db.$setAuth({ id: 1 }))
+    noDupes(db.asSystem())
+    noDupes(db.$scopedBy({}))
+    await db.$transaction(async (tx: any) => noDupes(tx))
+    db.$close()
+  })
+
+  test('Object.keys lists the tables, not just the methods on the target', async () => {
+    const db = await makeDb(SCHEMA, 'ownkeys-tables')
+    const keys = Object.keys(db)
+    expect(keys).toContain('user')
+    expect(keys).toContain('post')
+    expect(keys).toContain('$transaction')
+    db.$close()
+  })
+
+  // Junction builds a "model not found" message from this list, so a scoped
+  // client has to enumerate too — that path runs under $setAuth, never the bare
+  // client.
+  test('a scoped client enumerates its tables as well', async () => {
+    const db = await makeDb(SCHEMA, 'ownkeys-scoped')
+    expect(Object.keys(db.$setAuth({ id: 1 }))).toContain('user')
+    expect(Object.keys(db.asSystem())).toContain('post')
+    db.$close()
+  })
+
+  // The quieter half of the same defect: asSystem()'s proxy had a `get` trap and
+  // nothing else, so it did not throw — it answered wrongly. A guard reading
+  // `if ('user' in db)` silently skipped the table under a system client.
+  test('asSystem() agrees with itself about what it has', async () => {
+    const db = await makeDb(SCHEMA, 'ownkeys-system-has')
+    const sys = db.asSystem()
+    expect(typeof sys.user.findMany).toBe('function')
+    expect('user' in sys).toBe(true)
+    expect(Object.keys(sys)).toContain('user')
+    expect('nope' in sys).toBe(false)
+    db.$close()
+  })
+
+  test('a view is enumerable alongside the tables', async () => {
+    const db = await makeDb(`
+      model User { id Int @id  name String }
+      view ActiveUser { @@sql("SELECT * FROM user") }
+    `, 'ownkeys-views')
+    expect(Object.getOwnPropertyNames(db)).toContain('ActiveUser')
+    db.$close()
+  })
+})
+
+// ─── $checkWhere — ask before you query (FJS-109) ─────────────────────────────
+//
+// The ORM's own split is warn-on-read / throw-on-write, and it is right there: a
+// typo'd filter on a write is a mis-scoped destructive operation, while a read
+// is merely empty. Over HTTP it is wrong — the warning goes to the server's
+// stderr and the caller gets 200 with no rows. So a boundary that CAN answer 400
+// asks first, and the rule stays defined once, here.
+
+describe('$checkWhere', () => {
+  const SCHEMA = `model Product { id Int @id  name String  price Float @default(1) }`
+
+  test('a valid where reports nothing', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-ok')
+    expect(db.$checkWhere('product', { name: 'a', price: 2 })).toEqual([])
+    db.$close()
+  })
+
+  test('an unknown key is reported with the valid field list', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-unknown')
+    const [p] = db.$checkWhere('product', { bogusColumn: 7 })
+    expect(p.key).toBe('bogusColumn')
+    expect(p.allowed).toEqual(['id', 'name', 'price'])
+    db.$close()
+  })
+
+  test('a typo carries the same suggestion the warning does', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-typo')
+    expect(db.$checkWhere('product', { nme: 'a' })[0].suggestion).toBe('name')
+    db.$close()
+  })
+
+  test('it descends AND / OR / NOT', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-nested')
+    expect(db.$checkWhere('product', { OR: [{ name: 'a' }, { nope: 1 }] }).map((p: any) => p.key))
+      .toEqual(['nope'])
+    expect(db.$checkWhere('product', { AND: [{ NOT: { alsoNope: 1 } }] }).map((p: any) => p.key))
+      .toEqual(['alsoNope'])
+    db.$close()
+  })
+
+  test('$raw is an escape hatch, not an unknown key', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-raw')
+    expect(db.$checkWhere('product', { $raw: 'price > 1' })).toEqual([])
+    db.$close()
+  })
+
+  // "I cannot judge this" is not "this is wrong". A caller using the answer to
+  // reject a request must not reject what this failed to understand.
+  test('an unknown accessor reports nothing rather than throwing', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-unknown-model')
+    expect(db.$checkWhere('widget', { anything: 1 })).toEqual([])
+    db.$close()
+  })
+
+  test('it neither warns nor runs a query', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-silent')
+    const seen: string[] = []
+    db.$tapQuery((q: any) => seen.push(q.sql))
+    const warn = console.warn
+    const warned: unknown[] = []
+    console.warn = (...a: unknown[]) => { warned.push(a) }
+    try { db.$checkWhere('product', { nope: 1 }) } finally { console.warn = warn }
+    expect(seen).toEqual([])
+    expect(warned).toEqual([])
+    db.$close()
+  })
+
+  // It lived inline in the ROOT proxy's get trap, so the three derived clients
+  // did not have it — and since a Litestone proxy throws on an unknown property
+  // rather than returning undefined, even `typeof db.$setAuth(u).$checkWhere`
+  // threw. Junction hands services a `$setAuth` client, so its autoFilter hook
+  // died on every list read in both apps, complaining about a table nobody
+  // named. Which keys are valid is a question about the SCHEMA; auth and scope
+  // have no bearing on the answer, so every flavour must give the same one.
+  test('every client flavour answers it, identically', async () => {
+    const db = await makeDb(SCHEMA, 'checkwhere-flavours')
+    const flavours: Record<string, any> = {
+      root:      db,
+      setAuth:   db.$setAuth({ id: 1 }),
+      asSystem:  db.asSystem(),
+      scopedBy:  db.$scopedBy({}),
+    }
+    for (const [name, c] of Object.entries(flavours)) {
+      expect(typeof c.$checkWhere, name).toBe('function')
+      expect(c.$checkWhere('product', { name: 'a', price: 2 }), name).toEqual([])
+      expect(c.$checkWhere('product', { nme: 'a' })[0].suggestion, name).toBe('name')
+      expect(c.$checkWhere('widget', { anything: 1 }), name).toEqual([])
+    }
+    db.$close()
   })
 })

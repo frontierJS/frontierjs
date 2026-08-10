@@ -4,7 +4,7 @@
  * The block visual base. Every block primitive that wants the surface
  * treatment — card, alert, toast, dialog, popover, drawer — gets it from
  * the single rule below. Adding a composite = add its name to the
- * :where() list, once. (It used to mean editing five selector lists.)
+ * :where() list, once.
  *
  * ── The tone recipe carries no tone names ───────────────────────────
  *
@@ -14,10 +14,7 @@
  * variable falls back to the untoned default on the line below.
  *
  * So every tone in tones.css works on every surface composite for free —
- * including .secondary and .muted, which the old
- * `:is(.primary, .info, .success, .warning, .danger)` list silently
- * skipped. Adding a tone is now one line in tones.css and nothing here,
- * which is what the docs always claimed.
+ * Adding a tone is one line in tones.css and nothing here
  *
  * A composite opts out of tinting by resetting the tint variables to
  * `initial`, which re-fires the fallbacks (dialogs.css does this to route
@@ -29,9 +26,15 @@
  */
 
 :where(.surface, .card, .tile, .alert, .toast, .dialog, .popover, .drawer) {
-  --surface-tint-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
-  --surface-tint-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
-  --surface-tint-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
+  /*
+   * The percentages are not here — they are the --tint-* ramp in tones.css,
+   * so a toned Card and an app's own tinted element cannot drift apart.
+   * These three names stay because the variants below override them
+   * individually (a .raised Card tints from --surface-raised).
+   */
+  --surface-tint-bg:     var(--tint-surface);
+  --surface-tint-border: var(--tint-rule);
+  --surface-tint-color:  var(--tint-ink);
 
   --surface-bg:     var(--surface-tint-bg,     var(--surface));
   --surface-border: var(--surface-tint-border, var(--rule));
@@ -47,11 +50,8 @@
 
   /*
    * ── Variants ────────────────────────────────────────────────────
-   * These sit after the tone recipe, so a variant now beats the tint on
-   * the properties it owns. That is a change: previously .outlined and
-   * .ghost were declared before the tone rule and lost to it, so a toned
-   * .outlined card still drew a tinted background. Each variant keeps
-   * the tint on the parts it does render.
+   * These sit after the tone recipe, so a variant beats the tint on
+   * the properties it owns.
    */
   &.raised {
     --surface-bg:     var(--surface-tint-bg, var(--surface-raised));
@@ -71,6 +71,87 @@
 }
 
 /*
+ * ── A Surface that navigates ────────────────────────────────────
+ *
+ * `<a class="card">` and `<button class="tile">` are ordinary: a card that
+ * opens a detail view, a stat tile that drills into a report. Until this
+ * rule they got a focus ring from the a11y layer and nothing on hover, so
+ * every consumer hand-wrote the same three declarations — the guide's
+ * next-page footer was one of them, and it is what found this.
+ *
+ * ── Why the element, not a modifier ─────────────────────────────
+ *
+ * The elsewhere-in-this-package pattern is opt-in: `.rows.hover`,
+ * `.table.hover`, `.items.menu`. Those exist because the thing being
+ * styled is an `<li>` or a `<tr>` — not focusable, not operable by
+ * keyboard — so an unconditional hover state would advertise an
+ * interaction the markup cannot deliver. `lists.css` says so at length.
+ *
+ * An `<a href>` and a `<button>` have no such problem: they ARE the
+ * interaction. Keying on the element instead of a class means the
+ * affordance cannot be attached to something that does not have it, and
+ * cannot be forgotten on something that does. There is no `.card.hover`
+ * for the same reason there is no `.btn.hover`.
+ *
+ * ── What moves, and what deliberately does not ──────────────────
+ *
+ * The BORDER and the lift, not the background.
+ *
+ * Moving --surface-bg was the first attempt and it is wrong twice. In the
+ * default theme --surface-raised IS --surface (both #ffffff), so the hover
+ * did nothing at all — measured — and the affordance existed only in the
+ * three themes that happen to separate them. And on `.outlined`, whose
+ * whole variant is `--surface-bg: transparent`, filling the background on
+ * hover erases the variant: measured, an outlined card turned solid white
+ * under the pointer.
+ *
+ * The border is the honest channel. It reads on every theme, it survives
+ * all three variants, and it is the same signal `.field:focus` and
+ * `.navlink[aria-current]` already use.
+ *
+ * It is written as one `color-mix` toward --bg-mix rather than as a
+ * fallback chain, and that is the second thing measured. The obvious form
+ * — `var(--surface-tint-border, <brand>)` — only fires the fallback when
+ * the tint is guaranteed-invalid, which is exactly never on a toned card:
+ * a `.card.danger` therefore hovered to the SAME red it already had, so a
+ * toned card got no feedback but the 1px lift. Mixing takes whichever
+ * border the card actually has and pulls it further toward its own tone,
+ * so an untoned card goes brand-coloured and a danger card goes a deeper
+ * red. One expression, both cases.
+ *
+ * The lift is 1px. Anything larger reads as the layout shifting rather
+ * than the target responding, and a card is often directly above the fold.
+ */
+:where(a, button):where(.surface, .card, .tile) {
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, transform 120ms;
+}
+
+/*
+ * `(hover: hover)` so a touch device does not keep the lifted state after a
+ * tap — without it the last card tapped stays raised until something else
+ * is touched, which reads as a stuck selection.
+ */
+@media (hover: hover) {
+  :where(a, button):where(.surface, .card, .tile):hover {
+    --surface-border: color-mix(
+      in srgb,
+      var(--bg-mix, var(--color-primary)) 55%,
+      var(--surface-tint-border, var(--rule))
+    );
+    transform: translateY(-1px);
+  }
+}
+
+/*
+ * Pressed. Without it the card stays lifted while the pointer is down,
+ * which reads as the click not having registered.
+ */
+:where(a, button):where(.surface, .card, .tile):active {
+  transform: none;
+}
+
+/*
  * ── A closed <dialog> has to be told to stay closed ─────────────
  *
  * The UA stylesheet hides an inactive dialog with
@@ -80,10 +161,7 @@
  * `.dialog` and `.drawer` in the package: they rendered on page load,
  * before anything called showModal().
  *
- * This is the same trap frame.css documents for `.view[hidden]`. The
- * lesson was learned there and never carried across to the two
- * composites that are real <dialog> elements. It went unnoticed because
- * nothing consumed the package until the demo app did.
+ * This is the same trap frame.css documents for `.view[hidden]`.
  *
  * Scoped to the element rather than the class: `[open]` means nothing on
  * a <div>, so an unscoped `:not([open])` would hide anything that
@@ -99,8 +177,8 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 .surface-footer {
   display:     flex;
   align-items: center;
-  gap:         10px;
-  padding:     0.75rem 1.25rem;
+  gap:         var(--space-md);
+  padding:     var(--space-lg) var(--space-3xl);
 }
 .surface-header {
   justify-content: space-between;
@@ -114,7 +192,7 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
   background:      color-mix(in srgb, var(--ink) 3%, transparent);
 }
 .surface-body {
-  padding:     1rem 1.25rem;
+  padding:     var(--space-2xl) var(--space-3xl);
   line-height: 1.55;
 }
 .surface-body > p { margin: 0 0 10px; }

@@ -35,7 +35,7 @@
       //     ({ kind, object, data, total }) and only `data` is the rows;
       //   limit goes in the SECOND argument — the first is the filter, and
       //     `find({ limit: 100 })` asks for products whose `limit` column is
-      //     100, which is an empty list and not an error (ISSUES FJS-104).
+      //     100, which is an empty list and not an error (ISSUES FJS-109).
       live  = await client.service('products').findData({}, { limit: 100 })
       state = 'ready'
     } catch {

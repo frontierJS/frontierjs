@@ -1,0 +1,58 @@
+<script>
+  // deploy_feed — recent deployments, for one app or the whole workspace.
+  //
+  // The mock filters by PROJECT. A deployment belongs to an app and carries no
+  // project id, so the subject here is the app: it is the filter the service
+  // actually has, and inventing a project filter in the browser would mean
+  // fetching every app first to decide which deployments to keep.
+  import { deployments } from '../../resources/Deployment.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+
+  export let widget = null
+
+  let rows    = []
+  let error   = null
+  let loading = true
+
+  const TONE = {
+    success: 'success', failed: 'danger', cancelled: 'muted',
+    rolled_back: 'warning', building: 'info', deploying: 'info', pushing: 'info', pending: 'muted',
+  }
+
+  async function load() {
+    error = null
+    try {
+      rows = (await deployments.service.find(
+        widget?.appId ? { appId: widget.appId } : {}, { limit: 6 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(onWrite(deployments.service, load))
+
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else if !rows.length}
+  <p class="text-sm text-muted">Nothing has been deployed here yet.</p>
+{:else}
+  <ul class="stack" style="list-style: none; padding: 0">
+    {#each rows as d}
+      <li class="cluster">
+        <Badge tone={TONE[d.status] ?? 'muted'}>{d.status}</Badge>
+        <a href={`/deployments/${d.id}/`}>{d.app?.name ?? d.appId}</a>
+        <span class="text-xs text-muted">{when(d.queuedAt)}</span>
+      </li>
+    {/each}
+  </ul>
+{/if}

@@ -3,7 +3,7 @@ title: Servers
 ---
 <script>
   import { session } from '../../session.js'
-  import { servers } from '../../resources/servers.mesa'
+  import { servers } from '../../resources/Server.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   $: session.workspaceId

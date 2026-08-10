@@ -1,0 +1,319 @@
+---
+title: Dashboard
+---
+<script>
+  // The mock's DashboardDetailView + AddWidgetModal — one board, its widgets,
+  // and the picker that adds one.
+  //
+  // **Nothing on this page reads on the board's behalf.** Each card asks the
+  // service that owns its data, with the reader's own session — so a dashboard
+  // can show exactly what its reader could have opened, and a card they may not
+  // read says so instead of quietly appearing for everyone. That is the whole
+  // reason a widget names a KIND rather than carrying a query: a stored query
+  // would be run by the server for whoever opened the page, graded against
+  // nothing.
+  //
+  // **The picker is built from the service's own vocabulary**, fetched through
+  // the collection-level `kinds` action rather than shipped in this bundle. A
+  // list retyped here would drift from what the service accepts, and the
+  // failure would be an option that exists until you press it.
+  //
+  // The mock's picker is a modal. This is an inline panel, like every other
+  // create form in this app: the same three fields, one fewer layer to trap
+  // focus in, and it survives being the only thing on a narrow screen.
+  import { page } from '@frontierjs/sierra/router'
+  import { dashboards } from '../../../resources/Dashboard.mesa'
+  import { servers } from '../../../resources/Server.mesa'
+  import { apps } from '../../../resources/App.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Widget from '../../../components/widgets/Widget.mesa'
+
+  $: page.params
+
+  let board   = null
+  let kinds   = []
+  let sources = []          // what a counter may count
+  let adapters = []         // portal ids a service_health widget may name
+  let error   = null
+  let loading = true
+  let busy    = null
+  let editing = false
+
+  // The add-widget panel. `chosen` is the kind spec, not just its name — the
+  // second step is built from what that kind needs.
+  let adding  = false
+  let chosen  = null
+  let subject = ''          // server id or app id, depending on the kind
+  let config  = {}
+  let cols    = 1
+
+  // Subject options, loaded when a kind that takes one is chosen. Not on page
+  // load: most boards are read, not edited, and two list requests per visit for
+  // a picker nobody opened is two requests too many.
+  let serverOptions = []
+  let appOptions    = []
+
+  async function load() {
+    error = null
+    try {
+      board = await dashboards.service.get(page.params.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  async function loadKinds() {
+    try {
+      const answer = await dashboards.service.action('kinds', null)
+      // `answer.kinds`, not `answer.data`: the vocabulary is deliberately not
+      // shaped like a list, because a list envelope keeps `total` and `data`
+      // and drops every other key without saying so.
+      kinds    = answer.kinds ?? []
+      sources  = answer.statSources ?? []
+      adapters = answer.portalServices ?? []
+    } catch (e) {
+      // Not fatal: the board still renders. What breaks is adding a widget,
+      // and the panel says so rather than offering an empty picker.
+      kinds = []
+    }
+  }
+
+  load()
+  loadKinds()
+  $: page.params.id, () => load()
+
+  // Live. Another tab adding a card, or anything this board's widgets read
+  // changing, should land here — the widgets subscribe for themselves, this is
+  // the board's own shape.
+  const READS = new Set(['get', 'find', 'kinds'])
+  const off = dashboards.service.on('*', (method, row) => {
+    if (READS.has(method) || (row?.id && row.id !== page.params.id)) return
+    load()
+  })
+  $onDestroy(off)
+
+  const specFor = (kind) => kinds.find(k => k.kind === kind) ?? null
+
+  async function openPicker() {
+    adding = !adding
+    chosen = null
+    if (!adding) return
+    // Both lists, once. Which one is needed depends on the kind chosen next,
+    // and fetching then would put a spinner between two clicks.
+    try {
+      if (!serverOptions.length)
+        serverOptions = (await servers.service.find({}, { limit: 200 })).data
+          .map(s => ({ value: s.id, label: s.name }))
+      if (!appOptions.length)
+        appOptions = (await apps.service.find({}, { limit: 200 })).data
+          .map(a => ({ value: a.id, label: a.name }))
+    } catch {
+      // A member who cannot list servers can still add the widgets that take
+      // no subject. The picker below shows an empty select and says why.
+    }
+  }
+
+  function choose(spec) {
+    chosen  = spec
+    subject = ''
+    cols    = spec.cols
+    // The knobs this kind reads, blank. `config` keys the service does not
+    // accept are refused by name, so this cannot send one it invented.
+    config  = spec.kind === 'stat_counter'   ? { source: sources[0] ?? 'servers', label: '' }
+            : spec.kind === 'service_health' ? { serviceId: '' }
+            : {}
+  }
+
+  async function add() {
+    error = null; busy = 'add'
+    try {
+      board = await dashboards.service.action('addWidget', board.id, {
+        kind: chosen.kind,
+        ...(chosen.subject === 'server' ? { serverId: subject || null } : {}),
+        ...(chosen.subject === 'app'    ? { appId:    subject || null } : {}),
+        config,
+        cols,
+      })
+      toasts.success(`${chosen.label} added`)
+      adding = false
+      chosen = null
+    } catch (e) {
+      // 'A Server health widget needs a server', 'not countable here' — both
+      // arrive here, and neither is guessable from the form.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function removeWidget(widget) {
+    error = null; busy = widget.id
+    try {
+      board = await dashboards.service.action('removeWidget', board.id, { widgetId: widget.id })
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function resizeWidget(widget, next) {
+    error = null; busy = widget.id
+    try {
+      board = await dashboards.service.action('updateWidget', board.id, { widgetId: widget.id, cols: next })
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // The whole order, not one move: the service rewrites every position, which
+  // is what makes two people rearranging at once end up with one board rather
+  // than an interleaving neither chose.
+  async function moveWidget(widget, direction) {
+    const ids = board.widgets.map(w => w.id)
+    const at  = ids.indexOf(widget.id)
+    const to  = at + direction
+    if (at < 0 || to < 0 || to >= ids.length) return
+
+    ids.splice(to, 0, ...ids.splice(at, 1))
+    error = null; busy = widget.id
+    try {
+      board = await dashboards.service.action('reorder', board.id, { ids })
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  $: subjectOptions = chosen?.subject === 'server' ? serverOptions
+                    : chosen?.subject === 'app'    ? appOptions
+                    : []
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !board}
+  <div class="section-header"><h1>Dashboard</h1></div>
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error ?? 'Not found'}</div>
+  </article>
+{:else}
+  <div class="section-header">
+    <h1>{board.icon ?? ''} {board.name}</h1>
+    <span class="cluster">
+      {#if board.isPinned}<Badge tone="info">pinned</Badge>{/if}
+      <Button variant={editing ? 'outlined' : 'ghost'} id="edit-board"
+              onclick={() => editing = !editing}>{editing ? 'Done' : 'Edit layout'}</Button>
+      <Button variant="primary" id="add-widget" onclick={openPicker}>
+        {adding ? 'Cancel' : 'Add widget'}
+      </Button>
+    </span>
+  </div>
+
+  <p class="text-sm text-muted">
+    <a href="/dashboards/">← Dashboards</a>
+    {#if board.description} · {board.description}{/if}
+  </p>
+
+  {#if error}
+    <article class="alert danger" id="screen-error">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if adding}
+    <Card>
+      {#if !kinds.length}
+        <p class="text-sm text-muted">
+          The widget vocabulary could not be read, so nothing can be added right now.
+        </p>
+      {:else if !chosen}
+        <h2 class="h4">Choose a widget</h2>
+        <div class="tiles" style="--tile-min: 15rem" id="widget-kinds">
+          {#each kinds as spec}
+            <Button variant="outlined" onclick={() => choose(spec)}>
+              {spec.label} — {spec.description}
+            </Button>
+          {/each}
+        </div>
+      {:else}
+        <h2 class="h4">{chosen.label}</h2>
+        <p class="text-sm text-muted">{chosen.description}</p>
+        {#if chosen.needs}
+          <p class="text-xs text-muted">Not shown on this card: {chosen.needs}.</p>
+        {/if}
+
+        {#if chosen.subject}
+          <Select id="widget-subject"
+                  label={chosen.subject === 'server' ? 'Server' : 'App'}
+                  value={subject} options={subjectOptions}
+                  placeholder={chosen.required ? 'Pick one' : 'Everything in this workspace'}
+                  onchange={(e) => subject = e.target.value} />
+        {/if}
+
+        {#if chosen.kind === 'stat_counter'}
+          <Select id="widget-source" label="Count" value={config.source} options={sources}
+                  onchange={(e) => config = { ...config, source: e.target.value }} />
+          <Input id="widget-label" label="Label" value={config.label}
+                 hint="What this number is called on the card"
+                 oninput={(e) => config = { ...config, label: e.target.value }} />
+        {/if}
+
+        {#if chosen.kind === 'service_health'}
+          <!-- The adapter ids come from the same answer as the kinds, so this
+               cannot offer one the service would refuse. -->
+          <Select id="widget-service" label="Service" value={config.serviceId} options={adapters}
+                  placeholder="Pick one"
+                  onchange={(e) => config = { ...config, serviceId: e.target.value }} />
+        {/if}
+
+        <div class="cluster" role="group" aria-label="Width">
+          {#each [1, 2, 3] as n}
+            <Button variant={cols === n ? 'outlined' : 'ghost'} onclick={() => cols = n}>{n}/3</Button>
+          {/each}
+        </div>
+
+        <div class="cluster">
+          <Button variant="primary" id="confirm-widget" disabled={busy === 'add'} onclick={add}>
+            Add to dashboard
+          </Button>
+          <Button variant="ghost" onclick={() => chosen = null}>Back</Button>
+        </div>
+      {/if}
+    </Card>
+  {/if}
+
+  {#if !board.widgets.length}
+    <EmptyState title="No widgets yet">
+      Add cards to build the view you actually check in the morning.
+    </EmptyState>
+  {:else}
+    <!-- Thirds of a row, and the browser handles the wrapping. The mock packs
+         widgets into rows in JavaScript, which decides the layout at a width
+         nobody is looking at. -->
+    <div id="widget-grid"
+         style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md, 1rem)">
+      {#each board.widgets as widget}
+        <div style={`grid-column: span ${Math.min(widget.cols ?? 1, 3)}`}>
+          <Widget widget={widget} spec={specFor(widget.kind)} editing={editing}
+                  onremove={() => removeWidget(widget)}
+                  onresize={(n) => resizeWidget(widget, n)}
+                  onmove={(d) => moveWidget(widget, d)} />
+        </div>
+      {/each}
+    </div>
+  {/if}
+{/if}

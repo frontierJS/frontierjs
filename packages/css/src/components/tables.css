@@ -16,23 +16,23 @@
   border-spacing:  0;
   overflow:        hidden;
   font-family:     var(--font-primary);
-  font-size:       14px;
+  font-size:       var(--text-md);
   color:           var(--ink);
 }
 
 .table th {
   background:     var(--table-head-bg);
   color:          var(--ink-mute);
-  font-size:      11px;
+  font-size:      var(--text-2xs);
   font-weight:    600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   text-align:     left;
-  padding:        10px 14px;
+  padding:        var(--space-md) var(--space-xl);
 }
 
 .table td {
-  padding:    10px 14px;
+  padding:    var(--space-md) var(--space-xl);
   text-align: left;
 }
 
@@ -75,8 +75,8 @@
 
 .table.compact th,
 .table.compact td {
-  padding:   6px 10px;
-  font-size: 13px;
+  padding:   var(--space-xs) var(--space-md);
+  font-size: var(--text-sm);
 }
 
 /*
@@ -131,6 +131,6 @@
 /* ── Actions column helper ────────────────────────────────────── */
 .table-actions {
   display:         flex;
-  gap:             6px;
+  gap:             var(--space-xs);
   justify-content: flex-end;
 }

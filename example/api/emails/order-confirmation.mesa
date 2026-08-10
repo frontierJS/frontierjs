@@ -12,7 +12,7 @@
   // function and the caller applies it to the same object.
   //
   // A `<script module>` block runs once at import and its named exports are
-  // importable — the same rule that makes `src/resources/shop.mesa` work
+  // importable — the same rule that makes `src/resources/Order.mesa` work
   // (Invariant 18). It runs BEFORE props exist, which is exactly why this is a
   // function rather than a template literal.
   export const subject = (d) => `Your order ${d.reference} is confirmed`

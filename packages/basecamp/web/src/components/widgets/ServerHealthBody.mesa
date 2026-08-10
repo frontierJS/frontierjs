@@ -1,0 +1,66 @@
+<script>
+  // server_health — CPU, memory and disk for one server.
+  //
+  // `Server.health` is what the agent last reported, stamped by
+  // `servers.heartbeat`. It is a SNAPSHOT: there is nowhere a second reading is
+  // kept, so the bars are the last thing the machine said and the mock's
+  // sparkline is not buildable. The frame says so — `needs` in the vocabulary.
+  //
+  // A server with no `health` has not checked in. That is a state worth naming
+  // rather than three bars at zero, which reads as a machine at rest.
+  import { servers } from '../../resources/Server.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Bar from '@frontierjs/ui/components/display/Bar.mesa'
+
+  export let widget = null
+
+  let server  = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null
+    if (!widget?.serverId) { loading = false; return }
+    try {
+      server = await servers.service.get(widget.serverId)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(onWrite(servers.service, load))
+
+  // Only the three the mock draws, and only when the agent reported a number.
+  // Anything else the agent sends is its own vocabulary and belongs on the
+  // server's screen, not on a card three inches wide.
+  const READINGS = [
+    { key: 'cpu',    label: 'CPU'    },
+    { key: 'memory', label: 'Memory' },
+    { key: 'disk',   label: 'Disk'   },
+  ]
+  $: bars = READINGS
+    .map(r => ({ ...r, value: Number(server?.health?.[r.key]) }))
+    .filter(r => Number.isFinite(r.value))
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else if !server}
+  <p class="text-sm text-muted">This widget points at a server that is no longer here.</p>
+{:else if !bars.length}
+  <p class="text-sm text-muted">
+    No agent reading for {server.name} — last heartbeat {when(server.lastHeartbeatAt)}.
+  </p>
+{:else}
+  <p class="text-sm text-muted">{server.name} · {when(server.lastHeartbeatAt)}</p>
+  {#each bars as bar}
+    <Bar label={bar.label} value={bar.value} unit="%" />
+  {/each}
+{/if}

@@ -4423,6 +4423,94 @@ describe('snippet-style blocks — mountedBlock', () => {
 // When {#if} flips false, elements with {@attach entrance({out})} should stay
 // in the DOM until the out animation Promise resolves, then be removed.
 
+// ── §28a  an attachment runs on a CONNECTED element ───────────────────────────
+//
+// VISION §10.6 says `fn(el)` is called when the element MOUNTS. It used to be
+// called when the element was BUILT, which is before anything inserts it — so
+// every attachment in the repo saw `isConnected === false` and `parentNode ===
+// null`. Focus is a no-op there, a rect is all zeros, and worst of all
+// `el.animate(..., { fill: 'forwards' })` returns an animation that never
+// starts: the element paints at keyframe 0 for good. `@frontierjs/ui`'s
+// CommandPalette was a full-screen invisible backdrop for exactly this reason.
+
+describe('{@attach} — the element is in the document', () => {
+  it('sees a connected element', async () => {
+    const host = div()
+    document.body.appendChild(host)
+    const anchor = document.createComment('')
+    host.appendChild(anchor)
+
+    const seen = []
+    const el = div()
+    const enterBlock = makeBlock(
+      (() => { const f = document.createDocumentFragment(); f.appendChild(el); return f })(),
+      ($parentElement) => {
+        const node = $parentElement.nodeType === 11 ? $parentElement.firstChild : $parentElement
+        attach(node, () => (n) => { seen.push({ connected: n.isConnected, hasParent: !!n.parentNode }) })
+      }
+    )
+    ifBlock(anchor, () => 0, [enterBlock])
+    flushSync()
+    await tick()
+
+    expect(seen).toEqual([{ connected: true, hasParent: true }])
+    host.remove()
+  })
+
+  it('an entrance animation actually starts', async () => {
+    const host = div()
+    document.body.appendChild(host)
+    const anchor = document.createComment('')
+    host.appendChild(anchor)
+
+    // happy-dom has no WAAPI, so record what el.animate() would have been given
+    // and — the part that matters — whether the element was connected when it
+    // was called. A disconnected target is what produced startTime: null.
+    // Stubbed on the PROTOTYPE: the block clones its template, so a stub on the
+    // element we built never reaches the node the attachment receives.
+    const calls = []
+    const proto = window.HTMLElement.prototype
+    const had = Object.prototype.hasOwnProperty.call(proto, 'animate')
+    const prev = proto.animate
+    proto.animate = function (frames, opts) {
+      calls.push({ connected: this.isConnected, frames, opts })
+      return { finished: Promise.resolve() }
+    }
+    const el = div()
+
+    const fade = entrance({
+      in: (node) => node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 100, fill: 'forwards' }),
+    })
+
+    const enterBlock = makeBlock(
+      (() => { const f = document.createDocumentFragment(); f.appendChild(el); return f })(),
+      ($parentElement) => {
+        const node = $parentElement.nodeType === 11 ? $parentElement.firstChild : $parentElement
+        attach(node, () => fade)
+      }
+    )
+    ifBlock(anchor, () => 0, [enterBlock])
+    flushSync()
+    await tick()
+
+    if (had) proto.animate = prev
+    else delete proto.animate
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].connected).toBe(true)
+    host.remove()
+  })
+
+  it('runs synchronously when the element is already connected', () => {
+    const host = div()
+    document.body.appendChild(host)
+    let ran = false
+    attach(host, () => () => { ran = true })
+    expect(ran).toBe(true)     // no tick awaited — nothing that worked before is reordered
+    host.remove()
+  })
+})
+
 describe('entrance() exit gate', () => {
   it('element stays in DOM while exit Promise is pending', async () => {
     const container = div()
@@ -4456,6 +4544,11 @@ describe('entrance() exit gate', () => {
     flushSync()
 
     expect(container.querySelector('.target')).toBeTruthy()
+    // An attachment runs when the element MOUNTS (VISION §10.6), which for an
+    // element built detached is one microtask later — the same queue $onMount
+    // uses. Running it at build time is what left every entrance animation
+    // stuck at keyframe 0: el.animate() on a disconnected node never starts.
+    await tick()
     expect(container.querySelector('.target').dataset.animated).toBe('in')
 
     // Flip off — exit animation starts

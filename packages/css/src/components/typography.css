@@ -1,25 +1,46 @@
 /*
  * typography.css
- * Heading scale (element + class pairs).
- * Text color utilities.
+ * Heading scale (element + class pairs), and the Link term.
+ *
+ * Code, <pre> and <kbd> are in code.css, with the syntax highlighting
+ * theme — everything about a code block in one file.
  */
 
 /* ── Heading scale ────────────────────────────────────────────── */
 h1, h2, h3, h4, h5, h6,
 .h1, .h2, .h3, .h4, .h5, .h6 {
-  font-family: var(--font-primary);
+  /*
+   * Fallback at the use site, not an alias declared on :root — a
+   * `--font-display: var(--font-primary)` token would substitute once
+   * against :root and then inherit past a scoped --font-primary override.
+   * Unset, this is --font-primary and an app with one face sees nothing.
+   */
+  font-family: var(--font-display, var(--font-primary));
   color:       var(--ink);
   margin:      0;
-  line-height: 1.2;
+  line-height: var(--leading-heading);
+  /*
+   * Even the lines rather than filling each one, so a two-line heading does
+   * not leave a single orphaned word under a full line. The browser caps
+   * this at a handful of lines, which is why it is on headings and not on
+   * body copy. The package styles no `p` — it is not classless — so the
+   * `pretty` half of this belongs to the two places prose does live here:
+   * alert-content and empty-text.
+   */
+  text-wrap:   balance;
 }
 
-h1, .h1 { font-size: 2.25rem;  font-weight: 700; letter-spacing: -0.02em;  line-height: 1.1; }
-h2, .h2 { font-size: 1.75rem;  font-weight: 700; letter-spacing: -0.015em; line-height: 1.2; }
-h3, .h3 { font-size: 1.375rem; font-weight: 600; }
-h4, .h4 { font-size: 1.125rem; font-weight: 600; }
-h5, .h5 { font-size: 1rem;     font-weight: 600; }
+/*
+ * The rungs are --text-* in tokens.css, shared with the `.text-*` utilities,
+ * which is why h4 and .text-xl are one number. Retune the token, not this.
+ */
+h1, .h1 { font-size: var(--text-4xl); font-weight: 700; letter-spacing: -0.02em;  line-height: var(--leading-display); }
+h2, .h2 { font-size: var(--text-3xl); font-weight: 700; letter-spacing: -0.015em; line-height: var(--leading-heading); }
+h3, .h3 { font-size: var(--text-2xl); font-weight: 600; }
+h4, .h4 { font-size: var(--text-xl);  font-weight: 600; }
+h5, .h5 { font-size: var(--text-lg);  font-weight: 600; }
 h6, .h6 {
-  font-size:      0.875rem;
+  font-size:      var(--text-md);
   font-weight:    600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -43,95 +64,6 @@ h6, .h6 {
    around what is otherwise a square run of inline text. */
 .link:focus-visible {
   border-radius: 2px;
-}
-
-/*
- * ── Kbd — a key the user is meant to press ────────────────────────
- *
- *   Press <kbd>⌘</kbd><kbd>K</kbd> to search
- *   <kbd class="kbd">Esc</kbd>
- *
- * Styled on the element as well as the class, because <kbd> already means
- * exactly this and the class exists only for markup that cannot use it.
- *
- * The heavier bottom border is the whole "keycap" effect — a box-shadow
- * would be more literal but would not survive a dark theme, where the
- * shadow disappears and the cap flattens.
- */
-kbd, .kbd {
-  display:         inline-flex;
-  align-items:     center;
-  justify-content: center;
-
-  min-inline-size: 1.5em;
-  padding:         0.125em 0.375em;
-
-  font-family: var(--font-mono);
-  /* em, so a kbd inside small print shrinks with it. */
-  font-size:   0.8125em;
-  font-weight: 500;
-  line-height: 1.4;
-  color:       var(--ink);
-
-  background:              var(--surface-sunken);
-  border:                  1px solid var(--rule-strong);
-  border-block-end-width:  2px;
-  border-radius:           4px;
-}
-
-/*
- * ── Code ──────────────────────────────────────────────────────────
- *
- *   an inline <code>identifier</code>
- *
- *   <pre class="code"><code>bun run test</code></pre>
- *
- * <pre> is what makes a code block preserve whitespace; the class only
- * dresses it. The nested <code> is not optional decoration either — it is
- * what says "this is code" rather than "this is preformatted text", and
- * screen readers and search engines both use the distinction.
- *
- * A code block must scroll in its own box. Without `overflow-x`, one long
- * line pushes its grid track wider than the viewport and takes the whole
- * page sideways with it — the same failure `.table-wrap` exists to
- * prevent, and the reason `.screen` sets min-inline-size: 0.
- */
-code, .code-inline {
-  font-family: var(--font-mono);
-  font-size:   0.875em;
-  padding:     0.125em 0.375em;
-  border-radius: 4px;
-  background:  color-mix(in srgb, var(--ink) 6%, transparent);
-  color:       var(--ink);
-}
-
-.code {
-  display:    block;
-  overflow-x: auto;
-  margin:     0;
-  padding:    0.875rem 1rem;
-
-  background:    var(--surface-sunken);
-  border:        1px solid var(--rule);
-  border-radius: var(--card-radius);
-
-  font-family: var(--font-mono);
-  font-size:   0.8125rem;
-  line-height: 1.6;
-  color:       var(--ink);
-
-  /* Long lines scroll; they do not silently wrap and renumber themselves. */
-  white-space: pre;
-  tab-size:    2;
-}
-
-/* Inside a block the inline treatment would double the background. */
-.code > code,
-.code .code-inline {
-  padding:       0;
-  background:    none;
-  border-radius: 0;
-  font-size:     inherit;
 }
 
 /*

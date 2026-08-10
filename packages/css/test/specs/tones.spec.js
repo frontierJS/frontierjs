@@ -199,3 +199,90 @@ test('tone: an unknown tone works on every consumer with no component edit', fun
     cleanup();
   });
 });
+
+/* ── The --tint-* ramp ────────────────────────────────────────────── */
+
+test('tint: an app gets the same three colors the components use', function () {
+  /*
+   * The point of the ramp. Before it, 10% / 30% / 55% lived only inside
+   * surface.css, so an app that wanted a strip tinted like a toned Card had
+   * to re-derive the numbers by hand — and then keep them equal forever.
+   *
+   * This asserts the two are the same color, not that they are "close".
+   */
+  var card = el('<article class="card danger">ref</article>');
+  var want = {
+    bg: style(card, 'background-color'),
+    border: style(card, 'border-top-color'),
+    color: style(card, 'color'),
+  };
+  cleanup();
+
+  var mine = el(
+    '<div class="danger" style="' +
+      'background: var(--tint-surface); ' +
+      'border: 1px solid var(--tint-rule); ' +
+      'color: var(--tint-ink)">app</div>'
+  );
+
+  assert.sameColor(style(mine, 'background-color'), want.bg, '--tint-surface != the Card fill');
+  assert.sameColor(style(mine, 'border-top-color'), want.border, '--tint-rule != the Card border');
+  assert.sameColor(style(mine, 'color'), want.color, '--tint-ink != the Card text');
+});
+
+test('tint: unset on an untoned element, so var() fallbacks fire', function () {
+  /*
+   * --bg-mix is guaranteed-invalid when no tone is present, which makes
+   * each color-mix() invalid at computed-value time and leaves the token
+   * unset. If a future edit gave --tint-* an initial-value, every untoned
+   * element would silently take a tint of nothing instead of its fallback,
+   * and every plain Card would change color.
+   */
+  var plain = el('<div style="background: var(--tint-surface, rgb(1, 2, 3))">x</div>');
+  assert.sameColor(style(plain, 'background-color'), 'rgb(1, 2, 3)', '--tint-surface was set without a tone');
+});
+
+test('tint: does not leak into an untoned descendant', function () {
+  /*
+   * The bug tones.css registers --bg-mix `inherits: false` to prevent, one
+   * level up. A tint that inherited would paint an untoned child inside a
+   * danger Card red — the same red-on-red the tone system already fixed.
+   */
+  var parent = el(
+    '<div class="danger"><div id="kid" style="background: var(--tint-surface, rgb(1, 2, 3))">x</div></div>'
+  );
+  var kid = parent.querySelector('#kid');
+  assert.sameColor(style(kid, 'background-color'), 'rgb(1, 2, 3)', 'the tint inherited into an untoned child');
+});
+
+test('tint: follows the theme, not white and black', function () {
+  /*
+   * Why this is a tint ramp and not lighten-N/darken-N. The steps mix into
+   * --surface and --ink, which a theme redefines, so one set of
+   * percentages is right in light and dark alike. Mixing toward white
+   * would be a light-theme assumption wearing a neutral name.
+   */
+  var light = el('<div class="danger" style="background: var(--tint-surface)">x</div>');
+  var lightBg = style(light, 'background-color');
+  cleanup();
+
+  var dark = el('<div class="theme-dark"><div id="d" class="danger" style="background: var(--tint-surface)">x</div></div>');
+  var darkBg = style(dark.querySelector('#d'), 'background-color');
+
+  assert.differentColor(darkBg, lightBg, '--tint-surface ignored the theme — it is mixing toward white');
+});
+
+test('tint: surface.css reads the ramp rather than restating it', function () {
+  /*
+   * The structural half. If someone re-inlines `color-mix(… 10% …)` into
+   * surface.css the two can drift, and the drift is invisible until an app
+   * puts its own tinted strip next to a Card. Overriding the ramp on an
+   * element must therefore move the Card that sits on it.
+   */
+  var card = el('<article class="card danger" style="--tint-surface: rgb(4, 5, 6)">x</article>');
+  assert.sameColor(
+    style(card, 'background-color'),
+    'rgb(4, 5, 6)',
+    'a Card ignored --tint-surface — surface.css is restating the percentages'
+  );
+});

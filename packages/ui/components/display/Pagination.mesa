@@ -3,8 +3,8 @@
   // Page controls for tables and lists. Shows a sliding window of pages
   // with ellipsis compression. Bindable currentPage.
   //
-  // `.pagination` is the nav, `.page` is each control (it is in the chip
-  // lineage, so it gets the same auto-contrast as a button), and `.page-gap`
+  // `.pagination` is the nav, `.pagination-link` is each control (it is in the chip
+  // lineage, so it gets the same auto-contrast as a button), and `.pagination-gap`
   // is the ellipsis. Current page comes from aria-current="page".
   //
   // Usage:
@@ -69,7 +69,7 @@
     <!-- Previous -->
     <button
       type="button"
-      class="page"
+      class="pagination-link"
       disabled={page <= 1}
       aria-label="Previous page"
       on:click={() => goTo(page - 1)}
@@ -84,11 +84,11 @@
     {:else}
       {#each pages as p (p + '-' + page)}
         {#if p === '...'}
-          <span class="page-gap" aria-hidden="true">…</span>
+          <span class="pagination-gap" aria-hidden="true">…</span>
         {:else}
           <button
             type="button"
-            class="page"
+            class="pagination-link"
             aria-label="Page {p}"
             aria-current={p === page ? 'page' : null}
             on:click={() => goTo(p)}
@@ -100,7 +100,7 @@
     <!-- Next -->
     <button
       type="button"
-      class="page"
+      class="pagination-link"
       disabled={page >= pageCount}
       aria-label="Next page"
       on:click={() => goTo(page + 1)}

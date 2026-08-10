@@ -3,7 +3,7 @@ title: Jobs
 ---
 <script>
   import { session } from '../../session.js'
-  import { jobs } from '../../resources/jobs.mesa'
+  import { jobs } from '../../resources/Job.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   $: session.workspaceId

@@ -22,14 +22,23 @@
 // ============================================================
 
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, join, resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const args     = process.argv.slice(2)
-const baseline = readNumberFlag(args, '--baseline') ?? 0
-const quiet    = args.includes('--quiet')
+const args   = process.argv.slice(2)
+const quiet  = args.includes('--quiet')
+const update = args.includes('--update')
 
 const pkgDir  = process.cwd()
+
+// The ceiling lives in scripts/typecheck-baselines.json, keyed by package
+// directory name — one file so that raising a number shows up in a diff as a
+// raised number, which is what Invariant 14 is about. `--baseline N` still
+// overrides, for a one-off check.
+const BASELINES = join(dirname(fileURLToPath(import.meta.url)), 'typecheck-baselines.json')
+const pkgName   = basename(pkgDir)
+const baseline  = readNumberFlag(args, '--baseline') ?? readBaseline(pkgName)
 const tscPath = findTsc(pkgDir)
 
 if (!tscPath) {
@@ -99,15 +108,37 @@ if (ownCount > baseline) {
 }
 
 if (baseline > 0 && ownCount < baseline) {
-  console.log(
-    `\n[typecheck] ${ownCount} error(s), below the baseline of ${baseline}. ` +
-    `Lower the baseline in package.json to lock the improvement in.`
-  )
+  if (update) {
+    writeBaseline(pkgName, ownCount)
+    console.log(`\n[typecheck] ${ownCount} error(s) — baseline lowered from ${baseline} in scripts/typecheck-baselines.json.`)
+  } else {
+    console.log(
+      `\n[typecheck] ${ownCount} error(s), below the baseline of ${baseline}. ` +
+      `Run with --update to lock the improvement in.`
+    )
+  }
 } else if (ownCount === 0) {
   console.log('[typecheck] clean')
 }
 
 // ─── helpers ────────────────────────────────────────────────
+
+function loadBaselines() {
+  try { return JSON.parse(readFileSync(BASELINES, 'utf8')) } catch { return {} }
+}
+
+function readBaseline(name) {
+  const value = loadBaselines()[name]
+  return Number.isFinite(value) ? value : 0
+}
+
+// Only ever writes a LOWER number — the ratchet is the point.
+function writeBaseline(name, count) {
+  const all = loadBaselines()
+  if (count === 0) delete all[name]
+  else all[name] = count
+  writeFileSync(BASELINES, `${JSON.stringify(all, null, 2)}\n`)
+}
 
 function readNumberFlag(argv, name) {
   const i = argv.indexOf(name)

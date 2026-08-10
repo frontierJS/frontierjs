@@ -14,6 +14,16 @@
  *   </details>
  *
  * The chevron is a CSS-drawn caret that rotates on open — no icon needed.
+ *
+ * ── Opening is animated, and that used to be impossible ───────────
+ *
+ * `height: 0` to `height: auto` is the animation CSS could not do for
+ * twenty years, which is why every accordion in every framework measures
+ * scrollHeight in JavaScript and writes a pixel value back. Two features
+ * remove all of it: `interpolate-size: allow-keywords` lets a keyword be
+ * interpolated, and `::details-content` gives the open panel a box to put
+ * it on. `content-visibility` rides along as a discrete transition so the
+ * content is not hidden until the collapse has finished.
  */
 
 .disclosure {
@@ -26,8 +36,8 @@
   display:         flex;
   align-items:     center;
   justify-content: space-between;
-  gap:             0.5rem;
-  padding:         0.625rem 0.875rem;
+  gap:             var(--space-sm);
+  padding:         var(--space-md) var(--space-xl);
   font-weight:     600;
   cursor:          pointer;
   user-select:     none;
@@ -40,6 +50,23 @@
    bordered box edge to edge, so an outward ring would be clipped. */
 .disclosure-summary:hover {
   background: var(--surface-sunken);
+}
+
+/*
+ * The panel. `interpolate-size` is declared at the root in tokens.css —
+ * it inherits, and a keyword animation needs it on the element being
+ * animated, not on the rule that animates it.
+ */
+.disclosure::details-content {
+  block-size:         0;
+  overflow:           hidden;
+  transition:
+    block-size         var(--overlay-time, 160ms) var(--overlay-ease, ease),
+    content-visibility var(--overlay-time, 160ms) allow-discrete;
+}
+
+.disclosure[open]::details-content {
+  block-size: auto;
 }
 
 /* CSS caret — points right when collapsed, down when open */
@@ -58,7 +85,7 @@
 }
 
 .disclosure-body {
-  padding:    0.875rem;
+  padding:    var(--space-xl);
   border-top: 1px solid var(--rule);
 }
 

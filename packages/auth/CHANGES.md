@@ -1,5 +1,75 @@
 # Changes — @frontierjs/auth
 
+## 2026-08-10 — an app's own User columns can reach the session
+
+`createLitestoneAuth(db, { sessionFields })`. Additive; 83 tests unchanged and
+green, `example/` 37/37 unchanged.
+
+**The gap.** This package OWNS `model User` and every app that uses it EXTENDS
+that model — basecamp adds `kind`, `status`, `isSystemAdmin` and `scopes`. Two
+of those decide what a request may do, and there was no way to get either onto
+the `SessionContext`. The only route open to an app was to wrap
+`verifySession` and re-read the user: a **third query on the hottest path in the
+app, forever**, for a row `toContext()` had just fetched.
+
+`sessionFields(user)` is called from `toContext()`, which is the single place
+every issued session is built — so one hook covers login, `verifySession`, an
+API key and `createUser` alike, rather than four call sites an app has to know
+about.
+
+Two kinds of thing belong in it. The **standing** `sessionGateLevel()` grades on
+(`isAdmin` / `isOwner` / `isSystemAdmin` / `activatedAt` / `verifiedAt`), which
+is how an app whose privileged bit is its own column reaches `@@gate` at all;
+and the app's own keys, which travel on the session untouched — the framework
+reads none of them and the app's hooks read all of them.
+
+It is spread **last**, so an app that states a field wins. The other order would
+mean adding any key to `toContext` silently overrides what an app asked for,
+which is a breaking change nobody would see. The doc comment says not to restate
+the caller identity through it; that is not the app's to decide.
+
+Found building basecamp's hub tier, which needs `isSystemAdmin` on every request
+to grade a caller and `status` to refuse a suspended one.
+
+## 2026-08-09 — an API key can now be used
+
+83 tests (was 74). Found building basecamp's `/api-keys/` screen: the whole
+API-key half of `IAuth` was implemented, tested, and unreachable.
+
+**An issued key authenticated nothing** (`FJS-134`). Junction's HTTP transport
+resolves a Bearer token through `auth.verifySession()` and calls `verifyApiKey`
+nowhere — the better-auth provider knows that and falls through, this one did
+not. `createApiKey()` returned a token that was anonymous on every request, and
+the failure looked like a bad token rather than a missing code path.
+`verifySession` now routes on the `fjs_` prefix (this package generates it, so
+a machine request costs no wasted session lookup) and falls back for anything
+that missed.
+
+**A key's scopes were stored and then dropped** (`FJS-135`). `createApiKey`
+writes them into `Credential.scope`; `verifyApiKey` built its answer from the
+USER row, which knows nothing about keys, so `SessionContext.scopes` was always
+`undefined`. A key issued `servers:read` had the full standing of the person
+who made it. The session now carries `scopes` — absent, not `[]`, when none
+were issued, the same absent-≠-null rule `verifiedAt` follows — and a new
+`credentialId`, without which an app cannot tell WHICH of a user's keys made a
+call.
+
+**`revokeApiKey` revoked nothing on any app with uuid credential ids**
+(`FJS-136`). It coerced `Number(keyId)` because `schema.ts` ships
+`Credential.id Int` — but the fragments are a starting point apps edit, and
+`Number(uuid)` is `NaN`, which matches no row and throws nothing. Revoke
+reported success and the key kept working. The coercion is gone, the delete is
+filtered on `type: 'apiKey'` so a wrong id cannot take a password with it, and
+a revoke that matches nothing throws.
+
+### One behaviour change: verifying is quiet, issuing is loud
+
+`verifyApiKey` used to throw `AuthConfigError` when no `encryptionKey` was
+configured. It answers `null` now. It runs on attacker-supplied input on every
+request — and `verifySession` falls through to it — so throwing made a 500
+anybody could trigger with a Bearer header, in an app that may have no API keys
+at all. `createApiKey` still throws, which is where a developer is standing.
+
 ## 2026-08-06 — `cookieAuth: true` actually authenticates
 
 74 tests (was 70).

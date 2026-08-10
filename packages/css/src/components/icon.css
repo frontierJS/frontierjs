@@ -76,7 +76,7 @@
   .navlink,
   .navlist-label,
   .field-addon,
-  .page,
+  .pagination-link,
   .tab,
   .link,
   .item,
@@ -104,4 +104,13 @@
  * now they are one declaration each, and the rule above is untouched.
  */
 .pill-close { --icon-size: 0.85em; }
-.empty-icon { --icon-size: 1em; }
+
+/*
+ * The one absolute size here. An empty state's glyph tracks no text beside
+ * it, because there is none, so an `em` ratio would just point at whatever
+ * font-size .empty-icon happened to carry. feedback.css reads this back for
+ * `font-size`, so a text glyph and an <svg> come out the same size from one
+ * number. Not a --text-* rung: 32px is not on the type ladder, and putting
+ * it there would imply an app could reach it with a class.
+ */
+.empty-icon { --icon-size: 2rem; }

@@ -1,0 +1,62 @@
+<script>
+  // app_status — one app: what it is doing and what was last released to it.
+  //
+  // `apps.get` already answers the app with its recent deployments, so this is
+  // one request rather than two. What the mock also draws — uptime, CPU, a
+  // memory figure — is per-container telemetry nothing here collects; the app's
+  // own `status` column is real and is what this card shows.
+  import { apps } from '../../resources/App.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { onWrite } from './live.js'
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+
+  export let widget = null
+
+  let app     = null
+  let error   = null
+  let loading = true
+
+  const TONE = {
+    running: 'success', deploying: 'info', starting: 'info',
+    stopping: 'warning', stopped: 'muted', error: 'danger', unknown: 'muted',
+  }
+
+  async function load() {
+    error = null
+    if (!widget?.appId) { loading = false; return }
+    try {
+      app = await apps.service.get(widget.appId)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $onDestroy(onWrite(apps.service, load))
+
+  $: last = app?.recent_deployments?.[0] ?? null
+  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+</script>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if error}
+  <p class="text-sm">{error}</p>
+{:else if !app}
+  <p class="text-sm text-muted">This widget points at an app that is no longer here.</p>
+{:else}
+  <div class="cluster">
+    <Badge tone={TONE[app.status] ?? 'muted'}>{app.status}</Badge>
+    <span class="text-sm text-muted">{app.environment?.name ?? ''}</span>
+  </div>
+  <p class="text-sm">
+    <a href={`/apps/${app.id}/`}>{app.name}</a>
+  </p>
+  {#if last}
+    <p class="text-xs text-muted">Last release {last.status} · {when(last.queuedAt)}</p>
+  {:else}
+    <p class="text-xs text-muted">Never deployed.</p>
+  {/if}
+{/if}

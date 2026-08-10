@@ -136,18 +136,68 @@ Computed aggregates from related models, declared in the schema and evaluated at
 
 ```prisma
 model Account {
-  id         Int  @id
+  id         Int      @id
   name       String
-  userCount  Int  @from(users, count: true)
-  revenue    Float     @from(orders, sum: amount)
-  lastOrder  DateTime @from(orders, last: true)
-  hasOverdue Boolean  @from(invoices, exists: true, where: "due_at < date('now') AND paid = 0")
+  orders     Order[]                                   // the relation @from reads
+  orderCount Int      @from(Order, count: true)
+  revenue    Float    @from(Order, sum: amount)
+  biggest    Float    @from(Order, max: amount)
+  lastOrder  Order?   @from(Order, last: true)         // the whole row, not a column
+  hasBig     Boolean  @from(Order, exists: true, where: "amount > 100")
+}
+
+model Order {
+  id        Int     @id
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id])
+  amount    Float
 }
 ```
 
-`@from` fields appear automatically in query results — no extra include needed. They're read-only and not stored in SQLite.
+Two things trip people up, and both are validation errors rather than silent wrong answers:
 
-Supported: `count`, `sum`, `max`, `min`, `first`, `last`, `exists`. All accept an optional `where` SQL fragment.
+**The first argument is the target MODEL name, PascalCase** — `@from(Order, …)`, not the
+name of the relation field. `@from(orders, …)` fails with *"unknown model 'orders'"*.
+
+**`first:`/`last:` return the whole related row**, so the field is typed as the target
+model — `Order?`, not `DateTime`. Reach into it in application code (`account.lastOrder.createdAt`).
+
+`@from` fields appear automatically in query results — no extra `include` needed. They are
+read-only, are not stored in SQLite, and disable the `findUnique` fast path (see `performance.md`).
+
+The declared relation is what `@from` joins on, and a schema without one is a parse error:
+
+```
+Model 'Account', field 'orderCount': @from(Order, ...) — no relation from 'Order' back to
+'Account'. Declare 'Order.account Account @relation(fields: [...], references: [...])'
+```
+
+The correlation is inferred from the target's `@relation`, so it follows `references:` rather
+than assuming the primary key — an FK pointing at a non-PK `@unique` column works.
+
+### Operations
+
+Exactly one is required.
+
+| Operation | Field type must be | Result |
+| --- | --- | --- |
+| `count: true` | `Int` | `COUNT(*)`, `0` when there are no rows |
+| `sum: field` | `Int` / `Float` | `COALESCE(SUM(field), 0)` — `0`, never null |
+| `max: field` / `min: field` | matches the target field | `null` when there are no rows |
+| `first: true` / `last: true` | the target model, e.g. `Order?` | the whole row, or `null` |
+| `exists: true` | `Boolean` | `true` / `false` |
+
+Options: `where: "sql"` filters the rows considered; `orderBy: field` picks what `first`/`last`
+order by (default is `id`).
+
+Against the schema above, with one account holding orders of 50, 120 and 30 and a second holding none:
+
+```js
+{ name: 'Acme',  orderCount: 3, revenue: 200, biggest: 120,  hasBig: true,  lastOrder: { id: 3, accountId: 1, amount: 30 } }
+{ name: 'Empty', orderCount: 0, revenue: 0,   biggest: null, hasBig: false, lastOrder: null }
+```
+
+Note the two different empties: `sum` coalesces to `0`, `max` stays `null`.
 
 ## Recursive tree queries
 

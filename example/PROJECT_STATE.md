@@ -12,9 +12,9 @@ Everything below was verified by running it. Where it was not, it says so.
 | | |
 | --- | --- |
 | **Runs** | yes — `bun run api` + `bun run web`, two terminals |
-| **Verified** | **94 assertions across five drives, all passing, twice consecutively against one database**: `verify` **37/37** (dev *and* production build), `verify:ui` **26/26**, `verify:live` **14/14**, `verify:jobs` **8/8**, `verify:notify` **9/9**, 0 console errors, dev server **and** production build. **Repeatable** as of 2026-08-06 — the seeder restores what the drive consumes (was single-shot, `FJS-080`) |
-| **Builds** | yes — `bun run build` → `web/dist/client/` + robots.txt + sitemap (5 URLs). The built page is now driven too; until 2026-08-04 it loaded no JavaScript at all |
-| **Phase** | 1 (spine), **all of 2** (state machine + live updates), **deferred work** (caravan), **outbound + notifications** (conduit, notifications), the `@frontierjs/ui` re-skin, and the four screens that drive the kit's behavioural components |
+| **Verified** | **116 assertions across six drives, all passing, twice consecutively against one database**: `verify` **37/37** (dev *and* production build), `verify:ui` **27/27**, `verify:live` **14/14**, `verify:jobs` **8/8**, `verify:notify` **9/9**, `verify:public` **21/21** (the prerendered site, in the built output), 0 console errors. **Repeatable** as of 2026-08-06 — the seeder restores what the drive consumes (was single-shot, `FJS-080`) |
+| **Builds** | yes — `bun run build` → `web/dist/client/` + robots.txt + sitemap (5 URLs). The built page is now driven too; until 2026-08-04 it loaded no JavaScript at all. `bun run build:public` → `web/dist/public/`, the prerendered public site, driven by `verify:public` |
+| **Phase** | 1 (spine), **all of 2** (state machine + live updates), **deferred work** (caravan), **outbound + notifications** (conduit, notifications), **static + islands** (the public catalogue, proven interactive in the built output), the `@frontierjs/ui` re-skin, and the four screens that drive the kit's behavioural components |
 | **Committed** | **no.** `example/` is untracked; the package changes it drove are unstaged |
 
 The app is a shop: `Product`, `Customer`, `Order`, one `db/schema.lite`, real
@@ -128,12 +128,18 @@ example/
     │   ├── verify-ui.mjs   ← the KIT drive. 26 — overlays, keyboard, stores
     │   ├── verify-live.mjs ← the REAL-TIME drive. 14 — a watcher tab that never acts
     │   ├── verify-jobs.mjs ← the DEFERRED-WORK drive. 8 — no browser at all
-    │   ├── verify-notify.mjs ← the OUTBOUND drive. 8 — mail at a real server
+    │   ├── verify-notify.mjs ← the OUTBOUND drive. 9 — mail at a real server
+    │   ├── verify-public.mjs ← the PRERENDERED drive. 21 — the BUILT static
+    │   │                        site: markers, hydration, lazy chunks, no gated
+    │   │                        data in the file
     │   ├── preview.mjs     ← serves dist/ with the dev server's proxies
     │   └── verify-build.mjs
     └── src/
         ├── prefs.js              ← browser preferences; the only non-model state
-        ├── resources/shop.mesa   ← .mesa, invariant 18
+        ├── public-site/          ← the PUBLIC prerendered site (its own routesDir)
+        │   ├── catalog/           ← index.mesa + index.meta.js — load() at BUILD time
+        │   └── islands/           ← CatalogList (client:load), LiveStock (client:visible)
+        ├── resources/Order.mesa  ← .mesa, invariants 18 + 19
         └── routes/               ← index, orders/{index,create,[id]}, products,
                                     customers, settings
 ```
@@ -141,7 +147,8 @@ example/
 `bun run api` (:3600) · `bun run web` (:5274) · `bun run verify` · `bun run verify:ui` ·
 `bun run verify:live` · `bun run verify:jobs` · `bun run verify:notify` ·
 `bun run email:preview` ·
-`bun run build` · `bun run verify:build` · `bun run reset`
+`bun run build` · `bun run verify:build` · `bun run build:public` ·
+`bun run verify:public` · `bun run reset`
 
 Sign in: `sam@shop.test` (level 4) or `alex@shop.test` (level 5), password
 `correct-horse-battery`. The header buttons do it.
@@ -150,8 +157,18 @@ Sign in: `sam@shop.test` (level 4) or `alex@shop.test` (level 5), password
 
 ## Framework changes this app forced
 
-It found twenty-eight real defects. All fixed, all with tests, and only one of
+It found thirty-two real defects. All fixed, all with tests, and only one of
 them in the example itself — which is the point of it.
+
+The fourth wave came from prerendering the public catalogue and giving it two
+islands:
+
+| package | what |
+| --- | --- |
+| **mesa** | **A `.mesa` file with frontmatter was compiled as MARKDOWN.** `compileSource` routed any source beginning with `---` to the Markdown compiler whatever its extension — and a `---` block is how every Sierra route states its title and render mode. Markdown escapes what it does not recognise, so `<CatalogList client:load products={…} />` came out as a paragraph of escaped text with the props stringified into it, while `<LiveStock />` beside it compiled as a component. Only callers handing the compiler a raw file were affected, so dev and the SPA build were right and the PRERENDERER was wrong for the same file |
+| **mesa** | **Every server-rendered `<input>` carried `formaction="http://localhost/"` and `formmethod=""`.** happy-dom's `cloneNode` re-derives an input's attributes from default properties, and absolutises an authored relative `formaction`. `formaction` overrides its form's action, so a prerendered form would post to whatever machine built the site — with that machine's localhost URL in a public file |
+| **mesa** | **`{@attach}` ran on a DETACHED element, so every kit overlay was invisible.** VISION §10.6 says an attachment runs when the element mounts; it ran when the element was built. `el.animate(…, { fill: 'forwards' })` on a disconnected node returns an animation that never starts — the element paints at keyframe 0 for good. CommandPalette is a full-screen fixed backdrop, so **⌘K put an invisible sheet over the app that swallowed every click**. Found by the owner clicking the button; `verify:ui` was green against it because presence, not visibility, was the claim |
+| **sierra** | **A prerendered page linked no stylesheet and carried no body class.** A static document is assembled by Sierra, not by Vite's HTML transform, so the CSS asset the same build emitted had no way in and the theme class stated in `index.html` had none either. The page shipped every `@frontierjs/css` class name and not one rule behind it |
 
 The third wave came from the live-updates drive, from giving the app a queue,
 and from giving it an outbound boundary:
@@ -328,6 +345,44 @@ being declared `Int` while `@frontierjs/auth` issues uuids (`FJS-098`). And
 service factory and ignored by the other (`FJS-099`). Details in each package's
 `CHANGES.md`.
 
+## Static + islands — done (2026-08-06)
+
+`bun run build:public` prerenders `src/public-site/` into
+`web/dist/public/catalog/index.html`: the whole catalogue in the file, one
+module script, and nothing else. `bun run verify:public` serves that directory
+and drives it — **21 assertions, no sign-in, so it costs nothing against the
+login limiter.**
+
+Two islands, because one directive proves less than two:
+
+- **`CatalogList` (`client:load`)** is the list itself. Its rows are a PROP,
+  serialised into the marker at build time from what `load()` read through the
+  app's own Litestone client — so a crawler sees every product, the page makes
+  no request, and the search box works the moment the chunk runs. The drive
+  asserts `apiCalls()` is empty for exactly that reason.
+- **`LiveStock` (`client:visible`)** sits below the fold and asks the running API
+  what can be sold today, through the Junction browser client. Its chunk is not
+  fetched until it is scrolled to — asserted against resource timing, before and
+  after — and its `$onMount` is what keeps it from running during the build.
+
+The static-safety check (`FJS-081`) is what makes this publishable rather than
+merely emitted: `Product` reads at level 0, the build says so in a table, and
+pointing `load()` at a gated model fails the build.
+
+**Three framework defects, and the shape is the usual one — correct from within,
+broken from without.** Mesa compiled a `.mesa` route with frontmatter as
+MARKDOWN, so a component call with props became escaped text in the prerendered
+page while dev was fine (`FJS-106`). happy-dom's `cloneNode` invented
+`formaction="http://localhost/"` on every server-rendered `<input>`
+(`FJS-107`). And a prerendered page linked no stylesheet and carried no theme
+class, so the public site was unstyled while the SPA built from the same source
+was not (`FJS-108`).
+
+One trap filed rather than fixed: `find({ limit: 100 })` puts `limit` in the
+FILTER, and an unknown filter key answers `200` with an empty list rather than a
+400 — so the island rendered "0 of 0 products" and reported nothing wrong
+(`FJS-109`).
+
 ## The email realm — done (2026-08-06)
 
 The confirmation email's body is `api/emails/order-confirmation.mesa`, rendered
@@ -369,8 +424,8 @@ on it (`FJS-103`).
 3. ~~**conduit + notifications**~~ **done 2026-08-06** — the confirmation email
    through a declared target, and the staff bell.
 4. ~~**email previews**~~ **done 2026-08-06** (`bun run email:preview`).
-   **`static`/islands remains** — what is unproven is an island rehydrating in
-   the built output.
+   ~~**`static`/islands**~~ **done 2026-08-06** — see below. An island in the
+   BUILT output is proven interactive by `bun run verify:public`.
 5. **The confirmation has never been opened in a real mail client.** The kit
    renders Outlook-safe markup and nobody has looked. `curl
    localhost:3610/outbox` is where to get one to forward to yourself.
@@ -386,6 +441,13 @@ Out of scope by design: jetty (a different container) and the VS Code extension.
   rendering plausible empty tables.
 - **`bun run reset`** deletes the database; the seed runs again on next boot.
   Do this if a run leaves the data changed — `verify` itself is idempotent.
+- **The browser drives default to `http://localhost:5274` — check who is
+  answering it.** Another app on this machine wanted the same port, and a drive
+  pointed at somebody else's dev server reports `home.heading: "Sign in"` and an
+  empty nav, which reads exactly like this app being broken. Every drive takes
+  `UI_URL=`, so start Vite on a free port (`bun run web -- --port 5284
+  --strictPort`) and pass it. `verify:public` is unaffected — it serves the
+  built directory itself.
 - **The drive is the spec.** If you change a screen, `web/test/verify.mjs` is
   where the claim lives. Never return a bare `null` from a probe (CDP omits
   `value`, so it reads back as `undefined`), and never start an evaluated

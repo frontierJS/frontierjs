@@ -1,0 +1,227 @@
+---
+title: Volumes
+---
+<script>
+  // The mock's VolumesView, over the first OBSERVED model in this app.
+  //
+  // Everything else on these screens is something a person created here. A
+  // volume is the other direction: Docker made it, an agent found it, and this
+  // screen is Basecamp's picture of what is out there. So there is no "New
+  // volume" button — the only way a row appears is a report from a machine, and
+  // an empty list means either no disks or no agent, which the empty state says
+  // rather than leaving to be guessed.
+  //
+  // Deleting a row is not deleting a volume, so both destructive buttons go
+  // through the agent and fail in words when nothing answers. The screen never
+  // pre-empts that refusal by disabling itself: the decision is the server's.
+  import { session } from '../../session.js'
+  import { volumes } from '../../resources/Volume.mesa'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let rows    = []
+  let usage   = null
+  let error   = null
+  let loading = true
+  let busy    = null
+  let filter  = 'all'      // all | used | unused
+  let server  = ''         // '' = every server
+
+  // Every load is numbered, and only the newest may write to the screen. This
+  // is the one screen fed by a machine on a timer rather than by a person
+  // clicking: several agents reporting at once start several loads, and a
+  // slower earlier one landing last shows the fleet's disks as they were two
+  // reports ago.
+  const inflight = { seq: 0 }
+
+  async function load() {
+    const mine = ++inflight.seq
+    error = null; loading = true
+    try {
+      // Both reads. The totals are the FLEET's and the list is a page, so
+      // deriving one from the other would state "12 GB across the fleet" from
+      // whatever fifty rows came back.
+      const totals = await volumes.service.action('usage', null)
+      const page   = await volumes.service.find({
+        ...(filter === 'all' ? {} : { inUse: filter === 'used' }),
+        ...(server ? { serverId: server } : {}),
+      }, { limit: 200 })
+      if (mine !== inflight.seq) return
+      usage = totals
+      rows  = page.data
+    } catch (e) {
+      if (mine === inflight.seq) error = e.message
+    } finally {
+      if (mine === inflight.seq) loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  // A report from any agent in the workspace lands here as a push — which is
+  // the whole reason the report method publishes. Without it the picture is
+  // only as fresh as the last time somebody navigated.
+  //
+  // A reload driven from here does not always settle — see `FJS-138`. It is not
+  // worked around in this file, because every workaround tried made the screen
+  // stranger without making it right, and a screen that is only nearly live is
+  // better read as a bug than dressed up as a feature.
+  const READS = new Set(['get', 'find', 'usage'])
+  const off = volumes.service.on('*', (method) => {
+    if (READS.has(method)) return
+    load()
+  })
+  $onDestroy(off)
+
+  function setFilter(value) { filter = value; load() }
+  function setServer(value) { server = value; load() }
+
+  async function remove(volume) {
+    error = null; busy = volume.id
+    try {
+      await volumes.service.remove(volume.id)
+      toasts.success(`${volume.name} removed`, `Freed ${size(volume.sizeBytes)} on ${volume.serverName}`)
+      await load()
+    } catch (e) {
+      // 'mounted by pg-data, api — stop the container first' and 'no agent is
+      // registered' both arrive here. Neither is guessable from the row.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function prune() {
+    error = null; busy = 'prune'
+    try {
+      const res = await volumes.service.action('prune', null, server ? { serverId: server } : {})
+      toasts.success(
+        `Pruned ${res.forgotten.length} volume(s)`,
+        `Freed ${size(res.freedBytes)}` + (res.unreachable.length ? ` · no agent on ${res.unreachable.join(', ')}` : ''),
+      )
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // Bytes in, a sentence out. The column is bytes precisely so this decision
+  // lives here — `0.01 GB` in the mock is 10.7 MB, and a number rounded on the
+  // way into the database cannot be un-rounded on the way out.
+  function size(bytes) {
+    const n = Number(bytes) || 0
+    if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
+    if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
+    if (n >= 1024)      return `${Math.round(n / 1024)} KB`
+    return `${n} B`
+  }
+
+  function when(iso) {
+    if (!iso) return 'unknown'
+    const days = Math.floor((Date.now() - new Date(iso)) / 86_400_000)
+    return days < 1 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`
+  }
+</script>
+
+<div class="section-header">
+  <h1>Volumes</h1>
+  <Button variant="outlined" id="prune-all" disabled={busy === 'prune'} onclick={prune}>
+    Prune unused
+  </Button>
+</div>
+
+<p class="text-body">
+  Persistent Docker volumes across the fleet — observed, not declared. A row is here
+  because an agent reported it, and removing one asks that agent to delete the disk
+  before the record is forgotten.
+</p>
+
+{#if error}
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if usage}
+  <div class="cluster" id="volume-usage">
+    <Badge tone="muted">{usage.volumes} volumes</Badge>
+    <Badge tone="success">{usage.inUse} in use</Badge>
+    <Badge tone={usage.unused ? 'warning' : 'muted'}>{usage.unused} unused</Badge>
+    <Badge tone="muted">{size(usage.totalBytes)} total</Badge>
+    <Badge tone={usage.reclaimableBytes ? 'warning' : 'muted'}>{size(usage.reclaimableBytes)} reclaimable</Badge>
+  </div>
+{/if}
+
+<div class="cluster" id="volume-filters">
+  <Button variant={filter === 'all'    ? 'primary' : 'ghost'} onclick={() => setFilter('all')}>All</Button>
+  <Button variant={filter === 'used'   ? 'primary' : 'ghost'} onclick={() => setFilter('used')}>In use</Button>
+  <Button variant={filter === 'unused' ? 'primary' : 'ghost'} onclick={() => setFilter('unused')}>Unused</Button>
+
+  <label class="visually-hidden" for="filter-server">Server</label>
+  <Select id="filter-server" value={server} placeholder="All servers"
+          options={(usage?.servers ?? []).map(s => ({ value: s.id, label: `${s.name} (${s.count})` }))}
+          oninput={(e) => setServer(e.target.value)}
+          onchange={(e) => setServer(e.target.value)} />
+</div>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No volumes">
+    Nothing has been reported here yet. A volume appears when an agent checks in with one —
+    an empty list is either a fleet with no disks or a fleet with no agent.
+  </EmptyState>
+{:else}
+  <div class="stack" id="volume-list">
+    {#each rows as v}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">{v.name}</h2>
+          <span class="cluster">
+            <Pill tone={v.inUse ? 'success' : 'warning'}>{v.inUse ? 'in use' : 'unused'}</Pill>
+            <Badge tone="muted">{size(v.sizeBytes)}</Badge>
+            <Badge tone="muted">{v.driver}</Badge>
+          </span>
+        </div>
+
+        <p class="text-sm text-muted"><code>{v.mountPoint ?? 'no mount point reported'}</code></p>
+
+        <div class="cluster">
+          <a href={`/servers/${v.serverId}/`}>{v.serverName ?? v.serverId}</a>
+          <!-- Docker's own timestamp, not discoveredAt: the question this
+               answers is how long the disk has been lying around, and on a
+               fresh install every row was discovered today. -->
+          <span class="text-sm text-muted">created {when(v.createdOnServer)}</span>
+          <span class="text-sm text-muted">last seen {when(v.lastSeenAt)}</span>
+        </div>
+
+        {#if v.inUse && (v.containers ?? []).length}
+          <p class="text-sm text-muted">
+            Mounted by {(v.containers ?? []).join(', ')}
+          </p>
+        {/if}
+
+        <div class="cluster">
+          <Button variant="ghost" disabled={busy === v.id}
+                  aria-label={`Delete ${v.name}`}
+                  onclick={() => remove(v)}>Delete</Button>
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}

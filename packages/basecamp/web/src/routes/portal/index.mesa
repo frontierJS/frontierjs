@@ -9,7 +9,7 @@ title: Portal
   // splits the same way and that split is the reason both screens exist:
   // `find()` reports wiring and pings nothing, `get(id)` pings live. Adapters
   // reads the first, this screen reads the second.
-  import { portal } from '../../resources/portal.mesa'
+  import { portal } from '../../resources/Portal.mesa'
   import { session } from '../../session.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -95,7 +95,10 @@ title: Portal
 </p>
 
 {#if error}
-  <article class="alert danger">
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
     <div class="alert-content">{error}</div>
   </article>
 {/if}

@@ -137,20 +137,21 @@
   justify-items:  center;
   align-content:  center;
   text-align:     center;
-  gap:            0.5rem;
-  padding:        3rem 1.5rem;
+  gap:            var(--space-sm);
+  padding:        var(--space-6xl) var(--space-4xl);
   color:          var(--ink-soft);
 }
 .empty-icon {
-  font-size:   2rem;
+  font-size:   var(--icon-size);
   line-height: 1;
   color:       var(--ink-mute);
 }
-/* Icon sizing: icon.css. .empty-icon sets --icon-size: 1em there — and
-   gets the `[class*=" i-heroicons"]` branch this rule was missing. */
+/* Icon sizing: icon.css. .empty-icon sets --icon-size: 2rem there — and
+   gets the `[class*=" i-heroicons"]` branch this rule was missing. The
+   font-size above reads the same token so a text glyph matches an <svg>. */
 .empty-title {
   margin:      0;
-  font-size:   1.0625rem;
+  font-size:   var(--text-xl);
   font-weight: 600;
   color:       var(--ink);
 }
@@ -159,10 +160,12 @@
   /* Hold the copy to a readable measure however wide the container is. */
   max-inline-size: 42ch;
   line-height: 1.55;
+  /* At 42ch a widow is a whole line of nothing, right under the title. */
+  text-wrap:   pretty;
 }
 .empty-actions {
   display:     flex;
   flex-wrap:   wrap;
-  gap:         0.5rem;
+  gap:         var(--space-sm);
   margin-block-start: 0.5rem;
 }

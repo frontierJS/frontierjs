@@ -4,10 +4,11 @@
 // Bundles the Litestone parser (ESM) into a single CJS file the language server
 // can require(). Runs automatically before tsc via the "prebuild" npm script.
 //
-// Parser path resolution (first match wins):
+// Parser path resolution — each base is probed at core/parser.js then parser.js
+// (the parser moved into src/core/ ; the flat path is kept for older checkouts):
 //   1. LITESTONE_SRC env var              e.g. LITESTONE_SRC=/abs/path/to/litestone/src
-//   2. Sibling directory in monorepo      ../litestone/src/parser.js
-//   3. npm-installed package              node_modules/@frontierjs/litestone/src/parser.js
+//   2. Sibling directory in monorepo      ../litestone/src/
+//   3. npm-installed package              node_modules/@frontierjs/litestone/src/
 //
 // Usage:
 //   node scripts/build-parser.js           one-shot build
@@ -24,14 +25,20 @@ const WATCH   = process.argv.includes('--watch')
 // ─── Locate parser ────────────────────────────────────────────────────────────
 
 function resolveParser() {
-  const candidates = [
+  const bases = [
     // 1. Explicit env var
-    process.env.LITESTONE_SRC ? path.join(process.env.LITESTONE_SRC, 'parser.js') : null,
+    process.env.LITESTONE_SRC || null,
     // 2. Sibling directory (monorepo layout)
-    path.resolve(ROOT, '..', 'litestone', 'src', 'parser.js'),
+    path.resolve(ROOT, '..', 'litestone', 'src'),
     // 3. npm package
-    path.resolve(ROOT, 'node_modules', '@frontierjs', 'litestone', 'src', 'parser.js')
+    path.resolve(ROOT, 'node_modules', '@frontierjs', 'litestone', 'src')
   ].filter(Boolean)
+
+  // Current layout is src/core/parser.js; src/parser.js is the pre-move path.
+  const candidates = bases.flatMap(base => [
+    path.join(base, 'core', 'parser.js'),
+    path.join(base, 'parser.js')
+  ])
 
   for (const p of candidates) {
     if (fs.existsSync(p)) {

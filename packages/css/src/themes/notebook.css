@@ -1,0 +1,18 @@
+.theme-notebook {
+
+--surface:        #f4f1e8;
+--surface-raised: #fffdf7;
+--surface-sunken: #e7e2d5;
+
+--ink:      #202522;
+--ink-soft: #59615b;
+--ink-mute: #858c83;
+
+--color-primary: #315f72;
+--color-secondary: #536b4f;
+--color-info: #477f91;
+--color-success: #557a4d;
+--color-warning: #b08335;
+--color-danger: #a94b43;
+
+}

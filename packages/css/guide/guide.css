@@ -10,6 +10,10 @@
  * What remains here is chrome (.sg-*) plus a few utilities the previews use
  * that UnoCSS used to provide (.text-sm, .p-4, .gap-2 …).
  *
+ * Instruments — the tonal ramps, wireframes and ladders that DRAW the system
+ * rather than being built from it — are in guide/instruments.css. The test
+ * for which file a class belongs in is stated at the top of that one.
+ *
  * It lives in guide/ rather than the package root on purpose: package.json
  * ships "files": ["*.css"] and exports "./*.css", so a stylesheet at the root
  * would be published as part of the design system.
@@ -17,92 +21,108 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
+/*
+ * ── The guide's brand ────────────────────────────────────────────────
+ *
+ * Only what tokens.css does NOT declare. This block used to restate 28
+ * tokens the package already ships. Measured before removing them: 8 themes
+ * x 6 elements of computed style, identical either way — so the copy changed
+ * nothing, which is exactly why it survived four versions.
+ *
+ * Three of the 28 were NOT identical to the package, and none of the three
+ * reached the page — worth knowing, because it is the reason a harmless-
+ * looking copy is worth deleting anyway:
+ *
+ *   --color-secondary  #E5E7EB against the package's #1f2937 — inverted,
+ *                      near-white where the system ships near-black.
+ *   --surface-sunken   #f3f1e9 against #f5f5f5, warm against neutral.
+ *   --ring             `var(--color-primary)`, which is the alias trap
+ *                      tokens.css forbids BY NAME: the var() resolves once
+ *                      against :root and the computed colour then inherits
+ *                      past every .theme-* override. focus.css reads
+ *                      `var(--ring, var(--color-primary))` at the use site,
+ *                      which is the form that follows a theme.
+ *
+ * All three were dead: applyTheme() writes the live theme's tokens inline
+ * onto .sg-app at boot, and an inline style beats a :root declaration, so
+ * the guide rendered the package's values regardless. A wrong value nothing
+ * renders is still the value the next reader copies out of the reference
+ * implementation. Do not reintroduce any of them.
+ *
+ * What stays is what the package has no opinion about: the paper/ink warmth
+ * the guide is skinned in, its two faces, and the code-block pair.
+ */
 :root {
-  --color-primary: #0d83dd;
-  --color-secondary: #E5E7EB;
-  --color-muted: #6b7280;
-  --color-info: #2EA2C9;
-  --color-success: #16a34a;
-  --color-warning: #d4b609;
-  --color-danger: #F4403A;
-
-  --btn-radius: 6px;
-  --card-radius: 8px;
-  --field-radius: 6px;
-
-  --btn-font-weight: 600;
-  --btn-text-transform: none;
-  --btn-letter-spacing: normal;
-
-  --pill-font-weight: 600;
-  --pill-text-transform: none;
-  --pill-letter-spacing: normal;
-
-  --badge-font-weight: 600;
-  --badge-text-transform: uppercase;
-  --badge-letter-spacing: 0.04em;
-
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-lg: 0 1px 3px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.06);
-
-  --ring: var(--color-primary);
-  --ring-width: 2px;
-  --ring-offset: 2px;
-
   --font-primary: 'Geist', system-ui, sans-serif;
   --font-mono: 'Geist Mono', monospace;
+  /*
+   * The guide's display face. h1–h6 read this, so a section heading is
+   * Fraunces by being an h2 — there is no heading class to remember. It
+   * was four hardcoded `'Fraunces', serif` literals before the package
+   * had a name for the idea.
+   */
+  --font-display: 'Fraunces', serif;
 
   --paper: #faf8f2;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-sunken: #f3f1e9;
-  --ink: #1c1b18;
-  --ink-soft: #5a564e;
-  --ink-mute: #757067;
-  --rule: #e7e3d8;
-  --rule-strong: #d4cfc0;
   --accent: #0d83dd;
   --code-bg: #f3f1e9;
   --code-text: #3b372e;
 }
 
+/*
+ * The App term does the rest — background, ink, min-height and the font
+ * smoothing are .app in components/frame.css, and guide.js writes both
+ * classes onto this node.
+ *
+ * .sg-app stays because applyTheme() writes the live theme's tokens onto it
+ * as an inline style, so it is the theming HOOK as well as the surface: an
+ * element that must keep a stable, guide-owned name. What it declares now is
+ * only what the package does not — the guide's paper background, and a
+ * reading size a shade larger than the app default because this is a
+ * document rather than a UI.
+ */
 .sg-app {
-  font-family: 'Geist', system-ui, sans-serif;
   background: var(--paper);
-  color: var(--ink);
-  min-height: 100vh;
   font-size: 15px;
   line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
 }
 
-.sg-topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
+/*
+ * `bar start` — the row, the centring, nowrap and the --space-lg gap all come
+ * from the term, so this class declares nothing. It survives only as the hook
+ * the theme menu and the version badge are positioned against.
+ *
+ * Bar rather than Cluster because a Cluster WRAPS by definition, and a Topbar
+ * has a fixed --topbar-height: a wrapped line is drawn outside the bar rather
+ * than growing it. Not Toolbar — that role promises arrow-key movement
+ * between what are three independent tab stops.
+ */
 
-.sg-theme-menu {
-  position: relative;
+/*
+ * ── The three topbar triggers ────────────────────────────────────────
+ *
+ * Search, theme and config are .btn.outlined. All three had hand-rolled the
+ * same thirteen declarations — inline-flex, the font, a 1px border, a 6px
+ * radius, cursor and a hover — which is the Button term restated three
+ * times, and each was free to drift from the others.
+ *
+ * They are quieter than an action button, so the tone is the ink ramp rather
+ * than a colour: .btn.outlined reads --bg-mix for BOTH its text and its
+ * border, so one variable moves the pair and hover just moves it again.
+ * Setting `color` directly would leave the border behind.
+ */
+.sg-theme-trigger,
+.sg-config-trigger,
+.sg-search-trigger {
+  --bg-mix: var(--ink-soft);
+  gap: var(--space-sm);
+  font-size: var(--text-sm);
+  padding: var(--space-2xs) var(--space-sm);
 }
-.sg-theme-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: 'Geist', system-ui, sans-serif;
-  font-size: 13px;
-  color: var(--ink-soft);
-  background: var(--surface);
-  border: 1px solid var(--rule-strong);
-  border-radius: 6px;
-  padding: 6px 10px 6px 8px;
-  cursor: pointer;
-  transition: border-color 120ms, color 120ms;
-}
-.sg-theme-trigger:hover {
-  color: var(--ink);
-  border-color: var(--accent);
+.sg-theme-trigger:hover,
+.sg-config-trigger:hover,
+.sg-search-trigger:hover {
+  --bg-mix: var(--ink);
 }
 .sg-theme-trigger-swatch {
   width: 14px;
@@ -189,25 +209,9 @@
   margin-left: auto;
 }
 
-.sg-config-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-soft);
-  background: var(--surface);
-  border: 1px solid var(--rule-strong);
-  border-radius: 6px;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: border-color 120ms, color 120ms, background 120ms;
-}
-.sg-config-trigger:hover {
-  color: var(--ink);
-  border-color: var(--accent);
-  background: var(--paper);
-}
+/* It is labelled `{ }` and names a FILE, so it is monospace where the other
+   two triggers are not. Everything else is the shared rule above. */
+.sg-config-trigger { font-family: var(--font-mono); }
 .sg-config-glyph {
   font-size: 13px;
   color: var(--accent);
@@ -219,113 +223,78 @@
   color: var(--ink-mute);
 }
 
-.sg-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(28, 27, 24, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 32px;
-  backdrop-filter: blur(2px);
-}
+/*
+ * The config modal is the Dialog term. .dialog ships the panel, the shadow,
+ * the ::backdrop and the entry/exit motion (overlays.css); .surface-header
+ * is the borrowed sub-region; .dialog-close is Dialog's own part; the
+ * buttons are .btn. What was here reimplemented all of it against a div,
+ * including a hand-built fixed-position backdrop.
+ *
+ * What is left is the two things Dialog does not decide: how wide this
+ * particular panel is, and the guide's warm code palette inside it.
+ */
 .sg-modal {
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: 10px;
-  width: 100%;
   max-width: 780px;
-  max-height: 85vh;
+  max-block-size: 85vh;
+  /* The panel is header + scrolling body; without a column the <pre> cannot
+     take the remaining height and the dialog grows past its own max. */
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   overflow: hidden;
-}
-.sg-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--paper);
 }
 .sg-modal-title {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 14px;
-  font-weight: 500;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
   color: var(--ink);
 }
 .sg-modal-glyph {
   color: var(--accent);
   font-weight: 600;
 }
-.sg-modal-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.sg-modal-btn {
-  font-family: 'Geist', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  color: white;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 5px;
-  padding: 5px 14px;
-  cursor: pointer;
-  transition: filter 120ms;
-  min-width: 64px;
-}
-.sg-modal-btn:hover { filter: brightness(1.05); }
-.sg-modal-close {
-  background: transparent;
-  border: none;
-  font-size: 22px;
-  line-height: 1;
-  color: var(--ink-mute);
-  cursor: pointer;
-  padding: 2px 8px;
-  border-radius: 4px;
-  transition: color 120ms, background 120ms;
-}
-.sg-modal-close:hover {
-  color: var(--ink);
-  background: rgba(0, 0, 0, 0.04);
-}
+/* The code fills what the header leaves, and scrolls inside it. Square,
+   because it is the panel's whole body — .code's own radius would show a
+   corner of dialog background at each edge. */
 .sg-modal-code {
-  margin: 0;
-  padding: 20px 24px;
+  flex: 1;
+  border: none;
+  border-radius: 0;
   background: var(--code-bg);
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  line-height: 1.7;
   color: var(--code-text);
   overflow: auto;
-  flex: 1;
 }
-.sg-modal-code code { font-family: inherit; }
 
-.sg-topbar {
-  border-bottom: 1px solid var(--rule);
-  background: var(--paper);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-.sg-topbar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 28px;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-.sg-brand { display: flex; align-items: center; gap: 12px; }
+/*
+ * ── The frame is the package's ───────────────────────────────────────
+ *
+ * .shell, .topbar, .sidebar and .screen come from components/frame.css.
+ * The guide hand-rolled all four until 2026-08-09 — the most visible use of
+ * the Frame tier in the repo, and it did not use it, which is how those
+ * terms went six versions with no consumer. What was here read
+ * `grid-template-columns: 240px 1fr` and `top: 53px`: literal copies of
+ * --sidebar-width and --topbar-height that could drift from them silently.
+ *
+ * What is left below is only what the package has no opinion about: the
+ * guide's wordmark, the width cap on the topbar's contents, and the
+ * sub-nav's indent rule. See guide/AUDIT.md.
+ *
+ * The topbar's own layout (flex, space-between, sticky) is .topbar's. This
+ * only caps how wide its contents run, which the package deliberately does
+ * not decide.
+ */
+/*
+ * .sg-topbar-inner is gone. It declared max-width/margin-auto/width to cap
+ * the topbar at 1400px and did none of it: a flex item cannot be centred by
+ * `margin: 0 auto`, `width: 100%` is a hint the flex algorithm overrides,
+ * and .shell already caps at the same 1400px so the max-width had nothing
+ * to bind against. Brand and actions measured identical with and without it.
+ */
+
+/* `bar start` — the row, the centring, nowrap and the gap are the term's, so
+   the mark, the name and the rule-divided sub-label need nothing here. The
+   class stays as the hook the three spans below are addressed through. */
 .sg-brand-mark {
   width: 22px; height: 22px;
   background: var(--accent);
@@ -334,7 +303,7 @@
   transform: rotate(-8deg);
 }
 .sg-brand-name {
-  font-family: 'Fraunces', serif;
+  font-family: var(--font-display);
   font-weight: 600;
   font-size: 18px;
   letter-spacing: -0.01em;
@@ -346,73 +315,99 @@
   padding-left: 12px;
 }
 
-.sg-shell {
-  display: grid;
-  grid-template-columns: 240px 1fr;
+/*
+ * The width cap is the guide's own — .shell fills whatever it is given.
+ *
+ * NOT .shell.viewport, deliberately. That variant makes the Screen the
+ * scroller, and this guide scrolls the DOCUMENT: scrollToSection() is
+ * `window.scrollTo`, and every in-page anchor would silently stop moving
+ * the page. The sidebar sticks by itself instead, below.
+ */
+.shell {
   max-width: 1400px;
   margin: 0 auto;
 }
 
-.sg-sidebar {
-  border-right: 1px solid var(--rule);
-  padding: 32px 20px 32px 28px;
+/*
+ * The sidebar stays put while the document scrolls. .shell.viewport would
+ * give this for free, but it is the wrong trade here (see above), so the
+ * one behaviour it was wanted for is declared directly. --topbar-height is
+ * read rather than the 53px literal this replaced: that number had to track
+ * the topbar by hand, and nothing said so when it stopped.
+ */
+.sidebar {
   position: sticky;
-  top: 53px;
-  height: calc(100vh - 53px);
+  top: var(--topbar-height);
+  max-block-size: calc(100vh - var(--topbar-height));
   overflow-y: auto;
 }
-.sg-nav-group { margin-bottom: 24px; }
-.sg-nav-group-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+
+/*
+ * The active page's outline. Only ever one of these in the tree —
+ * renderPage() removes the previous before inserting the next — so the
+ * sidebar shows depth exactly where you are and stays a flat list elsewhere.
+ *
+ * A nested .navlist, so the links themselves are the package's. The rule on
+ * the left is the indent guide; without it the sub-items read as badly
+ * aligned nav items rather than as children of the page above them.
+ */
+.sg-nav-sub {
+  margin: 2px 0 6px 12px;
+  padding-left: 10px;
+  border-left: 1px solid var(--rule);
+}
+/* Quieter than a top-level nav item: these are sections of the page you are
+   already on, not places to go. */
+.sg-nav-sub .navlink {
+  padding: 4px var(--space-sm);
+  font-size: var(--text-xs);
   color: var(--ink-mute);
-  padding: 0 8px 6px;
-}
-.sg-nav-list { list-style: none; padding: 0; margin: 0; }
-/* An <a href="#page"> in the HTML version, so pages are linkable and
-   middle-clickable — hence the text-decoration reset the <button> did not
-   need. Everything else is unchanged. */
-.sg-nav-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: none;
-  padding: 6px 8px;
-  font-size: 14px;
-  color: var(--ink-soft);
-  text-decoration: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: color 100ms, background 100ms;
-}
-.sg-nav-item:hover {
-  color: var(--ink);
-  background: rgba(0,0,0,0.03);
-}
-.sg-nav-item.active {
-  color: var(--accent);
-  background: rgba(13, 131, 221, 0.09);
-  font-weight: 500;
 }
 
-.sg-main { padding: 48px 56px 96px; }
-.sg-main-inner { max-width: 760px; }
+/*
+ * nav.css styles `[aria-current="page"]` and only that. A section is current
+ * in a weaker sense — the PAGE is the sidebar entry above these — so it
+ * carries aria-current="true", which the package does not match and this
+ * rule therefore has to. Marking it "page" instead would style itself for
+ * free and put two contradicting current-page claims in the document.
+ */
+.sg-nav-sub .navlink[aria-current="true"] {
+  color: var(--color-primary);
+  font-weight: 600;
+  background: none;
+}
 
 .sg-page-header { margin-bottom: 40px; }
+/*
+ * A Kicker — the short uppercase label above a title — under discussion as a
+ * shipped term, FJS-D25. The guide had FOUR copies of it and they had
+ * drifted: the page header at 12px/500/accent, the wizard verdict at
+ * 11px/600/--ink-mute, and the wizard's axis label and section h4s at
+ * 11px/600/0.08em, which were the same declaration written twice.
+ * .navlist-label is the shape again, shipped but scoped to nav.
+ *
+ * One guide-local class until the ruling lands. The two sizes stay as a
+ * modifier rather than two classes, because the difference is emphasis in
+ * one place, not two ideas.
+ */
+.sg-kicker {
+  display: block;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
 .sg-eyebrow {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent);
-  margin-bottom: 14px;
+  margin-bottom: var(--space-2xl);
 }
 .sg-h1 {
-  font-family: 'Fraunces', serif;
+  font-family: var(--font-display);
   font-weight: 500;
   font-size: 44px;
   line-height: 1.05;
@@ -421,6 +416,12 @@
   font-variation-settings: "opsz" 144;
   color: var(--ink);
 }
+/*
+ * A Lead — the standfirst under a page title. Under discussion as a shipped
+ * term, FJS-D25: tokens.css already comments --text-lg as "lead paragraph",
+ * so the rung is tuned for this and there is no class for it. Two of these
+ * three declarations are Prose's job now, which is part of the question.
+ */
 .sg-lead {
   font-size: 18px;
   line-height: 1.5;
@@ -428,133 +429,116 @@
   margin: 0;
   max-width: 60ch;
 }
-.sg-divider {
-  border: none;
-  border-top: 1px solid var(--rule);
-  margin: 32px 0 0;
+/*
+ * The rule under a page header is a bare <hr>. bars.css already styles the
+ * element unscoped, and .sg-divider was a second owner that got it wrong: the
+ * shipped rule removes the border and draws the line as a BACKGROUND so a
+ * theme can retint it through --rule alone, and re-adding `border-top` stacked
+ * a second line on top of the first — measured, the element reported both a
+ * background and a 1px border. Only the spacing was ever the guide's, and it
+ * lives here as a child margin because the header is a plain block.
+ */
+.sg-page-header hr {
+  margin-block: var(--space-5xl) 0;
 }
 
-.sg-section { margin: 0 0 56px; }
-.sg-h2 {
-  font-family: 'Fraunces', serif;
-  font-weight: 500;
-  font-size: 26px;
-  letter-spacing: -0.01em;
-  margin: 0 0 16px;
-  font-variation-settings: "opsz" 60;
-}
-.sg-prose {
-  color: var(--ink-soft);
-  margin: 0 0 18px;
-  max-width: 64ch;
-}
-.sg-prose code,
-.sg-list code,
-.sg-td-prose code {
-  font-family: 'Geist Mono', monospace;
-  font-size: 0.875em;
-  background: var(--code-bg);
-  padding: 1px 6px;
-  border-radius: 4px;
-  color: var(--code-text);
-}
-.sg-list {
-  margin: 0 0 18px;
-  padding-left: 22px;
-  color: var(--ink-soft);
-  max-width: 64ch;
-}
-.sg-list li { margin-bottom: 8px; }
+/*
+ * A guide section is the Pane term. .pane ships the block + bottom margin;
+ * a documentation page wants considerably more air between sections than an
+ * app screen does, so the rhythm is overridden and nothing else.
+ */
+.screen .pane { margin-block-end: var(--space-6xl); }
+/*
+ * .sg-h2 declares nothing. A section heading is an <h2>, so it is already
+ * the package's heading rung in --font-display, and the Pane is a .stack so
+ * the gap below it is the parent's. The class survives as the discriminator
+ * tagSections() and the search harvest match on — `.pane > .sg-h2` is what
+ * tells a guide section apart from a Pane the guide DEMONSTRATES, whose
+ * heading is a plain h2. Marker, not a style hook.
+ */
+/*
+ * .sg-prose and .sg-list are gone — a guide section is a Prose, so a
+ * paragraph is a <p> and a list is a <ul>. Measure, ink and list indent
+ * come from the term; the gap between blocks comes from the Pane being a
+ * Stack. Both used to be a class on every single node.
+ *
+ * The inline-code rule that hung off them went too: code.css styles a bare
+ * `code` element unscoped, so it already covered every one of these. The
+ * guide's copy differed only in reading --code-bg / --code-text, which is
+ * a palette divergence and belongs in the guide's token block, not in a
+ * second rule for the same element.
+ */
 
-.sg-preview-box {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 28px 24px;
-  margin-bottom: 12px;
-}
+/*
+ * A preview is a plain .card — surface, border, radius and padding all come
+ * from the package. Centring is the one thing left, and it is a layout
+ * modifier rather than spacing, so it survives the Pane owning the gap.
+ */
 .sg-preview-center {
   display: flex; align-items: center; justify-content: center;
   min-height: 64px;
 }
-.sg-row-flex {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-.sg-row-flex.sg-row-baseline { align-items: baseline; }
+/*
+ * The preview rows are .cluster — same flex/wrap/centre, and its gap moves
+ * with --density where the 10px literal here did not.
+ *
+ * Baseline alignment is the one thing Cluster does not offer: it centres,
+ * which is right for a row of chips and wrong for a row of type samples at
+ * different sizes, where the eye reads the baseline.
+ */
+.cluster.sg-row-baseline { align-items: baseline; }
 
-.sg-code {
-  background: var(--code-bg);
-  border-radius: 8px;
-  padding: 16px 18px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--code-text);
-  overflow-x: auto;
-  margin: 0 0 12px;
-}
-.sg-code code { font-family: inherit; }
+/*
+ * .sg-code is gone. A code block is .code, and the guide's warm palette is
+ * now the guide setting --code-bg / --code-text in its token block above —
+ * which is what code.css reads, with the package's surface pair as the
+ * fallback. The same shape as --code-comment and the rest of the syntax
+ * theme: an override read at the point of use, never aliased at :root,
+ * where it would resolve once and inherit past every .theme-*.
+ */
 
-.sg-editor { margin-top: 4px; }
-.sg-editor-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  margin-bottom: 8px;
-}
-.sg-editor input {
-  width: 100%;
-  font-family: 'Geist Mono', monospace;
-  font-size: 14px;
-  padding: 11px 14px;
-  border: 1px solid var(--rule-strong);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--ink);
-  margin-bottom: 14px;
-  transition: border-color 120ms, box-shadow 120ms;
-}
-.sg-editor input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(13,131,221,0.14);
+/*
+ * The class-chain editor is a .field-group holding a .field — label styling,
+ * the input's border/radius/padding and the focus ring all ship. The old
+ * version restated all three and hand-rolled the ring as a box-shadow, which
+ * meant it did not follow a theme and did not match any other input in the
+ * document.
+ *
+ * What remains is that the input holds CLASS NAMES, so it is monospace.
+ */
+.sg-editor { margin-top: var(--space-3xs); }
+.sg-editor .field {
+  font-family: var(--font-mono);
+  margin-bottom: var(--space-md);
 }
 
-.sg-token-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-  margin: 0 0 12px;
+/*
+ * The token tables are .table — width, borders, the uppercase head and the
+ * last-row rule all ship. What does not is that these list TOKEN NAMES and
+ * VALUES, so the cells are monospace; a table of prose would not want that,
+ * which is why it is here and not in the package.
+ */
+.sg-tokens td {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }
-.sg-token-table th {
-  text-align: left;
-  font-weight: 500;
-  color: var(--ink-mute);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--rule);
-}
-.sg-token-table td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--rule);
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  vertical-align: middle;
-}
-.sg-token-table tr:last-child td { border-bottom: none; }
-.sg-td-prose {
-  font-family: 'Geist', sans-serif !important;
-  font-size: 13px !important;
+/* Opt a cell back out — a description column beside monospace values. The
+   specificity has to beat .sg-tokens td, hence the same two-class depth
+   rather than the !important this used to carry. */
+.sg-tokens td.sg-td-prose {
+  font-family: var(--font-primary);
+  font-size: var(--text-sm);
   color: var(--ink-soft);
 }
+/*
+ * NOT a Badge, though an early pass at guide/AUDIT.md said it was. A Badge
+ * is a categorical status: it carries text, pads around it, and derives its
+ * ink from its fill through chip.css. This is an empty 18px square whose
+ * whole content is a colour — no text to contrast against, and the padding
+ * and font sizing would be dead weight. The package ships no term for "a
+ * colour, shown", because showing a colour is what a guide does and not
+ * what an app does.
+ */
 .sg-swatch {
   display: inline-block;
   width: 18px;
@@ -575,7 +559,6 @@
 }
 
 /* ── Chrome for the Principles / Taxonomy / Patterns pages ───────────── */
-.sg-principles { display: grid; gap: 12px; }
 .sg-principle {
   display: grid;
   grid-template-columns: 2rem 1fr;
@@ -616,868 +599,6 @@
   }
 }
 
-/* Lineage diagram */
-.sg-lineage {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto minmax(220px, 1.3fr);
-  gap: 28px;
-  align-items: center;
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 28px 24px;
-  margin-bottom: 16px;
-}
-/* Vertical variant — used by surface lineage (base → many children) */
-.sg-lineage:has(.sg-lineage-base) {
-  grid-template-columns: 1fr;
-  gap: 12px;
-  justify-items: center;
-}
-.sg-lineage-base {
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  padding: 14px 18px;
-  background: var(--surface);
-  text-align: center;
-  min-width: 240px;
-  box-shadow: 0 0 0 3px rgba(13, 131, 221, 0.08);
-}
-.sg-lineage-arrow-line {
-  width: 1px;
-  height: 24px;
-  background: var(--rule-strong);
-}
-.sg-lineage-arrow-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--ink-mute);
-  font-weight: 500;
-}
-.sg-lineage-children {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  width: 100%;
-}
-.sg-lineage-col {
-  display: grid;
-  gap: 12px;
-}
-.sg-lineage-card {
-  border: 1px solid var(--rule-strong);
-  border-radius: 6px;
-  padding: 12px 14px;
-  background: var(--surface);
-}
-.sg-lineage-root {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(13, 131, 221, 0.08);
-}
-.sg-lineage-name {
-  font-family: 'Geist Mono', monospace;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
-  margin-bottom: 2px;
-}
-.sg-lineage-role {
-  font-size: 12px;
-  color: var(--ink-mute);
-}
-.sg-lineage-preview {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--rule);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 32px;
-}
-.sg-lineage-arrow {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--ink-mute);
-  font-weight: 500;
-  position: relative;
-}
-.sg-lineage-arrow::before {
-  content: '';
-  width: 32px;
-  height: 1px;
-  background: var(--rule-strong);
-}
-.sg-lineage-arrow::after {
-  content: '→';
-  font-size: 16px;
-  line-height: 1;
-  color: var(--ink-mute);
-}
-
-.sg-resolve {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 16px;
-  align-items: stretch;
-  margin: 0 0 18px;
-}
-.sg-resolve-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.sg-resolve-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-mute);
-  font-weight: 500;
-}
-.sg-code-inline {
-  margin: 0;
-  flex: 1;
-  font-size: 12px;
-}
-.sg-resolve-arrow {
-  align-self: center;
-  font-size: 18px;
-  color: var(--ink-mute);
-}
-
-.sg-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-}
-.sg-card-text {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: inherit;
-  opacity: 0.85;
-}
-.sg-card-text code {
-  font-family: 'Geist Mono', monospace;
-  font-size: 0.9em;
-  background: rgba(0,0,0,0.05);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-
-/* Themes page */
-.sg-theme-switcher {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  margin-bottom: 20px;
-}
-.sg-theme-tab {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  transition: border-color 120ms, box-shadow 120ms;
-}
-.sg-theme-tab:hover {
-  border-color: var(--rule-strong);
-}
-.sg-theme-tab.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(13, 131, 221, 0.12);
-}
-.sg-theme-swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  border: 1px solid rgba(0,0,0,0.1);
-}
-.sg-theme-tab-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.sg-theme-tab-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.sg-theme-tab-desc {
-  font-size: 12px;
-  color: var(--ink-mute);
-}
-
-.sg-theme-preview {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 10px;
-  padding: 20px 24px;
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  transition: background 200ms;
-  font-family: var(--font-primary);
-}
-.sg-theme-block {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.sg-theme-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-mute);
-  font-weight: 500;
-}
-.sg-theme-ramp {
-  display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  gap: 0;
-  border-radius: 6px;
-  overflow: hidden;
-}
-.sg-theme-ramp .tonal {
-  border-radius: 0;
-  min-height: 44px;
-  font-size: 10px;
-  padding: 6px 2px;
-}
-
-/* Colors page */
-.sg-palette {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.sg-palette-tile {
-  border-radius: 8px;
-  padding: 16px 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 96px;
-  border: 1px solid rgba(0,0,0,0.06);
-}
-.sg-palette-name {
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  font-weight: 500;
-}
-.sg-palette-hex {
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  opacity: 0.85;
-  margin-top: 24px;
-}
-
-.sg-color-ramps {
-  display: grid;
-  gap: 12px;
-}
-.sg-color-ramp {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 14px 16px;
-}
-.sg-color-ramp-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-.sg-color-ramp-name {
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink);
-  background: transparent;
-  padding: 0;
-}
-.sg-color-ramp-role {
-  font-size: 12px;
-  color: var(--ink-mute);
-}
-.sg-color-ramp-strip {
-  display: grid;
-  grid-template-columns: repeat(11, 1fr);
-  gap: 0;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--rule);
-}
-.sg-color-ramp-strip .tonal {
-  border-radius: 0;
-  min-height: 38px;
-  font-size: 10px;
-  padding: 6px 2px;
-}
-
-/* Tonal mixing */
-.tonal {
-  background: var(--bg);
-  color: var(--color);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 14px 16px;
-  border-radius: 4px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  font-weight: 500;
-  min-height: 44px;
-  text-align: center;
-}
-
-.sg-tonal-strip {
-  display: grid;
-  grid-template-columns: repeat(11, 1fr);
-  gap: 0;
-  margin-bottom: 12px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--rule);
-}
-.sg-tonal-strip .tonal {
-  border-radius: 0;
-  min-height: 56px;
-  font-size: 10px;
-  padding: 8px 4px;
-}
-.sg-tonal-raw {
-  background: var(--sg-ramp) !important;
-  color: white !important;
-}
-
-.sg-tonal-chip {
-  min-width: 110px;
-}
-
-.sg-tonal-strip-row {
-  display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  gap: 4px;
-}
-.sg-tonal-step {
-  min-height: 42px;
-  border-radius: 4px;
-  font-size: 10px;
-  padding: 6px 2px;
-}
-
-.sg-tonal-matrix {
-  display: grid;
-  gap: 4px;
-}
-.sg-tonal-matrix-row {
-  display: grid;
-  grid-template-columns: 70px repeat(9, 1fr);
-  gap: 4px;
-  align-items: stretch;
-}
-.sg-tonal-matrix-label {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 0 8px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink-soft);
-  background: transparent;
-}
-.sg-tonal-cell {
-  min-height: 36px;
-  font-size: 10px;
-  border-radius: 3px;
-  padding: 4px 2px;
-}
-
-/* Stack helper for previews */
-.sg-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: flex-start;
-}
-.sg-stack > * { width: 100%; }
-.sg-stack-divider {
-  height: 1px;
-  background: var(--rule);
-  margin: 4px 0;
-}
-.sg-prose-preview p {
-  margin: 0;
-  color: var(--ink);
-}
-
-/* Spacing page */
-.sg-scale {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.sg-scale-row {
-  display: grid;
-  grid-template-columns: 36px 1fr 80px 60px;
-  align-items: center;
-  gap: 14px;
-  padding: 6px 12px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-}
-.sg-scale-token {
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  color: var(--ink);
-  background: transparent;
-  padding: 0;
-  text-align: center;
-}
-.sg-scale-track {
-  display: flex;
-  align-items: center;
-  height: 18px;
-}
-.sg-scale-bar {
-  height: 14px;
-  background: var(--accent);
-  border-radius: 2px;
-  min-width: 0;
-}
-.sg-scale-val,
-.sg-scale-px {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-mute);
-  background: transparent;
-  padding: 0;
-  text-align: right;
-}
-
-.sg-pad-demo {
-  background: rgba(13, 131, 221, 0.08);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 500;
-}
-.p-2 { padding: 8px; }
-.p-4 { padding: 16px; }
-.p-6 { padding: 24px; }
-.p-8 { padding: 32px; }
-
-.sg-gap-demo {
-  display: flex;
-  align-items: center;
-  padding: 8px;
-  background: var(--surface);
-  border: 1px dashed var(--rule-strong);
-  border-radius: 6px;
-}
-
-/* Typography page */
-.sg-typescale {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.sg-typescale-row {
-  display: grid;
-  grid-template-columns: 80px 1fr auto;
-  align-items: baseline;
-  gap: 18px;
-  padding: 10px 14px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-}
-.sg-typescale-token {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-soft);
-  background: transparent;
-  padding: 0;
-}
-.sg-typescale-sample {
-  color: var(--ink);
-  line-height: 1.2;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-.sg-typescale-meta {
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink-mute);
-  background: transparent;
-  padding: 0;
-  text-align: right;
-  align-self: center;
-}
-
-.sg-weights {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.sg-weight-row {
-  display: grid;
-  grid-template-columns: 140px 1fr;
-  gap: 18px;
-  align-items: center;
-  padding: 8px 14px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-}
-.sg-weight-token {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-soft);
-  background: transparent;
-  padding: 0;
-}
-.sg-weight-sample {
-  color: var(--ink);
-  font-size: 16px;
-}
-
-.sg-color-grid {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.sg-color-row {
-  display: grid;
-  grid-template-columns: 130px 1fr 100px;
-  gap: 16px;
-  align-items: center;
-  padding: 8px 14px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-}
-.sg-color-token {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-soft);
-  background: transparent;
-  padding: 0;
-}
-.sg-color-sample {
-  font-weight: 500;
-  font-size: 15px;
-}
-.sg-color-note {
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink-mute);
-  background: transparent;
-  padding: 0;
-  text-align: right;
-}
-
-/* Cheat sheet */
-.sg-cheat-bases {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-  margin: 0 0 12px;
-}
-.sg-cheat-base {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  padding: 12px 14px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-}
-.sg-cheat-base-preview {
-  flex-shrink: 0;
-  min-width: 56px;
-  display: flex;
-  justify-content: center;
-}
-.sg-cheat-base-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-.sg-cheat-name {
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  color: var(--ink);
-  font-weight: 500;
-  background: transparent;
-  padding: 0;
-}
-.sg-cheat-shortcut {
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink-mute);
-  background: var(--code-bg);
-  padding: 4px 6px;
-  border-radius: 4px;
-  word-break: break-word;
-  line-height: 1.5;
-}
-
-.sg-cheat-tones {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.sg-cheat-tone {
-  display: grid;
-  grid-template-columns: 24px auto 1fr auto;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-}
-.sg-cheat-swatch {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  border: 1px solid rgba(0,0,0,0.08);
-}
-.sg-cheat-token {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-soft);
-  background: transparent;
-  padding: 0;
-}
-.sg-cheat-val {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-mute);
-  background: transparent;
-  padding: 0;
-}
-
-.sg-cheat-matrix {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 16px 20px;
-}
-.sg-matrix-head,
-.sg-matrix-row {
-  display: grid;
-  grid-template-columns: 100px 1fr 1fr;
-  gap: 16px;
-  align-items: center;
-}
-.sg-matrix-row {
-  padding: 8px 0;
-  border-top: 1px solid var(--rule);
-}
-.sg-matrix-head {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-mute);
-  padding-bottom: 8px;
-  font-weight: 500;
-}
-.sg-matrix-label code {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-soft);
-  background: transparent;
-  padding: 0;
-}
-
-.sg-cheat-sizes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: baseline;
-  padding: 16px 20px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-}
-
-.sg-cheat-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.sg-cheat-row-inline {
-  padding: 12px 16px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  align-items: center;
-}
-
-.sg-cheat-vars {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-.sg-cheat-var-group {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 14px 16px;
-}
-.sg-cheat-var-title {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-mute);
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-.sg-cheat-var {
-  display: block;
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--ink-soft);
-  padding: 3px 0;
-  background: transparent;
-}
-
-.sg-cheat-mini-card {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 6px 12px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink-soft);
-  min-width: 50px;
-}
-.sg-cheat-mini-field {
-  display: inline-flex;
-  align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--rule-strong);
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink);
-  min-width: 50px;
-}
-.sg-cheat-mini-table {
-  display: inline-block;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  padding: 4px 10px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink-soft);
-  border-top: 3px double var(--rule-strong);
-  min-width: 50px;
-  text-align: center;
-}
-.sg-cheat-mini-dialog {
-  display: inline-block;
-  background: var(--surface-raised);
-  border: 1px solid var(--rule-strong);
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--ink-soft);
-  box-shadow: var(--shadow-md);
-  min-width: 50px;
-  text-align: center;
-}
-
-.sg-cheat-card-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.sg-cheat-card {
-  padding: 12px;
-  font-size: 12px;
-}
-.sg-cheat-card > strong {
-  font-size: 13px;
-  margin-bottom: 2px;
-}
-.sg-cheat-card .sg-card-text {
-  font-size: 11px;
-  margin: 0;
-}
-
-.sg-cheat-tonal-strip {
-  display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  gap: 0;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--rule);
-}
-.sg-cheat-tonal-strip .tonal {
-  border-radius: 0;
-  min-height: 40px;
-  font-size: 10px;
-  padding: 6px 2px;
-}
-
-.sg-cheat-themes {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 6px;
-}
-.sg-cheat-theme {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-}
-.sg-cheat-theme-swatch {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  border: 1px solid rgba(0,0,0,0.08);
-}
-.sg-cheat-theme-desc {
-  font-size: 11px;
-  color: var(--ink-mute);
-  margin-left: auto;
-}
-
 /*
  * The .text-* size utilities used to be redefined here, "because in real apps
  * Uno provides these". That was true in the UnoCSS era and became a liar in
@@ -1489,7 +610,459 @@
  *
  * They are gone. The guide now uses the real utilities, which is the same
  * rule the stylesheet itself follows: link the source, never copy it.
+ *
+ * The package ships no spacing utility either — no `p-*`, `m-*`, `gap-*`.
+ * A demo that needs one carries an inline style with the real value, and
+ * the Layouts and Spacing pages say plainly that those class names are
+ * UnoCSS's. If you find yourself adding a utility here to make a demo
+ * render, the demo is the thing that is wrong.
  */
-.gap-2   { gap: 8px; }
-.gap-8   { gap: 32px; }
-.h-36    { height: 144px; }
+
+/*
+ * ── "Move on to …" — the next-page footer ─────────────────────────────
+ *
+ * Appended by renderPage(), never written into a page function, so the
+ * reading order has one definition (NAV) rather than a second one kept by
+ * hand in the pages.
+ *
+ * A link, not a button, and the whole card is the target: at the bottom of
+ * a long page the next step is the only thing anyone wants, and a 14px link
+ * is a poor thing to aim at after scrolling for a minute.
+ */
+/*
+ * ── "Move on to …" — the next-page footer ────────────────────────────
+ *
+ * A .card that is an <a>, laid out with .split, over an <hr>. The surface,
+ * border, radius, padding and the row layout are all the package's; what is
+ * left below is the one thing it does not ship and the one thing it should
+ * not decide.
+ *
+ * NOT SHIPPED: a hover affordance for a Card. `.hover` exists as a modifier
+ * but only on Table and Rows (`.table.hover tbody tr`, `.rows.hover
+ * .list-row`) — there is no interactive-Card state, so the lift and the
+ * border change are declared here. If Card ever grows one, this goes.
+ */
+.sg-next { margin-top: var(--space-6xl); }
+.sg-next hr { margin-block: 0 var(--space-3xl); }
+
+/*
+ * .sg-next-link declares NOTHING now, and the three things it used to are
+ * each a thing the package gained because this footer needed it:
+ *
+ *   color: inherit      dead all along — surface.css sets `color` on every
+ *                       Card, so the link already rendered as ink.
+ *   text-decoration     foundation/reset.css, which resets it for any `a`
+ *                       carrying a class while a bare one keeps its
+ *                       underline.
+ *   the hover           surface.css, `:where(a, button)` on the surface
+ *                       group — an <a class="card"> is interactive, so the
+ *                       affordance keys on the element rather than on a
+ *                       modifier nobody would remember to write.
+ *
+ * The class survives only as the hook for the arrow's own movement below.
+ * The focus ring is the package's, in the a11y layer.
+ */
+
+.sg-next-group {
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.sg-next-lead {
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+}
+.sg-next-label {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+/* Split already pushes it to the far end and centres it against the whole
+   card; only the movement is ours. */
+.sg-next-arrow {
+  font-size: var(--text-xl);
+  color: var(--ink-mute);
+  transition: transform 120ms, color 120ms;
+}
+.sg-next-link:hover .sg-next-arrow {
+  color: var(--accent);
+  transform: translateX(3px);
+}
+
+@media (max-width: 640px) {
+  .sg-next { margin-top: var(--space-5xl); }
+  .sg-next-label { font-size: var(--text-xl); }
+}
+
+/* ── The Learn wizard ──────────────────────────────────────────────────
+ *
+ * Chrome only. Everything the wizard SHOWS you — the preview, the badges,
+ * the alerts, the facts list — is the real package, because a teacher that
+ * demonstrates with its own private styles is teaching something you
+ * cannot then go and write.
+ */
+
+.sg-wiz { margin-top: var(--space-2xs); }
+
+/* Split puts "Start over" at the far end; the Breadcrumb inside does the
+   crumbs, their wrapping and the separator. min-height so the card below
+   does not jump on the first answer, when the trail appears. */
+.sg-wiz-trail {
+  align-items: start;
+  margin-bottom: var(--space-2xl);
+}
+.sg-wiz-crumbs { min-height: 30px; }
+/* A crumb is a Button, so it comes with the Button's padding; a trail of
+   them needs the text run, not the control run. */
+.sg-wiz-crumb { padding: 0; font-weight: 400; color: var(--ink-soft); }
+
+.sg-wiz-ask { margin: 0 0 var(--space-2xs); font-size: var(--text-lg); font-weight: 600; }
+.sg-wiz-note {
+  margin: 0 0 var(--space-2xl);
+  max-width: 62ch;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.sg-wiz-ask + .sg-wiz-opts { margin-top: var(--space-2xl); }
+
+/*
+ * Tiles does the grid; this narrows it and overrides the track function.
+ * auto-fill rather than Tiles' auto-fit: with auto-fit a lone option in the
+ * last row stretches to the full width and reads as more important than the
+ * seven above it. --tile-min cannot express that — the difference is the
+ * keyword, not the floor — so the template is restated here and nowhere else.
+ */
+.sg-wiz-opts {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: var(--space-sm);
+}
+/* Tile is a metric unit — centred, generously padded. An option is a target
+   with a label and a hint, so it stacks and left-aligns. The skin, the hover
+   lift and the tone-following border are the interactive-Surface rule's. */
+.sg-wiz-opt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  align-items: start;
+  text-align: left;
+  padding: var(--space-lg) var(--space-xl);
+}
+
+/* ── The verdict ─────────────────────────────────────────────────── */
+
+.sg-wiz-verdict { margin-bottom: var(--space-3xl); }
+.sg-wiz-term {
+  margin: var(--space-3xs) 0 var(--space-xs);
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sg-wiz-lead {
+  margin: 0 0 var(--space-md);
+  max-width: 62ch;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+/* .cluster does the row. The margin reset went with it — the wizard sits in a
+   section, which is a .prose, and Prose zeroes the UA block margin on every
+   <p> it contains. Only the no-class note is this one's: it has to read as an
+   aside beside two <code> chips, not as a third value. */
+.sg-wiz-facts em { color: var(--ink-mute); font-size: var(--text-sm); }
+
+/* The label is a fixed column so the chip rows below line up with each
+   other; Cluster inside does the chips. */
+.sg-wiz-axis {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+.sg-wiz-axis > .sg-kicker { flex: 0 0 78px; }
+
+.sg-wiz-live {
+  margin: var(--space-2xl) 0 var(--space-md);
+  padding: var(--space-3xl);
+  background: var(--surface-sunken);
+  border-radius: var(--card-radius);
+  /* The preview holds real components, and some of them are wide. It
+     scrolls in its own box rather than taking the page sideways — the same
+     reason .table-wrap exists. */
+  overflow-x: auto;
+}
+.sg-wiz-nolive { margin: var(--space-2xl) 0 var(--space-md); }
+
+.sg-wiz-states, .sg-wiz-instead { margin-top: var(--space-3xl); }
+.sg-wiz-states > .sg-kicker, .sg-wiz-instead > .sg-kicker {
+  margin: 0 0 var(--space-sm);
+}
+
+/*
+ * Sub-headings inside a section. The Learn pages break a section into
+ * numbered points, and without this an h3 sits flush against the paragraph
+ * or alert above it and reads as part of it.
+ */
+.screen .pane h3.h5 {
+  margin-top: var(--space-3xl);
+  margin-bottom: var(--space-2xs);
+}
+.screen .pane h3.h5:first-child { margin-top: 0; }
+
+
+/* ── Search ────────────────────────────────────────────────────────────
+ *
+ * Chrome, like everything else with an .sg- prefix. It deliberately does
+ * not use the package's own Dialog: the palette is part of the guide's
+ * frame, and a page that documents Dialog should be able to show one
+ * without the reader wondering which of the two on screen is the example.
+ */
+
+/* The trigger itself is the shared .btn.outlined rule near the top of this
+   file; what follows is only its contents. */
+.sg-search-trigger-glyph {
+  color: var(--accent);
+  font-size: 14px;
+}
+.sg-search-trigger-label { min-inline-size: 4.5em; text-align: start; }
+/*
+ * The Kbd term does the rest — it is a <kbd>, and code.css styles the
+ * ELEMENT, so the shortcut hint was already getting the package's treatment
+ * underneath eight declarations restating it. The class stays only as the
+ * hook the narrow-viewport rule below hides it by.
+ */
+.sg-search-kbd { color: var(--ink-mute); }
+
+.sg-search-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 27, 24, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 120;
+  display: flex;
+  justify-content: center;
+  /* Near the top, not centred: the list grows downward, and a centred
+     panel would shift under the reader on every keystroke. */
+  align-items: flex-start;
+  padding: 12vh 24px 24px;
+}
+.sg-search {
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  inline-size: 100%;
+  max-inline-size: 640px;
+  max-block-size: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sg-search-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+.sg-search-glyph {
+  color: var(--accent);
+  font-size: 16px;
+}
+.sg-search-input {
+  flex: 1;
+  min-inline-size: 0;
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 15px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 2px 0;
+}
+.sg-search-input::placeholder { color: var(--ink-mute); }
+.sg-search-esc {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-mute);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.sg-search-results {
+  overflow-y: auto;
+  padding: 6px;
+}
+.sg-search-hint,
+.sg-search-empty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+.sg-search-empty { font-size: 13px; }
+.sg-search-empty strong { color: var(--ink); }
+
+/*
+ * The row is `.item` plus `.item-lead/-text/-title/-sub` from lists.css,
+ * which is where that shape lives now. What is left here is what is about
+ * SEARCH rather than about a list entry.
+ */
+.sg-search-hit.active { background: var(--surface); }
+/* The row is the selection, so the ring goes on it and not on whichever
+   part of it a pointer happened to land in. */
+.sg-search-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* The kind column is mono and uppercase because it labels the row rather
+   than being part of it — and it is the one thing here a tone touches. */
+.sg-search-hit .item-lead {
+  font-family: 'Geist Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sg-search-hit .item-lead[data-kind='term'] { color: var(--accent); }
+/* Softer than a subtitle: the snippet is context, not an answer. */
+.sg-search-snip { color: var(--ink-soft); }
+.sg-search-snip mark {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--ink);
+  border-radius: 2px;
+}
+
+@media (max-width: 720px) {
+  /* The label and the shortcut both go; the glyph alone is still a target,
+     and a keyboard shortcut is not the affordance that matters here. */
+  .sg-search-trigger-label,
+  .sg-search-kbd { display: none; }
+  /* Square once the label is gone — the glyph should not sit in a wide box. */
+  .sg-search-trigger { padding: var(--space-2xs); }
+  .sg-search-backdrop { padding: 6vh 12px 12px; }
+}
+
+/* ── Copy buttons on code blocks ───────────────────────────────────────
+ *
+ * The button is a SIBLING of the <pre>, absolutely placed over its top
+ * right. Inside it, `.code`'s own `overflow-x: auto` would carry it off
+ * the side with the first line long enough to scroll.
+ *
+ * The wrapper is `.relative` — the utility — so there is no .sg-* class
+ * here at all. The hover rule below is scoped through .sg-copy rather than
+ * through the wrapper for that reason: `.relative:hover` would reach every
+ * absolutely positioned child in the guide.
+ */
+/*
+ * A .btn.outlined — the font, border, radius, cursor, focus ring and hover
+ * are the Button term's. What is left is the three things Button does not
+ * decide: where this one sits, that it is smaller than body copy, and the
+ * rest-state dimming below.
+ *
+ * `--bg-mix: var(--ink-soft)` rather than a colour: .btn.outlined reads that
+ * one variable for both its text and its border, so this is the tonal recipe
+ * being used, not overridden. A copy button is not a primary action, so it
+ * borrows the ink ramp instead of a tone.
+ */
+.sg-copy {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  z-index: 1;
+
+  --bg-mix: var(--ink-soft);
+  font-size: var(--text-2xs);
+  padding: var(--space-3xs) var(--space-xs);
+
+  /*
+   * Dimmed at rest rather than hidden. A button that appears on hover is
+   * unreachable on a touch screen and invisible to anyone reading the page
+   * without a pointer — and 142 blocks means the affordance has to be
+   * discoverable once, not per block.
+   */
+  opacity: 0.55;
+}
+.relative:hover > .sg-copy,
+.sg-copy:hover,
+.sg-copy:focus-visible {
+  opacity: 1;
+}
+/* Hover darkens the ink the tonal recipe is already reading, so the border
+   follows the text without naming a second colour. */
+.sg-copy:hover { --bg-mix: var(--ink); }
+/* Confirmed. The accent is the guide's own, and it is set through --bg-mix
+   for the same reason as above: one variable moves both. */
+.sg-copy.done {
+  --bg-mix: var(--accent);
+  opacity: 1;
+}
+
+/*
+ * A scroll box, because 160 rows would otherwise be the page. Capped in vh
+ * so it stays a panel on a laptop and does not become one on a phone.
+ */
+.sg-class-box {
+  max-block-size: 60vh;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  margin-block-end: 14px;
+}
+.sg-class-box > .table { margin: 0; }
+/* The header has to survive the scroll or the columns stop meaning anything. */
+.sg-class-box thead th {
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--paper);
+  z-index: 1;
+}
+.sg-class-file { font-size: 11px; color: var(--ink-mute); }
+.sg-class-empty { padding: 18px; margin: 0; color: var(--ink-mute); font-size: 13px; }
+
+/*
+ * The kind toggles.
+ *
+ * Pressed is `[aria-pressed="true"]`, never a class — the package keys every
+ * other state off ARIA for the same reason (a control that LOOKS pressed
+ * while announcing itself unpressed is a divergence a class makes possible
+ * and an attribute makes unrepresentable). The package itself ships no
+ * aria-pressed styling, so this is guide chrome; it is unlayered, which is
+ * what lets it beat `.btn.outlined` without a specificity fight.
+ *
+ * The fill is not chosen here either — setting --bg-mix hands the work to
+ * chip.css, so a pressed toggle gets the same derived, contrast-safe fill
+ * and text colour as every other toned control.
+ */
+.sg-kinds { gap: 6px; margin-block-end: 14px; }
+.sg-kind {
+  font-size: 12px;
+  text-transform: none;
+}
+.sg-kind[aria-pressed='true'] {
+  --bg-mix: var(--color-primary);
+  background: var(--fill);
+  color: var(--on-fill);
+  border-color: transparent;
+}
+/* The count rides the button, so it has to invert with it. */
+.sg-kind[aria-pressed='true'] .badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--on-fill);
+}
+/* The tone row's own colour, so seven rows that would read alike do not. */
+.sg-class-swatch {
+  display: inline-block;
+  inline-size: 11px;
+  block-size: 11px;
+  border-radius: 3px;
+  background: var(--bg-mix, var(--ink-mute));
+  vertical-align: -1px;
+  margin-inline-end: 4px;
+}
+/* A colour utility's swatch takes the colour the utility sets, not a tone. */
+.sg-class-swatch.text-body,.sg-class-swatch.text-muted,.sg-class-swatch.text-primary,
+.sg-class-swatch.text-info,.sg-class-swatch.text-success,.sg-class-swatch.text-warning,
+.sg-class-swatch.text-danger { background: currentColor; }

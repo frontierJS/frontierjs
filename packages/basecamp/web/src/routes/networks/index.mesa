@@ -6,8 +6,8 @@ title: Networking
   // 2026-08-06. A network is a name and a CIDR; what an operator needs is who
   // is ON it, so the membership list is the screen rather than a sub-page.
   import { session } from '../../session.js'
-  import { networks } from '../../resources/networks.mesa'
-  import { servers } from '../../resources/servers.mesa'
+  import { networks } from '../../resources/Network.mesa'
+  import { servers } from '../../resources/Server.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -31,6 +31,18 @@ title: Networking
   let creating  = false
   let attachTo  = null     // network id whose attach control is open
   let pickedSrv = ''
+  let draft     = networks.make()
+
+  // The kit's controls take a value and hand back an event; they are NOT bound
+  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
+  // let and a member expression is not one. Replacing the object rather than
+  // mutating it is what makes the change reactive.
+  //
+  // `name` on each control is what lets <Form> route a server message back to
+  // it — the form reads `e.target.name` off its one input listener.
+  function write(name, value) {
+    draft = { ...draft, [name]: value }
+  }
 
   async function load() {
     error = null; loading = true
@@ -71,6 +83,7 @@ title: Networking
       const created = await networks.service.create(data)
       toasts.success(`${created.name} created`)
       creating = false
+      draft = networks.make()
       await load()
     } catch (e) {
       error = e.message
@@ -79,7 +92,7 @@ title: Networking
   }
 
   async function attach(network) {
-    if (!pickedSrv) return
+    if (!pickedSrv) { toasts.error('Pick a server first'); return }
     error = null; busy = network.id
     try {
       await networks.service.action('attach', network.id, { serverId: pickedSrv })
@@ -137,7 +150,10 @@ title: Networking
 </p>
 
 {#if error}
-  <article class="alert danger">
+  <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
+       looking for "the screen reported a refusal" would otherwise match a
+       fleet notice and pass, or fail, for reasons this screen never caused. -->
+  <article class="alert danger" id="screen-error">
     <div class="alert-content">{error}</div>
   </article>
 {/if}
@@ -147,9 +163,11 @@ title: Networking
     <!-- The form takes the resource: every control resolves its own label,
          constraints and server error from the schema through $context.form.
          Nothing here restates a field's type or its required-ness. -->
-    <Form resource={networks} onsubmit={create}>
-      <Input name="name" id="name" />
-      <Input name="cidr" id="cidr" placeholder="10.0.0.0/16" />
+    <Form resource={networks} bind:record={draft} onsubmit={create}>
+      <Input name="name" id="name" value={draft.name}
+             oninput={(e) => write('name', e.target.value)} />
+      <Input name="cidr" id="cidr" placeholder="10.0.0.0/16" value={draft.cidr}
+             oninput={(e) => write('cidr', e.target.value)} />
       <Button type="submit" variant="primary">Create network</Button>
     </Form>
   </Card>
@@ -195,6 +213,7 @@ title: Networking
             <label class="visually-hidden" for={`attach-${n.id}`}>Server to attach</label>
             <Select id={`attach-${n.id}`} value={pickedSrv} placeholder="Pick a server…"
                     options={unattached(n.id).map(s => ({ value: s.id, label: s.name }))}
+                    oninput={(e) => pickedSrv = e.target.value}
                     onchange={(e) => pickedSrv = e.target.value} />
             <Button variant="primary" disabled={busy === n.id || !pickedSrv}
                     onclick={() => attach(n)}>Attach</Button>

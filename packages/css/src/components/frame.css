@@ -92,9 +92,9 @@
   display:         flex;
   align-items:     center;
   justify-content: space-between;
-  gap:             1rem;
+  gap:             var(--space-2xl);
   block-size:      var(--topbar-height);
-  padding-inline:  1rem;
+  padding-inline:  var(--space-2xl);
   background:      var(--surface);
   border-block-end: 1px solid var(--rule);
 
@@ -108,7 +108,7 @@
 .sidebar {
   grid-area:         sidebar;
   inline-size:       var(--sidebar-width);
-  padding:           1rem 0.75rem;
+  padding:           var(--space-2xl) var(--space-lg);
   background:        var(--surface);
   border-inline-end: 1px solid var(--rule);
 }
@@ -127,9 +127,19 @@
   min-inline-size: 0;
 }
 
-/* ── Pane — a labelled subdivision of a Screen ───────────────────── */
+/*
+ * ── Pane — a labelled subdivision of a Screen ─────────────────────
+ *
+ * States no `display`. A Pane is a semantic subdivision, not a layout mode,
+ * and a <section> is already block — so the declaration bought nothing and
+ * cost the ability to compose. `components` is a LATER layer than `layout`,
+ * and both selectors are (0,1,0), so `display: block` here beat `.stack` and
+ * `.cluster` outright: `class="pane stack"` laid out as a block, silently,
+ * with the gap doing nothing. Same collision the header of layout.css
+ * documents for `.bar.center`, resolved the other way — a Pane that wants
+ * to own the space between its children says so with a layout class.
+ */
 .pane {
-  display: block;
   margin-block-end: 2rem;
 }
 .pane:last-child {
@@ -169,7 +179,7 @@
     display: none;
   }
   .screen {
-    padding: 1rem;
+    padding: var(--space-2xl);
   }
 }
 

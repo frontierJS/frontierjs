@@ -10,7 +10,8 @@ title: Order
   // As everywhere else in this app, no list of statuses or moves is written
   // here. The ladder comes from fields.status.enum and the offered moves from
   // orders.transitions(row, level) — both read out of db/schema.lite.
-  import { orders, customers } from '../../resources/shop.mesa'
+  import { orders }    from '../../resources/Order.mesa'
+  import { customers } from '../../resources/Customer.mesa'
   import { session } from '../../session.js'
   import { page, goto } from '@frontierjs/sierra/router'
 

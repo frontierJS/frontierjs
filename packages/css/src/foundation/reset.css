@@ -1,0 +1,51 @@
+/*
+ * reset.css — the smallest set of element defaults the package depends on.
+ *
+ * This package is NOT classless, and this file is not a normalize.css. The
+ * rule for what may live here is narrow:
+ *
+ *   A declaration belongs in the reset only when a UA default actively
+ *   fights a term the package ships, and the term cannot fix it itself.
+ *
+ * Everything else is a class. A reset that starts styling `p`, `ul` or
+ * `body` has started deciding what a host app's un-classed markup looks
+ * like, which is the one thing the package has always refused to do —
+ * see the note on `.app` in components/frame.css.
+ *
+ * ── Layer placement ──────────────────────────────────────────────────
+ *
+ * First, before `tokens`. Everything here must be the weakest thing in the
+ * cascade: a reset that can beat a component has stopped being a reset. An
+ * element selector is (0,0,1) and a class is (0,1,0), so specificity alone
+ * would nearly always do it — the layer makes it true even for the cases
+ * where it would not, like a bare `a` against `:where(...)` at zero
+ * specificity.
+ */
+
+/*
+ * ── A link that is a component is not underlined ─────────────────────
+ *
+ * The UA underlines every `<a href>`. That is right for a link in a
+ * sentence and wrong for every component that happens to navigate: a Card,
+ * a Tile, a Row, an Item.
+ *
+ * chip.css already resets this for the inline lineage — that is where
+ * `<a class="btn">` gets it, added after the Sierra example rendered every
+ * navigating button with a line through its label. The surface lineage
+ * never got the same treatment, so `<a class="card">` shipped underlined,
+ * and each consumer wrote the reset by hand.
+ *
+ * Scoped to `a`, deliberately. `text-decoration: none` on `*` would erase
+ * the underline from prose links too, which is a real accessibility
+ * regression — colour alone is not an accessible link affordance — and it
+ * would do it silently. A bare `<a>` in a host app's markup keeps its
+ * underline; only one that has been given a component class loses it.
+ *
+ * The Link term is unaffected: `.link` sets `text-decoration: none` itself
+ * and turns it back on for `:hover`. That is the Inline tier — an `<a>` in
+ * a run of text, which SHOULD look like a link. This file is about the
+ * Block tier, where the bounded surface is the affordance.
+ */
+a:where([class]) {
+  text-decoration: none;
+}

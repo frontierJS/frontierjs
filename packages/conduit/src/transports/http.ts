@@ -217,16 +217,29 @@ export class HttpTransport extends BaseTransport {
       // succeeded, so classifying it as connection_failed { retryable } was
       // both the wrong kind and three wasted attempts (§2.5).
       const contentType = res.headers.get('content-type') ?? ''
-      if (contentType !== '' && !isJsonType(contentType)) {
-        return this.fail('server_error', `Expected JSON, got '${contentType}'`, {
+      if (isMarkupType(contentType)) {
+        return this.fail('server_error', `Expected a payload, got '${contentType}'`, {
           retryable: false,
           raw:       text.slice(0, 512),
         })
       }
 
+      // Anything else that is not JSON comes back as the text it is. This
+      // check used to refuse every non-JSON content type, which is a wider net
+      // than the case above needs and made whole classes of target
+      // unreachable: **a Slack incoming webhook answers 200 `text/plain: ok`**,
+      // so `app.conduit.send()` reported `server_error` for a notification that
+      // had been delivered. A target that answers plain text is not a broken
+      // target; only markup where a payload was expected is evidence of one.
+      if (contentType !== '' && !isJsonType(contentType))
+        return this.ok<T>(text as T, res.status, duration)
+
       try {
         return this.ok<T>(JSON.parse(text) as T, res.status, duration)
       } catch {
+        // An empty content-type with a non-JSON body lands here rather than
+        // above, and is still a failure: nothing said what this was, and it
+        // did not parse.
         return this.fail('server_error', 'Response was not valid JSON', {
           retryable: false,
           raw:       text.slice(0, 512),
@@ -339,6 +352,14 @@ class SerialiseError extends Error {
 }
 
 // application/json, application/vnd.api+json, text/json, …
+// The captive-portal / interstitial / error-page signature. Deliberately just
+// markup: a 200 whose body is a web page is evidence that something other than
+// the target answered, which is the one case worth failing on.
+function isMarkupType(contentType: string): boolean {
+  const type = contentType.split(';')[0].trim().toLowerCase()
+  return type === 'text/html' || type === 'application/xhtml+xml'
+}
+
 function isJsonType(contentType: string): boolean {
   const type = contentType.split(';')[0].trim().toLowerCase()
   return type === 'application/json'

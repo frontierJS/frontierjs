@@ -93,10 +93,4 @@
   {/if}
 </dialog>
 
-<style>
-  /* The drawer is a column so its body can take the remaining height. */
-  .drawer[open] {
-    display:        flex;
-    flex-direction: column;
-  }
-</style>
+<!-- No <style>. `.drawer[open]` is a column in drawers.css, where .drawer lives. -->

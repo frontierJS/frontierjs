@@ -3,7 +3,7 @@ title: Audit trail
 ---
 <script>
   import { session } from '../../../session.js'
-  import { audit } from '../../../resources/audit.mesa'
+  import { audit } from '../../../resources/AuditEvent.mesa'
 
   $: session.workspaceId
 

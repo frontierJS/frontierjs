@@ -55,7 +55,7 @@ model Product {
   /// client. An empty text box submits '', SQLite accepts any number of NULLs
   /// in a UNIQUE column but rejects a second '', so without normalisation the
   /// second product saved with a blank barcode fails a constraint nobody wrote.
-  barcode String? @unique
+  barcode  String? @unique
 
   active    Boolean  @default(true)
   createdAt DateTime @default(now())

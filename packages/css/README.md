@@ -1,7 +1,8 @@
 # @frontierjs/css
 
 A semantics-first design system for SaaS apps and internal tooling.
-Plain CSS — no build step, no UnoCSS, no config file.
+Plain CSS — no build step, no config file, and no UnoCSS *required*
+(it sits under Uno happily if you run it — see below).
 
 ```bash
 bun add @frontierjs/css
@@ -24,7 +25,7 @@ import '@frontierjs/css'
 The system is **two halves, equally weighted**.
 
 **Structure** — what the HTML actually *is*: which element, what ARIA, how the
-pieces nest. A vocabulary of 35 terms fixes one answer per concept, so "card"
+pieces nest. A vocabulary of 54 terms fixes one answer per concept, so "card"
 means the same thing on Monday and Thursday.
 
 **Style** — utility-first, but **one level above Tailwind**. Tailwind utilities
@@ -140,10 +141,15 @@ tokens → themes → tones → base → layout → components → patterns → 
 
 ## Using it with UnoCSS
 
-Uno is not required — the component shapes have been plain CSS since v0.6 —
-but the package is built to sit under it, and this is the configuration that
-works. Everything below was measured against UnoCSS 66.7.5 with
-`presetWind3`, not inferred.
+Uno is not required, but running it alongside is **supported** (ruled
+2026-08-08) and this is the configuration that works. Everything below was
+measured against UnoCSS 66.7.5 with `presetWind3`, not inferred.
+
+The division of labour: this package owns the **vocabulary** — a tone
+(`danger`), a treatment (`outlined`), a component (`card`). Uno owns the
+**one-off adjustment** — the `mt-6` on the third card that nothing else needs.
+Reach for Uno when you would otherwise write a one-line override; reach for the
+vocabulary when you are describing what a thing *is*.
 
 **The good part is free.** Uno's output is unlayered and everything here is
 layered, so **every Uno utility beats every component**, with no ordering
@@ -186,7 +192,7 @@ outranks the component of the same name:
 | Class | Uno makes it | Fix |
 | --- | --- | --- |
 | `container` | `width:100%` + breakpoint max-widths, so `.container.narrow` stops narrowing | blocklist `container`, or use Uno's |
-| `text-xs…xl` | Uno's scale (14/18px) replaces this package's (13/16px) | pick one — blocklist, or drop this package's steps |
+| `text-xs…xl` | Uno's scale (14/18px) replaces this package's (13/16px) | **retune the tokens** — see below — or blocklist |
 | `table`, `tab` | `display:table`, `tab-size:4` | harmless — that is what those elements already are |
 
 ```ts
@@ -196,6 +202,26 @@ export default defineConfig({
   blocklist: ['container', /^text-(xs|sm|md|lg|xl)$/],
 })
 ```
+
+**The `text-*` collision has a better fix than blocklisting since 2026-08-08.**
+The scale is `--text-*` tokens now, and *every* size in the package reads one —
+components, patterns and the `h1`–`h6` ladder alike. So rather than picking
+which set of classes wins, make them agree:
+
+```css
+:root {
+  --text-xs: 0.75rem;   /* 12 — Uno text-xs */
+  --text-sm: 0.875rem;  /* 14 — Uno text-sm */
+  --text-md: 1rem;      /* 16 — Uno text-base */
+  --text-lg: 1.125rem;  /* 18 — Uno text-lg */
+  --text-xl: 1.25rem;   /* 20 — Uno text-xl */
+}
+```
+
+Now `class="text-sm"` is 14px whichever generator produced the rule, and so is
+a `.field` label and a `.table` cell. Note this moves the package's body size
+from 14px to 16px, because that is what Uno's `text-base` means — a denser
+result wants Uno's `text-sm` as the body class.
 
 > `.shell.fixed` was a fourth collision — Uno's `fixed` is `position: fixed`,
 > so installing Uno turned the shell into a fixed-positioned element. It is
@@ -231,9 +257,12 @@ export default defineConfig({
 &nbsp;&nbsp;— current state comes from `[aria-current]` / `[aria-selected]`,
 never a class
 
-**Patterns** `bar` `section-header` `divider-label` · `items` `rows`
+**Patterns** `bar` `toolbar` `section-header` `divider-label` · `items` `rows`
 `list-row` · `feed` · `disclosure` · `avatars` · `<hr>` / `divider`
 · `<pre class="code">` and inline `<code>`
+
+**Syntax highlighting** `code[language]` and the elements inside it
+&nbsp;&nbsp;— **no classes**; see below
 
 **States** `spinner` `progress` `skeleton` `empty` · `btn.loading`
 
@@ -248,6 +277,72 @@ ring
 &nbsp;&nbsp;— one recipe for every focusable surface, in the last layer
 
 ---
+
+## Syntax highlighting
+
+Code blocks are highlighted by [`glow()`](../utils/) in `@frontierjs/utils`,
+and this package themes the result:
+
+```js
+import { glow } from '@frontierjs/utils/glow'
+
+el.innerHTML = glow(source, { language: 'css', prefix: false })
+```
+
+**There is no class contract.** glow marks each token with the HTML element
+that already means it — `<em>` a value, `<sup>` a comment, `<b>` an identifier,
+`<strong>` a keyword — and wraps the block in `<code language="css">`, so the
+whole theme is `code[language] em { … }`. Nothing to import, nothing to add to
+the vocabulary, and any highlighter emitting the same shape is themed for free.
+
+The block stands alone: `code[language]` is already a block that preserves
+whitespace and scrolls, so a `<pre>` around it is correct markup rather than a
+requirement.
+
+### Retuning it
+
+Six roles, each a `--code-*` override with a derived default:
+
+| Variable | Marks | Default |
+| --- | --- | --- |
+| `--code-comment` | `<sup>` comment | `--ink-mute` |
+| `--code-punct` | `<i>` punctuation | `--ink-soft` |
+| `--code-name` | `<b>` identifier | `--color-primary`, clamped |
+| `--code-value` | `<em>` string, number, custom property | `--color-success`, clamped |
+| `--code-keyword` | `<strong>` keyword, tag, hex | a hue off `--color-primary`, clamped |
+| `--code-special` | `<label>` at-rule, `!important` | `--color-danger`, clamped |
+
+Plus `--code-ins` `--code-del` `--code-note` for whole-line callouts,
+`--code-marked` and `--code-error` for the author's own marks, and
+`--code-gutter` for line numbers.
+
+### Why "clamped"
+
+A tone is tuned as a **fill behind white text**. As text on a surface it is a
+different job and mostly fails it — measured across the eight shipped themes,
+the raw tones came in as low as 1.65:1, and only one theme had all six
+roles above AA. So each tone passes through a lightness window in oklch, hue
+and chroma untouched:
+
+```css
+oklch(from var(--color-primary) clamp(var(--code-l-min), l, var(--code-l-max)) c h)
+```
+
+It is a **no-op wherever the tone already reads**, which is what keeps a
+well-tuned theme looking like itself instead of being uniformly muddied by a
+blend toward the ink.
+
+**A dark theme must invert the window**, because CSS cannot work it out —
+relative colour syntax exposes the channels of one origin colour, and the
+origin is the tone, not the surface it will land on:
+
+```css
+.theme-yours {
+  color-scheme: dark;
+  --code-l-min: 0.74;
+  --code-l-max: 1;
+}
+```
 
 ## Icons
 
@@ -267,18 +362,6 @@ look slightly off — it destroys the layout it is in. Two ways to be sized:
 
 `--icon-size` (default `1.15em`) is the knob, per component or per instance.
 It is in `em`, so an icon tracks the text beside it.
-
-> ### ⚠ Breaking change in v0.10
->
-> `.btn.icon` — the icon-only button — is now **`.btn.square`**. `.icon` means
-> "this element *is* an icon", and one class cannot also mean "a button shaped
-> to hold one", or `<button class="btn icon">` would size the button itself to
-> 1.15em.
->
-> The old markup does not fail loudly: with `border-box`, a width under
-> padding+border clamps, so the button floors at 30×30 and looks approximately
-> right while losing its `aspect-ratio` and padding. Search for
-> `class="btn ... icon"` and rename it.
 
 ## The focus ring
 
@@ -337,14 +420,14 @@ in the package where the markup has to say it twice:
 
 ---
 
-## Behaviour is not included
+## Behavior is not included
 
 Visual treatment is a class; keyboard, focus and ARIA management are a
 component. Tabs need roving tabindex and arrow keys. Dialogs need
 `showModal()`. Tooltips need Escape-to-dismiss. The CSS draws them; your app
 drives them. Each file's header documents the contract it expects.
 
-Where the platform already has the behaviour, the system uses it —
+Where the platform already has the behavior, the system uses it —
 `<dialog>` for modals and drawers, `<details>` for disclosure,
 `<progress>` for progress bars, a real checkbox for switches.
 
@@ -362,9 +445,11 @@ than breaking, but they are not a target.
 
 ## Status
 
-Alpha, and honest about it: **zero production consumers so far.** All 29
-vocabulary terms ship CSS and the invariants are covered by a checked-in test
-suite — but nothing has been through the friction of a real build yet.
+Alpha, and honest about it: **zero production consumers so far.** All 54
+vocabulary terms ship CSS — checked both directions against the real CSSOM, so
+a class the vocabulary does not name fails the suite — and the invariants are
+covered by a checked-in test suite. But nothing has been through the friction
+of a real build yet.
 
 ## Breaking changes
 
@@ -413,7 +498,6 @@ bundler you do not control, `bun run build` emits a single file:
   size steps inert on a button. If you compensated with an inline `font-size`,
   you can drop it.
 
-**v0.10** — `.btn.icon` → `.btn.square`.
 
 ## Tests
 
@@ -454,6 +538,7 @@ a deliberate measurement: every rule in that file is a gap in this package.
 - **`demo/`** — a realistic app, and the findings from building it
 - **`PROJECT_STATE.md`** — architecture, the two halves, the class taxonomy,
   design decisions, known constraints, and what's worth doing next
-- **`guide/`** — the interactive reference: 49 pages, every component
-  live, theme switching. Plain HTML + one plain `.js` file, no build step —
-  open `guide/index.html`, or `bun run demo` and go to `/guide/`
+- **`guide/`** — the interactive reference: 53 pages, every component
+  live, theme switching, and `⌘K` search over every term, heading and class
+  name in it. Plain HTML + plain `.js`, no build step — open
+  `guide/index.html`, or `bun run demo` and go to `/guide/`

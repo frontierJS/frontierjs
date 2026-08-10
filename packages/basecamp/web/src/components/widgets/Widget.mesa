@@ -1,0 +1,65 @@
+<script>
+  // kind → renderer. The one place a widget kind becomes a picture.
+  //
+  // `enum WidgetKind` in db/schema.lite is the vocabulary and the service says
+  // what each kind needs; this file says what each one LOOKS like, and it is
+  // the only file that knows. A kind with no branch here falls through to a
+  // card that says so — which is what a board looks like when the schema has
+  // grown a kind this build cannot draw, and is a great deal better than an
+  // empty rectangle.
+  //
+  // The title and the `needs` sentence come from the fetched vocabulary, not
+  // from a copy: a kind renamed or a gap closed changes them in one place.
+  import WidgetCard        from './WidgetCard.mesa'
+  import FleetBody         from './FleetBody.mesa'
+  import ServerHealthBody  from './ServerHealthBody.mesa'
+  import AppStatusBody     from './AppStatusBody.mesa'
+  import DeployFeedBody    from './DeployFeedBody.mesa'
+  import JobHistoryBody    from './JobHistoryBody.mesa'
+  import ActivityBody      from './ActivityBody.mesa'
+  import AlertsBody        from './AlertsBody.mesa'
+  import ServiceHealthBody from './ServiceHealthBody.mesa'
+  import CounterBody       from './CounterBody.mesa'
+
+  export let widget   = null
+  export let spec     = null      // the kinds entry for widget.kind, or null
+  export let editing  = false
+  export let onremove = null
+  export let onresize = null
+  export let onmove   = null
+
+  // What the card is pointed at, said in the header rather than inside each
+  // body: a board with four `app_status` cards is unreadable if only the body
+  // knows which app it is.
+  $: subtitle = widget?.subjectMissing
+    ? 'subject removed'
+    : (widget?.subjectName ?? widget?.config?.serviceId ?? '')
+</script>
+
+<WidgetCard title={spec?.label ?? widget?.kind} subtitle={subtitle} needs={spec?.needs ?? ''}
+            editing={editing} cols={widget?.cols ?? 1}
+            onremove={onremove} onresize={onresize} onmove={onmove}>
+  {#if widget?.kind === 'server_fleet'}
+    <FleetBody />
+  {:else if widget?.kind === 'server_health'}
+    <ServerHealthBody widget={widget} />
+  {:else if widget?.kind === 'app_status'}
+    <AppStatusBody widget={widget} />
+  {:else if widget?.kind === 'deploy_feed'}
+    <DeployFeedBody widget={widget} />
+  {:else if widget?.kind === 'job_history'}
+    <JobHistoryBody />
+  {:else if widget?.kind === 'activity_feed'}
+    <ActivityBody />
+  {:else if widget?.kind === 'alert_status'}
+    <AlertsBody />
+  {:else if widget?.kind === 'service_health'}
+    <ServiceHealthBody widget={widget} />
+  {:else if widget?.kind === 'stat_counter'}
+    <CounterBody widget={widget} />
+  {:else}
+    <p class="text-sm text-muted">
+      This build has no renderer for a <code>{widget?.kind}</code> widget.
+    </p>
+  {/if}
+</WidgetCard>

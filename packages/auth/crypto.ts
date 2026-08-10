@@ -25,8 +25,14 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 // hardcoded constant. This ensures stored hashes cannot be brute-forced
 // without knowing the application secret.
 
+// Both an API key and a session token arrive as a Bearer token, and the
+// transport has exactly one door for them (verifySession). The prefix is what
+// lets that door route without a wasted session lookup on every machine
+// request — so it is a constant here rather than a literal in the template.
+export const API_KEY_PREFIX = 'fjs_'
+
 export function generateApiKey(): string {
-  return `fjs_${randomBytes(32).toString('base64url')}`
+  return `${API_KEY_PREFIX}${randomBytes(32).toString('base64url')}`
 }
 
 export function hashApiKey(rawKey: string, secret: string): string {

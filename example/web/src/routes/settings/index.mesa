@@ -10,7 +10,7 @@ title: Settings
   // Everything here is a real preference the rest of the app reads, not a
   // control put on a page to be looked at.
   import { session } from '../../session.js'
-  import { orders } from '../../resources/shop.mesa'
+  import { orders } from '../../resources/Order.mesa'
   import { prefs, savePrefs, THEMES } from '../../prefs.js'
 
   import Accordion     from '@frontierjs/ui/components/layout/AccordionItem.mesa'

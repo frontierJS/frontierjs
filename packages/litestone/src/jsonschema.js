@@ -5,31 +5,43 @@
 //   const schema = generateJsonSchema(parseResult.schema, options)
 //
 // Or via CLI:
-//   litestone jsonschema                        → ./schema.jsonschema.json
+//   litestone jsonschema                        → ./schema.json, beside the .lite
 //   litestone jsonschema --out=./schemas/
-//   litestone jsonschema --format=flat          → one object per model at root
+//   litestone jsonschema --format=flat          → every definition at the root
 //   litestone jsonschema --format=definitions   → $defs with $ref (default)
 //
+// docs/jsonschema.md is the full key reference — every key this file can emit,
+// which mode and audience produces it, and who reads it.
+//
 // ─── Output shape (format=definitions) ───────────────────────────────────────
+//
+// $defs is keyed by MODEL name (PascalCase) and holds everything a $ref can
+// point at — models, enums, `type T` declarations, and FileRef when any model
+// has a File field. It travels whole or the refs dangle.
 //
 // {
 //   "$schema": "https://json-schema.org/draft-07/schema",
 //   "$defs": {
-//     "users": {
+//     "User": {
 //       "type": "object",
-//       "properties": { ... },
-//       "required": [...]
-//     }
-//   },
-//   "Plan": { "enum": ["starter", "pro", "enterprise"] }
+//       "title": "User",
+//       "properties": { "plan": { "$ref": "#/$defs/Plan" } },
+//       "required": [...],
+//       "additionalProperties": false
+//     },
+//     "Plan": { "type": "string", "enum": ["starter", "pro", "enterprise"], "title": "Plan" }
+//   }
 // }
 //
 // ─── Output shape (format=flat) ───────────────────────────────────────────────
 //
+// The same entries, at the document root instead of under $defs. $refs still
+// read "#/$defs/Plan" — consumers here resolve them by name, not by pointer.
+//
 // {
 //   "$schema": "...",
-//   "users": { "type": "object", ... },
-//   "Plan":  { "enum": [...] }
+//   "User": { "type": "object", ... },
+//   "Plan": { "type": "string", "enum": [...] }
 // }
 //
 // ─── Type mappings ────────────────────────────────────────────────────────────
@@ -484,7 +496,7 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
   // Apply @default as JSON Schema default (skip auth() — runtime-only)
   const defaultAttr = attributes.find(a => a.kind === 'default')
   if (defaultAttr) {
-    const dv = defaultValueToJson(defaultAttr.value)
+    const dv = defaultValueToJson(defaultAttr.value, type)
     if (dv !== undefined) typeSchema.default = dv
   }
 
@@ -621,12 +633,34 @@ function escapeRegex(str) {
 
 // ─── Default value serialization ─────────────────────────────────────────────
 
-function defaultValueToJson(value) {
+/**
+ * A `@default(…)` literal → the JSON value a consumer should fill in.
+ *
+ * `type` matters for exactly one case, and it is the one that broke: an ARRAY
+ * or `Json` field spells its default as a STRING in the `.lite` source, because
+ * that is how it is stored — `tags String[] @default("[]")`. Emitted verbatim
+ * that becomes `{"type":"array", "default":"[]"}`, a JSON Schema whose own
+ * default fails its own type check. Junction's `autoValidate` fills the default
+ * in and then refuses it: **every create that omitted the field 400'd with
+ * "tags must be an array"**, naming a field the caller never sent. Found
+ * declaring basecamp's feature flags.
+ *
+ * Parsed rather than passed through, so the emitted default is the value the
+ * column will actually hold. A literal that does not parse is dropped — a
+ * default nobody can use is better absent than wrong.
+ */
+function defaultValueToJson(value, type) {
   if (!value) return undefined
+  if (value.kind === 'call')     return undefined  // now(), uuid() etc — runtime only
+
+  const wantsStructured = type?.array || type?.name === 'Json'
+  if (wantsStructured && value.kind === 'string') {
+    try { return JSON.parse(value.value) } catch { return undefined }
+  }
+
   if (value.kind === 'string')   return value.value
   if (value.kind === 'number')   return value.value
   if (value.kind === 'boolean')  return value.value
   if (value.kind === 'enum')     return value.value
-  if (value.kind === 'call')     return undefined  // now(), uuid() etc — runtime only
   return undefined
 }

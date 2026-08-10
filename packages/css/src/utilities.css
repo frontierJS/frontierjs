@@ -2,21 +2,6 @@
  * utilities.css
  * The escape hatch: single-purpose classes that must beat any component.
  *
- * ── Why these are not in typography.css ───────────────────────────────
- *
- * They were, until v0.10.1, and every one of them was dead on a component
- * that set the same property. `.btn` declares `font-size: 0.875rem`;
- * buttons.css is imported after typography.css and both landed in the
- * `components` layer, so the two rules tied on specificity and source order
- * settled it. The result:
- *
- *   btn · btn text-xs · text-sm · text-md · text-lg · text-xl
- *   → every one of them 14px
- *
- * Five documented size modifiers, all silently inert, on the class the
- * package demonstrates first. The style guide's Buttons page showed five
- * identical buttons under a caption explaining how they differ.
- *
  * A later layer fixes it for every component at once, which is the point of
  * having layers: no re-ordering of imports, no `!important`, and no need to
  * remember that buttons happen to set a font size. It is also what the
@@ -27,10 +12,11 @@
  *
  * ── The Uno overlap ───────────────────────────────────────────────────
  *
- * If you also run UnoCSS, its `text-sm`/`text-lg`/… are unlayered and will
+ * If you also run UnoCSS, its `text-sm`/`text-lg`/… are unlayered and so
  * beat these — with a different scale (14/18px on a 4px grid) than the one
- * below (13/16px, tuned to the package's 14px body). Pick one: blocklist
- * the names in `uno.config.ts`, or drop this file's size steps. See the
+ * here (13/16px, tuned to the package's 14px body). Three ways out:
+ * blocklist the names, drop these steps, or retune `--text-*` in tokens.css
+ * to Uno's numbers so both sets of classes resolve to one scale. See the
  * "Using it with UnoCSS" section of README.md.
  */
 
@@ -39,26 +25,136 @@
  *
  * Principle 3 says heading levels carry structure, not size — outline via
  * <h1>–<h6>, visual size via utility classes. `.h1`–`.h6` in typography.css
- * are half of that promise; this is the other half, and it was missing
- * until v0.10.
- *
- * The demo app wrote `style="font-size: .8125rem"` fourteen times in five
- * screens before anyone noticed, which is what a missing utility looks
- * like from the outside.
+ * are half of that promise; this is the other half,
  *
  * The scale is deliberately shallow. `.text-md` is the package's own body
  * size, so the useful range is two steps down and two up — a caption, a
  * meta line, body, a lead paragraph, a subhead. Anything louder than
  * `.text-xl` is a heading and should say so with an <h*>.
  *
- * These set size only. Colour is the `.text-*` colour utilities below,
+ * These set size only. Color is the `.text-*` color utilities below,
  * and they chain: `class="text-sm text-muted"`.
+ *
+ * The rungs are `--text-*` in tokens.css and are the same rungs h1–h6 read,
+ * so `.text-xl` and an `<h4>` are one number. A theme retunes the ladder;
+ * nothing here needs editing to follow it.
  */
-.text-xs { font-size: 0.75rem;   line-height: 1.45; }
-.text-sm { font-size: 0.8125rem; line-height: 1.5;  }
-.text-md { font-size: 0.875rem;  line-height: 1.55; }
-.text-lg { font-size: 1rem;      line-height: 1.6;  }
-.text-xl { font-size: 1.125rem;  line-height: 1.6;  }
+.text-xs { font-size: var(--text-xs); line-height: var(--leading-snug);    }
+.text-sm { font-size: var(--text-sm); line-height: var(--leading-normal);  }
+.text-md { font-size: var(--text-md); line-height: var(--leading-body);    }
+.text-lg { font-size: var(--text-lg); line-height: var(--leading-relaxed); }
+.text-xl { font-size: var(--text-xl); line-height: var(--leading-relaxed); }
+
+/*
+ * ── Gap ───────────────────────────────────────────────────────────────
+ *
+ * The parent owns the space between its children — the rule on the
+ * `How things behave` page — so the escape hatch for spacing is a gap on
+ * the parent and nothing else. There is no `.pad-*` and no margin utility
+ * here: a margin utility puts the space on the child, which is the thing
+ * that page argues against and the reason the old numeric scale went.
+ *
+ * The rungs are `--space-*` in tokens.css, so every one of these is
+ * multiplied by `--density` and follows a `.dense` or `.roomy` region.
+ * A literal `gap: 4px` does not, which is what this replaces: a
+ * one-off `.thing { gap: … }` rule beside a component is a rung that
+ * stops moving.
+ *
+ * The full ladder is here rather than the shallow range `.text-*` takes.
+ * A text utility is bounded by the two steps either side of body size —
+ * anything louder is a heading. A gap has no equivalent centre: `3xs`
+ * between a label and its value and `6xl` between page sections are both
+ * ordinary.
+ *
+ * These beat a component's own gap because `utilities` is a later layer
+ * than `layout`, `components` and `patterns` — `.stack.gap-3xs` needs no
+ * extra specificity and no `!important`.
+ */
+.gap-0   { gap: 0;                  }
+.gap-3xs { gap: var(--space-3xs);   }
+.gap-2xs { gap: var(--space-2xs);   }
+.gap-xs  { gap: var(--space-xs);    }
+.gap-sm  { gap: var(--space-sm);    }
+.gap-md  { gap: var(--space-md);    }
+.gap-lg  { gap: var(--space-lg);    }
+.gap-xl  { gap: var(--space-xl);    }
+.gap-2xl { gap: var(--space-2xl);   }
+.gap-3xl { gap: var(--space-3xl);   }
+.gap-4xl { gap: var(--space-4xl);   }
+.gap-5xl { gap: var(--space-5xl);   }
+.gap-6xl { gap: var(--space-6xl);   }
+
+/*
+ * ── Line clamp ────────────────────────────────────────────────────────
+ *
+ * Cut a block of text to N lines and ellipse it. A utility rather than
+ * anatomy on any one term, because the need is orthogonal to what the text
+ * sits in: a search snippet, a card description and a table cell all want
+ * it, and none of them wants it always.
+ *
+ * The reason it ships at all is that a snippet which grows makes a list
+ * JUMP as a query narrows, which loses the reader's place in it — the
+ * failure is in the list, not in the paragraph.
+ *
+ * ── Two spellings, and the order matters ─────────────────────────────
+ *
+ * The prefixed form needs `display: -webkit-box`, which is a whole box
+ * model: a `-webkit-box` is not a block, and a child of one does not lay
+ * out the way its author wrote it. Modern `line-clamp` needs none of that
+ * and clamps a normal block.
+ *
+ * So the prefixed triple is written first as the floor, and the modern
+ * pair overrides `display` back to `flow-root` where it is understood —
+ * an engine that does not understand `line-clamp` also does not
+ * understand `flow-root` as a clamp trigger, drops both declarations, and
+ * keeps the `-webkit-box` above. Measured in Chrome 150: 40px against an
+ * unclamped 60px, computing `display: flow-root`, so the modern path is
+ * the one actually running and the prefixed one is the fallback rather
+ * than the other way round.
+ *
+ * Reversing these two blocks silently costs the fallback. It still clamps
+ * here, which is what makes it silent.
+ */
+.clamp-1,
+.clamp-2,
+.clamp-3 {
+  display:            -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow:           hidden;
+}
+.clamp-1 { -webkit-line-clamp: 1; }
+.clamp-2 { -webkit-line-clamp: 2; }
+.clamp-3 { -webkit-line-clamp: 3; }
+
+@supports (line-clamp: 2) {
+  .clamp-1,
+  .clamp-2,
+  .clamp-3 { display: flow-root; }
+  .clamp-1 { line-clamp: 1; }
+  .clamp-2 { line-clamp: 2; }
+  .clamp-3 { line-clamp: 3; }
+}
+
+/*
+ * ── Containing block ──────────────────────────────────────────────────
+ *
+ * The one positioning utility, and the line it does not cross: this
+ * establishes a containing block for an absolutely positioned child. It
+ * does not place anything — there is no `.absolute`, no `.top-0`, no
+ * inset ladder, because those are a layout the component should own.
+ *
+ * It ships because every consumer was writing the same one-declaration
+ * rule beside a component to hold a badge, a copy button or a menu, and a
+ * rule written per site is a rule that drifts. `.tooltip-anchor` and the
+ * demo's popover anchor are the shipped version of the same need where the
+ * element is also inline-flex; this is it with nothing else attached.
+ *
+ * It does NOT help a `[popover]`. The native popover is in the top layer,
+ * which escapes every positioning context, so a `.relative` parent means
+ * nothing there — anchor positioning is the answer and the package ships
+ * none. Same trap, stated on the Popover page.
+ */
+.relative { position: relative; }
 
 /* ── Text color ───────────────────────────────────────────────────── */
 .text-body    { color: var(--ink); }

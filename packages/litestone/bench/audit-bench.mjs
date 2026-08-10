@@ -62,12 +62,12 @@ await run('gate-getlevel', async () => {
     plugins: [new GatePlugin({ getLevel: async () => { calls++; return 5 } })],
   })
   const scoped = db.$setAuth({ id: 1 })
-  await scoped.posts.create({ data: { title: 'x' } })
+  await scoped.post.create({ data: { title: 'x' } })
   calls = 0
   const OPS = 200
   const t0 = performance.now()
-  for (let i = 0; i < OPS; i++) await scoped.posts.findMany({})
-  report('2. GatePlugin getLevel() calls for 200 reads', 'calls', calls, 'comment claims once per model per request')
+  for (let i = 0; i < OPS; i++) await scoped.post.findMany({})
+  report('2. GatePlugin getLevel() calls for 200 reads', 'calls', calls, 'H4 fixed — resolver cached per scoped client, so 0 is the pass condition')
   report('2. GatePlugin 200 gated findMany', 'us/op', (ms(t0) / OPS * 1000).toFixed(1))
   db.$close()
 })
@@ -116,7 +116,7 @@ await run('automigrate', async () => {
   const N = 50
   const t0 = performance.now()
   for (let i = 0; i < N; i++) autoMigrate(db)
-  report('5. autoMigrate already-in-sync (15 models)', 'ms/call', (ms(t0) / N).toFixed(1), 'runs full pristine build + 2x introspection')
+  report('5. autoMigrate already-in-sync (15 models)', 'ms/call', (ms(t0) / N).toFixed(1), 'H5 fixed — DDL checksum short-circuits; { force: true } to skip the skip')
   db.$close()
 })
 
@@ -135,7 +135,7 @@ model ApiRequest { method String; path String; status Int; createdAt DateTime @d
   const db = await createClient({ schema })
   let t0 = performance.now()
   await db.apiRequest.findFirst({ where: { status: 500 } })
-  report('6. JSONL findFirst on 200k-row file', 'ms', ms(t0).toFixed(0), 'full read+parse per query')
+  report('6. JSONL findFirst on 200k-row file', 'ms', ms(t0).toFixed(0), 'H6 fixed — warm; the cold first load is once per process, not per query')
   t0 = performance.now()
   await db.apiRequest.count({})
   report('6. JSONL count() on 200k-row file', 'ms', ms(t0).toFixed(0))
@@ -146,7 +146,7 @@ model ApiRequest { method String; path String; status Int; createdAt DateTime @d
   const N = 2000
   t0 = performance.now()
   for (let i = 0; i < N; i++) await db.apiRequest.create({ data: { method: 'GET', path: '/y', status: 200 } })
-  report('6. JSONL create() per-row append', 'us/op', (ms(t0) / N * 1000).toFixed(0), 'existsSync+statSync+appendFileSync per row')
+  report('6. JSONL create() per-row append', 'us/op', (ms(t0) / N * 1000).toFixed(0), 'STILL OPEN — one existsSync + statSync + appendFileSync per row (jsonl.js create)')
   db.$close()
 })
 
@@ -159,7 +159,7 @@ await run('sigv4', async () => {
   const t0 = performance.now()
   for (let i = 0; i < N; i++)
     await presignUrl('GET', `https://bucket.example.com/key/${i}`, cfg, 3600)
-  report('7. presignUrl (no signing-key cache)', 'us/op', (ms(t0) / N * 1000).toFixed(0), '5+ importKey+HMAC per call')
+  report('7. presignUrl', 'us/op', (ms(t0) / N * 1000).toFixed(0), 'M2 fixed — signing key cached per (date, region, service)')
 })
 
 // ── 8. createMany with @sequence ────────────────────────────────────────────
@@ -179,7 +179,7 @@ await run('sequence-createmany', async () => {
   await db.quote.createMany({ data: rows })
   const seq = ms(t0); db.$close()
   report('8. createMany 5k rows (disk), no @sequence', 'ms', plain.toFixed(0))
-  report('8. createMany 5k rows (disk), @sequence', 'ms', seq.toFixed(0), '2 auto-commit stmts/row outside the batch tx')
+  report('8. createMany 5k rows (disk), @sequence', 'ms', seq.toFixed(0), 'H2 fixed — inside the batch tx now; the delta left is one counter statement per row')
 })
 
 // ── 9. Auto-commit vs wrapped transaction (rotateKey pattern) ───────────────
@@ -215,7 +215,7 @@ await run('upsert', async () => {
   t0 = performance.now()
   for (let i = 0; i < N; i++) stmt.get(`k${i % 500}`, 'c')
   const native = ms(t0)
-  report('10. upsert() via findFirst+update/create', 'us/op', (orm / N * 1000).toFixed(1))
+  report('10. upsert() (M1 fast path)', 'us/op', (orm / N * 1000).toFixed(1), 'ONE statement — verified via $tapQuery; the gap to raw is transforms + validation')
   report('10. native ON CONFLICT single statement', 'us/op', (native / N * 1000).toFixed(1), `${(orm / native).toFixed(0)}x`)
   db.$close()
 })

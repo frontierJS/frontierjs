@@ -15,9 +15,19 @@ title: Activity
   // create/patch/remove only, so a server being DRAINED — the operator verb —
   // was never recorded. The hook now runs on `all` minus reads, which is what
   // makes this screen worth having.
-  import { session } from '../../session.js'
-  import { audit } from '../../resources/audit.mesa'
-  import { workspaces } from '../../resources/workspaces.mesa'
+  //
+  // **Two sources, one feed.** `AuditEvent` is what PEOPLE did; `ServerEvent`
+  // is what the MACHINES did — an agent going unreachable, a heartbeat coming
+  // back — and the second was unreadable at workspace scope until
+  // `servers.feed` landed (`FJS-104`): events were per-server only, so a fleet
+  // view meant one request per server, merged in the browser. They are merged
+  // here, by time, because an operator reading "what happened" does not care
+  // which table it came from — and a drain followed by the agent confirming it
+  // only reads as one story if they sit next to each other.
+  import { session }    from '../../session.js'
+  import { audit }      from '../../resources/AuditEvent.mesa'
+  import { workspaces } from '../../resources/Workspace.mesa'
+  import { servers }    from '../../resources/Server.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -59,7 +69,28 @@ title: Activity
     }
 
     try {
-      rows = (await audit.service.find({}, { limit: 100 })).data
+      const trail = (await audit.service.find({}, { limit: 100 })).data
+
+      // The fleet's own events. Not fatal if refused — the trail alone is
+      // still a feed, and a screen that blanks because half its data needs a
+      // role the reader lacks is worse than one that shows the half it can.
+      let fleet = []
+      try {
+        const raw = await servers.service.action('feed', null, null, { limit: 100 })
+        fleet = (Array.isArray(raw) ? raw : raw?.data ?? []).map(e => ({
+          id:          `srv-${e.id}`,
+          createdAt:   e.createdAt,
+          actorId:     null,
+          actorType:   'agent',
+          action:      `servers.${e.kind}`,
+          subjectType: 'servers',
+          subjectId:   e.serverId,
+          subjectName: e.serverName,
+          message:     e.message,
+        }))
+      } catch { fleet = [] }
+
+      rows = [...trail, ...fleet].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     } catch (e) {
       // The trail is admin/owner. A developer seeing "you cannot read this" is
       // a correct answer and a better one than an empty feed that looks broken.

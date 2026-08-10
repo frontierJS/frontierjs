@@ -18,9 +18,9 @@ read `../db/README.md`.
 
 | Realm | State |
 |---|---|
-| **Data** | Done. 24 models, migration generated from `db/schema.lite`, 19 tests green. |
-| **API** | Done. 9 services + 2 engines on Litestone accessors, zero raw SQL, verified over HTTP. |
-| **UI** | Built, phases 0–6. Sierra SPA over every service; 90 browser checks. |
+| **Data** | Done. 37 models, migration generated from `db/schema.lite`, 49 tests green. |
+| **API** | Done. 21 services + 3 engines on Litestone accessors, zero raw SQL, verified over HTTP. |
+| **UI** | Built. Sierra SPA over every service; 230 browser checks, 27 of the mock's 41 screens (`SCREENS.md`). |
 
 The mock that used to live in `web/` is at `docs/mock/BasecampUI.jsx` — read it
 for information architecture, not for markup.

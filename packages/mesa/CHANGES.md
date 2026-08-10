@@ -1,5 +1,129 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-07 — a component's anchor is a node of its own
+
+1035 tests (was 1027). `FJS-110`.
+
+Two components separated only by whitespace shared one anchor:
+
+```mesa
+{#if open}
+  <Button disabled={busy || !picked}>Attach</Button>
+  <Button onclick={cancel}>Cancel</Button>
+{/if}
+```
+
+A pending label request is satisfied by the next text node, and `tpl` keeps
+those as separate entries while the emitted template is one **string** — where
+adjacent text parses as a single DOM `Text` node. So both `Button`s resolved
+their anchor to the same whitespace.
+
+**The DOM was correct.** Each component inserts before that node, in source
+order, so it rendered, laid out and clicked exactly as written. But the
+component registry is keyed BY ANCHOR: the second `registerComponentAnchor`
+replaced the first, and the first component **never received another prop push
+for the life of the page**. Attach stayed disabled forever while a plain
+`<button>` two lines up, carrying the identical expression, followed the pick —
+because an attribute binding writes its node directly and needs no registry at
+all.
+
+A component invocation now always pushes an anchor comment of its own rather
+than adopting the text beside it. Several templates got *smaller* as a result:
+`<div><><><></div>` became `<div><><></div>`, since a component no longer needs
+a filler comment plus a separately-resolved label.
+
+Eight shapes are pinned — `{#if}`, `{:else}`, `{#each}`, inside an element, at
+component root, adjacent with and without whitespace, and three in a row. Four
+fail if the fix is reverted, checked.
+
+**The eight probes that missed it are the lesson.** Every one of them put a
+static element between the two components while "reducing" the case — which is
+precisely the thing that made the anchors distinct. Reproduce by adding to the
+real screen, not by simplifying it.
+
+## 2026-08-06 — an attachment runs on an element that is in the document
+
+1027 tests (was 1024). `FJS-114`.
+
+VISION §10.6 says `{@attach}`'s function "is called when the element mounts".
+It was called when the element was **built** — before anything inserts it — so
+every attachment in the repo saw `isConnected === false` and, for a root
+element, `parentNode === null`.
+
+Everything an attachment is for needs a connected node. `focus()` is a no-op,
+`getBoundingClientRect()` is all zeros, an IntersectionObserver never fires.
+One case is worse than useless:
+
+```js
+el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 100, fill: 'forwards' })
+```
+
+On a disconnected element that returns an animation with `startTime: null`
+which **never starts, even after the element is connected**, and which is not
+even listed in `el.getAnimations()`. The element paints at keyframe 0 for good.
+
+So `@frontierjs/ui`'s CommandPalette — `position: fixed; inset: 0; z-index:
+9000`, with an entrance fade — was a **completely invisible full-screen
+backdrop that swallowed every click on the page**. Reported as "clicking Search
+⌘K does nothing and the whole app freezes". Toast, Popover, DropdownMenu,
+ConfirmationPopover and AlertProvider all use the same pattern.
+
+The attachment is now deferred to a microtask — the queue `$onMount` already
+uses — when the element is not yet connected. An element that IS already
+connected still runs synchronously, so nothing that was ordered correctly
+before is reordered, and a detached element that never gets inserted still runs
+one tick later rather than silently never running. Cleanup is registered
+synchronously either way, so it lands on the effect's own owner.
+
+3 tests here, plus `example`'s `verify:ui`, which now opens the palette by
+CLICKING the header button — only ⌘K had ever been driven — and asserts
+computed opacity, hit-testing and size. Both fail if the fix is reverted,
+checked by reverting it.
+
+## 2026-08-06 — the extension decides the language, and a clone invents nothing
+
+1024 tests (was 1015). Two fixes, both found by prerendering a real page in
+`example/` rather than by a test — `FJS-106` and `FJS-107`.
+
+**A `.mesa` file with frontmatter was compiled as MARKDOWN.** `compileSource`
+routed any source beginning with `---` to `compileMd`, whatever its extension.
+A `---` block is how every Sierra route states its title and its render mode, so
+that heuristic said "this component is Markdown" about most route files in
+existence. Markdown escapes what it does not recognise:
+
+```mesa
+<CatalogList client:load products={data?.products ?? []} />
+```
+
+came out as a PARAGRAPH OF ESCAPED TEXT with the props stringified into it,
+while `<LiveStock />` beside it — no attributes, so a raw HTML block — compiled
+as a component and mounted correctly.
+
+It stayed hidden because it only bites a caller who hands the compiler a raw
+file. Sierra's Vite path strips frontmatter before calling `compile()`, so dev
+and the SPA build were right and only the PRERENDERER, which imports the `.mesa`
+off disk through `renderComponent`, was wrong. One file, two languages,
+depending on which build read it.
+
+Now: `.md` → Markdown, anything else → Mesa, which is what VISION's file-type
+table always said. `compile()` strips a leading `---` block, exposes it as
+`ctx.frontmatter`, and replaces it with the same number of blank lines so a
+warning still points at the line the author wrote. Mesa's three Markdown REPL
+examples are named `.md` now, which is what they are.
+
+**Every server-rendered `<input>` carried `formaction="http://localhost/"`.**
+happy-dom's `cloneNode` does not copy an input's attributes — it re-derives some
+of them from default PROPERTIES — so each clone of a cached template gained
+`formaction` (the build machine's own URL) and `formmethod=""`, and an authored
+relative `formaction="/search"` came back absolutised.
+
+Not cosmetic: `formaction` overrides its form's action, so a prerendered form
+posted to whatever machine built the site, with that machine's localhost URL in
+a public file. `template()` now PARSES per instance on the server rather than
+cloning a cached parse — the same path that produced the original, so what ships
+is what was written. The client still clones; the cost is one parse per instance
+of a page that is rendered once.
+
 ## 2026-08-06 — a `.mesa` import may name a package
 
 1013 tests. Two fixes for the same shape of caller: somebody rendering a
