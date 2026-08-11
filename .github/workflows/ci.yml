@@ -1,0 +1,69 @@
+# ============================================================
+# CI — a thin wrapper around scripts/ci.mjs
+#
+# Everything this file decides is environmental: a fresh clone, a bun, a node,
+# a Chrome. Every CHECK lives in scripts/ci.mjs, so moving off GitHub costs a
+# delete and the same run happens on a laptop with `bun run ci`.
+#
+# Do not add a check here. A check that only exists in YAML cannot be run by
+# the person who has to fix it.
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A superseded run tells nobody anything.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The typecheck ratchet compares against the merge base, which needs
+          # real history — a shallow clone has no merge base to find.
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      # packages/frontierjs-vscode is the one package that runs on npm — its own
+      # scripts shell out to `npm run build`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # packages/css drives a real headless Chrome and sierra's island
+      # verification does too. The runner image ships one; naming it here means
+      # a missing browser fails as a missing browser rather than as a css bug.
+      - name: Locate Chrome
+        run: |
+          which google-chrome || which chromium || {
+            echo "::error::No Chrome on the runner — packages/css cannot run"
+            exit 1
+          }
+          echo "FJS_CHROME=$(which google-chrome || which chromium)" >> "$GITHUB_ENV"
+
+      # --frozen-lockfile is the point of running this in a clean checkout: a
+      # lockfile that does not match package.json is a difference between this
+      # machine and everyone else's, which is the whole class of bug CI is for.
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Verify
+        env:
+          # A raised typecheck baseline is measured against where this branch
+          # left the base, not against the base's tip.
+          FJS_CI_BASE_REF: origin/${{ github.base_ref || 'main' }}
+        run: node scripts/ci.mjs

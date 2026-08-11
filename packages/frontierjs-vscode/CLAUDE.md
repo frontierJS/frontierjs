@@ -20,9 +20,17 @@ src/
   mesa/
     client.ts
     completions.js · hover.js · symbols.js
-scripts/build-parser.js   the failing step
+test/
+  lsp-client.js       an LSP client over stdio — the Litestone suite's driver
+  lsp.test.js · mesa.test.js
+  vscode-stub.js      a stand-in editor, so the Mesa providers run under node
+scripts/
+  build-parser.js     litestone's parser → out/litestone/parser-bundle.js
+  bundle.js           the two packaged entry points → self-contained CJS
+  verify-package.js   packs, unpacks, tests the artefact
+icons/                frontierjs.svg → frontierjs.png · litestone-{light,dark}.svg
 syntaxes/ · snippets/ · language-configuration/
-out/                      build output, not source
+out/                  build output, not source
 ```
 
 ---
@@ -51,19 +59,58 @@ out/                      build output, not source
   the `@slug` transform — as would any model or field named `trim`, `email`,
   `url`. `wordAt()` already scans back through `@`, so an attribute arrives
   prefixed; anything unprefixed is not one.
-- **Mesa support is syntax-only** — highlighting, snippets, symbols. There is no
-  Mesa language server, so nothing here diagnoses a `.mesa` file. It is also
-  **not loaded at all**: `startMesaClient` is commented out in `extension.ts`.
+- **Mesa is not a language server** — it registers vscode providers directly, so
+  there is no stdio protocol to drive it over and no separate process. It is
+  loaded from `extension.ts` like the Litestone client.
+- **`allowJs` is load-bearing.** `mesa/{hover,completions,symbols}.js` are plain
+  JS; without it tsc emits none of them and the first `require('./hover')` throws
+  at activation, which is why Mesa was switched off for months.
+- **The providers are `import`ed, not `require`d.** esbuild leaves a computed
+  require alone, so a bundled `.vsix` would ship without them and throw on the
+  first hover — where nothing tests it.
+- **`await import(p)` cannot load the compiler.** tsc under `module: commonjs`
+  rewrites it to a `require()`, and `require()` of mesa's ESM throws in the
+  extension host. The specifier has to be opaque to both compilers:
+  `new Function('specifier', 'return import(specifier)')`.
+- **The compiler is the workspace's own, resolved at runtime** — the package is
+  `@frontierjs/mesa` with its entry at `src/compiler.js`. It was
+  `@mesa/compiler/compiler.js` when the resolver was written, so every candidate
+  missed and diagnostics silently offered to be configured instead. The
+  extension-root fallback comes from `context.extensionPath`, never `__dirname`:
+  that is `out/` bundled and `out/mesa/` from tsc, two different depths.
+- **Only a QUOTED name in a compiler message names a variable.** Matching a
+  declared variable on a word boundary anywhere in the message underlined
+  `let a = 1` for `bind:group={missing} — 'missing' must be a top-level let
+  variable`, because "must be a top-level" contains a standalone `a`.
+- **A duplicate `.mesa` grammar wins some of the time.** Two copies of an older
+  `mesa-language-support` extension are installed under `~/.vscode/extensions`
+  (publishers `frontierjs` and `your-publisher-name`), both contributing the
+  `mesa` language id. Uninstall them before trusting what an editor shows.
 - **The Litestone server embeds an understanding of `.lite`** that the real
   parser owns (`packages/litestone/src/core/parser.js`). Any schema-language
   change is a change in two places, and this is the one that gets forgotten.
 - **`out/` is build output.** Editing it looks like it works until the next build.
+- **Packaging cannot use vsce's dependency walk.** bun installs
+  `vscode-languageclient` and friends as symlinks into the workspace root's
+  `.bun` store, so vsce follows them above the extension root and refuses with
+  `invalid relative path: extension/../../…`. `--no-dependencies` packs, and
+  ships an extension whose first `require()` throws where nothing tests it —
+  so `vscode:prepublish` runs `scripts/bundle.js`, which rewrites
+  `out/extension.js` and `out/litestone/server.js` as self-contained CJS.
+  `vscode` stays external (the host provides it) and so does
+  `out/litestone/parser-bundle.js` — `server.js` require()s it by a computed
+  path and it must sit beside it.
+- **The marketplace PNG is generated, not drawn.** `icons/frontierjs.svg` is the
+  source; regenerate after editing it with
+  `convert -background none -density 384 icons/frontierjs.svg -resize 128x128 PNG32:icons/frontierjs.png`.
 
 ## Proving a change
 
-**`npm test`** — 34 assertions driving the built server over real LSP/stdio.
-It builds first on purpose: a stale `out/` tests the previous fix and reads as
-"the change did not work".
+**`npm test`** — two suites, 70 assertions, over the built output. It builds
+first on purpose: a stale `out/` tests the previous fix and reads as "the change
+did not work".
+
+### Litestone — 34 assertions over real LSP/stdio
 
 - `test/lsp-client.js` — a small LSP client (Content-Length framing, requests
   correlated by id, `openDoc()` resolves on the diagnostics notification). No
@@ -80,6 +127,30 @@ The suite is mutation-checked: reverting `isInsideBlock`, the caret-aware
 attribute detection, or the null-schema guards each turns it red (the last one
 reproduces the original `Cannot read properties of null (reading 'models')`).
 
-`npm run test:nobuild` skips the build while iterating. For anything the
-protocol cannot show you, load the extension in a VS Code dev host (F5) and open
-a real `.lite` file.
+### Mesa — 36 assertions against the built `out/mesa/`
+
+- `test/vscode-stub.js` — stands in for the editor (`Module._load` intercepts
+  `require('vscode')`), because there is no protocol to drive these providers
+  over and the alternative, `@vscode/test-electron`, downloads a VS Code build
+  per run. **The compiler is the real one**: the defect the suite exists for was
+  a resolver hunting a renamed package, which a fake compiler resolves happily.
+- `test/mesa.test.js` — activation, all five compiler-resolution routes and the
+  none-found case, diagnostics from analysis errors and from a `compile()` that
+  throws, the debounce, and each of the three providers.
+
+Mutation-checked too: dropping `allowJs` reproduces
+`Cannot find module './hover'` at activation, and turning the opaque dynamic
+import back into `await import(p)` turns every resolution case red.
+
+`npm run test:nobuild` skips the build while iterating. For anything neither
+suite can show you, load the extension in a VS Code dev host (F5) — and
+uninstall the older `mesa-language-support` copies first.
+
+**`npm run verify:package`** proves the ARTEFACT rather than the tree: it packs,
+unpacks the `.vsix` somewhere with no `node_modules` above it, checks every icon
+`package.json` names is inside, that neither bundle bare-requires something
+unshipped, and that the Mesa providers and the opaque dynamic import survived
+bundling — then runs both suites against the UNPACKED copies (`FJS_LSP_SERVER`
+and `FJS_MESA_CLIENT` point them at any copy). Run it after touching
+`package.json`, the bundle or the icons — a `.vsix` that builds is not an
+extension that runs, and the marketplace is where that difference shows up.

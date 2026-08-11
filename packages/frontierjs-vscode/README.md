@@ -2,18 +2,6 @@
 
 Language support for FrontierJS projects.
 
-> **`npm run build` fails as checked in** (verified 2026-08-01). `scripts/build-parser.js`
-> looks for the Litestone parser at `litestone/src/parser.js`; it lives at
-> `litestone/src/core/parser.js` since the core/ move. Nothing else is wrong —
-> point it at the real path and both steps pass:
->
-> ```bash
-> LITESTONE_SRC=../litestone/src/core node scripts/build-parser.js && npx tsc -p tsconfig.json
-> ```
->
-> Fix the candidate list in `scripts/build-parser.js` to make `npm run build` work
-> unaided. Everything below describes the extension once it is built.
-
 ## Litestone (`.lite`, `.litestone`)
 
 Full language server for Litestone schema files:
@@ -50,7 +38,15 @@ Errors appear as red squiggles. Hover over any type or attribute for documentati
 
 ## MESA
 
-Syntax highlighting, snippets, and language configuration for `.mesa` files are active. Semantic features (diagnostics, completions, hover) are coming in the next release.
+Syntax highlighting, snippets, language configuration, hover documentation,
+completions (`$`, `{`, `:`, `|`, `<`) and the outline panel are active for
+`.mesa` files.
+
+**Diagnostics need the Mesa compiler**, which is your workspace's own rather
+than a copy shipped here — the extension resolves `@frontierjs/mesa` from
+`node_modules`, from a `packages/mesa` above the file you are editing, or from
+`mesa.compilerPath`. Without it the other four features still work and the
+extension says so once.
 
 ## Extension settings
 
@@ -59,7 +55,7 @@ Syntax highlighting, snippets, and language configuration for `.mesa` files are 
 | `litestone.formatOnSave` | `true` | Auto-format `.lite` files on save |
 | `litestone.trace.server` | `"off"` | LSP trace level (`"off"` / `"messages"` / `"verbose"`) |
 | `litestone.parserPath` | `""` | Absolute path to your `litestone/src` directory. Leave empty for auto-resolve (sibling monorepo directory or installed npm package). |
-| `mesa.compilerPath` | `""` | Path to `compiler.js`. Defaults to `node_modules/@mesa/compiler/compiler.js` in workspace root. |
+| `mesa.compilerPath` | `""` | Path to `@frontierjs/mesa`'s `src/compiler.js`, or to the package directory. Leave empty for auto-resolve. |
 | `mesa.validateOnType` | `true` | Validate Mesa files as you type (debounced). Disable for large files. |
 | `mesa.validateDelay` | `300` | Debounce delay in ms for on-type validation. |
 
@@ -73,3 +69,9 @@ npm run watch   # watch mode
 ```
 
 To debug the language server: use the **Extension + Server** compound launch config.
+
+```bash
+npm test               # 34 assertions driving the built server over LSP/stdio
+npm run package        # → frontierjs-<version>.vsix
+npm run verify:package # packs, unpacks, and tests the .vsix itself
+```

@@ -2,7 +2,7 @@
   "name": "@frontierjs/ui",
   "version": "0.1.0",
   "type": "module",
-  "description": "Mesa component kit over @frontierjs/css \u2014 forms, display, layout, overlay, feedback",
+  "description": "Mesa component kit over @frontierjs/css — forms, display, layout, overlay, feedback",
   "exports": {
     "./utils.js": "./utils.js",
     "./utils": "./utils.js",
@@ -15,7 +15,7 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "peerDependencies": {
-    "@frontierjs/css": "^0.11.0",
+    "@frontierjs/css": "^0.15.0",
     "@frontierjs/mesa": "^0.1.0"
   },
   "devDependencies": {

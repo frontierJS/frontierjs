@@ -1,0 +1,31 @@
+#!/bin/sh
+# ============================================================
+# pre-push — the fast CI tier, before anything leaves the machine
+#
+# Installed by `bun run hooks:install`, which links it into .git/hooks.
+# Edit THIS file, not the copy in .git/hooks — the installer symlinks, so a
+# change here is live, and .git/hooks is not in git.
+#
+# Runs hygiene, coverage and typecheck only. The suites take minutes and drive
+# a real browser; blocking every push on them trains people to reach for
+# --no-verify, which disables the cheap checks too. The suites belong in the
+# workflow, where they cost nobody's attention.
+#
+# Bypass: git push --no-verify
+# ============================================================
+
+root=$(git rev-parse --show-toplevel) || exit 0
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[pre-push] node not on PATH — skipping CI checks"
+  exit 0
+fi
+
+# The base ref decides what a RAISED typecheck baseline is measured against.
+# A push is against the remote's main, not the local one, which may be behind.
+FJS_CI_BASE_REF="${FJS_CI_BASE_REF:-origin/main}" \
+  node "$root/scripts/ci.mjs" --fast || {
+  echo ""
+  echo "[pre-push] blocked. Fix the above, or push with --no-verify if you mean it."
+  exit 1
+}

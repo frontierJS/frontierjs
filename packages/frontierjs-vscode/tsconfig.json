@@ -4,6 +4,9 @@
     "target":           "ES2020",
     "lib":              ["ES2020"],
     "outDir":           "out",
+    // src/mesa/{hover,completions,symbols}.js are plain JS. Without allowJs tsc
+    // emits none of them and the first require('./hover') throws at activation.
+    "allowJs":          true,
     "rootDir":          "src",
     "strict":           true,
     "esModuleInterop":  true,

@@ -49,9 +49,10 @@ index.ts     public API
   so the tarball imported nothing and said so only on install. `files` in
   `package.json` is `["*.ts", "README.md"]`: a new source file at the package
   root ships, a new directory does not.
-- **It still cannot go to npm, for junction's reason rather than its own** —
-  `@frontierjs/junction` is unpublished, and it is a peer. No OAuth either. Its
-  typecheck baseline is non-zero; see `scripts/typecheck-baselines.json`.
+- **It is shippable — its peer went to npm on 2026-08-10.** A `bun add` of the
+  auth tarball into an empty project resolves `@frontierjs/junction@^0.1.0` from
+  the registry and imports. Still no OAuth, and its typecheck baseline is
+  non-zero; see `scripts/typecheck-baselines.json`.
 
 ## Proving a change
 

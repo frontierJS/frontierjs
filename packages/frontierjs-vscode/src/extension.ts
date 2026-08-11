@@ -1,13 +1,14 @@
 import * as vscode from 'vscode'
 import { startLitestoneClient, stopLitestoneClient } from './litestone/client'
-// import { startMesaClient, stopMesaClient } from './mesa/client'  // uncomment when ready
+import { startMesaClient, stopMesaClient } from './mesa/client'
 
 export async function activate(context: vscode.ExtensionContext) {
   // Litestone language client
   await startLitestoneClient(context)
 
-  // MESA language client — uncomment when ready
-  // await startMesaClient(context)
+  // Mesa — plain vscode providers, no server. Diagnostics need the workspace's
+  // own @frontierjs/mesa; without it the other three features still work.
+  await startMesaClient(context)
 
   // Command: restart Litestone language server
   context.subscriptions.push(
@@ -21,5 +22,5 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export async function deactivate() {
   await stopLitestoneClient()
-  // await stopMesaClient()
+  await stopMesaClient()
 }

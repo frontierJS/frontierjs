@@ -6,7 +6,7 @@ Last verified by running: **2026-08-03**.
 
 | | |
 | --- | --- |
-| Version | 0.1.0 — working, self-styled pre-alpha |
+| Version | 0.1.0 — **published to npm 2026-08-10**, tag `latest`, public. Bun-only by construction: Node will not strip types inside `node_modules`, and compiling would only move the failure later (`Bun.serve`, `Bun.file`, `bun:sqlite`) |
 | Tests | **866 pass / 0 fail**, 33 files, 1,551 assertions (`bun run test`, 2.0s) |
 | Typecheck | **exactly 212** — the baseline. `bun run typecheck` exits 0 |
 | Realm | API / D8 |

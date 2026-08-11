@@ -1,5 +1,39 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-10 — published to npm as `@frontierjs/junction@0.1.0`
+
+Live on the registry, tag `latest`, public. Four manifest gaps closed first,
+each of which fails at a different moment:
+
+- **`publishConfig.access: "public"`** — a scoped package defaults to restricted,
+  so the *first* publish of `@frontierjs/*` fails on payment rather than on
+  anything about the code.
+- **`files`** — the tarball was 131 files and 464 kB, carrying `tests/`,
+  `example/`, `bun.lock`, `tsconfig.json` and the three state markdowns. Now 64
+  files and 281 kB: `index.ts`, `src/`, `tools/` minus the seven repo-internal
+  `check-*.mjs` audits, README and LICENSE. The bin needs `init.ts`, `setup.ts`,
+  `repl.ts` and `build-app.ts` beside it, which is why `tools/` ships at all.
+- **`LICENSE`** — the manifest said MIT and no file said anything.
+- **`repository`** with `directory: "packages/junction"`, the monorepo form.
+
+**Bun-only, and there is no version of this package that is not.** Node refuses
+to strip types inside `node_modules`, so the import fails outright — and
+compiling to JS would only move the failure later, because the transport is
+`Bun.serve`, logging and static files are `Bun.file`, and cache and database
+import `bun:sqlite`. `engines` already said so; the README now says it in the
+first paragraph a reader arriving from npm will see, and that Quick start no
+longer opens with `git clone <this repo>`.
+
+Verified against the published artefact rather than the tree: **all 29 declared
+subpath exports import from an installed copy** (the 29th, `/auth`, is
+types-only, so zero runtime exports is the right answer), and the `junction` bin
+runs from `node_modules/.bin`. 919 tests unchanged.
+
+**This unblocks `@frontierjs/auth`** — it declares junction as a peer, and its
+`FJS-003` fix was verifiable but unshippable while the peer was a 404. A `bun
+add` of the auth tarball into an empty project now resolves junction from the
+registry and imports.
+
 ## 2026-08-10 — a load that has been overtaken no longer writes the store
 
 Closes `FJS-082`. `resource().load()` was one unconditional line — read rows,

@@ -61,8 +61,8 @@
     "ws": "^8.20.0"
   },
   "peerDependencies": {
-    "@frontierjs/mesa": "*",
-    "@frontierjs/junction": "*"
+    "@frontierjs/mesa": "^0.1.0",
+    "@frontierjs/junction": "^0.1.0"
   },
   "peerDependenciesMeta": {
     "@frontierjs/mesa": {

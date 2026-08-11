@@ -1,8 +1,19 @@
 # Idea — A testing environment and automated CI
 
-**Status: IDEA + ASSESSMENT. Nothing here is built.** Dated 2026-08-03. Every claim
-below was probed by running, not read off a status file (`VERIFYING.md`); the
-evidence is named inline. Do not cite this file as describing behavior.
+**Status: gap A is BUILT, gap B is still an idea.** Dated 2026-08-03; gap A shipped
+2026-08-10 as `scripts/ci.mjs` + `scripts/hooks/pre-push` + `.github/workflows/ci.yml`
+— read the script, not the § Design — CI sketch below, which is what was proposed
+rather than what runs. Everything from § Design — the Suite realm onward is
+unbuilt. Every claim below was probed by running, not read off a status file
+(`VERIFYING.md`); the evidence is named inline. Do not cite this file as
+describing behaviour.
+
+**What the assessment below got wrong, re-probed 2026-08-10.** Two of its three
+skipped packages are no longer skipped — `packages/basecamp` has a `package.json`
+and 146 files in git, and `packages/frontierjs-vscode` has a `test` script — and
+the repo has no untracked files left. `packages/orion` is still invisible, joined
+by `datetime-kit`, `oracle` and `toolbelt`; all four are now exempt **by name**,
+which is the difference between a skip and a decision.
 
 **Vocabulary note:** Testing's noun is **Suite** (`ARCHITECT.md` §2). Like Release,
 it is a named realm with no package and no primitives — see
@@ -116,6 +127,16 @@ every commit is for — and precisely what a human spot-check misses.
 ---
 
 ## Design — CI (gap A)
+
+**Built 2026-08-10, against these six constraints.** 1 partly — the workflow
+checks out fresh and installs `--frozen-lockfile`, and the hygiene phase catches
+the `build/` class locally by failing on any source file `.gitignore` hides, but
+nothing clones into a scratch directory. 2, 3 and 4 in full: Chrome is named in
+the workflow rather than inherited, a package with no `test` script fails unless
+it is exempt by name with a reason, and a raised baseline fails against the merge
+base. 5 and 6 **not built** — no job installs a published tarball, and the
+example drives are outside CI because they need servers started by hand and
+`example` signs in against a 10-per-15-min login limit.
 
 Constraints this repo actually has, which shape the job:
 

@@ -9,8 +9,12 @@ const path = require('path')
 const fs   = require('fs')
 const { LspClient, labels, hoverText } = require('./lsp-client')
 
-const ROOT   = path.resolve(__dirname, '..')
-const SERVER = path.join(ROOT, 'out', 'litestone', 'server.js')
+const ROOT = path.resolve(__dirname, '..')
+
+// FJS_LSP_SERVER points the whole suite at another copy of the server — which is
+// how the UNPACKED .vsix is tested (scripts/verify-package.js), where node_modules
+// is absent and a missed bundle would fail at spawn rather than in the marketplace.
+const SERVER = process.env.FJS_LSP_SERVER || path.join(ROOT, 'out', 'litestone', 'server.js')
 
 // ─── Tiny harness ─────────────────────────────────────────────────────────────
 

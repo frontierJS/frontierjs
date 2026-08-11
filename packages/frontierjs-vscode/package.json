@@ -115,7 +115,7 @@
           "scope": "machine",
           "type": "string",
           "default": "",
-          "description": "Path to mesa compiler.js. Defaults to node_modules/@mesa/compiler/compiler.js in the workspace root."
+          "description": "Path to @frontierjs/mesa's src/compiler.js, or to the package directory. Leave empty to auto-resolve (node_modules/@frontierjs/mesa, or a packages/mesa above the edited file)."
         },
         "mesa.validateOnType": {
           "scope": "resource",
@@ -208,17 +208,19 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run build",
+    "vscode:prepublish": "npm run build && npm run bundle",
     "build": "npm run build:parser && tsc -p tsconfig.json",
     "build:parser": "node scripts/build-parser.js",
+    "bundle": "node scripts/bundle.js",
     "watch": "concurrently \"npm run watch:parser\" \"npm run watch:tsc\"",
     "watch:tsc": "tsc -watch -p tsconfig.json",
     "watch:parser": "node scripts/build-parser.js --watch",
     "dev": "npm run watch",
-    "package": "vsce package",
-    "publish": "vsce publish",
-    "test": "npm run build && node test/lsp.test.js",
-    "test:nobuild": "node test/lsp.test.js",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish --no-dependencies",
+    "test": "npm run build && node test/lsp.test.js && node test/mesa.test.js",
+    "test:nobuild": "node test/lsp.test.js && node test/mesa.test.js",
+    "verify:package": "node scripts/verify-package.js",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {

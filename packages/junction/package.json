@@ -38,6 +38,22 @@
   "bin": {
     "junction": "./tools/cli.ts"
   },
+  "files": [
+    "index.ts",
+    "src/",
+    "tools/",
+    "!tools/check-*.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/junction"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "init": "bun run tools/init.ts",
     "dev": "bun run --watch example/app.ts",

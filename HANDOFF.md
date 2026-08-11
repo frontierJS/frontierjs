@@ -48,6 +48,160 @@ proved the old build. If you can clear that port, `example`: `verify` +
 
 ---
 
+## Session — Mesa support was one commented-out line and three landmines (2026-08-10)
+
+```
+frontierjs-vscode    npm test 34 + 36 · typecheck clean · verify:package all green
+```
+
+`FJS-008b` closed. `startMesaClient` is called from `extension.ts` and `.mesa`
+files get hover, completions, the outline and compiler diagnostics — plain
+vscode providers, no second server. **Uncommenting the line was never the fix**:
+each of the three blockers ships an extension that fails where nothing watches.
+
+- **The providers are plain JS and tsc emitted none of them** — no `allowJs`, so
+  `require('./hover')` threw at activation. They are `import`ed now as well:
+  esbuild leaves a computed require alone, so the bundled `.vsix` would have
+  shipped without them and thrown on the first hover, in the marketplace.
+- **The compiler resolver hunted `@mesa/compiler/compiler.js`**, a name from
+  before the rename. It probes `@frontierjs/mesa`'s `src/compiler.js` in
+  node_modules, a `packages/mesa` above the edited file, `mesa.compilerPath`
+  (file or package directory), and a sibling of `context.extensionPath` —
+  which had to replace `__dirname`, since that is `out/` in the bundle and
+  `out/mesa/` in the tsc output.
+- **`await import(p)` cannot load it.** tsc under `module: commonjs` rewrites it
+  into a `require()`, and `require()` of mesa's ESM throws in the extension host.
+  It is loaded through `new Function('specifier', 'return import(specifier)')`
+  so neither compiler can see the specifier. This one is the dangerous shape: it
+  fails as *no diagnostics*, which looks like a clean file.
+
+The compiler is the workspace's own and is never shipped — without one, the other
+four features still work and the extension says so once.
+
+**`test/mesa.test.js` — 36 assertions over the built output.** There is no
+protocol to drive these providers over, so `test/vscode-stub.js` stands in for
+the editor; the compiler is the real one, because a fake compiler resolves
+happily and resolution was the defect. It covers all five resolution routes and
+the none-found prompt, an analysis error and a `compile()` that throws, the
+debounce, and each provider. Mutation-checked: dropping `allowJs` reproduces
+`Cannot find module './hover'`, and restoring the plain `await import(p)` turns
+every resolution case red. `verify:package` runs it against the unpacked `.vsix`
+and asserts the providers and the opaque import survived bundling.
+
+Writing it found one more: a diagnostic's range came from matching a declared
+variable on a word boundary anywhere in the message, so
+`bind:group={missing} — 'missing' must be a top-level let variable` underlined
+`let a = 1` — "must be a top-level" contains a standalone `a`. Only a quoted
+name names a variable now.
+
+**Not fixable from here**: two copies of an older `mesa-language-support`
+extension sit in `~/.vscode/extensions` (publishers `frontierjs` and
+`your-publisher-name`), both contributing the `mesa` language id. Uninstall
+them before trusting what an editor shows.
+
+---
+
+## Session — junction is on npm, and it is Bun-only for good (2026-08-10)
+
+```
+packages/junction    919 tests unchanged · 29/29 subpath exports import from the
+                     INSTALLED copy · @frontierjs/junction@0.1.0 live, tag latest
+```
+
+No code changed. Four manifest gaps, each failing at a different moment:
+
+- **`publishConfig.access: "public"`.** A scoped package defaults to restricted,
+  so the FIRST publish under `@frontierjs/*` fails on *payment* — an error that
+  says nothing about the package. This is the one that would have wasted an hour.
+- **`files`** — 131 files / 464 kB, carrying `tests/`, `example/`, `bun.lock`,
+  `tsconfig.json` and all three state markdowns. Now 64 / 281 kB. `tools/` ships
+  because the bin loads `init.ts`/`setup.ts`/`repl.ts`/`build-app.ts` beside it;
+  the seven `check-*.mjs` repo audits are negated out.
+- **`LICENSE`** — the manifest claimed MIT with no file.
+- **`repository` + `directory`.**
+
+**The decision underneath it: it ships raw TypeScript, and that is correct.**
+Node refuses to strip types inside `node_modules` — a policy, not a version
+gap — so `import '@frontierjs/junction'` fails there outright. Compiling would
+not buy Node support, only move the failure later: the transport is `Bun.serve`,
+logging and static files are `Bun.file`, cache and database import `bun:sqlite`.
+So the honest move was to say so rather than build a dist. The README's Quick
+start used to open `git clone <this repo>` — the wrong first sentence for
+someone arriving from npm — and now opens with `bun add` and the Bun-only
+paragraph.
+
+**Verified against the artefact.** Every one of the 29 declared subpath exports
+imports from an installed copy; `/auth` answers zero runtime exports, which is
+correct because it is types-only. The `junction` bin runs from
+`node_modules/.bin`. Then the thing this was for: `bun add` of the auth tarball
+into an empty project resolves `@frontierjs/junction@^0.1.0` **from the
+registry** and imports — the same command that 404'd before publish.
+
+**`npm publish` needs a 2FA OTP**, which is on a human's authenticator. Prep,
+dry-run and verification are all automatable; the publish itself is not.
+
+**Publishing a package makes every loose peer range on it go quiet, and that is
+the part to check after the next one too.** While `@frontierjs/junction` was a
+404, a peer of `"*"` or `>=0.1.0` failed at install — loudly, with a name in the
+error. The moment it existed, those same ranges resolved to 0.1.0 from the
+registry without a word, and would keep resolving through a future 2.0. Five
+were tightened to `^0.1.0` (caret pins the minor below 1.0, which is the
+behaviour wanted here): notifications and jetty were bare `*`, caravan and
+conduit were `>=0.1.0`. Nothing in the workspace had actually switched to the
+published copy — every consumer pairs its peer with a `workspace:*` devDep, and
+jetty's `file:` entry is a symlink — so this was about what an *outside* install
+would resolve, which is exactly the surface publishing just created.
+
+The audit found one unrelated live mismatch: **`@frontierjs/ui` declared
+`@frontierjs/css: ^0.11.0` while css is 0.15.0** in the workspace and on npm.
+Below 1.0 a caret pins the minor, so `^0.11.0` means `>=0.11.0 <0.12.0` — ui's
+declared peer excluded both copies of the package it is built on. Nothing caught
+it because ui resolves css by workspace and never by range. Now `^0.15.0`.
+Verified by suite, not by reading: caravan 79, conduit 193, notifications 38,
+auth 83, ui 64/64 + 26/26 + 60/60 + 7/7, jetty unchanged at its one known
+`FJS-030` failure.
+
+## Session — the extension packages, and the icon was the small half (2026-08-10)
+
+```
+frontierjs-vscode    npm test 34/34 · typecheck clean · npm run verify:package all green
+```
+
+`FJS-008c`, closed. The row said `icons/` does not exist and that it blocks
+packaging only. Both true, and the icon was the cheaper half: `icons/` now holds
+`frontierjs.svg` → `frontierjs.png` (128×128) plus `litestone-{light,dark}.svg`,
+one family with `example/`'s favicon — three bars, middle one `#0d83dd`, which is
+`--color-primary` from `@frontierjs/css`.
+
+**With the icons in place `vsce package` still died** —
+`invalid relative path: extension/../../.claude/settings.local.json`. bun installs
+`vscode-languageclient` and the two server packages as **symlinks into the
+workspace root's `.bun` store**, and vsce's dependency walk follows them above the
+extension root. `--no-dependencies` packs in one second and ships an extension
+whose first `require('vscode-languageclient/node')` throws — in the marketplace,
+where nothing tests it. That is the failure the icon was hiding.
+
+So `vscode:prepublish` bundles: `scripts/bundle.js` (esbuild, already a dep and
+already bundling the parser) rewrites `out/extension.js` and
+`out/litestone/server.js` as self-contained CJS. Two things stay out — `vscode`,
+which the host provides, and `out/litestone/parser-bundle.js`, which `server.js`
+require()s by a computed path and which must sit beside it.
+
+**Proven against the artefact, not the tree.** `npm run verify:package` packs,
+unpacks the `.vsix` into a temp dir with no `node_modules` above it, asserts every
+icon `package.json` names is inside, asserts neither bundle bare-requires anything
+unshipped, and then runs **all 34 LSP assertions against the unpacked server** —
+`test/lsp.test.js` takes `FJS_LSP_SERVER` now, so one suite covers both copies.
+The `.vsix` is 20 files, 292 KB. A `LICENSE`, a `.vscodeignore` and a README with
+its stale *"npm run build fails"* banner removed came with it — that banner is the
+marketplace page.
+
+**Left open:** `vsce publish` needs a marketplace publisher account, and nothing
+here can create one. `FJS-008b` (Mesa client switched off) is untouched — the
+bundle does not reach it, since `startMesaClient` is still commented out.
+
+---
+
 ## Session — auth was written as a folder, not as a package (2026-08-10)
 
 ```
@@ -81,9 +235,8 @@ obvious from the diff:
   beside it — and it does that with `"*"` as the range too, so it is not the
   range. `npm install` resolves it from the tree and the import passes. Do not
   read that 404 as a regression.
-- **auth still cannot reach npm, and it is junction's turn now.**
-  `@frontierjs/junction` is unpublished, and it is a peer. Nothing left on
-  auth's side of that.
+- **auth's own side is done; the peer was junction's turn** — and junction was
+  published the same day, so this is closed end to end. See the session below.
 
 ## Session — an include enforced nothing, and one model got a policy (2026-08-10)
 

@@ -14,7 +14,7 @@
     "junction"
   ],
   "peerDependencies": {
-    "@frontierjs/junction": "*"
+    "@frontierjs/junction": "^0.1.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

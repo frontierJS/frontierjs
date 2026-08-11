@@ -4,10 +4,27 @@ A pragmatic, batteries-included backend framework for Bun. Built on three ideas:
 
 ---
 
-## Quick start
+## Install
 
 ```bash
-git clone <this repo>
+bun add @frontierjs/junction
+```
+
+**Bun only, and permanently so.** The transport is `Bun.serve`, static files and
+logs go through `Bun.file`, and the cache and database batteries import
+`bun:sqlite`. Under Node the import itself fails — Node refuses to strip types
+inside `node_modules` — and a build step would only move that failure later, so
+there is no Node path to have. `engines` says the same thing.
+
+`@frontierjs/litestone` is an optional peer: install it and `createService`
+generates all five CRUD methods, validation and `@file` wiring from the schema.
+Without it, services are hand-written and everything else works unchanged.
+
+## Quick start
+
+Working on Junction itself, from a clone of the monorepo:
+
+```bash
 cd packages/junction
 bun run dev        # starts example/app.ts with --watch
 

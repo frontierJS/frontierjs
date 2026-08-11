@@ -221,12 +221,12 @@ Re-proven the same way it was found: pack, install the tarball into an empty
 project, import it, build a plugin. The three runtime value imports resolve
 through the specifier.
 
-**What is left is junction's, not auth's.** `@frontierjs/junction` is a 404 on
-the registry, so `npm i @frontierjs/auth` cannot satisfy its own peer until
-junction ships — and `bun install` of the tarball 404s for that reason even with
-the local copy in the tree, which it also does with `"*"` as the range, so that
-is bun declining to satisfy a peer from a `file:` dep rather than anything about
-the range.
+**The peer landed the same day.** `@frontierjs/junction@0.1.0` is on npm, so a
+`bun add` of the auth tarball into an empty project now resolves the peer from
+the registry and imports — which it could not do while junction was a 404, and
+could not do from a sibling `file:` tarball either (bun declines to satisfy a
+semver peer from one; it does that with `"*"` as the range too, so that failure
+was never about the range).
 
 ### 5. The coverage gap — **CLOSED for the flows, by 57 new tests**
 

@@ -38,7 +38,7 @@
     "bun": ">=1.0.0"
   },
   "peerDependencies": {
-    "@frontierjs/junction": ">=0.1.0"
+    "@frontierjs/junction": "^0.1.0"
   },
   "peerDependenciesMeta": {
     "@frontierjs/junction": {

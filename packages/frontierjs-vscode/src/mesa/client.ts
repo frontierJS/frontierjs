@@ -13,12 +13,18 @@
 import * as vscode from 'vscode'
 import * as path   from 'path'
 
-// Mesa implementation — plain JS modules (no compilation overhead)
-/* eslint-disable @typescript-eslint/no-var-requires */
-const { provideHover }           = require('./hover')
-const { provideCompletionItems } = require('./completions')
-const { provideDocumentSymbols } = require('./symbols')
-/* eslint-enable @typescript-eslint/no-var-requires */
+// The three providers are plain JS. They are imported, not require()d, so that
+// esbuild pulls them into the packaged bundle — a computed require would be left
+// alone and the marketplace copy would throw on the first hover.
+import { provideHover }           from './hover'
+import { provideCompletionItems } from './completions'
+import { provideDocumentSymbols } from './symbols'
+
+// The compiler is ESM. `await import(p)` is rewritten to a require() by tsc under
+// module:commonjs, and require() of an ESM file throws in the extension host —
+// so the specifier has to be opaque to both compilers.
+const dynamicImport: (specifier: string) => Promise<any> =
+  new Function('specifier', 'return import(specifier)') as any
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -26,10 +32,15 @@ let diagnosticCollection: vscode.DiagnosticCollection | null = null
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let _compile: Function | null = null
 let _compilerNotFoundShown    = false
+let _extensionPath            = ''
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function startMesaClient(context: vscode.ExtensionContext) {
+  // The sibling-package fallback below is relative to the extension root, which
+  // __dirname does not give: it is out/ in the packaged bundle and out/mesa/ in
+  // the tsc output, two different depths.
+  _extensionPath      = context.extensionPath
   diagnosticCollection = vscode.languages.createDiagnosticCollection('mesa')
   context.subscriptions.push(diagnosticCollection)
 
@@ -105,16 +116,28 @@ export async function stopMesaClient() {
   diagnosticCollection = null
   _compile = null
   _compilerNotFoundShown = false
+  _extensionPath = ''
 }
 
 // ─── Compiler resolution ──────────────────────────────────────────────────────
+// The package is `@frontierjs/mesa` and its entry is src/compiler.js — it was
+// `@mesa/compiler/compiler.js` when this file was written, so every candidate
+// missed and the diagnostics silently offered to be configured instead.
 // Search order:
-//   1. mesa.compilerPath setting (explicit)
-//   2. node_modules/@mesa/compiler/compiler.js in each workspace folder
-//   3. node_modules/mesa/compiler.js in each workspace folder
-//   4. compiler.js at each workspace folder root
-//   5. Walk up from the currently active file (monorepo support)
-//   6. compiler.js next to the extension itself (dev/F5 mode)
+//   1. mesa.compilerPath setting (explicit — a file, or a directory to probe)
+//   2. each workspace folder
+//   3. every directory from the edited file up to the filesystem root (monorepo)
+//   4. a sibling packages/mesa next to the extension itself (dev/F5 in this repo)
+
+/** The places a mesa checkout hides under one directory, in probe order. */
+function compilerEntriesUnder(dir: string): string[] {
+  return [
+    path.join(dir, 'node_modules', '@frontierjs', 'mesa', 'src', 'compiler.js'),
+    path.join(dir, 'packages', 'mesa', 'src', 'compiler.js'),
+    path.join(dir, 'src', 'compiler.js'),
+    path.join(dir, 'compiler.js')
+  ]
+}
 
 async function resolveCompiler(triggerFilePath?: string): Promise<Function | null> {
   if (_compile) return _compile
@@ -123,35 +146,32 @@ async function resolveCompiler(triggerFilePath?: string): Promise<Function | nul
   const explicitPath = config.get<string>('compilerPath')
   const candidates:  string[] = []
 
-  if (explicitPath) candidates.push(explicitPath)
+  const { existsSync, statSync } = require('fs')
 
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    const root = folder.uri.fsPath
-    candidates.push(
-      path.join(root, 'node_modules', '@mesa', 'compiler', 'compiler.js'),
-      path.join(root, 'node_modules', 'mesa', 'compiler.js'),
-      path.join(root, 'compiler.js')
-    )
+  if (explicitPath) {
+    // A setting naming the package directory rather than the file is the likelier
+    // typo of the two, and it costs one stat to accept.
+    const isDir = existsSync(explicitPath) && statSync(explicitPath).isDirectory()
+    if (isDir) candidates.push(...compilerEntriesUnder(explicitPath))
+    else candidates.push(explicitPath)
   }
+
+  for (const folder of vscode.workspace.workspaceFolders ?? [])
+    candidates.push(...compilerEntriesUnder(folder.uri.fsPath))
 
   if (triggerFilePath) {
     let dir = path.dirname(triggerFilePath)
-    const fsRoot = path.parse(dir).root
-    while (dir !== fsRoot) {
-      candidates.push(
-        path.join(dir, 'node_modules', '@mesa', 'compiler', 'compiler.js'),
-        path.join(dir, 'node_modules', 'mesa', 'compiler.js'),
-        path.join(dir, 'compiler.js')
-      )
+    while (true) {
+      candidates.push(...compilerEntriesUnder(dir))
       const parent = path.dirname(dir)
       if (parent === dir) break
       dir = parent
     }
   }
 
-  candidates.push(path.join(__dirname, '..', '..', 'compiler.js'))
+  if (_extensionPath)
+    candidates.push(path.join(_extensionPath, '..', 'mesa', 'src', 'compiler.js'))
 
-  const { existsSync }    = require('fs')
   const { pathToFileURL } = require('url')
   const seen = new Set<string>()
 
@@ -160,7 +180,7 @@ async function resolveCompiler(triggerFilePath?: string): Promise<Function | nul
     seen.add(candidate)
     if (!existsSync(candidate)) continue
     try {
-      const mod = await import(pathToFileURL(candidate).href)
+      const mod = await dynamicImport(pathToFileURL(candidate).href)
       if (typeof mod.compile === 'function') {
         _compile = mod.compile
         console.log(`[FrontierJS] Mesa compiler loaded: ${candidate}`)
@@ -247,26 +267,35 @@ function findScriptContentOffset(source: string): number {
   return match ? (match.index! + match[0].length) : 0
 }
 
+// A QUOTED name is the compiler naming the thing it is complaining about; the
+// prose around it is not. Matching a declared variable on a word boundary
+// anywhere in the message underlined `let a = 1` for
+// `bind:group={missing} — 'missing' must be a top-level let variable`, because
+// "must be a top-level" contains a standalone `a`. Single-letter names are
+// ordinary, so the wrong line was underlined with nothing looking wrong.
 function findRangeForMessage(doc: vscode.TextDocument, message: string, source: string, scriptOffset: number, analysis: any): vscode.Range {
-  if (analysis?.vars) {
-    for (const [name, v] of Object.entries<any>(analysis.vars)) {
-      if (messageIsAbout(message, name) && v.nodeStart != null) {
-        return rangeFromOffsets(doc, scriptOffset + v.nodeStart, scriptOffset + (v.nodeEnd ?? v.nodeStart + name.length))
-      }
-    }
-  }
-  for (const [, id] of [...message.matchAll(/'([^']+)'/g)]) {
-    if (id.length < 2 || id.length > 80) continue
-    if (['let','const','var','export','bind','on','function'].includes(id)) continue
+  const quoted = [...message.matchAll(/'([^']+)'/g)]
+    .map(m => m[1])
+    .filter(id => id.length >= 2 && id.length <= 80)
+    .filter(id => !['let','const','var','export','bind','on','function'].includes(id))
+
+  for (const id of quoted) {
+    const v = analysis?.vars?.[id]
+    if (v?.nodeStart != null)
+      return rangeFromOffsets(doc, scriptOffset + v.nodeStart, scriptOffset + (v.nodeEnd ?? v.nodeStart + id.length))
     const idx = findBestOccurrence(source, id)
     if (idx !== -1) return rangeFromOffsets(doc, idx, idx + id.length)
   }
-  return new vscode.Range(0, 0, 0, 0)
-}
 
-function messageIsAbout(message: string, name: string): boolean {
-  return message.includes(`'${name}'`) || message.includes(`"${name}"`) ||
-    new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(message)
+  // Only when the message quotes nothing is a bare mention worth trusting.
+  if (!quoted.length && analysis?.vars) {
+    for (const [name, v] of Object.entries<any>(analysis.vars)) {
+      if (v.nodeStart != null && new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(message))
+        return rangeFromOffsets(doc, scriptOffset + v.nodeStart, scriptOffset + (v.nodeEnd ?? v.nodeStart + name.length))
+    }
+  }
+
+  return new vscode.Range(0, 0, 0, 0)
 }
 
 function findBestOccurrence(source: string, needle: string): number {
