@@ -1011,6 +1011,8 @@ function buildRelationMap(schema) {
           joinTable:   pair.joinTable,
           selfKey:     dir.selfKey,
           targetKey:   dir.targetKey,
+          selfPk:      pair.pkA,
+          targetPk:    pair.pkA,
         }
       }
       continue
@@ -1023,6 +1025,12 @@ function buildRelationMap(schema) {
         joinTable:   pair.joinTable,
         selfKey:     pair.colA,    // join table column for THIS model
         targetKey:   pair.colB,    // join table column for TARGET model
+        // The @id column each side is keyed by. Every m2m path used to write
+        // `id` literally, so a model whose key is named anything else silently
+        // wrote nothing (INSERT OR IGNORE swallows the NOT NULL) and read back
+        // an empty list.
+        selfPk:      pair.pkA,
+        targetPk:    pair.pkB,
       }
     }
     if (pair.fieldB) {
@@ -1032,6 +1040,8 @@ function buildRelationMap(schema) {
         joinTable:   pair.joinTable,
         selfKey:     pair.colB,    // join table column for THIS model
         targetKey:   pair.colA,    // join table column for TARGET model
+        selfPk:      pair.pkB,
+        targetPk:    pair.pkA,
       }
     }
   }
@@ -1586,7 +1596,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         sql = countPolicy
           ? `SELECT j."${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" j ` +
             `WHERE j."${rel.selfKey}" IN (${ph}) ` +
-            `AND j."${rel.targetKey}" IN (SELECT "id" FROM "${modelToTable(rel.targetModel)}" WHERE ${countPolicy.sql}) ` +
+            `AND j."${rel.targetKey}" IN (SELECT "${rel.targetPk ?? 'id'}" FROM "${modelToTable(rel.targetModel)}" WHERE ${countPolicy.sql}) ` +
             `GROUP BY j."${rel.selfKey}"`
           : `SELECT "${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" WHERE "${rel.selfKey}" IN (${ph}) GROUP BY "${rel.selfKey}"`
         results = readDb.query(sql).all(...pkValues, ...(countPolicy?.params ?? []))
@@ -1637,7 +1647,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
     const policyClause = targetPolicy ? ` AND (${targetPolicy.sql})` : ''
     const policyParams = targetPolicy ? targetPolicy.params : []
     const policyInClause = targetPolicy
-      ? ` AND t."id" IN (SELECT "id" FROM "${modelToTable(rel.targetModel)}" WHERE ${targetPolicy.sql})`
+      ? ` AND t."${rel.targetPk ?? 'id'}" IN (SELECT "${rel.targetPk ?? 'id'}" FROM "${modelToTable(rel.targetModel)}" WHERE ${targetPolicy.sql})`
       : ''
 
     // Field rules on the target — @guarded, @encrypted, @omit, field @allow.
@@ -1741,7 +1751,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
     } else if (rel.kind === 'manyToMany') {
       // Implicit m2m — JOIN through the join table.
       // Select j.selfKey alongside t.* so we can group in one pass — no second query.
-      const pkField  = rel.referencedKey ?? 'id'
+      const pkField  = rel.referencedKey ?? rel.selfPk ?? 'id'
       const pkValues = [...new Set(rows.map(r => r[pkField]).filter(v => v != null))]
       if (!pkValues.length) { rows.forEach(r => r[relName] = []); continue }
 
@@ -1757,7 +1767,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const rawRows = readDb
         .query(
           `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey${edgeSelect} FROM "${modelToTable(rel.targetModel)}" t ` +
-          `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t."id" ` +
+          `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t."${rel.targetPk ?? 'id'}" ` +
           `WHERE j."${rel.selfKey}" IN (${ph})${rwM.clause}${policyInClause}`
         )
         .all(...pkValues, ...rwM.params, ...policyParams)
@@ -2785,7 +2795,7 @@ function makeTable(
     const rel = ctx.relationMap?.[modelName]?.[relName]
     if (!rel) return undefined   // not a relation → normal column
 
-    const parentRefKey = rel.referencedKey ?? 'id'
+    const parentRefKey = rel.referencedKey ?? (rel.kind === 'manyToMany' ? rel.selfPk : null) ?? 'id'
     const parentCol = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"${rel.kind === 'belongsTo' ? rel.foreignKey : parentRefKey}"`
     const targetTable = _modelToTable(rel.targetModel)
     const targetSoft  = ctx.softDeleteMap?.[rel.targetModel] ? ` AND t."deletedAt" IS NULL` : ''
@@ -2803,7 +2813,7 @@ function makeTable(
     if (rel.kind === 'hasMany') {
       corr = `FROM "${targetTable}" t WHERE t."${rel.foreignKey}" = ${parentCol}${targetSoft}`
     } else if (rel.kind === 'manyToMany') {
-      corr = `FROM "${rel.joinTable}" j INNER JOIN "${targetTable}" t ON t."id" = j."${rel.targetKey}" WHERE j."${rel.selfKey}" = ${parentCol}${targetSoft}`
+      corr = `FROM "${rel.joinTable}" j INNER JOIN "${targetTable}" t ON t."${rel.targetPk ?? 'id'}" = j."${rel.targetKey}" WHERE j."${rel.selfKey}" = ${parentCol}${targetSoft}`
     } else { // belongsTo
       corr = `FROM "${targetTable}" t WHERE t."${parentRefKey}" = ${parentCol}${targetSoft}`
     }
@@ -3242,12 +3252,25 @@ function makeTable(
         const jt = rel.joinTable
         const sk = rel.selfKey    // join col for this model
         const tk = rel.targetKey  // join col for target model
+        const tpk = rel.targetPk ?? 'id'   // the target's @id COLUMN, not the word "id"
+
+        // A join row is written with INSERT OR IGNORE so connecting twice is
+        // idempotent — which also means a NULL key is ignored rather than
+        // refused. Reading the target's key by the literal name `id` therefore
+        // produced a connect that reported success and wrote nothing on any
+        // model keyed by something else. Refuse the undefined instead.
+        const keyOf = (row) => {
+          const v = row?.[tpk]
+          if (v == null)
+            throw new Error(`m2m on "${fieldName}": "${rel.targetModel}" row has no "${tpk}" to join on`)
+          return v
+        }
 
         if (ops.create) {
           const rows = Array.isArray(ops.create) ? ops.create : [ops.create]
           for (const row of rows) {
             const created = await tbl.create({ data: applyCoFk(rel.targetModel, row) })
-            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, created.id)
+            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(created))
           }
         }
         if (ops.connect) {
@@ -3255,7 +3278,7 @@ function makeTable(
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) throw new Error(`m2m connect on "${fieldName}": no "${rel.targetModel}" found`)
-            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, target.id)
+            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
           }
         }
         if (ops.disconnect) {
@@ -3263,7 +3286,7 @@ function makeTable(
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) continue
-            writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, target.id)
+            writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, keyOf(target))
           }
         }
         if (ops.delete) {
@@ -3271,8 +3294,8 @@ function makeTable(
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) continue
-            writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, target.id)
-            await tbl.delete({ where: { id: target.id } })
+            writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, keyOf(target))
+            await tbl.delete({ where: { [tpk]: keyOf(target) } })
           }
         }
         if (ops.set) {
@@ -3282,7 +3305,7 @@ function makeTable(
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) throw new Error(`m2m set on "${fieldName}": no "${rel.targetModel}" found matching ${JSON.stringify(where)}`)
-            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, target.id)
+            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
           }
         }
         continue

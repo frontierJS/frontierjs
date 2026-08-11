@@ -38,7 +38,7 @@ web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition t
           resources/ (PascalCase singular, one Resource per file — Invariant 19)
 web/test/ verify.mjs · verify-build.mjs + preview.mjs (the built output)
 docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
-          grouped by what blocks them (FJS-101). No screen is blocked on an
+          grouped by what blocks them (FJS-153). No screen is blocked on an
           API any more — the 10 left need a model or a real third party
           UI_PLAN.md · UI_HANDOFF.md · VISION.md · mock/
 ```

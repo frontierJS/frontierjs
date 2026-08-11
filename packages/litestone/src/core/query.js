@@ -576,7 +576,7 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
 // No JOINs needed; no row duplication risk.
 //
 // hasMany:    SELECT COUNT(*) FROM "posts" WHERE "posts"."userId" = t."id"
-// manyToMany: SELECT COUNT(*) FROM "_tags_posts" WHERE "postId" = t."id"
+// manyToMany: SELECT COUNT(*) FROM "_tags_posts" WHERE "postId" = t."<pk>"
 // _sum etc:   SELECT SUM("amount") FROM "orders" WHERE "orders"."userId" = t."id"
 
 function _buildAggregateOrder(relName, spec, aggKeys, modelName, relationMap, orderParts, modelToTable) {
@@ -602,7 +602,7 @@ function _buildAggregateOrder(relName, spec, aggKeys, modelName, relationMap, or
 
       let subquery
       if (rel.kind === 'manyToMany') {
-        subquery = `(SELECT COUNT(*) FROM "${rel.joinTable}" WHERE "${rel.selfKey}" = t."id")`
+        subquery = `(SELECT COUNT(*) FROM "${rel.joinTable}" WHERE "${rel.selfKey}" = t."${rel.selfPk ?? 'id'}")`
       } else {
         // hasMany
         subquery = `(SELECT COUNT(*) FROM "${targetTable}" WHERE "${rel.foreignKey}" = t."${rel.referencedKey}")`

@@ -462,6 +462,20 @@ function topoSort(models) {
 
 const relLabel = (field) => field.attributes?.find(a => a.kind === 'relation')?.name ?? null
 
+// The @id field of a model, as { name, type } for the join table's FK column.
+//
+// Both are carried on the pair rather than assumed. The join table used to
+// declare `"postId" INTEGER … REFERENCES "post"("id")` whatever the models
+// said, so a schema whose ids are `String @id @default(uuid())` — which is
+// every app in this repo — got a STRICT table that refused its own keys:
+// `cannot store TEXT value in INTEGER column _post_tag.postId`, on the first
+// connect, naming a table nobody wrote.
+function joinKeyOf(model, modelName) {
+  const pk = model?.fields.find(f => f.attributes.some(a => a.kind === 'id'))
+  if (!pk) return { name: 'id', type: 'INTEGER' }
+  return { name: pk.name, type: sqlType(pk.type) }
+}
+
 export function detectM2MPairs(schema, pluralize = false) {
   const rels = []
   const seen = new Set()
@@ -492,6 +506,8 @@ export function detectM2MPairs(schema, pluralize = false) {
       const mB = schema.models.find(m => m.name === b)
       const tableA = mA ? modelToTableName(mA, pluralize) : a
       const tableB = mB ? modelToTableName(mB, pluralize) : b
+      const keyA   = joinKeyOf(mA, a)
+      const keyB   = joinKeyOf(mB, b)
 
       if (self) {
         // Deterministic direction: first-DECLARED field is the "A end" —
@@ -501,6 +517,7 @@ export function detectM2MPairs(schema, pluralize = false) {
         rels.push({
           relName: label, self: true,
           modelA: a, modelB: b, tableA, tableB,
+          pkA: keyA.name, pkB: keyB.name, typeA: keyA.type, typeB: keyB.type,
           joinTable: label ? `_${label}` : `_${a.toLowerCase()}_${b.toLowerCase()}`,
           colA: 'A', colB: 'B',
           fieldA: f2?.name ?? null,   // field on modelA whose join column is colA…
@@ -515,6 +532,7 @@ export function detectM2MPairs(schema, pluralize = false) {
         rels.push({
           relName: label, self: false,
           modelA: a, modelB: b, tableA, tableB,
+          pkA: keyA.name, pkB: keyB.name, typeA: keyA.type, typeB: keyB.type,
           joinTable: labeled ? `_${label}` : `_${a.toLowerCase()}_${b.toLowerCase()}`,
           colA: labeled ? 'A' : a.charAt(0).toLowerCase() + a.slice(1) + 'Id',
           colB: labeled ? 'B' : b.charAt(0).toLowerCase() + b.slice(1) + 'Id',
@@ -533,8 +551,8 @@ export function generateJoinTableDDL(pair, ifNotExists = true) {
   const edgeCols = (pair.edgeColumns ?? []).map(c => `${c},`)
   return [
     `CREATE TABLE ${ie}"${pair.joinTable}" (`,
-    `  "${pair.colA}" INTEGER NOT NULL REFERENCES "${pair.tableA ?? pair.modelA}"("id") ON DELETE CASCADE,`,
-    `  "${pair.colB}" INTEGER NOT NULL REFERENCES "${pair.tableB ?? pair.modelB}"("id") ON DELETE CASCADE,`,
+    `  "${pair.colA}" ${pair.typeA ?? 'INTEGER'} NOT NULL REFERENCES "${pair.tableA ?? pair.modelA}"("${pair.pkA ?? 'id'}") ON DELETE CASCADE,`,
+    `  "${pair.colB}" ${pair.typeB ?? 'INTEGER'} NOT NULL REFERENCES "${pair.tableB ?? pair.modelB}"("${pair.pkB ?? 'id'}") ON DELETE CASCADE,`,
     ...edgeCols,
     `  PRIMARY KEY ("${pair.colA}", "${pair.colB}")`,
     `) STRICT;`,
@@ -587,7 +605,14 @@ export function planEdgeStorage(schema, m2mPairs, pluralize = false) {
       const dimCol    = edge.key
       const [la, lb]  = [edge.hostName, edge.ref].map(_lowerFirst).sort()
       const sideTable = `_${la}_${lb}`
-      const g = ownGroups.get(sideTable) ?? { sideTable, hostTable, dimTable, hostCol, dimCol, cols: [] }
+      // Same rule as the m2m join table: the FK takes the referenced model's
+      // own @id name and type, never the literal `id INTEGER`.
+      const hostKey   = joinKeyOf(edge.hostModel, edge.hostName)
+      const dimKey    = joinKeyOf(refModel, edge.ref)
+      const g = ownGroups.get(sideTable) ?? {
+        sideTable, hostTable, dimTable, hostCol, dimCol, cols: [],
+        hostPk: hostKey.name, dimPk: dimKey.name, hostType: hostKey.type, dimType: dimKey.type,
+      }
       g.cols.push(colDef)
       ownGroups.set(sideTable, g)
     }
@@ -638,8 +663,8 @@ export function generateEdgeSideTableDDL(g, ifNotExists = true) {
   const ie = ifNotExists ? 'IF NOT EXISTS ' : ''
   return [
     `CREATE TABLE ${ie}"${g.sideTable}" (`,
-    `  "${g.hostCol}" INTEGER NOT NULL REFERENCES "${g.hostTable}"("id") ON DELETE CASCADE,`,
-    `  "${g.dimCol}" INTEGER NOT NULL REFERENCES "${g.dimTable}"("id") ON DELETE CASCADE,`,
+    `  "${g.hostCol}" ${g.hostType ?? 'INTEGER'} NOT NULL REFERENCES "${g.hostTable}"("${g.hostPk ?? 'id'}") ON DELETE CASCADE,`,
+    `  "${g.dimCol}" ${g.dimType ?? 'INTEGER'} NOT NULL REFERENCES "${g.dimTable}"("${g.dimPk ?? 'id'}") ON DELETE CASCADE,`,
     ...g.cols.map(c => `${c},`),
     `  PRIMARY KEY ("${g.hostCol}", "${g.dimCol}")`,
     `) STRICT;`,

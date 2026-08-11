@@ -44,10 +44,50 @@ Three owners, because the three rules answer at different times:
   modelName, …)` is now module level, so a path holding rows of a model that is
   not its own can ask for them — one definition instead of the two that drifted.
 
-13 tests, mutation-checked: 10 fail on revert, 3 are controls. 1475 pass. Found
+13 tests, mutation-checked: 10 fail on revert, 3 are controls. 1480 pass. Found
 by declaring `@@allow` on one model of `basecamp`'s 37 and asking what would
 have to be audited first — the answer was the `include` graph, and the graph
 turned out not to matter, because nothing in it was enforced.
+
+## 2026-08-10 — implicit many-to-many only ever worked on `Int @id` named `id`
+
+```
+model Post { slug String @id  tags Tag[] }
+model Tag  { code String @id  posts Post[] }
+```
+
+The join table came out as `"postId" INTEGER NOT NULL REFERENCES "post"("id")`
+whatever the models said. Two shapes, two different failures.
+
+**A uuid key failed loudly**, which is the better half: STRICT refuses the TEXT
+and the first `connect` dies with `cannot store TEXT value in INTEGER column
+_post_tag.postId` — an error naming a table the author never wrote.
+
+**A key named anything else failed silently.** Join rows are written `INSERT OR
+IGNORE`, so connecting twice is idempotent — and OR IGNORE swallows a NOT NULL
+violation exactly as happily as a duplicate. `.id` on a row keyed by `code` is
+`undefined`, so `connect` returned the created row, wrote nothing, and the
+relation read back empty. Forever.
+
+The fix is one fact carried instead of assumed: `detectM2MPairs` now puts each
+side's `@id` **name and SQL type** on the pair, and the relation map carries
+`selfPk` / `targetPk` to the six runtime sites that each had their own `t."id"`
+— the include join and its policy subquery, `_count` in both directions, the
+relation-filter correlation, the aggregate `orderBy`, and the
+connect/disconnect/set/delete writes. The `@edge` side table had copied the same
+two DDL lines and takes the same treatment. A target row with no key now throws
+by name rather than being ignored.
+
+Nothing here caught it because nothing here uses the feature: `basecamp` writes
+an explicit join model all three times it needs one, and `sierra/example` is the
+only implicit m2m in the repo — keyed `Int @id`. 4 tests, mutation-checked in
+both halves.
+
+**Upgrading an existing database**: join tables are invisible to introspection
+(underscore prefix), so a migration emits them `IF NOT EXISTS` and never alters
+one. A database created before this keeps its `INTEGER` table and the same
+failure. Drop it and re-run the migration — it is provably empty, since no
+insert into it could ever have succeeded on the schemas this affected.
 
 ## 2026-08-10 — a refused update stayed applied
 

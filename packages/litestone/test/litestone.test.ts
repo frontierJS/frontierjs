@@ -11612,6 +11612,96 @@ describe('implicit many-to-many', () => {
     expect(post.tags).toHaveLength(2)
     db.$close()
   })
+
+  // ── keys that are not `Int @id` named `id` ─────────────────────────────────
+  //
+  // The join table hardcoded `INTEGER … REFERENCES "<table>"("id")`, and every
+  // runtime path read the target's key as the literal `.id`. So the feature was
+  // off for the two commonest shapes in real schemas: a uuid key (STRICT
+  // refuses the TEXT, `cannot store TEXT value in INTEGER column`) and a key
+  // named anything else (`INSERT OR IGNORE` swallows the NULL, so connect
+  // reported success and wrote nothing).
+
+  const keyedSchema = `
+    model Post {
+      slug  String @id
+      title String
+      tags  Tag[]
+    }
+    model Tag {
+      code  String @id
+      name  String
+      posts Post[]
+    }
+  `
+
+  test('the join table takes each side\'s own @id name and type', async () => {
+    const db  = await makeDb(keyedSchema, 'm2m-keyed-ddl')
+    const ddl = db.$db.query(`SELECT sql FROM sqlite_master WHERE name = '_post_tag'`).get() as any
+    expect(ddl.sql).toContain('"postId" TEXT NOT NULL REFERENCES "post"("slug")')
+    expect(ddl.sql).toContain('"tagId" TEXT NOT NULL REFERENCES "tag"("code")')
+    db.$close()
+  })
+
+  test('connect / include / disconnect round-trip on a String @id named something else', async () => {
+    const db = await makeDb(keyedSchema, 'm2m-keyed-roundtrip')
+    await db.tag.create({ data: { code: 't1', name: 'ts' } })
+    await db.post.create({ data: { slug: 'p1', title: 'P', tags: { connect: [{ code: 't1' }] } } })
+
+    const withTags = await db.post.findUnique({ where: { slug: 'p1' }, include: { tags: true } }) as any
+    expect(withTags.tags.map((t: any) => t.code)).toEqual(['t1'])
+
+    // The reverse end, the count, the filter and the aggregate order all read
+    // the same key — each was its own `t."id"`.
+    const reverse = await db.tag.findUnique({ where: { code: 't1' }, include: { posts: true } }) as any
+    expect(reverse.posts.map((p: any) => p.slug)).toEqual(['p1'])
+    const counted = await db.post.findMany({ include: { _count: { select: { tags: true } } } }) as any[]
+    expect(counted[0]._count.tags).toBe(1)
+    expect((await db.post.findMany({ where: { tags: { some: { name: 'ts' } } } })).length).toBe(1)
+    expect((await db.post.findMany({ orderBy: { tags: { _count: 'desc' } } })).length).toBe(1)
+
+    await db.post.update({ where: { slug: 'p1' }, data: { tags: { disconnect: [{ code: 't1' }] } } })
+    const after = await db.post.findUnique({ where: { slug: 'p1' }, include: { tags: true } }) as any
+    expect(after.tags).toHaveLength(0)
+    db.$close()
+  })
+
+  test('the two sides may be keyed differently', async () => {
+    const db = await makeDb(`
+      model User  { uid String @id  name String  groups Group[] }
+      model Group { gid Int    @id  title String  members User[] }
+    `, 'm2m-keyed-mixed')
+    await db.user.create({ data: { uid: 'a', name: 'A' } })
+    await db.group.create({ data: { gid: 1, title: 'G', members: { connect: [{ uid: 'a' }] } } })
+
+    const ddl = db.$db.query(`SELECT sql FROM sqlite_master WHERE name = '_group_user'`).get() as any
+    expect(ddl.sql).toContain('"groupId" INTEGER NOT NULL REFERENCES "group"("gid")')
+    expect(ddl.sql).toContain('"userId" TEXT NOT NULL REFERENCES "user"("uid")')
+
+    const g = await db.group.findUnique({ where: { gid: 1 }, include: { members: true } }) as any
+    expect(g.members.map((m: any) => m.uid)).toEqual(['a'])
+    db.$close()
+  })
+
+  test('a self-relation keyed by uuid connects and reads both directions', async () => {
+    const db = await makeDb(`
+      model User {
+        uid       String @id
+        following User[] @relation("follows")
+        followers User[] @relation("follows")
+      }
+    `, 'm2m-keyed-self')
+    await db.user.create({ data: { uid: 'a' } })
+    await db.user.create({ data: { uid: 'b' } })
+    await db.user.update({ where: { uid: 'a' }, data: { following: { connect: [{ uid: 'b' }] } } })
+
+    const rows = await db.user.findMany({ include: { following: true, followers: true } }) as any[]
+    const a = rows.find(r => r.uid === 'a'), b = rows.find(r => r.uid === 'b')
+    expect(a.following.map((u: any) => u.uid)).toEqual(['b'])
+    expect(a.followers).toHaveLength(0)
+    expect(b.followers.map((u: any) => u.uid)).toEqual(['a'])
+    db.$close()
+  })
 })
 
 // ─── 31. onAfterDelete hook — soft-delete boundary ───────────────────────────

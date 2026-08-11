@@ -113,7 +113,8 @@ DateTime   Bytes     Json
 File                           — stores JSON ref in SQLite, bytes in S3/R2/local
 Enum       — inline: status Status  OR standalone: enum Status { active inactive }
 Type[]     — arrays stored as JSON: tags String[]
-Model[]    — implicit many-to-many: tags Tag[]
+Model[]    — implicit many-to-many: tags Tag[]  (join table takes each side's own
+             @id name and type — see docs/relations.md § The implicit join table)
 Type?      — optional (nullable)
 ```
 
@@ -978,9 +979,11 @@ against a real client rather than a stand-in.
   declared file and accumulating state across runs.
 - **Columns are emitted verbatim camelCase; `DateTime` is ISO-8601 TEXT.** Hand-
   written SQL assuming snake_case or epoch-ms will not match.
-- **The audit logger buffers ~1s and flushes on exit** — a read straight after a
-  write returns 0 rows and the `.jsonl` may not exist yet. `path` resolves against
-  process CWD, not the schema file.
+- **The audit logger defers one event-loop tick** — `fireLog()` writes via
+  `setImmediate`, then the jsonl driver appends synchronously. A read in the same
+  tick sees 0 rows and the `.jsonl` may not exist yet; anything after an `await`
+  sees the row. Yield once rather than waiting: there is no timed buffer, and no
+  flush on exit to wait for.
 - **`@guarded` is not a level** — it takes only `(all)`; `@guarded(5)` does not
   parse. Per-role column access is field-level `@allow`.
 - **`encryptionKey` is parsed as hex**, so a 64-*character* key is not necessarily

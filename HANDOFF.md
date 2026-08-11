@@ -51,7 +51,7 @@ proved the old build. If you can clear that port, `example`: `verify` +
 ## Session — an include enforced nothing, and one model got a policy (2026-08-10)
 
 ```
-packages/litestone   1476 tests (was 1462) · junction 919 · sierra 833 + 5 safety
+packages/litestone   1480 tests (was 1462) · junction 919 · sierra 833 + 5 safety
 packages/basecamp    verify 270/270 · 61 data tests (was 56) · typecheck 63, unchanged
 ```
 
@@ -107,6 +107,17 @@ from the where-clause the service was already writing: a caller reads one
 workspace's servers with no `where` at all, naming another workspace's server by
 id answers null, creating or moving one into another workspace is refused, and a
 `Workspace` carries only its own servers through an `include`.
+
+**A third defect came out of the probe schema rather than the app** (`FJS-152`,
+also fixed). Implicit many-to-many only ever worked on models keyed `Int @id`
+named `id`: the join table hardcoded `INTEGER … REFERENCES "<table>"("id")` and
+six runtime sites read the target's key as the literal `.id`. A uuid key dies
+loudly on the first connect; **a key named anything else fails silently**,
+because join rows are written `INSERT OR IGNORE` and OR IGNORE swallows a NOT
+NULL as happily as a duplicate — connect returns the row, writes nothing, and
+the relation reads back empty. Nothing in the repo noticed because nothing here
+uses the feature: `basecamp` writes an explicit join model all three times, and
+`sierra/example`'s ids are `Int`.
 
 ---
 

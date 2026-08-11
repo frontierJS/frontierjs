@@ -639,7 +639,7 @@ not roll back on a model with a Json column (`FJS-151`).
    connected to the workspace. Noise rather than a leak, but the wrong default.
 5. **`litestone types`** — 77 of this package's typecheck diagnostics are the
    untyped-accessor class and would go with generated types.
-6. **Build the remaining 16 screens** — `FJS-101`, phased in `docs/SCREENS.md`
+6. **Build the remaining 16 screens** — `FJS-153`, phased in `docs/SCREENS.md`
    §What the order should be. Phases 1–8 are **done**: shell chrome; Portal and
    Activity; services over `AlertRule`/`Network`/`Secret`; `AppDetailView`;
    Channels and Flags; `ApiKey`; `Volume` — the first screen over a model nobody

@@ -32,6 +32,26 @@ model Tag {
 
 The `@relation` attribute lives on the **belongsTo** side (the model with the FK column). The reverse side (`users[]`, `posts[]`) is inferred and doesn't need `@relation`.
 
+### The implicit join table
+
+A mutual `Model[]` pair generates the join table for you — you never write it,
+but it is an ordinary table and worth knowing the shape of:
+
+```sql
+CREATE TABLE "_post_tag" (
+  "postId" TEXT NOT NULL REFERENCES "post"("slug") ON DELETE CASCADE,
+  "tagId"  TEXT NOT NULL REFERENCES "tag"("code")  ON DELETE CASCADE,
+  PRIMARY KEY ("postId", "tagId")
+) STRICT
+```
+
+Each column takes the **name and type of that model's own `@id`** — a uuid key
+is `TEXT`, an `Int @id` is `INTEGER`, and the two sides may differ. A key named
+something other than `id` is referenced by its real name. Naming:
+`_modela_modelb` alphabetically with `modelaId` / `modelbId` columns, or
+`_<label>` with columns `"A"` / `"B"` when the relation is labeled with
+`@relation("name")` — the labeled layout is Prisma's, byte for byte.
+
 ## Include (eager loading)
 
 ```js
