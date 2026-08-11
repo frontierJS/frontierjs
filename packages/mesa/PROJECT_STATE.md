@@ -28,7 +28,7 @@ Read `docs/BLOCK_TEARDOWN_PASS.md` and `docs/REACTIVITY_PASS.md` before changing
 | Package | Path | Description |
 |---|---|---|
 | `@frontierjs/mesa` | `./mesa/` | Core compiler, runtime, REPL, render pipeline |
-| `@frontierjs/mesa-vite` | `./mesa/mesa-vite/` | Vite plugin — HMR, devtools, dev client |
+| `@frontierjs/mesa/vite` | `./mesa/mesa-vite/` | Vite plugin — HMR, devtools, dev client. **A subpath of mesa since 2026-08-10, not a package** — see `CHANGES.md` |
 | `@frontierjs/email-kit` | `packages/email-kit/` | Email component kit. **Arrived 2026-08-03.** The skipped `email-kit.test.js` that needed it is deleted — it was all 27 of this package's skipped tests. |
 | `@frontierjs/ui` | `packages/ui/` | Component kit over `@frontierjs/css`, 63 components. **Promoted out of `packages/mesa/ui-v2/` on 2026-08-03** and restyled; `packages/mesa/ui/` (the older 4: Badge, Button, Card, Input) was deleted in the same move. |
 

@@ -37,5 +37,35 @@
     "vite": "^8.0.3",
     "vitest": "^4.1.2"
   },
-  "_built": "2026-04-13"
+  "_built": "2026-04-13",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/sierra"
+  },
+  "peerDependencies": {
+    "@frontierjs/mesa": "^0.1.0",
+    "@frontierjs/junction": "^0.1.0",
+    "@frontierjs/litestone": "^1.1.0",
+    "vite": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@frontierjs/junction": {
+      "optional": true
+    },
+    "@frontierjs/litestone": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    }
+  }
 }

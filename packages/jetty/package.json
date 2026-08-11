@@ -23,7 +23,8 @@
     "src",
     "bin",
     "docs",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build:fixture": "node bin/build-ext.js --root=test/fixtures/basic-ext --browser=chrome",
@@ -82,5 +83,13 @@
   "devDependencies": {
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/jetty"
   }
 }

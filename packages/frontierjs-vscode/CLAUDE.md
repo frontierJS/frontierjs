@@ -22,7 +22,7 @@ src/
     completions.js · hover.js · symbols.js
 test/
   lsp-client.js       an LSP client over stdio — the Litestone suite's driver
-  lsp.test.js · mesa.test.js
+  lsp.test.js · mesa.test.js · snippets.test.js
   vscode-stub.js      a stand-in editor, so the Mesa providers run under node
 scripts/
   build-parser.js     litestone's parser → out/litestone/parser-bundle.js
@@ -82,10 +82,16 @@ out/                  build output, not source
   declared variable on a word boundary anywhere in the message underlined
   `let a = 1` for `bind:group={missing} — 'missing' must be a top-level let
   variable`, because "must be a top-level" contains a standalone `a`.
-- **A duplicate `.mesa` grammar wins some of the time.** Two copies of an older
-  `mesa-language-support` extension are installed under `~/.vscode/extensions`
-  (publishers `frontierjs` and `your-publisher-name`), both contributing the
-  `mesa` language id. Uninstall them before trusting what an editor shows.
+- **`$name` in a snippet BODY is a VS Code variable, and an unknown one expands
+  to nothing.** `"$onCleanup(() => { $2 })"` inserted `(() => { })` — the call
+  gone, the text silently swallowed. Both languages here write `$` as ordinary
+  text, so every literal one is `\\$`. The editor's only complaint is one line in
+  the extension host log at startup naming neither snippet nor file; the test is
+  `test/snippets.test.js`. A `prefix` is exempt — it is typed, not expanded.
+- **A locally installed copy contributes the same `mesa` language id, and one of
+  the two wins.** Two older `mesa-language-support` builds sat in
+  `~/.vscode/extensions` for months, so what an editor showed was not necessarily
+  this tree. Check that directory before believing a dev host.
 - **The Litestone server embeds an understanding of `.lite`** that the real
   parser owns (`packages/litestone/src/core/parser.js`). Any schema-language
   change is a change in two places, and this is the one that gets forgotten.
@@ -106,7 +112,7 @@ out/                  build output, not source
 
 ## Proving a change
 
-**`npm test`** — two suites, 70 assertions, over the built output. It builds
+**`npm test`** — three suites, 76 assertions, over the built output. It builds
 first on purpose: a stale `out/` tests the previous fix and reads as "the change
 did not work".
 
@@ -137,6 +143,12 @@ reproduces the original `Cannot read properties of null (reading 'models')`).
 - `test/mesa.test.js` — activation, all five compiler-resolution routes and the
   none-found case, diagnostics from analysis errors and from a `compile()` that
   throws, the debounce, and each of the three providers.
+
+### Snippets — 6 assertions, no build needed
+
+`test/snippets.test.js` walks every body of both snippet files: a `$` must be
+escaped, a tabstop, or one of the 33 real VS Code variables. It exists because
+the editor's own complaint arrives once, in a log, naming nothing.
 
 Mutation-checked too: dropping `allowJs` reproduces
 `Cannot find module './hover'` at activation, and turning the opaque dynamic

@@ -31,7 +31,7 @@
     "prefix": "$watchAsync",
     "body": [
       "\\$: ${1:dep}, async () => {",
-      "\t$onCleanup(() => { $2 })",
+      "\t\\$onCleanup(() => { $2 })",
       "\t$0",
       "}"
     ],
@@ -360,7 +360,7 @@
       "$class",
       "class prop"
     ],
-    "body": "export let $class = ''",
+    "body": "export let \\$class = ''",
     "description": "Declare the $class prop for class passthrough"
   },
   "bind:class shorthand": {

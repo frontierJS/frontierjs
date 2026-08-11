@@ -1,0 +1,11 @@
+{
+  // Table-based email components (.mesa) plus the renderer, all JS.
+  //
+  // checkJs is off, matching mesa and css: the value here is that Invariant
+  // 14's ratchet can SEE this package at all. Without a typecheck script it
+  // was the one workspace member the ceiling could not be raised or lowered
+  // for, because nothing measured it.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": false },
+  "include": ["*.js"]
+}

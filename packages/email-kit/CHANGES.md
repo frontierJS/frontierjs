@@ -2,6 +2,15 @@
 
 Newest first.
 
+## 2026-08-10 — the ratchet can see this package
+
+Added a `typecheck` script and a `tsconfig.json`. This was the one workspace
+member with neither, so Invariant 14's ceiling could be neither raised nor
+lowered for it — not because it was clean, but because nothing measured it.
+`checkJs` is off, matching mesa and css, so it starts at 0 and stays absent from
+`scripts/typecheck-baselines.json`. Found by `bun run ci`, which now says so
+rather than walking past.
+
 ## 2026-08-06 — the kit can be used from outside itself
 
 34 tests. Driven by `example/` for the first time, which is what found all of

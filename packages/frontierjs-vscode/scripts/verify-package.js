@@ -53,6 +53,7 @@ for (const lang of PKG.contributes.languages) {
   ok(`${lang.id} file icon: dark`,  has(lang.icon.dark))
 }
 ok('parser bundle beside the server', has('out/litestone/parser-bundle.js'))
+for (const s of PKG.contributes.snippets) ok(`${s.language} snippets shipped`, has(s.path))
 ok('no node_modules shipped', !has('node_modules'))
 
 // The bundle is only real if nothing bare-requires a dependency that is no

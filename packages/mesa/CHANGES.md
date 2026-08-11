@@ -1,5 +1,55 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-10 — `happy-dom` was a devDependency the SSR exports import at load
+
+Publish prep found it, and only an isolated install could: `src/render.js` and
+`src/css-inliner.js` open with `import { Window } from 'happy-dom'` — a static,
+top-level import in shipped code — while `happy-dom` sat in `devDependencies`.
+That resolves inside the workspace and nowhere else, so `@frontierjs/mesa/render`,
+`/render-component` and `/css-inliner` (six specifiers with their aliases) would
+have thrown `Cannot find package 'happy-dom'` on every installed copy. Now a
+real dependency.
+
+Worth keeping the method rather than the fix: a probe that installs the whole
+family together **cannot see this** — happy-dom is present because something
+else pulled it in. It only appears when the package is installed alone. Same
+shape as auth's `../junction` imports: correct by adjacency, broken on arrival.
+
+Also prepped for publishing: `files` (`src`, **`mesa-vite`** — it is a declared
+export, so it must ship despite being the nested directory `FJS-026` says the
+`packages/*` glob cannot see — README, LICENSE), `publishConfig.access`, a
+`LICENSE`, and `repository` + `directory`. 1052 tests unchanged.
+
+## 2026-08-10 — the Vite plugin is a subpath, and it could never find the compiler
+
+`mesa-vite/` had its own `package.json`, which made it a package the workspace
+glob could not see: `packages/*` is one level deep, so it installed nowhere, no
+importer could resolve it by name, and nothing had ever loaded it. It is now
+`@frontierjs/mesa/vite` (and `@frontierjs/mesa/vite/client`), two entries in
+mesa's exports map. `vite` is an optional peer dependency — mesa stays a leaf
+with zero workspace dependencies.
+
+**What being uninstalled had hidden.** The plugin resolves the compiler lazily,
+and its candidate list was `@mesa/compiler`, `node_modules/mesa/compiler.js`,
+then two guesses relative to the project root. The first name was never
+published; the second is an unrelated package that genuinely exists on npm, so
+the plugin was one `npm install mesa` away from importing a stranger's code.
+Neither names `@frontierjs/mesa`. It only ever worked at all through the root
+guess, which requires the consumer's cwd to be mesa's own directory.
+
+The compiler is now a sibling, resolved as one relative path from
+`import.meta.url`. Relative is also the rule for every in-repo consumer of mesa:
+`bun install` resolves a `workspace:*` dependency to a copy under
+`node_modules/.bun/`, so reaching the compiler by package name would serve a
+snapshot that goes stale on the next compiler edit. `options.compilerPath` still
+wins, for a consumer testing a build that is not this one.
+
+**A smoke import now compiles a real `.mesa` through the plugin** — the first
+line of code that has ever loaded it. That is a floor, not a suite: HMR, the
+error overlay and the devtools route remain unproven (`FJS-024`). The same
+loading found `mesa-bench/vite.config.js` importing `./mesa-vite/index.js`, one
+directory too shallow, broken for as long as it had existed.
+
 ## 2026-08-10 — three defects a suite that renders every component found
 
 1052 tests (was 1044). `FJS-146`, `FJS-147`, `FJS-148` fixed. All three were

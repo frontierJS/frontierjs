@@ -21,10 +21,25 @@ src/
   css-inliner.js       — scoped-style extraction and inlining
   glow.js              — small syntax highlighter used by the docs/demo
 
+mesa-vite/
+  index.js             — the Vite plugin, exported as @frontierjs/mesa/vite
+  client.js            — its HMR client, @frontierjs/mesa/vite/client
+  devtools.html        — the /__mesa/devtools panel it serves
+
 runtime.js             — root re-export; what everything imports
 docs/VISION.md         — the language: rules 1–40ish, numbered. Cite by rule
 docs/SSR_SPEC.md       — server-render contract. No open items
 ```
+
+**The Vite plugin is a subpath, not a package.** It had its own `package.json`
+until 2026-08-10 and was therefore invisible to the `packages/*` glob —
+uninstalled, so nothing imported it and nothing could test it. It also could not
+find its own compiler: the resolver hunted `@mesa/compiler` and
+`node_modules/mesa/`, one never published and the other someone else's package
+on npm. The compiler is now a sibling and reached by relative path, which is
+also the rule for every in-repo consumer of mesa (`bun install` copies workspace
+deps, so a package-name import serves a stale snapshot). `vite` is an optional
+peer — mesa stays a leaf.
 
 **The file EXTENSION decides the language.** A `.mesa` file with frontmatter is
 Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).

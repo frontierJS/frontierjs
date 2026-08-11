@@ -51,7 +51,7 @@ proved the old build. If you can clear that port, `example`: `verify` +
 ## Session — Mesa support was one commented-out line and three landmines (2026-08-10)
 
 ```
-frontierjs-vscode    npm test 34 + 36 · typecheck clean · verify:package all green
+frontierjs-vscode    npm test 34 + 36 + 6 · typecheck clean · verify:package all green
 ```
 
 `FJS-008b` closed. `startMesaClient` is called from `extension.ts` and `.mesa`
@@ -94,12 +94,71 @@ variable on a word boundary anywhere in the message, so
 `let a = 1` — "must be a top-level" contains a standalone `a`. Only a quoted
 name names a variable now.
 
-**Not fixable from here**: two copies of an older `mesa-language-support`
-extension sit in `~/.vscode/extensions` (publishers `frontierjs` and
-`your-publisher-name`), both contributing the `mesa` language id. Uninstall
-them before trusting what an editor shows.
+**Running it in a dev host found `FJS-156`, which no suite could have.** Two
+Mesa snippets wrote `$onCleanup` and `$class` unescaped in their BODY, where
+`$name` is a VS Code snippet *variable* — an unknown one expands to nothing, so
+the snippets inserted `(() => { })` and `export let  = ''`. The editor says so
+once, in the extension host log, naming neither snippet nor file:
+*"very likely confuse snippet-variables and snippet-placeholders"*.
+`test/snippets.test.js` now walks every body of both languages; a `$` must be
+escaped, a tabstop or one of the 33 real variables, and a `prefix` is exempt
+because it is typed rather than expanded.
+
+**The third blocker was outside the repo** and is gone: two copies of an older
+`mesa-language-support` extension (publishers `frontierjs` and
+`your-publisher-name`) sat in `~/.vscode/extensions` contributing the same
+`mesa` language id, along with a stale `undefined_publisher` build of this
+extension. Removed by hand. A dev host shows what is INSTALLED, so check that
+directory before concluding anything about this tree.
 
 ---
+
+## Session — eleven packages prepped to publish, and two were broken (2026-08-10)
+
+```
+prepped   mesa utils sierra auth caravan conduit notifications ui email-kit jetty cli
+verified  every declared export imported from an INSTALLED copy, each package ALONE
+suites    mesa 1052 · sierra 833 · email-kit 34 · utils 15 · ui 64/64 — unchanged
+```
+
+All eleven got the four things junction needed — `publishConfig.access`
+(a scoped package's first publish otherwise fails on *payment*), a `files` field
+written from what each entry point actually reaches, a `LICENSE` for the MIT
+every manifest already claimed, and `repository` + `directory`.
+
+**Two of them would have shipped broken, and the same probe found both.**
+
+- **mesa** had `happy-dom` in `devDependencies` while `src/render.js` and
+  `src/css-inliner.js` import it at the top level. Six specifiers dead on
+  arrival. Now a dependency.
+- **sierra** had **no `peerDependencies` at all**, while five shipped files
+  statically import `@frontierjs/mesa/runtime` and one imports
+  `@frontierjs/junction/client`. `@frontierjs/sierra/router` — the main path —
+  would throw. mesa is now a **required peer**, deliberately not a dependency:
+  two copies of the reactive runtime are two signal graphs and nothing says so.
+  junction, litestone and vite are optional peers, all three genuinely
+  `await import`ed (litestone resolves from the APP on purpose).
+
+**The method is the transferable part. A probe that installs the family together
+cannot see either bug** — the missing package is present because a sibling
+pulled it in. Both only appear when the package is installed ALONE. That is the
+same failure as auth's `../junction` imports wearing a different hat: correct by
+adjacency, broken on arrival. Install one package into an empty project and
+import every subpath its own `exports` declares.
+
+The static scan that found them has one trap worth knowing: `import('vite').Plugin`
+in a JSDoc `@returns` and `import x from 'y'` inside a doc comment both look
+exactly like real imports. Strip comments first or roughly half the hits are
+phantom — of 16 candidates, 11 were prose.
+
+**Publish order, because one package gates three.** mesa is a leaf and
+`sierra`, `ui` and `email-kit` all peer on it — they now *refuse to install*
+until it exists, which is the improvement. Wave 1: **mesa**, utils, auth,
+caravan, conduit, notifications, jetty. Wave 2 (needs mesa): **sierra**, **ui**,
+**email-kit**. `cli` is separate — it is already on npm at `0.0.0-beta.0` while
+the tree says 0.1.0, so it is a re-release and the version bump is a human's
+call. Never: basecamp and both `example`s are `private`, and
+`frontierjs-vscode` goes to the VS Code marketplace.
 
 ## Session — junction is on npm, and it is Bun-only for good (2026-08-10)
 

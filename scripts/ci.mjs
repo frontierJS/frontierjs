@@ -107,9 +107,13 @@ function hygiene() {
     )
   }
 
+  // An allowance is stale only if the file is THERE and no longer ignored.
+  // These entries are generated files, so on a clean checkout none of them
+  // exists yet — a fresh clone called all of them stale and advised removing
+  // them, which would fail the run the moment anyone started a dev server.
   for (const path of Object.keys(allowed)) {
-    if (!ignoredSource.includes(path)) {
-      note(`generatedIgnored allowance is stale — ${path} is no longer an ignored source file. Remove it.`)
+    if (existsSync(join(ROOT, path)) && !ignoredSource.includes(path)) {
+      note(`generatedIgnored allowance is stale — ${path} exists and is no longer an ignored source file. Remove it.`)
     }
   }
 
@@ -163,9 +167,18 @@ function coverage() {
 
   // FJS-026: the workspace glob is one level deep, so a package nested inside
   // another is uninstalled, untested and unrunnable — and says nothing.
-  const members = new Set(workspaceDirs())
+  const members    = new Set(workspaceDirs())
+  const nonMembers = allowances.nonMembers ?? {}
   for (const dir of nestedPackageDirs()) {
-    if (!members.has(dir)) note(`${dir} has a package.json and is not a workspace member — uninstalled and untested (FJS-026).`)
+    if (members.has(dir) || dir in nonMembers) continue
+    note(`${dir} has a package.json and is not a workspace member — uninstalled and untested (FJS-026).`)
+  }
+  for (const dir of Object.keys(nonMembers)) {
+    if (members.has(dir)) {
+      fail(`${dir} is listed in nonMembers and IS a workspace member now. Remove the entry.`)
+    } else if (!existsSync(join(ROOT, dir, 'package.json'))) {
+      note(`nonMembers allowance is stale — ${dir} has no package.json. Remove it.`)
+    }
   }
 
   // Guarded on the whole phase, not just `missing` — a stale exemption is a

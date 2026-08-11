@@ -2,7 +2,7 @@
   "name": "@frontierjs/email-kit",
   "version": "0.1.0",
   "type": "module",
-  "description": "Mesa email component kit \u2014 table-based email components with CSS inlining for transactional email",
+  "description": "Mesa email component kit — table-based email components with CSS inlining for transactional email",
   "main": "./index.js",
   "exports": {
     ".": {
@@ -20,7 +20,8 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "peerDependencies": {
     "@frontierjs/mesa": "^0.1.0"
@@ -37,5 +38,20 @@
     "react-email"
   ],
   "license": "MIT",
-  "_built": "2026-04-13"
+  "_built": "2026-04-13",
+  "files": [
+    "index.js",
+    "render.js",
+    "components",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/email-kit"
+  }
 }

@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite'
-import mesa from './mesa-vite/index.js'
+import mesa from '../mesa-vite/index.js'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 

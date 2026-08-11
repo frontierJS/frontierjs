@@ -9,7 +9,8 @@
   },
   "files": [
     "*.ts",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "peerDependencies": {
     "@frontierjs/litestone": "^1.1.0",
@@ -31,5 +32,13 @@
   "scripts": {
     "test": "bun test tests/",
     "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/auth"
   }
 }

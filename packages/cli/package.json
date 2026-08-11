@@ -17,5 +17,21 @@
     "test:deploy": "bun test tests/deploy-helpers.test.js tests/deploy-dispatch.test.js",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
-  "_built": "2026-04-13"
+  "_built": "2026-04-13",
+  "files": [
+    "bin",
+    "core",
+    "commands",
+    "web",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/cli"
+  }
 }

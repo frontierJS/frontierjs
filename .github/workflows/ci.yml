@@ -55,11 +55,13 @@ jobs:
           }
           echo "FJS_CHROME=$(which google-chrome || which chromium)" >> "$GITHUB_ENV"
 
-      # --frozen-lockfile is the point of running this in a clean checkout: a
-      # lockfile that does not match package.json is a difference between this
-      # machine and everyone else's, which is the whole class of bug CI is for.
+      # NOT --frozen-lockfile, which is what a clean checkout should want: a
+      # lockfile that does not match package.json is exactly the difference
+      # between one machine and everyone else's. It cannot be used here yet —
+      # bun.lock never converges, so frozen mode fails on a pristine clone of an
+      # untouched HEAD and again on a lockfile bun itself just wrote. FJS-157.
       - name: Install
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Verify
         env:

@@ -1,4 +1,4 @@
-# @frontierjs/mesa-vite
+# @frontierjs/mesa/vite
 
 Vite plugin for [Mesa](../) — `.mesa` and `.md` source transforms, scoped CSS,
 HMR, error overlay, and DevTools.
@@ -21,7 +21,7 @@ HMR, error overlay, and DevTools.
 ```js
 // vite.config.js
 import { defineConfig } from 'vite'
-import mesa from '@frontierjs/mesa-vite'
+import mesa from '@frontierjs/mesa/vite'
 
 export default defineConfig({
   plugins: [mesa()]
@@ -34,15 +34,15 @@ Production builds compile with `dev: false`.
 
 ### Compiler resolution
 
-The plugin imports `compileSource` from the Mesa compiler. Resolution order:
+The plugin imports `compileSource` from `../src/compiler.js` — a sibling, since
+this plugin ships inside `@frontierjs/mesa`. There is nothing to search for and
+no layout that can fail to match; a missing sibling means a broken install.
 
-1. `options.compilerPath` — explicit path
-2. `node_modules/@mesa/compiler/compiler.js`
-3. `node_modules/mesa/compiler.js`
-4. `./compiler.js` (project root — for local development of Mesa itself)
+It is imported lazily, so putting the plugin in a config file does not pull
+~290 KB of compiler into a process that may never transform anything.
 
-If you've installed `@frontierjs/mesa` from npm and none of the auto-paths
-match your layout, set `compilerPath` explicitly:
+`options.compilerPath` still wins, for testing against a compiler build that is
+not the installed one:
 
 ```js
 mesa({
@@ -158,7 +158,7 @@ Add `mesaDevtools()` as a separate top-level plugin to restore them:
 
 ```js
 import sierra from '@frontierjs/sierra'
-import { mesaDevtools } from '@frontierjs/mesa-vite'
+import { mesaDevtools } from '@frontierjs/mesa/vite'
 
 export default {
   plugins: [

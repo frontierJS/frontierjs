@@ -24,5 +24,19 @@
   "scripts": {
     "test": "bun test tests/",
     "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "files": [
+    "*.ts",
+    "drivers",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/notifications"
   }
 }

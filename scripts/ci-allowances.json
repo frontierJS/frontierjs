@@ -17,6 +17,12 @@
     "packages/sierra/example/web/config/routes.js": "Same, packages/sierra/example/.gitignore:2."
   },
 
+  "//nonMembers": "Directories holding a package.json that the `packages/*` glob cannot see, kept out of the workspace on purpose. Uninstalled means untested and unrunnable (FJS-026), so each one has to say why that is acceptable. A NEW nested package is a note, because the default answer is that it should be a member.",
+  "nonMembers": {
+    "packages/mesa/mesa-bench": "A js-framework-benchmark harness, `private: true`, pinning vite 5.4.11 against mesa's own 8.x plus its own remark chain. Making it a member installs a second toolchain for something CI has nothing to assert about. It is run by hand, from its own directory.",
+    "packages/orion/mockup/api-engine": "Real TypeScript with vitest tests and a typecheck script, inside a package that is otherwise claimed-not-built. Whether orion becomes a workspace member is FJS-D14's question, not CI's."
+  },
+
   "//knownTestFailures": "Packages whose own suite exits non-zero today. Listed so that a NEW failure is loud rather than lost in an already-red run. An entry whose suite now passes fails CI until it is removed — that is the ratchet, and `--update` removes it for you.",
   "knownTestFailures": {
     "packages/jetty": "FJS-030 — phase8 asserts the built islands/demo.js parses as a classic script and it does not: `Cannot use 'import.meta' outside a module`. MV3 content scripts are classic scripts. The other nine phases pass."

@@ -2,7 +2,7 @@
   "name": "@frontierjs/mesa",
   "version": "0.1.0",
   "type": "module",
-  "description": "Mesa \u2014 reactive UI language compiler and runtime",
+  "description": "Mesa — reactive UI language compiler and runtime",
   "main": "./src/compiler.js",
   "module": "./src/compiler.js",
   "exports": {
@@ -44,6 +44,12 @@
     },
     "./render-component": {
       "import": "./src/render-component.js"
+    },
+    "./vite": {
+      "import": "./mesa-vite/index.js"
+    },
+    "./vite/client": {
+      "import": "./mesa-vite/client.js"
     }
   },
   "scripts": {
@@ -58,6 +64,7 @@
     "css-select": "^7.0.0",
     "css-tree": "^2.0.0",
     "css-what": "^8.0.0",
+    "happy-dom": "^14.12.3",
     "rehype-slug": "^6.0.0",
     "rehype-stringify": "^10.0.1",
     "remark-gfm": "^4.0.1",
@@ -65,10 +72,31 @@
     "remark-rehype": "^11.1.2",
     "unified": "^11.0.5"
   },
+  "peerDependencies": {
+    "vite": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "happy-dom": "^14.12.3",
     "vite": "^8.0.10",
     "vitest": "^2.0.0"
   },
-  "_built": "2026-05-05"
+  "_built": "2026-05-05",
+  "files": [
+    "src",
+    "mesa-vite",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/mesa"
+  }
 }

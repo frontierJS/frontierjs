@@ -28,5 +28,21 @@
     "forms",
     "overlay"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "files": [
+    "components",
+    "stores",
+    "utils.js",
+    "tokens.css",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/ui"
+  }
 }

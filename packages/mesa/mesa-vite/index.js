@@ -1,5 +1,11 @@
 /**
- * @frontierjs/mesa-vite — Vite plugin for Mesa (.mesa and .md) files.
+ * @frontierjs/mesa/vite — Vite plugin for Mesa (.mesa and .md) files.
+ *
+ * Ships inside @frontierjs/mesa rather than beside it. A plugin whose whole job
+ * is to call the compiler cannot be versioned apart from it, and as its own
+ * package it could not even find it: the resolver hunted `@mesa/compiler` and
+ * `node_modules/mesa/` — one a name that was never published, the other an
+ * unrelated package that really exists on npm.
  *
  * Features:
  *   - Transform .mesa and .md files to JavaScript modules
@@ -9,7 +15,7 @@
  *
  * Usage:
  *   // vite.config.js
- *   import mesa from '@frontierjs/mesa-vite'
+ *   import mesa from '@frontierjs/mesa/vite'
  *
  *   export default {
  *     plugins: [mesa()]
@@ -41,23 +47,24 @@ let _compileSource = null
 
 /**
  * Lazily resolve and import the Mesa compiler.
- * Search order:
- *   1. options.compilerPath (explicit)
- *   2. node_modules/@frontierjs/mesa-compiler/compiler.js
- *   3. node_modules/mesa/compiler.js
- *   4. ./compiler.js (project root, local dev)
+ *
+ * The compiler is a sibling — this plugin ships inside @frontierjs/mesa — so
+ * the answer is a relative path and there is nothing to hunt for. It is
+ * resolved lazily so that importing the plugin does not pull ~290 KB of
+ * compiler into a config file that may never transform anything.
+ *
+ * A relative path is also what an in-repo consumer needs: `bun install`
+ * resolves workspace deps to a COPY under node_modules/.bun/, so reaching the
+ * compiler by package name would serve a stale snapshot of it.
+ *
+ * `options.compilerPath` still wins, for a consumer testing a compiler build
+ * that is not this one.
  */
-async function getCompileSource(options, root) {
+async function getCompileSource(options) {
   if (_compileSource) return _compileSource
 
-  const candidates = []
-  if (options.compilerPath) candidates.push(options.compilerPath)
-  candidates.push(
-    path.join(root, 'node_modules', '@mesa', 'compiler', 'compiler.js'),
-    path.join(root, 'node_modules', 'mesa', 'compiler.js'),
-    path.join(root, 'src', 'compiler.js'),   // mesa's own layout since 2026-08-04
-    path.join(root, 'compiler.js')
-  )
+  const sibling    = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'compiler.js')
+  const candidates = options.compilerPath ? [options.compilerPath, sibling] : [sibling]
 
   for (const c of candidates) {
     if (fs.existsSync(c)) {
@@ -70,7 +77,8 @@ async function getCompileSource(options, root) {
   }
 
   throw new Error(
-    '[Mesa] compiler not found. Add compiler.js to your project root or install @frontierjs/mesa-compiler.'
+    `[Mesa] compiler not found at ${candidates.join(' or ')}. ` +
+    `This plugin ships inside @frontierjs/mesa — a missing sibling means a broken install.`
   )
 }
 
@@ -387,7 +395,7 @@ export function __mesa_hot_update() {}
 
       let compileSource
       try {
-        compileSource = await getCompileSource(options, root)
+        compileSource = await getCompileSource(options)
       } catch (e) {
         this.warn(e.message)
         return null
@@ -453,7 +461,7 @@ export function __mesa_hot_update() {}
       // Re-compile on change to catch errors early and show overlay
       let compileSource
       try {
-        compileSource = await getCompileSource(options, root)
+        compileSource = await getCompileSource(options)
       } catch (_) {
         return modules
       }

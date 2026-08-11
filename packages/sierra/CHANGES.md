@@ -1,5 +1,26 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-10 — the package declared none of the four things it imports
+
+Publish prep. `package.json` had **no `peerDependencies` at all**, while five
+shipped files open with a static `import … from '@frontierjs/mesa/runtime'` —
+`router/index.js`, `router/signals.js`, `junction/index.js`, `presence/index.js`,
+`islands/loader.js` — and `junction/index.js` also statically imports
+`@frontierjs/junction/client`. An installed copy would throw on
+`@frontierjs/sierra/router`, which is the main path.
+
+Now declared: **`@frontierjs/mesa` required**, `@frontierjs/junction`,
+`@frontierjs/litestone` and `vite` optional. mesa is a **peer, not a
+dependency** — two copies of the reactive runtime are two signal graphs, and
+nothing at runtime would say so. The three optional ones are genuinely dynamic:
+`vite` and `mesa/render-component.js` are `await import`ed inside the build, and
+`litestone` is resolved **from the app** on purpose (`schema-plugin.js` says why
+in a comment).
+
+The declaration is what makes the block visible rather than silent: sierra now
+refuses to install until `@frontierjs/mesa` is published, instead of installing
+happily and failing on first import. 833 tests unchanged.
+
 ## 2026-08-10 — auto-import recurses, and covers module bindings
 
 `autoImport.components` scanned one directory level and matched only tags, which

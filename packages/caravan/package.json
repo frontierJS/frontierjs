@@ -2,14 +2,15 @@
   "name": "@frontierjs/caravan",
   "version": "0.1.0",
   "_built": "2026-05-04",
-  "description": "SQLite-backed job queue for Bun \u2014 first-party Junction plugin",
+  "description": "SQLite-backed job queue for Bun — first-party Junction plugin",
   "type": "module",
   "license": "MIT",
   "author": "Kobami",
   "homepage": "https://github.com/frontierjs/caravan",
   "repository": {
     "type": "git",
-    "url": "https://github.com/frontierjs/caravan.git"
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/caravan"
   },
   "keywords": [
     "queue",
@@ -27,7 +28,9 @@
     }
   },
   "files": [
-    "src/"
+    "src/",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "bun test",
@@ -48,5 +51,8 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@frontierjs/junction": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

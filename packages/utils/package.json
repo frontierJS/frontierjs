@@ -11,12 +11,22 @@
     "./glow": "./src/glow/glow.js"
   },
   "files": [
-    "src"
+    "src",
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "frontierjs",
     "utils",
     "syntax-highlighting"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/utils"
+  }
 }

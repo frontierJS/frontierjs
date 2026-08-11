@@ -1,7 +1,7 @@
 {
-  "name": "frontierjs",
-  "displayName": "FrontierJS",
-  "description": "Language support for Litestone (.lite) and MESA",
+  "name": "@frontierjs/vscode-frontierjs",
+  "displayName": "FrontierJS VSCode Plugin",
+  "description": "Language support for Litestone (.lite) and (.mesa)",
   "version": "0.1.0",
   "publisher": "frontierjs",
   "license": "MIT",
@@ -148,21 +148,21 @@
       "editor.tokenColorCustomizations": {
         "textMateRules": [
           {
-            "comment": "Mesa: let \u2014 reactive signal (orange, mutable)",
+            "comment": "Mesa: let — reactive signal (orange, mutable)",
             "scope": "keyword.declaration.let.mesa",
             "settings": {
               "foreground": "#fe8a11"
             }
           },
           {
-            "comment": "Mesa: const \u2014 derived/static (teal, settled)",
+            "comment": "Mesa: const — derived/static (teal, settled)",
             "scope": "keyword.declaration.const.mesa",
             "settings": {
               "foreground": "#2ec4b6"
             }
           },
           {
-            "comment": "Mesa: var \u2014 non-reactive sampler (dim, escapes graph)",
+            "comment": "Mesa: var — non-reactive sampler (dim, escapes graph)",
             "scope": "keyword.declaration.var.mesa",
             "settings": {
               "foreground": "#545470"
@@ -218,8 +218,8 @@
     "dev": "npm run watch",
     "package": "vsce package --no-dependencies",
     "publish": "vsce publish --no-dependencies",
-    "test": "npm run build && node test/lsp.test.js && node test/mesa.test.js",
-    "test:nobuild": "node test/lsp.test.js && node test/mesa.test.js",
+    "test": "npm run build && node test/lsp.test.js && node test/mesa.test.js && node test/snippets.test.js",
+    "test:nobuild": "node test/lsp.test.js && node test/mesa.test.js && node test/snippets.test.js",
     "verify:package": "node scripts/verify-package.js",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
