@@ -279,7 +279,8 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere, TOrderBy> {
   upsertMany(args: { data: TCreate[]; conflictTarget: string[]; update?: string[] }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args: { where: TWhere }): Promise<{ count: number }>
-  restore(args: { where: TWhere }): Promise<TRow | null>
+  /** The restored rows, shaped like any other read. `where` can match many. */
+  restore(args: { where: TWhere }): Promise<TRow[]>
   delete(args: { where: TWhere }): Promise<TRow | null>
   deleteMany(args: { where: TWhere }): Promise<{ count: number }>
   transition(id: number | string, name: string): Promise<TRow>
@@ -308,6 +309,22 @@ export interface LitestoneClient {
   $cacheSize:  { read: number; write: number } | Record<string, { read: number; write: number }>
   $enums:      Record<string, string[]>
   $close():    void
+  /**
+   * Is this a valid where key? Ask before you query — for a boundary that can
+   * answer 400 rather than the ORM's warn-on-read / throw-on-write. An unknown
+   * accessor answers [], because "I cannot judge this" is not "this is wrong".
+   */
+  $checkWhere(accessor: string, where: unknown): { key: string; suggestion: string | null; allowed: string[] }[]
+  /**
+   * Is this a valid orderBy key? Same contract as $checkWhere. `reason`
+   * separates a field that does not exist from a @computed field, which SQLite
+   * can neither sort nor paginate by. Pass `{ aggregates: true }` for
+   * groupBy/aggregate, where `_count` is the point rather than a typo.
+   */
+  $checkOrderBy(accessor: string, orderBy: unknown, opts?: { aggregates?: boolean }): {
+    key: string; reason: 'computed' | 'unknown'; suggestion: string | null
+    sortable: string[]; message: string
+  }[]
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ size: number }>
   $walStatus(): { busy: boolean; frames: number; checkpointed: number } | Record<string, { busy: boolean; frames: number; checkpointed: number } | null>
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>

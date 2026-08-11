@@ -1,5 +1,205 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-11 — `@@softDelete` + `@@fts` corrupted the index on every soft delete
+
+Found while splitting a test fixture in two to avoid it. The pair was unusable:
+
+```
+db.note.remove({ where: { id: 1 } })
+→ SQLiteError: database disk image is malformed   (SQLITE_CORRUPT_VTAB)
+```
+
+Two triggers fired on one soft delete. An unconditional `AFTER UPDATE` one
+issued `'delete' old` and re-inserted `new`; an `AFTER UPDATE OF "deletedAt"`
+one issued `'delete' old` a second time. FTS5 reports a repeated delete of one
+docid as a malformed database — a message naming neither the model, the FTS
+table, nor the two attributes that could not both be declared, so it read as a
+broken file rather than an unsupported combination.
+
+**It only raises when the extra delete empties the structure.** With more than
+one indexed row the second delete was swallowed and the row stayed in the index,
+which is why nothing caught this and why the original report said *every*
+`remove()` throws. So the triggers never achieved the live-only index they were
+written for either: `search()` was correct only because it filters again in its
+own `WHERE`.
+
+That second filter is now the only one. The index mirrors the table, the two
+extra triggers are retired, and the trigger set no longer branches on
+`@@softDelete` at all — one owner for "is this row visible", which is the rule
+the rest of the package already follows.
+
+Three things follow from it:
+
+- **`withDeleted` / `onlyDeleted` on `search()` work.** They were documented and
+  accepted, and could not do anything: the rows they asked for were not in the
+  index to find.
+- **`rebuild` agrees with the triggers.** It reindexes straight from the content
+  table, so it can only match an index that mirrors that table. A live-only
+  index silently disagreed with its own rebuild.
+- **`search()` narrows before the FTS `LIMIT`.** Soft-deleted, template and
+  `where`-excluded rows used to spend slots that step 2 then discarded, so a
+  search for 20 answered 13 with nothing to say why, and `offset` paged index
+  entries rather than matching rows.
+
+The fixture that found this now carries both attributes on one model. Two
+fixtures, each exercising one attribute, is exactly what hid it.
+
+## 2026-08-11 — a trigger could never migrate, and a rebuild destroyed every one
+
+Both found fixing the above, and both are why that fix would otherwise have
+reached new databases only.
+
+**`introspect()` recorded no triggers.** Tables, columns, indexes, foreign keys,
+STRICT and views were all read back; triggers were not. So `diffSchemas` could
+not see one and `generateMigrationSQL` could not emit one — every database that
+already existed kept the broken trigger pair while the diff reported the schema
+in sync. Triggers now travel in `__triggers` beside `__views` and compare on
+normalised SQL.
+
+**A table rebuild dropped every trigger and put none of them back.**
+`rebuildSQL` is the standard SQLite rewrite — create `_tmp`, copy, `DROP TABLE`,
+rename — and dropping the table takes its triggers with it. A model came out of
+an ordinary column-drop migration with an FTS index that had stopped updating
+and an `updatedAt` that had stopped being stamped. Writes still succeed and
+searches still return rows, so there is nothing to notice. A rebuilt table now
+has its generated triggers restated afterwards.
+
+Only names Litestone generates are ever dropped — `*_fts_*`, `*_updatedAt`. A
+trigger the app wrote is not in pristine, so nothing here drops it. It is still
+lost by a rebuild, which is `FJS-183` and stated in `docs/migrations.md` rather
+than fixed silently.
+
+## 2026-08-11 — `@from` read the target model the wrong way, twice; `orderBy` validated nothing
+
+Three defects found in one sitting, by trying to build a CRM "chattiness" score:
+a per-client count of notes, messages and call logs, divided by the account's
+age. That is `@from` for the counts and `@computed` for the ratio, which is the
+shape the package already recommends, and all three of these were on the path.
+
+**A `@from` ignored the target model's own defaults.** `@from(Note, count: true)`
+counted soft-deleted rows and template rows. Every schema therefore had to write
+`where: "deletedAt IS NULL"` by hand on every derived field — a default nobody
+remembers on the second model, and one that goes silently wrong rather than
+loudly. `include: { _count: true }` over the same relation had injected both
+filters since it was written, so the two counts of one relation disagreed:
+
+```prisma
+model Client {
+  noteCount Int @from(Note, count: true)   // counted deleted notes
+  notes     Note[]
+}
+// db.client.findMany({ include: { _count: true } })  → _count.notes excluded them
+```
+
+A `@from` now reads the target the way the target is read. `withDeleted: true`
+and `withTemplates: true` opt back in, named for the `findMany` args rather than
+inventing a second vocabulary, and an explicit `where:` still composes on top.
+An existing `where: "deletedAt IS NULL"` becomes redundant, not wrong.
+
+**A `@from` did not survive a relation `orderBy`.** The correlated subquery names
+the outer table, and a relation orderBy aliases that table to `t`, so the two
+disagreed — in two different registers depending on what the caller selected:
+
+```js
+db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
+// → every @from field undefined, and a @computed field reading one
+//   computed from undefined, in silence
+
+db.author.findMany({ orderBy: { books: { _count: 'desc' } }, select: { bookCount: true } })
+// → SQLiteError: no such column: author.id
+```
+
+Both variants of every subquery are built at schema load now, and the query
+picks by whether it aliased. The WHERE clause needs the same choice, and the
+alias question is not the join question — a relation *aggregate* orderBy adds an
+order part and no join, which is the case that was still wrong after the SELECT
+list was fixed.
+
+**`orderBy` validated nothing at all.** `orderBy: { bogusColumn: 'desc' }` was a
+silent no-op: rows came back in insertion order, no warning anywhere, not even
+the stderr line that `where` prints. The same silence covered `@computed`, which
+cannot be sorted at all — it is a JS function over a row, so SQLite can neither
+sort nor paginate by it — so a list "sorted by" a derived score was ordinary
+rows in arbitrary order, and page 2 of it was plausible and wrong.
+
+This half does **not** inherit `checkWhereKeys`'s warn-on-read split. A bad
+filter key returns fewer rows, which the caller can see; a bad sort key returns
+the right rows in the wrong order, which nothing can see. Both now throw, naming
+what is sortable, and separating the two refusals — a field that does not exist
+gets a typo suggestion, a `@computed` field is told why it cannot be sorted and
+what to do instead. A `@from` field sorts, as it always did.
+
+`db.$checkOrderBy(accessor, orderBy)` is `$checkWhere`'s sibling and carries the
+identical contract: ask before you query, an unknown accessor answers `[]`
+because *I cannot judge this* is not *this is wrong*, and every flavour of client
+answers identically, because sortability is a fact about the schema that auth and
+scope cannot change. Junction's `autoSort` calls it and answers 400.
+
+**And `@from` turned out to exist on one read path only.** `findManyCursor` and
+`resolveIncludes` build their own SQL below the query pipeline, so neither ever
+appended the subqueries — the field was absent, not wrong:
+
+```js
+await db.author.findMany()                            // { id, name, bookCount: 2, score: 10 }
+await db.author.findManyCursor({ limit: 10 })         // { id, name,               score: 0  }
+await db.book.findMany({ include: { author: true } }) // author: { id, name,       score: 0  }
+```
+
+Absence is the dangerous half. `applyComputed` runs either way, so a `@computed`
+field over a missing `@from` field answered a plausible `0` rather than throwing
+— the same row read two ways gave two different numbers, and neither complained.
+Selecting the field by name on those paths answered `{}`.
+
+Closed the way `@from` under an alias was: `fromSelectExpr()` and
+`deserializeFromRow()` are module-level, `fromMap` is on `ctx`, and the four
+sites ask instead of growing a fourth copy of the rule. The m2m include needed
+the aliased variant, since it selects `t.*` beside the join table. Both halves of
+the shaping were missing and only one of them is visible — without the SELECT
+expression the field is absent, without the deserializer a `@from(X, last: true)`
+arrives as the JSON string SQLite returned.
+
+Walking every method that returns a row found two more of the same, and they
+are closed too. `search()` builds its own step-2 SELECT. And **every write
+returned a row with no `@from` field at all** — `RETURNING` is table columns
+only, SQLite cannot put a correlated subquery there:
+
+```js
+await db.author.findUnique({ where: { id: 1 } })      // { …, bookCount: 2, score: 10 }
+await db.author.update({ where: { id: 1 }, data: {} }) // { …,               score: 0  }
+```
+
+That is the one that reached furthest. Junction returns `table.update()`
+straight through, so the PATCH response *and* the `svc updated` broadcast built
+from it both carried the degraded row — every open tab replaced a correct row
+with it.
+
+Writes now re-read the `@from` values before shaping. One extra SELECT, only
+for a model that declares `@from`, and only on write paths that opt in — a read
+already carries the values, and hydrating whenever a key happened to be missing
+would fire a query per row for a `select` that legitimately excluded them.
+`delete` needs no extra query: it already reads the row before the DELETE, which
+is the only moment the values still correlate to anything.
+
+## 2026-08-11 — `restore()` answers the rows
+
+It returned `{ count }`. `index.d.ts` declared `Promise<TRow | null>` and
+`CLAUDE.md` documented `row[]`; three sources, three answers, and the
+declaration was the wrong one in the direction that typechecks —
+`(await restore(…)).id` compiled and was `undefined`.
+
+The rows were there the whole time: `restore` runs `UPDATE … RETURNING *` and
+threw them away to count them. It now answers the array, which is what `where`
+matching many implies and what `remove` already does with its row. They are
+also **shaped** — the RETURNING rows had never been through `read()`, so had
+they been returned before they would have carried unparsed Json, `0`/`1` for
+booleans, and no computed or `@from` fields.
+
+Breaking for a caller reading `.count`. One existed: this package's own
+audit-trail suite.
+
+64 tests, mutation-checked — 45 fail on revert. Proven by `example`: `verify`
+(37) and `verify:jobs` (8), `basecamp`: `verify` (270), `sierra`: `test:safety`.
+
 ## 2026-08-10 — an `include` enforced nothing the model declared
 
 Every access rule in the package held on a direct read and none of them survived

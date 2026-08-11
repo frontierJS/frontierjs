@@ -171,6 +171,9 @@ Type?      — optional (nullable)
 @from(Model, sum: field)         relation field. sum/max/min take a field; count needs Int,
 @from(Model, last: true)         exists needs Boolean, first/last are typed Model? (whole row)
 @from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered derived field
+@from(Model, count: true, withDeleted: true, withTemplates: true)  opt back into the
+                                 target's soft-deleted / template rows. By DEFAULT a @from
+                                 reads the target the way the target is read — both out
 ```
 
 Every validator above takes an optional trailing message —
@@ -290,7 +293,7 @@ db.user.findMany({ where, recursive: { direction: 'ancestors', nested: true, max
 db.user.create({ data, include, select })                    // → row
 db.user.update({ where, data, include, select })             // → row | null
 db.user.upsert({ where, create: {...}, update: {...} })      // → row
-db.user.restore({ where })                                   // → row[]
+db.user.restore({ where })                                   // → row[] (may be empty)
 db.user.remove({ where })               // soft delete on @@softDelete models → row
 db.user.delete({ where })               // always hard delete → row
 
@@ -986,5 +989,42 @@ against a real client rather than a stand-in.
   flush on exit to wait for.
 - **`@guarded` is not a level** — it takes only `(all)`; `@guarded(5)` does not
   parse. Per-role column access is field-level `@allow`.
+- **A `@computed` field cannot be sorted, and `orderBy` now says so.** It is a JS
+  function over a fetched row; SQLite cannot order or paginate by one. Both that
+  and an unknown key THROW — stricter than the where-key check, which only warns
+  on a read, because a bad filter returns fewer rows and a bad sort returns the
+  right rows in the wrong order. `@from` sorts fine (it is a subquery in the
+  SELECT). `db.$checkOrderBy(accessor, orderBy)` asks without running the query.
+- **A `@from` applies the TARGET model's `@@softDelete` and `@@hasTemplates`.**
+  Same as `include: { _count: true }` over the same relation. `withDeleted: true`
+  / `withTemplates: true` opt back in; an explicit `where:` composes on top.
+- **A `@computed` field resolves its own dependencies — you never list them.**
+  Naming one in a `select` sets `needsAllDbCols`, so the SQL widens to `SELECT *`
+  and the result is trimmed after. `@from` values are resolved first, so a
+  computed field may read one. **Six sites build SELECTs of their own** — the
+  query pipeline, `findManyCursor`, `search()`, `resolveIncludes` (×3 relation
+  shapes) — and each has to append the `@from` subqueries itself;
+  `fromSelectExpr()` / `deserializeFromRow()` are the shared definition.
+  Forgetting one is silent, not loud: the field goes absent and `applyComputed`
+  still runs, so a computed field over it answers a plausible `0`.
+- **A write cannot return a `@from` field from `RETURNING`** — SQLite takes no
+  correlated subquery there. `create`/`update`/`upsert`/`remove` re-read them
+  (`hydrateFromFields`, one extra SELECT, only when the model declares `@from`);
+  `delete` reads them on its pre-DELETE SELECT, the last moment they correlate.
+  A new write path must opt in with `read(row, { hydrateFrom: true })` or it
+  silently reintroduces the bug.
+- **An FTS index mirrors its table, soft-deleted rows included** — `search()` is
+  the only reader and does the filtering, which is what makes its
+  `withDeleted`/`onlyDeleted` mean anything. Keeping deleted rows *out* of the
+  index needs a second trigger, and two triggers firing on one soft delete is
+  what made `@@softDelete` + `@@fts` unusable: FTS5 answers a repeated `'delete'`
+  for one docid with `database disk image is malformed`, and only when the extra
+  delete empties the structure — above one row it corrupts in silence.
+- **A generated trigger is diffed and migrated; a hand-written one is not.**
+  `introspect()` reads triggers into `__triggers`, and a rebuilt table has its
+  generated triggers restated (a rebuild drops the table, and its triggers with
+  it). Only names litestone owns — `*_fts_*`, `*_updatedAt` — are ever dropped.
+  A trigger the app wrote survives an ordinary migration and is **lost** by a
+  rebuild, with nothing said (`FJS-183`, open).
 - **`encryptionKey` is parsed as hex**, so a 64-*character* key is not necessarily
   a 32-byte one.

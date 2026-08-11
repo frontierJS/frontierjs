@@ -147,7 +147,40 @@ See [access-control.md](./access-control.md).
 @from(Model, first|last: true)   the whole related ROW — field must be typed Model?
 @from(Model, exists: true)       field must be Boolean
 @from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered
+@from(Model, count: true, withDeleted: true)     include the target's soft-deleted rows
+@from(Model, count: true, withTemplates: true)   include the target's @@hasTemplates rows
 ```
+
+A `@from` reads the target model the way the target model is read: if it declares
+`@@softDelete`, deleted rows are out; if it declares `@@hasTemplates`, template
+rows are out. That matches `include: { _count: true }` over the same relation.
+The two flags opt back in independently, and an explicit `where:` composes on
+top of whichever filters remain.
+
+A `@from` field is a correlated subquery in the SELECT list, so it can be
+filtered (`where: { orderCount: { gt: 5 } }`) and sorted
+(`orderBy: { orderCount: 'desc' }`). A `@computed` field is a JS function over an
+already-fetched row, so it can be neither — see
+[sorting.md](./sorting.md#what-can-be-sorted).
+
+### Computed fields resolve their own dependencies
+
+You never list what a `@computed` field reads. Selecting one sets
+`needsAllDbCols`, which widens the SQL to every column of the row, and the
+result is trimmed back to what you asked for afterwards:
+
+```js
+db.client.findMany({ select: { chattiness: true } })   // → { chattiness: 20 }
+// fetched every column plus the @from subqueries, ran the fn, then trimmed
+```
+
+`@from` values are resolved before computed functions run, so a `@computed`
+field may read one. The cost is worth knowing: **naming one computed field in a
+`select` turns it into a `SELECT *`.** There is no way to declare a narrower
+dependency set.
+
+Both hold on every read path — `findMany`, `findFirst`, `findUnique`,
+`findManyAndCount`, `findManyCursor`, and a model reached through `include`.
 
 ### File storage
 ```

@@ -1061,6 +1061,59 @@ export function autoFilter(accessorOpt: string | undefined) {
   }
 }
 
+// ─── Sort keys derived from the model ───────────────────────────────────────
+//
+// autoFilter's sibling, and the failure it closes is the quieter of the two.
+// `GET /products?bogusColumn=7` at least answered an empty list; `?$orderBy=-
+// bogusColumn` answered the RIGHT rows in the caller's original order and said
+// nothing anywhere — no warning even on the server, because until litestone
+// grew orderBy validation the key was simply quoted into SQL and resolved
+// against the SELECT aliases, finding nothing. A caller cannot see a sort that
+// did not happen, so page 2 of a "sorted" list is plausible and wrong.
+//
+// Same division as autoFilter: `db.$checkOrderBy` keeps the one definition of
+// what is sortable — including the difference between a field that does not
+// exist and a @computed field that cannot be sorted — and Junction contributes
+// the status code. A client without $checkOrderBy no-ops.
+
+interface OrderByKeyProblem {
+  key: string
+  reason: 'computed' | 'unknown'
+  suggestion: string | null
+  sortable: string[]
+  message: string
+}
+
+export function autoSort(accessorOpt: string | undefined) {
+  return function autoSort(ctx: ServiceContext): void {
+    const accessor = accessorOpt ?? ctx.service
+    const client = ctx.locals.db as {
+      $checkOrderBy?: (a: string, o: unknown) => OrderByKeyProblem[]
+    } | undefined
+    // Probing a Litestone client for a property it does not have THROWS — see
+    // the note in autoFilter, and `FJS-117` for what that cost the last time.
+    let check: ((a: string, o: unknown) => OrderByKeyProblem[]) | undefined
+    try { check = client?.$checkOrderBy } catch { return }
+    if (typeof check !== 'function') return
+
+    const raw = ctx.directives?.orderBy
+    if (raw == null) return
+
+    let problems: OrderByKeyProblem[] = []
+    try { problems = check.call(client, accessor, parseSort(raw as SortParam)) ?? [] } catch { return }
+    if (!problems.length) return
+
+    const detail = problems.map(p =>
+      `'${p.key}'${p.reason === 'computed' ? ' (computed — not sortable)' : ''}` +
+      `${p.suggestion ? ` — did you mean '${p.suggestion}'?` : ''}`).join(', ')
+    throw new BadRequest(
+      `Unknown or unsortable $orderBy ${problems.length > 1 ? 'keys' : 'key'} ${detail}. ` +
+      `Sortable fields on ${accessor}: ${problems[0].sortable.join(', ')}.`,
+      problems.map(p => ({ field: p.key, message: p.message })),
+    )
+  }
+}
+
 // ─── Authentication derived from @@gate ─────────────────────────────────────
 //
 // A model's @@gate already states the minimum level per operation:

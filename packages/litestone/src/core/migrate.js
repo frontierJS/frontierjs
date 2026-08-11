@@ -87,8 +87,37 @@ export function introspect(db) {
     schema.__views[v.name] = { sql: v.sql }
   }
 
+  // Triggers — recorded so a change to a GENERATED trigger body can migrate.
+  // Nothing read them until the @@fts + @@softDelete pair had to be repaired:
+  // both databases already had the wrong triggers, and a diff that cannot see a
+  // trigger reports a schema in sync while every remove() on that model throws.
+  const trigRows = db
+    .prepare(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger' AND sql IS NOT NULL`)
+    .all()
+
+  schema.__triggers = {}
+  for (const t of trigRows) {
+    schema.__triggers[t.name] = { table: t.tbl_name, sql: t.sql }
+  }
+
   return schema
 }
+
+// Two trigger definitions are the same trigger when SQLite would build the same
+// thing from them. `IF NOT EXISTS` is stripped because buildPristine strips it
+// on the way in, so the pristine side never carries it and the live side does.
+export function normaliseTriggerSql(sql) {
+  return sql
+    .replace(/CREATE\s+TRIGGER\s+IF\s+NOT\s+EXISTS/i, 'CREATE TRIGGER')
+    .replace(/\s+/g, ' ')
+    .replace(/;\s*$/, '')
+    .trim()
+}
+
+// Trigger names litestone generates, and therefore owns: a trigger matching one
+// of these is ours to drop and recreate, anything else on the table is the
+// app's and is left alone.
+const OWNED_TRIGGER = /_(fts_insert|fts_delete|fts_update|fts_soft_delete|fts_restore|updatedAt)$/
 
 // ─── Pristine db ──────────────────────────────────────────────────────────────
 // Executes parsed schema DDL against a fresh in-memory db.
@@ -291,10 +320,12 @@ function fksEqual(a, b) {
 
 // ─── Full diff ────────────────────────────────────────────────────────────────
 
+const META_KEYS = new Set(['__views', '__triggers'])
+
 export function diffSchemas(pristine, live, parseResult, dbName = 'main', { pluralize = false } = {}) {
-  // Filter out __views from table name sets
-  const pristineNames = new Set(Object.keys(pristine).filter(k => k !== '__views'))
-  const liveNames     = new Set(Object.keys(live).filter(k => k !== '__views'))
+  // Filter the meta buckets out of the table name sets
+  const pristineNames = new Set(Object.keys(pristine).filter(k => !META_KEYS.has(k)))
+  const liveNames     = new Set(Object.keys(live).filter(k => !META_KEYS.has(k)))
 
   // Filter models to those belonging to this database, excluding @@external
   const dbModels = parseResult.schema.models.filter(m => {
@@ -380,6 +411,31 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     }
   }
 
+  // Triggers — only over tables this database still has, and only the ones
+  // litestone generates. A trigger the app wrote is not in pristine, so it is
+  // never dropped here.
+  //
+  // A rebuilt table needs every one of its triggers restated even when the
+  // bodies match: rebuildSQL drops the table, which takes its triggers with it,
+  // and nothing put them back. A model with @@fts came out of a column-drop
+  // migration with an index that had silently stopped updating.
+  const pristineTrigs = pristine.__triggers ?? {}
+  const liveTrigs     = live.__triggers ?? {}
+  const rebuilding    = new Set(tableDiffs.filter(d => d.needsRebuild).map(d => d.name))
+  const inScope       = (t) => liveNames.has(t) && pristineNames.has(t)
+
+  const changedTriggers = []
+  for (const [name, p] of Object.entries(pristineTrigs)) {
+    if (!inScope(p.table)) continue
+    const l = liveTrigs[name]
+    if (rebuilding.has(p.table) || !l || normaliseTriggerSql(l.sql) !== normaliseTriggerSql(p.sql))
+      changedTriggers.push({ name, table: p.table, sql: p.sql })
+  }
+  const droppedTriggers = Object.entries(liveTrigs)
+    .filter(([name, l]) => !pristineTrigs[name] && OWNED_TRIGGER.test(name) &&
+                           inScope(l.table) && !rebuilding.has(l.table))
+    .map(([name, l]) => ({ name, table: l.table }))
+
   return {
     newTables,
     newMatViews,
@@ -387,9 +443,12 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     changedViews,
     droppedTables,
     tableDiffs,
+    changedTriggers,
+    droppedTriggers,
     hasChanges: newTables.length > 0 || newMatViews.length > 0 ||
                 newViews.length > 0   || changedViews.length > 0 ||
-                droppedTables.length  > 0 || tableDiffs.length > 0,
+                droppedTables.length  > 0 || tableDiffs.length > 0 ||
+                changedTriggers.length > 0 || droppedTriggers.length > 0,
   }
 }
 
@@ -441,7 +500,8 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
 }
 
 export function generateMigrationSQL(diffResult, parseResult, { pluralize = false } = {}) {
-  const { newTables, newMatViews, newViews, changedViews, droppedTables, tableDiffs } = diffResult
+  const { newTables, newMatViews, newViews, changedViews, droppedTables, tableDiffs,
+          changedTriggers, droppedTriggers } = diffResult
   const lines = []
 
   lines.push(`PRAGMA foreign_keys = OFF;`)
@@ -587,6 +647,17 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     }
   }
 
+  if (changedTriggers?.length || droppedTriggers?.length) {
+    lines.push(`-- ─── generated triggers (drop + recreate) ${'─'.repeat(26)}`)
+    lines.push(``)
+    for (const t of droppedTriggers ?? []) lines.push(`DROP TRIGGER IF EXISTS "${t.name}";`)
+    for (const t of changedTriggers ?? []) {
+      lines.push(`DROP TRIGGER IF EXISTS "${t.name}";`)
+      lines.push(t.sql.trim().replace(/;?$/, ';'))
+    }
+    lines.push(``)
+  }
+
   lines.push(`COMMIT;`)
   lines.push(`PRAGMA foreign_keys = ON;`)
 
@@ -622,6 +693,11 @@ export function summariseDiff(diffResult) {
     for (const i of d.indexes.dropped)
       lines.push(`      - idx  ${i.name}`)
   }
+
+  for (const t of diffResult.changedTriggers ?? [])
+    lines.push(`  ~ ${t.table}  trigger ${t.name}  (recreate)`)
+  for (const t of diffResult.droppedTriggers ?? [])
+    lines.push(`  - ${t.table}  trigger ${t.name}  (retired)`)
 
   return lines.join('\n')
 }

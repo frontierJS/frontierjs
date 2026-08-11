@@ -1121,6 +1121,7 @@ class Parser {
 
     // Parse key: value pairs
     let op = null, opValue = null, where = null, orderBy = null
+    let withDeleted = false, withTemplates = false
 
     while (!this.check(TK.RPAREN)) {
       const key = this.eat(TK.IDENT).value
@@ -1157,6 +1158,20 @@ class Parser {
           orderBy = this.eat(TK.IDENT).value
           break
         }
+        // A @from reads the target model through the target model's own
+        // defaults — soft-deleted and template rows are out, exactly as they
+        // are for a direct read or an include. These opt back in, and they are
+        // named for the findMany args rather than inventing a second word.
+        case 'withDeleted': {
+          const val = this.eat(TK.BOOL).value
+          withDeleted = val === true || val === 'true'
+          break
+        }
+        case 'withTemplates': {
+          const val = this.eat(TK.BOOL).value
+          withTemplates = val === true || val === 'true'
+          break
+        }
         default:
           throw new ParseError(`@from: unknown option '${key}'`, this.peek())
       }
@@ -1165,7 +1180,7 @@ class Parser {
 
     this.eat(TK.RPAREN)
     if (!op) throw new ParseError(`@from requires an operation (last, first, count, sum, max, min, exists)`, this.peek())
-    return { target, op, opValue, where: where ?? null, orderBy: orderBy ?? null }
+    return { target, op, opValue, where: where ?? null, orderBy: orderBy ?? null, withDeleted, withTemplates }
   }
 
   parseParenString() {

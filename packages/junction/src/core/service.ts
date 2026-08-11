@@ -20,7 +20,7 @@ import { wrapResult, isServiceResult, resultData } from './envelope.ts'
 // module imports createLitestoneBase (used only inside createBaseService).
 import { createSchema } from './schema.ts'
 import {
-  createLitestoneBase, autoValidate, gateAuth, autoFilter,
+  createLitestoneBase, autoValidate, gateAuth, autoFilter, autoSort,
   jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload,
 } from './litestone.ts'
 
@@ -861,7 +861,7 @@ export function createBaseService(
   // anonymous request costs less than parsing its body.
   const derivedHooks: HookMap = {
     before: {
-      find:   [gateAuth(model, 'read'), autoFilter(model)],
+      find:   [gateAuth(model, 'read'), autoFilter(model), autoSort(model)],
       get:    [gateAuth(model, 'read'), autoFilter(model)],
       create: [gateAuth(model, 'create'), autoValidate(model, 'create')],
       patch:  [gateAuth(model, 'update'), autoValidate(model, 'patch')],
@@ -1131,7 +1131,7 @@ function makeBypass(
 // Exported because two tests asserted on the total length of a compiled
 // `before` list and broke the day a second derived hook appeared — the count is
 // a framework detail a test about USER hooks does not own. Filter by this.
-export const DERIVED_HOOKS = new Set(['gateAuth', 'autoValidate', 'autoFilter'])
+export const DERIVED_HOOKS = new Set(['gateAuth', 'autoValidate', 'autoFilter', 'autoSort'])
 
 export function createService(def: ServiceDefinition): Service {
 

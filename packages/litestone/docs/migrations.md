@@ -110,3 +110,23 @@ Unlike Prisma, Litestone does not create a shadow database. It builds a pristine
 - No extra database file created
 - Works in read-only environments
 - Safe to run in CI without write access to the filesystem
+
+The diff covers tables, columns, indexes, foreign keys, STRICT, views and
+triggers.
+
+## Triggers
+
+Litestone generates triggers for `@@fts` (index sync) and for an `updatedAt`
+field. They are diffed like anything else: a trigger whose body no longer
+matches the schema is dropped and recreated, and one the schema no longer
+generates is dropped.
+
+**Only names Litestone generates are ever dropped** — `<table>_fts_*` and
+`<table>_updatedAt`. A trigger you wrote is not in the pristine database, so
+nothing here touches it.
+
+One exception, and it is destructive: a change needing a **table rebuild**
+(dropping a column, changing a type, changing a foreign key) drops the table,
+which takes every trigger on it. Litestone's own are restated afterwards; a
+trigger you wrote is gone, and the migration says nothing. Recreate it in a JS
+migration that runs after.

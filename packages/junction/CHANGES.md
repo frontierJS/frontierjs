@@ -1,5 +1,31 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-11 — `autoSort`: an unknown `$orderBy` key is a 400, not an unsorted 200
+
+`autoFilter`'s sibling, closing the quieter half of the same failure. An unknown
+filter key at least answered an empty list, which a caller eventually notices;
+an unknown sort key answered the **right rows in their original order** and said
+nothing anywhere — no error, no warning, not even on the server, because the key
+was quoted into SQL and resolved against the SELECT aliases, finding nothing. A
+caller cannot see a sort that did not happen, so page 2 of a "sorted" list is
+plausible and wrong.
+
+```
+GET /products?$orderBy=-bogusColumn   → 200, unsorted, silent
+GET /products?$orderBy=shoutName      → 200, unsorted, silent  (a @computed field)
+```
+
+Both are now 400. Same division of labour as `autoFilter`: litestone's new
+`db.$checkOrderBy` keeps the one definition of what is sortable, Junction
+contributes the status code. The two refusals stay distinct — a field that does
+not exist gets the typo suggestion litestone already computes, a `@computed`
+field is told it cannot be sorted at all — because a caller can act on the
+difference. A `@from` field sorts; it is SQL, not a JS function.
+
+Installed on `find` beside `autoFilter`. A client that cannot answer the probe
+no-ops rather than 500s, the same contract and for the same reason as
+`FJS-117` — reading an unknown property off a Litestone client throws.
+
 ## 2026-08-10 — published to npm as `@frontierjs/junction@0.1.0`
 
 Live on the registry, tag `latest`, public. Four manifest gaps closed first,

@@ -367,4 +367,94 @@ describe('autoFilter — unknown filter keys', () => {
     expect((await get(app, '/posts?anythingAtAll=1')).status).toBe(200)
     await app.stop()
   })
+
+  // ─── $orderBy ───────────────────────────────────────────────────────────
+  //
+  // The quieter half of the same failure. An unknown FILTER key at least
+  // answered an empty list; an unknown SORT key answered the right rows in the
+  // original order and said nothing anywhere, so a "sorted" page 2 is
+  // plausible and wrong. Same division of labour: litestone owns what is
+  // sortable, Junction owns the status code.
+  const appWithSortables = async () => {
+    const { createClient } = await import('../../litestone/src/index.js')
+    const db: any = await createClient({
+      schema: `model Product {
+        id Int @id
+        name String
+        price Float @default(1)
+        reviews Review[]
+        reviewCount Int @from(Review, count: true)
+        shoutName String @computed
+      }
+      model Review {
+        id Int @id
+        productId Int
+        product Product @relation(fields: [productId], references: [id])
+      }`,
+      db: ':memory:',
+      computed: { Product: { shoutName: (r: any) => String(r.name).toUpperCase() } },
+    })
+    await db.product.createMany({ data: [{ id: 1, name: 'a' }, { id: 2, name: 'b' }] })
+    await db.review.createMany({ data: [{ id: 1, productId: 2 }, { id: 2, productId: 2 }] })
+    return { app: await appFor(db), db }
+  }
+
+  test('a known column still sorts', async () => {
+    const { app, db } = await appWithSortables()
+    const res = await get(app, '/products?$orderBy=-name')
+    expect(res.status).toBe(200)
+    expect((res.body.data as { name: string }[]).map(p => p.name)).toEqual(['b', 'a'])
+    db.$close(); await app.stop()
+  })
+
+  test('an unknown sort key is a 400 naming the sortable fields', async () => {
+    const { app, db } = await appWithSortables()
+    const res = await get(app, '/products?$orderBy=-bogusColumn')
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain("'bogusColumn'")
+    expect(res.body.message).toContain('Sortable fields')
+    db.$close(); await app.stop()
+  })
+
+  test('a sort typo gets the suggestion litestone already computes', async () => {
+    const { app, db } = await appWithSortables()
+    const res = await get(app, '/products?$orderBy=nme')
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain("did you mean 'name'")
+    db.$close(); await app.stop()
+  })
+
+  // The two refusals are not the same sentence: one field does not exist, the
+  // other exists and cannot be sorted. A caller can act on the difference.
+  test('a @computed field is refused as unsortable, not as unknown', async () => {
+    const { app, db } = await appWithSortables()
+    const res = await get(app, '/products?$orderBy=shoutName')
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('computed')
+    db.$close(); await app.stop()
+  })
+
+  test('a @from field sorts — it is SQL, not a JS function', async () => {
+    const { app, db } = await appWithSortables()
+    const res = await get(app, '/products?$orderBy=-reviewCount')
+    expect(res.status).toBe(200)
+    expect((res.body.data as { name: string }[]).map(p => p.name)).toEqual(['b', 'a'])
+    db.$close(); await app.stop()
+  })
+
+  test('a client without $checkOrderBy no-ops', async () => {
+    const stub = {
+      $setAuth() { return this },
+      $schema: { enums: [], types: [], models: [{ name: 'Post', attributes: [], fields: [
+        { name: 'id', type: 'String', attributes: [] },
+      ] }] },
+      post: {
+        findMany: async () => [], count: async () => 0,
+        findManyAndCount: async () => ({ rows: [], total: 0 }),
+      },
+    }
+    const app = await appFor(stub, 'posts', 'post')
+    expect((await get(app, '/posts?$orderBy=anythingAtAll')).status).toBe(200)
+    await app.stop()
+  })
 })

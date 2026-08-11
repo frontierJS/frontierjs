@@ -750,12 +750,17 @@ function buildGeneratedMap(schema) {
 }
 
 // ─── @from map ───────────────────────────────────────────────────────────────
-// { modelName: { fieldName: { subquerySql, isObject } } }
+// { modelName: { fieldName: { subquerySql, subquerySqlAliased, isObject } } }
 // subquerySql: the correlated subquery string to inject into SELECT
 // isObject: true for last/first (returns JSON-encoded row), false for scalars
 //
 // FK inference lives in the parser as inferFromFk() — the same call validate()
 // makes, so a schema that parses always produces a subquery here.
+//
+// TWO variants of every subquery, because the correlation names the outer table
+// and a relation orderBy aliases that table to `t`. With one variant the query
+// either dropped the field silently or died on `no such column: <table>.<pk>`,
+// depending on whether the caller had named the field in `select`.
 
 function buildFromMap(schema, pluralize = false) {
   const map = {}
@@ -769,7 +774,7 @@ function buildFromMap(schema, pluralize = false) {
 
     for (const field of fromFields) {
       const attr = field.attributes.find(a => a.kind === 'from')
-      const { target, op, opValue, where, orderBy } = attr
+      const { target, op, opValue, where, orderBy, withDeleted, withTemplates } = attr
 
       const targetModel = schema.models.find(m => m.name === target)
       if (!targetModel) continue
@@ -781,7 +786,18 @@ function buildFromMap(schema, pluralize = false) {
       const { fkCol, refCol } = fk
       const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
 
-      const whereParts = [`"${fkCol}" = "${selfTable}"."${refCol}"`]
+      // The target model's own defaults apply, the same ones a direct read or an
+      // include gets. Without this a @from counted rows the app had deleted, and
+      // every schema had to repeat `where: "deletedAt IS NULL"` by hand — which
+      // is a default nobody remembers to write on the second model.
+      const targetSoftDelete = !!targetModel.attributes.find(a => a.kind === 'softDelete')
+      const targetHtField    = targetModel.attributes.find(a => a.kind === 'hasTemplates')?.field ?? null
+
+      // `%SELF%` is substituted per variant below — it is the only part of the
+      // subquery that has to know what the outer table is called in this query.
+      const whereParts = [`"${fkCol}" = %SELF%."${refCol}"`]
+      if (targetSoftDelete && !withDeleted)   whereParts.push(`"deletedAt" IS NULL`)
+      if (targetHtField    && !withTemplates) whereParts.push(`"${targetHtField}" = 0`)
       if (where) whereParts.push(`(${where})`)
       const whereClause = whereParts.join(' AND ')
 
@@ -819,10 +835,53 @@ function buildFromMap(schema, pluralize = false) {
           break
       }
 
-      map[model.name][field.name] = { subquerySql, isObject, isBool: op === 'exists' }
+      map[model.name][field.name] = {
+        subquerySql:        subquerySql.replaceAll('%SELF%', `"${selfTable}"`),
+        subquerySqlAliased: subquerySql.replaceAll('%SELF%', 't'),
+        isObject,
+        isBool: op === 'exists',
+      }
     }
   }
   return map
+}
+
+// ─── @from on a path that builds its own SQL ─────────────────────────────────
+//
+// makeTable holds a table's own @from entries in a closure, which is right for
+// the query pipeline and reaches none of the paths that assemble SQL
+// themselves. Those paths — resolveIncludes, and findManyCursor for its own
+// table — ask here instead of growing a third copy of the rule.
+//
+// Both halves matter and only one of them is visible: without the SELECT
+// expression the field is absent, and without the deserializer a
+// `@from(X, last: true)` arrives as the JSON string SQLite returned. Absent is
+// the dangerous one, because applyComputed still runs — a @computed field
+// reading a missing @from field answers a plausible 0 rather than throwing.
+
+function fromSelectExpr(fromFields, aliased = false) {
+  const entries = Object.entries(fromFields ?? {})
+  if (!entries.length) return null
+  return entries
+    .map(([n, f]) => `${aliased ? f.subquerySqlAliased : f.subquerySql} AS "${n}"`)
+    .join(', ')
+}
+
+function deserializeFromRow(row, fromFields) {
+  if (!row || !fromFields) return row
+  let out = row
+  for (const [name, f] of Object.entries(fromFields)) {
+    if (!(name in row)) continue
+    if (out === row) out = { ...row }
+    if (f.isObject) {
+      out[name] = out[name] != null
+        ? (typeof out[name] === 'string' ? JSON.parse(out[name]) : out[name])
+        : null
+    } else if (f.isBool) {
+      out[name] = out[name] === 1 || out[name] === true
+    }
+  }
+  return out
 }
 
 function buildComputedSet(schema) {
@@ -1114,6 +1173,80 @@ function collectWhereKeyProblems(where, allowed, out = []) {
   return out
 }
 
+// Which keys of a model may appear in an orderBy, split three ways so the
+// caller can say WHY a key was refused. One definition, asked by both the ORM
+// wrapper and $checkOrderBy.
+function sortableKeysFor(model) {
+  const sortable  = new Set()
+  const relations = new Set()
+  const computed  = new Set()
+  for (const f of model.fields) {
+    if (f.type?.kind === 'relation') { relations.add(f.name); continue }
+    if (f.attributes?.some(a => a.kind === 'computed')) { computed.add(f.name); continue }
+    // @edge values live on a side table the ORDER BY cannot reach.
+    if (f.attributes?.some(a => a.kind === 'edge' || a.kind === 'scoped')) continue
+    sortable.add(f.name)
+  }
+  return { sortable, relations, computed }
+}
+
+// ─── orderBy key validation ───────────────────────────────────────────────────
+//
+// The sibling of collectWhereKeyProblems, and it does NOT inherit the
+// warn-on-read half of that split. A bad filter key returns fewer rows, which
+// the caller can see; a bad sort key returns the RIGHT rows in the wrong order,
+// which nothing can see. Until this existed `orderBy: { bogusColumn: 'desc' }`
+// and `orderBy: { aComputedField: 'asc' }` were both a silent no-op — SQLite
+// never received a column it could not resolve, because buildOrderBy quoted the
+// key and SQLite resolved it against the SELECT aliases, finding nothing.
+//
+// Sortable is a narrower question than filterable, so this cannot reuse the
+// where set: a @computed field is a JS function over a row that SQLite has
+// never heard of, so it can be neither sorted nor paginated, while a @from
+// field is a correlated subquery aliased into the SELECT list and sorts fine.
+//
+// Relation keys pass through — buildRelationOrderBy owns that grammar.
+//
+// `allowAggregates` is groupBy/aggregate, where `_count` and `_sum` are the
+// point of the query rather than a typo.
+function collectOrderByKeyProblems(orderBy, sortable, relations, computed, allowAggregates, out = []) {
+  if (!orderBy) return out
+  for (const item of Array.isArray(orderBy) ? orderBy : [orderBy]) {
+    if (!item || typeof item !== 'object') continue
+    for (const [key, val] of Object.entries(item)) {
+      if (allowAggregates && key.startsWith('_')) continue
+      if (relations.has(key))                     continue
+      if (sortable.has(key))                      continue
+      if (computed.has(key)) {
+        out.push({
+          key,
+          reason:     'computed',
+          suggestion: null,
+          sortable:   [...sortable].sort(),
+          message:    `Cannot orderBy '${key}' on %MODEL% — it is a @computed field, which is a JS ` +
+                      `function over a row, so SQLite can neither sort nor paginate by it. ` +
+                      `To sort by a derived value make it @from or @generated, or store it. ` +
+                      `Sortable: ${[...sortable].sort().join(', ')}`,
+        })
+        continue
+      }
+      const hint = suggestKey(key, sortable)
+      out.push({
+        key,
+        reason:     'unknown',
+        suggestion: hint,
+        sortable:   [...sortable].sort(),
+        message:    `Unknown orderBy field '${key}' on %MODEL%.` +
+                    (hint ? ` Did you mean: ${hint}?` : ` Sortable: ${[...sortable].sort().join(', ')}`),
+      })
+      // A nested object under an unknown key is a relation orderBy on a
+      // relation that does not exist — same problem, already reported.
+      void val
+    }
+  }
+  return out
+}
+
 function checkWhereKeys(where, allowed, modelName, method, isWrite) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return
   for (const [k, v] of Object.entries(where)) {
@@ -1149,6 +1282,20 @@ function withArgValidation(table, model, ctx) {
   const allowed = new Set(model.fields.map(f => f.name))
   for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) allowed.add(d.as)
   const modelName = model.name
+  const { sortable, relations, computed } = sortableKeysFor(model)
+
+  const checkOrderBy = (args, method) => {
+    const problems = collectOrderByKeyProblems(
+      args?.orderBy, sortable, relations, computed,
+      method === 'groupBy' || method === 'aggregate',
+    )
+    if (!problems.length) return
+    const p = problems[0]
+    throw new ValidationError([{
+      path:    ['orderBy', p.key],
+      message: p.message.replace('%MODEL%', `${modelName}.${method}`),
+    }])
+  }
 
   const checkTakeSkip = (args, method) => {
     if (!args || typeof args !== 'object') return
@@ -1171,6 +1318,7 @@ function withArgValidation(table, model, ctx) {
     out[method] = async (args = {}) => {
       checkTakeSkip(args, method)
       checkWhereKeys(args?.where, allowed, modelName, method, isWrite)
+      checkOrderBy(args, method)
       return fn.call(table, args)
     }
   }
@@ -1541,7 +1689,7 @@ function coerceEdgeValue(raw, desc) {
 function resolveIncludes(readDb, rows, include, modelName, ctx) {
   if (!include || !rows.length) return rows
 
-  const { relationMap, jsonMap, edgeMap, computedSets, softDeleteMap, computedFns } = ctx
+  const { relationMap, jsonMap, edgeMap, computedSets, fromMap, softDeleteMap, computedFns } = ctx
   const tableRelations = relationMap[modelName] ?? {}
 
   // Resolve a PascalCase model name to its SQL table name. Relations in relationMap
@@ -1549,6 +1697,20 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
   const modelToTable = (mName) => {
     const m = ctx.schema?.models.find(x => x.name === mName)
     return m ? modelToTableName(m, ctx.pluralize ?? false) : mName
+  }
+
+  // Append the target's @from subqueries to a nested SELECT list. A bare
+  // include takes them all; an explicit nested select takes only what it named.
+  const withFromCols = (sqlCols, targetFrom, parsedNested) => {
+    if (!targetFrom) return sqlCols
+    if (sqlCols === '*') {
+      const all = fromSelectExpr(targetFrom)
+      return all ? `*, ${all}` : sqlCols
+    }
+    if (!parsedNested?.requestedFrom?.size) return sqlCols
+    const picked = [...parsedNested.requestedFrom]
+      .map(n => `${targetFrom[n].subquerySql} AS "${n}"`).join(', ')
+    return `${sqlCols}, ${picked}`
   }
 
   // ── _count in include ──────────────────────────────────────────────────────
@@ -1680,6 +1842,11 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       : 'instances'
 
     const targetJsonFields  = jsonMap[rel.targetModel]      ?? new Set()
+    // The target's @from fields. These paths build their own SQL, so nothing
+    // appends the subqueries unless this does — before which an included row
+    // carried no @from field at all and a @computed field reading one computed
+    // from undefined, silently, on the include path only.
+    const targetFrom        = fromMap?.[rel.targetModel] ?? null
     const targetSoftDelete  = softDeleteMap[rel.targetModel] ?? false
     const targetHtField     = ctx.hasTemplatesMap?.[rel.targetModel] ?? null
     const targetHasTemplates = targetHtField !== null
@@ -1699,7 +1866,8 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (!fkValues.length) { rows.forEach(r => r[relName] = null); continue }
 
       const parsedNested = nestedSelect
-        ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude)
+        ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
+                         targetFrom ? { [rel.targetModel]: new Set(Object.keys(targetFrom)) } : null)
         : null
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
@@ -1707,6 +1875,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         sqlCols = `"${rel.referencedKey}", ${sqlCols}`
         parsedNested.injectedFKs.add(rel.referencedKey)
       }
+      sqlCols = withFromCols(sqlCols, targetFrom, parsedNested)
 
       // Build WHERE with soft delete filter for target table
       const sdParams = []
@@ -1731,7 +1900,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const related = shapeRelated(readDb
         .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rw.clause}${policyClause}`)
         .all(...sdParams, ...rw.params, ...policyParams)
-        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx)),
+        .map(r => applyComputed(deserializeFromRow(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), targetFrom), rel.targetModel, computedFns, ctx)),
         parsedNested
           ? { mode: 'select', selectedFields: parsedNested.requestedFields }
           : { mode: 'single' })
@@ -1764,9 +1933,12 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         .filter(d => d.storage === 'decorate' && d.table === rel.joinTable)
       const edgeSelect = edgeDescs.map(d => `, j."${d.col}" AS "__edge_${d.col}"`).join('')
 
+      // The target is aliased `t` here, so the @from correlation has to be too.
+      const m2mFrom = targetFrom ? `, ${fromSelectExpr(targetFrom, true)}` : ''
+
       const rawRows = readDb
         .query(
-          `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey${edgeSelect} FROM "${modelToTable(rel.targetModel)}" t ` +
+          `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey${edgeSelect}${m2mFrom} FROM "${modelToTable(rel.targetModel)}" t ` +
           `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t."${rel.targetPk ?? 'id'}" ` +
           `WHERE j."${rel.selfKey}" IN (${ph})${rwM.clause}${policyInClause}`
         )
@@ -1789,7 +1961,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       })
 
       const related = shapeRelated(rawRows
-        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx)),
+        .map(r => applyComputed(deserializeFromRow(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), targetFrom), rel.targetModel, computedFns, ctx)),
         { mode: 'list' })
 
       // Attach namespaced edge values onto each shaped target row.
@@ -1820,7 +1992,8 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (!pkValues.length) { rows.forEach(r => r[relName] = []); continue }
 
       const parsedNested = nestedSelect
-        ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude)
+        ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
+                         targetFrom ? { [rel.targetModel]: new Set(Object.keys(targetFrom)) } : null)
         : null
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
@@ -1828,6 +2001,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         sqlCols = `"${rel.foreignKey}", ${sqlCols}`
         parsedNested.injectedFKs.add(rel.foreignKey)
       }
+      sqlCols = withFromCols(sqlCols, targetFrom, parsedNested)
 
       const ph = pkValues.map(() => '?').join(', ')
       let sdWhere
@@ -1843,7 +2017,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       const related = shapeRelated(readDb
         .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}${policyClause}`)
         .all(...pkValues, ...rwH.params, ...policyParams)
-        .map(r => applyComputed(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), rel.targetModel, computedFns, ctx)),
+        .map(r => applyComputed(deserializeFromRow(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), targetFrom), rel.targetModel, computedFns, ctx)),
         parsedNested
           ? { mode: 'select', selectedFields: parsedNested.requestedFields }
           : { mode: 'list' })
@@ -2585,10 +2759,31 @@ function makeTable(
     return out
   }
 
+  // A write returns its row through RETURNING, which is table columns only —
+  // SQLite cannot put a correlated subquery there. So a created or updated row
+  // came back with no @from field at all, and since applyComputed runs either
+  // way, a @computed field over one answered a plausible 0. The caller then
+  // held a row that disagreed with the same row refetched, and junction hands
+  // that row straight to the HTTP response AND the `svc updated` broadcast, so
+  // every open tab replaced a correct row with a degraded one.
+  //
+  // One extra SELECT, only for a model that declares @from and only on the
+  // write paths that opt in — a read already carries the values, and hydrating
+  // whenever a key happened to be missing would fire a query per row for a
+  // `select` that legitimately excluded them.
+  function hydrateFromFields(row) {
+    if (!_hasFrom || !row || row[idField] == null) return row
+    const cols = _fromEntries.map(([n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')
+    const vals = readDb
+      .query(`SELECT ${cols} FROM "${tableName}" WHERE "${idField}" = ?`)
+      .get(row[idField])
+    return vals ? { ...row, ...vals } : row
+  }
+
   function read(row, opts = {}) {
     if (!row) return null
     if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return row
-    let r = row
+    let r = opts.hydrateFrom ? hydrateFromFields(row) : row
     if (_hasJson || _hasBool) {
       const out = { ...r }
       if (_hasJson) {
@@ -2840,8 +3035,9 @@ function makeTable(
     return clauses.join(' AND ')
   }
 
-  function buildWhereWithEncryption(where, params, tableAlias = null) {
-    if (!where) return buildWhere(where, params, _fromExprMap, tableAlias, _typedJsonMap, edgeOrRelFilter)
+  function buildWhereWithEncryption(where, params, tableAlias = null, outerIsAliased = tableAlias === 't') {
+    const fromMap = outerIsAliased ? _fromExprMapAliased : _fromExprMap
+    if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter)
     let rewritten = where
     if (ctx.encKey) {
       rewritten = rewriteEncryptedWhere(where)
@@ -2850,7 +3046,7 @@ function makeTable(
         return `${prefix}"id" IS NULL AND ${prefix}"id" IS NOT NULL`
       }
     }
-    return buildWhere(rewritten, params, _fromExprMap, tableAlias, _typedJsonMap, edgeOrRelFilter)
+    return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter)
   }
 
   function rewriteEncryptedWhere(where) {
@@ -2905,9 +3101,14 @@ function makeTable(
   // These are always present — no include needed.
   const _fromEntries  = Object.entries(fromFields)   // [fieldName, { subquerySql, isObject }]
   const _hasFrom      = _fromEntries.length > 0
-  // Pre-build fromExprMap for buildWhere — substitutes @from field keys with their subquery SQL
+  // Pre-build fromExprMap for buildWhere — substitutes @from field keys with their subquery SQL.
+  // Two maps: a relation orderBy aliases the outer table to `t`, and the
+  // correlation inside each subquery has to name whichever one this query used.
   const _fromExprMap  = _hasFrom
     ? Object.fromEntries(_fromEntries.map(([n, {subquerySql}]) => [n, subquerySql]))
+    : null
+  const _fromExprMapAliased = _hasFrom
+    ? Object.fromEntries(_fromEntries.map(([n, {subquerySqlAliased}]) => [n, subquerySqlAliased]))
     : null
 
   // ── Typed JSON path pushdown setup ──────────────────────────────────────────
@@ -3032,23 +3233,37 @@ function makeTable(
     // to avoid ambiguous column errors (e.g. `id` exists on both joined tables).
     const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, relationMap, _modelToTable)
     const hasJoins  = joinClauses.length > 0
+    // The table is aliased for a relation AGGREGATE orderBy too, which adds an
+    // order part and no join — so the alias question and the join question are
+    // not the same question, and a @from correlation in the WHERE has to follow
+    // the alias. Column refs still only need qualifying when a join could make
+    // them ambiguous, which is `hasJoins`.
+    const needsAlias = joinClauses.length > 0 || orderParts.length > 0
     const whereAlias = hasJoins ? 't' : null
-    const whereSql  = buildWhereWithEncryption(effectiveWhere, params, whereAlias)
+    const whereSql  = buildWhereWithEncryption(effectiveWhere, params, whereAlias, needsAlias)
     // When JOINs exist, buildRelationOrderBy returns the full ordered list
     // (flat + relation, flat prefixed with `t.`). Don't double-emit flat parts.
     const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy)
     const orderSql = [flatOrderSql, ...orderParts].filter(Boolean).join(', ')
     const sqlCols   = parsedSelect?.sqlCols ?? '*'
-    const needsAlias = joinClauses.length > 0 || orderParts.length > 0
     const distinctKw = distinct ? 'DISTINCT ' : ''
+    // A @from subquery correlates to the outer table by name, so an aliased
+    // query needs the aliased variant. Emitting the plain one under `t` fails
+    // as `no such column: <table>.<pk>`; emitting neither — which is what
+    // `SELECT t.*` did — dropped every @from field to undefined, and any
+    // @computed field reading one then computed from undefined in silence.
+    const fromExpr = n => needsAlias ? fromFields[n].subquerySqlAliased : fromFields[n].subquerySql
     let basePart
     if (sqlCols === '*') {
+      const allFromCols = needsAlias && _hasFrom
+        ? _fromEntries.map(([n]) => `${fromExpr(n)} AS "${n}"`).join(', ')
+        : null
       basePart = needsAlias
-        ? `SELECT ${distinctKw}t.* FROM "${tableName}" t`
+        ? `SELECT ${distinctKw}t.*${allFromCols ? `, ${allFromCols}` : ''} FROM "${tableName}" t`
         : (distinct ? `SELECT DISTINCT * FROM "${tableName}"` : _baseSqlWithFrom)
     } else {
       const fromCols = parsedSelect?.requestedFrom?.size
-        ? [...parsedSelect.requestedFrom].map(n => `${fromFields[n].subquerySql} AS "${n}"`).join(', ')
+        ? [...parsedSelect.requestedFrom].map(n => `${fromExpr(n)} AS "${n}"`).join(', ')
         : null
       const selectExpr = fromCols ? `${sqlCols}, ${fromCols}` : sqlCols
       basePart = needsAlias
@@ -4238,7 +4453,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       // RETURNING * gives the inserted row directly — no follow-up SELECT needed.
       // Uses writeDb so it works inside open transactions.
-      let created = read(writeDb.query(_crSql).get(..._crParams), { mode: 'single' })
+      let created = read(writeDb.query(_crSql).get(..._crParams), { mode: 'single', hydrateFrom: true })
       fireQuery({ operation: 'create', args: { data, include, select }, sql: _crSql, params: _crParams, duration: _nt ? performance.now() - _crT0 : 0, rowCount: created ? 1 : 0 })
       if (!created) return null
       // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
@@ -4437,7 +4652,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const _upT0 = _nt ? performance.now() : 0
         // RETURNING * gives the updated row directly — no follow-up SELECT needed.
         // Uses writeDb so it works inside open transactions.
-        updated = read(writeDb.query(_upSql).get(..._upParams), { mode: 'single' })
+        updated = read(writeDb.query(_upSql).get(..._upParams), { mode: 'single', hydrateFrom: true })
         fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: updated ? 1 : 0 })
         if (!updated) {
           if (_transResult) throw new TransitionConflictError(tableName, _transResult.field, _transResult.from, _transResult.to)
@@ -4446,7 +4661,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         }
       } else {
         // No columns to set — read back to return current row
-        updated = read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams), { mode: 'single' })
+        updated = read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams), { mode: 'single', hydrateFrom: true })
       }
       if (!updated) return null
 
@@ -4591,7 +4806,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const _nt = needsTiming()
         const _fpT0 = _nt ? performance.now() : 0
         try {
-          const result = read(writeDb.query(_fpSql).get(..._fpParams), { mode: 'single' })
+          const result = read(writeDb.query(_fpSql).get(..._fpParams), { mode: 'single', hydrateFrom: true })
           fireQuery({ operation: 'upsert', args: { where, create: createData, update: updateData }, sql: _fpSql, params: _fpParams, duration: _nt ? performance.now() - _fpT0 : 0, rowCount: result ? 1 : 0 })
           return result
         } catch (e) {
@@ -4788,7 +5003,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const _rmSql = `UPDATE "${tableName}" SET "deletedAt" = ? WHERE ${removeFinalSql} RETURNING *`
         const _nt = needsTiming()
         const _rmT0 = _nt ? performance.now() : 0
-        const softResult = read(writeDb.query(_rmSql).get(ts, ...removeFinalParams), { mode: 'single' })
+        const softResult = read(writeDb.query(_rmSql).get(ts, ...removeFinalParams), { mode: 'single', hydrateFrom: true })
         fireQuery({ operation: 'remove', args: { where }, sql: _rmSql, params: [ts, ...removeFinalParams], duration: _nt ? performance.now() - _rmT0 : 0, rowCount: softResult ? 1 : 0 })
         if (!softResult) return null
 
@@ -4829,7 +5044,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _rmHSql = `DELETE FROM "${tableName}" WHERE ${removeFinalSql} RETURNING *`
       const _nt = needsTiming()
       const _rmHT0 = _nt ? performance.now() : 0
-      const row = read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single' })
+      const row = read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single', hydrateFrom: true })
       fireQuery({ operation: 'remove', args: { where }, sql: _rmHSql, params: removeFinalParams, duration: _nt ? performance.now() - _rmHT0 : 0, rowCount: row ? 1 : 0 })
       if (!row) return null
       if (emitter) emitter.emit('remove', { model: modelName, operation: 'remove', result: row, schema: ctx.models[modelName] }, ctx)
@@ -4956,7 +5171,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // the entry vocabulary is create|update|delete|read, and a restored row is
       // a row that changed state, not one that was created.
       if (tableHasAnyLog && restored.length) emitLogs('update', restored)
-      return { count: restored.length }
+      // The rows, shaped — not `{ count }`. Three sources claimed three
+      // different answers here (index.d.ts said one row, CLAUDE.md said an
+      // array, the code returned a count), so the TypeScript declaration
+      // accepted `(await restore(…)).id` for something that never had one.
+      // An array is the honest shape: `where` can match many, and RETURNING
+      // already had the rows before they were thrown away. They were also raw
+      // — no JSON parse, no boolean coercion, no computed fields — so anything
+      // that had reached for them would have got a shape no other read
+      // produces. restore mirrors remove, which returns its row.
+      return restored.map(r => read(r, { mode: 'single', hydrateFrom: true }))
     },
 
 
@@ -5034,6 +5258,21 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             sqlCols = `"${col}", ${sqlCols}`
             injectedOrderCols.add(col)
           }
+        }
+      }
+
+      // @from subqueries — this path builds its own SQL, so it has to append
+      // them itself. Without this a cursor page carried NO @from field at all
+      // and any @computed field reading one computed from undefined: a
+      // plausible 0 rather than an error, on the paginated path only, so the
+      // same query answered differently through findMany.
+      if (_hasFrom) {
+        if (sqlCols === '*') {
+          sqlCols = `"${tableName}".*, ` +
+            _fromEntries.map(([n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')
+        } else if (ps?.requestedFrom?.size) {
+          sqlCols += ', ' + [...ps.requestedFrom]
+            .map(n => `${fromFields[n].subquerySql} AS "${n}"`).join(', ')
         }
       }
 
@@ -5159,8 +5398,25 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         ftsParams.push(open, close, ellip, tokens)
       }
 
-      ftsSql += ` FROM "${ftsTable}" WHERE "${ftsTable}" MATCH ? ORDER BY rank`
-      ftsParams.push(query)  // MATCH ? must come last
+      ftsSql += ` FROM "${ftsTable}" WHERE "${ftsTable}" MATCH ?`
+      ftsParams.push(query)  // MATCH ? comes before the filter's params, as here
+
+      // The index mirrors the table, so soft-deleted, template and where-excluded
+      // rows are in it and would otherwise spend slots the LIMIT below then
+      // throws away — a search asking for 20 answering 13, with nothing to say
+      // why. Narrowing here rather than after also makes `offset` mean pages of
+      // matching rows rather than pages of index entries.
+      const filterParams = []
+      const filterSql    = buildWhereWithEncryption(
+        applyHtFilter(softDelete ? injectSoftDeleteFilter(where ?? {}, mode) : (where ?? {}), htm),
+        filterParams
+      )
+      if (filterSql && filterSql !== '1=1') {
+        ftsSql += ` AND rowid IN (SELECT "${idField}" FROM "${tableName}" WHERE ${filterSql})`
+        ftsParams.push(...filterParams)
+      }
+
+      ftsSql += ` ORDER BY rank`
 
       if (limit  != null) ftsSql += ` LIMIT ${Number(limit)}`
       if (offset)         ftsSql += ` OFFSET ${Number(offset)}`
@@ -5196,7 +5452,17 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const whereSql = buildWhereWithEncryption(effectiveWhere, baseParams)
 
       const ps         = parseArgs(select, include)
-      const sqlCols    = ps?.sqlCols ?? '*'
+      let   sqlCols    = ps?.sqlCols ?? '*'
+      // Step 2 builds its own SELECT, so it appends the @from subqueries itself
+      // — the same reason findManyCursor and resolveIncludes do.
+      if (_hasFrom) {
+        if (sqlCols === '*') {
+          sqlCols = `*, ${fromSelectExpr(fromFields)}`
+        } else if (ps?.requestedFrom?.size) {
+          sqlCols += ', ' + [...ps.requestedFrom]
+            .map(n => `${fromFields[n].subquerySql} AS "${n}"`).join(', ')
+        }
+      }
       let   baseSql    = `SELECT ${sqlCols} FROM "${tableName}" WHERE ${whereSql}`
 
       const baseRows = readAll(readDb.query(baseSql).all(...baseParams))
@@ -5233,7 +5499,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const delPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const delFinalSql = delPolicy ? `(${whereSql}) AND (${delPolicy.sql})` : whereSql
       const delFinalParams = delPolicy ? [...params, ...delPolicy.params] : params
-      const row = read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${delFinalSql}`).get(...delFinalParams))
+      // The row is still present here, so the @from subqueries can ride on the
+      // pre-delete SELECT rather than costing a second query — after the DELETE
+      // there is no outer row for them to correlate to.
+      const _delCols = _hasFrom ? `*, ${fromSelectExpr(fromFields)}` : '*'
+      const row = read(readDb.query(`SELECT ${_delCols} FROM "${tableName}" WHERE ${delFinalSql}`).get(...delFinalParams))
       const _delSql = `DELETE FROM "${tableName}" WHERE ${delFinalSql}`
       const _nt = needsTiming()
       const _delT0 = _nt ? performance.now() : 0
@@ -6203,7 +6473,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
   // Shared context threaded through include resolution + table ops
   const ctx = {
-    relationMap, jsonMap, edgeMap, computedSets,
+    relationMap, jsonMap, edgeMap, computedSets, fromMap,
     softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // Default: parent values silently overwrite any child-supplied co-FK
@@ -6765,12 +7035,38 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Which filter keys are valid is a question about the SCHEMA — auth and scope
   // have no bearing on it, so every flavour of client answers it identically.
   function $checkWhere(accessor, where) {
-    const model = ctx.models?.[accessor]
-      ?? schema.models.find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
+    const model = modelForAccessor(accessor)
     if (!model?.fields) return []
     const allowed = new Set(model.fields.map(f => f.name))
     for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) allowed.add(d.as)
     return collectWhereKeyProblems(where, allowed)
+  }
+
+  function modelForAccessor(accessor) {
+    return ctx.models?.[accessor]
+      ?? schema.models.find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
+  }
+
+  // ─── $checkOrderBy ──────────────────────────────────────────────────────
+  //
+  // $checkOrderBy(accessor, orderBy, { aggregates }) → [{ key, reason, suggestion, sortable, message }]
+  //
+  // $checkWhere's sibling, same contract in every respect: ask before you
+  // query, unknown accessor answers [] because "I cannot judge this" is not
+  // "this is wrong", and every flavour of client answers identically because
+  // sortability is a fact about the schema that auth and scope cannot change.
+  //
+  // It exists for the same reason $checkWhere does. The ORM throws, which is
+  // right below the boundary; a boundary that can answer 400 has to ask
+  // without running the query, and must not grow a second copy of the rule.
+  // `reason` is 'computed' or 'unknown' — a boundary wants to say different
+  // sentences for "no such field" and "that field cannot be sorted".
+  function $checkOrderBy(accessor, orderBy, opts = {}) {
+    const model = modelForAccessor(accessor)
+    if (!model?.fields) return []
+    const { sortable, relations, computed } = sortableKeysFor(model)
+    return collectOrderByKeyProblems(orderBy, sortable, relations, computed, opts.aggregates === true)
+      .map(p => ({ ...p, message: p.message.replace('%MODEL%', model.name) }))
   }
 
   // $transaction — wraps async callback in BEGIN IMMEDIATE / COMMIT
@@ -7165,6 +7461,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$close')  return () => _closeAll()
         if (prop === '$schema') return schema
         if (prop === '$checkWhere') return $checkWhere
+        if (prop === '$checkOrderBy') return $checkOrderBy
         if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         throw new Error(`"${prop}" is not a table in this schema.`)
       },
@@ -7177,7 +7474,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(sysTables),
-          ['asSystem', '$close', '$schema', '$checkWhere', '$enums'],
+          ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$enums'],
         )
       },
       has(target, prop) { return prop === 'asSystem' || prop in target || prop in sysTables },
@@ -7264,6 +7561,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$schema')         return schema
         if (prop === '$auth')           return user
         if (prop === '$checkWhere')     return $checkWhere
+        if (prop === '$checkOrderBy')   return $checkOrderBy
         if (prop === '$cacheSize')      return _cacheSize()
         if (prop === '$enums')          return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(authTables).join(', ')}`)
@@ -7272,7 +7570,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(authTables),
-          ['$close', '$schema', '$auth', '$checkWhere', '$cacheSize', '$enums'],
+          ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$cacheSize', '$enums'],
         )
       },
       has(target, prop) { return prop in target || prop in authTables },
@@ -7318,6 +7616,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$scope')  return overrides.scopedBy ?? {}
         if (prop === '$auth')   return overrides.auth ?? null
         if (prop === '$checkWhere') return $checkWhere
+        if (prop === '$checkOrderBy') return $checkOrderBy
         if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(tables).join(', ')}`)
       },
@@ -7378,6 +7677,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$schema')         return schema
       if (prop === '$relations')      return relationMap
       if (prop === '$checkWhere')     return $checkWhere
+      if (prop === '$checkOrderBy')   return $checkOrderBy
       if (prop === '$softDelete')     return softDeleteMap
       if (prop === '$cacheSize')      return _cacheSize()
       if (prop === '$config') {
@@ -7402,7 +7702,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         Reflect.ownKeys(target),
         Object.keys(scopedTables),
         viewNames,
-        ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$enums', '$setAuth', '$scopedBy', '$lock', '$locks', '$db'],
+        ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$enums', '$setAuth', '$scopedBy', '$lock', '$locks', '$db'],
       )
     },
     has(target, prop) {

@@ -28,7 +28,8 @@ await db.post.findMany({ withDeleted: true })
 // Read only soft-deleted rows
 await db.post.findMany({ onlyDeleted: true })
 
-// Restore — clears deletedAt
+// Restore — clears deletedAt, answers the restored rows (an array; `where`
+// can match many, and an empty array means nothing was deleted to restore)
 await db.post.restore({ where: { id: 1 } })
 
 // Hard delete — physically removes row regardless of @@softDelete

@@ -320,6 +320,21 @@ function createFts(model, tableName) {
   const tokenize = fts.tokenize && fts.tokenize !== 'unicode61'
     ? `,\n  tokenize='${fts.tokenize}'`
     : ''
+  const oldVals = fts.fields.map(f => `old.${f}`).join(', ')
+  const newVals = fts.fields.map(f => `new.${f}`).join(', ')
+
+  // The index mirrors the table row for row, soft-deleted rows included, and
+  // the ONE reader — search() — excludes them in its own WHERE, which is also
+  // what makes its withDeleted/onlyDeleted options mean anything.
+  //
+  // Keeping deleted rows out of the index instead costs a second owner of the
+  // same decision, and that is what made @@softDelete + @@fts unusable: this
+  // unconditional AFTER UPDATE trigger and an AFTER UPDATE OF "deletedAt" one
+  // BOTH fired on a soft delete, issuing two 'delete' commands for one docid.
+  // FTS5 answers that with `database disk image is malformed` — a message
+  // naming neither the model, the FTS table, nor the two attributes that
+  // cannot both be declared, so every remove() on such a model read as a
+  // corrupt database file.
   const parts = [
     `CREATE VIRTUAL TABLE IF NOT EXISTS "${tableName}_fts" USING fts5(`,
     `  ${contentCols},`,
@@ -327,36 +342,27 @@ function createFts(model, tableName) {
     `  content_rowid="id"${tokenize}`,
     `);`,
     ``,
-    `-- Triggers to keep FTS index in sync`,
-    `CREATE TRIGGER IF NOT EXISTS "${tableName}_fts_insert" AFTER INSERT ON "${tableName}" BEGIN`,
-    `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.id, ${fts.fields.map(f => `new.${f}`).join(', ')});`,
+    `-- Triggers to keep FTS index in sync.`,
+    `-- Dropped first: IF NOT EXISTS keeps a stale body forever, and a trigger is`,
+    `-- cheap to recreate, so re-applying the DDL repairs a wrong trigger set.`,
+    `DROP TRIGGER IF EXISTS "${tableName}_fts_insert";`,
+    `DROP TRIGGER IF EXISTS "${tableName}_fts_delete";`,
+    `DROP TRIGGER IF EXISTS "${tableName}_fts_update";`,
+    ...(hasSoftDelete ? [
+      `DROP TRIGGER IF EXISTS "${tableName}_fts_soft_delete";`,
+      `DROP TRIGGER IF EXISTS "${tableName}_fts_restore";`,
+    ] : []),
+    `CREATE TRIGGER "${tableName}_fts_insert" AFTER INSERT ON "${tableName}" BEGIN`,
+    `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.id, ${newVals});`,
     `END;`,
-    `CREATE TRIGGER IF NOT EXISTS "${tableName}_fts_delete" AFTER DELETE ON "${tableName}" BEGIN`,
-    `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.id, ${fts.fields.map(f => `old.${f}`).join(', ')});`,
+    `CREATE TRIGGER "${tableName}_fts_delete" AFTER DELETE ON "${tableName}" BEGIN`,
+    `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.id, ${oldVals});`,
     `END;`,
-    `CREATE TRIGGER IF NOT EXISTS "${tableName}_fts_update" AFTER UPDATE ON "${tableName}" BEGIN`,
-    `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.id, ${fts.fields.map(f => `old.${f}`).join(', ')});`,
-    `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.id, ${fts.fields.map(f => `new.${f}`).join(', ')});`,
+    `CREATE TRIGGER "${tableName}_fts_update" AFTER UPDATE ON "${tableName}" BEGIN`,
+    `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.id, ${oldVals});`,
+    `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.id, ${newVals});`,
     `END;`,
   ]
-
-  // On @@softDelete models, soft-deleting (setting deletedAt) should remove
-  // the row from the FTS index so deleted records don't show up in searches.
-  if (hasSoftDelete) {
-    parts.push(
-      ``,
-      `-- Remove from FTS index on soft delete (deletedAt set)`,
-      `CREATE TRIGGER IF NOT EXISTS "${tableName}_fts_soft_delete" AFTER UPDATE OF "deletedAt" ON "${tableName}"`,
-      `WHEN old."deletedAt" IS NULL AND new."deletedAt" IS NOT NULL BEGIN`,
-      `  INSERT INTO "${tableName}_fts"("${tableName}_fts", rowid, ${contentCols}) VALUES ('delete', old.id, ${fts.fields.map(f => `old.${f}`).join(', ')});`,
-      `END;`,
-      `-- Re-add to FTS index on restore (deletedAt cleared)`,
-      `CREATE TRIGGER IF NOT EXISTS "${tableName}_fts_restore" AFTER UPDATE OF "deletedAt" ON "${tableName}"`,
-      `WHEN old."deletedAt" IS NOT NULL AND new."deletedAt" IS NULL BEGIN`,
-      `  INSERT INTO "${tableName}_fts"(rowid, ${contentCols}) VALUES (new.id, ${fts.fields.map(f => `new.${f}`).join(', ')});`,
-      `END;`,
-    )
-  }
 
   return parts.join('\n')
 }

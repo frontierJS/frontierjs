@@ -47,6 +47,26 @@ const snippets = await db.message.search('hello', {
 
 Results are ordered by FTS5 rank (relevance) by default.
 
+## With @@softDelete
+
+The index mirrors the table — soft-deleted rows stay in it, and `search()` is
+what decides they are not visible:
+
+```js
+await db.message.search('invoice')                        // live rows
+await db.message.search('invoice', { withDeleted: true })  // live + deleted
+await db.message.search('invoice', { onlyDeleted: true })  // deleted only
+```
+
+`where`, the soft-delete filter and `@@hasTemplates` all narrow **before** the
+`limit`, so a search for 20 answers 20 matching rows rather than whatever is
+left of 20 index entries.
+
+Keeping deleted rows out of the index instead would need a second trigger, and a
+soft delete would then fire two of them: FTS5 answers a repeated delete of one
+docid with `database disk image is malformed`, and only sometimes — above one
+indexed row it corrupts without a word. One filter, in one place.
+
 ## FTS5 query syntax
 
 ```js

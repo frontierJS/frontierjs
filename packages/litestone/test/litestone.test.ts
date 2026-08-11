@@ -1938,17 +1938,21 @@ describe('relation orderBy', () => {
     expect(rows.map((r: any) => r.name)).toEqual(['Zulu Corp', 'Mesa Ltd', 'Alpha Inc'])
   })
 
+  // Both of these name a key the model does not declare, so orderBy key
+  // validation refuses them before buildRelationOrderBy is reached. It names
+  // what IS sortable, which the old "relation not found" could not.
   test('throws on unknown hasMany relation in orderBy', async () => {
     await expect(
       db.country.findMany({ orderBy: { companies: { name: 'asc' } } })
-    ).rejects.toThrow("not found")
+    ).rejects.toThrow("Unknown orderBy field 'companies'")
   })
 
   test('throws on unknown relation in orderBy', async () => {
     await expect(
       db.user.findMany({ orderBy: { nonexistent: { name: 'asc' } } })
-    ).rejects.toThrow("relation 'nonexistent' not found")
+    ).rejects.toThrow("Unknown orderBy field 'nonexistent'")
   })
+
 })
 
 describe('relation aggregate orderBy', () => {
@@ -2649,6 +2653,201 @@ describe('client — FTS search', () => {
     const r = await db.message.search('unique_quasar_term')
     expect(r.length).toBe(1)
     expect(r[0].id).toBe(99)
+  })
+})
+
+// ─── 9b. Client — @@fts on a @@softDelete model ───────────────────────────────
+// The pair was unusable. Two triggers fired on one soft delete — an
+// unconditional AFTER UPDATE one and an AFTER UPDATE OF "deletedAt" one — so
+// FTS5 got two 'delete' commands for one docid. It reports that as `database
+// disk image is malformed`, naming neither the model, the FTS table, nor the
+// two attributes, so remove() read as a corrupt database file.
+//
+// Whether it raises at all depends on the index: FTS5 only notices when the
+// second delete empties the structure, which is why the one-row case below is
+// the deterministic guard and why nothing caught this for so long. Above one
+// row the extra delete was swallowed and the row stayed in the index — so the
+// old triggers never achieved the live-only index they were written for, and
+// search() was right only because it filters again in its own WHERE.
+//
+// That second filter is now the only one: the index mirrors the table, which
+// is also what makes withDeleted/onlyDeleted mean anything.
+
+describe('client — @@fts + @@softDelete', () => {
+  const FTS_SD = `
+    model Note {
+      id        Int @id
+      title     String
+      body      String
+      deletedAt DateTime?
+      @@softDelete
+      @@fts([title, body])
+    }`
+
+  async function notes(n = 3) {
+    const db: any = await makeDb(FTS_SD, 'fts-sd')
+    const rows = [
+      { id: 1, title: 'ada',   body: 'lovelace wrote notes' },
+      { id: 2, title: 'grace', body: 'hopper wrote compilers' },
+      { id: 3, title: 'alan',  body: 'turing wrote papers' },
+    ].slice(0, n)
+    for (const data of rows) await db.note.create({ data })
+    return db
+  }
+  const ids = (rows: any[]) => rows.map(r => r.id).sort()
+  // The index's own opinion, with no soft-delete filter over it — the only way
+  // to see what the triggers actually did rather than what search() shows.
+  const indexed = (db: any) =>
+    db.$db.query(`SELECT rowid FROM note_fts WHERE note_fts MATCH 'wrote' ORDER BY rowid`)
+      .all().map((r: any) => r.rowid)
+
+  test('remove() does not throw when the index holds one row', async () => {
+    const db = await notes(1)
+    const removed = await db.note.remove({ where: { id: 1 } })
+    expect(removed.id).toBe(1)
+    db.$close()
+  })
+
+  test('the index mirrors the table through the whole lifecycle', async () => {
+    const db = await notes()
+    expect(indexed(db)).toEqual([1, 2, 3])
+    await db.note.remove({ where: { id: 2 } })
+    expect(indexed(db)).toEqual([1, 2, 3])       // soft delete is not an index event
+    await db.note.delete({ where: { id: 3 } })
+    expect(indexed(db)).toEqual([1, 2])          // a hard delete is
+    await db.note.restore({ where: { id: 2 } })
+    expect(indexed(db)).toEqual([1, 2])
+    db.$close()
+  })
+
+  test('a soft-deleted row leaves the results', async () => {
+    const db = await notes()
+    expect(ids(await db.note.search('wrote'))).toEqual([1, 2, 3])
+    await db.note.remove({ where: { id: 2 } })
+    expect(ids(await db.note.search('wrote'))).toEqual([1, 3])
+    db.$close()
+  })
+
+  test('withDeleted and onlyDeleted reach the deleted row', async () => {
+    const db = await notes()
+    await db.note.remove({ where: { id: 2 } })
+    expect(ids(await db.note.search('wrote', { withDeleted: true }))).toEqual([1, 2, 3])
+    expect(ids(await db.note.search('wrote', { onlyDeleted: true }))).toEqual([2])
+    db.$close()
+  })
+
+  test('restore() puts the row back in the results', async () => {
+    const db = await notes()
+    await db.note.remove({ where: { id: 2 } })
+    await db.note.restore({ where: { id: 2 } })
+    expect(ids(await db.note.search('wrote'))).toEqual([1, 2, 3])
+    db.$close()
+  })
+
+  test('a rebuild agrees with the triggers', async () => {
+    // 'rebuild' reindexes straight from the content table, so it can only agree
+    // with the triggers while the index mirrors the table. Holding the live rows
+    // only means the index silently disagrees with its own rebuild.
+    const db = await notes()
+    await db.note.remove({ where: { id: 2 } })
+    const before = indexed(db)
+    db.$db.run(`INSERT INTO "note_fts"("note_fts") VALUES('rebuild')`)
+    expect(indexed(db)).toEqual(before)
+    db.$close()
+  })
+
+  test('the index passes integrity-check after the full lifecycle', async () => {
+    const db = await notes()
+    await db.note.remove({ where: { id: 1 } })
+    await db.note.restore({ where: { id: 1 } })
+    await db.note.update({ where: { id: 1 }, data: { body: 'lovelace wrote algorithms' } })
+    await db.note.remove({ where: { id: 3 } })
+    await db.note.delete({ where: { id: 2 } })
+    expect(() => db.$db.run(`INSERT INTO "note_fts"("note_fts") VALUES('integrity-check')`)).not.toThrow()
+    db.$close()
+  })
+
+  test('limit counts matching rows, not index entries', async () => {
+    // Soft-deleted rows are in the index, so a filter applied after the FTS
+    // LIMIT spends slots on rows that are then dropped: a search for 2 answering
+    // 1, with nothing to say why.
+    const db = await notes()
+    await db.note.remove({ where: { id: 1 } })
+    expect(await db.note.search('wrote', { limit: 2 })).toHaveLength(2)
+    db.$close()
+  })
+
+  test('a where filter also narrows before the limit', async () => {
+    const db = await notes()
+    expect(ids(await db.note.search('wrote', { where: { title: 'grace' }, limit: 1 }))).toEqual([2])
+    db.$close()
+  })
+
+  test('a database still carrying the retired triggers is repaired by a migration', async () => {
+    // The DDL fix reaches new databases. Every database that already exists
+    // carries the trigger pair, and introspect() did not record triggers at
+    // all — so the diff said "in sync" about a database where every remove()
+    // throws. A trigger the app wrote is not in pristine and has to survive.
+    const parsed = parse(FTS_SD)
+    const path   = tmpDb('fts-legacy' + Math.random().toString(36).slice(2))
+    const raw    = new Database(path)
+    for (const stmt of splitStatements(generateDDL(parsed.schema)))
+      if (!stmt.startsWith('PRAGMA')) raw.run(stmt)
+
+    raw.run(`CREATE TRIGGER "note_fts_soft_delete" AFTER UPDATE OF "deletedAt" ON "note"
+             WHEN old."deletedAt" IS NULL AND new."deletedAt" IS NOT NULL BEGIN
+               INSERT INTO "note_fts"("note_fts", rowid, title, body) VALUES ('delete', old.id, old.title, old.body);
+             END`)
+    raw.run(`CREATE TRIGGER "note_fts_restore" AFTER UPDATE OF "deletedAt" ON "note"
+             WHEN old."deletedAt" IS NOT NULL AND new."deletedAt" IS NULL BEGIN
+               INSERT INTO "note_fts"(rowid, title, body) VALUES (new.id, new.title, new.body);
+             END`)
+    raw.run(`CREATE TABLE "app_log" (id INTEGER PRIMARY KEY, what TEXT)`)
+    raw.run(`CREATE TRIGGER "note_app_log" AFTER INSERT ON "note"
+             BEGIN INSERT INTO "app_log"(what) VALUES ('n'); END`)
+    raw.run(`INSERT INTO "note" (id, title, body) VALUES (1, 'ada', 'lovelace wrote notes')`)
+
+    const diff = diffSchemas(buildPristine(new Database(':memory:'), parsed), introspect(raw), parsed)
+    expect(diff.droppedTriggers.map((t: any) => t.name).sort())
+      .toEqual(['note_fts_restore', 'note_fts_soft_delete'])
+
+    for (const stmt of splitStatements(generateMigrationSQL(diff, parsed)))
+      if (!stmt.startsWith('PRAGMA')) raw.run(stmt + ';')
+    const after = raw.query(`SELECT name FROM sqlite_master WHERE type='trigger'`)
+      .all().map((r: any) => r.name)
+    raw.close()
+
+    expect(after).toContain('note_app_log')
+    expect(after).not.toContain('note_fts_soft_delete')
+
+    const db: any = await createClient({ parsed, db: path })
+    expect((await db.note.remove({ where: { id: 1 } })).id).toBe(1)
+    db.$close()
+  })
+
+  test('a table rebuild puts the generated triggers back', async () => {
+    // rebuildSQL drops the table, which takes every trigger on it, and nothing
+    // recreated them — so a model came out of a column-drop migration with an
+    // FTS index that had silently stopped updating and an updatedAt that had
+    // stopped being stamped. Both keep working; neither reports anything.
+    const before = parse(`model Note { id Int @id  title String  keep String  updatedAt DateTime  @@fts([title]) }`)
+    const after  = parse(`model Note { id Int @id  title String  updatedAt DateTime  @@fts([title]) }`)
+    const raw = new Database(tmpDb('fts-rebuild' + Math.random().toString(36).slice(2)))
+    for (const stmt of splitStatements(generateDDL(before.schema)))
+      if (!stmt.startsWith('PRAGMA')) raw.run(stmt)
+    const triggers = () => raw.query(`SELECT name FROM sqlite_master WHERE type='trigger'`)
+      .all().map((r: any) => r.name).sort()
+    const wanted = triggers()
+    expect(wanted).toContain('note_fts_update')
+    expect(wanted).toContain('note_updatedAt')
+
+    const diff = diffSchemas(buildPristine(new Database(':memory:'), after), introspect(raw), after)
+    expect(diff.tableDiffs.some((d: any) => d.name === 'note' && d.needsRebuild)).toBe(true)
+    for (const stmt of splitStatements(generateMigrationSQL(diff, after)))
+      if (!stmt.startsWith('PRAGMA')) raw.run(stmt + ';')
+
+    expect(triggers()).toEqual(wanted)
+    raw.close()
   })
 })
 
@@ -5473,8 +5672,11 @@ describe('audit trail covers bulk writes', () => {
     const db = await makeBulkDb()
     await seed(db)
     await db.widget.removeMany({ where: { code: 'c' } })
+    // restore answers the shaped rows, mirroring remove — it used to answer
+    // { count }, which neither its TypeScript declaration nor CLAUDE.md said.
     const res = await db.widget.restore({ where: { code: 'c' } })
-    expect(res.count).toBe(1)
+    expect(res).toHaveLength(1)
+    expect(res[0].code).toBe('c')
     const log = (await entries(db)).filter((e: any) => e.operation === 'update')
     expect(log.length).toBe(1)
     expect(log[0].records).toEqual([3])
@@ -12080,6 +12282,654 @@ describe('@from — WHERE filtering', () => {
       where: { OR: [{ orderCount: 2 }, { name: 'C' }] }
     })
     expect(rows.map((r: any) => r.id).sort()).toEqual([2, 3])
+    db.$close()
+  })
+})
+
+
+// ─── @from — the target model's own defaults ─────────────────────────────────
+//
+// A @from reads another model, so it reads it the way that model is read:
+// soft-deleted rows and template rows are out. Before this every schema had to
+// repeat `where: "deletedAt IS NULL"` by hand, and `include: { _count: true }`
+// over the same relation already disagreed with it.
+
+const FROM_DEFAULTS_SCHEMA = `
+  model Client {
+    id        Int @id
+    name      String
+    notes     Note[]
+
+    liveNotes      Int @from(Note, count: true)
+    allNotes       Int @from(Note, count: true, withDeleted: true)
+    withTemplates  Int @from(Note, count: true, withTemplates: true)
+    everything     Int @from(Note, count: true, withDeleted: true, withTemplates: true)
+    liveTotal      Float @from(Note, sum: weight)
+    hasLive        Boolean @from(Note, exists: true)
+    lastLive       Note? @from(Note, last: true)
+    deletedAt      DateTime?
+    @@softDelete
+  }
+
+  model Note {
+    id         Int @id
+    body       String
+    weight     Float
+    isTemplate Boolean
+    clientId   Int
+    client     Client @relation(fields: [clientId], references: [id])
+    deletedAt  DateTime?
+    @@softDelete
+    @@hasTemplates(field: "isTemplate")
+  }
+`
+
+// live 2 (n1,n2) · soft-deleted 1 (n3) · template 1 (n4) · deleted template 1 (n5).
+// n5 is stamped deleted through create(), not removeMany(): a write cannot
+// reach a template row, and createMany() drops deletedAt.
+async function fromDefaultsClient() {
+  const { db } = await makeTestClient(FROM_DEFAULTS_SCHEMA, {
+    data: async (db: any) => {
+      await db.client.create({ data: { id: 1, name: 'Acme' } })
+      await db.note.createMany({ data: [
+        { id: 1, body: 'n1', weight: 10, isTemplate: false, clientId: 1 },
+        { id: 2, body: 'n2', weight: 20, isTemplate: false, clientId: 1 },
+        { id: 3, body: 'n3', weight: 40, isTemplate: false, clientId: 1 },
+        { id: 4, body: 'n4', weight: 80, isTemplate: true,  clientId: 1 },
+      ]})
+      await db.note.create({ data: { id: 5, body: 'n5', weight: 160, isTemplate: true, clientId: 1, deletedAt: new Date() } })
+      await db.note.removeMany({ where: { id: 3 } })
+    }
+  })
+  return db
+}
+
+describe('@from — target model defaults', () => {
+  test('count excludes soft-deleted and template rows by default', async () => {
+    const db = await fromDefaultsClient()
+    const [row] = await db.client.findMany({})
+    expect(row.liveNotes).toBe(2)
+    db.$close()
+  })
+
+  test('withDeleted: true counts soft-deleted rows, still no templates', async () => {
+    const db = await fromDefaultsClient()
+    const [row] = await db.client.findMany({})
+    expect(row.allNotes).toBe(3)
+    db.$close()
+  })
+
+  test('withTemplates: true counts templates, still no deleted', async () => {
+    const db = await fromDefaultsClient()
+    const [row] = await db.client.findMany({})
+    expect(row.withTemplates).toBe(3)
+    db.$close()
+  })
+
+  test('both flags together count every row', async () => {
+    const db = await fromDefaultsClient()
+    const [row] = await db.client.findMany({})
+    expect(row.everything).toBe(5)
+    db.$close()
+  })
+
+  test('sum, exists and last apply the same defaults', async () => {
+    const db = await fromDefaultsClient()
+    const [row] = await db.client.findMany({})
+    expect(row.liveTotal).toBe(30)        // 10 + 20, not 40/80/160
+    expect(row.hasLive).toBe(true)
+    expect(row.lastLive.body).toBe('n2')  // not n3 (deleted) or n5 (deleted template)
+    db.$close()
+  })
+
+  test('a @from count agrees with include: { _count: true } over the same relation', async () => {
+    const db = await fromDefaultsClient()
+    const [row] = await db.client.findMany({ include: { _count: true } })
+    expect(row.liveNotes).toBe(row._count.notes)
+    db.$close()
+  })
+
+  test('an explicit where: still composes on top of the defaults', async () => {
+    const { db } = await makeTestClient(`
+      model Client {
+        id    Int @id
+        name  String
+        notes Note[]
+        heavyLive Int @from(Note, count: true, where: "weight > 15")
+      }
+      model Note {
+        id        Int @id
+        weight    Float
+        clientId  Int
+        client    Client @relation(fields: [clientId], references: [id])
+        deletedAt DateTime?
+        @@softDelete
+      }
+    `, {
+      data: async (db: any) => {
+        await db.client.create({ data: { id: 1, name: 'Acme' } })
+        await db.note.createMany({ data: [
+          { id: 1, weight: 10, clientId: 1 },
+          { id: 2, weight: 20, clientId: 1 },
+          { id: 3, weight: 30, clientId: 1 },
+        ]})
+        await db.note.remove({ where: { id: 3 } })
+      }
+    })
+    const [row] = await db.client.findMany({})
+    expect(row.heavyLive).toBe(1)   // weight > 15 AND not deleted → id 2 only
+    db.$close()
+  })
+})
+
+
+// ─── @from — under an aliased query ──────────────────────────────────────────
+//
+// A relation orderBy aliases the outer table to `t`, and a @from subquery
+// correlates to the outer table BY NAME. With one variant of the subquery the
+// query either dropped every @from field to undefined (default select, where a
+// @computed field reading one then computed from undefined in silence) or died
+// on `no such column: <table>.<pk>` (explicit select).
+
+const FROM_ALIAS_SCHEMA = `
+  model Author {
+    id     Int @id
+    name   String
+    books  Book[]
+    bookCount Int   @from(Book, count: true)
+    score     Float @computed
+  }
+  model Book {
+    id       Int @id
+    title    String
+    authorId Int
+    author   Author @relation(fields: [authorId], references: [id])
+  }
+`
+
+async function fromAliasClient() {
+  const { db } = await makeTestClient(FROM_ALIAS_SCHEMA, {
+    computed: { Author: { score: (r: any) => (r.bookCount ?? 0) * 100 } },
+    data: async (db: any) => {
+      await db.author.createMany({ data: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] })
+      await db.book.createMany({ data: [
+        { id: 1, title: 'b1', authorId: 1 },
+        { id: 2, title: 'b2', authorId: 1 },
+        { id: 3, title: 'b3', authorId: 2 },
+      ]})
+    }
+  })
+  return db
+}
+
+describe('@from — under a relation orderBy', () => {
+  test('survives a relation aggregate orderBy with the default select', async () => {
+    const db = await fromAliasClient()
+    const rows = await db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
+    expect(rows.map((r: any) => r.bookCount)).toEqual([2, 1])
+    db.$close()
+  })
+
+  test('a @computed field reading a @from field still computes', async () => {
+    const db = await fromAliasClient()
+    const rows = await db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
+    expect(rows.map((r: any) => r.score)).toEqual([200, 100])
+    db.$close()
+  })
+
+  test('survives a relation aggregate orderBy with an explicit select', async () => {
+    const db = await fromAliasClient()
+    const rows = await db.author.findMany({
+      orderBy: { books: { _count: 'desc' } },
+      select:  { name: true, bookCount: true },
+    })
+    expect(rows).toEqual([{ name: 'A', bookCount: 2 }, { name: 'B', bookCount: 1 }])
+    db.$close()
+  })
+
+  test('a where on a @from field correlates correctly under the alias', async () => {
+    const db = await fromAliasClient()
+    const rows = await db.author.findMany({
+      where:   { bookCount: { gt: 1 } },
+      orderBy: { books: { _count: 'desc' } },
+    })
+    expect(rows.map((r: any) => r.name)).toEqual(['A'])
+    db.$close()
+  })
+
+  test('survives a belongsTo relation orderBy, which adds a real JOIN', async () => {
+    const db = await fromAliasClient()
+    const rows = await db.book.findMany({ orderBy: { author: { name: 'desc' } } })
+    expect(rows.map((r: any) => r.title)).toEqual(['b3', 'b1', 'b2'])
+    db.$close()
+  })
+})
+
+
+// ─── @from — on the paths that build their own SQL ───────────────────────────
+//
+// findManyCursor and resolveIncludes assemble SELECTs below the query pipeline,
+// so neither had @from subqueries at all: the field was simply absent. What
+// made that silent rather than obvious is that applyComputed still runs — a
+// @computed field reading a missing @from field answers a plausible 0 rather
+// than throwing, so the same row read two ways gave two different numbers.
+
+const FROM_PATHS_SCHEMA = `
+  model Author {
+    id     Int @id
+    name   String
+    books  Book[]
+    tags   Tag[]
+    bookCount Int     @from(Book, count: true)
+    lastBook  Book?   @from(Book, last: true)
+    hasBooks  Boolean @from(Book, exists: true)
+    score     Float   @computed
+  }
+  model Book {
+    id       Int @id
+    title    String
+    authorId Int
+    author   Author @relation(fields: [authorId], references: [id])
+  }
+  model Tag {
+    id      Int @id
+    label   String
+    authors Author[]
+  }
+`
+
+async function fromPathsClient() {
+  const { db } = await makeTestClient(FROM_PATHS_SCHEMA, {
+    computed: { Author: { score: (r: any) => (r.bookCount ?? 0) * 5 } },
+    data: async (db: any) => {
+      await db.author.createMany({ data: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] })
+      await db.book.createMany({ data: [
+        { id: 1, title: 'b1', authorId: 1 },
+        { id: 2, title: 'b2', authorId: 1 },
+        { id: 3, title: 'b3', authorId: 2 },
+      ]})
+      await db.tag.create({ data: { id: 1, label: 't', authors: { connect: [{ id: 1 }, { id: 2 }] } } })
+    }
+  })
+  return db
+}
+
+describe('@from — findManyCursor', () => {
+  test('a cursor page carries the @from fields', async () => {
+    const db = await fromPathsClient()
+    const { items } = await db.author.findManyCursor({ limit: 10, orderBy: { id: 'asc' } })
+    expect(items.map((r: any) => r.bookCount)).toEqual([2, 1])
+    db.$close()
+  })
+
+  test('a @computed field over a @from field agrees with findMany', async () => {
+    const db = await fromPathsClient()
+    const { items } = await db.author.findManyCursor({ limit: 10, orderBy: { id: 'asc' } })
+    const rows = await db.author.findMany({ orderBy: { id: 'asc' } })
+    expect(items.map((r: any) => r.score)).toEqual(rows.map((r: any) => r.score))
+    expect(items[0].score).toBe(10)
+    db.$close()
+  })
+
+  test('selecting a @from field on a cursor page returns it', async () => {
+    const db = await fromPathsClient()
+    const { items } = await db.author.findManyCursor({ limit: 1, orderBy: { id: 'asc' }, select: { bookCount: true } })
+    expect(items).toEqual([{ bookCount: 2 }])
+    db.$close()
+  })
+
+  test('an object-valued @from is parsed, not left as JSON text', async () => {
+    const db = await fromPathsClient()
+    const { items } = await db.author.findManyCursor({ limit: 1, orderBy: { id: 'asc' } })
+    expect(items[0].lastBook).toEqual({ id: 2, title: 'b2', authorId: 1 })
+    db.$close()
+  })
+})
+
+describe('@from — under an include', () => {
+  test('belongsTo: the parent carries its @from fields', async () => {
+    const db = await fromPathsClient()
+    const [row] = await db.book.findMany({ where: { id: 1 }, include: { author: true } })
+    expect(row.author.bookCount).toBe(2)
+    expect(row.author.score).toBe(10)
+    db.$close()
+  })
+
+  test('hasMany: the host row still carries its own', async () => {
+    const db = await fromPathsClient()
+    const [row] = await db.author.findMany({ where: { id: 1 }, include: { books: true } })
+    expect(row.bookCount).toBe(2)
+    expect(row.books).toHaveLength(2)
+    db.$close()
+  })
+
+  test('manyToMany: the target is aliased, and the correlation follows it', async () => {
+    const db = await fromPathsClient()
+    const [row] = await db.tag.findMany({ include: { authors: true } })
+    expect(row.authors.map((a: any) => a.bookCount)).toEqual([2, 1])
+    expect(row.authors.map((a: any) => a.score)).toEqual([10, 5])
+    db.$close()
+  })
+
+  test('a nested select may name a @from field', async () => {
+    const db = await fromPathsClient()
+    const [row] = await db.book.findMany({ where: { id: 1 }, include: { author: { select: { name: true, bookCount: true } } } })
+    expect(row.author).toEqual({ name: 'A', bookCount: 2 })
+    db.$close()
+  })
+
+  test('a nested select naming only a @computed field still gets its deps', async () => {
+    const db = await fromPathsClient()
+    const [row] = await db.book.findMany({ where: { id: 1 }, include: { author: { select: { score: true } } } })
+    expect(row.author).toEqual({ score: 10 })
+    db.$close()
+  })
+
+  test('object and boolean @from fields are shaped under an include too', async () => {
+    const db = await fromPathsClient()
+    const [row] = await db.book.findMany({ where: { id: 1 }, include: { author: true } })
+    expect(row.author.lastBook).toEqual({ id: 2, title: 'b2', authorId: 1 })
+    expect(row.author.hasBooks).toBe(true)
+    db.$close()
+  })
+
+  test('two levels deep', async () => {
+    const db = await fromPathsClient()
+    const [row] = await db.tag.findMany({ include: { authors: { include: { books: true } } } })
+    expect(row.authors.map((a: any) => [a.bookCount, a.books.length])).toEqual([[2, 2], [1, 1]])
+    db.$close()
+  })
+
+  // The property that makes all of the above one bug rather than eight: a row
+  // is the same row however it was reached.
+  test('an included row and a directly-read row agree field for field', async () => {
+    const db = await fromPathsClient()
+    const direct = await db.author.findUnique({ where: { id: 1 } })
+    const [book] = await db.book.findMany({ where: { id: 1 }, include: { author: true } })
+    expect(book.author).toEqual(direct)
+    db.$close()
+  })
+})
+
+
+// ─── @from — search(), and the row a write hands back ────────────────────────
+//
+// A write returns through RETURNING, which is table columns only — SQLite
+// cannot put a correlated subquery there. So the row a caller held after a
+// write disagreed with the same row refetched, and junction passes that row
+// straight to the HTTP response AND the `svc updated` broadcast, so every open
+// tab replaced a correct row with a degraded one.
+
+const FROM_WRITE_SCHEMA = `
+  model Author {
+    id        Int @id
+    name      String
+    deletedAt DateTime?
+    books     Book[]
+    bookCount Int     @from(Book, count: true)
+    lastBook  Book?   @from(Book, last: true)
+    hasBooks  Boolean @from(Book, exists: true)
+    score     Float   @computed
+    @@softDelete
+    @@fts([name])
+  }
+  model Book {
+    id       Int @id
+    title    String
+    authorId Int
+    author   Author @relation(fields: [authorId], references: [id])
+  }
+`
+
+// One fixture carries @@softDelete and @@fts together on purpose: the pair used
+// to make every remove() throw SQLITE_CORRUPT_VTAB, and separate fixtures are
+// how that went unseen while both attributes had passing tests of their own.
+async function fromWriteClient() {
+  const { db } = await makeTestClient(FROM_WRITE_SCHEMA, {
+    computed: { Author: { score: (r: any) => (r.bookCount ?? 0) * 5 } },
+    data: async (db: any) => {
+      await db.author.create({ data: { id: 1, name: 'alpha' } })
+      await db.book.createMany({ data: [
+        { id: 1, title: 'x', authorId: 1 },
+        { id: 2, title: 'y', authorId: 1 },
+      ]})
+    }
+  })
+  return db
+}
+
+const fromFtsClient = fromWriteClient
+
+describe('@from — search()', () => {
+  test('an FTS hit carries the @from fields', async () => {
+    const db = await fromFtsClient()
+    const [hit] = await db.author.search('alpha')
+    expect(hit.bookCount).toBe(2)
+    expect(hit.score).toBe(10)
+    db.$close()
+  })
+
+  test('a search hit and a directly-read row agree', async () => {
+    const db = await fromFtsClient()
+    const [hit] = await db.author.search('alpha')
+    const direct = await db.author.findUnique({ where: { id: 1 } })
+    delete hit._rank
+    expect(hit).toEqual(direct)
+    db.$close()
+  })
+})
+
+describe('@from — the row a write returns', () => {
+  const expectHydrated = (row: any) => {
+    expect(row.bookCount).toBe(2)
+    expect(row.score).toBe(10)
+    expect(row.lastBook).toEqual({ id: 2, title: 'y', authorId: 1 })
+    expect(row.hasBooks).toBe(true)
+  }
+
+  test('update', async () => {
+    const db = await fromWriteClient()
+    expectHydrated(await db.author.update({ where: { id: 1 }, data: { name: 'a2' } }))
+    db.$close()
+  })
+
+  test('upsert on the update path', async () => {
+    const db = await fromWriteClient()
+    expectHydrated(await db.author.upsert({
+      where: { id: 1 }, create: { id: 1, name: 'c' }, update: { name: 'u' },
+    }))
+    db.$close()
+  })
+
+  test('remove — a soft-deleted row still has its children', async () => {
+    const db = await fromWriteClient()
+    expectHydrated(await db.author.remove({ where: { id: 1 } }))
+    db.$close()
+  })
+
+  test('restore', async () => {
+    const db = await fromWriteClient()
+    await db.author.remove({ where: { id: 1 } })
+    const [row] = await db.author.restore({ where: { id: 1 } })
+    expectHydrated(row)
+    db.$close()
+  })
+
+  test('delete — the values are read while the row still exists', async () => {
+    const db = await fromWriteClient()
+    await db.book.deleteMany({ where: { authorId: 1 } })
+    const row = await db.author.delete({ where: { id: 1 } })
+    expect(row.bookCount).toBe(0)
+    expect(row.hasBooks).toBe(false)
+    db.$close()
+  })
+
+  test('create — a brand new row counts zero children, not undefined', async () => {
+    const db = await fromWriteClient()
+    const row = await db.author.create({ data: { id: 2, name: 'beta' } })
+    expect(row.bookCount).toBe(0)
+    expect(row.score).toBe(0)
+    expect(row.hasBooks).toBe(false)
+    db.$close()
+  })
+
+  // The property, again: a row is the same row however it was obtained. This
+  // is the one that fails loudest when a write path is missed, because it is
+  // what an app actually does — write, then render what came back.
+  test('an updated row equals the same row refetched', async () => {
+    const db = await fromWriteClient()
+    const written = await db.author.update({ where: { id: 1 }, data: { name: 'a2' } })
+    const refetched = await db.author.findUnique({ where: { id: 1 } })
+    expect(written).toEqual(refetched)
+    db.$close()
+  })
+
+  // A model with no @from field must not pay for a lookup it does not need.
+  test('a model without @from fields issues no extra query on write', async () => {
+    const { db } = await makeTestClient(`model Plain { id Int @id  name String }`)
+    const seen: string[] = []
+    db.$tapQuery((q: any) => seen.push(q.sql))
+    await db.plain.create({ data: { id: 1, name: 'a' } })
+    expect(seen.filter(s => s.startsWith('SELECT'))).toHaveLength(0)
+    db.$close()
+  })
+})
+
+describe('restore() returns the rows, shaped', () => {
+  test('an array of rows, not { count }', async () => {
+    const db = await fromWriteClient()
+    await db.author.remove({ where: { id: 1 } })
+    const res = await db.author.restore({ where: { id: 1 } })
+    expect(Array.isArray(res)).toBe(true)
+    expect(res).toHaveLength(1)
+    expect(res[0].name).toBe('alpha')
+    expect(res[0].deletedAt).toBe(null)
+    db.$close()
+  })
+
+  test('the rows are shaped like any other read, not raw', async () => {
+    const { db } = await makeTestClient(`
+      model Doc {
+        id        Int @id
+        meta      Json
+        published Boolean
+        deletedAt DateTime?
+        @@softDelete
+      }
+    `, {
+      data: async (db: any) => {
+        await db.doc.create({ data: { id: 1, meta: { a: 1 }, published: true } })
+        await db.doc.remove({ where: { id: 1 } })
+      }
+    })
+    const [row] = await db.doc.restore({ where: { id: 1 } })
+    expect(row.meta).toEqual({ a: 1 })      // parsed, not the JSON text SQLite stored
+    expect(row.published).toBe(true)        // coerced, not 1
+    db.$close()
+  })
+
+  test('restoring nothing answers an empty array', async () => {
+    const db = await fromWriteClient()
+    expect(await db.author.restore({ where: { id: 999 } })).toEqual([])
+    db.$close()
+  })
+})
+
+
+// ─── orderBy key validation ──────────────────────────────────────────────────
+//
+// A bad filter key returns fewer rows, which the caller can see. A bad sort key
+// returns the RIGHT rows in the wrong order, which nothing can see — so this
+// half throws on a read where checkWhereKeys only warns.
+
+describe('orderBy key validation', () => {
+  test('an unknown orderBy field throws and names what is sortable', async () => {
+    const db = await fromAliasClient()
+    await expect(db.author.findMany({ orderBy: { bogusColumn: 'desc' } }))
+      .rejects.toThrow("Unknown orderBy field 'bogusColumn'")
+    db.$close()
+  })
+
+  test('a typo gets a suggestion', async () => {
+    const db = await fromAliasClient()
+    await expect(db.author.findMany({ orderBy: { nam: 'desc' } }))
+      .rejects.toThrow('Did you mean: name?')
+    db.$close()
+  })
+
+  test('a @computed field is refused as unsortable, not as unknown', async () => {
+    const db = await fromAliasClient()
+    await expect(db.author.findMany({ orderBy: { score: 'asc' } }))
+      .rejects.toThrow('it is a @computed field')
+    db.$close()
+  })
+
+  test('a @from field sorts — it is a subquery in the SELECT, not a JS function', async () => {
+    const db = await fromAliasClient()
+    const rows = await db.author.findMany({ orderBy: { bookCount: 'desc' } })
+    expect(rows.map((r: any) => r.bookCount)).toEqual([2, 1])
+    db.$close()
+  })
+
+  test('the { dir, nulls } object form still passes', async () => {
+    const db = await fromAliasClient()
+    const rows = await db.author.findMany({ orderBy: { name: { dir: 'desc', nulls: 'last' } } })
+    expect(rows.map((r: any) => r.name)).toEqual(['B', 'A'])
+    db.$close()
+  })
+
+  test('an array of orderBy items is checked item by item', async () => {
+    const db = await fromAliasClient()
+    await expect(db.author.findMany({ orderBy: [{ name: 'asc' }, { bogus: 'desc' }] }))
+      .rejects.toThrow("Unknown orderBy field 'bogus'")
+    db.$close()
+  })
+
+  test('findManyCursor is checked too', async () => {
+    const db = await fromAliasClient()
+    await expect(db.author.findManyCursor({ limit: 1, orderBy: { bogus: 'asc' } }))
+      .rejects.toThrow("Unknown orderBy field 'bogus'")
+    db.$close()
+  })
+
+  test('groupBy may order by an aggregate — those are the point, not a typo', async () => {
+    const db = await fromAliasClient()
+    const rows = await db.book.groupBy({ by: ['authorId'], _count: true, orderBy: { _count: 'desc' } })
+    expect(rows[0]._count).toBe(2)
+    db.$close()
+  })
+
+  test('findMany may NOT order by an aggregate name', async () => {
+    const db = await fromAliasClient()
+    await expect(db.author.findMany({ orderBy: { _count: 'desc' } }))
+      .rejects.toThrow("Unknown orderBy field '_count'")
+    db.$close()
+  })
+
+  test('$checkOrderBy answers without running the query', async () => {
+    const db = await fromAliasClient()
+    expect(db.$checkOrderBy('author', { name: 'asc' })).toEqual([])
+    expect(db.$checkOrderBy('author', { bookCount: 'desc' })).toEqual([])
+    const [computedProblem] = db.$checkOrderBy('author', { score: 'asc' })
+    expect(computedProblem.reason).toBe('computed')
+    const [unknownProblem] = db.$checkOrderBy('author', { nam: 'asc' })
+    expect(unknownProblem.reason).toBe('unknown')
+    expect(unknownProblem.suggestion).toBe('name')
+    db.$close()
+  })
+
+  test('$checkOrderBy on an unknown accessor answers [] — cannot judge is not wrong', async () => {
+    const db = await fromAliasClient()
+    expect(db.$checkOrderBy('nosuchthing', { whatever: 'asc' })).toEqual([])
+    db.$close()
+  })
+
+  test('$checkOrderBy is on every flavour of client — sortability is a fact about the schema', async () => {
+    const db = await fromAliasClient()
+    for (const client of [db.asSystem(), db.$setAuth({ id: 1 }), db.$scopedBy({})]) {
+      expect(typeof client.$checkOrderBy).toBe('function')
+      expect(client.$checkOrderBy('author', { score: 'asc' })[0].reason).toBe('computed')
+    }
     db.$close()
   })
 })
