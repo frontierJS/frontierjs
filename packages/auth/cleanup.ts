@@ -15,8 +15,8 @@
 //     async boot() { cleanup.start() },
 //   })
 
-import { createScheduler } from '../junction/index.ts'
-import type { JobHandle }  from '../junction/index.ts'
+import { createScheduler } from '@frontierjs/junction'
+import type { JobHandle }  from '@frontierjs/junction'
 
 interface LitestoneClient {
   asSystem(): any

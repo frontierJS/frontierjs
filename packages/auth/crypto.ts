@@ -3,7 +3,7 @@
 // Nothing here is exported from the package — all usage is via auth.ts.
 
 import { createHmac, randomBytes } from 'crypto'
-import { parseTtl }                from '../junction/index.ts'
+import { parseTtl }                from '@frontierjs/junction'
 
 // ─── Password hashing ─────────────────────────────────────────────────────
 // Bun's native bcrypt — no external dep.

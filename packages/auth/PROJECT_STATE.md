@@ -90,11 +90,11 @@ Rate limiting works: 5 registers then `429`, keyed per-IP off `ctx.ip`.
 
 
 *Still open here, in `../../ISSUES.md`: **`FJS-002`** (cookie auth),
-**`FJS-003`** (unpublishable), **`FJS-042`** (API keys, no events — `stale?`),
-**`FJS-063`** (timing oracle, `any` types). Decision waiting: **`FJS-D20`**.
-The writeups below are the argued detail.*
+**`FJS-042`** (API keys, no events — `stale?`), **`FJS-063`** (timing oracle,
+`any` types). Decision waiting: **`FJS-D20`**. The writeups below are the argued
+detail.*
 
-**Status: 1, 3 and 5 are fixed. 2, 4, 6 and 7 remain open.**
+**Status: 1, 3, 4 and 5 are fixed. 2, 6 and 7 remain open.**
 
 ### 1. Every auth failure reached the client as HTTP 500 — **FIXED**
 
@@ -198,25 +198,35 @@ read the token, and handing it back in the body defeated the opt-in.
 returning `{ user }` — and only when `ctx.setCookie` actually exists, so a
 transport without cookie support does not leave the caller with nothing.
 Verified by reverting: 2 route tests go red.
-### 4. The package cannot be published as-is
+### 4. The package could not be published as-is — **FIXED**
 
-Five shipped files import **`../junction/index.ts`** — a relative path outside
-the package root — 8 times, 3 of them runtime value imports (`parseTtl`,
-`Unauthorized/BadRequest/TooManyRequests`, `createScheduler`).
-
-Proven, not inferred: `npm pack`, extract into a bare `node_modules/`, import it →
+Was: five shipped files imported **`../junction/index.ts`** — a relative path
+outside the package root — 8 times, 3 of them runtime value imports (`parseTtl`,
+`Unauthorized/BadRequest/TooManyRequests`, `createScheduler`). Proven, not
+inferred: `npm pack`, extract into a bare `node_modules/`, import it →
 
 ```
 error: Cannot find module '../junction/index.ts' from …/auth-pkg/plugin.ts
 ```
 
-Meanwhile `package.json` declares `"@frontierjs/junction": "*"` as a peer
-dependency it never imports by name — and a bare `"*"` range is the exact pattern
-that caused the litestone dialect trap (`../../CLAUDE.md`). There is no `files`
-field, so `PROJECT_STATE.md` and the tests ship too.
+All 8 are now `@frontierjs/junction`, which is what conduit, caravan,
+notifications, basecamp and `sierra/example` were already writing — auth was the
+only package in the repo reaching out by path, and it resolved only because it
+sat inside the workspace. The peer range is `^0.1.0` rather than `"*"`, the
+pattern that caused the litestone dialect trap (`../../CLAUDE.md`), and `files`
+is `["*.ts", "README.md"]` — a 10-file tarball, with `tests/`, `tsconfig.json`
+and the markdown that is not the README no longer shipping.
 
-Severity is bounded: **auth is not on npm** (404), so nothing is broken for real
-users today. This is a publish blocker, and it is why v1.0.0 is misleading.
+Re-proven the same way it was found: pack, install the tarball into an empty
+project, import it, build a plugin. The three runtime value imports resolve
+through the specifier.
+
+**What is left is junction's, not auth's.** `@frontierjs/junction` is a 404 on
+the registry, so `npm i @frontierjs/auth` cannot satisfy its own peer until
+junction ships — and `bun install` of the tarball 404s for that reason even with
+the local copy in the tree, which it also does with `"*"` as the range, so that
+is bun declining to satisfy a peer from a `file:` dep rather than anything about
+the range.
 
 ### 5. The coverage gap — **CLOSED for the flows, by 57 new tests**
 

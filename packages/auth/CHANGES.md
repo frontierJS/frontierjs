@@ -1,5 +1,36 @@
 # Changes — @frontierjs/auth
 
+## 2026-08-10 — the package is shippable (FJS-003)
+
+Three defects, one shape: the package was written as a folder in a workspace
+rather than as a thing that leaves it.
+
+**Eight imports of `../junction/index.ts`** across `auth.ts`, `plugin.ts`,
+`types.ts`, `crypto.ts` and `cleanup.ts` — a relative path *out of the package
+root*, which resolves only while the package sits next to junction in this repo.
+Three of the eight are runtime values (`parseTtl`, `createScheduler`,
+`Unauthorized`/`BadRequest`/`TooManyRequests`), so an installed copy did not
+merely typecheck wrong, it threw on import. All eight are now
+`@frontierjs/junction` — the specifier conduit, caravan, notifications, basecamp
+and `sierra/example` were already using. auth was the only package reaching out
+by path.
+
+**The peer range was `"*"`** — the pattern that produced the litestone dialect
+trap, where a floating range agreed with the workspace by luck. Now `^0.1.0`.
+
+**There was no `files` field**, so `npm pack` shipped `tests/`, `tsconfig.json`,
+`PROJECT_STATE.md` and `CHANGES.md`. Now `["*.ts", "README.md"]` — 10 files.
+The consequence to know: a new source file at the package root ships, a new
+*directory* does not.
+
+Proven the way the issue was found rather than by reading the diff: `npm pack`,
+install the tarball into an empty project, import it, call `createAuthPlugin`.
+83 tests unchanged and green, typecheck unchanged at its baseline of 4.
+
+`@frontierjs/junction` is still a 404 on the registry, so `npm i
+@frontierjs/auth` cannot satisfy its own peer until junction ships. That is
+junction's blocker now, not auth's.
+
 ## 2026-08-10 — an app's own User columns can reach the session
 
 `createLitestoneAuth(db, { sessionFields })`. Additive; 83 tests unchanged and

@@ -44,7 +44,13 @@ index.ts     public API
   flow must not grade down.
 - **Ids are uuids, not ints.** The audit log's `actorId` is `Any` for exactly
   this reason; a STRICT INTEGER column throws on the first audited write.
-- **Not publishable yet** — `../junction/*` relative imports, and no OAuth. Its
+- **Junction is imported by SPECIFIER — `@frontierjs/junction`, never a relative
+  path.** `../junction/index.ts` resolves inside the workspace and nowhere else,
+  so the tarball imported nothing and said so only on install. `files` in
+  `package.json` is `["*.ts", "README.md"]`: a new source file at the package
+  root ships, a new directory does not.
+- **It still cannot go to npm, for junction's reason rather than its own** —
+  `@frontierjs/junction` is unpublished, and it is a peer. No OAuth either. Its
   typecheck baseline is non-zero; see `scripts/typecheck-baselines.json`.
 
 ## Proving a change

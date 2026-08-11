@@ -48,6 +48,43 @@ proved the old build. If you can clear that port, `example`: `verify` +
 
 ---
 
+## Session — auth was written as a folder, not as a package (2026-08-10)
+
+```
+packages/auth        83 tests unchanged · typecheck 4, unchanged (its baseline)
+example              verify 37/37 · basecamp verify 270/270 (--reset)
+```
+
+`FJS-003`, closed. The row named three things and all three were the same
+mistake: the package was written as a directory that happens to sit next to
+junction, rather than as something that leaves the workspace.
+
+**Eight imports of `../junction/index.ts`** across `auth.ts`, `plugin.ts`,
+`types.ts`, `crypto.ts` and `cleanup.ts` — a path *out of the package root*.
+Three of the eight are runtime values (`parseTtl`, `createScheduler`, the three
+error classes), so an installed copy did not typecheck wrong, it threw on
+import. They are now `@frontierjs/junction`. Worth knowing why this was only
+ever auth's bug: conduit, caravan, notifications, basecamp and `sierra/example`
+were all already writing the specifier, so **auth was the one package resolving
+by adjacency**, and nothing in the repo could see it because adjacency held.
+
+The peer range was `"*"` (now `^0.1.0`) and there was no `files` field (now
+`["*.ts", "README.md"]`, a 10-file tarball rather than one carrying `tests/`
+and the state docs).
+
+**Proven the way the row asked**: `npm pack`, install the tarball into an empty
+project, import it, build a plugin. Two things that probe teaches, neither
+obvious from the diff:
+
+- **`bun install` cannot satisfy a semver peer from a `file:` dep.** The probe
+  404s on `@frontierjs/junction` even with junction's own tarball installed
+  beside it — and it does that with `"*"` as the range too, so it is not the
+  range. `npm install` resolves it from the tree and the import passes. Do not
+  read that 404 as a regression.
+- **auth still cannot reach npm, and it is junction's turn now.**
+  `@frontierjs/junction` is unpublished, and it is a peer. Nothing left on
+  auth's side of that.
+
 ## Session — an include enforced nothing, and one model got a policy (2026-08-10)
 
 ```

@@ -7,9 +7,13 @@
   "exports": {
     ".": "./index.ts"
   },
+  "files": [
+    "*.ts",
+    "README.md"
+  ],
   "peerDependencies": {
     "@frontierjs/litestone": "^1.1.0",
-    "@frontierjs/junction": "*"
+    "@frontierjs/junction": "^0.1.0"
   },
   "devDependencies": {
     "bun-types": "latest",

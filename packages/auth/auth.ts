@@ -5,7 +5,7 @@
 // Never touches HTTP — that is the plugin's job.
 // Never sends email — that is the caller's job via the onX callbacks in opts.
 
-import type { IAuth, SessionContext, CreateUserInput, ApiKeyOptions } from '../junction/index.ts'
+import type { IAuth, SessionContext, CreateUserInput, ApiKeyOptions } from '@frontierjs/junction'
 import {
   hashPassword,
   verifyPassword,

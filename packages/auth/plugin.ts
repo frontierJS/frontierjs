@@ -11,11 +11,9 @@
 // handlers to translate them — which only covered these routes, and left an
 // auth error raised from a SERVICE surfacing as a 500.
 
-import type { IAuth, SessionContext }  from '../junction/index.ts'
-import { parseTtl }                    from '../junction/index.ts'
-import { Unauthorized, BadRequest, TooManyRequests } from '../junction/index.ts'
-import type { AuthPluginOptions }   from './types.ts'
-import type { RateLimitHookOptions }   from '../junction/index.ts'
+import type { IAuth, SessionContext, RateLimitHookOptions }   from '@frontierjs/junction'
+import { parseTtl, Unauthorized, BadRequest, TooManyRequests } from '@frontierjs/junction'
+import type { AuthPluginOptions }                             from './types.ts'
 
 // ─── Route-level rate limiter ─────────────────────────────────────────────
 // The rateLimitHook from core/hooks.ts operates on ServiceContext, which has
