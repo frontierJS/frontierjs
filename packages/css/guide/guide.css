@@ -43,11 +43,12 @@
  *                      `var(--ring, var(--color-primary))` at the use site,
  *                      which is the form that follows a theme.
  *
- * All three were dead: applyTheme() writes the live theme's tokens inline
- * onto .sg-app at boot, and an inline style beats a :root declaration, so
- * the guide rendered the package's values regardless. A wrong value nothing
- * renders is still the value the next reader copies out of the reference
- * implementation. Do not reintroduce any of them.
+ * All three were dead while applyTheme() wrote a theme's tokens inline onto
+ * .sg-app, because an inline style beats a :root declaration — the guide
+ * rendered the package's values regardless. A wrong value nothing renders is
+ * still the value the next reader copies out of the reference implementation.
+ * Do not reintroduce any of them: applying a theme is now a CLASS on .sg-app,
+ * and a :root token would inherit straight past it.
  *
  * What stays is what the package has no opinion about: the paper/ink warmth
  * the guide is skinned in, its two faces, and the code-block pair.
@@ -66,26 +67,45 @@
    */
   --font-display: 'Playfair Display', serif;
 
-  --paper: #faf8f2;
   --accent: #0d83dd;
-  --code-bg: #f3f1e9;
+}
+
+/*
+ * The guide's own warm skin, and it belongs to the DEFAULT theme rather than
+ * to :root.
+ *
+ * At :root these three inherited into .sg-app past every theme class, so the
+ * page ground stayed cream under a dark theme while the ink went light — the
+ * guide was unreadable in basecamp, whose stylesheet is correct. The hand copy
+ * in guide.js papered over it for dark alone by carrying --paper, which is how
+ * one theme looked right and the next one did not.
+ *
+ * Every other theme falls through to the package's own surfaces at the use
+ * site below. --accent follows the live brand for the same reason, resolved on
+ * .sg-app so it reads the theme class on that same element — an alias at :root
+ * would resolve once against :root's blue and inherit past the theme.
+ */
+.sg-app.theme-default {
+  --paper:     #faf8f2;
+  --code-bg:   #f3f1e9;
   --code-text: #3b372e;
 }
+
+.sg-app { --accent: var(--color-primary); }
 
 /*
  * The App term does the rest — background, ink, min-height and the font
  * smoothing are .app in components/frame.css, and guide.js writes both
  * classes onto this node.
  *
- * .sg-app stays because applyTheme() writes the live theme's tokens onto it
- * as an inline style, so it is the theming HOOK as well as the surface: an
- * element that must keep a stable, guide-owned name. What it declares now is
- * only what the package does not — the guide's paper background, and a
- * reading size a shade larger than the app default because this is a
- * document rather than a UI.
+ * .sg-app stays because applyTheme() writes the live theme's CLASS onto it,
+ * so it is the theming HOOK as well as the surface: an element that must keep
+ * a stable, guide-owned name. What it declares now is only what the package
+ * does not — the guide's paper background, and a reading size a shade larger
+ * than the app default because this is a document rather than a UI.
  */
 .sg-app {
-  background: var(--paper);
+  background: var(--paper, var(--surface-sunken));
   font-size: 15px;
   line-height: 1.65;
 }
@@ -247,8 +267,8 @@
   flex: 1;
   border: none;
   border-radius: 0;
-  background: var(--code-bg);
-  color: var(--code-text);
+  background: var(--code-bg, var(--surface-sunken));
+  color: var(--code-text, var(--ink));
   overflow: auto;
 }
 
@@ -840,7 +860,7 @@
   padding: 12vh 24px 24px;
 }
 .sg-search {
-  background: var(--paper);
+  background: var(--paper, var(--surface-sunken));
   border: 1px solid var(--rule-strong);
   border-radius: 10px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
@@ -1010,7 +1030,7 @@
 .sg-class-box thead th {
   position: sticky;
   inset-block-start: 0;
-  background: var(--paper);
+  background: var(--paper, var(--surface-sunken));
   z-index: 1;
 }
 .sg-class-file { font-size: 11px; color: var(--ink-mute); }

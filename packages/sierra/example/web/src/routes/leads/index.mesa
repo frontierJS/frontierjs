@@ -21,6 +21,11 @@ title: Leads
   // still the server that actually refuses.
   $: canDelete = leads.can('delete', session.level)
 
+  // `var`, not `const`: a gate level comes off the schema and never changes,
+  // so a snapshot is what it is. Read straight in the template it is still a
+  // one-time read, only silently.
+  var deleteLevel = leads.gate.delete
+
   async function remove(id) {
     error = null
     try { await leads.service.remove(id) } catch (e) { error = e.message }
@@ -75,7 +80,7 @@ title: Leads
   <article class="alert muted">
     <div class="alert-content">
       Delete is disabled because <code>@@gate</code> wants level
-      {leads.gate.delete} and this session is {session.level}. Sign in as admin.
+      {deleteLevel} and this session is {session.level}. Sign in as admin.
     </div>
   </article>
 {/if}

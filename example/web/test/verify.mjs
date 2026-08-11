@@ -9,8 +9,8 @@
  *
  * Both servers must already be running:
  *
- *   bun run api     # terminal 1 — Junction + Litestone on :3600
- *   bun run web     # terminal 2 — Sierra + Vite on :5274
+ *   bun run api     # terminal 1 — Junction + Litestone on :8110
+ *   bun run web     # terminal 2 — Sierra + Vite on :8010
  *   node web/test/verify.mjs
  *
  * Needs Chrome on PATH or $FJS_CHROME, same as the css package's harness.
@@ -28,8 +28,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const UI     = process.env.UI_URL  ?? 'http://localhost:5274'
-const API    = process.env.API_URL ?? 'http://localhost:3600'
+const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
+const API    = process.env.API_URL ?? 'http://localhost:8110'
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // ─── preflight ────────────────────────────────────────────────────────────

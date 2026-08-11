@@ -40,23 +40,9 @@
     {#if title}
       <!--
         A real heading element, chosen by the caller, because the outline is
-        the caller's document — not a <div> with a font-weight. Spelled out as
-        a ladder because Mesa has no dynamic-element form; a <mesa:element>
-        guess compiled without complaint and emitted empty `<>` tags.
+        the caller's document — not a <div> with a font-weight.
       -->
-      {#if hLevel === 1}
-        <h1 style:margin="0">{title}</h1>
-      {:else if hLevel === 2}
-        <h2 style:margin="0">{title}</h2>
-      {:else if hLevel === 3}
-        <h3 style:margin="0">{title}</h3>
-      {:else if hLevel === 4}
-        <h4 style:margin="0">{title}</h4>
-      {:else if hLevel === 5}
-        <h5 style:margin="0">{title}</h5>
-      {:else}
-        <h6 style:margin="0">{title}</h6>
-      {/if}
+      <mesa:element this={'h' + hLevel} style:margin="0">{title}</mesa:element>
     {/if}
     {#if sub}
       <p class="text-sm text-muted" style:margin="0">{sub}</p>

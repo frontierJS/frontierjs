@@ -326,9 +326,27 @@ DEV_CAPTAIN, CAPROVER_URL, CAPROVER_TOKEN
 
 `[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod. Global tooling on `8500` (gui), `8501` (pview), `8502` (studio). Dynamic project ports assigned at runtime via `~/.fli/sessions.lock` with O_EXCL file lock for atomicity.
 
+### Startup cost
+
+A read-only invocation (`fli list`, `help`, `?`, completion) is ~119ms where it was ~306ms, measured as 10 runs of each. Three things paid for that and each is a rule, not a tweak:
+
+- **No `.md` loader hook.** `module.register()` starts a hooks thread — 56ms — and nothing imports a `.md`; the runtime compiles with the namespace module script and imports the shim.
+- **No zx on the read-only path.** ~85ms for chalk. `core/color.js` is the ANSI subset those paths use; `bootstrap.js` imports `runtime.js` at the call site so a `fli list` does not pull zx in through it. A command body still gets the real zx from its own shim, so nothing a command author writes changes.
+- **The registry cache** — see below.
+
+A command that actually runs still pays zx once (~206ms for `crypto:keygen`), because its shim imports `zx/globals`.
+
+### Registry cache
+
+`buildRegistry()` used to read and frontmatter-parse ~200 files on every invocation, including on every press of Tab. It now caches one parsed block per file at `~/.fli/cache/registry-<digest>.json`, keyed by mtime+size: a run stats what the walk finds and parses only what moved. ~13-23ms → ~4-7ms.
+
+Discovery still walks the directories — a cached file list would not notice a new command, and "drop a file, it runs" is the authoring model. The cache lives under `~/.fli/` for the same reason the temp root does. `FLI_NO_CACHE=1` bypasses it for one run; `fli completion:refresh` drops it via `clearRegistryCache()`. Invalidation is held by 4 tests in `tests/registry.test.js`.
+
 ### Temp files
 
 Compiled command shims live at `<fliRoot>/.fli-tmp/<pid>/c_*.mjs`. Created lazily on first compile, removed on exit. Stale-PID sweep at every fli startup. `.gitignore` includes `.fli-tmp/` and the legacy `.__fli_*.mjs` pattern.
+
+`fliTmpRoot()` in `core/utils.js` decides the location and is the only thing that does — a shim imports `zx/globals` by bare specifier, so it has to sit where Node's resolver can reach a `node_modules`. When fliRoot is not writable (a global install under a root-owned prefix, where every command used to die on the first mkdir) the session moves to `$TMPDIR/fli-<digest of fliRoot>/` with `node_modules` symlinked back at the install's. `sweepStaleTmp()` is the other half; it reaps `<pid>` and the suites' `test-<pid>` alike.
 
 ---
 

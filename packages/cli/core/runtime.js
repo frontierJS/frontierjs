@@ -5,7 +5,7 @@ import { compileCli, extractFrontmatter } from './compiler.js'
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, rmSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
 import { fileURLToPath } from 'url'
-import { logger, findWorkspaceRoot } from './utils.js'
+import { logger, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } from './utils.js'
 import { getModule } from './registry.js'
 import { printPlanFromFile } from './prose.js'
 
@@ -13,17 +13,13 @@ const env = process.env
 
 // ─── Temp file registry — guaranteed cleanup on exit ─────────────────────────
 // Compiled command bodies are written as .mjs shims so we can `import()` them
-// (Node ESM loaders only resolve real files, not in-memory strings). They have
-// to live somewhere that can resolve 'zx/globals' (and any other node_modules
-// imports compiled commands need) — which means under fliRoot, where the
-// node_modules tree is.
+// (Node ESM loaders only resolve real files, not in-memory strings). Where they
+// may live is `fliTmpRoot()`'s decision, not this file's — the shim has to
+// resolve 'zx/globals', and under a global install fliRoot is not writable.
 //
-// Subdirectory choice: <fliRoot>/.fli-tmp/<pid>/. Hidden from typical
-// dev-tooling walks, easy to add to .gitignore, and a single rmSync at exit
-// handles the whole session. PID-keyed subdirs mean concurrent fli processes
-// don't step on each other; a startup sweep reaps dirs from runs that crashed
-// before cleanup. Previous fliRoot/.__fli_*.mjs sprinkled untracked files
-// directly in the project root; this layout is much tidier.
+// Session dirs are PID-keyed so concurrent fli processes don't step on each
+// other, a single rmSync at exit handles the whole session, and a startup sweep
+// reaps dirs from runs that crashed before cleanup.
 //
 // Lazy-init: we don't create the dir or register handlers until first temp
 // file is needed, so importing this module before `global.fliRoot` is set
@@ -36,27 +32,10 @@ const _ensureSession = () => {
   if (!global.fliRoot) {
     throw new Error('runtime: global.fliRoot is not set — bin/fli.js must initialize globals before commands run')
   }
-  _sessionDir = join(global.fliRoot, '.fli-tmp', String(process.pid))
+  const tmpRoot = fliTmpRoot(global.fliRoot)
+  _sessionDir = join(tmpRoot, String(process.pid))
   mkdirSync(_sessionDir, { recursive: true })
-
-  // Sweep stale session dirs from previous runs that didn't clean up.
-  // Best-effort, never throws.
-  try {
-    const tmpRoot = join(global.fliRoot, '.fli-tmp')
-    for (const name of readdirSync(tmpRoot)) {
-      const pid = parseInt(name)
-      if (!pid || pid === process.pid) continue
-      // process.kill(pid, 0) throws ESRCH if the process is gone
-      try {
-        process.kill(pid, 0)
-        // still alive — leave it
-      } catch (err) {
-        if (err.code === 'ESRCH') {
-          try { rmSync(join(tmpRoot, name), { recursive: true, force: true }) } catch {}
-        }
-      }
-    }
-  } catch {}
+  sweepStaleTmp(tmpRoot)
 
   if (!_cleanupRegistered) {
     process.on('exit', _cleanupTmp)

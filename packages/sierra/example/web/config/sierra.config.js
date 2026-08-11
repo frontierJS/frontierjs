@@ -11,7 +11,7 @@ export default {
 
   junction: {
     // Same origin as the page: Vite proxies /api and /ws to the API process.
-    url:       typeof location !== 'undefined' ? location.origin : 'http://localhost:5273',
+    url:       typeof location !== 'undefined' ? location.origin : 'http://localhost:8030',
     apiPrefix: '/api',
     tokenKey:  'sierra_example_token',
   },

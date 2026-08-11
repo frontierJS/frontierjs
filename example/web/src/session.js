@@ -32,7 +32,7 @@ export async function refresh() {
     // logged against virtual:sierra, which is the listener, not the cause.
     if (!res.ok) {
       _w.error = res.status === 502
-        ? 'API not reachable on :3600 — run `bun run api` in another terminal'
+        ? 'API not reachable on :8110 — run `bun run api` in another terminal'
         : `session check failed: HTTP ${res.status}`
       return
     }
@@ -62,7 +62,7 @@ export async function signIn(email, password) {
     _w.error = res.status === 401
       ? 'Wrong email or password'
       : res.status === 502
-        ? 'API not reachable on :3600 — run `bun run api` in another terminal'
+        ? 'API not reachable on :8110 — run `bun run api` in another terminal'
         : `sign-in failed: HTTP ${res.status}`
     return false
   }

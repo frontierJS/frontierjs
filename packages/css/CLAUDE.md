@@ -33,6 +33,9 @@ src/
   patterns/        nav · tabs · steps · lists · feed · facts · bars · disclosure
   a11y/            a11y.css · focus.css
   themes/          default · dark · midnight · forest · sunset · elite · basecamp
+                   · notebook · press. press.css is the token-surface probe —
+                   it changes face, scale, leading, density, rules, ring and
+                   shadow shape and ships no selector of its own
   utilities.css    the deliberately small escape hatch
 vocabulary.js      THE OTHER HALF — two exports, one subject.
                    VOCAB: 54 terms in 8 tiers, which element each is.

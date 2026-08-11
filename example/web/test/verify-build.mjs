@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const PORT = process.env.PREVIEW_PORT ?? '5310'
+const PORT = process.env.PREVIEW_PORT ?? '8011'
 const UI   = `http://localhost:${PORT}`
 
 const preview = spawn(process.execPath, [join(HERE, 'preview.mjs')], {

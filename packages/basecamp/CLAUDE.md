@@ -14,7 +14,7 @@ bun run db:reset     # stops the servers, deletes the databases
 ```
 
 `verify` needs an **empty** database (`bun run verify --reset` does it for you)
-and both ports free: API **3001**, web **5274**. That web port is the same one
+and both ports free: API **8120**, web **8020**. That web port is the same one
 `example/` uses — they cannot serve at once, and only this side is strict about
 it (`strictPort` + `scripts/preflight.mjs`).
 

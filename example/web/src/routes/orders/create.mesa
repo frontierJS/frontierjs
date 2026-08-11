@@ -79,6 +79,11 @@ title: New order
   function write(name, value) {
     draft = { ...draft, [name]: value }
   }
+
+  // `var`, not `const`: a gate level comes off the schema and never changes,
+  // so a snapshot is what it is. Read straight in the template it is still a
+  // one-time read, only silently.
+  var createLevel = orders.gate.create
 </script>
 
 <SectionHeader title="New order" level={1}>
@@ -87,9 +92,9 @@ title: New order
   {/snippet}
 </SectionHeader>
 
-{#if session.level < orders.gate.create}
+{#if session.level < createLevel}
   <Alert tone="warning">
-    Not signed in at level {orders.gate.create}. <code>@@gate</code> wants that
+    Not signed in at level {createLevel}. <code>@@gate</code> wants that
     to create, so this will come back 401 — which is the point: the button is
     NOT disabled, because the server is the thing that decides.
   </Alert>

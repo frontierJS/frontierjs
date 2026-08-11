@@ -315,10 +315,11 @@ function generateVirtualSierra(config, manifestOutput, sierraConfigPath, sierraC
   // to drive the Mesa writer, and monkey-patched `.get` on the exported signal
   // object so reads inside Mesa effects registered as dependencies.
   //
-  // router/signals.js now returns Mesa signals directly, so `.get` is already a
-  // tracked Mesa read and there is nothing to patch. Removing the bridge also
-  // removed the `.value` desync it caused (see signals.js) and the ordering
-  // requirement that the patch land before any component's first render.
+  // The router exports no signal at all now — `page`, `status` and `theme` are
+  // plain objects a component watches with `$:` — so there is nothing to bridge
+  // and nothing to patch. Removing it also removed the `.value` desync it caused
+  // (see signals.js) and the ordering requirement that the patch land before any
+  // component's first render.
 
   // Router init
   lines.push(`// ── Router ─────────────────────────────────────────────────────`)

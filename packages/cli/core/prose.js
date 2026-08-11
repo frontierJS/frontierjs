@@ -4,7 +4,7 @@
 // and {{var}} interpolation from context.vars + arg + flag.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { chalk } from 'zx'
+import { chalk } from './color.js'
 import { readFileSync } from 'fs'
 
 // Extract prose from a raw .md file — strip frontmatter, script, js block

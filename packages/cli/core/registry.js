@@ -11,11 +11,60 @@
 //   source: 'core' | 'project'
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { readFileSync, existsSync } from 'fs'
-import { resolve, dirname, basename } from 'path'
+import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'fs'
+import { resolve, dirname, basename, join } from 'path'
+import { homedir } from 'os'
+import { createHash } from 'crypto'
 import { findFilesPlugin } from './utils.js'
 import { extractFrontmatter } from './compiler.js'
 import { getConfig } from './config.js'
+
+
+// ─── Frontmatter cache ───────────────────────────────────────────────────────
+// Every invocation builds the registry, and building it used to mean reading
+// and frontmatter-parsing all ~200 command files — including on each press of
+// Tab, since completion asks the registry the same question.
+//
+// The cache holds one parsed frontmatter block per file, keyed by mtime+size,
+// so a run stats the files it finds and parses only what moved. Discovery still
+// walks the directories: a cached list would not notice a new command file, and
+// "drop a file, it runs" is the whole authoring model.
+//
+// It lives under ~/.fli/ rather than beside the install, for the same reason
+// the temp root does — a global install is not writable. A cache that cannot be
+// read or written is never an error: every path here falls back to parsing.
+const CACHE_VERSION = 1
+
+function cacheFile(routesDir) {
+  const key = createHash('sha1')
+    .update([global.fliRoot, global.projectRoot, routesDir].join('\0'))
+    .digest('hex')
+    .slice(0, 10)
+  return join(homedir(), '.fli', 'cache', `registry-${key}.json`)
+}
+
+function readCache(path) {
+  // The escape hatch for "I think the cache is lying to me". Cheap to offer and
+  // the alternative is deleting a file whose location you have to look up.
+  if (process.env.FLI_NO_CACHE) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'))
+    if (parsed?.v === CACHE_VERSION && parsed.files) return parsed.files
+  } catch {}
+  return {}
+}
+
+function writeCache(path, files) {
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    // Write-then-rename: two fli processes can finish a build at once, and a
+    // half-written cache read by a third would be a parse error every run
+    // after. The rename is atomic; the loser's copy is simply overwritten.
+    const tmp = `${path}.${process.pid}`
+    writeFileSync(tmp, JSON.stringify({ v: CACHE_VERSION, files }))
+    renameSync(tmp, path)
+  } catch {}
+}
 
 
 // ─── Module registry ─────────────────────────────────────────────────────────
@@ -46,6 +95,33 @@ export function loadModuleFile(filePath) {
 
 export function buildRegistry() {
   const registry = new Map()
+  const { routesDir } = getConfig()
+  const cachePath = cacheFile(routesDir)
+  const cached = readCache(cachePath)
+  // Rebuilt from scratch each run, so a deleted command's entry leaves with it
+  // rather than accumulating forever.
+  const fresh = {}
+  let cacheChanged = false
+
+  // The parse a cache hit avoids: a full read plus the frontmatter scan.
+  const metaFor = (filePath) => {
+    let sig = null
+    try {
+      const st = statSync(filePath)
+      sig = `${st.mtimeMs}:${st.size}`
+      const hit = cached[filePath]
+      if (hit && hit.sig === sig) {
+        fresh[filePath] = hit
+        return hit.meta
+      }
+    } catch {}
+    const meta = extractFrontmatter(readFileSync(filePath, 'utf8'))
+    if (sig) {
+      fresh[filePath] = { sig, meta }
+      cacheChanged = true
+    }
+    return meta
+  }
 
   // Core commands — always available regardless of cwd
   const coreFinder = findFilesPlugin({
@@ -54,7 +130,6 @@ export function buildRegistry() {
   })
 
   // Project commands — from routesDir in .fli.json (default: cli/src/routes)
-  const { routesDir } = getConfig()
   const projectFinder = findFilesPlugin({
     directories: [resolve(global.projectRoot, routesDir)],
     extensions: ['md']
@@ -92,8 +167,7 @@ export function buildRegistry() {
           continue
         }
 
-        const raw  = readFileSync(filePath, 'utf8')
-        const meta = extractFrontmatter(raw)
+        const meta = metaFor(filePath)
 
         if (!meta.title) continue
 
@@ -138,7 +212,23 @@ export function buildRegistry() {
     }
   }
 
+  // A file that vanished also changes the cache, not just a file that moved.
+  if (cacheChanged || Object.keys(fresh).length !== Object.keys(cached).length) {
+    writeCache(cachePath, fresh)
+  }
+
   return registry
+}
+
+// Drop the cache — the one thing `completion:refresh` needs to do, and the
+// caller should not have to know where it lives. Answers how many files the
+// dropped cache held, since "cleared" with no number reads as a no-op.
+export function clearRegistryCache() {
+  const { routesDir } = getConfig()
+  const path = cacheFile(routesDir)
+  const held = Object.keys(readCache(path)).length
+  try { unlinkSync(path) } catch {}
+  return { path, held }
 }
 
 // Unique command entries only (no alias duplicates)

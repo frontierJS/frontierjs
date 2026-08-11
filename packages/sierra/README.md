@@ -27,8 +27,8 @@ Chrome — navigation, sign-in, form submit, delete — with the console watched
 see its [README](example/README.md) for what was found that way.
 
 ```bash
-cd example && bun run api    # :3500
-cd example && bun run dev    # :5273
+cd example && bun run api    # :8130
+cd example && bun run dev    # :8030
 ```
 
 ---
@@ -954,9 +954,25 @@ Runs automatically after `vite build`:
 import { theme, setTheme, toggleTheme } from '@frontierjs/sierra'
 ```
 
-`theme` is a Mesa signal that resolves to `'light'` or `'dark'` — never `'system'`. With
-`theme` configured, the post-build pipeline injects an inline `<head>` script that applies
-the persisted preference before first paint, so there is no flash.
+`theme` is a plain object — `{ value: 'light' | 'dark' }`, never `'system'` — like `page`
+and `status`. Watch it to make it reactive:
+
+```html
+<script>
+  import { theme, toggleTheme } from '@frontierjs/sierra'
+  $: theme.value
+</script>
+
+<button on:click={toggleTheme}>{theme.value}</button>
+```
+
+Without the `$:` the read is a snapshot taken at mount. Sierra passes
+`externalReactivityHints: 'strict'` to the Mesa compiler, so an uncovered member read on
+any imported object is reported at build time — say `var` if a one-time read is what you
+meant.
+
+With `theme` configured, the post-build pipeline injects an inline `<head>` script that
+applies the persisted preference before first paint, so there is no flash.
 
 ---
 

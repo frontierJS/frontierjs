@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdirSync, writeFileSync, rmSync, realpathSync } from 'fs'
+import { mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync, existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-const { findProjectRoot, findWorkspaceRoot } = await import('../core/utils.js')
+const { findProjectRoot, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } = await import('../core/utils.js')
 
 // A monorepo with two FJS apps inside it — the shape of this repo (example/,
 // packages/basecamp/). Walking up to the .git root landed on a directory with
@@ -96,5 +96,56 @@ describe('findWorkspaceRoot', () => {
 
   test('outside any workspace it answers null, so the caller can fall back', () => {
     expect(findWorkspaceRoot(tmpdir())).toBe(null)
+  })
+})
+
+// ─── fliTmpRoot / sweepStaleTmp ───────────────────────────────────────────────
+// A compiled command shim has to be written somewhere before it can be
+// imported. It used to be written under fliRoot unconditionally, so a global
+// install under a root-owned prefix answered EACCES on the first temp write and
+// EVERY command died before running.
+describe('temp root', () => {
+  let TMP
+  const t = (...s) => join(TMP, ...s)
+
+  beforeAll(() => {
+    TMP = realpathSync(mkdirSync(join(tmpdir(), `fli-tmp-test-${process.pid}`), { recursive: true }))
+  })
+  afterAll(() => { try { rmSync(TMP, { recursive: true, force: true }) } catch {} })
+
+  test('a writable install keeps its temp under fliRoot', () => {
+    mkdirSync(t('writable'), { recursive: true })
+    expect(fliTmpRoot(t('writable'))).toBe(join(t('writable'), '.fli-tmp'))
+  })
+
+  test('a read-only install falls back to the OS temp dir, node_modules linked', () => {
+    if (process.getuid?.() === 0) return   // root ignores the mode bits
+    const root = t('readonly')
+    mkdirSync(join(root, 'node_modules'), { recursive: true })
+    chmodSync(root, 0o555)
+    try {
+      const answer = fliTmpRoot(root)
+      expect(answer.startsWith(realpathSync(tmpdir()))).toBe(true)
+      // The link is what keeps `import 'zx/globals'` resolving from a shim that
+      // no longer sits inside the install.
+      expect(realpathSync(join(answer, 'node_modules'))).toBe(join(root, 'node_modules'))
+      writeFileSync(join(answer, 'probe.mjs'), 'export default 1\n')
+      rmSync(answer, { recursive: true, force: true })
+    } finally {
+      chmodSync(root, 0o755)
+    }
+  })
+
+  test('the sweep reaps dead sessions and leaves live ones', () => {
+    const root = t('sweep')
+    // `test-<pid>` is what the suites name theirs; an int-only parse skipped
+    // them, so 47 accumulated in the checkout before anyone noticed.
+    for (const name of ['999999999', `test-999999998`, String(process.pid)]) {
+      mkdirSync(join(root, name), { recursive: true })
+    }
+    sweepStaleTmp(root)
+    expect(existsSync(join(root, '999999999'))).toBe(false)
+    expect(existsSync(join(root, 'test-999999998'))).toBe(false)
+    expect(existsSync(join(root, String(process.pid)))).toBe(true)
   })
 })

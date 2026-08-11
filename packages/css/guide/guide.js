@@ -181,138 +181,41 @@ const BTN_VARS = [
   ["--btn-font-weight", "Default 600. Themes can override (e.g. Elite uses 700)."],
 ];
 
+/*
+ * A theme is a CLASS in the package's own stylesheet, so the guide applies
+ * that class and reads the declarations back out of the CSSOM — swatches,
+ * the preview and the printed source all come from `.theme-<key>` itself.
+ *
+ * What this replaces is a hand copy of every theme's tokens, written onto
+ * .sg-app as an inline style. It drifted the way a second copy always does,
+ * and it drifted invisibly: basecamp's copy carried the surfaces and the ink
+ * ramp but not --paper, the guide's own page background, so under that theme
+ * the page stayed cream while the body text went light — the guide was
+ * unreadable in a theme whose stylesheet is correct. notebook's copy was one
+ * colour and the word "Testing".
+ *
+ * Only what the stylesheet cannot say lives here: the display name and the
+ * one-line description.
+ */
 const THEMES = {
-  default: {
-    name: 'Default',
-    description: 'Blue brand, neutral surfaces.',
-    tokens: {
-      '--color-primary': '#0d83dd',
-      '--color-secondary': '#1f2937',
-      '--color-muted': '#6b7280',
-      '--color-info': '#2EA2C9',
-      '--color-success': '#16a34a',
-      '--color-warning': '#d4b609',
-      '--color-danger': '#F4403A'
-    }
-  },
-  sunset: {
-    name: 'Sunset',
-    description: 'Warm oranges, earthy accents.',
-    tokens: {
-      '--color-primary': '#F98E2E',
-      '--color-secondary': '#9a3412',
-      '--color-muted': '#a8a29e',
-      '--color-info': '#c2410c',
-      '--color-success': '#84cc16',
-      '--color-warning': '#facc15',
-      '--color-danger': '#dc2626'
-    }
-  },
-  forest: {
-    name: 'Forest',
-    description: 'Green primary, cool neutrals.',
-    tokens: {
-      '--color-primary': '#16a34a',
-      '--color-secondary': '#166534',
-      '--color-muted': '#64748b',
-      '--color-info': '#0891b2',
-      '--color-success': '#15803d',
-      '--color-warning': '#ca8a04',
-      '--color-danger': '#b91c1c'
-    }
-  },
-  midnight: {
-    name: 'Midnight',
-    description: 'Purple accent, deep contrast.',
-    tokens: {
-      '--color-primary': '#8b5cf6',
-      '--color-secondary': '#4338ca',
-      '--color-muted': '#94a3b8',
-      '--color-info': '#06b6d4',
-      '--color-success': '#10b981',
-      '--color-warning': '#f59e0b',
-      '--color-danger': '#ef4444'
-    }
-  },
-  dark: {
-    name: 'Dark',
-    description: 'Inverted neutrals, same brand colors.',
-    tokens: {
-      '--surface': '#1a1a1a',
-      '--surface-raised': '#252525',
-      '--surface-sunken': '#0f0f0f',
-      '--ink': '#f5f5f5',
-      '--ink-soft': '#c5c5c5',
-      '--ink-mute': '#8c8c8c',
-      '--rule': '#2d2d2d',
-      '--rule-strong': '#404040',
-      '--paper': '#0f0f0f',
-      '--code-bg': '#252525',
-      '--code-text': '#e5e5e5'
-    }
-  },
-  elite: {
-    name: 'Elite',
-    description: 'Navy + lime, uppercase, sharp corners, Montserrat.',
-    tokens: {
-      '--color-primary': '#9fc612',
-      '--color-secondary': '#1d3b4c',
-      '--color-muted': '#6b7280',
-      '--color-info': '#1d3b4c',
-      '--color-success': '#3a7d1e',
-      '--color-warning': '#ca8a04',
-      '--color-danger': '#b22222',
-      '--btn-radius': '0',
-      '--card-radius': '0',
-      '--field-radius': '0',
-      '--btn-font-weight': '700',
-      '--btn-text-transform': 'uppercase',
-      '--btn-letter-spacing': '0.1em',
-      '--badge-font-weight': '700',
-      '--badge-letter-spacing': '0.08em',
-      '--pill-text-transform': 'uppercase',
-      '--pill-letter-spacing': '0.05em',
-      '--shadow-md': '0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.04)',
-      '--font-primary': "'Montserrat', system-ui, sans-serif",
-      /*
-       * Both faces. The theme tokens are written inline onto .sg-app, which
-       * is INSIDE the :root that declares the guide's own --font-display —
-       * so a theme that names only --font-primary changes the body and
-       * leaves every heading in the guide's serif.
-       */
-      '--font-display': "'Montserrat', system-ui, sans-serif",
-      '--font-mono': "'IBM Plex Mono', monospace"
-    }
-  },
-  basecamp: {
-    name: 'Basecamp',
-    description: 'Deep blue-black, cool neutrals, six accent hues.',
-    tokens: {
-      '--color-primary': '#5a8ef8',
-      '--color-secondary': '#9d87f5',
-      '--color-muted': '#636882',
-      '--color-info': '#1ec8d4',
-      '--color-success': '#2dd4a0',
-      '--color-warning': '#f5b540',
-      '--color-danger': '#f06b6b',
-      '--surface': '#151820',
-      '--surface-raised': '#1b1f2c',
-      '--surface-sunken': '#0b0d14',
-      '--ink': '#dde1ed',
-      '--ink-soft': '#a0a7cf',
-      '--ink-mute': '#7c86af',
-      '--rule': 'rgba(255,255,255,.07)',
-      '--rule-strong': 'rgba(255,255,255,.13)',
-      '--shadow-lg': '0 8px 32px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04)'
-    }
-  },
-  notebook: {
-    name: 'Notebook',
-    description: 'Testing',
-    tokens: {
-      '--color-primary': '#5a8ef8'
-    }
-  }
+  default:  { name: 'Default',  description: 'Blue brand, neutral surfaces.' },
+  sunset:   { name: 'Sunset',   description: 'Warm oranges, earthy accents.' },
+  forest:   { name: 'Forest',   description: 'Green primary, cool neutrals.' },
+  midnight: { name: 'Midnight', description: 'Purple accent, deep contrast.' },
+  dark:     { name: 'Dark',     description: 'Inverted neutrals, same brand colors.' },
+  elite:    { name: 'Elite',    description: 'Navy + lime, uppercase, sharp corners, Montserrat.' },
+  basecamp: { name: 'Basecamp', description: 'Deep blue-black, cool neutrals, six accent hues.' },
+  notebook: { name: 'Notebook', description: 'Muted ink on warm paper.' },
+  press:    { name: 'Press',    description: 'Newsprint: serif headlines, mono body, hard shadows.' },
+}
+
+/*
+ * A theme's own value for one token, straight from its rule. Falls back to
+ * the live cascade rather than to a literal, so a theme that does not set the
+ * token shows what it would actually inherit.
+ */
+function themeToken(key, prop) {
+  return tokenValue(prop, '.theme-' + key) || 'var(' + prop + ')'
 }
 
 function getLabel(id) {
@@ -2455,14 +2358,15 @@ function densityPage() {
 
 function themesPage() {
   const active = state.theme;
-  const theme = THEMES[active];
 
-  const themeCSS = `/* ${active}.css */
-.theme-${active} {
-${Object.entries(theme.tokens)
-  .map(([k, v]) => `  ${k}: ${v};`)
-  .join("\n")}
-}`;
+  /*
+   * The printed source is READ, never remembered. A themes page that quotes a
+   * hand copy is the one page in the guide guaranteed to be wrong the day a
+   * theme is edited, and wrong silently — see THEMES above.
+   */
+  const themeCSS =
+    `/* ${active}.css */\n` +
+    (ruleText(`.theme-${active}`) || `.theme-${active} { /* not loaded */ }`);
 
   const ramp = [
     ["80", "color-mix(in srgb, var(--sg-ramp) 80%, white)", "var(--ink)"],
@@ -2501,7 +2405,7 @@ ${Object.entries(theme.tokens)
             aria-pressed="${active === key}"
             data-theme="${key}">
             <span class="sg-theme-swatch" style="background: ${
-              t.tokens['--color-primary'] || 'var(--color-primary)'
+              themeToken(key, '--color-primary')
             }"></span>
             <span class="item-text">
               <span class="item-title">${t.name}</span>
@@ -2512,7 +2416,7 @@ ${Object.entries(theme.tokens)
             .join('')}
         </div>
 
-        <div class="sg-theme-preview" style="${styleAttr(theme.tokens)}">
+        <div class="sg-theme-preview theme-${active}">
           <div class="stack gap-md">
             <div class="sg-theme-label">Buttons</div>
             <div class="cluster">
@@ -5753,7 +5657,7 @@ function cheatSheetPage() {
               ([key, t]) => `
           <div class="sg-cheat-theme">
             <span class="sg-cheat-theme-swatch" style="background: ${
-              t.tokens['--color-primary'] || 'var(--color-primary)'
+              themeToken(key, '--color-primary')
             }"></span>
             <code class="sg-cheat-name">.theme-${key}</code>
             <span class="sg-cheat-theme-desc">${t.description}</span>
@@ -12009,7 +11913,7 @@ function topbar() {
           <div class="relative">
             <button type="button" class="btn outlined sg-theme-trigger" data-theme-menu>
               <span class="sg-theme-trigger-swatch" style="background: ${
-                theme.tokens['--color-primary'] || 'var(--color-primary)'
+                themeToken(state.theme, '--color-primary')
               }"></span>
               ${theme.name}
               <span class="sg-theme-trigger-arrow" aria-hidden="true">⌄</span>
@@ -12024,7 +11928,7 @@ function topbar() {
                   key === state.theme
                 }" aria-checked="${key === state.theme}" data-theme="${key}">
                   <span class="sg-theme-option-swatch" style="background: ${
-                    t.tokens['--color-primary'] || 'var(--color-primary)'
+                    themeToken(key, '--color-primary')
                   }"></span>
                   <span class="item-text">
                     <span class="item-title sg-theme-option-name">${t.name}</span>
@@ -12259,11 +12163,14 @@ function configModal() {
 
 const app = $("#app");
 
-/* A theme is nothing but custom properties, so applying one is one assignment.
- * cssText rather than setProperty so the previous theme's tokens go with it —
- * Dark and Elite set keys the others never do. */
+/*
+ * Applying a theme is adding the package's own class. The previous one has to
+ * come off first: `.theme-dark` and `.theme-press` both declare keys the other
+ * does not, and two theme classes on one element is the cascade's choice, not
+ * the reader's.
+ */
 function applyTheme() {
-  app.style.cssText = styleAttr(THEMES[state.theme].tokens);
+  app.className = app.className.replace(/\btheme-\S+/g, '').trim() + ' theme-' + state.theme;
 }
 
 function setTheme(key) {

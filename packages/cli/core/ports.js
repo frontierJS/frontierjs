@@ -48,6 +48,33 @@ export const GLOBAL = {
   studio: 8502,   // db studio — project-local dev tooling
 }
 
+// ─── Static project ids ───────────────────────────────────────────────────────
+//
+// claimSession() hands out the lowest FREE id at runtime, which is right for an
+// app somebody scaffolded and wrong for the apps that live in this repo: a
+// vite.config.js and a test harness need the same number tomorrow that they had
+// today, and two of them wanting one port is exactly the failure this scheme
+// exists to stop (`example` and `basecamp` both asked for 5274, and vite hops
+// ports silently, so the second one's drive tested the first one's app).
+//
+// So the repo's own apps are ASSIGNED here and the dynamic allocator starts
+// above them. A number is claimed forever; adding an app takes the next one.
+//
+//   port = ENV*1000 + CAT*100 + PROJECT*10 + SERVICE   →   dev fe = 80<id>0
+//
+export const PROJECTS = {
+  scaffold:        0,   // whatever `fli new` produces — the default in the templates
+  example:         1,
+  basecamp:        2,
+  'sierra-example': 3,
+  css:             4,   // the guide/demo server — frontend only
+  'junction-example': 5,
+  'litestone-example': 6,
+}
+
+/** Lowest project id claimSession() may hand out. Below this is assigned above. */
+export const DYNAMIC_PROJECT_FLOOR = 7
+
 // ─── Formula ─────────────────────────────────────────────────────────────────
 
 /**
@@ -197,9 +224,12 @@ export async function claimSession(projectName, env, categories) {
       return { projectId: s.projectId, ports: s.ports }
     }
 
-    // Claim lowest unused project ID
+    // Claim lowest unused project ID. Starts above the statically assigned
+    // block — a dynamic claim of 1 would land on `example`'s ports whether or
+    // not example is running, and the collision only shows up as a drive
+    // talking to the wrong app.
     const usedIds  = new Set(Object.values(sessions).map(s => s.projectId))
-    let   projectId = 0
+    let   projectId = PROJECTS[projectName] ?? DYNAMIC_PROJECT_FLOOR
     while (usedIds.has(projectId)) projectId++
     if (projectId > 9) throw new Error('Maximum concurrent projects (10) reached')
 

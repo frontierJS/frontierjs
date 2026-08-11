@@ -2,6 +2,25 @@
 
 Newest first.
 
+## 2026-08-10 — the methods five components documented now exist
+
+Mesa closed `FJS-087` and `FJS-023`, and both had a workaround here.
+
+`Input`, `Select`, `Textarea` and `NumberInput` each declare `export function
+focus()`; the compiler had been deleting it, so every one of them documented a
+method that was absent from the output. Nothing here changed — they work now.
+
+`Form` dropped the comment explaining why `submit()`/`reset()`/`clearErrors()
+could not be methods and made them `export function`. **`onready` stays**: an
+app that captured the api at mount has nothing to gain from changing, and both
+routes reach the same three functions.
+
+`SectionHeader` replaced its explicit `h1`–`h6` `{#if}` ladder with
+`<mesa:element this={'h' + hLevel}>` — one line for six branches. `test/render.mjs`
+now asserts the heading TAG for `level: 3`, because a level that stopped
+reaching the DOM would render something that looks identical and carries a
+different document outline.
+
 ## 2026-08-10 — every component forwards its caller's attributes
 
 `{...$attributes}` was on 9 of 64 components; the other 55 dropped `id`,

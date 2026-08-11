@@ -64,6 +64,11 @@ title: New lead
       saving = false
     }
   }
+
+  // `var`, not `const`: a gate level comes off the schema and never changes,
+  // so a snapshot is what it is. Read straight in the template it is still a
+  // one-time read, only silently.
+  var createLevel = leads.gate.create
 </script>
 
 <div class="section-header">
@@ -71,10 +76,10 @@ title: New lead
   <a class="btn ghost" href="/leads/">Back to list</a>
 </div>
 
-{#if session.level < leads.gate.create}
+{#if session.level < createLevel}
   <article class="alert warning">
     <div class="alert-content">
-      Not signed in. <code>@@gate</code> wants level {leads.gate.create} to create,
+      Not signed in. <code>@@gate</code> wants level {createLevel} to create,
       so this will come back 401 — which is the point: the button is not disabled,
       because the server is the thing that decides.
     </div>

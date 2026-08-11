@@ -42,7 +42,7 @@ const PKG  = join(HERE, '../..')
 const DIST = join(PKG, 'web/dist/client')
 
 const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
-const API_PORT = 3001
+const API_PORT = 8120
 const PORT     = Number(process.env.PREVIEW_PORT ?? 5311)
 const UI       = `http://localhost:${PORT}`
 const PROFILE  = '/tmp/fjs-basecamp-build-profile'

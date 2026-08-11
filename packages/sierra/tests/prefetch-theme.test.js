@@ -2,7 +2,9 @@
  * tests/prefetch-theme.test.js — prefetch and theme tests
  */
 
-import { flushSync } from '@frontierjs/mesa/runtime.js'
+import {
+  flushSync, watchPath, createEffect, setRenderEnvironment,
+} from '@frontierjs/mesa/runtime.js'
 import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest'
 import { mkdir, writeFile, rm, readFile } from 'fs/promises'
 import { join } from 'path'
@@ -110,43 +112,48 @@ describe('injectThemeScript (post-build)', () => {
   })
 })
 
-// ─── theme signal ────────────────────────────────────────────────────────────
+// ─── theme state ─────────────────────────────────────────────────────────────
 
-describe('theme signal', () => {
-  test('setTheme updates signal', () => {
+describe('theme state', () => {
+  test('setTheme updates the value', () => {
     setTheme('dark')
-    expect(theme.get()).toBe('dark')
+    expect(theme.value).toBe('dark')
     setTheme('light')
-    expect(theme.get()).toBe('light')
+    expect(theme.value).toBe('light')
   })
 
   test('toggleTheme flips between light and dark', () => {
     setTheme('light')
     toggleTheme()
-    expect(theme.get()).toBe('dark')
+    expect(theme.value).toBe('dark')
     toggleTheme()
-    expect(theme.get()).toBe('light')
+    expect(theme.value).toBe('light')
   })
 
-  test('theme signal is subscribable', () => {
-    const values = []
-    const unsub = theme.subscribe(v => values.push(v))
-    setTheme('dark');  flushSync()
-    setTheme('light'); flushSync()
-    unsub()
-    setTheme('dark'); flushSync()  // after unsub — should not be captured
-    expect(values).toContain('dark')
-    expect(values).toContain('light')
-    // After unsub, no more updates
-    const lastIdx = values.lastIndexOf('dark')
-    expect(values.slice(lastIdx + 1)).not.toContain('dark')
+  test('setTheme fires a theme.value path watch', () => {
+    // `theme` is a plain object — there is no .subscribe(). A consumer declares
+    // `$: theme.value`, which the compiler turns into watchPath plus a proxy
+    // read. This is that, by hand. Path watching is a no-op with no DOM
+    // (RULE 19), so the environment has to say browser first.
+    setRenderEnvironment(true)
+    const [watch] = watchPath(theme, 'value')
+    let runs = 0
+    const dispose = createEffect(() => { watch(); runs++ })
+    flushSync()
+    const before = runs
+
+    setTheme(theme.value === 'dark' ? 'light' : 'dark')
+    flushSync()
+
+    expect(runs).toBeGreaterThan(before)
+    dispose()
   })
 
   test('setTheme ignores invalid values', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     setTheme('light')
     setTheme('rainbow')
-    expect(theme.get()).toBe('light')  // unchanged
+    expect(theme.value).toBe('light')  // unchanged
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("invalid value 'rainbow'")
     )

@@ -11,11 +11,11 @@ notes, so there is field-level access; refunds need authority, so there is a
 gate ladder.
 
 ```bash
-bun run api     # terminal 1 — Junction + Litestone on :3600
-bun run web     # terminal 2 — Sierra + Vite on :5274
+bun run api     # terminal 1 — Junction + Litestone on :8110
+bun run web     # terminal 2 — Sierra + Vite on :8010
 ```
 
-Open <http://localhost:5274> and sign in from the header.
+Open <http://localhost:8010> and sign in from the header.
 
 **Two processes, two terminals — both are required.** Vite serves the UI and
 proxies `/api`, `/auth`, `/session` and `/ws` to the API; with the API down every
@@ -36,7 +36,7 @@ tables.
 | `bun run email:preview` | render the transactional emails to files you can open |
 | `bun run build` | production build to `web/dist/client/` |
 | `bun run verify:build` | build, then drive **the built app** with the same 37 assertions (needs `bun run api`) |
-| `bun run preview` | serve `web/dist/client/` on :5310 with `/api` `/auth` `/session` `/ws` proxied — `vite preview` carries no proxy |
+| `bun run preview` | serve `web/dist/client/` on :8011 with `/api` `/auth` `/session` `/ws` proxied — `vite preview` carries no proxy |
 | `bun run reset` | delete the database and start the seed over |
 
 Sign in as **`sam@shop.test`** (level 4) or **`alex@shop.test`** (level 5), both
@@ -172,14 +172,14 @@ announces nothing (`FJS-010`) and every open tab keeps the stale row.
 **Paying an order sends an email, and the email is checked.** The customer's
 confirmation goes out through `@frontierjs/conduit` to a declared target, and
 that target is [`api/mail-sink.ts`](api/mail-sink.ts) — a dev mail catcher on
-:3610 speaking the shape a provider REST API speaks. A separate listener on
+:8111 speaking the shape a provider REST API speaks. A separate listener on
 purpose: an in-process fake would prove the payload is built and nothing else,
 while over a real socket the credential really resolves (the sink 401s without
 it) and `POST /fail-next` makes the provider fail so the retry path is a test
 rather than a claim. Read what the shop has sent:
 
 ```bash
-curl localhost:3610/outbox
+curl localhost:8111/outbox
 ```
 
 The mailer is [`api/mailer.ts`](api/mailer.ts): Junction's `IMail`, implemented
@@ -212,7 +212,7 @@ orders left `pending` past a horizon, at 03:00. A cron you can only observe
 through `nextRuns()` is a schedule, not a behaviour:
 
 ```bash
-curl -X POST localhost:3600/jobs/run/sweep-abandoned -d '{"days":0}'
+curl -X POST localhost:8110/jobs/run/sweep-abandoned -d '{"days":0}'
 ```
 
 That route did not exist until this app needed it.
@@ -407,7 +407,7 @@ gates, end to end, verified. Deliberately absent:
 
 | | |
 | --- | --- |
-| **A real mail client** | The confirmation email is rendered by `@frontierjs/email-kit` now and asserted to be a table document — but nobody has opened one in Outlook, Gmail or Apple Mail. `bun run email:preview` writes it to a file; `curl localhost:3610/outbox` gets the delivered copy to forward to yourself. |
+| **A real mail client** | The confirmation email is rendered by `@frontierjs/email-kit` now and asserted to be a table document — but nobody has opened one in Outlook, Gmail or Apple Mail. `bun run email:preview` writes it to a file; `curl localhost:8111/outbox` gets the delivered copy to forward to yourself. |
 | **`static` / islands** | `web/src/public-site/` prerenders a catalogue. What is unproven is an island rehydrating in the built output. |
 | **`@frontierjs/ui`'s remaining 35 components** | 29 of 64 are now driven in a browser. `DatePicker` (1200 lines), `Drawer`, `Popover`, `ConfirmationPopover` and `FileUpload` are compile-only. The way in is a screen that genuinely needs one, not a gallery. |
 | **`static` / islands target, email previews** | Build-mode wings off this same app rather than separate projects. |

@@ -1,6 +1,6 @@
 // api/app.ts — the API realm.
 //
-//   bun run api        → http://localhost:3600
+//   bun run api        → http://localhost:8110
 //
 // Read db.ts first (the client and the gate), then gate.ts (how a session
 // becomes a number). This file only assembles them.
@@ -24,7 +24,7 @@ import { sweepAbandoned } from './jobs/sweep-abandoned.ts'
 import { startMailSink }  from './mail-sink.ts'
 import { createConduitMailer, MAIL_TARGET } from './mailer.ts'
 
-const PORT = 3600
+const PORT = 8110
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
 //
@@ -121,7 +121,7 @@ setApp(app)
 // provider's shape. Pointing this at api.resend.com is a change of `address`
 // and `ref` here, and nothing else anywhere.
 
-const MAIL_SINK = process.env.MAIL_SINK_URL ?? `http://localhost:${process.env.MAIL_SINK_PORT ?? 3610}`
+const MAIL_SINK = process.env.MAIL_SINK_URL ?? `http://localhost:${process.env.MAIL_SINK_PORT ?? 8111}`
 const sink = process.env.MAIL_SINK_URL ? null : startMailSink()
 
 app.configure(conduit({
@@ -189,7 +189,7 @@ if (sink) console.log(`  [mail] dev sink on ${MAIL_SINK} — GET ${MAIL_SINK}/ou
 console.log(`
   ─────────────────────────────────────────────────────────────
     API   http://localhost:${PORT}/api/orders
-    UI    bun run dev        → http://localhost:5274
+    UI    bun run dev        → http://localhost:8010
 
     Sign in as:
       user   ${DEMO.user.email}  / ${DEMO.user.password}     → level 4

@@ -7,7 +7,7 @@
  *   the staff      a row, through @frontierjs/notifications' inApp channel
  *
  * Both happen on the queue, after the response. The mail provider is
- * api/mail-sink.ts — a dev catcher on :3610 speaking the shape a provider REST
+ * api/mail-sink.ts — a dev catcher on :8111 speaking the shape a provider REST
  * API speaks, so the request really leaves the process, really carries a
  * resolved credential, and can really answer 500.
  *
@@ -23,8 +23,8 @@
  * the other drives.
  */
 
-const API  = process.env.API_URL       ?? 'http://localhost:3600'
-const SINK = process.env.MAIL_SINK_URL ?? 'http://localhost:3610'
+const API  = process.env.API_URL       ?? 'http://localhost:8110'
+const SINK = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
 const REF  = 'ORD-NOTIFY-1'
 
 for (const [name, url] of [['api (bun run api)', `${API}/health`], ['the mail sink', `${SINK}/outbox`]]) {

@@ -33,7 +33,20 @@ model User {
   updatedAt      DateTime  @default(now()) @updatedAt
 
   @@db(${db})
-  @@gate("8")
+  // R.C.U.D. Read, create and update are USER: an app's own screens list its
+  // people, and a signed-in caller edits their own profile. Delete is
+  // ADMINISTRATOR — removing a person is not self-service.
+  //
+  // A GATE IS PER MODEL, NOT PER ROW. Update at USER means any signed-in
+  // caller may write any user row, its role column included. "Their own row"
+  // is a @@allow('update', id == auth().id), which is a different question and
+  // is not declared here — an app that exposes User through a service owes
+  // itself that policy or an ownership hook.
+  //
+  // Registration is unaffected either way: every write this package makes goes
+  // through asSystem(), which is above the ladder. The three models below stay
+  // at 8 — they hold the credential material.
+  @@gate("4.4.4.5")
   @@log(audit)
 }
 

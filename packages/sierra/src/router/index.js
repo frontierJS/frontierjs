@@ -89,8 +89,9 @@ function _reportError(type, context, err) {
  *
  * This replaces the eight separate signals that preceded it — params,
  * activeRoute, pendingRoute, meta, data, loadError, pageSlots and the old page
- * descriptor. One object means one thing to import, one thing to watch, and
- * nothing for the compiler's externalSignals map to know about.
+ * descriptor. One object means one thing to import and one thing to watch. It
+ * was also the first of the three moves that emptied the compiler's
+ * `externalSignals` map (`FJS-060`); `status` and `theme` followed.
  *
  * ── Reserved field names ──────────────────────────────────────────────────
  * A route's frontmatter is spread onto this object, so `{page.title}` works

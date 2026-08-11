@@ -12,7 +12,7 @@ export default {
 
   junction: {
     // Same origin as the page: Vite proxies /api, /auth, /session and /ws.
-    url:       typeof location !== 'undefined' ? location.origin : 'http://localhost:5274',
+    url:       typeof location !== 'undefined' ? location.origin : 'http://localhost:8010',
     apiPrefix: '/api',
     tokenKey:  'shop_token',
   },

@@ -2,7 +2,7 @@
  * src/theme/index.js — theme management
  *
  * Exposes:
- *   theme         — Mesa signal: 'light' | 'dark'
+ *   theme         — plain object: { value: 'light' | 'dark' }
  *   setTheme(v)   — set + persist
  *   toggleTheme() — flip between light/dark
  *
@@ -19,12 +19,33 @@
  * and sets the attribute before first paint — preventing flash.
  */
 
-import { signal } from '../router/signals.js'
+import { watchProxy } from '@frontierjs/mesa/runtime.js'
 
-// ─── Public signal ───────────────────────────────────────────────────────────
+// ─── Public state ────────────────────────────────────────────────────────────
 
-/** Current resolved theme — 'light' or 'dark'. Never 'system'. */
-export const theme = signal('light')
+/**
+ * The theme — a plain object, the last of Sierra's module-level state to become
+ * one. `page` and `status` went first; this one held the whole `externalSignals`
+ * bridge up on its own after they did.
+ *
+ * Not a signal. A component makes it reactive with a `$:` path watch
+ * (VISION §4.1, RULE 43):
+ *
+ *   import { theme } from '@frontierjs/sierra/theme'
+ *   $: theme.value
+ *   <button on:click={toggleTheme}>{theme.value}</button>
+ *
+ * @property {'light'|'dark'} value  the resolved theme — never 'system'
+ */
+export const theme = { value: 'light' }
+
+// The writer's handle. Every mutation goes through it so path watches fire —
+// assigning `theme.value` directly updates the object and notifies nobody
+// (RULE 45). Resolved per write rather than captured at import: watchProxy is a
+// no-op with no DOM (RULE 19), so a handle taken at module load in a non-browser
+// environment would stay the raw object even after setRenderEnvironment() says
+// otherwise. It caches per object, so this is a WeakMap hit.
+const _w = () => watchProxy(theme)
 
 // ─── Internal config ─────────────────────────────────────────────────────────
 
@@ -53,7 +74,7 @@ export function initTheme(config = {}) {
 
   // Resolve the actual theme (never 'system')
   const resolved = resolveTheme()
-  theme.set(resolved)
+  _w().value = resolved
   applyTheme(resolved)
 
   // Watch system preference changes (only relevant if default === 'system' or
@@ -67,7 +88,7 @@ export function initTheme(config = {}) {
     }
     if (_config.default === 'system') {
       const resolved = mq.matches ? 'dark' : 'light'
-      theme.set(resolved)
+      _w().value = resolved
       applyTheme(resolved)
     }
   })
@@ -85,7 +106,7 @@ export function setTheme(value) {
     return
   }
 
-  theme.set(value)
+  _w().value = value
   applyTheme(value)
 
   if (_config.persist && typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
@@ -97,7 +118,7 @@ export function setTheme(value) {
  * Toggle between light and dark.
  */
 export function toggleTheme() {
-  setTheme(theme.get() === 'dark' ? 'light' : 'dark')
+  setTheme(theme.value === 'dark' ? 'light' : 'dark')
 }
 
 // ─── Internal ─────────────────────────────────────────────────────────────────

@@ -29,7 +29,7 @@ src/
 
   build/                 — the Vite side
     index.js             createSierraViteConfig — start here
-    mesa-plugin.js       Mesa compilation + `externalSignals`
+    mesa-plugin.js       Mesa compilation + reactivity hints
     scanner-plugin.js    runs the scanner
     schema-plugin.js     .lite → client-side model schemas
     slot-rewrite.js      compile-time slot rewriting
@@ -70,8 +70,19 @@ src/
   `publishes: N` (FJS-081).
 - **A mounted ancestor is authoritative** for nested islands — test a marker with
   `isConnected`, not `parentNode`.
-- **`externalSignals`** (build/mesa-plugin.js) is hand-maintained and slated for
-  retirement. Adding to it is a smell; check whether the case can be inferred.
+- **Sierra exports no module-level signal, and the `externalSignals` map is
+  gone** (`FJS-060`). State is plain objects — `page`, `status`, `theme` — that a
+  component makes reactive with a `$:` path watch. A module-level signal would be
+  reactive nowhere: a bare template read of one is only rewritten if the
+  consuming build names it, by hand, in another package, and omitting an entry
+  is silent. `tests/no-module-signals.test.js` asserts the absence. `signal()`
+  survives for `presence(channelId)`, which returns one from a call.
+- **The plugin passes `externalReactivityHints: 'strict'`.** An uncovered member
+  read on an imported object is reported — Mesa's default only reports it when
+  the file already watches some other path on the same import, which says nothing
+  about the component that watches nothing, and that is the component that
+  shipped the bug. Measured free: 0 warnings over all 218 `.mesa` in this repo.
+  A deliberate one-time read says `var`.
 - **A missing auto-import does not fail a build.** Mesa compiles a reference to
   an undefined name without complaint, so the symptom is a component that
   renders as nothing. Only what reached the bundle separates *injected* from

@@ -11,11 +11,11 @@ proxies `/api`, `/login` and `/ws` to the API; with the API down every one of
 those is a 502.
 
 ```bash
-bun run api     # terminal 1 — Junction + Litestone on :3500
-bun run dev     # terminal 2 — Sierra + Vite on :5273
+bun run api     # terminal 1 — Junction + Litestone on :8130
+bun run dev     # terminal 2 — Sierra + Vite on :8030
 ```
 
-Open <http://localhost:5273>, then sign in from the header — `@@gate("0.4.4.5")`
+Open <http://localhost:8030>, then sign in from the header — `@@gate("0.4.4.5")`
 makes reads public and writes authenticated.
 
 ## Layout
@@ -204,7 +204,7 @@ submit, delete) with the console watched, rather than having two pages dumped:
 | `ctx.body` in raw routes | A raw route's `ctx` is a `TransportContext`; the parsed body is `ctx.body`. Re-reading the request yields nothing silently — here it made "sign in as admin" quietly grant level 4. |
 | `bind:value={draft[key]}` | **Mesa emitted a broken setter.** The read was rewritten through the accessors, the write was not — `($$v) => { draft[key] = $$v }`, referring to a name that no longer exists. Valid JS, mounted fine, threw `ReferenceError: draft is not defined` on the first keystroke. Binding to an object property — which is what every form does — could not accept input at all. Fixed in `packages/mesa/compiler.js`, with regression tests in `emission.test.js`. |
 | Numbers arrived as strings | `el.value` is a string for every control, `<select>` and `type="number"` included, and Mesa passes it through unchanged (correctly — it does not know the field). The form failed validation with *"value must be a number"*. Only the schema knows the types, so Sierra now casts them: `coerce: true`. |
-| Running `dev` without `api` | `signIn()` did `await res.json()` without checking the response. With the API down, Vite answers `/login` with an empty-bodied 502, so the parse threw inside a promise nobody awaited — and the only trace was the dev overlay logging `[Sierra] PromiseRejectionEvent` at `virtual:sierra:24`, which is the *listener*, not the cause. **Check `res.ok` before parsing**: the header now says `API not reachable on :3500 — run bun run api`. Reported by a user, reproduced with the API stopped, fixed in `web/src/routes/_module.mesa`. |
+| Running `dev` without `api` | `signIn()` did `await res.json()` without checking the response. With the API down, Vite answers `/login` with an empty-bodied 502, so the parse threw inside a promise nobody awaited — and the only trace was the dev overlay logging `[Sierra] PromiseRejectionEvent` at `virtual:sierra:24`, which is the *listener*, not the cause. **Check `res.ok` before parsing**: the header now says `API not reachable on :8130 — run bun run api`. Reported by a user, reproduced with the API stopped, fixed in `web/src/routes/_module.mesa`. |
 | `$:` on a plain `let` | While fixing the above: adding the new local to the `$:` path-watch tuple compiled cleanly and threw `$runtime.get(...) is not a function` on mount. `$:` is for fields of plain objects (Mesa RULE 43) — a `let` is already component state and must stay out of it. |
 | A wrapped paragraph lost its spaces | Adopting the design system meant reading the rendered prose, and it said *"its 401s and its400s from it"*. Mesa's `compactDOM` **deleted** every newline-plus-indent in a text node instead of collapsing it to a space, so every paragraph written across two source lines welded its words together. Fixed in `packages/mesa/compiler.js`, pinned by `whitespace-collapse.test.js`. |
 | `{name}{#if …}` rendered backwards | The required-field marker came out as `* name`. A bare interpolation immediately followed by a block is inserted **after** the block on the client, though the static renderer emits it correctly. **Not fixed** — logged in Mesa's `CHANGES.md`; the workaround here is `<span>{name}</span>`, which pins the position. |

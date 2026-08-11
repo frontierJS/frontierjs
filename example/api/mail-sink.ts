@@ -16,7 +16,7 @@
 // Started by api/app.ts unless MAIL_SINK_URL points somewhere else. Nothing in
 // the app imports it except that one line.
 
-const PORT = Number(process.env.MAIL_SINK_PORT ?? 3610)
+const PORT = Number(process.env.MAIL_SINK_PORT ?? 8111)
 
 /** What the provider is willing to accept as its API key. */
 const KEY = process.env.SHOP_MAIL_KEY ?? 'dev-mail-key'

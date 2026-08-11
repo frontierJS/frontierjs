@@ -1,7 +1,7 @@
 /**
  * web/test/preview.mjs — serve the PRODUCTION build the way `bun run web`
  * serves the source: static files, SPA fallback, and the API routes proxied to
- * Junction on :3001.
+ * Junction on :8120.
  *
  * Why this rather than `vite preview`: preview does not carry `server.proxy`,
  * so the built app would talk to nothing and render plausible empty tables —
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', 'dist', 'client')
-const API  = process.env.API_URL ?? 'http://localhost:3001'
+const API  = process.env.API_URL ?? 'http://localhost:8120'
 const PORT = Number(process.env.PREVIEW_PORT ?? 5311)
 
 const TYPES = {

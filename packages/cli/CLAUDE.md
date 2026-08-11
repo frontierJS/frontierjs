@@ -47,10 +47,30 @@ tests/     compiler · runtime · registry · server · deploy · project-root �
   Namespace overviews are written as plain lists.
 - **The parse sweep compiles each command with NO module script**, so a command
   using a `_module.md` helper parses whether or not the module defines it. Run
-  the command.
+  the command. This is not theoretical: `completion/_module.md` used `join`,
+  `homedir`, `existsSync` and `statSync` without importing any of them, so all
+  five completion commands threw `join is not defined` and **Tab completion had
+  never worked**, while every suite stayed green (`FJS-167`).
+- **Nothing on the read-only path may import zx.** zx is ~85ms of what was a
+  ~200ms invocation, and `fli list`, `help`, `?` and completion wanted one thing
+  from it — chalk, which is now `core/color.js`. The same rule is why
+  `bootstrap.js` imports `runtime.js` at the call site rather than at the top: a
+  static import pulls zx back in for every `fli list`. A command body is
+  unaffected, since its compiled shim imports `zx/globals` itself.
+- **`module.register()` costs 56ms because it starts a hooks thread**, and the
+  `.md` loader hook is not what runs a command — the runtime compiles WITH the
+  namespace module script (which a hooks thread cannot see) and imports the
+  shim. No entry point registers it.
 - **The edges are aspirational.** Several documented commands do not do what the
   prose says, and three packages' docs advertise `fli` commands that do not
   exist. Verify a command by running it before citing it.
+- **A compiled command is a real file, so where it may be written is a
+  constraint, not a detail.** The shim imports `zx/globals` by bare specifier and
+  Node resolves that from the importing file's own directory — which is why the
+  location is `fliTmpRoot()`'s decision in `core/utils.js` and nobody else's, and
+  why the read-only fallback symlinks `node_modules` beside the shim. The
+  workspace copy is always writable, so nothing here can see the install shape
+  that is not (`FJS-166`).
 - The port broker implements the FJS port scheme; the scheme itself is documented
   in `packages/jetty/src/dev/fjs-ports.js`.
 

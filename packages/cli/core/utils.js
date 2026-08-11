@@ -1,7 +1,9 @@
-import { readdirSync, readFileSync, existsSync } from 'fs'
+import { readdirSync, readFileSync, existsSync, mkdirSync, rmSync, accessSync, symlinkSync, constants } from 'fs'
 import { join, resolve } from 'path'
 import { pathToFileURL } from 'url'
-import { chalk } from 'zx'
+import { tmpdir } from 'os'
+import { createHash } from 'crypto'
+import { chalk } from './color.js'
 
 // ─── Filesystem walker ────────────────────────────────────────────────────────
 // Recursive .md (or arbitrary extension) discovery. Hot path on every cold
@@ -308,4 +310,69 @@ export function findProjectRoot(start, fliRootSelf) {
   if (pkgRoot) return pkgRoot
 
   return start
+}
+
+// ─── Temp root ────────────────────────────────────────────────────────────────
+// The one owner of "where does a compiled command shim go". Both the runtime
+// (which writes them) and bin/fli.js (which sweeps them at startup) ask here.
+//
+// A shim imports `zx/globals` by bare specifier, so it has to sit somewhere
+// Node's resolver can walk up from and find a node_modules holding zx —
+// <fliRoot>/.fli-tmp/<pid>/ whenever fliRoot is writable.
+//
+// It is not writable for a global install: `npm i -g @frontierjs/cli` lands
+// under a root-owned prefix, where the first temp write is EACCES and EVERY
+// command dies before running. The fallback moves the session under the OS temp
+// dir and symlinks node_modules back at fliRoot's, which is what keeps the bare
+// specifier resolving — Node resolves from the importing file's own directory,
+// and the link sits on that path. The directory is keyed by a digest of fliRoot
+// so two installs never share one link pointing at the wrong tree.
+const _tmpRoots = new Map()
+
+export function fliTmpRoot(fliRoot) {
+  if (_tmpRoots.has(fliRoot)) return _tmpRoots.get(fliRoot)
+
+  const local = join(fliRoot, '.fli-tmp')
+  // Attempt rather than probe permissions — a root-owned prefix, a read-only
+  // mount and a container's squashed image all fail differently and only the
+  // write tells the truth.
+  try {
+    mkdirSync(local, { recursive: true })
+    accessSync(local, constants.W_OK)
+    _tmpRoots.set(fliRoot, local)
+    return local
+  } catch {}
+
+  const key = createHash('sha1').update(fliRoot).digest('hex').slice(0, 10)
+  const fallback = join(tmpdir(), `fli-${key}`)
+  mkdirSync(fallback, { recursive: true })
+  try {
+    // 'junction' is the Windows directory-link type that needs no privilege;
+    // ignored on POSIX. EEXIST is the normal case after the first run, and a
+    // dangling link is not one existsSync can see.
+    symlinkSync(join(fliRoot, 'node_modules'), join(fallback, 'node_modules'), 'junction')
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err
+  }
+  _tmpRoots.set(fliRoot, fallback)
+  return fallback
+}
+
+// Reap session dirs left by runs that died before their exit handler. Keyed by
+// pid, so a live process is left alone; `test-<pid>` is the suites' own naming
+// and was invisible to an int-only parse, which is why 47 of them accumulated.
+export function sweepStaleTmp(tmpRoot) {
+  try {
+    for (const name of readdirSync(tmpRoot)) {
+      const pid = Number(/^(?:test-)?(\d+)$/.exec(name)?.[1])
+      if (!pid || pid === process.pid) continue
+      try {
+        process.kill(pid, 0)   // throws ESRCH when the process is gone
+      } catch (err) {
+        if (err.code === 'ESRCH') {
+          try { rmSync(join(tmpRoot, name), { recursive: true, force: true }) } catch {}
+        }
+      }
+    }
+  } catch {}
 }

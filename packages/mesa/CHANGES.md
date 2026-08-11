@@ -1,5 +1,76 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-10 — `externalSignals` has no callers left, and its replacement needed strict
+
+No compiler change. Recorded here because the design records live in this package
+and both are now settled: `EXTERNAL_REACTIVITY.md` and `PLAIN_OBJECT_STATE.md`.
+
+Sierra stopped exporting module-level signals and stopped passing an
+`externalSignals` map (`FJS-060`, closed in sierra's `CHANGES.md`). The map
+survives as an app-facing escape hatch for a third-party package that does export
+one; nothing in this repo uses it.
+
+**What is worth carrying forward is what the migration nearly got wrong.** Plain
+objects remove the *declaration* problem and keep the *failure*: a member read
+with no `$:` watch is hoisted out of the render block and assigned once at mount,
+exactly as a missed signal rewrite was. And the path-watch tier's default
+confidence is **quieter** than the signal tier it replaced — it reports an
+uncovered read only when the file already watches some other path on the same
+import, so it says nothing about a component that watches nothing, which is the
+shape the original bug had. `externalReactivityHints: 'strict'` is therefore the
+end state rather than a migration aid, and the docs now say so.
+
+Measured against the 218 `.mesa` files in the FrontierJS repo: strict reports 0.
+
+## 2026-08-10 — a component can expose a method, and an element can have a dynamic tag
+
+Two features the docs described and the compiler did not have. Both failed the
+same way — by emitting nothing and saying nothing — which is why both survived
+a suite of 1052 tests and two apps.
+
+**`export function` was deleted from the output** (`FJS-087`). The emitter
+skipped every `ExportNamedDeclaration`, and only `export let` had been handled
+before it, so the declaration vanished while every reference to it survived: a
+component calling its own exported function from its template threw
+`ReferenceError` on the first interaction. **No render test can catch that** —
+SSR dispatches no events, so the component renders perfectly and fails when a
+user touches it. `@frontierjs/ui` had four components declaring `export function
+focus()` and none of them had one.
+
+It is now emitted as the plain declaration it is, with assignments rewritten
+through the signal setters like any other function body, plus one
+`registerExports({…})` call.
+
+**`bind:this` on a component handed over the anchor** — a comment node — where
+VISION §10.2 and RULE 36 promise the exported interface. So `ref.focus()` was a
+TypeError and `ref.count` was `undefined`, both silently. It is now
+`componentApi(anchor)`: methods from `export function`, and props as accessors
+onto the child's own signals, so `ref.count` is the current value rather than a
+snapshot taken at mount and `ref.count = 2` writes it. `bind:this` on a DOM
+element is unchanged. `Form.mesa` dropped the `onready` workaround it carried
+for this (`onready` stays for apps that already use it).
+
+**`<mesa:element this={tag}>` now exists** (`FJS-023`). A tag cannot be
+interpolated into a template string — the string is parsed once, and the parse
+is what decides the element — so the element is compiled under the placeholder
+tag `mesa-dynamic-element` and `$runtime.dynamicElement` transplants it onto an
+element built from the live expression: attributes copied, children moved. The
+whole ordinary element path runs over the placeholder first, so `class`, `on:`,
+`style:`, `bind:` and `{@attach}` all work. Wrapped in a `keyBlock` on the tag,
+because an element's tag is not writable and the alternative is an `<h2>` that
+answers to `h3` for every selector on the page. The one limit: a **tag**
+selector in a scoped `<style>` cannot match it, since the scoper runs on the
+parsed template where the tag is still the placeholder — match on a class.
+
+`@frontierjs/ui`'s `SectionHeader` replaced its explicit `h1`–`h6` `{#if}`
+ladder with one line.
+
+**And every other unknown `mesa:*` name is now an error naming what exists.**
+That silence is what made `<mesa:element>` indistinguishable from a typo: the
+element and all its children were dropped from the output, so the component
+rendered without them and the build stayed green. A nested `<mesa:mounted>` —
+which gates nothing anywhere but the top level — says so rather than vanishing.
+
 ## 2026-08-10 — `happy-dom` was a devDependency the SSR exports import at load
 
 Publish prep found it, and only an isolated install could: `src/render.js` and

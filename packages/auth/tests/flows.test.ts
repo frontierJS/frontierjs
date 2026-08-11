@@ -431,20 +431,70 @@ describe('deleteUser', () => {
 
 // ─── the Data boundary ────────────────────────────────────────────────────
 
-describe('gate("8") walls the auth tables off from non-system callers', () => {
+describe('the gate walls the credential tables off, and User is readable by a user', () => {
   // VERIFYING.md's headline failure is a gate that looks enforced and isn't.
-  // asSystem() is this package's deliberate bypass; everything else must bounce.
-  const models = ['user', 'credential', 'session', 'verification'] as const
+  // asSystem() is this package's deliberate bypass; everything else is graded.
+  //
+  // The three credential-material models are @@gate("8") — above every level a
+  // request can reach. User is "4.5.5.6": an app's own screens legitimately list
+  // its people, so read is USER, while writing identity stays privileged.
+  // Registration is unaffected because every write this package makes is
+  // asSystem(), which is above the ladder — the test below proves that rather
+  // than assuming it.
+  const walled = ['credential', 'session', 'verification'] as const
 
-  for (const m of models) {
+  for (const m of walled) {
     test(`anonymous db.${m}.findMany() is refused`, async () => {
       await expect(h.db[m].findMany()).rejects.toThrow(/SYSTEM access/)
     })
   }
 
-  test('a logged-in normal user is still refused', async () => {
+  test('a logged-in normal user is still refused the credential tables', async () => {
     const scoped = h.db.$setAuth({ id: 'someone', role: 'user' })
-    await expect(scoped.user.findMany()).rejects.toThrow(/SYSTEM access/)
     await expect(scoped.credential.findMany()).rejects.toThrow(/SYSTEM access/)
+    await expect(scoped.session.findMany()).rejects.toThrow(/SYSTEM access/)
+  })
+
+  test('anonymous db.user.findMany() is refused — read is USER, not STRANGER', async () => {
+    await expect(h.db.user.findMany()).rejects.toThrow(/requires level 4/)
+  })
+
+  test('a logged-in normal user CAN read User', async () => {
+    const scoped = h.db.$setAuth({ id: 'someone', role: 'user' })
+    expect(Array.isArray(await scoped.user.findMany())).toBe(true)
+  })
+
+  test('a logged-in normal user cannot DELETE a user', async () => {
+    const scoped = h.db.$setAuth({ id: 'someone', role: 'user' })
+    const victim = await h.sys.user.create({ data: { email: `victim-${Date.now()}@example.com` } })
+    await expect(scoped.user.delete({ where: { id: victim.id } }))
+      .rejects.toThrow(/requires level 5/)
+  })
+
+  test('an ADMINISTRATOR can delete a user', async () => {
+    // No GatePlugin is configured here, so litestone's own default resolver
+    // grades the principal — it reads standing (isAdmin/isOwner/isSystemAdmin),
+    // not an app's `role` string, which is a column auth does not interpret.
+    const scoped = h.db.$setAuth({ id: 'boss', isAdmin: true })
+    const victim = await h.sys.user.create({ data: { email: `deleted-${Date.now()}@example.com` } })
+    await scoped.user.delete({ where: { id: victim.id } })
+    expect(await h.sys.user.findUnique({ where: { id: victim.id } })).toBeNull()
+  })
+
+  // The gate is a floor on the MODEL, not an ownership rule on the row. This
+  // test states the consequence rather than pretending otherwise: at USER,
+  // one caller may write another caller's row. Row ownership is a
+  // @@allow('update', id == auth().id), which auth does not declare.
+  test('update at USER is not ownership — a user may write ANOTHER user\'s row', async () => {
+    const other  = await h.sys.user.create({ data: { email: `other-${Date.now()}@example.com` } })
+    const scoped = h.db.$setAuth({ id: 'someone-else', role: 'user' })
+    await scoped.user.update({ where: { id: other.id }, data: { name: 'written by a stranger' } })
+    const after = await h.sys.user.findUnique({ where: { id: other.id } })
+    expect(after!.name).toBe('written by a stranger')
+  })
+
+  test('registration is unaffected by the ladder — it writes asSystem()', async () => {
+    const ctx = await h.auth.createUser!({ email: `gate-${Date.now()}@example.com`, password: 'hunter22!' })
+    expect(ctx.userId).toBeTruthy()
   })
 })

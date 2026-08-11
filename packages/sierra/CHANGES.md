@@ -1,5 +1,46 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-10 — no signals to declare, so no `externalSignals` to declare them in
+
+`FJS-060`, closed by removing the last thing it applied to.
+
+A module-level signal read bare in a template is only reactive if the CONSUMING
+build names it — in another package, by hand — and omitting a name fails in the
+worst possible way: the read is hoisted out of the render block and assigned once
+at mount. `{connected ? 'ws connected' : 'ws offline'}` said *ws connected* with
+the API stopped, and across a reload.
+
+Two thirds of the retirement had already happened: the router's eight signals
+became the plain object `page`, junction's two became `status`. **`theme` was the
+last one and it was holding the whole bridge up on its own** — one entry, in two
+spellings, that nothing in this repo read. It is now `{ value: 'light' | 'dark' }`,
+written through `watchProxy` like the other two, and `mesa-plugin.js` passes the
+compiler **no map at all**. `externalSignals` still exists in Mesa as an
+app-facing escape hatch for a third-party package that does export a signal.
+
+**Breaking:** `theme.get()` → `theme.value`, and a component that reads it needs
+`$: theme.value` like `page` and `status`. Zero consumers in this repo.
+
+**The plugin now passes `externalReactivityHints: 'strict'`, and that is the half
+worth reading.** The plain-object replacement has the *identical* silent failure
+— a member read with no `$:` watch is hoisted static exactly as a missed rewrite
+was — and by default it was **quieter than the thing it replaced**: Mesa's path
+tier reports an uncovered read only when the file already watches some other path
+on the same import. It says nothing about a component that watches nothing, and
+that is the shape the `connected` bug had. Strict covers it, existed already, was
+opt-in, and nothing anywhere enabled it.
+
+Measured before finishing: 4 warnings over 97 app components, all
+`resource.gate.<method>` — a level number the schema fixes, now `var` snapshots,
+which is what RULE 13 exists to say. After: **0 over all 218 `.mesa` in the
+repo**. Strict costs nothing.
+
+`tests/external-signals.test.js` is gone with the map it guarded.
+`tests/no-module-signals.test.js` replaces it with the stronger property, held in
+both directions: `src/` exports no module-level signal, and the plugin declares
+none. `signal()` itself stays — `presence(channelId)` returns one from a call,
+which no map could ever have described.
+
 ## 2026-08-10 — the package declared none of the four things it imports
 
 Publish prep. `package.json` had **no `peerDependencies` at all**, while five

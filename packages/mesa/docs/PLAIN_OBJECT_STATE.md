@@ -3,9 +3,19 @@
 **Question:** can external state be plain objects, made reactive by opt-in
 `$:` path watching (§4.1), instead of signals declared in `externalSignals`?
 
-**Answer:** yes. The mechanism exists and works today. It needs one shape
-constraint, and it removes the entire class of bug that `externalSignals`
-creates. Everything below was verified against the current runtime.
+**Answer:** yes, and it is done — `page`, `status` and `theme`, in that order,
+finished 2026-08-10 (`FJS-060`). Sierra passes Mesa no `externalSignals` map at
+all and exports no module-level signal.
+
+**The one thing to carry forward:** this removes the *declaration* problem and
+keeps the *failure*. A member read with no `$:` watch is hoisted out of the
+render block exactly as a missed signal rewrite was. The default diagnostic tier
+below does not cover a component that watches nothing on that import — which is
+the shape the original bug had — so **`externalReactivityHints: 'strict'` is not
+only a migration aid, it is the end state**, and Sierra's plugin passes it.
+Measured over 218 real components: 0 warnings.
+
+Everything below was verified against the current runtime.
 
 ---
 
@@ -148,8 +158,10 @@ compiler now reports it. Two levels:
   across 36 real components.
 - **`externalReactivityHints: 'strict'`** — any uncovered member read on an
   imported object. Opt-in, because a plain config object and a mutable store are
-  indistinguishable. This is the mode to turn on *during* the migration: it lists
-  every read that will need a `$:`.
+  indistinguishable. **This is the mode to turn on during the migration AND to
+  leave on afterwards**: default confidence is silent for a file that watches
+  nothing at all, which is precisely a component that forgot, not one that meant
+  a snapshot. Say `var` where a snapshot is what you meant.
 
 The path tier defers to `externalSignals`, so it stays quiet for names that are
 still signals. That means you can enable strict mode before migrating anything

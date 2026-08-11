@@ -120,6 +120,7 @@ const FJS_VERSIONS = {
   '@frontierjs/sierra':         'latest',
   '@frontierjs/mesa':           'latest',
   '@frontierjs/litestone':      'latest',
+  '@frontierjs/css':            'latest',
   '@frontierjs/auth':           'latest',
   '@frontierjs/conduit':        'latest',
   '@frontierjs/caravan':        'latest',
@@ -147,6 +148,8 @@ function makePackageJson(spec) {
   if (useWeb) {
     deps['@frontierjs/sierra'] = specFor('@frontierjs/sierra')
     deps['@frontierjs/mesa']   = specFor('@frontierjs/mesa')
+    // web/src/main.js imports it — the styling language, not an optional extra.
+    deps['@frontierjs/css']    = specFor('@frontierjs/css')
   }
   for (const pkg of withPkgs) {
     const key = `@frontierjs/${pkg}`
@@ -209,8 +212,8 @@ function makeEnvExample(useAuth) {
     'DATABASE_URL=./db/app.db',
     '',
     '# App',
-    'PORT=3000',
-    'APP_URL=http://localhost:3000',
+    'PORT=8100',
+    'APP_URL=http://localhost:8100',
     'NODE_ENV=development',
     '',
   ]
@@ -276,7 +279,7 @@ bun run dev
 \`\`\`
 
 ${useWeb
-  ? 'This runs both the api (port 3000) and the web (Vite default port) concurrently.'
+  ? 'This runs both the api (port 8100) and the web (port 8000) concurrently.'
   : 'This runs the api server with watch mode.'}
 
 Schema DDL runs automatically on first start — no migration step.
@@ -333,9 +336,10 @@ ${useWeb
     │   ├── vite.config.js      # Thin wrapper — createSierraViteConfig
     │   └── sierra.config.js    # Routes dir, target, junction url
     └── src/
+        ├── main.js             # Entry: boots the router + client, mounts App
         ├── App.mesa            # Root: <RouterView />
         ├── routes/             # Sierra file-based routes (.mesa)
-        └── resources/          # Junction stores (.js)
+        └── resources/          # One Resource per model — Note.mesa (.mesa)
 \`\`\``
   : '\`\`\`'}
 
@@ -370,7 +374,7 @@ function makeApiAppTs(useAuth) {
 // \`app.start()\` call lives in api/index.ts so that test code can import this
 // file without binding a port.
 
-import { createApp, cors, requestLogger, correlationId } from '@frontierjs/junction'
+import { createApp, cors, requestLogger, correlationId, healthPlugin, channels } from '@frontierjs/junction'
 import { auth, authPlugin } from './core/auth.ts'
 import { withDb }           from './core/hooks.ts'
 import { env }              from './core/env.ts'
@@ -388,12 +392,25 @@ app.configure(cors({ origins: ['*'], credentials: true }))
 app.configure(correlationId())
 app.configure(requestLogger())
 
+// ─── Health ───────────────────────────────────────────────────────────────
+// GET /health and /metrics. frontier.config.js points the deploy's health
+// check at /health, and a deploy rolls back when it does not answer — so this
+// is load-bearing the first time the app leaves the laptop.
+app.configure(healthPlugin())
+
+// ─── Real-time ────────────────────────────────────────────────────────────
+// Registers the /ws route. Without it the browser client has nothing to
+// upgrade to: it falls back to HTTP, which works, and reports itself
+// disconnected forever with no error anywhere.
+app.configure(channels())
+
 // ─── Auth routes ──────────────────────────────────────────────────────────
 // Mounts /auth/register, /auth/login, /auth/logout, /auth/me, etc.
 app.configure(authPlugin)
 
 // ─── Per-request db scoping ──────────────────────────────────────────────
-// withLitestoneDb attaches a request-scoped db client to ctx.params.db.
+// withLitestoneDb attaches a request-scoped db client to ctx.locals.db.
+// A SERVICE context has no ctx.params at all — that is raw-route only.
 // Every service call sees a db with auth context applied.
 app.hooks({
   around: { all: [withDb] },
@@ -409,7 +426,7 @@ export default app
   return `// api/src/app.ts
 // The construction site — createApp + every plugin registration lives here.
 
-import { createApp, cors, requestLogger, correlationId } from '@frontierjs/junction'
+import { createApp, cors, requestLogger, correlationId, healthPlugin, channels } from '@frontierjs/junction'
 import { withDb }                                        from './core/hooks.ts'
 import { env }                                           from './core/env.ts'
 
@@ -424,6 +441,15 @@ const app = createApp({
 app.configure(cors({ origins: ['*'], credentials: true }))
 app.configure(correlationId())
 app.configure(requestLogger())
+
+// ─── Health ───────────────────────────────────────────────────────────────
+// GET /health and /metrics. The deploy's health check reads /health and rolls
+// back when it does not answer.
+app.configure(healthPlugin())
+
+// ─── Real-time ────────────────────────────────────────────────────────────
+// Registers the /ws route the browser client upgrades to.
+app.configure(channels())
 
 // ─── Per-request db scoping ──────────────────────────────────────────────
 app.hooks({
@@ -454,8 +480,8 @@ export const env = defineEnv({
   DATABASE_URL: { type: 'string', default: './db/app.db' },
 
   // App
-  PORT:     { type: 'port',   default: 3000 },
-  APP_URL:  { type: 'url',    default: 'http://localhost:3000' },
+  PORT:     { type: 'port',   default: 8100 },
+  APP_URL:  { type: 'url',    default: 'http://localhost:8100' },
   NODE_ENV: { type: 'string', default: 'development' },
 })
 `
@@ -496,8 +522,10 @@ function makeApiCoreHooksTs() {
   return `// api/src/core/hooks.ts
 // Global hooks attached at the App level — run on every service call.
 // withLitestoneDb scopes the db client to the current request's user
-// (ctx.params.db = db.$setAuth(ctx.user)) so policies + plugins see
-// who's calling. createService reads ctx.params.db automatically.
+// (ctx.locals.db = db.$setAuth(ctx.auth.user)) so policies + plugins see
+// who's calling. createService reads ctx.locals.db automatically.
+// A SERVICE context has no ctx.params — that is raw-route only, and reaching
+// for it here reads undefined rather than failing.
 
 import { withLitestoneDb } from '@frontierjs/junction/litestone'
 import { db } from './db.ts'
@@ -580,6 +608,17 @@ function makeSchemaLiteEmpty() {
 // Single source of truth for data shape + authorization.
 // Add models here; Litestone generates DDL automatically on first start.
 
+// ─── Databases ────────────────────────────────────────────────────────────
+// Both blocks must exist before any model is added: auth's fragments name
+// \`main\` and \`audit\` explicitly, and a model referencing an undeclared
+// database fails the whole parse — the app dies at createClient, not later.
+// Once \`database main\` is declared THIS PATH WINS and createClient's \`db:\`
+// option is ignored entirely.
+
+database main  { path env("DATABASE_URL", "./db/app.db") }
+
+database audit { path "./db/audit/" driver logger retention 90d }
+
 `
 }
 
@@ -595,7 +634,7 @@ function makeIndexHtml(appName) {
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/App.mesa">${sc}
+    <script type="module" src="/src/main.js">${sc}
   </body>
 </html>
 `
@@ -603,13 +642,45 @@ function makeIndexHtml(appName) {
 
 function makeViteConfig() {
   return `// web/config/vite.config.js
-// Thin wrapper — Sierra produces the actual Vite config from sierra.config.js.
+// Sierra produces the route table and the schema seed from sierra.config.js;
+// the dev proxy is this file's job, because only the app knows where its own
+// API listens.
 
 import { defineConfig } from 'vite'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
 import sierraConfig from './sierra.config.js'
 
-export default defineConfig(createSierraViteConfig(sierraConfig))
+// sierra.config.js points the client at the page's own origin, so every one of
+// these paths has to reach the API from here. Without the proxy they hit Vite's
+// SPA fallback instead: 200, an HTML body, and a client that reports the API
+// answered nonsense.
+// FLI_PORT_BE is set by the port broker when the app is started through fli,
+// which probes before it assigns; the literal is the static slot for project 0.
+const API = process.env.API_URL || 'http://localhost:' + (process.env.FLI_PORT_BE ?? 8100)
+
+const base = createSierraViteConfig(sierraConfig)
+
+export default defineConfig({
+  ...base,
+  server: {
+    // Spread, never replace: Sierra's own server block carries the HMR overlay
+    // and the port. Its port default is 3000, which is nobody's slot in the
+    // FJS scheme, so the web port is stated here rather than inherited.
+    // 8000 = dev / frontend / project 0; the API is 8100. See ports.js.
+    ...base.server,
+    port:       parseInt(process.env.WEB_PORT ?? process.env.FLI_PORT_FE ?? '8000'),
+    strictPort: true,
+    proxy: {
+      '/api':     { target: API, changeOrigin: true },
+      // Raw app.get routes take no apiPrefix, so /auth is a sibling of /api
+      // rather than a path inside it.
+      '/auth':    { target: API, changeOrigin: true },
+      '/session': { target: API, changeOrigin: true },
+      '/health':  { target: API, changeOrigin: true },
+      '/ws':      { target: API, ws: true },
+    },
+  },
+})
 `
 }
 
@@ -625,7 +696,11 @@ export default {
   trailingSlash: 'always',
 
   junction: {
-    url:      \`\${location.protocol === 'https:' ? 'wss:' : 'ws:'}//\${location.host}\`,
+    // Vite loads this file in NODE to build its own config, where there is no
+    // \`location\` — an unguarded reference here takes the dev server down before
+    // it serves a byte. Same origin as the page; the client upgrades to ws
+    // itself, so this stays http.
+    url:      typeof location !== 'undefined' ? location.origin : 'http://localhost:8000',
     tokenKey: '${appName}_token',
     // Must match the API's config.apiPrefix (api/config/default.ts). Junction
     // defaults to no prefix — services at /{service} — so this line and that
@@ -646,6 +721,35 @@ ${sc}
 `
 }
 
+function makeMainJs() {
+  return `// web/src/main.js — the entry point index.html loads.
+//
+// A .mesa module EXPORTS a component; importing one mounts nothing. Without
+// this file the page loads, throws no error, logs nothing, and renders an
+// empty <div id="app"> — the hardest possible failure to read.
+
+// Boots the router, the Junction client and — because db/schema.lite exists —
+// registerSchemas(), all generated from sierra.config.js. Import it first: a
+// route module that evaluates before the schemas are registered gets a bare
+// make() with no field rules.
+import 'virtual:sierra'
+
+// The design system. One import, no build step, no config.
+import '@frontierjs/css'
+
+import { mount } from '@frontierjs/mesa/runtime'
+import App from './App.mesa'
+
+// mount()'s first argument is an anchor NODE, not an element id — Mesa inserts
+// the component immediately after it, so the anchor must already be in the tree.
+const root   = document.getElementById('app')
+const anchor = document.createTextNode('')
+root.appendChild(anchor)
+
+mount(anchor, App, { root })
+`
+}
+
 function makeRouteModule(appName, useAuth) {
   if (useAuth) {
     return `---
@@ -653,7 +757,12 @@ siteName: ${appName}
 ---
 <script>
   import { goto, isActive, page } from '@frontierjs/sierra/router'
-  import { connected, logout } from '@frontierjs/sierra/junction'
+  import { status, logout } from '@frontierjs/sierra/junction'
+
+  // Naming a property in a $: line is what SUBSCRIBES this component to it.
+  // Without it status.connected renders once, at its initial false, and never
+  // updates — the socket connects and the page still says otherwise.
+  $: (page.siteName, status.connected)
 ${sc}
 
 <div class="shell">
@@ -666,7 +775,7 @@ ${sc}
     </div>
 
     <div class="status">
-      <span class="dot" class:connected={connected}></span>
+      <span class="dot" class:connected={status.connected}></span>
       <button on:click={() => { logout(); goto('/login/') }}>Sign out</button>
     </div>
   </nav>
@@ -696,7 +805,12 @@ siteName: ${appName}
 ---
 <script>
   import { isActive, page } from '@frontierjs/sierra/router'
-  import { connected } from '@frontierjs/sierra/junction'
+  import { status } from '@frontierjs/sierra/junction'
+
+  // Naming a property in a $: line is what SUBSCRIBES this component to it.
+  // Without it status.connected renders once, at its initial false, and never
+  // updates — the socket connects and the page still says otherwise.
+  $: (page.siteName, status.connected)
 ${sc}
 
 <div class="shell">
@@ -708,7 +822,7 @@ ${sc}
     </div>
 
     <div class="status">
-      <span class="dot" class:connected={connected}></span>
+      <span class="dot" class:connected={status.connected}></span>
     </div>
   </nav>
 
@@ -736,11 +850,15 @@ function makeRouteIndex(appName) {
 title: Home
 ---
 <script>
-  import { connected } from '@frontierjs/sierra/junction'
+  import { status } from '@frontierjs/sierra/junction'
+
+  // The $: line is the subscription — without it this renders once at the
+  // initial false and never changes.
+  $: status.connected
 ${sc}
 
 <h1>Welcome to ${appName}</h1>
-<p>Junction: {connected ? 'connected ✓' : 'connecting…'}</p>
+<p>Junction: {status.connected ? 'connected ✓' : 'connecting…'}</p>
 <p>Edit <code>web/src/routes/index.mesa</code> to start.</p>
 `
 }
@@ -939,7 +1057,9 @@ if (fjsSource !== 'local' && fjsSource !== 'npm') {
 // The @frontierjs packages this project will actually depend on
 const neededPkgs = ['@frontierjs/junction', '@frontierjs/litestone']
 if (useAuth) neededPkgs.push('@frontierjs/auth')
-if (useWeb)  neededPkgs.push('@frontierjs/sierra', '@frontierjs/mesa')
+// Every dependency makePackageJson writes for the web half belongs here too —
+// a `link:` spec for a package nobody linked fails the install outright.
+if (useWeb)  neededPkgs.push('@frontierjs/sierra', '@frontierjs/mesa', '@frontierjs/css')
 for (const p of withPkgs) neededPkgs.push(`@frontierjs/${p}`)
 
 // Where local package sources live. fli lives at <root>/packages/cli, so the
@@ -1041,6 +1161,7 @@ if (useWeb) {
     ['web/config/vite.config.js',           makeViteConfig()],
     ['web/config/sierra.config.js',         makeSierraConfig(appName)],
     ['web/src/App.mesa',                    makeAppMesa()],
+    ['web/src/main.js',                     makeMainJs()],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth)],
     ['web/src/routes/index.mesa',           makeRouteIndex(appName)],
   )

@@ -70,18 +70,22 @@ The packages are the application layer. The FJS World is the operational environ
 ```bash
 npm install -g @frontierjs/cli
 
-fli create my-app
+fli new my-app
 cd my-app
-fli dev
+bun run dev
 ```
 
-The CLI starts all sub-projects in development mode. API runs on `:3000`, web on `:5173`.
+API runs on `:8100`, web on `:8000` — the FJS port scheme, `packages/cli/core/ports.js`.
 
 > **Alpha.** The published `@frontierjs/cli` is `0.0.0-beta.0` and lags this repo.
 > Only Litestone and the CLI are on npm at all — see [Publishing status](#publishing-status).
 > To work against current code, clone this repo and `bun install`.
 
-For a working walkthrough, start with the [Junction example ladder](./packages/junction/example/README.md)
+**[Quickstart](./docs/QUICKSTART.md) is the whole path** — a new app, a model of
+your own, and the deploy pipeline that puts it on a server. Every command in it
+was run against a clean scaffold.
+
+For the API realm on its own, the [Junction example ladder](./packages/junction/example/README.md)
 and its UI counterpart in [Sierra's example app](./packages/sierra/example/README.md).
 
 ---
@@ -170,6 +174,7 @@ One schema. One service declaration. One resource binding. Any component that im
 
 | Document                                                                              | Description                                                                     |
 | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [Quickstart](./docs/QUICKSTART.md)                                                    | A new app to a deployed server, in the order you type it                        |
 | [Philosophy](./PHILOSOPHY.md)                                                         | Why FrontierJS exists — the axioms and decision tests above the architecture     |
 | [Architecture & Vocabulary](./ARCHITECT.md)                                           | The mental model (§1), the mandatory vocabulary (§2), the eight domains (§4)     |
 | [Decisions](./DECISIONS.md)                                                           | Dated rulings — read before relitigating any semantics                           |

@@ -1,37 +1,26 @@
 ---
 title: completion:refresh
-description: Clear and rebuild the completion cache
+description: Drop the registry cache and rebuild it
 alias: cr
 examples:
   - fli completion:refresh
 ---
 
-<script>
-import { existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
-import { homedir } from 'os'
-</script>
-
 ```js
 
-const cacheFile = join(homedir(), '.fli', 'completion-cache.json')
-
-if (!existsSync(cacheFile)) {
-  log.info('No completion cache found — nothing to clear.')
-  log.info('Cache is built automatically on your next Tab press.')
-  return
-}
+const { clearRegistryCache } = await import(
+  new URL('file://' + global.fliRoot + '/core/registry.js')
+)
 
 if (flag.dry) {
-  log.dry(`Would delete: ${cacheFile}`)
+  log.dry('Would drop the registry cache and rebuild it')
   return
 }
 
-unlinkSync(cacheFile)
-log.success('Completion cache cleared.')
+const { path, held } = clearRegistryCache()
+log.info(held ? `Dropped ${held} cached command(s) — ${path}` : 'No cache was present.')
 
-// Rebuild immediately so the next Tab press is instant
-log.info('Rebuilding...')
+// Rebuild now so the next Tab press pays nothing
 const commands = await loadCompletions()
 log.success(`Rebuilt — ${commands.length} command(s) cached.`)
 ```

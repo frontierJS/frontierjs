@@ -4,8 +4,8 @@ description: Kill all running Node/Bun processes, or whatever holds a given port
 alias: kill
 examples:
   - fli kill
-  - fli kill 5274
-  - fli kill 5274 --force
+  - fli kill 8010
+  - fli kill 8010 --force
   - fli kill deno
   - fli killnode
   - fli kill --dry
@@ -38,7 +38,7 @@ const sh = (command, dry, log) => {
 }
 
 // -sTCP:LISTEN matters: without it lsof also reports every process with an open
-// CONNECTION to that port, so `fli kill 5274` would take your browser with it.
+// CONNECTION to that port, so `fli kill 8010` would take your browser with it.
 // lsof exits 1 with no output when nothing is listening.
 const pidsOnPort = (port) => {
   try {

@@ -56,7 +56,17 @@ model User {
   updatedAt      DateTime  @default(now()) @updatedAt
 
   @@db(${db})
-  @@gate("8")
+  // R.C.U.D. Read, create and update are USER: an app's own screens list its
+  // people, and a signed-in caller edits their own profile. Delete is
+  // ADMINISTRATOR — removing a person is not self-service.
+  //
+  // A GATE IS PER MODEL, NOT PER ROW. Update at USER means any signed-in
+  // caller may write any user row, its role column included. "Their own row"
+  // is a @@allow('update', id == auth().id) and is not declared here.
+  //
+  // Registration is unaffected: @frontierjs/auth writes through asSystem().
+  // Hand copy of packages/auth/schema.ts — change one, change both.
+  @@gate("4.4.4.5")
   @@log(audit)
 }
 
@@ -236,14 +246,15 @@ if (alreadyInstalled) {
   return
 }
 
-// Check the requested db block exists
-if (flag.db !== 'main') {
-  const dbBlockRegex = new RegExp(`database\\s+${flag.db}\\s*\\{`)
-  if (!dbBlockRegex.test(schemaContents)) {
-    log.error(`Database block '${flag.db}' not found in schema.lite`)
-    log.info(`Add a 'database ${flag.db} { path ... }' block to schema.lite first`)
-    return
-  }
+// Check the requested db block exists. `main` is checked like any other — it is
+// not implicit, and exempting it let auth inject models naming a database that
+// was never declared, which fails the whole parse at createClient.
+// `audit` is separate: every fragment carries @@log(audit).
+for (const name of [flag.db, 'audit']) {
+  if (new RegExp(`database\\s+${name}\\s*\\{`).test(schemaContents)) continue
+  log.error(`Database block '${name}' not found in schema.lite`)
+  log.info(`Add a 'database ${name} { path ... }' block to schema.lite first`)
+  return
 }
 
 echo('')
@@ -260,19 +271,19 @@ if (flag.dry) {
   log.success('Injected auth models into schema.lite')
 }
 
-// ─── 3. Push schema to database ───────────────────────────────────────────────
+// ─── 3. Generate ENCRYPTION_KEY ───────────────────────────────────────────────
+//
+// Before the push, not after: the fragments carry @secret columns, so a schema
+// with no key refuses to compile and the push dies rather than the app later.
+// The test is for a VALUE — a scaffolded .env ships the bare name with nothing
+// after it, which a substring test reads as already set.
 
-if (flag.dry) {
-  log.dry('Would run: fli db:push')
-} else {
-  log.info('Pushing schema to database...')
-  context.exec({ command: `cd ${context.paths.root} && bun run litestone push --schema db/schema.lite` })
-  log.success('Schema pushed')
-}
+// [ \t] rather than \s — \s matches the newline, so `KEY=` followed by a blank
+// line and a comment reads as a key whose value is `#`.
+const hasKey = (name) => existsSync(envPath) &&
+  new RegExp(`^[ \\t]*${name}[ \\t]*=[ \\t]*\\S`, 'm').test(readFileSync(envPath, 'utf8'))
 
-// ─── 4. Generate ENCRYPTION_KEY ───────────────────────────────────────────────
-
-const encKeyExists = existsSync(envPath) && readFileSync(envPath, 'utf8').includes('ENCRYPTION_KEY=')
+const encKeyExists = hasKey('ENCRYPTION_KEY')
 
 if (encKeyExists) {
   log.info('ENCRYPTION_KEY already set in .env — skipping')
@@ -283,9 +294,9 @@ if (encKeyExists) {
   log.success('Generated ENCRYPTION_KEY → .env')
 }
 
-// ─── 5. Generate AUTH_SECRET ──────────────────────────────────────────────────
+// ─── 4. Generate AUTH_SECRET ──────────────────────────────────────────────────
 
-const authSecretExists = existsSync(envPath) && readFileSync(envPath, 'utf8').includes('AUTH_SECRET=')
+const authSecretExists = hasKey('AUTH_SECRET')
 
 if (authSecretExists) {
   log.info('AUTH_SECRET already set in .env — skipping')
@@ -294,6 +305,30 @@ if (authSecretExists) {
 } else {
   context.exec({ command: `cd ${context.paths.root} && fli keygen --name AUTH_SECRET --env --format hex --length 32` })
   log.success('Generated AUTH_SECRET → .env')
+}
+
+// ─── 5. Push schema to database ───────────────────────────────────────────────
+//
+// Adopt what was just written into THIS process first. bootstrap.js loaded the
+// project .env at startup, so a scaffolded `ENCRYPTION_KEY=` put an EMPTY
+// string on process.env — and a child inherits that empty value, which Bun's
+// own .env loading will not override. Without this the push reports no key
+// while the file it would have read holds a good one.
+
+if (!flag.dry && existsSync(envPath)) {
+  const written = readFileSync(envPath, 'utf8')
+  for (const name of ['ENCRYPTION_KEY', 'AUTH_SECRET']) {
+    const m = written.match(new RegExp(`^[ \\t]*${name}[ \\t]*=[ \\t]*(\\S+)`, 'm'))
+    if (m) process.env[name] = m[1]
+  }
+}
+
+if (flag.dry) {
+  log.dry('Would run: fli db:push')
+} else {
+  log.info('Pushing schema to database...')
+  context.exec({ command: `cd ${context.paths.root} && bun run litestone db push --schema db/schema.lite` })
+  log.success('Schema pushed')
 }
 
 // ─── 6. Append .env.example entries ──────────────────────────────────────────

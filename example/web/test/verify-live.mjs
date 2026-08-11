@@ -33,8 +33,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const UI     = process.env.UI_URL  ?? 'http://localhost:5274'
-const API    = process.env.API_URL ?? 'http://localhost:3600'
+const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
+const API    = process.env.API_URL ?? 'http://localhost:8110'
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // Its own reference, so a failed run cannot poison the next one and the seeded

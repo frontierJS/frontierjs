@@ -48,12 +48,22 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
 
 ## What bites here
 
-- **A component cannot expose a method.** `export function foo()` in an instance
-  script is dropped from the output, so `bind:this` methods (VISION §10.2 /
-  RULE 36) do not exist. A component referencing its own exported function from
-  its template throws `ReferenceError` on first interaction — invisible to a
-  render test, because SSR dispatches no events. Hand the function out through a
-  callback prop. `FJS-087`.
+- **An instance `<script>` has exactly two export forms** — `export let` (a
+  prop) and `export function` (a method on what `bind:this` hands the parent,
+  VISION §10.2 / RULE 36). Anything else is refused by name. `export function`
+  used to be deleted from the output while every reference to it survived, so a
+  component calling its own exported function threw `ReferenceError` on first
+  interaction — which no render test can see, because SSR dispatches no events.
+- **`bind:this` on a COMPONENT is the exported interface; on an ELEMENT it is
+  the node.** The component form reads props through the child's own signals, so
+  `ref.count` is live and `ref.count = 2` writes it. It used to hand over the
+  anchor comment, silently.
+- **`<mesa:element this={tag}>` is compiled under a placeholder tag** and
+  transplanted at runtime, wrapped in a `keyBlock` so a changed tag rebuilds. A
+  **tag selector** in a scoped `<style>` cannot match it — the scoper runs on the
+  parsed template, where the tag is still `mesa-dynamic-element`. Match on a
+  class. Unknown `mesa:*` names are an error listing the ones that exist; they
+  used to emit nothing, which made a typo and a missing feature the same event.
 - **`{#each}` takes an array, an iterable or an array-like — and refuses a
   number or a plain object by name.** `eachItems()` in `runtime.js` is the one
   definition; `{#each}` and `{#virtual each}` share it. It used to call `.map()`

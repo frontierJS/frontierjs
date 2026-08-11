@@ -48,6 +48,93 @@ proved the old build. If you can clear that port, `example`: `verify` +
 
 ---
 
+## Session — the reactivity registry closed itself, and the replacement was quieter than the bug (2026-08-10)
+
+`FJS-060`. The record said *hand-maintained cross-package registry, nothing
+validates it*. Two thirds of that was already stale — a drift test existed, and
+the map was down to **one entry**: `theme`, in two spellings, which nothing in
+the repo read. The router's eight signals had become the plain object `page` and
+junction's two had become `status`.
+
+So it closed by finishing: `theme` is `{ value }` written through `watchProxy`,
+`mesa-plugin.js` passes **no map**, and `tests/external-signals.test.js` is
+replaced by `tests/no-module-signals.test.js`, which asserts the stronger thing —
+`src/` exports no module-level signal and the plugin declares none. Breaking:
+`theme.get()` → `theme.value`, zero consumers here.
+
+**The finding worth keeping is the other half.** Plain-object state has the
+*identical* silent failure — `{page.path}` with no `$:` watch is hoisted out of
+the render block and assigned once at mount, exactly as a missed signal rewrite
+was — and by default it was **quieter than what it replaced**. Mesa's path tier
+reports an uncovered read only when the file already watches some other path on
+the same import; it says nothing about a component that watches *nothing*, and
+that is the shape the `connected` bug had. `externalReactivityHints: 'strict'`
+covers it, existed already, was opt-in, and **nothing anywhere turned it on**.
+Sierra's plugin does now.
+
+Measured before finishing: 4 warnings over 97 app components — all
+`resource.gate.<method>`, a level number the schema fixes, now `var` snapshots
+(RULE 13 exists to say exactly that). After: **0 over all 218 `.mesa` in the
+repo**. Strict is free, which is the argument for leaving it on.
+
+Verified: sierra 832 + `test:safety` 5, mesa 1078, and in a browser `example`
+`verify` 37, `verify:build` 37, `verify:public` 21.
+
+**Next, if anyone wants it:** jetty's own mesa plugin forwards an empty
+`externalSignals` and does not pass strict. Left alone deliberately — this row
+was Sierra's — but the reason for strict is a Mesa-level truth, not a Sierra one.
+
+---
+
+## Session — two Mesa features the docs described and the compiler did not have (2026-08-10)
+
+`FJS-023` and `FJS-087`, both closed. They are one bug wearing two hats: **the
+compiler's answer to "I do not handle this" was to emit nothing and say
+nothing**, so in both cases the build stayed green and the failure arrived at a
+user.
+
+**`export function` was deleted from the output** while every reference to it
+survived. A component calling its own exported function from its template threw
+`ReferenceError` on the first click — and **no render test can catch that**,
+because SSR dispatches no events, so the component renders perfectly. Four kit
+form controls declared `export function focus()` and none of them had one.
+Fixed by emitting the declaration (assignments rewritten through the signal
+setters, like any other function body) plus one `registerExports({…})`.
+
+**`bind:this` on a component handed over the anchor** — a comment node — where
+VISION §10.2 promises the exported interface. Now `componentApi(anchor)`:
+methods, plus props as accessors onto the child's own signals, so `ref.count` is
+live rather than a snapshot and `ref.count = 2` writes it. The element form is
+untouched. Nothing in the repo was using the component form, which is why a
+comment node satisfied it for as long as it existed.
+
+**`<mesa:element this={tag}>` exists.** A tag cannot be interpolated into a
+template string — the string is parsed once and the parse decides the element —
+so it compiles under the placeholder `mesa-dynamic-element` and
+`$runtime.dynamicElement` transplants attributes and children onto the real
+one. Every directive works because the ordinary element path runs over the
+placeholder first. In a `keyBlock`, because a tag is not writable. One limit:
+a **tag selector** in a scoped `<style>` cannot match it.
+
+**The silence around it was the larger half**, and it covered the whole `mesa:`
+namespace: an unknown name dropped the element and all its children. It now
+errors listing the eight that exist. That is what made `<mesa:element>`
+indistinguishable from a typo for as long as it was missing.
+
+Proven where the two halves fail apart: mesa 1078 (+26 new), sierra 833,
+ui 64 compile / 27 render / 60 attributes / 7 form, email-kit 34, and in a
+browser — `example` `verify` 37, `verify:ui` 27, `verify:public` 21. Every one
+of the 26 new assertions either calls a method or reads a prop back after a
+mutation, because that is the only kind that could have failed.
+
+**A trap found on the way, not fixed**: `example`'s `bun run build:public`
+REWRITES `web/config/routes.js` with the public-site-only tree and leaves it
+there, so a dev server started afterwards serves an app with no `/` route and
+`verify:ui` dies as "the shell never appeared". `git checkout` the file and
+restart the server. Filed as `FJS-168`.
+
+---
+
 ## Session — Mesa support was one commented-out line and three landmines (2026-08-10)
 
 ```

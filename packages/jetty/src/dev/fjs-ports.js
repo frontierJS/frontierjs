@@ -21,9 +21,11 @@
 //     ...
 //     8490 — dev/ext, project 9, service 0
 //
-//   Two-digit project slot allows projects 0–99. Phase 5 only validates the
-//   shape; assigning project numbers is the human's job (declared in
-//   jetty.config.js → dev.port).
+//   PROJECT and SERVICE are one digit each, which is what the examples above
+//   show and what packages/cli/core/ports.js computes — it is the schema's
+//   owner, and it also carries the registry of assigned project ids. This file
+//   only validates the extension slice; assigning a project number is the
+//   human's job (declared in jetty.config.js → dev.port).
 
 export const FJS_DEV_EXT_RANGE = [8400, 8499]
 export const FJS_TEST_EXT_RANGE = [7400, 7499]

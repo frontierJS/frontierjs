@@ -54,7 +54,7 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
 
   if (!res.ok) {
     const message = res.status === 502
-      ? 'API not reachable on :3001 — run `bun run api`'
+      ? 'API not reachable on :8120 — run `bun run api`'
       : data?.message ?? `HTTP ${res.status}`
     throw Object.assign(new Error(message), { status: res.status, data })
   }

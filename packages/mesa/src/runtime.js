@@ -151,9 +151,10 @@ function _unwindComponents(compDepth, ctxDepth) {
     // before any of the abandoned components pushed.
     const frame = _compStack[compDepth]
     _compStack.length = compDepth
-    _mountList    = frame.mounts
-    _propRegistry = frame.props
-    _devCompId    = frame.devCompId
+    _mountList      = frame.mounts
+    _propRegistry   = frame.props
+    _exportRegistry = frame.exports
+    _devCompId      = frame.devCompId
   }
   if (_contextStack.length > ctxDepth) _contextStack.length = ctxDepth
 }
@@ -562,6 +563,7 @@ export function onCleanup(fn) {
 }
 let _mountList = null // $onMount callbacks collected during component init
 let _propRegistry = null // prop signal map collected during component init
+let _exportRegistry = null // `export function` methods collected during component init
 export function $onMount(fn) {
   if (!_isClient) return // Rule 19: $onMount is a no-op on server
   if (_mountList) _mountList.push(fn)
@@ -4162,7 +4164,7 @@ export function push_component(devName, devFile) {
   if (_owner) _owner._children.push(rootNode)
   _compStack.push({
     owner: _owner, listener: _listener,
-    mounts: _mountList, props: _propRegistry,
+    mounts: _mountList, props: _propRegistry, exports: _exportRegistry,
     ctx: null, rootNode,
     devCompId: _devCompId,   // save caller's component id for restore in pop
   })
@@ -4173,6 +4175,7 @@ export function push_component(devName, devFile) {
   _listener    = null
   _mountList   = []
   _propRegistry = new Map()
+  _exportRegistry = null   // stays null unless the component declares a method
 
   // Dev registration — only when compiler emitted name (dev: true build)
   if (devName) {
@@ -4202,11 +4205,13 @@ export function pop_component() {
   const mountList = _mountList
   const rootNode  = _owner
   const registry  = _propRegistry
-  _owner        = frame.owner
-  _listener     = frame.listener
-  _mountList    = frame.mounts
-  _propRegistry = frame.props
-  _devCompId    = frame.devCompId   // restore enclosing component's id
+  const exports   = _exportRegistry
+  _owner          = frame.owner
+  _listener       = frame.listener
+  _mountList      = frame.mounts
+  _propRegistry   = frame.props
+  _exportRegistry = frame.exports
+  _devCompId      = frame.devCompId   // restore enclosing component's id
   _contextStack.pop()
   _resolved.then(() => {
     for (const fn of mountList) {
@@ -4215,6 +4220,19 @@ export function pop_component() {
     }
   })
   rootNode._registry = registry
+  rootNode._exports  = exports
+}
+
+/**
+ * registerExports — the child half of `bind:this` on a component.
+ *
+ * Emitted once per component that declares `export function`, with the methods
+ * as a plain object. Props are not passed here: they are already in the prop
+ * registry, and reading them through it is what keeps `ref.count` live rather
+ * than a copy taken at mount.
+ */
+export function registerExports(methods) {
+  _exportRegistry = _exportRegistry ? { ..._exportRegistry, ...methods } : methods
 }
 
 // ── Component prop registry — keyed by anchor comment node ────────────────────
@@ -4224,6 +4242,7 @@ export function pop_component() {
 // rootNode._registry. We map anchor → registry so the parent can call pushProps.
 
 const _componentRegistry = new WeakMap()
+const _componentExports  = new WeakMap()
 
 export function registerComponentAnchor(anchor) {
   // Called immediately after ComponentFn(anchor, props, null) returns.
@@ -4234,6 +4253,38 @@ export function registerComponentAnchor(anchor) {
   if (childNode?._registry) {
     _componentRegistry.set(anchor, childNode._registry)
   }
+  if (childNode?._exports) {
+    _componentExports.set(anchor, childNode._exports)
+  }
+}
+
+/**
+ * componentApi — what `bind:this={ref}` on a component resolves to (VISION
+ * §10.2, RULE 36): the child's exported interface, never a DOM node.
+ *
+ * Props are accessors onto the child's own signals, so `ref.count` is the
+ * current value and `ref.count = 2` writes it — a snapshot taken at mount would
+ * be stale by the first interaction. Methods come from `export function`.
+ *
+ * The anchor is a comment node the parent owns, so a component that exports
+ * nothing still answers an object rather than a node the caller would then try
+ * to call `.focus()` on.
+ */
+export function componentApi(anchor) {
+  const registry = _componentRegistry.get(anchor)
+  const methods  = _componentExports.get(anchor)
+  const api = {}
+  if (registry) {
+    for (const [name, prop] of registry) {
+      Object.defineProperty(api, name, {
+        enumerable: true,
+        get: () => prop.get(),
+        set: (v) => prop.set(v),
+      })
+    }
+  }
+  if (methods) for (const name in methods) api[name] = methods[name]
+  return api
 }
 
 /**
@@ -4535,6 +4586,47 @@ export function template(html, flags) {
     if (!_isClient) return parseTemplateFresh(html, !!isFragment)
     if (!parsed) parsed = htmlToFragment(html, isFragment ? 2 : 1)
     return parsed.cloneNode(true)
+  }
+}
+
+// ── dynamicElement() — the template factory behind <mesa:element> ────────────
+
+/**
+ * Build one instance of `<mesa:element this={tag}>`.
+ *
+ * A tag cannot be interpolated into a template string: the string is parsed
+ * once, and the parse is what decides the element. So the compiler emits the
+ * element under a placeholder tag, and this transplants it — attributes copied,
+ * children moved — onto an element created from the live expression. The block
+ * source that follows then binds against the real element, so every directive
+ * (`class`, `on:`, `style:`, `bind:`, `{@attach}`) works as it does anywhere.
+ *
+ * Wrapped in a keyBlock by the compiler, so a tag that changes rebuilds rather
+ * than mutating — an element's tag is not writable, and the alternative is a
+ * `<h2>` that keeps reporting itself as an `<h3>` to every selector on the page.
+ *
+ * The placeholder is a custom-element name so nothing is foster-parented out of
+ * it during parse and no user agent gives it default properties. It is never in
+ * the document: the parse happens inside a detached <template>.
+ */
+export function dynamicElement(tagFn, tplFn) {
+  return () => {
+    const tag = tagFn()
+    if (typeof tag !== 'string' || !tag) {
+      throw new Error(
+        `[Mesa] <mesa:element this={…}> — expected a tag name, got ${
+          typeof tag === 'string' ? "''" : String(tag)
+        }. A dynamic element always has a tag; render nothing with {#if} instead.`
+      )
+    }
+    const proto = tplFn()
+    const el = document.createElement(tag)
+    // Attributes first: moving children invalidates nothing, but a live
+    // NamedNodeMap read after the node is emptied is one more thing to reason
+    // about for no gain.
+    for (const a of [...proto.attributes]) el.setAttribute(a.name, a.value)
+    while (proto.firstChild) el.appendChild(proto.firstChild)
+    return el
   }
 }
 

@@ -80,7 +80,7 @@ Each of these is an assertion in one of the three drives, or a line in the READM
 The dev server is not the only thing that has to work, and it hid an inert
 build for as long as this app existed. `web/dist/client/` is static; drive it
 with any server that serves the SPA fallback and proxies `/api`, `/auth`,
-`/session` **and `/ws`** to :3600, then point the drive at it:
+`/session` **and `/ws`** to :8110, then point the drive at it:
 
 ```bash
 bun run verify:build        # builds, serves dist/, runs the 37 assertions
@@ -91,8 +91,8 @@ or by hand, which is also how to point the kit drive at the build:
 ```bash
 bun run build
 bun run preview &
-UI_URL=http://localhost:5310 node web/test/verify.mjs
-UI_URL=http://localhost:5310 node web/test/verify-ui.mjs
+UI_URL=http://localhost:8011 node web/test/verify.mjs
+UI_URL=http://localhost:8011 node web/test/verify-ui.mjs
 ```
 
 `vite preview` does **not** carry `server.proxy`, so it is not that server.
@@ -116,7 +116,7 @@ example/
 │   ├── app-ref.ts          ← how a job reaches app.service() (FJS-093)
 │   ├── jobs/               ← book-courier + announce-payment (autoloaded), sweep-abandoned (cron)
 │   ├── mailer.ts           ← IMail over app.conduit.send() — the provider is a TARGET
-│   ├── mail-sink.ts        ← the dev mail catcher on :3610, provider-shaped
+│   ├── mail-sink.ts        ← the dev mail catcher on :8111, provider-shaped
 │   ├── notifications/      ← OrderPaid (staff, inApp) + OrderConfirmation (customer, email)
 │   ├── emails/             ← order-confirmation.mesa — the body, in the email
 │   │                         realm + preview.mjs (`bun run email:preview`)
@@ -144,7 +144,7 @@ example/
                                     customers, settings
 ```
 
-`bun run api` (:3600) · `bun run web` (:5274) · `bun run verify` · `bun run verify:ui` ·
+`bun run api` (:8110) · `bun run web` (:8010) · `bun run verify` · `bun run verify:ui` ·
 `bun run verify:live` · `bun run verify:jobs` · `bun run verify:notify` ·
 `bun run email:preview` ·
 `bun run build` · `bun run verify:build` · `bun run build:public` ·
@@ -322,7 +322,7 @@ and a failure arrives as a typed `error.kind` instead of a thrown string.
 Pointing it at the real api.resend.com is a change of `address` and `ref` in
 `api/app.ts` and nothing else.
 
-**The provider is `api/mail-sink.ts`** — a dev mail catcher on :3610 speaking
+**The provider is `api/mail-sink.ts`** — a dev mail catcher on :8111 speaking
 the shape a provider REST API speaks. A separate listener on purpose: an
 in-process fake would prove the payload is built and nothing else. Over a real
 socket, the credential really resolves, and `POST /fail-next` makes it answer
@@ -428,7 +428,7 @@ on it (`FJS-103`).
    BUILT output is proven interactive by `bun run verify:public`.
 5. **The confirmation has never been opened in a real mail client.** The kit
    renders Outlook-safe markup and nobody has looked. `curl
-   localhost:3610/outbox` is where to get one to forward to yourself.
+   localhost:8111/outbox` is where to get one to forward to yourself.
 
 Out of scope by design: jetty (a different container) and the VS Code extension.
 
@@ -441,7 +441,7 @@ Out of scope by design: jetty (a different container) and the VS Code extension.
   rendering plausible empty tables.
 - **`bun run reset`** deletes the database; the seed runs again on next boot.
   Do this if a run leaves the data changed — `verify` itself is idempotent.
-- **The browser drives default to `http://localhost:5274` — check who is
+- **The browser drives default to `http://localhost:8010` — check who is
   answering it.** Another app on this machine wanted the same port, and a drive
   pointed at somebody else's dev server reports `home.heading: "Sign in"` and an
   empty nav, which reads exactly like this app being broken. Every drive takes

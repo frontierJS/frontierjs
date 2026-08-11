@@ -17,8 +17,8 @@
 import net from 'node:net'
 
 const PORTS = [
-  { port: 3001, who: 'API   (bun run api)' },
-  { port: 5274, who: 'web   (bun run web)' },
+  { port: 8120, who: 'API   (bun run api)' },
+  { port: 8020, who: 'web   (bun run web)' },
 ]
 
 function check({ port, who }) {

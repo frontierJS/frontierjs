@@ -177,29 +177,16 @@
 
   // ── The imperative API ───────────────────────────────────────────────
   //
-  // Handed to the caller through `onready` rather than exposed on `bind:this`,
-  // because NEITHER documented way of putting a method on a component instance
-  // compiles today (`ISSUES.md` FJS-087):
+  // Reachable two ways, and they are the same three functions:
   //
-  //   export function submit() {…}     — dropped from the output entirely.
-  //     `compiler.js:5998` skips every ExportNamedDeclaration in the instance
-  //     script and only `export let` is handled before it, so this component's
-  //     own `on:submit={submit}` threw ReferenceError on the first click. Not
-  //     caught by a render test: SSR never dispatches an event.
+  //   <Form {resource} bind:this={form} />        form.submit()
+  //   <Form {resource} onready={api => …} />      api.submit()
   //
-  //   export let submit = async (e) => {…}  — emits `$runtime.get(sig) = true`
-  //     for every assignment in the body. Reads inside a prop initialiser are
-  //     rewritten; assignments are not. Unparseable.
-  //
-  // So these are plain functions, which compile correctly, and the component
-  // hands them out once at mount:
-  //
-  //   <Form {resource} onready={api => saveFromElsewhere = api.submit} />
-  //
-  // When FJS-085 is fixed this should become `bind:this` and `onready` can go.
+  // `onready` predates `export function` working at all and stays because an
+  // app that captured the api at mount has nothing to gain from changing.
 
-  async function submit(e) {
-    // Also called programmatically via bind:this, where there is no event.
+  export async function submit(e) {
+    // Also called programmatically, where there is no event.
     e?.preventDefault?.()
     if (submitting || disabled) return undefined
 
@@ -233,7 +220,7 @@
   }
 
   /** Back to the pristine record, with every error and flag cleared. */
-  function reset(next) {
+  export function reset(next) {
     if (next !== undefined) pristine = { ...next }
     record    = { ...pristine }
     dirty     = false
@@ -242,7 +229,7 @@
   }
 
   /** Drop the messages without touching the record. */
-  function clearErrors() {
+  export function clearErrors() {
     errors    = {}
     formError = ''
     _server   = {}

@@ -188,3 +188,50 @@ describe('fli list --json', () => {
   })
 
 })
+
+// ─── Frontmatter cache ────────────────────────────────────────────────────────
+// The cache exists so a run does not re-parse ~200 files, and the only way it
+// can be wrong is by serving a description, alias or flag set that the file no
+// longer has. These hold the invalidation, not the speed.
+describe('registry cache', () => {
+  const routeDir = resolve(ROOT, 'cli/src/routes/cachetest')
+  const file     = resolve(routeDir, 'thing.md')
+  const write = (desc, extra = '') =>
+    writeFileSync(file, `---\ntitle: cachetest:thing\ndescription: ${desc}\n${extra}---\n\n\`\`\`js\nlog.info('hi')\n\`\`\`\n`)
+
+  beforeAll(() => { mkdirSync(routeDir, { recursive: true }) })
+  afterAll(() => { rmSync(routeDir, { recursive: true, force: true }); buildRegistry() })
+
+  test('an edited command file is re-read, not served from the cache', () => {
+    write('first')
+    expect(buildRegistry().get('cachetest:thing').meta.description).toBe('first')
+
+    // Same path, new content. mtime alone would settle it, but the signature
+    // carries size too — an edit inside one millisecond still changes length.
+    write('second')
+    expect(buildRegistry().get('cachetest:thing').meta.description).toBe('second')
+  })
+
+  test('a new alias on an existing command reaches the registry', () => {
+    write('third', 'alias: ct\n')
+    const registry = buildRegistry()
+    expect(registry.get('ct')?.filePath).toBe(registry.get('cachetest:thing').filePath)
+  })
+
+  test('a deleted command file leaves the registry', () => {
+    write('fourth')
+    expect(buildRegistry().has('cachetest:thing')).toBe(true)
+    rmSync(file)
+    expect(buildRegistry().has('cachetest:thing')).toBe(false)
+  })
+
+  test('FLI_NO_CACHE builds the same registry the cache would have', () => {
+    const cached = uniqueCommands(buildRegistry()).map(c => c.title).sort()
+    process.env.FLI_NO_CACHE = '1'
+    try {
+      expect(uniqueCommands(buildRegistry()).map(c => c.title).sort()).toEqual(cached)
+    } finally {
+      delete process.env.FLI_NO_CACHE
+    }
+  })
+})

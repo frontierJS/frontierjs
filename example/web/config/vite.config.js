@@ -10,7 +10,7 @@ import sierraConfig from './sierra.config.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
-const API  = 'http://localhost:3600'
+const API  = 'http://localhost:8110'
 const UI   = resolve(HERE, '../../../packages/ui')
 
 const sierra = createSierraViteConfig(sierraConfig)
@@ -42,7 +42,10 @@ export default defineConfig({
   root: ROOT,
 
   server: {
-    port: 5274,
+    port: 8010,
+    // Refuse to hop. Vite's default is to take the next free port in silence,
+    // which is how a drive ends up asserting against a different app.
+    strictPort: true,
     // One origin: the browser talks to Vite, Vite forwards to Junction. That is
     // also what lets the Junction client derive its WebSocket URL from the same
     // base as its HTTP calls, and it means no CORS.

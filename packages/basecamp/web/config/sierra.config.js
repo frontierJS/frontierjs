@@ -16,8 +16,8 @@ export default {
   // flatten it.
 
   junction: {
-    // Same origin as the page: Vite proxies the API paths to :3001.
-    url: typeof location !== 'undefined' ? location.origin : 'http://localhost:5274',
+    // Same origin as the page: Vite proxies the API paths to :8120.
+    url: typeof location !== 'undefined' ? location.origin : 'http://localhost:8020',
 
     // Both of these are the client's own defaults, spelled out because they are
     // load-bearing. Basecamp mounts services at /{service} (junction's default

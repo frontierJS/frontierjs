@@ -1390,7 +1390,31 @@ Renders children into any DOM node, escaping overflow and stacking context.
 </mesa:portal>
 ```
 
-### 12.5 `<mesa:boundary>` and `<mesa:mounted>`
+### 12.5 `<mesa:element>`
+
+An element whose tag is an expression. Everything else about it is an ordinary
+element — attributes, `on:`, `style:`, `bind:`, `{@attach}` and children all
+behave exactly as they do on a written tag.
+
+```html
+<script>export let level = 2</script>
+
+<mesa:element this={'h' + level} class="title">{title}</mesa:element>
+```
+
+The tag must resolve to a non-empty string; a missing one throws naming the
+element rather than rendering a stray node. Render nothing with `{#if}` instead.
+
+Changing the tag **rebuilds** the element and its subtree — an element's tag is
+not writable, so there is nothing else it could mean.
+
+One limit: a **tag selector** in a scoped `<style>` cannot reach it. The scoper
+runs on the parsed template, where the tag is still the compiler's placeholder.
+Match on a class.
+
+Any other `mesa:` name is a compile error listing the ones that exist.
+
+### 12.6 `<mesa:boundary>` and `<mesa:mounted>`
 
 Both elements gate template content behind an async operation and share the same
 snippet convention and runtime infrastructure. They differ only in what triggers them.
@@ -2138,6 +2162,9 @@ components hydrate to their initial render and serialize cleanly.
 | 42 | `$inspect` is dev-only — stripped entirely when `config.debug: false`. Top-level only. |
 | 54 | `createRoot(fn)` gives ownership without tracking — for anything that owns a lifetime (see §5) |
 | 55 | Scoped CSS appends the hash to the selector's SUBJECT — a component styles its own root, and reaches no child's markup. Cross a boundary with `:global(...)` |
+| 56 | An instance `<script>` exports exactly two things: `export let` (a prop) and `export function` (a method on the instance API). Every other export form is a compiler error — module scope is `<script module>` |
+| 57 | `<mesa:element this={expr}>` takes a non-empty tag name; changing it rebuilds the element. A tag selector in a scoped `<style>` cannot match it |
+| 58 | An unknown `mesa:` name is a compiler error, never a silently dropped element |
 
 ---
 

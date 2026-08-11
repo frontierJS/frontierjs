@@ -25,7 +25,7 @@ This file describes what it currently does.
 ## How to run it
 
 ```bash
-bun run dev          # API on :3001, UI on :5274
+bun run dev          # API on :8120, UI on :8020
 bun run db:seed      # an example fleet to look at
 bun run verify       # drive the whole thing in a browser (add --reset)
 ```

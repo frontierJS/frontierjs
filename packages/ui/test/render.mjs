@@ -39,6 +39,10 @@ const CASES = [
   ['components/display/Breadcrumbs.mesa', { items: [{ label: 'Home' }] }, ['breadcrumb']],
   ['components/display/Table.mesa',     { columns: [{ key: 'a', label: 'A' }] }, ['table', 'table-wrap']],
   ['components/display/Kbd.mesa',       {},                          ['kbd']],
+  // The heading TAG is the assertion: it comes from <mesa:element this={'h'+level}>,
+  // and a level that stopped reaching the DOM would render something that looks
+  // identical and carries a different document outline.
+  ['components/display/SectionHeader.mesa', { title: 'T', level: 3 }, ['section-header', 'h3']],
   ['components/layout/Card.mesa',       { tone: 'danger' },          ['card', 'danger']],
   ['components/layout/Tab.mesa',        { id: 'x' },                 ['tab']],
   ['components/feedback/Alert.mesa',    { tone: 'danger' },          ['alert', 'danger', 'alert-icon']],

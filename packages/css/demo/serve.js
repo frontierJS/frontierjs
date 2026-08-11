@@ -48,7 +48,8 @@ const root = findWorkspaceRoot(pkgRoot) || pkgRoot;
 const base = pkgRoot.slice(root.length).split(/[\\/]/).filter(Boolean).join('/');
 const prefix = base ? '/' + base : '';
 
-const port = Number(process.env.PORT || 5173);
+// dev/fe, project 4 — the FJS port scheme, packages/cli/core/ports.js
+const port = Number(process.env.PORT || 8040);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',

@@ -6,7 +6,7 @@ description: Push schema to fresh database
 ```js
 const { schema } = resolveDb(context, flag)
 context.exec({
-  command: `cd ${context.config.root} && bunx litestone push --schema ${schema}`,
+  command: `cd ${context.config.root} && bunx litestone db push --schema ${schema}`,
   dry: flag.dry
 })
 log.success('Database reset complete')

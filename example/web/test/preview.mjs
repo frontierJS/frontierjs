@@ -1,11 +1,11 @@
 /**
  * web/test/preview.mjs — serve the PRODUCTION build the way `bun run web`
  * serves the source: static files, SPA fallback, and `/api` `/auth` `/session`
- * `/ws` proxied to Junction on :3600.
+ * `/ws` proxied to Junction on :8110.
  *
  *   bun run build
- *   node web/test/preview.mjs &            # :5310
- *   UI_URL=http://localhost:5310 node web/test/verify.mjs
+ *   node web/test/preview.mjs &            # :8011
+ *   UI_URL=http://localhost:8011 node web/test/verify.mjs
  *
  * `bun run verify:build` does all three.
  *
@@ -27,8 +27,8 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', 'dist', 'client')
-const API  = process.env.API_URL ?? 'http://localhost:3600'
-const PORT = Number(process.env.PREVIEW_PORT ?? 5310)
+const API  = process.env.API_URL ?? 'http://localhost:8110'
+const PORT = Number(process.env.PREVIEW_PORT ?? 8011)
 
 const TYPES = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',

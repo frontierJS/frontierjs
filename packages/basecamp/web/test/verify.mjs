@@ -40,8 +40,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG  = join(HERE, '../..')            // packages/basecamp
 
 const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
-const API_PORT = 3001
-const WEB_PORT = 5274
+const API_PORT = 8120
+const WEB_PORT = 8020
 // The fake Basecamp agent. `volumes.remove` refuses to forget a row until the
 // machine says the disk is gone, so proving the happy path needs something
 // that answers as an agent — the same reason the channels checks send a real
@@ -1249,8 +1249,8 @@ check('…and the API never answers the token again',
 // ── the half that is not a screen ────────────────────────────────────
 // Called with fetch rather than through apiCall(), because apiCall carries the
 // SESSION token and the whole question here is what the KEY can do. Relative
-// URLs, through vite's proxy — the page's own origin is :5274, so an absolute
-// http://localhost:3001 is cross-origin and dies as `TypeError: Failed to
+// URLs, through vite's proxy — the page's own origin is :8020, so an absolute
+// http://localhost:8120 is cross-origin and dies as `TypeError: Failed to
 // fetch` with no status to assert on.
 const asKey = (path, method = 'GET') => evaluate(`
   fetch(${JSON.stringify(path)}, {

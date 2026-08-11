@@ -424,11 +424,12 @@ createApp({ db, auth })</pre>
 $ npx @frontierjs/cli new my-app
 $ cd my-app
 
-<i># edit db/schema.lite, then</i>
-$ fli db:migrate
-$ fli dev
+<i># add a model, apply it, run both halves</i>
+$ fli scaffold Note --fields "title:string done:boolean"
+$ fli db:push
+$ bun run dev
 
-  <em>→ http://localhost:3200</em></pre>
+  <em>&rarr; api :3000 &nbsp; web :5173</em></pre>
       </div>
 
       <div class="stack">
@@ -443,7 +444,8 @@ $ npm i @frontierjs/auth @frontierjs/caravan</pre>
     </div>
 
     <div class="cluster" style="margin-top:2rem; gap:.75rem;">
-      <a class="btn primary raised" href="https://github.com/frontierjs/frontierjs">GitHub</a>
+      <a class="btn primary raised" href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">Quickstart</a>
+      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs">GitHub</a>
       <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/blob/main/ARCHITECT.md">Architecture</a>
       <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/blob/main/PHILOSOPHY.md">Philosophy</a>
       <a class="btn ghost" href="https://github.com/frontierjs/frontierjs/tree/main/packages/junction/example">Runnable examples</a>

@@ -170,7 +170,7 @@ export function create${pascalPlural}Service() {
 
 function makeResourceFile(model, plural) {
   return `<script module>
-// src/resources/${plural}.mesa — the Resource layer.
+// src/resources/${model}.mesa — the Resource layer.
 //
 // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
 // no markup, everything in <script module>.
@@ -217,7 +217,7 @@ function makeIndexRoute(model, plural, fields) {
 title: ${toLabel(plural)}
 ---
 <script>
-  import { ${plural} } from '../../resources/${plural}.mesa'
+  import { ${plural} } from '../../resources/${model}.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
@@ -379,7 +379,7 @@ function makeCreateRoute(model, plural) {
 title: New ${toLabel(model)}
 ---
 <script>
-  import { ${plural} } from '../../resources/${plural}.mesa'
+  import { ${plural} } from '../../resources/${model}.mesa'
   import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
   import { goto } from '@frontierjs/sierra/router'
 
@@ -439,7 +439,7 @@ function makeEditRoute(model, plural) {
 title: ${toLabel(model)}
 ---
 <script>
-  import { ${plural} } from '../../resources/${plural}.mesa'
+  import { ${plural} } from '../../resources/${model}.mesa'
   import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
   import { page, goto } from '@frontierjs/sierra/router'
 
@@ -613,8 +613,13 @@ write(
 // ─── 3. Resource ──────────────────────────────────────────────────────────────
 
 if (!flag['no-resource']) {
+  // Invariant 19: a resource file is named for its noun — PascalCase, singular —
+  // exactly the split the Data realm already makes between `model Note` and
+  // `db.note`. The filename is the MODEL; the export inside stays the lowercase
+  // accessor. Where the plural is irregular that puts the irregularity in the
+  // filename, where it is visible.
   write(
-    resolve(context.paths.webResources, `${plural}.mesa`),
+    resolve(context.paths.webResources, `${modelName}.mesa`),
     makeResourceFile(modelName, plural),
     'resource'
   )

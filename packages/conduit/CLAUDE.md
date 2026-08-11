@@ -33,7 +33,7 @@ src/
   succeeds with a canned response; NotImplemented refuses. Do not use the first
   as a placeholder for a transport you meant to write.
 - **The credential must really resolve.** `example`'s drive posts to a dev mail
-  sink on :3610 precisely so the request leaves the process carrying a resolved
+  sink on :8111 precisely so the request leaves the process carrying a resolved
   credential and can really answer 500 — an outbound path that is only ever
   mocked is the easiest thing in a framework to believe in and never check.
 

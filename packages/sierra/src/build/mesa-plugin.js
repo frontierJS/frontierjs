@@ -265,33 +265,33 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
 
       try {
         const ctx = await compiler.compileSource(content, {
+          // An uncovered member read on an IMPORTED object is reported, whether
+          // or not the file already watches something on that import.
+          //
+          // Sierra's own state — `page`, `status`, `theme` — is plain objects a
+          // component makes reactive with a `$:` path watch, and a missing watch
+          // fails the worst possible way: the expression reads nothing reactive,
+          // so it is hoisted out of the render block and assigned once at mount.
+          // `{connected ? 'ws connected' : 'ws offline'}` read "ws connected"
+          // with the API stopped, and across a reload.
+          //
+          // Mesa's default confidence reports that only when the file watches
+          // some OTHER path on the same import — intent is then clear and the
+          // omission is an oversight. A component that watches nothing at all is
+          // the shape that actually shipped the bug, and default says nothing
+          // about it. Measured over the 97 components in this repo's apps:
+          // 4 warnings, all on `resource.gate.<method>`, a level number the
+          // schema fixes. Suppress one with `$: <path>` or read it in a `var`.
+          externalReactivityHints: 'strict',
           filename: id,
           dev: isDev,
+          // Everything the app configured, including any `externalSignals` of
+          // its own. Sierra declares NONE: it exports no module-level signal, so
+          // it has nothing to tell the compiler about (`FJS-060`). The map is an
+          // app-facing escape hatch for a third-party package that does export
+          // one — and `tests/no-module-signals.test.js` is what keeps this
+          // package from quietly becoming such a package again.
           ...mesaOptions,
-          // Teach the Mesa compiler which imported names are reactive signals.
-          // Names listed here are rewritten in template expressions from `name`
-          // to `name.get()` — Mesa's _listener tracking fires when .get() is
-          // called inside a reactive context (createEffect / render / memo).
-          // Sierra signals (router/signals.js) expose .get() which the runtime
-          // bridge below wires to Mesa's reactive graph via subscribe().
-          externalSignals: {
-            // Support both the scoped package name and the legacy short alias.
-            // Projects may install sierra as 'sierra' (file alias) or '@frontierjs/sierra'.
-            // NOTE: sierra/router is deliberately absent, as sierra/junction is.
-            // Router state is one plain `page` object now, made reactive per
-            // component with a `$:` path watch. Nothing for the accessor rewrite
-            // to do — and nothing to drift out of sync with.
-            '@frontierjs/sierra/theme': ['theme'],
-            'sierra/theme': ['theme'],
-
-            // NOTE: sierra/junction is deliberately absent. Its connection state
-            // is a plain `status` object now, made reactive per-component with a
-            // `$:` path watch — so there is nothing for the accessor rewrite to
-            // do. See mesa docs/VISION.md §5 and docs/PLAIN_OBJECT_STATE.md.
-            // User-provided externalSignals (from config.mesa.externalSignals)
-            // are merged in last so they can extend or override the above.
-            ...(mesaOptions.externalSignals ?? {}),
-          },
         })
 
         if (sierraContext) {

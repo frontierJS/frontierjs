@@ -20,7 +20,7 @@ is a finding about FrontierJS.
 
 ```bash
 cd packages/basecamp
-bun run dev          # API on :3001 and the UI on :5274
+bun run dev          # API on :8120 and the UI on :8020
 ```
 
 `bun run api` and `bun run web` start them separately. `dev` refuses to start if
@@ -31,7 +31,7 @@ The database is created and migrated on first boot. There are no users yet, so
 bootstrap one — this is the only unauthenticated write in the app:
 
 ```bash
-curl -X POST localhost:3001/setup \
+curl -X POST localhost:8120/setup \
   -H 'Content-Type: application/json' \
   -d '{"workspace_name":"Acme","name":"Sam","email":"sam@example.com","password":"hunter2hunter2"}'
 ```
@@ -42,7 +42,7 @@ That returns a `token`, the `user`, and a `workspace_id`. Then:
 TOKEN=…   WS=…
 
 # every scoped call needs the workspace header
-curl localhost:3001/projects \
+curl localhost:8120/projects \
   -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS"
 ```
 
@@ -50,7 +50,7 @@ curl localhost:3001/projects \
 wizard polls. To start over: `bun run db:reset` (it stops the servers first, for
 the reason above).
 
-Or do all of this in the browser at <http://localhost:5274> — the wizard, login
+Or do all of this in the browser at <http://localhost:8020> — the wizard, login
 and sign-out are built.
 
 **Or skip the empty app entirely:**
@@ -67,8 +67,8 @@ Seeding is idempotent — a second run does nothing; `--force` starts over.
 | | |
 |---|---|
 | `bun run dev` | both servers, after a port preflight |
-| `bun run api` | API with `--watch`, :3001 |
-| `bun run web` | UI dev server, :5274 — proxies the API paths to :3001 |
+| `bun run api` | API with `--watch`, :8120 |
+| `bun run web` | UI dev server, :8020 — proxies the API paths to :8120 |
 | `bun run stop` | kill whatever the last run left behind |
 | `bun run start` | API, no watch |
 | `bun run build` | `db:check` then the UI production build into `web/dist/` |
@@ -89,7 +89,7 @@ Everything is environment variables, declared and validated in
 
 | var | default | |
 |---|---|---|
-| `PORT` | `3001` | |
+| `PORT` | `8120` | |
 | `DATABASE_URL` | `./db/basecamp.db` | CWD-relative — start from the package root. The path is declared in `db/schema.lite` as `database main { path env("DATABASE_URL", …) }`, so the schema is what decides it and this variable steers that declaration |
 | `AUTH_SECRET` | dev placeholder | 32+ chars |
 | `ENCRYPTION_KEY` | dev placeholder | 64 hex chars — `Secret.data` is encrypted at rest |

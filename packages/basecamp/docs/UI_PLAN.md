@@ -66,11 +66,11 @@ No screens. Make the workspace see a UI realm at all.
 
 - `sierra.config.js`: `target: 'spa'`, `junction: { apiPrefix: '',
   authPrefix: '/auth', tokenKey }` — both the client's own defaults now that the
-  API carries no prefix. Vite proxies to `:3001`.
+  API carries no prefix. Vite proxies to `:8120`.
 - Move `BasecampUI.jsx` out of the Vite root to `docs/mock/` — reference, never
   ported.
 
-**Checkpoint — met.** `bun run web` on :5274, screenshot taken in headless
+**Checkpoint — met.** `bun run web` on :8020, screenshot taken in headless
 Chrome: the shell renders in `@frontierjs/css` vocabulary, Sierra reports
 `schema: 24 model(s)` from `../db/schema.lite`, and the page reads **39 defs**
 registered in the browser, `/health` → `ok` and `/setup/probe` → live counts,
@@ -90,8 +90,8 @@ proxy rule answers it with JSON.
 
 `web/config/vite.config.js` discriminates on `Accept`: a browser navigation asks
 for `text/html` and is handed the SPA shell, everything else is proxied.
-Verified both ways — `curl -H 'Accept: text/html' :5274/projects/` returns the
-shell, `curl -H 'Accept: application/json' :5274/projects` returns `401`.
+Verified both ways — `curl -H 'Accept: text/html' :8020/projects/` returns the
+shell, `curl -H 'Accept: application/json' :8020/projects` returns `401`.
 
 It works, and it is worth knowing it is load-bearing. If it turns fragile, the
 durable fix is to give the API an `apiPrefix: '/api'` and match it in

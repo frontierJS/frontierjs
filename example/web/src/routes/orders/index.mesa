@@ -43,6 +43,12 @@ title: Orders
   // still the server that actually refuses.
   $: canDelete = orders.can('delete', session.level)
 
+  // `var`, not `const`: a gate level comes off the schema and never changes,
+  // so a snapshot is what it is. Read straight in the template it is still a
+  // one-time read, only silently — the compiler reports an uncovered member
+  // read on an imported object, and saying `var` is how you agree with it.
+  var deleteLevel = orders.gate.delete
+
   // A transition IS an update, so it answers to the model's @@gate as well as
   // to its own @gate. transitionsAt() only grades the per-move gate — it is
   // given a row and a level, not the model's gate table — so without this a
@@ -174,7 +180,7 @@ title: Orders
 {#if !canDelete}
   <Alert tone="muted">
     Delete is disabled because <code>@@gate</code> wants level
-    {orders.gate.delete} and this session is {session.level}. Sign in as admin.
+    {deleteLevel} and this session is {session.level}. Sign in as admin.
   </Alert>
 {/if}
 

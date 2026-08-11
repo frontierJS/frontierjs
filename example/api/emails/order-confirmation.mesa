@@ -44,7 +44,7 @@
   export let reference = 'ORD-0000'
   export let customer  = 'there'
   export let total     = '0.00'
-  export let orderUrl  = 'http://localhost:5274/orders/'
+  export let orderUrl  = 'http://localhost:8010/orders/'
 </script>
 
 <Email subject="Your order is confirmed" preview="We have your payment — here is what happens next.">

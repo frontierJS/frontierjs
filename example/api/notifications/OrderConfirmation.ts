@@ -59,7 +59,7 @@ export class OrderConfirmation extends Notification {
       reference: order.reference,
       customer:  customer.name,
       total:     order.total.toFixed(2),
-      orderUrl:  `http://localhost:5274/orders/${order.id}/`,
+      orderUrl:  `http://localhost:8010/orders/${order.id}/`,
     }
 
     const { subject, html, text } = await renderEmailFile(TEMPLATE, { data })

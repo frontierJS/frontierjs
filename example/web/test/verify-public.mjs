@@ -40,7 +40,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const DIST   = join(HERE, '..', 'dist', 'public')
-const API    = process.env.API_URL ?? 'http://localhost:3600'
+const API    = process.env.API_URL ?? 'http://localhost:8110'
 const PORT   = Number(process.env.PUBLIC_PORT ?? 5320)
 const ORIGIN = `http://localhost:${PORT}`
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'

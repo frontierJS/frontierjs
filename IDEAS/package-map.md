@@ -139,6 +139,11 @@ it is very urgent the moment one does.
   interim and `compass` supersedes it
 - `IDEAS/diagnostics.md` — `fli doctor`; a `fli` command rather than a package, but it
   shares `project:map --json` with `atlas`
+- `IDEAS/command-surface.md` — **no package, and the finding is the reverse of most
+  rows here.** Sized against oclif, `fli`'s authoring model is ahead and its
+  *distribution* model is the gap: a package cannot ship a command, so the CLI's tree
+  hand-copies what belongs to `auth`. Item 1 is the command-shaped half of `slices.md`
+  and item 2 is the CLI half of `herald` — neither wants a name of its own
 - `IDEAS/app-manifest.md` — `frontier.config.js` + `frontier.lock`; also `fli` rather
   than a package, and the lock may simply *be* `project:map --json`, committed
 - `IDEAS/time-travel.md` — named checkpoints over the audit trail; `fli` commands over

@@ -182,7 +182,10 @@ const apiSrcCandidates = [
   resolvePath(context.paths.root, 'api/src/app.ts'),
 ]
 const healthPath = deployConf.api?.health ?? '/health'
+// healthPlugin() registers /health without the path ever appearing as a literal,
+// so a plugin-wired app would fail a string search while answering correctly.
 const hasHealth  = fileContains(apiSrcCandidates, new RegExp(`['"\`]${healthPath.replace(/\//g, '\\/')}['"\`]`))
+  || (healthPath === '/health' && fileContains(apiSrcCandidates, /healthPlugin\s*\(/))
 if (hasHealth) {
   renderCheck(`${healthPath} route in api source`, 'pass')
 } else {
@@ -224,7 +227,9 @@ if (isJunction) {
     junctionDep ? 'in package.json' : 'imported in api source')
 
   // /ws route check — the convention from the deploy:setup nginx template
+  // channels() is what registers /ws; the path is never written in app source.
   const hasWs = fileContains(apiSrcCandidates, /['"\`]\/ws['"\`]/)
+    || fileContains(apiSrcCandidates, /channels\s*\(/)
   if (hasWs) {
     renderCheck(`/ws route in api source`, 'pass')
   } else {

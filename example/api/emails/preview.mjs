@@ -5,7 +5,7 @@
  * server, delivered to somebody else, and read in a client you do not control.
  * `bun run verify:notify` asserts the structure; this is for the other half —
  * seeing it. Open the file it prints in a browser, and forward it to yourself
- * from `curl localhost:3610/outbox` when you want a real mail client's opinion.
+ * from `curl localhost:8111/outbox` when you want a real mail client's opinion.
  */
 import { renderEmailFile } from '@frontierjs/email-kit/render'
 import { writeFile, mkdir } from 'node:fs/promises'
@@ -18,7 +18,7 @@ const SAMPLES = [
     reference: 'ORD-1042',
     customer:  'Acme Corp',
     total:     '128.40',
-    orderUrl:  'http://localhost:5274/orders/1042/',
+    orderUrl:  'http://localhost:8010/orders/1042/',
   }],
 ]
 

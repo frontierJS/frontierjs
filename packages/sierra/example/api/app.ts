@@ -18,7 +18,7 @@ import {
 import { createClient, autoMigrate, GatePlugin } from '@frontierjs/litestone'
 
 const HERE = import.meta.dir
-const PORT = 3500
+const PORT = 8130
 
 // ─── 1. Data ──────────────────────────────────────────────────────────────
 // The SAME file the Vite build reads to seed the browser. Neither side restates
@@ -112,7 +112,7 @@ await app.start()
 console.log(`
   ─────────────────────────────────────────────
     API   http://localhost:${PORT}/api/leads
-    UI    bun run example        → http://localhost:5273
+    UI    bun run example        → http://localhost:8030
 
     curl http://localhost:${PORT}/api/leads
     curl -X POST http://localhost:${PORT}/api/leads \\

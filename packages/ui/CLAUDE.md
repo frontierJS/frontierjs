@@ -48,8 +48,11 @@ test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs
   something else (a toast identity, a tab pairing, the id of the control a
   `Label` points at) and never reaches the DOM as an id — those are in the
   suite's own exception list, with the reason.
-- **A component cannot expose a method** (mesa `FJS-087`) — `export function` in
-  an instance script is dropped. Hand behaviour out through a callback prop.
+- **A component exposes a method with `export function`, reached by `bind:this`**
+  — `Input`/`Select`/`Textarea`/`NumberInput` (`focus()`, `select()`) and `Form`
+  (`submit()`, `reset()`, `clearErrors()`). It was dropped from the compiled
+  output until mesa closed `FJS-087`, so those four had documented a method they
+  did not have. `Form` also still hands the same three out through `onready`.
 - **A local `<style>` may not name a class `@frontierjs/css` owns.** That is the
   only way a kit component silently changes the package for an app that never
   imports the kit. Two did and both are gone: `DropdownItem` styled `.item`

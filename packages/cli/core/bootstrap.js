@@ -1,14 +1,15 @@
 // bootstrap.js — fli's command-resolution + help/list/search entry point.
-// Notably, this file does NOT import 'zx/globals'. Compiled commands import
-// zx/globals themselves; bootstrap only needs chalk + minimist as named
-// imports. Skipping zx/globals here saves ~100ms on read-only invocations
-// (fli list, fli help, search).
-import { chalk, minimist } from 'zx'
+// Nothing on the read-only path (list, help, search, completion) may import zx,
+// which is ~85ms of a ~200ms invocation. That means chalk comes from color.js
+// and minimist is a direct dependency rather than one of zx's re-exports — and
+// it also means `Command` is imported where a command is actually run, since a
+// static import of runtime.js pulls zx back in for every `fli list`.
+import minimist from 'minimist'
+import { chalk } from './color.js'
 import { resolve } from 'path'
 import { homedir } from 'os'
 import { logger, loadEnv } from './utils.js'
 import { printPlanFromFile } from './prose.js'
-import { Command } from './runtime.js'
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { loadConfig } from './config.js'
 
@@ -536,6 +537,7 @@ export async function run(process) {
   // consumed there too (it pins global.projectRoot). Stripping them here avoids
   // them bleeding into commands that don't expect them.
   const { help: _help, h: _h, debug: _debug, project: _project, ...cmdFlag } = flag
+  const { Command } = await import('./runtime.js')
   const command = await Command({ file: entry.filePath, arg: rawArgs, flag: cmdFlag })
   return command()
 }

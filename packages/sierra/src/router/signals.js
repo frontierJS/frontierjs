@@ -32,9 +32,14 @@
  * rather than eight. (Measured at one both before and after this change — the
  * bridge was not defeating the scheduler, it was just redundant.)
  *
- * The object shape — { get, set } — is kept because the Mesa compiler's
- * `externalSignals` config rewrites bare identifiers to `name.get()` inside
- * template expressions. See build/mesa-plugin.js.
+ * NOTHING HERE IS EXPORTED AT MODULE SCOPE ANY MORE, and that is load-bearing.
+ * A module-level signal is only reactive in a template if the consuming build
+ * names it in an `externalSignals` map — in another package, by hand — and the
+ * map is gone (`FJS-060`). `page`, `status` and `theme` are plain objects a
+ * component watches with `$:`. The one caller left is `presence(channelId)`,
+ * which returns a signal from a function call: no map could ever have described
+ * that, and the caller holds the object rather than importing a name.
+ * `tests/no-module-signals.test.js` is what keeps it that way.
  */
 
 import { createSignal, createEffect } from '@frontierjs/mesa/runtime.js'

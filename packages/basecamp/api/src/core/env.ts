@@ -14,7 +14,7 @@ export const DEV_ENCRYPTION_KEY = '0'.repeat(64)
 export const env = defineEnv({
   // ── Core ──────────────────────────────────────────────────
   NODE_ENV:     { default: 'development' },
-  PORT:         { type: 'port',   default: 3001 },
+  PORT:         { type: 'port',   default: 8120 },
   HOST:         { default: '0.0.0.0' },
 
   // ── Database ──────────────────────────────────────────────

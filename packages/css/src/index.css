@@ -11,7 +11,7 @@
  *   index.css        this file — the only thing most apps import
  *   utilities.css    the escape hatch; late layer, so it beats components
  *   foundation/      reset, tokens, tones, and the two lineage bases
- *   themes/          the seven shipped themes
+ *   themes/          the nine shipped themes
  *   components/      btn, card, field, table, dialog …
  *   patterns/        the Block tier: bar, list, feed, steps, tabs …
  *   a11y/            the focus ring and the a11y primitives
@@ -74,6 +74,7 @@
 @import './themes/elite.css'    layer(themes);
 @import './themes/basecamp.css' layer(themes);
 @import './themes/notebook.css' layer(themes);
+@import './themes/press.css'    layer(themes);
 
 /* Foundation — the rest of it; tokens.css is imported above */
 @import './foundation/tones.css'   layer(tones);

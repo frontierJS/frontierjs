@@ -54,7 +54,7 @@
   grid-template-columns: minmax(180px, 1fr) auto minmax(220px, 1.3fr);
   gap: 28px;
   align-items: center;
-  background: var(--paper);
+  background: var(--paper, var(--surface-sunken));
   border: 1px solid var(--rule);
   border-radius: 8px;
   padding: 28px 24px;
@@ -1081,7 +1081,7 @@
   display: block;
   inline-size: 100%;
   block-size: auto;
-  background: var(--paper);
+  background: var(--paper, var(--surface-sunken));
   border: 1px solid var(--rule);
   border-radius: 10px;
   margin-block-end: 16px;

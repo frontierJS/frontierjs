@@ -248,10 +248,10 @@ which reported success from `analysis.errors`:
   class prop was passed and only the consumer's when one was. Fixed with
   `bindClassPassthrough` in `runtime.js`.
 
-Three gaps found there are **not** fixed and are documented as current
-behaviour: a destructuring assignment to reactive lets (`[a,b] = [b,a]`) emits
-invalid JS; `{@const}` inside `{#each}` calls the loop index as a getter; and
-`<mesa:element this={…}>` is not a feature but compiles without complaint.
+Two gaps found there are **not** fixed and are documented as current behaviour:
+a destructuring assignment to reactive lets (`[a,b] = [b,a]`) emits invalid JS,
+and `{@const}` inside `{#each}` calls the loop index as a getter. The third —
+`<mesa:element this={…}>` compiling to nothing — is closed; see `CHANGES.md`.
 
 ---
 
@@ -282,11 +282,9 @@ invalid JS; `{@const}` inside `{#each}` calls the loop index as a getter; and
 ## Known Issues / Backlog — see `ISSUES.md`
 
 Defects and gaps for this package are in the repo-wide register:
-**`FJS-023`** `<mesa:element this={…}>` compiles but is not a feature ·
 **`FJS-024`** `mesa-vite` has no tests, HMR unconfirmed in a browser ·
 **`FJS-025`** nothing verified in a real browser (every suite is happy-dom) ·
 **`FJS-026`** `mesa-vite/`/`mesa-bench/` invisible to the workspace glob ·
-**`FJS-060`** `externalSignals` is hand-maintained ·
 **`FJS-067`** the deferred set — `tick()`, `{#virtual each}` in SSR,
 variable-height virtual lists, full hydration SSR, TypeScript,
 `$: fn()` post-execution hooks ·

@@ -8,8 +8,7 @@ if (major < 20 || (major === 20 && minor < 6)) {
   process.exit(1)
 }
 
-import { register } from 'node:module'
-import { pathToFileURL, fileURLToPath } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 global.fliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -17,8 +16,8 @@ global.fliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const { findProjectRoot } = await import('../core/utils.js')
 global.projectRoot = findProjectRoot(process.cwd(), global.fliRoot)
 
-const loaderPath = resolve(global.fliRoot, 'core/compiler.js')
-register(pathToFileURL(loaderPath))
+// No .md loader hook — nothing imports a .md. The runtime compiles a command
+// with its namespace module script and imports the shim; see bin/fli.js.
 
 const { startServer } = await import('../core/server.js')
 startServer()

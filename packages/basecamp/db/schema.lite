@@ -251,7 +251,7 @@ model User {
   deployments    Deployment[]
   apiKeys        ApiKey[]
 
-  @@gate("8")
+  @@gate("4.4.4.5")
   @@softDelete
   @@log(audit)
   @@unique([accountId, username])

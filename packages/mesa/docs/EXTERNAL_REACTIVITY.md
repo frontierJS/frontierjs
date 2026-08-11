@@ -1,11 +1,31 @@
 # External reactivity in Mesa
 
-**Status:** option 1 (compiler diagnostic) shipped. Options 2–4 still open.
-**See also:** `PLAIN_OBJECT_STATE.md` — a fifth option that removes the problem
-rather than detecting it: external state as plain objects, reactivity opt-in via
-`$:` path watching. Verified feasible.
-**Symptom:** an imported signal reads as a plain object — permanently truthy,
-never updates, no error.
+**Status: settled by option 5, 2026-08-10.** Sierra exports no module-level
+signal and passes Mesa no `externalSignals` map at all — its state is the plain
+objects `page`, `status` and `theme`, made reactive per component with a `$:`
+path watch (`PLAIN_OBJECT_STATE.md`, `FJS-060`). Options 2–4 below are therefore
+**not open questions any more, they are alternatives that were not taken**; they
+are kept because the reasoning is what makes the choice legible, and because
+`externalSignals` still exists as an app-facing escape hatch for a third-party
+package that does export a signal.
+
+**Two things the migration nearly got wrong**, both now handled:
+
+- **It moved the silent failure rather than removing it.** A plain-object read
+  with no `$:` watch is hoisted out of the render block exactly as a missed
+  signal rewrite was — assigned once at mount, never updated, no error. The
+  syntax changed; the failure did not.
+- **And the replacement was QUIETER than what it replaced.** Option 1's
+  diagnostic fires whenever the map describes the module. The path-watch tier's
+  default confidence fires only when the file already watches some other path on
+  the same import — which says nothing about a component that watches nothing at
+  all, and that is the shape that shipped the `connected` bug. `strict` closes
+  it, and Sierra's plugin now passes it. Measured over 218 real components in
+  the FrontierJS repo: 4 warnings before the migration was finished, all on a
+  schema-fixed gate level, 0 after.
+
+**Symptom (historical):** an imported signal reads as a plain object —
+permanently truthy, never updates, no error.
 
 ---
 
@@ -158,24 +178,26 @@ and makes "is this reactive?" a runtime property rather than a compile-time one.
 
 ---
 
-## A view
+## What was chosen
 
-**1 is shipped; 2 is the natural follow-on.** They're complementary and neither
-is breaking. 1 turns a silent failure into a loud one, which is the actual
-problem. 2 would remove the drift that makes 1 necessary — and would also let 1
-widen, because once packages declare their own signals, a read from an
-undescribed module becomes suspicious rather than merely unknown.
+**5, with 1 kept as its guard rail.** A framework that exports no module-level
+signal has nothing to declare, so 2's drift, 3's breaking rename and 4's runtime
+cost all become questions nobody has to answer. `page`, `status` and `theme` are
+plain objects; a component states the paths it depends on, which is the same
+`let`/`const`/`var` decision made at the use site rather than at the declaration.
 
-The gap 1 leaves is the barrel: re-export a signal through a local module and
-nothing can tell. That needs 2 or 4.
+**The barrel gap goes with it.** 1 could never see a signal re-exported through a
+local module. There is no signal to re-export.
 
-3 is the cleanest end state and the most expensive to get to. Worth deciding
-before the API surface grows further, because the cost only goes up.
+What 5 costs, and it is not nothing: the failure mode survives the change — a
+member read with no watch is still hoisted static — so option 1's diagnostic
+had to grow a second tier and Sierra had to opt into its strict setting. A
+migration that had stopped at "the map is empty" would have shipped a quieter
+bug than the one it set out to fix.
 
-4 is tempting for barrels but trades a compile-time property for a runtime one,
-which cuts against what makes the `let`/`const`/`var` design good.
+2, 3 and 4 stay written down because a package outside this repo can still export
+a signal, and `externalSignals` is still the answer for it.
 
-Interim, and cheap: `sierra/tests/external-signals.test.js` walks `src/` for
-`export const x = signal(...)`, parses the map out of `mesa-plugin.js`, and
-asserts they agree in both directions. That closes drift for signals Sierra
-itself exports. It does nothing for consuming apps.
+The drift test that guarded the map is gone with the map.
+`sierra/tests/no-module-signals.test.js` replaced it and asserts the stronger
+thing: `src/` exports none, and the plugin declares none.

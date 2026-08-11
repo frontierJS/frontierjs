@@ -96,10 +96,15 @@ All three were invisible to `analysis.errors` — the compiler reported success.
 
 ## Known Mesa gaps (not fixed — worked around here)
 
-- **`<mesa:element this={…}>` is not a feature**, and compiles without
-  complaint. `SectionHeader` uses an explicit `h1`–`h6` ladder.
+None outstanding.
 
-Two are gone (2026-08-10). A **destructuring assignment to reactive lets** is
+Four are gone (2026-08-10). **`<mesa:element this={…}>` exists**, so
+`SectionHeader` no longer carries an `h1`–`h6` `{#if}` ladder. **`export
+function` reaches the compiled output** and `bind:this` on a component hands
+over the exported interface, so `Input`/`Select`/`Textarea`/`NumberInput`
+actually have the `focus()` the docs claimed and `Form` exposes `submit()`,
+`reset()` and `clearErrors()` (its `onready` prop stays for callers already
+using it). A **destructuring assignment to reactive lets** is
 rewritten through the setters, so `DatePicker` writes its range swap as
 `[_startDate, _endDate] = [_endDate, _startDate]` again. A **`{@const}` reading
 the loop index** works — the index is a signal, so calling it is correct — and
@@ -134,7 +139,7 @@ vs `on:click` directive ·
 **`FJS-056`** `Btn`/`Button` overlap, `CommandPalette` surface, `themeStore` vs
 the six `theme-*` classes.
 
-The Mesa gap above is **`FJS-023`**. Three more were found by rendering all 64
+Three Mesa defects were found by rendering all 64
 components for the first time and are **fixed the same day** — `FJS-146` an
 `{@attach}` ran under SSR where `el.animate` does not exist, `FJS-147`
 `{#each { length: n }}` was not iterable so **`DatePicker` had never rendered

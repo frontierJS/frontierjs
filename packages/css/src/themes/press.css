@@ -1,0 +1,147 @@
+/*
+ * press.css
+ * Newsprint letterpress: paper ground, serif headlines over a monospace body,
+ * square corners, hard ink shadows with no blur.
+ *
+ * The other themes retune colour and, in elite's case, radius and face. This
+ * one exists to answer how far the token surface reaches on its own — it moves
+ * the type scale, the leading ladder, the density axis, the ring, the rules and
+ * the shadow shape, and touches no selector the package does not already ship.
+ * If a look needs a rule of its own, the token that would have carried it is
+ * missing; nothing here needed one.
+ */
+
+.theme-press {
+  /* ── Colours ────────────────────────────────────────────────────────
+   * Primary is ink, not a brand hue: a press sheet has one colour and a
+   * second one it paid extra for, which is --color-secondary's vermilion.
+   * chip.css derives chip text from the fill's luminance, so the fills are
+   * safe by construction; these are additionally tuned to clear AA as TEXT
+   * on --surface-sunken, the tightest of the three grounds (4.6:1 at worst).
+   */
+  --color-primary:   #1b1714;
+  --color-secondary: #af3d28;
+  --color-muted:     #696358;
+  --color-info:      #2c5f7c;
+  --color-success:   #2f6b3a;
+  --color-warning:   #875b08;
+  --color-danger:    #a12318;
+
+  /* ── Paper and ink ──────────────────────────────────────────────────
+   * --ink-mute is the lightest rung of the ramp and it is still body text
+   * (placeholders, table heads, field hints at 11–13px), so it is fitted to
+   * 4.61:1 on --surface-sunken by scaling in linear RGB — chromaticity
+   * unchanged, the same operation tokens.css used on its own.
+   */
+  --surface:        #f7f4ec;
+  --surface-raised: #fffefa;
+  --surface-sunken: #e8e2d4;
+  --ink:            #16130f;
+  --ink-soft:       #4a453c;
+  --ink-mute:       #696358;
+
+  /*
+   * Rules are ink, not a tint. Every divider, field border and table line in
+   * the package reads these two, so a dark --rule is what turns the whole
+   * system boxy without a single new selector — and it is also the one token
+   * here that a light-touch theme should not copy.
+   */
+  --rule:        #2a251d;
+  --rule-strong: #16130f;
+
+  /* ── Square everything ──────────────────────────────────────────────
+   * --badge-radius is deliberately unset: badges follow --btn-radius through
+   * a use-site fallback, so squaring buttons squares badges for free.
+   * --pill-radius stays 9999px — a Pill that is not a pill is a Badge.
+   */
+  --btn-radius:   0;
+  --card-radius:  0;
+  --field-radius: 0;
+
+  /* ── Set type ───────────────────────────────────────────────────────
+   * Buttons and badges are stamped: heavy, uppercase, widely tracked. Pills
+   * stay sentence case, because a Pill carries a value the reader typed.
+   */
+  --btn-font-weight:    700;
+  --btn-text-transform: uppercase;
+  --btn-letter-spacing: 0.12em;
+
+  --badge-font-weight:    700;
+  --badge-text-transform: uppercase;
+  --badge-letter-spacing: 0.1em;
+
+  --pill-font-weight:    500;
+  --pill-text-transform: none;
+  --pill-letter-spacing: 0.01em;
+
+  /*
+   * Both faces are stated. --font-display does not fall back through a theme:
+   * a theme that sets only --font-primary leaves h1–h6 in whatever the host
+   * page declared, which is the trap elite.css documents.
+   *
+   * No webfont. A theme that needs one is a theme that renders in a fallback
+   * face on first paint and in someone else's on a locked-down network.
+   */
+  --font-primary: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-display: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --font-mono:    ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  /*
+   * A monospace body sets wider than a proportional one at the same nominal
+   * size, so the reading rungs come down a step while the display rungs go
+   * up — the headline/body contrast a broadsheet has and a UI usually does
+   * not. The rungs are literals: `--text-sm: var(--text-md)` at a theme
+   * resolves once and would not follow a scoped retune.
+   */
+  --text-2xs: 0.625rem;
+  --text-xs:  0.6875rem;
+  --text-sm:  0.75rem;
+  --text-md:  0.8125rem;
+  --text-lg:  0.9375rem;
+  --text-xl:  1.125rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 2.125rem;
+  --text-4xl: 3rem;
+
+  /* Headline leading, tight enough that a two-line h1 reads as one block. */
+  --leading-display: 0.95;
+  --leading-heading: 1.08;
+  --leading-snug:    1.4;
+  --leading-normal:  1.5;
+  --leading-body:    1.6;
+  --leading-relaxed: 1.7;
+
+  /*
+   * Density inherits, so a theme can set it: mono glyphs need the extra
+   * room. A `.dense` region inside still wins — it is declared on the
+   * element, this is inherited from the ancestor.
+   */
+  --density: 1.15;
+
+  /* ── Hard shadows ───────────────────────────────────────────────────
+   * No blur and no alpha ramp: the elevation is a printing offset, so the
+   * card looks stamped rather than lit. Every raised surface in the package
+   * reads these three, which is why this reaches dialogs, toasts, drawers,
+   * popovers and tooltips without naming any of them.
+   */
+  --shadow-sm: 2px 2px 0 #16130f;
+  --shadow-md: 3px 3px 0 #16130f;
+  --shadow-lg: 6px 6px 0 #16130f;
+
+  /*
+   * The ring is ink rather than the brand hue and sits flush, so focus reads
+   * as a struck border. --ring must be stated: it follows --color-primary by
+   * use-site fallback, and here that would be right by accident.
+   */
+  --ring:        #16130f;
+  --ring-width:  3px;
+  --ring-offset: 0px;
+
+  /* Measure and frame. A narrower column than the default 1280px. */
+  --container-max:    1080px;
+  --container-narrow: 680px;
+  --container-pad:    1.5rem;
+  --topbar-height:    3rem;
+  --sidebar-width:    14rem;
+  --screen-pad:       2rem;
+}

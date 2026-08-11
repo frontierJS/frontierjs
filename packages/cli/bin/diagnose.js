@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
-import { register } from 'node:module'
-import { pathToFileURL, fileURLToPath } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 
@@ -17,11 +16,7 @@ console.log('fliRoot:     ', global.fliRoot)
 console.log('projectRoot: ', global.projectRoot)
 
 const loaderPath = resolve(global.fliRoot, 'core/compiler.js')
-console.log('Loader path: ', loaderPath)
-console.log('Loader exists:', existsSync(loaderPath))
-
-register(pathToFileURL(loaderPath))
-console.log('Loader registered ✓')
+console.log('Compiler:    ', loaderPath, existsSync(loaderPath) ? '✓' : '✗ MISSING')
 
 const { compileCli } = await import('../core/compiler.js')
 const testMd = `---\ntitle: test:diag\ndescription: Diagnostic test\n---\n\n\`\`\`js\nlog.info('ok')\n\`\`\`\n`

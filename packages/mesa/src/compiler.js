@@ -32,6 +32,15 @@ const RESERVED_WORDS = new Set([
   'void', 'while', 'with', 'yield', 'await',
 ])
 
+/**
+ * The tag `<mesa:element this={…}>` is compiled under before the runtime swaps
+ * it for the real one. A hyphenated custom-element name so the HTML parser gives
+ * it no special treatment — a made-up plain name like `dyn` is parsed as an
+ * unknown element too, but only a custom-element name is guaranteed to stay
+ * where it was written rather than being foster-parented or auto-closed.
+ */
+const MESA_DYNAMIC_TAG = 'mesa-dynamic-element'
+
 // ─── 1. UTILS ─────────────────────────────────────────────────────────────────
 
 // Events that do not bubble and therefore cannot be delegated to a root listener.
@@ -1948,6 +1957,7 @@ export function analyzeScript(raw, ast) {
 
   // ── Pass 1: classify declarations ──────────────────────────────────────────
   const contextProvides = []   // { key, initRaw, nodeStart }
+  const exportedMembers = []   // { name } — `export function` on the instance API
 
   // Pre-scan for import names so $: label parsing (also in Pass 1) can
   // distinguish imported identifiers from locally-declared functions.
@@ -1981,6 +1991,34 @@ export function analyzeScript(raw, ast) {
       // initNode is what lets the emitter run rewriteAssignments over the value.
       contextProvides.push({ key, initRaw, initNode: node.expression.right, nodeStart: node.start })
       passthroughDeclStarts.add(node.start)
+      continue
+    }
+
+    // export function name() {…} — a method on the component's instance API
+    // (VISION §10.2 / RULE 36). The declaration itself is emitted like any other
+    // top-level function; what `export` adds is the registration that puts it on
+    // whatever `bind:this` hands the parent.
+    if (
+      node.type === 'ExportNamedDeclaration' &&
+      node.declaration?.type === 'FunctionDeclaration'
+    ) {
+      const name = node.declaration.id?.name
+      if (name) exportedMembers.push({ name })
+      continue
+    }
+
+    // Every other export form. They were dropped in silence, which is how a
+    // component could reference its own exported function from its template and
+    // throw ReferenceError on the first interaction with nothing to read.
+    if (
+      node.type === 'ExportNamedDeclaration' &&
+      node.declaration?.type !== 'VariableDeclaration'
+    ) {
+      errors.push(
+        `'${raw.slice(node.start, Math.min(node.end, node.start + 40)).split('\n')[0].trim()}' — ` +
+        `an instance <script> exports only \`export let\` (a prop) and ` +
+        `\`export function\` (a method). Module-scope exports go in <script module>.`
+      )
       continue
     }
 
@@ -2471,6 +2509,7 @@ export function analyzeScript(raw, ast) {
     errors,
     warnings,
     contextProvides,
+    exportedMembers,
     reactiveNames: [...reactiveSet],
     passthroughDeclStarts
   }
@@ -3471,6 +3510,68 @@ export function buildBlock(data, option = {}) {
                 }
               }))
             }
+          } else if (n.elArg === 'element') {
+            // <mesa:element this={tag}> — an element whose tag is an expression.
+            //
+            // Compiled as the placeholder element `MESA_DYNAMIC_TAG` so the whole
+            // ordinary element path runs over it — attributes, events, bindings,
+            // children, CSS scoping — and wrapped in a keyBlock on the tag, which
+            // rebuilds when it changes. $runtime.dynamicElement then transplants
+            // the placeholder onto an element created from the live expression.
+            //
+            // A tag SELECTOR in a scoped <style> cannot match it: the scoper works
+            // on the parsed template, where the tag is the placeholder. Match on a
+            // class instead.
+            const thisProp = n.attributes.find(a => a.name === 'this')
+            const rawTag = thisProp?.value ? unwrapExp(thisProp.value) : null
+            if (!rawTag) {
+              ctx.analysis.errors.push(
+                '<mesa:element> requires a tag expression: <mesa:element this={tag}>.'
+              )
+              return
+            }
+            const tagExp = ctx.accessors ? rewriteExpr(rawTag, ctx.accessors) : rawTag
+            ctx.detectDependency(rawTag)
+            const elNode = {
+              ...n,
+              name: MESA_DYNAMIC_TAG,
+              elArg: null,
+              attributes: n.attributes.filter(a => a !== thisProp)
+            }
+            const block = ctx.buildBlock({ body: [elNode] }, { inline: true })
+            const label = requireLabel(true, true)
+            binds.push(xNode('dynamic-element', { label, tagExp, block }, (w, nd) => {
+              w.write(true, `$runtime.keyBlock(${nd.label.name}, () => (${nd.tagExp}), `)
+              w.write(`$runtime.makeBlock($runtime.dynamicElement(() => (${nd.tagExp}), `)
+              w.add(nd.block.template)
+              w.write(')')
+              if (nd.block.source) {
+                w.write(', ($parentElement) => {', true)
+                w.indent++
+                w.add(nd.block.source)
+                w.indent--
+                w.write(true, '}')
+              }
+              w.write(')')
+              if (!nd.label.node) w.write(', true')
+              w.write(');', true)
+            }))
+            if (isRoot) requireFragment = true
+          } else if (n.elArg === 'mounted') {
+            // The top-level one was lifted out of the body before this ran; any
+            // that reaches here is nested, where it gates nothing.
+            ctx.analysis.errors.push(
+              '<mesa:mounted> gates the whole template and must be a top-level ' +
+              'node of the component.'
+            )
+          } else {
+            // Anything else under the mesa: namespace emitted NOTHING and said
+            // nothing — the element and every child vanished from the output, so
+            // a misspelling read as "the feature does not work" (`FJS-023`).
+            ctx.analysis.errors.push(
+              `<mesa:${n.elArg}> is not a Mesa element. Known: ` +
+              `boundary, mounted, element, window, document, body, portal, head.`
+            )
           }
           return
         }
@@ -4631,8 +4732,10 @@ export function makeComponent(node, option = {}) {
         w.writeLine(`}${close}`)
       }
 
-      // Register anchor so pushProps and bindProp can find the child's registry
-      if (n.hasReactive || n.hasSpreads || n.twoWayProps.length) {
+      // Register anchor so pushProps, bindProp and bind:this can find the
+      // child's registry. bind:this needs it too — the exported interface is
+      // built from the same registration.
+      if (n.hasReactive || n.hasSpreads || n.twoWayProps.length || n.hasBindThis) {
         w.writeLine(`$runtime.registerComponentAnchor(${n.anchorName});`)
       }
 
@@ -4641,9 +4744,12 @@ export function makeComponent(node, option = {}) {
         w.writeLine(`$runtime.bindProp(${n.anchorName}, '${b.name}', (v) => ${b.setter}(v));`)
       }
 
-      // bind:this
+      // bind:this — the child's exported interface (props + `export function`
+      // methods), never the anchor node. It used to hand over the anchor, which
+      // is a comment: `ref.focus()` on a component was a TypeError and
+      // `ref.count` was undefined, both silently (`FJS-087`).
       if (n.hasBindThis) {
-        w.writeLine(`${n.bindThisSetter}(${n.anchorName});`)
+        w.writeLine(`${n.bindThisSetter}($runtime.componentApi(${n.anchorName}));`)
       }
 
       // Reactive prop sync: push new values whenever deps change
@@ -6162,7 +6268,16 @@ export function emitScript(ctx) {
   // must be emitted verbatim with their init expressions rewritten through
   // ctx.accessors so reactive variables are read through their signal getters.
   const { passthroughDeclStarts } = ctx.analysis
-  for (const node of ast.body) {
+  for (const astNode of ast.body) {
+    // `export function f() {}` is emitted as `function f() {}` — the keyword has
+    // no meaning inside the component function, and skipping the whole statement
+    // deleted the declaration along with it (`FJS-087`). What `export` buys is the
+    // registerExports() call below, not a different emission.
+    const node =
+      astNode.type === 'ExportNamedDeclaration' &&
+      astNode.declaration?.type === 'FunctionDeclaration'
+        ? astNode.declaration
+        : astNode
     if (node.type === 'ImportDeclaration') continue // already emitted
     if (node.type === 'ExportNamedDeclaration') continue // props handled above
     if (node.type === 'LabeledStatement') continue // $: forms handled above
@@ -6260,6 +6375,16 @@ export function emitScript(ctx) {
     } else {
       mod.code.push(xNode.raw(rewritten))
     }
+  }
+
+  // ── The instance API — what `bind:this` on this component hands the parent ──
+  // Exported props are already in the prop registry (makeExternalProperty), so
+  // only the methods need declaring. One call, after the statements: function
+  // declarations hoist, so the order inside the emitted body does not matter.
+  const exportedMembers = ctx.analysis.exportedMembers || []
+  if (exportedMembers.length) {
+    const entries = exportedMembers.map(m => m.name).join(', ')
+    mod.code.push(xNode.raw(`$runtime.registerExports({ ${entries} });`))
   }
 }
 
@@ -6967,6 +7092,11 @@ export async function compile(source, config = {}) {
 
   ctx.script = { source: rawScript, ast: scriptAST, rootVariables: {}, rootFunctions: {} }
   scriptAST.body.forEach((n) => {
+    // `export function f()` declares f exactly as `function f()` does — the
+    // export only adds it to the instance API.
+    if (n.type === 'ExportNamedDeclaration' && n.declaration?.type === 'FunctionDeclaration') {
+      ctx.script.rootFunctions[n.declaration.id.name] = true
+    }
     if (n.type === 'FunctionDeclaration') ctx.script.rootFunctions[n.id.name] = true
     if (n.type === 'VariableDeclaration')
       n.declarations.forEach((d) => {

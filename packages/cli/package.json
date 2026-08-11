@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "linkedom": "^0.18.12",
+    "minimist": "^1.2.8",
     "turndown": "^7.2.4",
     "zx": "^8.8.5"
   },

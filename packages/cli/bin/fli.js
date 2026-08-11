@@ -8,38 +8,13 @@ if (major < 20 || (major === 20 && minor < 6)) {
   process.exit(1)
 }
 
-import { register } from 'node:module'
-import { pathToFileURL, fileURLToPath } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { existsSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 
 // ─── FLI root — where this package lives (never changes) ─────────────────────
 // bin/fli.js is at <fliRoot>/bin/fli.js
 global.fliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-
-// ─── Sweep stale temp dirs from previous runs that crashed before cleanup ───
-// Cheap (one readdir + a few process.kill probes), runs once per fli startup.
-// Without this, `.fli-tmp/<dead-pid>/` directories from killed runs would
-// accumulate. Lives here (rather than runtime.js) so it fires even for
-// commands that don't compile anything, like `fli list` and `fli help`.
-;(() => {
-  const tmpRoot = resolve(global.fliRoot, '.fli-tmp')
-  if (!existsSync(tmpRoot)) return
-  try {
-    for (const name of readdirSync(tmpRoot)) {
-      const pid = parseInt(name)
-      if (!pid || pid === process.pid) continue
-      try {
-        process.kill(pid, 0)
-        // still alive — leave it
-      } catch (err) {
-        if (err.code === 'ESRCH') {
-          try { rmSync(resolve(tmpRoot, name), { recursive: true, force: true }) } catch {}
-        }
-      }
-    }
-  } catch {}
-})()
 
 // ─── Project root — user's project (walk up from cwd, see findProjectRoot) ───
 // Falls back to cwd if nothing matches (e.g. running in /tmp)
@@ -47,7 +22,12 @@ global.fliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // `--project <dir>` (or FLI_PROJECT) pins it explicitly, so a command can be
 // run against an app that isn't cwd — `fli project:view --project example`
 // from a monorepo root. Stripped from the command's flags in bootstrap.js.
-const { findProjectRoot } = await import('../core/utils.js')
+const { findProjectRoot, fliTmpRoot, sweepStaleTmp } = await import('../core/utils.js')
+
+// Reap session dirs from runs that were killed before their exit handler. Cheap
+// (one readdir plus a few kill probes) and lives here rather than in runtime.js
+// so it also fires for commands that compile nothing — `fli list`, `fli help`.
+sweepStaleTmp(fliTmpRoot(global.fliRoot))
 
 const explicitProject = (() => {
   const argv = process.argv.slice(2)
@@ -91,9 +71,11 @@ if (!explicitProject && global.projectRoot === process.cwd() && !cwdHasPkg
   console.error(`\x1b[2m  paths.* will resolve relative to cwd. cd into a project or run \`fli init\`\x1b[0m`)
 }
 
-// Register .md loader hook before any .md imports happen
-const loaderPath = resolve(global.fliRoot, 'core/compiler.js')
-register(pathToFileURL(loaderPath))
+// No .md loader hook is registered here. `module.register()` starts a hooks
+// thread — 56ms of a ~200ms invocation, on every command — and nothing in the
+// CLI ever imports a `.md`: the runtime compiles a command WITH its namespace
+// module script, which a hooks thread cannot see, and imports the shim. The
+// hooks stay exported from core/compiler.js for `node --import`.
 
 const { run } = await import('../core/bootstrap.js')
 

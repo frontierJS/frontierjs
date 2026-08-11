@@ -7,7 +7,7 @@ import sierraConfig from './sierra.config.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
-const API  = 'http://localhost:3001'
+const API  = 'http://localhost:8120'
 const UI   = resolve(HERE, '../../../ui')
 
 const sierra = createSierraViteConfig(sierraConfig)
@@ -86,11 +86,11 @@ export default defineConfig({
   root: ROOT,
 
   server: {
-    port: 5274,   // 5273 is the sierra example's; they can run side by side
+    port: 8020,   // dev/fe, project 2 — see packages/cli/core/ports.js
 
     // Refuse to hop ports. Vite's default is to take the next free one and
     // print a line nobody reads — which, with a stale server still holding
-    // 5274, means the browser you open talks to the OLD build while the new
+    // 8020, means the browser you open talks to the OLD build while the new
     // one runs somewhere else. A collision is a mistake; say so and stop.
     strictPort: true,
 

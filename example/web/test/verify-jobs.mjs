@@ -17,7 +17,7 @@
  * browser drives.
  */
 
-const API = process.env.API_URL ?? 'http://localhost:3600'
+const API = process.env.API_URL ?? 'http://localhost:8110'
 const REF = 'ORD-JOBS-1'
 
 try {

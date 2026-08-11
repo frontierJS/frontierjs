@@ -10,7 +10,7 @@ FrontierJS is not short of documentation — `ARCHITECT.md`, `PHILOSOPHY.md`,
 `DECISIONS.md`, twelve package READMEs. What it has never had is **one page that
 makes someone want to read any of them.**
 
-That is this site's only job: take a person from "never heard of it" to
+That is this site's primary job: take a person from "never heard of it" to
 "I understand the idea and I want to try it" in a single scroll.
 
 Explicit non-goals: it is not the docs, not an API reference, and not a changelog.

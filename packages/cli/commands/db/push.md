@@ -22,7 +22,10 @@ if (flag.dry) {
   context.exec({ command: `${litestone(context)} migrate dry-run --schema ${schema}` })
 } else {
   log.info('Pushing schema to database...')
-  context.exec({ command: `${litestone(context)} migrate apply --schema ${schema}` })
+  // `db push` diffs the schema against the live database. `migrate apply`
+  // replays migration FILES — on a project that has none it reports success
+  // having done nothing, which is a new model that silently never got a table.
+  context.exec({ command: `${litestone(context)} db push --schema ${schema}` })
   log.success('Schema applied')
   log.info('Regenerating JSON Schema...')
   context.exec({ command: `${litestone(context)} jsonschema --schema ${schema}` })

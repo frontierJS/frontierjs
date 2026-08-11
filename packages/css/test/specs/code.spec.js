@@ -180,7 +180,7 @@ test('code: a --code-* override beats the tone it falls back to', function () {
  *
  * 4.5:1 is AA for body text, and code is body text.
  */
-['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'notebook'].forEach(
+['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'notebook', 'press'].forEach(
   function (theme) {
     test('code: every token clears AA in theme-' + theme, function () {
       var pre = themed(theme, '<pre class="code">' + GLOW.css + '</pre>');
