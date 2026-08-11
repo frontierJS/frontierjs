@@ -8,26 +8,37 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-if (!context.config.results?.length) { log.info("Nothing to publish"); return }
-let failed = 0
+const { released, tag, otp } = context.config
+if (!released?.length) { log.info('Nothing to publish'); return }
 
-for (const { name, dir, newVersion } of context.config.results) {
-  const parts = [`npm publish`, `--prefix ${dir}`]
-  if (context.config.tag !== 'latest') parts.push(`--tag ${context.config.tag}`)
-  if (context.config.otp) parts.push(`--otp ${context.config.otp}`)
+const published = []
+const failures  = []
+
+for (const { name, dir, newVersion } of released) {
+  const parts = ['npm publish']
+  if (tag !== 'latest') parts.push(`--tag ${tag}`)
+  if (otp) parts.push(`--otp ${otp}`)
 
   log.info(`  Publishing ${name}@${newVersion}...`)
 
-  if (flag.dry) { log.dry(`  Would run: ${parts.join(' ')}`); continue }
+  if (flag.dry) { log.dry(`  Would run in ${dir}: ${parts.join(' ')}`); continue }
 
   try {
     execSync(parts.join(' '), { cwd: dir, stdio: 'inherit' })
+    published.push(`${name}@${newVersion}`)
     log.success(`  ✓ ${name}@${newVersion}`)
   } catch (err) {
+    failures.push(name)
     log.error(`  ✗ ${name}: ${err.message}`)
-    failed++
   }
 }
 
-if (failed) throw new Error(`${failed} package(s) failed to publish`)
+context.config.published = published
+
+if (failures.length) {
+  // The commit and tags from step 01 are still local — nothing is pushed, so
+  // the recovery is to fix the failure and re-run, or reset the release commit.
+  if (published.length) log.warn(`  ${published.length} package(s) DID publish: ${published.join(', ')}`)
+  throw new Error(`${failures.length} package(s) failed to publish: ${failures.join(', ')} — nothing pushed`)
+}
 ```

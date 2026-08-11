@@ -93,9 +93,21 @@ question()   // interactive prompt
 $``          // ZX shell execution
 ```
 
-`context.git` provides: `branch()`, `status()`, `isDirty()`, `lastTag()`, `hasChangesSince()`, `isAffected()`, `log()`. Defaults to `paths.root` for the dir but accepts an override.
+`context.git` provides: `branch()`, `status()`, `isDirty()`, `lastTag()`, `hasChangesSince()`, `isAffected()`, `log()`, `remote()`, `ahead()`, `behind()`, `repoRoot()`, `pkgState()`. Defaults to `paths.root` for the dir but accepts an override.
 
 `context.paths` exposes: `root`, `wiki`, `tests`, `cli`, `api`, `db`, `web`, `webPages`, `webComponents`, `webResources`, `site`, `siteContent`, `siteMedia`, `mobile`, `extension`.
+
+### Workspace context
+
+Three helpers for the `ws:*` commands, all on `context`:
+
+| Helper | Answers |
+|---|---|
+| `wsRoot()` | where the monorepo is — the workspace cwd is standing in, else `$WORKSPACE_DIR`, else a prompt |
+| `wsPackages()` | `{ wsRoot, packages }`, each `{ dir, folder, path, pkg }`, read from `packages/*` |
+| `wsRepo(packages)` | the shared git repo root when every member lives in ONE repo, `null` when each has its own |
+
+`git.pkgState(name, dir)` is the fourth: `{ lastTag, commits, files, affected, dirty }` for a single package. Both of the questions it answers are asked with a pathspec and a `<name>@<version>` tag lookup, because `git status` and `git describe` run from a package directory describe the whole repo — which is why every member used to report the same tag and the same dirty flag.
 
 ---
 
@@ -103,11 +115,15 @@ $``          // ZX shell execution
 
 ### Namespaces with `_module.md` (shared helpers)
 
-`auth`, `cloudflare`, `completion`, `db`, `deploy`, `github`, `project`
+`auth`, `cloudflare`, `completion`, `db`, `deploy`, `github`, `project`, `workspace`
 
 These provide functions and constants that prepend to every command in the namespace. The runtime loads them once at startup and merges into the compiled output.
 
 ### Recent additions (last few sessions)
+
+- **The `ws:*` namespace understands a single-repo monorepo (2026-08-10)** — every workspace command assumed the shape `ws:add` builds, where each member is its own git checkout. In one repo the git questions all answered repo-wide: `ws:status` printed the same branch, the same ahead/behind and the same dirty flag on all sixteen rows, and `--affected` selected everything or nothing. Worse, `ws:pub` released through `npm version` per package, which writes a commit and a `vX.Y.Z` tag into the shared history — sixteen commits, sixteen pushes of one branch, and a tag collision the moment two members sat at the same version, which nine of them did. Release now detects which shape it is in (`context.wsRepo`): one repo means one commit, one `<name>@<version>` tag per released package and one push; many repos keeps the per-package path. `git.pkgState()` is the one definition of "has this package changed", asked with a pathspec. Private packages are skipped, since npm refuses them and a failed publish aborts the run before anything is pushed. New: **`ws:npm`**, the state nothing could answer — local version against the registry, one concurrent `npm view` per package, retried once because a published package can answer 404 and "never published" is the one wrong answer that sends someone to publish over a version that exists.
+
+- **`context.wsRoot()` finds the workspace it is standing in (2026-08-10)** — it read `$WORKSPACE_DIR` or prompted, so every `ws:*` command needed an env var set to run against the repo the user was already inside, and a stale global default silently redirected them to another monorepo. `findWorkspaceRoot()` walks up for a `packages/` dir whose parent declares `workspaces` or is a git root; the env var is now the fallback for running from outside any workspace. It is deliberately not `findProjectRoot`, which stops at the deepest `db/schema.lite` and answers `packages/basecamp` from inside basecamp.
 
 - **Nested-app support for `project:*` (2026-08-05)** — `project:map` / `project:view` could not run inside `example/` or `packages/basecamp`: `findProjectRoot` walked past both to the repo's `.git` root, so `paths.db` held no `schema.lite`. Root resolution now recognises `db/schema.lite` as an app marker (below `.fli.json`, above `.git`), and a global `--project <dir>` / `FLI_PROJECT` pins it explicitly from anywhere. Three defects surfaced underneath: the compiler deleted every line after a `<script>` tag *mentioned* in a comment, which is why `project:view` built its map and exited without starting the server; `scanFiles` was not recursive, so basecamp's `services/<name>/<name>.service.ts` layout reported 0 services; and `--no-open` was declared as flag `no-open`, which minimist never binds. All four fixed, with regression tests for root resolution and for the compiler truncation (a truncated file still parses, so the shipped-command parse sweep could not see it).
 
@@ -120,7 +136,7 @@ These provide functions and constants that prepend to every command in the names
 
 ### Existing namespace breakdown (147 commands)
 
-Top counts: `npm` (14), `db` (14), `utils` (11), `make` (10), `workspace` (8), `git` (7), `env` (6), `caprover` (6), `fli` (6), `web` (5), `site` (5), `api` (4), `browser` (4), and the deploy namespace's 8 commands plus 4 step folders, plus various smaller namespaces (`admin`, `auth`, `cloudflare`, `completion`, `crypto`, `ai`, `fetch`, `github`, `ports`, `project`, `literate`).
+Top counts: `npm` (14), `db` (14), `workspace` (14), `utils` (11), `make` (10), `git` (7), `env` (6), `caprover` (6), `fli` (6), `web` (5), `site` (5), `api` (4), `browser` (4), and the deploy namespace's 8 commands plus 4 step folders, plus various smaller namespaces (`admin`, `auth`, `cloudflare`, `completion`, `crypto`, `ai`, `fetch`, `github`, `ports`, `project`, `literate`).
 
 ---
 

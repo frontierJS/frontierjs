@@ -1,6 +1,6 @@
 ---
 title: workspace:status
-description: Show git status across all workspace packages
+description: Show git status per package
 alias: ws:status
 examples:
   - fli ws-status
@@ -13,67 +13,53 @@ flags:
     defaultValue: false
 ---
 
-<script>
-import { existsSync, readFileSync, readdirSync } from 'fs'
-import { resolve } from 'path'
-import { homedir } from 'os'
-import { execSync } from 'child_process'
+Working-tree state, scoped to each package's own files.
 
-
-const getPackages = (wsRoot) => {
-  const pkgsDir = resolve(wsRoot, 'packages')
-  if (!existsSync(pkgsDir)) return []
-  return readdirSync(pkgsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = resolve(pkgsDir, d.name)
-      try {
-        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-        return { dir, pkg, folder: d.name }
-      } catch { return null }
-    }).filter(Boolean)
-}
-
-// git helpers available via context.git
-</script>
+In a single-repo monorepo the branch and the ahead/behind counts belong to the
+whole repo — they are the same number on every row and are printed once at the
+top rather than repeated sixteen times as if each package had its own.
 
 ```js
-const wsRoot = await context.wsRoot()
+const { wsRoot, packages } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
-const packages = getPackages(wsRoot)
 
 if (!packages.length) {
   log.warn('No packages found — run `fli ws-init` and `fli ws-add`')
   return
 }
 
-echo(`\nWorkspace: ${wsRoot}\n`)
+const repo = context.wsRepo(packages)
+
+echo(`\nWorkspace: ${wsRoot}`)
+if (repo) {
+  const branch = context.git.branch(repo)
+  const ahead  = context.git.ahead(repo)
+  const behind = context.git.behind(repo)
+  echo(`Repo:      one at ${repo}`)
+  echo(`Branch:    ${branch}  ↑${ahead} ↓${behind}\n`)
+} else {
+  echo(`Repo:      one per package\n`)
+}
 
 let anyDirty = false
 
 for (const { dir, pkg } of packages) {
-  const branch  = context.git.branch(dir)
-  const lines   = context.git.status(dir)
-  const status  = lines.join('\n')
-  const ahead   = context.git.ahead(dir)
-  const behind  = context.git.behind(dir)
-  const dirty   = lines.length > 0
-  const syncStr = ahead || behind
-    ? ` ↑${ahead} ↓${behind}`
-    : ' ✓'
-
+  const lines = context.git.pkgState(pkg.name, dir).files
+  const dirty = lines.length > 0
   if (dirty) anyDirty = true
 
+  // Per-package branch and sync counts only mean something when the package
+  // IS its own repo.
+  const head = repo
+    ? `${pkg.name}@${pkg.version}`
+    : `${pkg.name}@${pkg.version}  ${context.git.branch(dir)} ↑${context.git.ahead(dir)} ↓${context.git.behind(dir)}`
+
   if (flag.short) {
-    const dirtyStr = dirty ? ` [${lines.length} changed]` : ' [clean]'
-    echo(`  ${pkg.name}@${pkg.version}  ${branch}${syncStr}${dirtyStr}`)
+    echo(`  ${head}${dirty ? `  [${lines.length} changed]` : '  [clean]'}`)
   } else {
-    echo(`  ${pkg.name}@${pkg.version}  (${branch}${syncStr})`)
-    if (dirty) {
-      for (const line of lines) echo(`    ${line}`)
-    } else {
-      echo(`    nothing to commit`)
-    }
+    echo(`  ${head}`)
+    if (dirty) for (const line of lines) echo(`    ${line}`)
+    else echo(`    nothing to commit`)
     echo('')
   }
 }

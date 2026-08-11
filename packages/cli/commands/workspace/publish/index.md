@@ -29,55 +29,42 @@ flags:
     type: string
     description: npm 2FA one-time password
     defaultValue: ''
+  private:
+    type: boolean
+    description: Include packages marked private in package.json
+    defaultValue: false
   changed-only:
     type: boolean
-    description: Only publish packages with uncommitted git changes
+    description: Only publish packages with uncommitted changes of their own
     defaultValue: false
   affected:
     char: a
     type: boolean
-    description: Only publish packages changed since their last git tag
+    description: Only publish packages changed since their own release tag
     defaultValue: false
 ---
 
-<script>
-import { existsSync, readFileSync, readdirSync } from 'fs'
-import { resolve } from 'path'
-import { homedir } from 'os'
-import { execSync } from 'child_process'
+Bump versions, publish to npm, then push.
 
+In a single-repo monorepo the bump is ONE commit with one `<name>@<version>` tag
+per released package, and one push at the end. In a multi-repo workspace each
+package is committed, tagged and pushed in its own repo. `ws:pub` detects which
+shape it is in rather than being told.
 
-const getPackages = (wsRoot) => {
-  const pkgsDir = resolve(wsRoot, 'packages')
-  if (!existsSync(pkgsDir)) return []
-  return readdirSync(pkgsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = resolve(pkgsDir, d.name)
-      try {
-        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-        return { dir, pkg, folder: d.name }
-      } catch { return null }
-    }).filter(Boolean)
-}
-
-// git helpers available via context.git
-</script>
-
-Bump versions and publish selected workspace packages in sequence.
-Each package gets its own git commit and tag.
+A package marked `private` in its `package.json` is skipped — npm refuses it,
+and a failed publish aborts the run before anything is pushed.
 
 ```js
-const wsRoot = await context.wsRoot()
+const { wsRoot, packages: all } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
-let packages = getPackages(wsRoot)
 
-if (!packages.length) {
+if (!all.length) {
   log.error(`No packages found in ${wsRoot}/packages/`)
   return
 }
 
-// Filter
+let packages = all
+
 if (flag.filter) {
   const filters = Array.isArray(flag.filter) ? flag.filter : [flag.filter]
   packages = packages.filter(({ pkg, folder }) =>
@@ -85,38 +72,56 @@ if (flag.filter) {
   )
 }
 
-// Changed only (uncommitted)
+// npm refuses a private package, and step 02 aborts the run on any failure —
+// so an unfiltered private member would stop every later package publishing.
+if (!flag.private) {
+  const skipped = packages.filter(({ pkg }) => pkg.private)
+  packages = packages.filter(({ pkg }) => !pkg.private)
+  for (const { pkg } of skipped) log.info(`  skipping ${pkg.name} (private)`)
+}
+
 if (flag['changed-only']) {
-  packages = packages.filter(({ dir }) => context.git.isDirty(dir))
+  packages = packages.filter(({ dir, pkg }) => context.git.pkgState(pkg.name, dir).dirty)
   if (!packages.length) {
     log.info('No packages with uncommitted changes — nothing to publish')
     return
   }
 }
 
-// Affected (changes since last git tag — the publish-ready check)
 if (flag.affected) {
   const before = packages.length
-  packages = packages.filter(({ dir }) => context.git.isAffected(dir))
-  log.info(`--affected: ${packages.length} of ${before} package(s) have changes since last tag`)
-  if (!packages.length) {
-    log.info('All packages are up to date — nothing to publish')
-    return
-  }
+  packages = packages.filter(({ dir, pkg }) => context.git.pkgState(pkg.name, dir).affected)
+  log.info(`--affected: ${packages.length} of ${before} package(s) have changes since their own tag`)
 }
 
-log.info(`Publishing ${packages.length} package(s)`)
+if (!packages.length) {
+  log.info('Nothing to publish')
+  return
+}
+
+// Target versions are resolved here rather than in the version step, so the
+// preview below states the numbers a user is approving.
+const planned = packages.map(p => ({ ...p, newVersion: bumpVersion(p.pkg.version, arg.bump) }))
+const repo    = context.wsRepo(all)
+
+log.info(`Publishing ${planned.length} package(s)`)
 log.info(`Bump:   ${arg.bump}`)
 log.info(`Tag:    ${flag.tag}`)
+log.info(`Repo:   ${repo ? `one repo at ${repo}` : 'one per package'}`)
 echo('')
-for (const { pkg } of packages) log.info(`  ${pkg.name}@${pkg.version}`)
+for (const { pkg, newVersion } of planned) log.info(`  ${pkg.name}  ${pkg.version} → ${newVersion}`)
 echo('')
 
-context.config.wsRoot   = wsRoot
-context.config.packages = packages
-context.config.bump     = arg.bump
-context.config.tag      = flag.tag
-context.config.otp      = flag.otp
-context.config.results  = []
-context.config.startTime = Date.now()
+context.config.wsRoot     = wsRoot
+context.config.repo       = repo
+context.config.planned    = planned
+context.config.bump       = arg.bump
+context.config.tag        = flag.tag
+context.config.otp        = flag.otp
+context.config.released   = []
+context.config.startTime  = Date.now()
+
+// Steps are compiled without the namespace module, so the helpers travel here.
+context.config.releaseTag     = releaseTag
+context.config.releaseSubject = releaseSubject
 ```

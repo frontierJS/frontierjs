@@ -5,7 +5,7 @@ import { compileCli, extractFrontmatter } from './compiler.js'
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, rmSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
 import { fileURLToPath } from 'url'
-import { logger } from './utils.js'
+import { logger, findWorkspaceRoot } from './utils.js'
 import { getModule } from './registry.js'
 import { printPlanFromFile } from './prose.js'
 
@@ -342,13 +342,20 @@ export async function Command({ file, arg, flag, emit }) {
   config.git = buildGitUtils(config.paths.root)
 
   // ─── context.wsRoot — lazy workspace root resolver ────────────────────────
-  // Returns $WORKSPACE_DIR from env, or prompts once and caches the answer.
+  // Order: the workspace cwd is standing in, then $WORKSPACE_DIR, then a prompt.
+  //
+  // Detection comes first because where you are standing is a fact about this
+  // run, while WORKSPACE_DIR is a machine-wide default — a stale one in a
+  // global .env used to point every ws:* command at another monorepo from
+  // inside this one, silently. The env var stays as the escape hatch for
+  // running a workspace command from outside any workspace.
+  //
   // Usage in any command: const wsRoot = await context.wsRoot()
   config.wsRoot = (() => {
     let cached = null
     return async () => {
       if (cached) return cached
-      let root = process.env.WORKSPACE_DIR || null
+      let root = findWorkspaceRoot(process.cwd()) || process.env.WORKSPACE_DIR || null
       if (!root) {
         const { createInterface } = await import('readline')
         const answer = await new Promise(resolve => {
@@ -364,6 +371,47 @@ export async function Command({ file, arg, flag, emit }) {
       return root || null
     }
   })()
+
+  // ─── context.wsPackages — the workspace member list ───────────────────────
+  // Resolves wsRoot itself, so a command is one await:
+  //   const { wsRoot, packages } = await context.wsPackages()
+  //
+  // Each entry is { dir, folder, path, pkg } — `path` is the wsRoot-relative
+  // one, which is what git needs to answer a question about a single package
+  // inside a single-repo monorepo.
+  //
+  // Reads packages/* only, not the root's `workspaces` globs: those also name
+  // nested example apps, which are not releasable members.
+  config.wsPackages = async () => {
+    const wsRoot = await config.wsRoot()
+    if (!wsRoot) return { wsRoot: null, packages: [] }
+    const pkgsDir = resolve(wsRoot, 'packages')
+    if (!existsSync(pkgsDir)) return { wsRoot, packages: [] }
+    const packages = readdirSync(pkgsDir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => {
+        const dir = resolve(pkgsDir, d.name)
+        try {
+          const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
+          return { dir, folder: d.name, path: `packages/${d.name}`, pkg }
+        } catch { return null }
+      })
+      .filter(Boolean)
+    return { wsRoot, packages }
+  }
+
+  // ─── context.wsRepo — one git repo, or many? ──────────────────────────────
+  // Returns the shared repo root when every member lives in the SAME git repo
+  // (the single-repo monorepo), null when they each have their own.
+  //
+  // The whole of release differs between the two. In one repo a per-package
+  // `npm version` writes a commit and a `vX.Y.Z` tag into the shared history,
+  // so sixteen members produce sixteen commits and collide on the first two
+  // that share a version — and sixteen `git push`es of the same branch.
+  config.wsRepo = (packages) => {
+    const roots = new Set(packages.map(p => config.git.repoRoot(p.dir)).filter(Boolean))
+    return roots.size === 1 ? [...roots][0] : null
+  }
 
   // ─── context.vars + context.printPlan — prose interpolation ────────────────
   // Commands populate context.vars with runtime values, then call
@@ -790,6 +838,52 @@ function buildGitUtils(defaultDir) {
         const [hash, subject, author] = line.split('|')
         return { hash, subject, author }
       })
+    },
+
+    // Absolute path of the git repo containing `dir` — empty if not in one.
+    // Workspace commands compare this across members: one distinct root means
+    // a single-repo monorepo, where a per-package commit/tag/push is wrong.
+    repoRoot: (dir) => run('git rev-parse --show-toplevel', dir),
+
+    // ── pkgState — release state of ONE package ─────────────────────────────
+    // The one definition of "has this package changed since its last release".
+    //
+    // Asking git per DIRECTORY answers repo-wide in a single-repo monorepo:
+    // `git status --porcelain` and `git describe --tags` run from packages/mesa
+    // describe the whole repo, so every member reported the same tag and the
+    // same dirty flag and `--affected` selected all of them or none. Both
+    // questions are therefore asked with a pathspec, and the tag is looked up
+    // by the `<name>@<version>` scheme ws:version writes rather than by
+    // `git describe`, which finds whichever tag is nearest regardless of who
+    // it belongs to.
+    //
+    // `name` is the package name and `dir` its own directory. The pathspec is
+    // `.` rather than the package path because a pathspec is resolved against
+    // the CWD, not the repo root — `-- packages/mesa` run from inside
+    // packages/mesa matches nothing, git exits non-zero, and every package
+    // reads as clean. `.` is also right in a multi-repo workspace, where the
+    // package dir IS the repo root.
+    //
+    // No tag yet means never released, so every commit touching the path counts.
+    pkgState: (name, dir) => {
+      const q       = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
+      const lastTag = run(`git tag --list ${q(`${name}@*`)} --sort=-v:refname`, dir)
+        .split('\n').filter(Boolean)[0] || ''
+      const range   = lastTag ? `${lastTag}..HEAD` : ''
+      const commits = run(`git log ${range ? range + ' ' : ''}--format="%h|%s|%an" --no-merges -- .`, dir)
+        .split('\n').filter(Boolean)
+        .map(line => {
+          const [hash, subject, author] = line.split('|')
+          return { hash, subject, author }
+        })
+      const files = run(`git status --porcelain -- .`, dir).split('\n').filter(Boolean)
+      return {
+        lastTag,
+        commits,
+        files,
+        affected: commits.length > 0,
+        dirty:    files.length > 0,
+      }
     },
 
     // Remote URL for origin

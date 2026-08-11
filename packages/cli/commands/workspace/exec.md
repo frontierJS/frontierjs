@@ -28,33 +28,19 @@ flags:
 ---
 
 <script>
-import { existsSync, readFileSync, readdirSync } from 'fs'
-import { resolve } from 'path'
 import { execSync } from 'child_process'
-
-const getPackages = (wsRoot) => {
-  const pkgsDir = resolve(wsRoot, 'packages')
-  if (!existsSync(pkgsDir)) return []
-  return readdirSync(pkgsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = resolve(pkgsDir, d.name)
-      try {
-        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-        return { dir, pkg, folder: d.name }
-      } catch { return { dir, pkg: { name: d.name }, folder: d.name } }
-    })
-}
 </script>
 
 Runs an arbitrary shell command in every package directory.
 Unlike `ws:run`, this doesn't require a `package.json` script — any shell
 command works. Useful for cleanup, git operations, or one-off tasks.
+A directory under `packages/` with no `package.json` is not a member and is
+not visited.
 
 ```js
-const wsRoot = await context.wsRoot()
+const { wsRoot, packages: all } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
-let packages = getPackages(wsRoot)
+let packages = all
 
 if (!packages.length) {
   log.warn(`No packages found in ${wsRoot}/packages/`)

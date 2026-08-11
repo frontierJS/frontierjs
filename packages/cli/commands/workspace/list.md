@@ -19,33 +19,12 @@ flags:
     defaultValue: false
 ---
 
-<script>
-import { existsSync, readFileSync, readdirSync } from 'fs'
-import { resolve } from 'path'
-import { homedir } from 'os'
-
-
-const getPackages = (wsRoot) => {
-  const pkgsDir = resolve(wsRoot, 'packages')
-  if (!existsSync(pkgsDir)) return []
-  return readdirSync(pkgsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = resolve(pkgsDir, d.name)
-      try {
-        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-        return { dir, pkg, folder: d.name }
-      } catch { return null }
-    }).filter(Boolean)
-}
-
-// git helpers available via context.git
-</script>
+Every member of the workspace and the version in its `package.json`.
+That is the LOCAL version — `fli ws:npm` is the one that asks the registry.
 
 ```js
-const wsRoot = await context.wsRoot()
+const { wsRoot, packages } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
-const packages = getPackages(wsRoot)
 
 if (!packages.length) {
   log.warn(`No packages found in ${wsRoot}/packages/`)
@@ -56,6 +35,7 @@ if (!packages.length) {
 if (flag.json) {
   echo(JSON.stringify(packages.map(({ pkg, folder }) => ({
     name: pkg.name, version: pkg.version, folder,
+    private: !!pkg.private,
     dependencies: pkg.dependencies || {},
     devDependencies: pkg.devDependencies || {}
   })), null, 2))
@@ -71,7 +51,8 @@ echo(`Packages:  ${packages.length}\n`)
 for (const { pkg, folder, dir } of packages) {
   const branch = context.git.branch(dir)
   const branchStr = branch ? ` (${branch})` : ''
-  echo(`  ${pkg.name}@${pkg.version}${branchStr}`)
+  const privStr = pkg.private ? '  [private]' : ''
+  echo(`  ${pkg.name}@${pkg.version}${branchStr}${privStr}`)
 
   if (flag.deps) {
     const allDeps = { ...pkg.dependencies, ...pkg.devDependencies }

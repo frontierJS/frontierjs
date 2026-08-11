@@ -220,6 +220,39 @@ export async function loadFrontierConfig(projectRoot) {
   }
 }
 
+// ─── findWorkspaceRoot ────────────────────────────────────────────────────────
+// Walk up from `start` to locate the monorepo root — the directory holding
+// `packages/`. Priority order:
+//
+//   1. package.json declaring `workspaces` AND holding a `packages/` dir.
+//      Both halves are needed: `workspaces` alone matches a member package that
+//      declares its own, and `packages/` alone matches any directory that
+//      happens to have one.
+//   2. `.git/` with a `packages/` dir — a monorepo whose root package.json
+//      does not declare workspaces (or has none at all).
+//
+// This is NOT findProjectRoot. That resolves the app you are working ON and
+// stops at the deepest `db/schema.lite`, so standing in packages/basecamp it
+// answers basecamp — the wrong answer for a workspace-wide command.
+//
+// Returns null when nothing matches, which is the signal to fall back to
+// $WORKSPACE_DIR and then to prompting.
+export function findWorkspaceRoot(start) {
+  let dir = resolve(start)
+  while (true) {
+    if (existsSync(resolve(dir, 'packages'))) {
+      try {
+        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
+        if (pkg.workspaces) return dir
+      } catch { /* no package.json, or unreadable — try the .git marker */ }
+      if (existsSync(resolve(dir, '.git'))) return dir
+    }
+    const parent = resolve(dir, '..')
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
 // ─── findProjectRoot ──────────────────────────────────────────────────────────
 // Walk up from `start` to locate the user's project root. Priority order:
 //

@@ -21,22 +21,8 @@ flags:
 ---
 
 <script>
-import { existsSync, readFileSync, readdirSync, rmSync } from 'fs'
+import { existsSync, rmSync } from 'fs'
 import { resolve } from 'path'
-
-const getPackages = (wsRoot) => {
-  const pkgsDir = resolve(wsRoot, 'packages')
-  if (!existsSync(pkgsDir)) return []
-  return readdirSync(pkgsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = resolve(pkgsDir, d.name)
-      try {
-        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-        return { dir, pkg, folder: d.name }
-      } catch { return null }
-    }).filter(Boolean)
-}
 
 const ARTIFACT_DIRS = ['dist', '.turbo', 'build', '.next', 'out']
 </script>
@@ -46,9 +32,9 @@ every package. Pass `--deps` to also wipe `node_modules` (implies `bun install`
 after). Safe to run anytime — just re-run `ws:run build` to rebuild.
 
 ```js
-const wsRoot = await context.wsRoot()
+const { wsRoot, packages: all } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
-let packages = getPackages(wsRoot)
+let packages = all
 
 if (!packages.length) {
   log.warn(`No packages found in ${wsRoot}/packages/`)

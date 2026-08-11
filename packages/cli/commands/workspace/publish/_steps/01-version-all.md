@@ -1,35 +1,53 @@
 ---
 title: 01-version-all
-description: Bump versions across all target packages
+description: Write the new versions, then commit and tag them
 ---
 
 <script>
-import { readFileSync } from 'fs'
+import { readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
 import { execSync } from 'child_process'
-
-const getVer = (dir) => {
-  try { return JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8')).version }
-  catch { return '?' }
-}
 </script>
 
 ```js
-if (!context.config.packages?.length) { log.info("No packages to version"); return }
-for (const { dir, pkg } of context.config.packages) {
-  const before = getVer(dir)
-  const cmd    = `npm version ${context.config.bump} --prefix ${dir}`
+const { planned, repo, releaseTag, releaseSubject } = context.config
+if (!planned?.length) { log.info('No packages to version'); return }
 
-  log.info(`  ${pkg.name}: ${before} → (${context.config.bump})`)
+for (const { dir, pkg, newVersion } of planned) {
+  log.info(`  ${pkg.name}: ${pkg.version} → ${newVersion}`)
+  if (flag.dry) continue
+  const pkgPath = resolve(dir, 'package.json')
+  const raw = JSON.parse(readFileSync(pkgPath, 'utf8'))
+  raw.version = newVersion
+  writeFileSync(pkgPath, JSON.stringify(raw, null, 2) + '\n', 'utf8')
+}
 
-  if (flag.dry) {
-    context.config.results.push({ ...pkg, dir, newVersion: `${before}-preview` })
-    continue
+context.config.released = planned.map(({ dir, path, pkg, newVersion }) =>
+  ({ dir, path, name: pkg.name, newVersion }))
+
+if (flag.dry) {
+  log.dry(`  Would commit ${planned.length} manifest(s) and tag each package`)
+  return
+}
+
+const released = context.config.released
+
+if (repo) {
+  // One repo, one commit. Staging is per manifest — an unrelated edit sitting
+  // in the working tree is not part of this release.
+  for (const { path } of released) execSync(`git add ${path}/package.json`, { cwd: repo })
+  execSync(`git commit -m ${JSON.stringify(releaseSubject(released))}`, { cwd: repo, stdio: 'inherit' })
+  for (const { name, newVersion } of released) {
+    execSync(`git tag ${releaseTag(name, newVersion)}`, { cwd: repo })
+    log.success(`  tagged ${releaseTag(name, newVersion)}`)
   }
-
-  execSync(cmd, { cwd: dir, stdio: 'inherit' })
-  const after = getVer(dir)
-  context.config.results.push({ ...pkg, dir, newVersion: after })
-  log.success(`  ${pkg.name}: ${before} → ${after}`)
+} else {
+  for (const { dir, name, newVersion } of released) {
+    const tag = releaseTag(name, newVersion)
+    execSync('git add package.json', { cwd: dir })
+    execSync(`git commit -m ${JSON.stringify(`chore(release): ${tag}`)}`, { cwd: dir })
+    execSync(`git tag ${tag}`, { cwd: dir })
+    log.success(`  tagged ${tag}`)
+  }
 }
 ```

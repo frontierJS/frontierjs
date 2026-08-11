@@ -1,6 +1,6 @@
 ---
 title: workspace:changed
-description: List packages that have changed since their last git tag
+description: List packages that have changed since their last release tag
 alias: ws:changed
 examples:
   - fli ws:changed
@@ -10,7 +10,7 @@ flags:
   verbose:
     char: v
     type: boolean
-    description: Show changed files for each package
+    description: Show changed files and commits for each package
     defaultValue: false
   json:
     char: j
@@ -19,45 +19,22 @@ flags:
     defaultValue: false
 ---
 
-<script>
-import { existsSync, readFileSync, readdirSync } from 'fs'
-import { resolve } from 'path'
-
-const getPackages = (wsRoot) => {
-  const pkgsDir = resolve(wsRoot, 'packages')
-  if (!existsSync(pkgsDir)) return []
-  return readdirSync(pkgsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = resolve(pkgsDir, d.name)
-      try {
-        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-        return { dir, pkg, folder: d.name }
-      } catch { return null }
-    }).filter(Boolean)
-}
-</script>
-
-Shows which packages have commits or file changes since their last release tag.
+Shows which packages have commits or working-tree edits since their own release
+tag (`<name>@<version>`, the scheme `ws:version` and `ws:pub` write).
 Run this before `fli ws:pub` to confirm what will be published.
 
 ```js
-const wsRoot = await context.wsRoot()
+const { wsRoot, packages } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
-const packages = getPackages(wsRoot)
 
 if (!packages.length) {
   log.warn(`No packages found in ${wsRoot}/packages/`)
   return
 }
 
-const results = packages.map(({ dir, pkg }) => {
-  const lastTag  = context.git.lastTag(dir)
-  const affected = context.git.isAffected(dir)
-  const dirty    = context.git.isDirty(dir)
-  const commits  = lastTag ? context.git.log(lastTag, dir) : []
-  const files    = dirty ? context.git.status(dir) : []
-  return { name: pkg.name, version: pkg.version, lastTag, affected, dirty, commits, files }
+const results = packages.map(({ dir, path, pkg }) => {
+  const state = context.git.pkgState(pkg.name, dir)
+  return { name: pkg.name, version: pkg.version, path, ...state }
 })
 
 if (flag.json) {
@@ -77,15 +54,15 @@ echo('')
 echo(`  ${changed.length} changed  ·  ${clean.length} clean\n`)
 
 for (const r of changed) {
-  const tag = r.lastTag ? `since ${r.lastTag}` : 'no tags yet'
-  echo(`  ${r.name}@${r.version}  (${tag})`)
+  const tag = r.lastTag ? `since ${r.lastTag}` : 'never released'
+  const n   = [
+    r.commits.length ? `${r.commits.length} commit${r.commits.length === 1 ? '' : 's'}` : '',
+    r.files.length   ? `${r.files.length} uncommitted` : '',
+  ].filter(Boolean).join(', ')
+  echo(`  ${r.name}@${r.version}  (${tag}${n ? ` — ${n}` : ''})`)
   if (flag.verbose) {
-    if (r.commits.length) {
-      for (const c of r.commits) echo(`    ${c.hash}  ${c.subject}`)
-    }
-    if (r.files.length) {
-      for (const f of r.files) echo(`    ${f}`)
-    }
+    for (const c of r.commits) echo(`    ${c.hash}  ${c.subject}`)
+    for (const f of r.files)   echo(`    ${f}`)
   }
 }
 

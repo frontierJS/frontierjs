@@ -28,40 +28,20 @@ flags:
   affected:
     char: a
     type: boolean
-    description: Only run in packages with changes since the last git tag
+    description: Only run in packages changed since their own release tag
     defaultValue: false
 ---
 
 <script>
-import { existsSync, readFileSync, readdirSync } from 'fs'
-import { resolve } from 'path'
-import { homedir } from 'os'
 import { execSync } from 'child_process'
 
-
-const getPackages = (wsRoot) => {
-  const pkgsDir = resolve(wsRoot, 'packages')
-  if (!existsSync(pkgsDir)) return []
-  return readdirSync(pkgsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = resolve(pkgsDir, d.name)
-      try {
-        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-        return { dir, pkg, folder: d.name }
-      } catch { return null }
-    }).filter(Boolean)
-}
-
 const hasScript = (pkg, name) => !!pkg.scripts?.[name]
-
-// git helpers available via context.git
 </script>
 
 ```js
-const wsRoot = await context.wsRoot()
+const { wsRoot, packages: all } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
-let packages   = getPackages(wsRoot)
+let packages = all
 
 if (!packages.length) {
   log.error(`No packages found in ${wsRoot}/packages/`)
@@ -83,7 +63,7 @@ if (flag.filter) {
 // Apply --affected filter
 if (flag.affected) {
   const before = packages.length
-  packages = packages.filter(({ dir }) => context.git.isAffected(dir))
+  packages = packages.filter(({ dir, pkg }) => context.git.pkgState(pkg.name, dir).affected)
   const skippedAffected = before - packages.length
   if (skippedAffected) log.info(`--affected: skipping ${skippedAffected} unchanged package(s)`)
   if (!packages.length) {

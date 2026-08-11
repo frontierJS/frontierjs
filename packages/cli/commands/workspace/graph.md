@@ -19,33 +19,13 @@ flags:
     defaultValue: false
 ---
 
-<script>
-import { existsSync, readFileSync, readdirSync } from 'fs'
-import { resolve } from 'path'
-
-const getPackages = (wsRoot) => {
-  const pkgsDir = resolve(wsRoot, 'packages')
-  if (!existsSync(pkgsDir)) return []
-  return readdirSync(pkgsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => {
-      const dir = resolve(pkgsDir, d.name)
-      try {
-        const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
-        return { dir, pkg, folder: d.name }
-      } catch { return null }
-    }).filter(Boolean)
-}
-</script>
-
 Visualises which packages depend on which, so you know what order to build
 and publish in. Workspace interdependencies are highlighted — external deps
 are counted but hidden by default (use `--external` to show them).
 
 ```js
-const wsRoot = await context.wsRoot()
+const { wsRoot, packages } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
-const packages = getPackages(wsRoot)
 
 if (!packages.length) {
   log.warn(`No packages found in ${wsRoot}/packages/`)
