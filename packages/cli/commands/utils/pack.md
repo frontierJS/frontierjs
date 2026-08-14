@@ -33,6 +33,7 @@ flags:
   exclude:
     char: e
     type: string
+    multiple: true
     description: Additional glob pattern to exclude (can repeat)
     defaultValue: ''
 ---

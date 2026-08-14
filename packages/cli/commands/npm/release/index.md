@@ -54,7 +54,7 @@ Full release pipeline. Steps run in sequence:
 2. **build** — runs `npm run build` if the script exists (skippable with `--no-build`)
 3. **version** — bumps `package.json` and creates a git commit + tag
 4. **publish** — publishes to npm with the specified tag
-5. **push** — `git push` + `git push --tags`
+5. **push** — `git push origin HEAD --tags` (one invocation: two would run a pre-push hook twice)
 
 ```js
 const root  = context.paths.root

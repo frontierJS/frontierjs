@@ -18,6 +18,7 @@ flags:
   filter:
     char: f
     type: string
+    multiple: true
     description: Only run in packages matching this name (repeat for multiple)
     defaultValue: ''
   parallel:

@@ -82,7 +82,7 @@ log.info(`Tagging: ${tagCmd}`)
 
 if (flag.dry) {
   log.dry(`Would run: ${tagCmd}`)
-  if (!flag['no-push']) log.dry(`Would run: git push && git push --tags`)
+  if (!flag['no-push']) log.dry(`Would run: git push origin HEAD --tags`)
   return
 }
 
@@ -91,8 +91,8 @@ log.success(`Created tag ${tagName}`)
 
 // ─── Push ────────────────────────────────────────────────────────────────────
 if (!flag['no-push']) {
-  execSync('git push', { cwd: root, stdio: 'inherit' })
-  execSync('git push --tags', { cwd: root, stdio: 'inherit' })
+  // Branch and tags together: two pushes run a pre-push hook twice.
+  execSync('git push origin HEAD --tags', { cwd: root, stdio: 'inherit' })
   log.success(`Pushed ${tagName} to remote`)
 }
 ```

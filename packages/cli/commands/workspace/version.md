@@ -16,6 +16,7 @@ flags:
   filter:
     char: f
     type: string
+    multiple: true
     description: Only bump packages matching this name
     defaultValue: ''
   affected:

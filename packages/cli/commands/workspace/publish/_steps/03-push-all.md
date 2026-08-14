@@ -21,8 +21,12 @@ const targets = repo
 for (const { label, dir } of targets) {
   log.info(`  Pushing ${label}...`)
   try {
-    execSync('git push', { cwd: dir, stdio: 'inherit' })
-    execSync('git push --tags', { cwd: dir, stdio: 'inherit' })
+    // Branch and tags in ONE invocation. `git push` then `git push --tags` runs
+    // the repo's pre-push hook twice, and in this workspace that hook is the
+    // fast CI tier — 49s of typecheck, paid twice per release for one push's
+    // worth of work. `--follow-tags` is not the answer: it carries annotated
+    // tags only, and the release tags above are lightweight.
+    execSync('git push origin HEAD --tags', { cwd: dir, stdio: 'inherit' })
     log.success(`  ✓ ${label}`)
   } catch (err) {
     log.warn(`  ✗ ${label} push failed: ${err.message}`)

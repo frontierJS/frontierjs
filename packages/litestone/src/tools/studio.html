@@ -4794,6 +4794,7 @@ function perfRenderPlan(res) {
       <div class="plan-node-body">
         <div>${esc(node.detail)}</div>
         ${node.advice ? `<p class="text-muted">${bold(node.advice)}</p>` : ''}
+        ${node.sql ? `<pre class="code wrap">${esc(node.sql)}</pre>` : ''}
       </div>
     </article>`).join('')
 

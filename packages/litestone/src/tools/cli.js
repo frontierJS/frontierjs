@@ -1027,8 +1027,134 @@ async function cmdTenant(subCmd, args, cfg) {
 
 // ─── EXPLAIN QUERY PLAN parser ────────────────────────────────────────────────
 // Converts a SQLite EXPLAIN QUERY PLAN detail string into a rating + advice.
+//
+// A plan line on its own is not enough to advise on. "USE TEMP B-TREE FOR ORDER
+// BY" used to answer "add an index on your ORDER BY column", which is wrong
+// whenever that column is the primary key — and it usually is, because the
+// default list query orders by it. Measured on `ORDER BY "id"` against a
+// `String @id`: adding the advised index changes the plan not at all, because
+// the column already carries sqlite_autoindex_<table>_1.
+//
+// The sort is not a missing index, it is TWO jobs and one index. SQLite uses a
+// single index per table here; it spent it on the WHERE, and that index's
+// entries are ordered by (its columns, rowid) rather than by the ORDER BY
+// column. What removes the sort is one index that does both jobs — the filter
+// columns first, the sort columns after. So the advice needs the query, the
+// rest of the plan, and the indexes the table actually has.
 
-function parsePlanDetail(detail) {
+// The indexes a table really carries, the implicit PRIMARY KEY one included.
+//
+// PRAGMA takes no bound parameters, so the name has to be interpolated. It is
+// resolved through sqlite_master first and the stored name is what gets used —
+// never the caller's text (Invariant 8).
+function tableIndexes(db, table) {
+  try {
+    const row = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table)
+    if (!row) return []
+    const safe = row.name.replace(/"/g, '""')
+    return db.prepare(`PRAGMA index_list("${safe}")`).all().map(ix => ({
+      name:    ix.name,
+      cols:    db.prepare(`PRAGMA index_info("${ix.name.replace(/"/g, '""')}")`).all().map(c => c.name),
+      unique:  !!ix.unique,
+      partial: !!ix.partial,
+      // 'pk' is the index PRIMARY KEY created for you; 'c' is one you declared.
+      implicit: ix.origin === 'pk' || ix.origin === 'u',
+      sql:     db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?`).get(ix.name)?.sql ?? null,
+    }))
+  } catch { return [] }
+}
+
+// The columns named in the statement's own ORDER BY. Deliberately shallow: a
+// subquery's ORDER BY would be a different table's problem, so anything that
+// does not parse cleanly returns nothing and the advice stays general.
+function orderByColumns(sql) {
+  const m = /\border\s+by\s+([^)]+?)(?:\s+limit\b|\s+offset\b|;|$)/is.exec(sql ?? '')
+  if (!m) return []
+  return m[1].split(',')
+    .map(part => part.trim()
+      .replace(/\s+(asc|desc)$/i, '')
+      .replace(/\s+(nulls\s+(first|last))$/i, '')
+      .replace(/^.*\./, '')            // drop a table qualifier
+      .replace(/^["'`\[]|["'`\]]$/g, ''))
+    .filter(c => /^\w+$/.test(c))      // an expression is not a column
+}
+
+// The table this plan line is about, and the index it settled on.
+function planTarget(detail) {
+  const m = /^(?:SEARCH|SCAN)\s+"?(\w+)"?/i.exec(detail)
+  return {
+    table: m?.[1] ?? null,
+    index: /USING\s+(?:COVERING\s+)?INDEX\s+"?([\w-]+)"?/i.exec(detail)?.[1] ?? null,
+  }
+}
+
+// The concrete advice for a temp sort: name what is already indexed, then give
+// the one index that would do both jobs.
+function adviseOrderBySort(ctx) {
+  const GENERAL = {
+    advice: '<b>Temp sort</b> — SQLite sorted the results itself because no single index both '
+          + 'satisfied the WHERE and returned rows in the ORDER BY order.',
+    sql: null,
+  }
+  if (!ctx?.db || !ctx.sql) return GENERAL
+
+  const cols = orderByColumns(ctx.sql)
+  if (!cols.length) return GENERAL
+
+  // The sort belongs to whichever table this plan actually reads. With more
+  // than one, which ORDER BY column belongs to which table is a guess.
+  const targets = (ctx.planRows ?? []).map(r => planTarget(r.detail ?? '')).filter(t => t.table)
+  const tables  = [...new Set(targets.map(t => t.table))]
+  if (tables.length !== 1) return GENERAL
+
+  const table   = tables[0]
+  const indexes = tableIndexes(ctx.db, table)
+  if (!indexes.length) return GENERAL
+
+  const chosenName = targets.find(t => t.index)?.index ?? null
+  const chosen     = indexes.find(ix => ix.name === chosenName) ?? null
+
+  // Is the ORDER BY already indexed? This is the whole reason the old advice
+  // was wrong, so it is said out loud rather than implied.
+  const alreadyIndexed = indexes.find(ix => cols.every((c, i) => ix.cols[i] === c))
+  const already = alreadyIndexed
+    ? `<b>${cols.join(', ')}</b> is already indexed (${alreadyIndexed.implicit
+        ? 'the implicit index on its PRIMARY KEY / UNIQUE'
+        : alreadyIndexed.name}), so a second index on it alone changes nothing. `
+    : ''
+
+  // One index doing both jobs: the filter columns lead, the sort columns follow.
+  // The chosen index's own columns ARE the filter it was picked for, which is
+  // steadier than re-parsing the constraint out of the plan string.
+  const lead     = chosen ? chosen.cols : []
+  const combined = [...lead, ...cols.filter(c => !lead.includes(c))]
+  if (!lead.length || combined.length === lead.length) {
+    return {
+      advice: `${already}<b>Temp sort</b> — nothing here returns rows in ${cols.join(', ')} order. `
+            + `Add an index leading with your WHERE columns and ending with ${cols.join(', ')}.`,
+      sql: null,
+    }
+  }
+
+  // Carry the chosen index's partial clause across. Litestone's own soft-delete
+  // index is partial, and a partial replacement stays the same size.
+  const where = chosen.partial
+    ? / (WHERE .+)$/i.exec(chosen.sql ?? '')?.[1] ?? ''
+    : ''
+  const name  = `idx_${table}_${combined.join('_')}`
+  const quoted = combined.map(c => `"${c}"`).join(', ')
+
+  return {
+    advice: `${already}<b>Temp sort</b> — SQLite spent its one index on the WHERE `
+          + `(<b>${chosen.name}</b>), and that index returns rows in ${lead.join(', ')} order, not `
+          + `${cols.join(', ')} order. One index that does both jobs removes the sort: `
+          + `filter columns first, sort columns last.`,
+    sql: `CREATE INDEX "${name}" ON "${table}" (${quoted})${where ? ' ' + where : ''};`
+       + `\n-- in the schema: @@index([${combined.join(', ')}])`,
+  }
+}
+
+function parsePlanDetail(detail, ctx) {
   const d = detail.toUpperCase()
 
   // Full table scan — worst case
@@ -1042,11 +1168,7 @@ function parsePlanDetail(detail) {
 
   // Temp B-tree for ORDER BY or GROUP BY — sort without index
   if (d.includes('TEMP B-TREE FOR ORDER BY')) {
-    const col = detail.match(/ORDER BY (.+)$/i)?.[1] ?? 'ORDER BY column'
-    return {
-      rating: 'yellow',
-      advice: `<b>Temp sort</b> — SQLite built a temporary B-tree to sort results. Add an index on your ORDER BY column to avoid this.`,
-    }
+    return { rating: 'yellow', ...adviseOrderBySort(ctx) }
   }
   if (d.includes('TEMP B-TREE FOR GROUP BY')) {
     return {
@@ -2281,10 +2403,13 @@ async function cmdStudio(cfg) {
           try {
             const planRows = activeRawDb.prepare(`EXPLAIN QUERY PLAN ${sql.trim()}`).all()
 
-            // Parse each plan row into a rated node
+            // Parse each plan row into a rated node. A temp sort can only be
+            // explained against the whole plan and the table's real indexes,
+            // so the context travels with every line.
+            const ctx = { sql: sql.trim(), planRows, db: activeRawDb }
             const nodes = planRows.map(row => {
               const detail = row.detail ?? ''
-              return { detail, ...parsePlanDetail(detail) }
+              return { detail, ...parsePlanDetail(detail, ctx) }
             })
 
             // Overall score 0–5

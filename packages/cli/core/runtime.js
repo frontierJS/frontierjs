@@ -766,7 +766,19 @@ export function getConfig(metadata, rawArg, flag) {
       return
     }
 
-    if (flagData.type && typeof value !== flagData.type) {
+    // A flag given twice arrives as an ARRAY. Seven commands are written to
+    // take one (`--filter a --filter b`, and their own examples say so), and
+    // the type check refused every one of them: typeof [] is 'object', which is
+    // never the declared 'string'. Repeatability is DECLARED — `multiple: true`
+    // — rather than inferred from the value, because inferring it would turn
+    // `--tag beta --tag latest` into an array that every `tag !== 'latest'`
+    // comparison reads as true.
+    if (Array.isArray(value) && !flagData.multiple) {
+      logger(`[${key}] given more than once, and it is not a repeatable flag`, 'error')
+      throw new Error('Cancelling action.')
+    }
+
+    if (flagData.type && [value].flat().some(v => typeof v !== flagData.type)) {
       logger(`[${key}] must be type ${flagData.type}`, 'error')
       throw new Error('Cancelling action.')
     }

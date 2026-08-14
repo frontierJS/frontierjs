@@ -80,3 +80,7 @@ a:where([class]) {
 body {
   margin: 0;
 }
+
+/* Badge and Pill are spans in the vocabulary. Where Studio makes one clickable
+   the element has to be a button, and the UA chrome has to come off it. */
+button:is(.badge, .pill) { appearance: none; cursor: pointer }

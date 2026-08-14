@@ -16,6 +16,7 @@ flags:
   filter:
     char: f
     type: string
+    multiple: true
     description: Only show packages matching this name
     defaultValue: ''
   private:

@@ -1,10 +1,11 @@
 {
-  "name": "@frontierjs/vscode-frontierjs",
+  "name": "vscode-frontierjs",
   "displayName": "FrontierJS VSCode Plugin",
   "description": "Language support for Litestone (.lite) and (.mesa)",
   "version": "0.1.0",
   "publisher": "frontierjs",
   "license": "MIT",
+  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/frontierjs/vscode"
