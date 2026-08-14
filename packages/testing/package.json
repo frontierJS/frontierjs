@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/testing",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Testing realm for FrontierJS — one environment across Data and API.",
   "type": "module",
   "license": "MIT",

@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/litestone",
-  "version": "1.1.0",
-  "description": "SQLite ORM for Bun \u2014 schema-first, type-safe, zero dependencies",
+  "version": "1.1.1",
+  "description": "SQLite ORM for Bun — schema-first, type-safe, zero dependencies",
   "type": "module",
   "license": "MIT",
   "author": "FrontierJS",
