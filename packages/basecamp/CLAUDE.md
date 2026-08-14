@@ -7,8 +7,9 @@ All three realms are real.
 ```
 bun run dev          # preflights both ports, then API + web together
 bun run test         # bun — the db tests
-bun run verify       # 270 checks in a real browser; starts and stops both servers
+bun run verify       # 271 checks in a real browser; starts and stops both servers
 bun run verify:build # builds, then probes the PRODUCTION output (FJS-085)
+bun run db:types     # regenerate db/schema.d.ts — the client's types
 bun run db:seed      # an example fleet
 bun run db:reset     # stops the servers, deletes the databases
 ```
@@ -62,6 +63,25 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   when the workspace changes mid-request, which the workspaces service does
   (it addresses `ctx.id`, not the header). The role hooks stay — a gate refuses
   with a level, a person needs the sentence.
+- **`User` reads and updates at USER(4), and the level is not what makes that
+  safe.** A gate is per MODEL, so 4 on update is *any signed-in caller rewrites
+  any person's row*. `@@allow('update', id == auth().id)` narrows it to their
+  own, and `@allow('write', auth().isSystemAdmin)` on `isSystemAdmin`, `status`
+  and `kind` keeps the three columns `basecampGateLevel()` grades on out of the
+  caller's reach — a column the caller can write is not a column a level can be
+  graded from. Both are bypassed by `asSystem()`, which is every legitimate
+  write here (`/setup`, the hub). **`@guarded` would not have done it**: it is a
+  read-side lock, the write lands and the answer comes back with the column
+  missing, which reads exactly like a refusal (`FJS-248`). This is the shape `@frontierjs/auth`'s own fragment now ships (`DECISIONS.md` § Access control); what differs here is the standing, deliberately — auth writes the policy against `auth().isAdmin`, this app has no app-wide admin (a level is per WORKSPACE) and its hub reads through `asSystem()`, so the row policy is self-only with no admin exception and the guarded columns are the three its own resolver grades on.
+- **`db/schema.d.ts` is generated, committed, and the only place the client is
+  typed.** `bun run db:types` writes it (`audience=system` — the API reads
+  `Secret.data`, which is `@encrypted`, through `asSystem()`), `api/src/core/db.ts`
+  casts once, and nothing downstream casts at all. `bun run test` fails if the
+  file is not what the schema generates right now, which is the half that makes a
+  committed generated file safe. **A hand-written row interface is the thing this
+  replaces**: `job.engine.ts` carried `JobRow` in snake_case with `service_id` on
+  it — three renames stale, describing no row that has ever existed, while the
+  code around it read the right camelCase names.
 - **`Server` is the one model whose tenancy is in the schema.** `@@allow('all',
   workspaceId == auth().workspaceId)`, graded off the same principal — the other
   36 are still the `workspaceId` in a service where-clause plus

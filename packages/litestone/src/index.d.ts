@@ -366,7 +366,15 @@ export interface LitestoneClient {
   ): Promise<T>
   $attach(path: string, alias: string): void
   $detach(alias: string): void
-  $rotateKey(newKey: string): Promise<Record<string, { rows: number; fields: number }>>
+  /**
+   * Re-encrypt every key-reversible column with `newKey`, then swap the client's key.
+   *
+   * Throws BEFORE writing anything if the schema declares a column rotation cannot
+   * carry — `@hashed` (one-way) or `@secret(rotate: false)` — naming each one.
+   * `orphan` acknowledges them by name; a boolean would let a column added later
+   * inherit an acknowledgement made for a different one.
+   */
+  $rotateKey(newKey: string, opts?: { orphan?: string[] }): Promise<Record<string, { rows: number; fields: number }>>
   $lock(key: string, fn: () => Promise<unknown>, opts?: { ttl?: number; timeout?: number }): Promise<unknown>
   $locks: {
     acquire(key: string, opts?: { ttl?: number; owner?: string }): Promise<{ release(): Promise<void>; heartbeat(ms?: number): Promise<void> }>
@@ -460,7 +468,7 @@ export declare function parseFile(path: string): ParseResult
 
 export interface MigrationRow {
   file:       string
-  state:      'applied' | 'pending' | 'modified' | 'orphaned'
+  state:      'applied' | 'pending' | 'modified' | 'orphaned' | 'skipped'
   applied_at: string | null
   tampered:   boolean
   sql:        string | null
@@ -469,6 +477,10 @@ export interface MigrationRow {
 export interface ApplyResult {
   applied:  { file: string; ok: boolean; elapsed?: string; error?: string }[]
   pending:  number
+  /** `.sql`/`.js` files the name pattern rejected — never applied, always named. */
+  skipped:  string[]
+  /** True when the directory held candidate files and NONE matched: a refusal, not an empty directory. */
+  unmatched?: boolean
   failed?:  string
   message?: string
 }
@@ -486,6 +498,8 @@ export interface VerifyResult {
   state:    'in-sync' | 'pending' | 'drift'
   message:  string
   pending?: string[]
+  skipped?: string[]
+  note?:    string
   diff?:    string
 }
 
@@ -495,6 +509,8 @@ export declare function status(db: unknown, dir?: string): MigrationRow[]
 export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean }): VerifyResult
 export declare function autoMigrate(db: LitestoneClient, parseResult?: ParseResult, opts?: { pluralize?: boolean }): Record<string, { state: string; applied?: number; sql?: string }>
 export declare function listMigrationFiles(dir: string): string[]
+export declare function unmatchedMigrationFiles(dir: string): string[]
+export declare function describeSkipped(skipped: string[]): string
 export declare function slugify(label: string): string
 
 // ─── DDL ──────────────────────────────────────────────────────────────────────

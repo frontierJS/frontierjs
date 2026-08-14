@@ -18,6 +18,7 @@
 // A Basecamp restart resets in-flight jobs to pending — no stuck deploys.
 
 import type { BasecampApp } from '../basecamp.types.ts'
+import type { StepStatus } from '../../../db/schema.d.ts'
 
 // Row shapes come from the schema now, not from hand-written mirrors of it.
 // The old DeploymentRow / ServiceRow / StepRow / ServiceServerRow interfaces
@@ -58,7 +59,10 @@ export function createDeploymentEngine(app: BasecampApp) {
   }
 
   // ── Step helpers ──────────────────────────────────────────────────
-  async function setStepStatus(stepId: string, status: string, output?: string): Promise<void> {
+  // `StepStatus`, not `string`: the column is an enum with a CHECK behind it, so
+  // a typo here is a constraint error at the end of a deploy rather than a
+  // refusal at the call.
+  async function setStepStatus(stepId: string, status: StepStatus, output?: string): Promise<void> {
     await db.deploymentStep.update({
       where: { id: stepId },
       data: {

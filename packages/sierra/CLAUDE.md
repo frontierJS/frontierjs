@@ -23,6 +23,10 @@ src/
     build-tree.js        the node tree
     generate-manifest.js writes config/routes.js
 
+  tools/                 — the `sierra` bin, never imported by app code
+    cli.js               `sierra routes` — dispatch, --check, --stdout
+    routes-snapshot.js   the committed routes.snapshot.md
+
   router/                — the runtime router
     index.js, match.js, internals.js (used by RouterView.mesa),
     signals.js, prefetch.js, page-fields.js (the fields the router owns on `page`)
@@ -54,6 +58,18 @@ src/
 
 ## What bites here
 
+- **The route table is committed, because a naming convention leaves no other
+  trace.** `sierra routes --config config/sierra.config.js` writes
+  `routes.snapshot.md` — every URL with the file behind it, the layout the
+  scanner resolved (or none, where the page declared `reset`), the meta a layout
+  pushed onto every page under it, and on a `static` target `publishes:` in its
+  own section ahead of the routes, because that is the line that turns the
+  publish check off. `--check` is the CI half (`snapshots` phase). **Run it from
+  the app's WEB ROOT** — `routesDir` is relative to Vite's root, never to where
+  the config file sits (Invariant 3), and CI reruns the command from the
+  snapshot's own directory. One config is one target, and the config's name
+  carries into the snapshot's: `sierra.static.config.js` →
+  `routes.static.snapshot.md`, so two targets cannot overwrite each other.
 - **`createResource` coerces, blank-strips and validates by default.** A create
   that used to 400 at the server now throws `ResourceValidationError` in the
   browser with no request made, and an untouched text box writes NULL not `''`.

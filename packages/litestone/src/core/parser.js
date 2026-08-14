@@ -772,7 +772,11 @@ class Parser {
 
       // ── @secret — composite encrypted+guarded+logged field ─────────────────
       // @secret                        — rotatable (default)
-      // @secret(rotate: false)         — permanently bound to original key
+      // @secret(rotate: false)         — excluded from $rotateKey, and therefore
+      //                                  UNREADABLE after one: the key swap is global,
+      //                                  so a column rotation skips is not left on the
+      //                                  old key, it is lost. $rotateKey refuses while
+      //                                  one exists unless it is orphaned by name.
       // @secret(deterministic: true)   — the same value stores the same bytes, so
       //                                  the secret can be looked up by equality
       //                                  and still rotated. An API key is both.

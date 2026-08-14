@@ -176,17 +176,17 @@ const GRID = `
 kind      | whereEq  whereIn  whereNot contains bareArr  hasOp    orderBy  distinct groupBy  aggMax   update   updMany
 text      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
 int       | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-bool      | ok       ok       ok       210:ref  ok       ref      ok       ok       ok       ok       ok       ok
+bool      | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok
 datetime  | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-array     | ok       ok       ok       210:ref  ok       ok       200:ref  ok       ok       203:ref  ok       ok
-intArray  | ok       ok       ok       210:ref  ok       ok       200:ref  ok       ok       203:ref  ok       ok
+array     | ok       ok       ok       ref      ok       ok       ref      ok       ok       203:ref  ok       ok
+intArray  | ok       ok       ok       ref      ok       ok       ref      ok       ok       203:ref  ok       ok
 enum      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-enumArray | ok       ok       ok       210:ref  ok       ok       200:ref  ok       ok       203:ref  ok       ok
-json      | ref      ref      ref      210:ref  ref      ref      200:ref  ok       ok       203:ref  ok       ok
-typedJson | ok       ref      ref      210:ref  ref      206:ref  200:ref  ok       ok       203:ref  ok       ok
-encrypted | ref      ref      ref      ref      ref      ref      200:ref  ok       ok       ok       ok       ok
-encDet    | ok       ok       ok       ref      ok       ref      200:ref  ok       ok       ok       ok       ok
-hashed    | ok       ok       ok       ref      ok       ref      200:ref  ok       ref      ref      ok       ok
+enumArray | ok       ok       ok       ref      ok       ok       ref      ok       ok       203:ref  ok       ok
+json      | ref      ref      ref      ref      ref      ref      ref      ok       ok       203:ref  ok       ok
+typedJson | ok       ref      ref      ref      ref      206:ref  ref      ok       ok       203:ref  ok       ok
+encrypted | ref      ref      ref      ref      ref      ref      ref      ok       ok       ok       ok       ok
+encDet    | ok       ok       ok       ref      ok       ref      ref      ok       ok       ok       ok       ok
+hashed    | ok       ok       ok       ref      ok       ref      ref      ok       ref      ref      ok       ok
 computed  | ref      ref      ref      ref      ref      ref      ref      ok       ref      202:ref  ref      ref
 generated | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ref      ref
 `

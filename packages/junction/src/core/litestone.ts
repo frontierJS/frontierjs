@@ -1304,10 +1304,18 @@ export function autoFilter(accessorOpt: string | undefined) {
 
 interface OrderByKeyProblem {
   key: string
-  reason: 'computed' | 'unknown'
+  reason: 'computed' | 'opaque' | 'unknown'
   suggestion: string | null
   sortable: string[]
   message: string
+}
+
+// Why a real, correctly spelled column is still not a sort key. Litestone owns
+// the sentence (it is in `message`); this is the short form the summary line
+// carries, so the two reasons a 400 has are not flattened into one.
+const UNSORTABLE: Record<string, string> = {
+  computed: ' (computed — not sortable)',
+  opaque:   ' (stores a serialisation — not sortable)',
 }
 
 export function autoSort(accessorOpt: string | undefined) {
@@ -1330,7 +1338,7 @@ export function autoSort(accessorOpt: string | undefined) {
     if (!problems.length) return
 
     const detail = problems.map(p =>
-      `'${p.key}'${p.reason === 'computed' ? ' (computed — not sortable)' : ''}` +
+      `'${p.key}'${UNSORTABLE[p.reason] ?? ''}` +
       `${p.suggestion ? ` — did you mean '${p.suggestion}'?` : ''}`).join(', ')
     throw new BadRequest(
       `Unknown or unsortable $orderBy ${problems.length > 1 ? 'keys' : 'key'} ${detail}. ` +

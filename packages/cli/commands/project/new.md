@@ -532,9 +532,15 @@ function makeApiCoreDbTs() {
   return `// api/src/core/db.ts
 // One Litestone client for the whole app. Gate plugin maps the
 // SessionContext from auth into Litestone's level system:
-//   no user        → STRANGER (0)
-//   role: 'admin'  → ADMINISTRATOR (5)
-//   anyone else    → USER (4)
+//   no user           → STRANGER (0)
+//   isAdmin standing  → ADMINISTRATOR (5)
+//   anyone else       → USER (4)
+//
+// STANDING, not a role string: isAdmin / isOwner / isSystemAdmin are what
+// Litestone's own resolver reads and what schema.lite's @@allow and field
+// policies read, so a level and a policy cannot disagree about who an
+// administrator is. What 'admin' MEANS is the app's decision, made once where
+// the session is built (auth's sessionFields), not matched as a string here.
 //
 // Schema is loaded from disk; createClient runs the DDL automatically
 // on first run. No separate apply() step needed for fresh DBs.
@@ -544,8 +550,11 @@ import { env } from './env.ts'
 
 const gate = new GatePlugin({
   async getLevel(user: unknown) {
-    if (!user) return LEVELS.STRANGER
-    if ((user as { role?: string }).role === 'admin') return LEVELS.ADMINISTRATOR
+    const u = user as { isAdmin?: boolean; isOwner?: boolean; isSystemAdmin?: boolean } | null
+    if (!u)               return LEVELS.STRANGER
+    if (u.isSystemAdmin)  return LEVELS.SYSADMIN
+    if (u.isOwner)        return LEVELS.OWNER
+    if (u.isAdmin)        return LEVELS.ADMINISTRATOR
     return LEVELS.USER
   },
 })

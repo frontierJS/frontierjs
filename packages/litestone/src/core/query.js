@@ -1,5 +1,7 @@
 // query.js — SQL clause builders + row serialization + select parsing
 
+import { ValidationError } from './validate.js'
+
 // ─── sql tagged template ──────────────────────────────────────────────────────
 //
 // Safe parameterized raw SQL for use inside where: { $raw: sql`...` }.
@@ -51,6 +53,28 @@ const JSON_LEAF_OPS = new Set([
 // Operators that read the column as a JSON array. Asking one of a scalar column
 // is a caller error, not a SQLite error — see the guard in buildWhere.
 const ARRAY_OPS = new Set(['has', 'hasEvery', 'hasSome', 'hasNone', 'isEmpty'])
+
+// Operators that compile to LIKE, which asks a question about TEXT.
+const TEXT_OPS = new Set(['contains', 'startsWith', 'endsWith'])
+
+// A column whose stored text is not the value cannot answer one, and the way it
+// fails is a plausible answer rather than an error: on an array column `contains`
+// substring-matches the stored JSON, so `contains: '['` matches every row and
+// `contains: '","'` matches every array of two or more elements — it looks like
+// `has` and is not `has`. On a Boolean the value is 0/1, so `contains: 'tru'`
+// answers nothing at all.
+//
+// Int and DateTime are deliberately NOT here: SQLite's coercion answers the
+// question that was asked, and `{ when: { contains: '2024-01' } }` against an ISO
+// column is a genuinely useful way to ask for a month.
+const TEXT_OP_REFUSALS = {
+  array:   (k, op) => `"${k}" holds a JSON array, so "${op}" would substring-match the stored document rather than its elements — ` +
+                      `use "has" for an element, or "hasSome"/"hasEvery" for several`,
+  json:    (k, op) => `"${k}" holds a JSON document, so "${op}" would match its serialised text, punctuation included — ` +
+                      `declare @type(...) on the column to filter by a path`,
+  file:    (k, op) => `"${k}" holds a file reference document, so "${op}" would match its serialised text rather than anything about the file`,
+  boolean: (k, op) => `"${k}" is a Boolean, stored as 0/1, so "${op}" can never match — compare it to true or false`,
+}
 
 // Decides whether the object value on a typed-JSON field is a path traversal
 // (recurse into sub-keys) or a leaf operator block (apply directly to the
@@ -199,17 +223,19 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 //
 // typedJsonMap: { fieldName: typeDecl } — only typed-Json fields appear here.
 //
-// Array columns (when arrayFields is provided):
+// Array columns (when fieldKinds is provided):
 //   { tags: ['x', 'y'] }              the row holds x OR y   — IN over the elements
 //   { tags: { equals: [...] } }       the row IS exactly that — ordered
 //   { tags: { has, hasEvery, hasSome, hasNone, isEmpty } }
 //
-// arrayFields: Set<fieldName> for THIS model. A bare array cannot be read off
-// the operand — `{ id: [1,2] }` and `{ tags: ['x','y'] }` are the same shape and
-// mean different SQL — so without the set the array column silently compiles to
-// `"tags" IN ('x','y')`, which asks a JSON document whether it equals 'x'.
+// fieldKinds: Map<fieldName, 'array'|'json'|'file'|'boolean'> for THIS model —
+// what the column HOLDS, which the operand cannot say. `{ id: [1,2] }` and
+// `{ tags: ['x','y'] }` are the same shape and mean different SQL, so without it
+// the array column silently compiles to `"tags" IN ('x','y')`, which asks a JSON
+// document whether it equals 'x'. It is the same fact a text operator needs, so
+// it is one map rather than one per question.
 
-export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null, arrayFields = null) {
+export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null, fieldKinds = null) {
   if (!where) return ''
   if (typeof where === 'string') return where
 
@@ -257,17 +283,17 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
   for (const [key, val] of Object.entries(where)) {
     if (key === 'AND') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, arrayFields)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
       continue
     }
     if (key === 'OR') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, arrayFields)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' OR ')})`)
       continue
     }
     if (key === 'NOT') {
-      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter, arrayFields)
+      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds)
       if (inner) clauses.push(`NOT (${inner})`)
       continue
     }
@@ -330,7 +356,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     // error tells the caller which field caused it.
     const push = pushFor(key)
 
-    const isArrayCol = arrayFields?.has(key) ?? false
+    const isArrayCol = fieldKinds?.get(key) === 'array'
 
     if (typeof val !== 'object' || Array.isArray(val) || val instanceof Date) {
       if (Array.isArray(val)) {
@@ -357,10 +383,19 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
       // json_each and json() raise "malformed JSON" on a column that is not a
       // JSON document — a message naming neither the field nor the operator.
       // Say it here instead, while both are still in hand.
-      if (ARRAY_OPS.has(op) && arrayFields && !isArrayCol)
-        throw new Error(
-          `where clause: "${op}" is an array operator and "${key}" is not an array field`
-        )
+      // Both refusals below are ValidationErrors rather than bare Errors: an
+      // operator the column cannot answer is a caller error, and junction maps
+      // the name to a 400. A 500 would say the server broke.
+      if (ARRAY_OPS.has(op) && fieldKinds && !isArrayCol)
+        throw new ValidationError([{ path: ['where', key], message:
+          `"${op}" is an array operator and "${key}" is not an array field` }])
+
+      // A string operator on a column that does not hold text answers the wrong
+      // question instead of failing — see TEXT_OP_REFUSALS.
+      if (TEXT_OPS.has(op)) {
+        const refusal = TEXT_OP_REFUSALS[fieldKinds?.get(key)]
+        if (refusal) throw new ValidationError([{ path: ['where', key], message: refusal(key, op) }])
+      }
 
       switch (op) {
         case 'gt':         push(operand);              clauses.push(`${col} > ?`);           break

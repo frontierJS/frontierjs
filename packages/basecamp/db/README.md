@@ -4,7 +4,7 @@
 it and must never be hand-edited.
 
 ```bash
-bun db/generate.js           # regenerate 001_initial_schema.sql
+bun db/generate.js           # regenerate migrations/main/20260801000000_initial_schema.sql
 bun db/generate.js --check   # exit 1 if the SQL is stale (wire this into CI)
 bun db/generate.js --print   # dump DDL to stdout
 ```
@@ -182,10 +182,18 @@ recorded before they landed, both because a path reads what it needs:
 
 Two properties worth knowing, both verified by running:
 
-- **`User` at SYSTEM (8) means even SYSADMIN cannot read it** — any service
-  listing workspace members goes through `asSystem()`. That is auth's own design
-  and it fails closed. The hub was written that way two phases before the gates
-  landed, which is why it needed no change.
+- **`User` reads at USER (4), and what makes that safe is not the level.** It was
+  SYSTEM (8) until auth moved its own fragment (`FJS-170`) — a level no request
+  reaches, which is why every service listing members was written through
+  `asSystem()`, and they all still are. A gate is per MODEL, so 4 on update says
+  *any signed-in caller may rewrite any other person's row*, the hub tier
+  column included. Two declarations narrow it, neither of them a level:
+  `@@allow('update', id == auth().id)` for whose row, and
+  `@allow('write', auth().isSystemAdmin)` on `isSystemAdmin`, `status` and
+  `kind` for which columns — the three `basecampGateLevel()` grades on, which is
+  the reason they may not be written by the caller being graded. `asSystem()`
+  passes both, so the hub grants the tier and `/setup` makes the first
+  administrator exactly as before.
 - **`AuditEvent` update/delete at LOCKED (9) is not passable by `asSystem()`.**
   The audit trail cannot be rewritten from inside the application — the one gate
   here aimed at the app rather than at its callers. `db/seed.js --force` cannot

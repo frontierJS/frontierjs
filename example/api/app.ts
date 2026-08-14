@@ -36,6 +36,13 @@ const PORT = 8110
 
 const auth = createLitestoneAuth(db, {
   encryptionKey: process.env.ENCRYPTION_KEY ?? DEV_KEY,
+  // What 'admin' means here, said once. api/gate.ts grades the role string onto
+  // ADMINISTRATOR(5); auth's own User model bounds its columns with
+  // @allow('write', auth().isAdmin) and a row policy that reads the same field.
+  // Without this projection the two would disagree — the level would say admin
+  // and the policy would not — and the disagreement is silent, because a policy
+  // filters rather than refuses.
+  sessionFields: (user: { role?: string }) => ({ isAdmin: user.role === 'admin' }),
 })
 
 await seed(auth)
@@ -129,7 +136,9 @@ setApp(app)
 // and `ref` here, and nothing else anywhere.
 
 const MAIL_SINK = process.env.MAIL_SINK_URL ?? `http://localhost:${process.env.MAIL_SINK_PORT ?? 8111}`
-const sink = process.env.MAIL_SINK_URL ? null : startMailSink()
+// Bound only when this file is the entry. `junction surface` imports it to
+// describe the app, and a describe that binds 8111 fights the dev server.
+const sink = process.env.MAIL_SINK_URL || !import.meta.main ? null : startMailSink()
 
 app.configure(conduit({
   targets: [{
@@ -192,11 +201,21 @@ app.get('/session', async ctx => {
   })
 })
 
-await app.start()
+// ─── Serve ────────────────────────────────────────────────────────────────
+//
+// The app is exported, and only listens when this file IS the entry. Something
+// that wants to describe the app rather than serve it — `junction surface`,
+// which writes the committed surface.snapshot.md — must be able to import it
+// without taking the port the dev server is already on.
 
-if (sink) console.log(`  [mail] dev sink on ${MAIL_SINK} — GET ${MAIL_SINK}/outbox`)
+export { app }
 
-console.log(`
+if (import.meta.main) {
+  await app.start()
+
+  if (sink) console.log(`  [mail] dev sink on ${MAIL_SINK} — GET ${MAIL_SINK}/outbox`)
+
+  console.log(`
   ─────────────────────────────────────────────────────────────
     API   http://localhost:${PORT}/api/orders
     UI    bun run dev        → http://localhost:8010
@@ -210,3 +229,4 @@ console.log(`
          -H 'content-type: application/json' -d '{}'          # 401, @@gate
   ─────────────────────────────────────────────────────────────
 `)
+}

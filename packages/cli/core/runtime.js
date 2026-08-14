@@ -397,6 +397,14 @@ export async function Command({ file, arg, flag, emit }) {
   // context.printPlan() on --dry to render the prose section interpolated.
   config.vars       = {}
   config.filePath   = file
+
+  // Per-run scratch, shared with any steps. Initialised for EVERY command, not
+  // only ones that have steps: it used to be set inside the steps runner, and
+  // every command in `commands/deploy/` got it only because a bare `_steps/`
+  // attached itself to all of them. Narrowing that (FJS-250) left `deploy:doctor`
+  // throwing `undefined is not an object` on `context.config.abort = true`.
+  // A command reading its own scratch object should not have to be a pipeline.
+  config.config     = {}
   config.printPlan  = () => printPlanFromFile(file, {
     ...config.vars,
     ...config.arg,
@@ -404,23 +412,44 @@ export async function Command({ file, arg, flag, emit }) {
   })
 
   // ─── _steps/ discovery ────────────────────────────────────────────────────
-  // If the command has a _steps/ folder alongside it, run its steps in sequence.
-  // The orchestrator's own run() body executes first (use it to populate context.config
-  // from flags), then each step runs in order sharing the same context.
+  // A command with a `_steps/` folder runs its steps in sequence after its own
+  // run() body, which is where it populates context.config from flags. The
+  // orchestrator may then set context.config.stepsDir to redirect to a different
+  // folder (e.g. '_steps-docker'); discovery is deferred until after it runs so
+  // that override takes effect before any step is loaded.
   //
-  // The orchestrator may set context.config.stepsDir to redirect to a different
-  // steps folder (e.g. '_steps-docker'). Discovery is deferred until after the
-  // orchestrator runs so this override takes effect before steps are loaded.
-  const defaultStepsDir = file.endsWith('.md')
-    ? resolve(dirname(file), '_steps')
+  // **Only the directory's index is the orchestrator.** `_steps/` used to attach
+  // to every `.md` beside it, which meant `commands/deploy/`'s legacy CapRover
+  // steps ran at the end of `deploy:local`, `deploy:status` and `deploy:logs` —
+  // so the command whose whole purpose is a safe local rehearsal finished with
+  // `ssh undefined` and printed `✓ Deployed to undefined in NaNs` (FJS-250).
+  // Every other steps folder in the tree sits beside nothing but an index, so
+  // the narrower rule is what they already relied on.
+  //
+  // A non-index command that genuinely wants steps says so:
+  //   ---
+  //   steps: _steps-docker
+  //   ---
+  const ownSteps = file.endsWith('.md')
+    ? extractFrontmatter(readFileSync(file, 'utf8'))?.steps
     : null
+
+  const defaultStepsDir = !file.endsWith('.md')
+    ? null
+    : ownSteps
+      ? resolve(dirname(file), ownSteps)
+      : basename(file) === 'index.md'
+        ? resolve(dirname(file), '_steps')
+        : null
+
+  if (ownSteps && !existsSync(defaultStepsDir)) {
+    throw new Error(`Steps folder not found: ${ownSteps} (declared by ${basename(file)}, resolved to ${defaultStepsDir})`)
+  }
 
   if (defaultStepsDir && existsSync(defaultStepsDir)) {
     // Return a function that runs the orchestrator then all steps
     const runSteps = async () => {
-      // Shared mutable config object — steps read and write to this
-      config.config = {}
-
+      // config.config is already there — see the initialisation above.
       // Run the orchestrator's own body first (sets up context.config from flags)
       await config.run(config)
 
@@ -534,7 +563,13 @@ export async function Command({ file, arg, flag, emit }) {
           } catch {}
 
           if (!stepRun) {
-            const stepSource = compileCli(stepTemplate, '', stepFile)
+            // Steps get the namespace module too. They used to be compiled with
+            // an empty one, so a `_module.md` helper was reachable from the
+            // orchestrator and `litestreamStatus is not defined` from the step
+            // beside it — which pushed shared logic into whichever step needed
+            // it first and left the next one to copy. A step is the deepest part
+            // of a namespace, not a stranger to it.
+            const stepSource = compileCli(stepTemplate, mod?.script || '', stepFile)
             const tmpStep = _tmpFile()
             try {
               writeFileSync(tmpStep, stepSource)
@@ -740,6 +775,29 @@ export function getConfig(metadata, rawArg, flag) {
     }
   })
 
+  // ─── `--no-x` back to the flag that was declared ────────────────────────
+  // minimist reads `--no-push` as `{ push: false }`, so a command declaring a
+  // `no-push` flag and reading `flag['no-push']` reads undefined — forever, and
+  // silently, because the negation still parses. Nine flags across seven
+  // commands were dead this way: `fli git:release --no-push` warned
+  // "[push] flag not defined" and pushed anyway.
+  //
+  // Translated here rather than in each command so there is one owner. The
+  // discriminator is the declaration: `push: false` can only have come from
+  // `--no-push` when the command declares `no-push` and does NOT declare
+  // `push`. An explicit `--push=false` arrives as the STRING 'false', so the
+  // strict `=== false` cannot confuse the two.
+  Object.keys(meta.flags)
+    .filter(name => name.startsWith('no-'))
+    .forEach(negated => {
+      const positive = negated.slice(3)
+      if (positive in meta.flags) return
+      if (flag[positive] === false) {
+        delete flag[positive]
+        flag[negated] = true
+      }
+    })
+
   Object.entries(flag).forEach(([key, value]) => {
     if (key.length === 1) {
       const found = Object.entries(meta.flags).find(([, { char }]) => char === key)
@@ -777,6 +835,20 @@ export function getConfig(metadata, rawArg, flag) {
       logger(`[${key}] given more than once, and it is not a repeatable flag`, 'error')
       throw new Error('Cancelling action.')
     }
+
+    // The argv parser decides a value's type from how it LOOKS, before the
+    // command's declaration is consulted — so `--tail 200` arrived as the number
+    // 200 at a flag declared `type: string` and was refused as "must be type
+    // string". That is `deploy:logs`'s own documented example, and it took
+    // `deploy:local --port` and `cloudflare:dns` with it. The declaration is
+    // what the command asked for, so coerce toward it and then check.
+    const toDeclared = (v) => {
+      if (flagData.type === 'string' && (typeof v === 'number' || typeof v === 'boolean')) return String(v)
+      if (flagData.type === 'number' && typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) return Number(v)
+      return v
+    }
+    value = Array.isArray(value) ? value.map(toDeclared) : toDeclared(value)
+    flag[key] = value
 
     if (flagData.type && [value].flat().some(v => typeof v !== flagData.type)) {
       logger(`[${key}] must be type ${flagData.type}`, 'error')

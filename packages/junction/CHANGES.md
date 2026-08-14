@@ -1,6 +1,62 @@
 # Changes — @frontierjs/junction
 
 
+## 2026-08-14 — `junction errors` — what a thrown value becomes, executed
+
+`errors.snapshot.md` at this package root: every error class with its status,
+one row per branch `toFrameworkError` can take, the status → class table, and
+**Litestone's real error classes constructed and run through the boundary**.
+`--check` byte-compares; the `snapshots` CI phase reruns it from the header the
+file carries.
+
+Every row is a value actually thrown through `toFrameworkError()`, not a table
+written from the source. That matters because everything above the boundary
+reads only the result: a class that gains a `status` silently stops being a 500,
+and one that never had a status is silently a 500 while its message says
+otherwise. Neither breaks a test, because nothing asserts on a category nobody
+named.
+
+**It found `FJS-255` on its first run.** The three lock errors —
+`LockNotAcquiredError` (`retryable: true`), `LockExpiredError`,
+`LockReleasedByOtherError` — each declare the one field a status cannot express
+and none declares a status, so all three reach a caller as a 500 with
+`retryable` intact beside it. Same shape as the transition errors before
+`FJS-190`, and the same fix: if you own the class, give it a status.
+
+Constructing them is load-bearing: `status` and `retryable` are set in the
+constructor, so a row synthesised from a class NAME reports every one as a 500
+with no retryable. That is exactly what the first draft did for the two classes
+whose constructors take arguments a probe has to guess.
+
+
+## 2026-08-14 — `junction surface` — the API surface as a committed file
+
+The Data realm's snapshots (`litestone access`, `litestone ddl`) have an API-realm
+sibling. `junction surface --app <module>` writes `surface.snapshot.md`: every
+service with its policy-applied methods, its actions, what it broadcasts on, and
+its hook chain **in the order it runs**; the app-level hooks that wrap every call;
+every path the router mounted, prefix applied; and the plugins in configure order.
+`--check` byte-compares the committed file, which is what `scripts/ci.mjs` reruns.
+
+**Read off a BUILT app, never scanned**, because none of it is answerable from
+source text: `collectActions` decides at construction whether a key is an option
+or an action, `svc.pipelines()` resolves the chain a service actually runs
+(`gateAuth`, `autoValidate` and friends lead it, and appear in no service file),
+and `apiPrefix` moves routes registered by plugins that never mention it. The
+tool asks the declared owners — `svc.describe()` and `buildRoutes()` — and
+`serializeHookMap` is now exported rather than copied, so "a hook is its function
+name" has one spelling.
+
+The app module must expose the app **without listening**: a built `App`, or a
+factory returning one — the same contract `@frontierjs/testing` takes as `api:`.
+`--services <dir>` names the autoload directory, because that phase is `needsHost`
+(it resolves against `Bun.main`) and an app whose services are all autoloaded
+otherwise describes as empty.
+
+This is what `FJS-254` closes against: `fli project:view` re-derives service
+metadata with regexes over source, including its own copy of the action rule.
+
+
 ## 2026-08-14 — a filtered bulk PATCH/REMOVE writes row by row
 
 `FJS-044`, ruled by `FJS-D11`. The row was filed as an ergonomics gap — bulk

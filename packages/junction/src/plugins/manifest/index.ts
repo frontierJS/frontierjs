@@ -235,7 +235,14 @@ function buildChannels(app: App): ChannelManifest[] {
   return list.map(c => ({ name: c.name, connections: c.size }))
 }
 
-function serializeHookMap(map: HookMap = {}): HookManifest {
+/**
+ * A hook chain as the names that will run, in order.
+ *
+ * Exported because `tools/surface.ts` renders the same thing into the committed
+ * surface snapshot — a second spelling of "a hook is its function name, and
+ * anonymous means you cannot tell which one" would drift from this one silently.
+ */
+export function serializeHookMap(map: HookMap = {}): HookManifest {
   const phases = ['before', 'after', 'around', 'error'] as const
   const out: HookManifest = { before: {}, after: {}, around: {}, error: {} }
 

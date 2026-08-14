@@ -238,7 +238,12 @@ describe('what the runner reports about itself', () => {
 })
 
 describe('the repo scope', () => {
-  test('a fifth markdown file at a package root is an error', () => {
+  test('a fifth markdown file at a package root is a WARNING that names it', () => {
+    // Ruled 2026-08-14: the four are the standard and a fifth is a question, not
+    // a refused build — the rule cannot tell a stray design note from the next
+    // thing everyone needs at the root, and it was refusing both. The severity
+    // is the assertion here: as an error this stopped CI for a generated
+    // snapshot file, which is how the ruling got asked for.
     const root = tree('repo', {
       'packages/thing/package.json': '{}',
       'packages/thing/README.md':    '#\n',
@@ -247,7 +252,20 @@ describe('the repo scope', () => {
     })
     const { findings } = runChecks({ root, scope: 'repo' })
     expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
     expect(findings[0].message).toMatch(/NOTES\.md/)
+  })
+
+  test('a generated *.snapshot.md at a package root says nothing at all', () => {
+    // Gated output, not documentation. It cannot move — CI reruns each
+    // snapshot's generator from the file's own directory — so warning about it
+    // every run would be a permanent note nobody can act on.
+    const root = tree('repo-snap', {
+      'packages/thing/package.json':    '{}',
+      'packages/thing/README.md':       '#\n',
+      'packages/thing/routes.snapshot.md': '#\n',
+    })
+    expect(runChecks({ root, scope: 'repo' }).findings).toEqual([])
   })
 
   test('the four named ones are not', () => {

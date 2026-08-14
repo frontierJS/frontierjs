@@ -43,6 +43,8 @@ here renders as an empty heading.
 
 - **ws:list** — every package and its version
 - **ws:npm** — local version vs what is on the registry
+- **ws:exports** — the committed published-surface snapshot: what each package
+  ships, and whether every entry point it declares is inside that (`--check` in CI)
 - **ws:status** — working-tree state per package
 - **ws:changed** — what has moved since each package's own tag
 - **ws:graph** — who depends on whom

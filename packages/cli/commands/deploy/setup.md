@@ -14,6 +14,11 @@ flags:
     type: boolean
     description: Set up the staging server
     defaultValue: false
+# Not the directory's index, so it declares its own steps folder rather than
+# inheriting `_steps/` — the runtime attaches a bare `_steps/` to index.md only
+# (FJS-250). Setting context.config.stepsDir alone is not enough: that redirects
+# a steps run, it does not start one.
+steps: _steps-setup
 ---
 
 Checks the target server for all requirements and walks through

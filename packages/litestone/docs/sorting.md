@@ -27,6 +27,23 @@ To sort by a derived value, move the derivation into SQL — `@from` for anythin
 that counts or sums a relation, `@generated` for an expression over the row's own
 columns — or store the value in a real column and write it on change.
 
+**A column whose stored text is a storage detail cannot be sorted either.** The
+column exists and SQLite will happily order by what is in it — which is a
+serialisation or an encoding, not the value:
+
+| Column | Ordering by its text means |
+| --- | --- |
+| `String[]` · `Int[]` · `Enum[]` | the JSON document, so `[10]` sorts before `[9]` and a re-serialised row moves |
+| `Json` (typed or not) | whichever key serialised first |
+| `File` | the storage reference, not the file |
+| `@encrypted` | ciphertext — meaningless, and stable only where the IV is derived from the value |
+| `@hashed` | the digest — stable and equally meaningless |
+
+Sorting *within* an array has no definition here; the question is only whether
+the column may be a sort key at all, and the answer is no. Sort by a column that
+holds the value itself — for an array that usually means a `@from` count, or a
+denormalised column written on change.
+
 ### Asking without running the query
 
 ```js
@@ -39,9 +56,10 @@ db.$checkOrderBy('client', { chattiness: 'asc' })
 accessor also answers `[]` (*I cannot judge this* is not *this is wrong*), and
 every flavour of client — root, `$setAuth`, `asSystem`, `$scopedBy` — answers
 identically, because sortability is a fact about the schema. `reason` is
-`'computed'` or `'unknown'`, so a boundary can say different sentences for "no
-such field" and "that field cannot be sorted". Junction's `autoSort` hook calls
-it and turns a problem into a 400.
+`'computed'`, `'opaque'` or `'unknown'`, so a boundary can say different
+sentences for "no such field", "that field is derived in JS" and "that column
+stores a serialisation, so its text is not the value". Junction's `autoSort` hook
+calls it and turns a problem into a 400.
 
 ## Basic orderBy
 

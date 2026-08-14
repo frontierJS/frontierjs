@@ -8,12 +8,12 @@
 //      partial state, bookkeeping committed atomically, FK pragma restored.
 import { describe, it, expect } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { parse } from '../src/core/parser.js'
 import { splitStatements } from '../src/core/migrate.js'
-import { create, apply, autoMigrate, appliedMigrations } from '../src/core/migrations.js'
+import { create, apply, status, autoMigrate, appliedMigrations } from '../src/core/migrations.js'
 
 const V1 = `
 model Post {
@@ -204,5 +204,75 @@ model Post {
 
     const second = autoMigrate({ $db: db }, pr2)
     expect(second.main.state).toBe('blocked')     // hash was not written — still surfaces
+  })
+})
+
+// ─── A file the name pattern rejects (FJS-193) ────────────────────────────────
+//
+// The ordering guarantee comes from the 14-digit timestamp, so the pattern
+// cannot be loosened. What it must not do is read "none of these matched" as
+// "there are none" — that is a deploy migrating nothing and reporting success.
+
+describe('unmatched migration files are named, never silently skipped', () => {
+  it('apply() refuses a directory whose files all fail the name pattern', async () => {
+    const { dir, db } = freshLab()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '001_initial_schema.sql'), 'CREATE TABLE t (id INTEGER);')
+
+    const res = await apply(db, dir)
+
+    expect(res.unmatched).toBe(true)
+    expect(res.skipped).toEqual(['001_initial_schema.sql'])
+    expect(res.message).toContain('001_initial_schema.sql')
+    expect(res.message).not.toBe('no migration files found')
+    // The table it names is the proof nothing ran.
+    expect(db.query(`SELECT name FROM sqlite_master WHERE name = 't'`).get()).toBeNull()
+  })
+
+  it('an empty directory is still an empty directory', async () => {
+    const { dir, db } = freshLab()
+    mkdirSync(dir, { recursive: true })
+
+    const res = await apply(db, dir)
+
+    expect(res.unmatched).toBeUndefined()
+    expect(res.skipped).toEqual([])
+    expect(res.message).toBe('no migration files found')
+  })
+
+  it('a valid migration still applies, and the misnamed sibling is reported', async () => {
+    const { dir, db } = freshLab()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '20240101000000_init.sql'), 'CREATE TABLE t (id INTEGER);')
+    writeFileSync(join(dir, 'backfill.sql'),            'CREATE TABLE u (id INTEGER);')
+
+    const res = await apply(db, dir)
+
+    expect(res.applied.map((r: { file: string }) => r.file)).toEqual(['20240101000000_init.sql'])
+    expect(res.skipped).toEqual(['backfill.sql'])
+    expect(res.unmatched).toBeUndefined()
+    expect(db.query(`SELECT name FROM sqlite_master WHERE name = 'u'`).get()).toBeNull()
+  })
+
+  it('status() reports the same file apply() skipped', async () => {
+    const { dir, db } = freshLab()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '001_initial_schema.sql'), 'CREATE TABLE t (id INTEGER);')
+
+    const rows = status(db, dir)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ file: '001_initial_schema.sql', state: 'skipped' })
+  })
+
+  it('a non-migration file in the directory is not a candidate', async () => {
+    const { dir, db } = freshLab()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'README.md'), '# how migrations work here')
+
+    const res = await apply(db, dir)
+
+    expect(res.skipped).toEqual([])
+    expect(res.message).toBe('no migration files found')
   })
 })

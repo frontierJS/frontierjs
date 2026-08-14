@@ -45,11 +45,24 @@ const scanFiles = (dir, ...exts) => {
 }
 
 // ─── extractServiceMeta ───────────────────────────────────────────────────────
-// Reads a .service.ts file and extracts name, model, hooks, custom methods.
-// Covers createService({ hooks: { before: { ... }, after: { ... } } })
-// and the chained svc.hooks({ ... }) form. Actions come from `methods:` when
-// the file declares one, and from a pattern scan when it does not — the same
-// order junction resolves them in.
+//
+// FLAGGED FOR DELETION — FJS-254. This is a second implementation of "what is
+// this service", built from regexes over source text, and junction declares one
+// owner for it: `collectActions` at construction, read back through
+// `svc.describe()` (Invariant 4). It cannot agree in the general case — an
+// action assigned from a module-level const takes no visible `ctx`, a `methods:`
+// list built from a variable is not a literal to match, and a hook added by a
+// plugin or by `app.hooks()` is in no service file at all. The viewer then draws
+// a confident picture with nothing to contradict it.
+//
+// The replacement is `junction surface`, which writes the committed
+// surface.snapshot.md off a BUILT app and is gated by the `snapshots` CI phase.
+// Read that, and delete this with the resource extractor reviewed the same way.
+//
+// Until then: reads a .service.ts and extracts name, model, hooks, custom
+// methods. Covers createService({ hooks: … }) and the chained svc.hooks({ … })
+// form. Actions come from `methods:` when the file declares one, and from a
+// pattern scan when it does not.
 
 const extractServiceMeta = (src, filename) => {
   const name  = src.match(/name\s*:\s*['"](\w+)['"]/)
@@ -159,7 +172,7 @@ const TIER1_PACKAGES = [
     label: '@frontierjs/auth',
     short: 'auth',
     realm: 'junction',
-    signals: ['createFjsAuth', 'createFjsAuthPlugin', 'frontierjs/auth'],
+    signals: ['createLitestoneAuth', 'createAuthPlugin', 'frontierjs/auth'],
   },
   {
     id:    'conduit',

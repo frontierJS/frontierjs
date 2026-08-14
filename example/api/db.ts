@@ -20,8 +20,9 @@ const HERE = import.meta.dir
 // them in the repo. Two consequences worth knowing:
 //
 //   · The browser build reads db/schema.lite from disk and therefore never
-//     sees User / Credential / Session / Verification. That is correct — they
-//     are @@gate("8") and no UI may read them.
+//     sees User / Credential / Session / Verification. That is correct — the
+//     three credential models are @@gate("8"), and User reads at USER(4),
+//     which is still above anything a public page may publish.
 //   · `fli auth:install` pastes them in instead. If you scaffold with the CLI
 //     you get the copy; this file shows the alternative.
 

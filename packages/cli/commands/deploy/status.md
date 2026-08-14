@@ -162,14 +162,22 @@ try {
 // ─── Litestream ───────────────────────────────────────────────────────────────
 echo('\nLitestream')
 try {
-  const pidResult = context.exec({
-    command: `ssh ${host} "pgrep -x litestream 2>/dev/null || echo ''"`,
-    stdio: 'pipe',
+  const ls = litestreamStatus((cmd) => {
+    try { return context.exec({ command: `ssh ${host} "${cmd}"`, stdio: 'pipe' })?.toString('utf8') ?? '' }
+    catch { return '' }
   })
-  const pid = pidResult?.toString('utf8').trim() ?? ''
 
-  if (pid) {
-    echo(`  status:     running (pid ${pid})`)
+  if (ls.running) {
+    if (ls.supported === false) {
+      // "running" here used to be the whole answer, and it is the wrong one:
+      // 0.3.x runs forever against a litestone database and replicates nothing.
+      echo(`  status:     running (pid ${ls.pid}) — ${ls.version} is TOO OLD, replicating NOTHING`)
+      echo(`  ⚠  ${LITESTREAM_MIN_LABEL}+ required — 0.3.x cannot parse STRICT tables and loops without exiting`)
+    } else if (ls.supported === null) {
+      echo(`  status:     running (pid ${ls.pid}) — version unreadable, cannot confirm ${LITESTREAM_MIN_LABEL}+`)
+    } else {
+      echo(`  status:     running (pid ${ls.pid}, ${ls.version})`)
+    }
 
     // Try to find what replica URL it's replicating to
     const configResult = context.exec({

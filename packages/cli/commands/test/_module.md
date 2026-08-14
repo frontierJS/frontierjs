@@ -28,8 +28,12 @@ passing against a rule that no longer exists.
 
 ```
 fli test:access  — write db/access.snapshot.md, the reviewable access artefact
+fli test:ddl     — write db/ddl.snapshot.sql, the tables SQLite is given
 fli test:mutate  — mutate the schema, report what the checks cannot see
 ```
+
+Both snapshots name the command that regenerates them in their own header, so
+CI reruns them with `--check` without carrying a list of what exists.
 
 ## The access snapshot
 

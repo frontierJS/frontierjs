@@ -81,6 +81,8 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@frontierjs/junction": "workspace:*",
+    "@frontierjs/mesa": "workspace:*",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1"
   },

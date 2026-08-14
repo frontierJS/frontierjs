@@ -130,3 +130,58 @@ describe('accessor consistency', () => {
     expect(src).not.toMatch(/\bsys\.(users|credentials|sessions|verifications)\./)
   })
 })
+
+// ─── the hand copy ───────────────────────────────────────────────────────────
+// `fli auth:install` carries its own copy of these fragments, because the CLI
+// scaffolds a schema before anything is installed and cannot import this file.
+// The two have drifted before — pre-rename scalars that no longer parse, a
+// missing `role`, and `@@gate("9")`, which is LOCKED and walled the auth tables
+// off from the auth package itself. Prose said "keep them in sync"; this asks.
+//
+// It compares the DECLARATIONS, not the bytes: comments are allowed to differ
+// (the copy says it is one), an access rule is not.
+
+describe('the CLI hand copy declares the same access as the shipped fragment', () => {
+
+  function cliFragment(): string {
+    const md    = readFileSync(join(import.meta.dir, '..', '..', 'cli', 'commands', 'auth', 'install.md'), 'utf8')
+    const start = md.indexOf('const authSchemaFragments = (db) => `')
+    const open  = md.indexOf('`', start) + 1
+    const close = md.indexOf('\n`\n', open)
+    expect(start).toBeGreaterThan(-1)
+    return md.slice(open, close).replaceAll('${db}', 'main')
+  }
+
+  /** Model name → the access rules it declares, in a comparable shape. */
+  function accessOf(source: string) {
+    const result = parse(PREAMBLE + source)
+    expect(result.errors ?? []).toEqual([])
+    // `any`: a parsed schema is the parser's own shape, and this comparison is
+    // about attribute payloads no exported type describes.
+    const models: any[] = (result.schema as any)?.models ?? []
+    expect(models.length).toBe(4)
+    const out: Record<string, unknown> = {}
+    for (const model of models) {
+      out[model.name] = {
+        gate:   model.attributes.find((a: any) => a.kind === 'gate')?.value,
+        // JSON is the comparison: a policy is an expression tree, and two trees
+        // that stringify the same are the same rule.
+        model:  model.attributes.filter((a: any) => a.kind === 'allow' || a.kind === 'deny')
+                     .map((a: any) => JSON.stringify(a)).sort(),
+        fields: model.fields.flatMap((f: any) =>
+                  (f.attributes ?? [])
+                    .filter((a: any) => a.kind === 'fieldAllow' || a.kind === 'guarded' || a.kind === 'secret' || a.kind === 'encrypted')
+                    .map((a: any) => `${f.name}:${JSON.stringify(a)}`)).sort(),
+      }
+    }
+    return out
+  }
+
+  test('gate, row policies and field policies match model for model', () => {
+    expect(accessOf(cliFragment())).toEqual(accessOf(authSchemaFragments('main')))
+  })
+
+  test('and the copy is not empty or truncated', () => {
+    expect(Object.keys(accessOf(cliFragment())).sort()).toEqual(['Credential', 'Session', 'User', 'Verification'])
+  })
+})

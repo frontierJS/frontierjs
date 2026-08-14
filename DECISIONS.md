@@ -179,6 +179,54 @@ for derived — if it has no independent existence, it is not a Projection.
 
 ## Access control
 
+**2026-08-14 · The identity ladder: `@@gate("8")` is for credential material,
+not for `User`. A model is bounded by three declarations, and a level is only
+the first.**
+
+`8` reads as *the safest number*, and it is not a stronger `5` — it means
+*nothing outside `asSystem()` has anything to say to this model*. That is true
+of a password hash, a session token and a reset token. It is false of the table
+an app's own screens list: at `8` the member list, the admin zone and the user
+picker all have to go through `asSystem()`, where **nothing is enforced at
+all** — so raising the gate moves the whole surface into the bypass. `FJS-170`
+moved auth's `User` to `"4.4.4.5"` for that reason.
+
+What `FJS-177` then showed is that the level alone is not the ruling. A gate is
+per MODEL, so update at USER(4) says *any signed-in caller may write any other
+person's row*, and in basecamp that included `isSystemAdmin` — the column its
+own resolver grades SYSADMIN(7) from. Measured, not inferred: a `developer`
+promoted themselves.
+
+**The rule.** Identity — and any model whose columns feed a level — is declared
+with all three:
+
+| | Question | On refusal |
+| --- | --- | --- |
+| `@@gate("4.4.4.5")` | what KIND of caller | throws, naming model and level |
+| `@@allow('update', id == auth().id \|\| auth().isAdmin)` | WHOSE row | filters; the write matches nothing and answers |
+| `@allow('write', auth().isAdmin)` on the graded columns | WHICH columns | drops the field, keeps the rest of the write |
+
+Two consequences are the decision rather than the arithmetic.
+
+**A column the caller can write is not a column a level can be graded from.**
+Whatever the app's `getLevel` reads — `role`, `isAdmin`, a status, a membership
+— must be out of that caller's reach, or the ladder grades a caller on a value
+the caller chose. Where a level already covers it, that is enough:
+basecamp's `WorkspaceMember.role` needs no field policy because writing the
+membership is ADMINISTRATOR(5) and the caller being graded is USER(4).
+
+**Write the policy against the same standing the level is graded from.**
+`auth().isAdmin` is what `FrontierGateGetLevel` and `sessionGateLevel()` both
+read for ADMINISTRATOR(5), so the level that deletes a person is the level that
+sets their role — one idea, not two. This is why the scaffolds stopped grading
+`role === 'admin'` in a resolver while the schema policy read a different field:
+what `'admin'` MEANS is the app's decision, made once where the session is built
+(`sessionFields`), and projected onto the standing everything else reads.
+
+The cost, stated: a policy FILTERS where a gate REFUSES, so the write a policy
+turns away returns normally. Nothing in a return value can tell you it was
+refused — a test reads the row back through `asSystem()`.
+
 **2026-08-10 · Basecamp's gate ladder: a level is a fact about a caller IN A
 WORKSPACE, so it is resolved per request and carried on the principal.**
 
@@ -1662,6 +1710,32 @@ session past `VISITOR(1)`; `example/` disproved that by running it —
 `sessionGateLevel()` plus a one-line role wrapper grades a verified user 4 and a
 verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstanding
 work, not a decision.)*
+
+## Repo conventions
+
+**2026-08-14 · Invariant 17 is a standard, not a wall — `package-root-md` warns.**
+The four files at a package root (`README.md`, `CLAUDE.md`, `PROJECT_STATE.md`,
+`CHANGES.md`) stay the standard, and the reason stands: the root is the index, and
+an index nobody can hold in their head is a directory listing. What changed is the
+verdict on a fifth. **The rule cannot tell a stray design note from the next thing
+everyone needs at the root**, and it was refusing both — `packages/css/AGENTS.md`
+sat behind a named allowance whose own text admitted the question was unruled, and
+a generated `surface.snapshot.md` failed a build for being generated output the
+rule had no word for.
+
+So it names what it found and asks. An allowance under `structure` in
+`scripts/ci-allowances.json` is where the answer gets written down once someone
+gives one, which is what that file was always for: a named path with a reason, not
+a loosened rule. Generated `*.snapshot.md` is exempt outright — it is gated output
+rather than documentation, and nobody is asked to hold it in their head.
+
+**Why not simply raise the number to five.** A count is not the constraint; the
+constraint is that a person can read a package root and know where they are. Five
+named files would refuse the sixth for the same bad reason, and the rule would
+still be unable to say which of the five earned its place. A warning that names
+the file puts the judgement where judgement lives.
+
+— `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
 

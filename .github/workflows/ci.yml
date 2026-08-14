@@ -55,17 +55,23 @@ jobs:
           }
           echo "FJS_CHROME=$(which google-chrome || which chromium)" >> "$GITHUB_ENV"
 
-      # NOT --frozen-lockfile, which is what a clean checkout should want: a
+      # --frozen-lockfile, which is what a clean checkout should want: a
       # lockfile that does not match package.json is exactly the difference
-      # between one machine and everyone else's. It cannot be used here yet —
-      # bun.lock never converges, so frozen mode fails on a pristine clone of an
-      # untouched HEAD and again on a lockfile bun itself just wrote. FJS-157.
+      # between one machine and everyone else's. It could not be used until
+      # FJS-157 — bun re-resolved sierra's and jetty's `@frontierjs/mesa` peer
+      # on every install and wrote a nested tree the previous install had not,
+      # so frozen mode failed on a lockfile bun itself had just written.
       - name: Install
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Verify
         env:
           # A raised typecheck baseline is measured against where this branch
           # left the base, not against the base's tip.
           FJS_CI_BASE_REF: origin/${{ github.base_ref || 'main' }}
+          # ubuntu-latest ships a Docker daemon, so the deploy phase has no
+          # excuse here. Locally a missing daemon is a named note; on the runner
+          # a skipped phase is a failure, because a check that quietly stops
+          # running is worse than one that was never written.
+          FJS_CI_REQUIRE_DOCKER: '1'
         run: node scripts/ci.mjs

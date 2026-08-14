@@ -190,3 +190,69 @@ describe('_steps/ — execution scenarios', () => {
   })
 
 })
+
+// ─── _steps/ is the index's, not the directory's ─────────────────────────────
+// `_steps/` used to attach to every .md beside it, so `commands/deploy/`'s
+// legacy CapRover steps ran at the end of deploy:local, deploy:status and
+// deploy:logs — the local-rehearsal command finished with `ssh undefined` and
+// printed `✓ Deployed to undefined in NaNs` (FJS-250). A non-index command now
+// has to ask.
+
+describe('_steps/ attaches to the index, not to every sibling', () => {
+
+  test('index.md gets _steps/ implicitly', async () => {
+    const file = resolve(__dir, 'fixtures/sibling-steps/index.md')
+    const log  = texts(await runCommand(file, [], {}))
+    expect(log.some(t => t.includes('index body ran'))).toBe(true)
+    expect(log.some(t => t.includes('the step ran'))).toBe(true)
+  })
+
+  test('a sibling command does NOT inherit them', async () => {
+    const file = resolve(__dir, 'fixtures/sibling-steps/sibling.md')
+    const log  = texts(await runCommand(file, [], {}))
+    expect(log.some(t => t.includes('sibling body ran'))).toBe(true)
+    expect(log.some(t => t.includes('the step ran'))).toBe(false)
+  })
+
+  test('a sibling may opt in by naming the folder', async () => {
+    const file = resolve(__dir, 'fixtures/sibling-steps/optin.md')
+    const log  = texts(await runCommand(file, [], {}))
+    expect(log.some(t => t.includes('optin body ran'))).toBe(true)
+    expect(log.some(t => t.includes('the step ran'))).toBe(true)
+  })
+
+  // Both of these broke when _steps/ stopped being inherited, and neither was
+  // caught by the parse sweep — a command using a _module.md helper compiles
+  // whether or not the module defines it, so only running it says anything.
+
+  test('context.config exists on a command with no steps at all', async () => {
+    const file = resolve(__dir, 'fixtures/sibling-steps/scratch.md')
+    const ev   = await runCommand(file, [], {})
+    const log  = texts(ev)
+    // It used to be initialised only inside the steps runner, so every deploy
+    // command got it by accident and deploy:doctor threw
+    // "undefined is not an object" on context.config.abort = true.
+    expect(log.some(t => t.includes('scratch is object'))).toBe(true)
+    expect(ev.some(e => e.type === 'error')).toBe(false)
+  })
+
+  test('a step is compiled with its namespace module', async () => {
+    // The fixture is titled `deploy:…`, so Command() resolves the namespace from
+    // its own frontmatter and loads the REAL commands/deploy/_module.md. A
+    // fixture-local _module.md cannot be used: module lookup is by namespace over
+    // commands/, not by sibling directory.
+    buildRegistry()
+    const file = resolve(__dir, 'fixtures/module-in-step/index.md')
+    const ev   = await runCommand(file, [], {})
+    const log  = texts(ev)
+    expect(log.some(t => t.includes('step reached the module: 1 host'))).toBe(true)
+    expect(ev.some(e => e.type === 'error')).toBe(false)
+  })
+
+  test('a declared folder that does not exist is an error, not a silent skip', async () => {
+    const file = resolve(__dir, 'fixtures/sibling-steps/badsteps.md')
+    const ev   = await runCommand(file, [], {})
+    expect(ev.some(e => e.type === 'error' && /_steps-nope/.test(e.text))).toBe(true)
+  })
+
+})

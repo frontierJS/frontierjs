@@ -1,6 +1,41 @@
 # Changes — @frontierjs/auth
 
 
+## 2026-08-14 — the fragment ships what bounds the level, not just the level
+
+`FJS-170` moved `User` from `@@gate("8")` — a level no request reaches, so an
+app could not list its own people — down to `"4.4.4.5"`, and stated the
+remaining gap in a comment rather than closing it: *update at USER means any
+signed-in caller may write any user row, its role column included*. Basecamp
+then shipped that gap for three days and a `developer` promoted themselves to
+the hub tier through it (`FJS-177`), which is the argument for the fragment
+carrying the whole shape rather than an instruction to add the rest.
+
+Now declared here:
+
+- `@@allow('update', id == auth().id || auth().isAdmin)` — whose row.
+- `@allow('write', auth().isAdmin)` on `role` and `emailVerified` — which
+  columns. These are what a resolver grades on, and **a column the caller can
+  write is not a column a level can be graded from**. Self-verifying an address
+  is skipping the verification.
+
+`auth().isAdmin` rather than a role string, because it is the standing
+`FrontierGateGetLevel` and `sessionGateLevel()` both read for ADMINISTRATOR(5) —
+the level that deletes a person is the level that sets their role. What
+`'admin'` MEANS stays the app's decision, made once in `sessionFields`; both CLI
+scaffolds now grade standing and project `role === 'admin'` onto it there,
+instead of matching the string in a resolver while the schema read another
+field.
+
+`Credential` / `Session` / `Verification` stay at 8, which is the case 8 is
+for. Ruled in `DECISIONS.md` § Access control.
+
+The suite states the ladder through refusals — a stranger by level, another
+user's row by policy, `role`/`emailVerified` by field policy, an ADMINISTRATOR
+doing both — and a new test parses the CLI's hand copy and compares what the two
+files DECLARE, because prose asking them to stay in sync is what failed three
+times. Verified by breaking it.
+
 ## 2026-08-13 — the rate limiter is junction's, not a copy of it
 
 `plugin.ts` carried its own limiter, on the stated grounds that junction's hook

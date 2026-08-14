@@ -8,6 +8,7 @@ examples:
   - fli ws-pub patch --tag beta
   - fli ws-pub patch --affected
   - fli ws-pub patch --dry
+  - fli ws-pub patch --no-push
 args:
   -
     name: bump
@@ -38,6 +39,10 @@ flags:
     type: boolean
     description: Only publish packages with uncommitted changes of their own
     defaultValue: false
+  no-push:
+    type: boolean
+    description: Version, tag and publish, but leave the commit and tags local
+    defaultValue: false
   affected:
     char: a
     type: boolean
@@ -54,6 +59,12 @@ shape it is in rather than being told.
 
 A package marked `private` in its `package.json` is skipped — npm refuses it,
 and a failed publish aborts the run before anything is pushed.
+
+`--no-push` stops after publishing: the release commit and its tags stay local.
+Worth reaching for when this repo's `pre-push` hook is a CI tier — a release
+commit carries version bumps and nothing else, so re-running the checks that
+already passed on its parent costs about a minute and proves nothing new. The
+push command is printed for you to run when you mean to.
 
 ```js
 const { wsRoot, packages: all } = await context.wsPackages()

@@ -27,6 +27,11 @@ import { validate, applyTransforms, buildValidationMap, ValidationError } from '
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel } from '../plugins/gate.js'
 import { buildPolicyMap, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, evalJs } from './policy.js'
+import {
+  encryptField, decryptField, encryptDeterministic, hashField,
+  isCiphertext, normaliseKey, comparisonEncoderFor,
+} from './encryption.js'
+import { randomBytes } from 'crypto'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { runSqliteRetention } from '../tools/retention.js'
 export { ValidationError } from './validate.js'
@@ -539,117 +544,6 @@ function applySequences(data, modelName, sequenceMap, writeDb) {
   return out
 }
 
-
-import { createCipheriv, createDecipheriv, randomBytes, createHmac } from 'crypto'
-
-// ─── Encryption ───────────────────────────────────────────────────────────────
-// Three modes, along one axis — can the value be read back?
-//
-//   @encrypted                      v1.   AES-256-GCM, RANDOM iv    recoverable, not filterable
-//   @encrypted(deterministic: true) v1d.  AES-256-GCM, DERIVED iv   recoverable, equality-filterable
-//   @hashed                         v1h.  HMAC-SHA256               NOT recoverable, equality-filterable
-//
-// There is no fourth cell: a value that can be neither read nor matched is a value
-// that was deleted.
-//
-// `v1s.` was a fourth prefix that stored an HMAC under the @encrypted name and is
-// gone. Nothing reads it: a column holding one is unrecoverable, so recognising the
-// prefix could only produce a friendlier way to say the same loss. See CHANGES.md.
-//
-// Payload (base64url) is `iv + tag + ciphertext` for both AES modes, so one
-// decrypt path serves them; @hashed has no decrypt path at all.
-
-const ENC_PREFIX      = 'v1.'
-const ENC_D_PREFIX    = 'v1d.'
-const HASH_PREFIX     = 'v1h.'
-const GCM_IV_LEN      = 12
-const GCM_TAG_LEN     = 16
-const HMAC_ALG        = 'sha256'
-
-// Domain separation. The IV and the digest are both HMACs of the same plaintext
-// under the same root key, so without distinct salts a deterministic field's IV
-// and a @hashed field's stored digest would be the same 12/32 bytes of the same
-// function — and the IV travels in the clear inside the payload, which would hand
-// out a prefix of the digest for free.
-const IV_SALT         = Buffer.from('litestone/iv/v1')
-const HASH_SALT       = Buffer.from('litestone/hash/v1')
-
-function encryptField(plaintext, key) {
-  if (plaintext == null) return plaintext
-  const iv         = randomBytes(GCM_IV_LEN)
-  const cipher     = createCipheriv('aes-256-gcm', key, iv)
-  const encrypted  = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()])
-  const tag        = cipher.getAuthTag()
-  const payload    = Buffer.concat([iv, tag, encrypted])
-  return ENC_PREFIX + payload.toString('base64url')
-}
-
-function decryptField(ciphertext, key) {
-  if (ciphertext == null) return ciphertext
-  const s      = String(ciphertext)
-  const prefix = s.startsWith(ENC_D_PREFIX) ? ENC_D_PREFIX
-               : s.startsWith(ENC_PREFIX)   ? ENC_PREFIX
-               : null
-  if (!prefix) return ciphertext  // not encrypted
-  const payload    = Buffer.from(s.slice(prefix.length), 'base64url')
-  const iv         = payload.subarray(0, GCM_IV_LEN)
-  const tag        = payload.subarray(GCM_IV_LEN, GCM_IV_LEN + GCM_TAG_LEN)
-  const encrypted  = payload.subarray(GCM_IV_LEN + GCM_TAG_LEN)
-  const decipher   = createDecipheriv('aes-256-gcm', key, iv)
-  decipher.setAuthTag(tag)
-  return decipher.update(encrypted) + decipher.final('utf8')
-}
-
-// The IV is a FUNCTION of the plaintext, which is the entire mechanism: the same
-// value encrypts to the same bytes, so `WHERE col = ?` works after encrypting the
-// operand the same way.
-//
-// GCM breaks catastrophically on nonce reuse across DIFFERENT plaintexts — the
-// keystream repeats and XORing two ciphertexts reveals both. Deriving the nonce
-// from the plaintext makes that a SHA-256 collision rather than an accident, and
-// reuse across IDENTICAL plaintexts is not a weakness, it is the property being
-// bought. Same construction Rails ships for `deterministic: true`.
-//
-// The trade this makes, and it is not hidden: equal values are visibly equal in the
-// column to anyone holding the database. That is true of every searchable-encryption
-// scheme — a blind index leaks exactly the same fact — and it is why this is opt-in
-// per field rather than the default.
-function deriveIv(plaintext, key) {
-  return createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), IV_SALT]))
-    .update(String(plaintext)).digest().subarray(0, GCM_IV_LEN)
-}
-
-function encryptDeterministic(plaintext, key) {
-  if (plaintext == null) return plaintext
-  const iv         = deriveIv(plaintext, key)
-  const cipher     = createCipheriv('aes-256-gcm', key, iv)
-  const encrypted  = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()])
-  const tag        = cipher.getAuthTag()
-  const payload    = Buffer.concat([iv, tag, encrypted])
-  return ENC_D_PREFIX + payload.toString('base64url')
-}
-
-// @hashed. One way, by construction and by name — there is no inverse of an HMAC,
-// so nothing here has a partner function elsewhere in this file.
-function hashField(plaintext, key) {
-  if (plaintext == null) return plaintext
-  const hmac = createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), HASH_SALT]))
-    .update(String(plaintext)).digest('base64url')
-  return HASH_PREFIX + hmac
-}
-
-function isCiphertext(value) {
-  const s = String(value ?? '')
-  return s.startsWith(ENC_PREFIX) || s.startsWith(ENC_D_PREFIX) || s.startsWith(HASH_PREFIX)
-}
-
-// Normalise key: hex string, Buffer, or Uint8Array → 32-byte Buffer
-function normaliseKey(raw) {
-  if (!raw || (typeof raw === 'string' && !raw.trim())) return null
-  if (typeof raw === 'string') return Buffer.from(raw, 'hex')
-  return Buffer.from(raw)
-}
-
 // ─── Field policy map ─────────────────────────────────────────────────────────
 // Per model, per field:
 //   omit:      'lists' | 'all' | null
@@ -1039,22 +933,30 @@ function buildBoolMap(schema) {
 }
 
 
-// ─── Array map ────────────────────────────────────────────────────────────────
-// { modelName: Set<fieldName> } — columns holding a JSON array.
+// ─── Filter kind map ──────────────────────────────────────────────────────────
+// { modelName: Map<fieldName, 'array' | 'json' | 'file' | 'boolean'> }
 //
-// buildWhere reads it to decide what a bare array in a `where` means, which it
-// cannot tell from the operand: `{ id: [1,2] }` is an IN over one value and
-// `{ tags: ['x','y'] }` is an IN over the row's several. An implicit m2m field
-// is excluded — it has no column, and a relation filter owns it.
-
-function buildArrayMap(schema) {
+// What a column HOLDS — the fact `buildWhere` cannot read off the operand, and
+// which two of its questions need. Whether a bare array means `IN` or `hasSome`
+// (`{ id: [1,2] }` and `{ tags: ['x','y'] }` are the same shape and different
+// SQL), and whether a string operator can ask this column anything at all: a
+// serialisation answers about its own punctuation and a Boolean is 0/1, so both
+// answer plausibly and wrongly rather than failing (`FJS-210`).
+//
+// Anything absent is a plain scalar. Int and DateTime are deliberately absent —
+// SQLite's coercion answers what was asked there.
+function buildFilterKindMap(schema) {
   const map = {}
   for (const model of schema.models) {
-    map[model.name] = new Set(
-      model.fields
-        .filter(f => f.type.array && f.type.kind !== 'relation' && f.type.kind !== 'implicitM2M')
-        .map(f => f.name)
-    )
+    const kinds = new Map()
+    for (const f of model.fields) {
+      if (f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
+      if (f.type.array)                   kinds.set(f.name, 'array')
+      else if (f.type.name === 'Json')    kinds.set(f.name, 'json')
+      else if (f.type.name === 'File')    kinds.set(f.name, 'file')
+      else if (f.type.name === 'Boolean') kinds.set(f.name, 'boolean')
+    }
+    map[model.name] = kinds
   }
   return map
 }
@@ -1376,18 +1278,47 @@ function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [
 // Which keys of a model may appear in an orderBy, split three ways so the
 // caller can say WHY a key was refused. One definition, asked by both the ORM
 // wrapper and $checkOrderBy.
+// A column whose stored TEXT is a storage detail rather than the value. SQLite
+// orders by that text, so the answer is always plausible and never the one
+// asked for — `[10]` sorts before `[9]`, a Json document sorts by whichever key
+// serialised first, and ciphertext reshuffles on every re-encryption. One
+// bucket, because the question is not what sorting *within* the value would mean
+// but whether the column may be a sort key at all, and the answer is no.
+const OPAQUE_SORT = {
+  array:     `an array column, stored as a JSON document — sorting it orders rows by that text, so '[10]' sorts before '[9]' and a re-serialised row moves`,
+  json:      `a Json column, stored as a document — sorting it orders rows by the serialised text, so the order is by whichever key serialised first`,
+  file:      `a File column, stored as a reference document — sorting it orders rows by that JSON text, not by anything about the file`,
+  encrypted: `@encrypted — sorting it orders rows by ciphertext, which is meaningless, and stable only where the IV is derived from the value`,
+  hashed:    `@hashed — sorting it orders rows by the digest, which is stable and equally meaningless`,
+}
+
+function opaqueSortKind(f) {
+  if (f.attributes?.some(a => a.kind === 'hashed')) return 'hashed'
+  if (f.attributes?.some(a => a.kind === 'encrypted' || a.kind === 'secret')) return 'encrypted'
+  if (f.type?.array)            return 'array'
+  if (f.type?.name === 'Json')  return 'json'
+  if (f.type?.name === 'File')  return 'file'
+  return null
+}
+
 function sortableKeysFor(model) {
   const sortable  = new Set()
   const relations = new Set()
   const computed  = new Set()
+  const opaque    = new Map()
   for (const f of model.fields) {
-    if (f.type?.kind === 'relation') { relations.add(f.name); continue }
+    // An implicit many-to-many is `Tag[]` — an array in the AST and a join table
+    // in SQLite, so it must be claimed here or the array bucket below takes it
+    // and `orderBy: { tags: { _count: 'asc' } }` stops compiling.
+    if (f.type?.kind === 'relation' || f.type?.kind === 'implicitM2M') { relations.add(f.name); continue }
     if (f.attributes?.some(a => a.kind === 'computed')) { computed.add(f.name); continue }
     // @edge values live on a side table the ORDER BY cannot reach.
     if (f.attributes?.some(a => a.kind === 'edge' || a.kind === 'scoped')) continue
+    const opaqueKind = opaqueSortKind(f)
+    if (opaqueKind) { opaque.set(f.name, opaqueKind); continue }
     sortable.add(f.name)
   }
-  return { sortable, relations, computed }
+  return { sortable, relations, computed, opaque }
 }
 
 // ─── orderBy key validation ───────────────────────────────────────────────────
@@ -1409,7 +1340,7 @@ function sortableKeysFor(model) {
 //
 // `allowAggregates` is groupBy/aggregate, where `_count` and `_sum` are the
 // point of the query rather than a typo.
-function collectOrderByKeyProblems(orderBy, sortable, relations, computed, allowAggregates, out = []) {
+function collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaque, allowAggregates, out = []) {
   if (!orderBy) return out
   for (const item of Array.isArray(orderBy) ? orderBy : [orderBy]) {
     if (!item || typeof item !== 'object') continue
@@ -1417,6 +1348,19 @@ function collectOrderByKeyProblems(orderBy, sortable, relations, computed, allow
       if (allowAggregates && key.startsWith('_')) continue
       if (relations.has(key))                     continue
       if (sortable.has(key))                      continue
+      const opaqueWhy = opaque?.get(key)
+      if (opaqueWhy) {
+        out.push({
+          key,
+          reason:     'opaque',
+          suggestion: null,
+          sortable:   [...sortable].sort(),
+          message:    `Cannot orderBy '${key}' on %MODEL% — it is ${OPAQUE_SORT[opaqueWhy]}. ` +
+                      `Sort by a column that holds the value itself. ` +
+                      `Sortable: ${[...sortable].sort().join(', ')}`,
+        })
+        continue
+      }
       if (computed.has(key)) {
         out.push({
           key,
@@ -1487,13 +1431,13 @@ function withArgValidation(table, model, ctx) {
   const whereKeys = filterableKeysFor(model)
   for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) whereKeys.filterable.add(d.as)
   const modelName = model.name
-  const { sortable, relations, computed } = sortableKeysFor(model)
+  const { sortable, relations, computed, opaque } = sortableKeysFor(model)
 
   const checkOrderBy = (args, method) => {
     // `_depth` is a column only a tree read has, so it is sortable only there.
     const sortableHere = args?.recursive ? new Set([...sortable, '_depth']) : sortable
     const problems = collectOrderByKeyProblems(
-      args?.orderBy, sortableHere, relations, computed,
+      args?.orderBy, sortableHere, relations, computed, opaque,
       method === 'groupBy' || method === 'aggregate',
     )
     if (!problems.length) return
@@ -2035,7 +1979,7 @@ function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'list', s
     // ── Decrypt if field is present and encrypted ─────────────────────────
     if (encrypted && fieldName in out && out[fieldName] != null) {
       try {
-        out[fieldName] = decryptField(out[fieldName], ctx.encKey)
+        out[fieldName] = decryptField(out[fieldName], ctx.enc.key)
 
         // Mirror of the write step: a Json field was serialized before it was
         // encrypted, so it is parsed after it is decrypted.
@@ -2171,7 +2115,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         let whereExtra = ''
         const whereParams = []
         if (where) {
-          const ws = buildWhere(where, whereParams, null, null, null, null, ctx.arrayMap?.[rel.targetModel])
+          const ws = buildWhere(where, whereParams, null, null, null, null, ctx.filterKindMap?.[rel.targetModel])
           if (ws) whereExtra = ` AND (${ws})`
         }
         const polExtra = countPolicy ? ` AND (${countPolicy.sql})` : ''
@@ -2240,7 +2184,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
     const relWhereSql = (extraAlias) => {
       if (!relWhere) return { clause: '', params: [] }
       const p = []
-      const ws = buildWhere(relWhere, p, null, extraAlias ?? null, null, null, ctx.arrayMap?.[rel.targetModel])
+      const ws = buildWhere(relWhere, p, null, extraAlias ?? null, null, null, ctx.filterKindMap?.[rel.targetModel])
       return { clause: ws ? ` AND (${ws})` : '', params: p }
     }
     // Soft delete mode for related table
@@ -2616,7 +2560,7 @@ function makeTable(
   ftsFields,
   boolFields,
   enumFields,
-  arrayFields,
+  fieldKinds,
   softDeleteCascade,
   fieldPolicy,
   fromFields,
@@ -3413,7 +3357,7 @@ function makeTable(
     }
 
     // Encrypt @encrypted / hash @hashed fields before write
-    if (ctx.encKey && hasFieldPolicy) {
+    if (ctx.enc.key && hasFieldPolicy) {
       for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
         if (!policy.encrypted && !policy.hashed) continue
         if (!(fieldName in transformed)) continue
@@ -3430,9 +3374,9 @@ function makeTable(
         // still a JSON string as the column type says.
         const plain = policy.json ? JSON.stringify(val) : val
 
-        transformed[fieldName] = policy.hashed                 ? hashField(plain, ctx.encKey)
-                               : policy.encrypted.deterministic ? encryptDeterministic(plain, ctx.encKey)
-                               :                                  encryptField(plain, ctx.encKey)
+        transformed[fieldName] = policy.hashed                 ? hashField(plain, ctx.enc.key)
+                               : policy.encrypted.deterministic ? encryptDeterministic(plain, ctx.enc.key)
+                               :                                  encryptField(plain, ctx.enc.key)
       }
     }
 
@@ -3542,7 +3486,7 @@ function makeTable(
     const innerOf = (w) => {
       if (!w || (typeof w === 'object' && !Object.keys(w).length)) return ''
       const p = []
-      const sql = buildWhere(w, p, null, 't', null, relationFilterSql, ctx.arrayMap?.[rel.targetModel])
+      const sql = buildWhere(w, p, null, 't', null, relationFilterSql, ctx.filterKindMap?.[rel.targetModel])
       return { sql, p }
     }
 
@@ -3580,16 +3524,16 @@ function makeTable(
 
   function buildWhereWithEncryption(where, params, tableAlias = null, outerIsAliased = tableAlias === 't') {
     const fromMap = outerIsAliased ? _fromExprMapAliased : _fromExprMap
-    if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, arrayFields)
+    if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds)
     let rewritten = where
-    if (ctx.encKey) {
+    if (ctx.enc.key) {
       rewritten = rewriteEncryptedWhere(where)
       if (rewritten?.__impossible) {
         const prefix = tableAlias ? `${tableAlias}.` : ''
         return `${prefix}"id" IS NULL AND ${prefix}"id" IS NOT NULL`
       }
     }
-    return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, arrayFields)
+    return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds)
   }
 
   function rewriteEncryptedWhere(where) {
@@ -3606,10 +3550,10 @@ function makeTable(
 
       // Both matchable modes take the SAME rewrite — encode the operand the way the
       // column was encoded, then compare bytes to bytes. Only the encoder differs,
-      // and only equality survives either encoding.
-      const encode = policy?.hashed                  ? (v) => hashField(v, ctx.encKey)
-                   : policy?.encrypted?.deterministic ? (v) => encryptDeterministic(v, ctx.encKey)
-                   : null
+      // and only equality survives either encoding. `comparisonEncoderFor` is the
+      // one owner of that choice; policy.js asks it too.
+      const encoder = comparisonEncoderFor(policy)
+      const encode  = encoder?.encode ? (v) => encoder.encode(v, ctx.enc.key) : null
 
       if (encode && val !== null && typeof val !== 'object') {
         out[key] = encode(val)
@@ -3633,11 +3577,8 @@ function makeTable(
             // Deterministic encryption and an HMAC preserve equality and nothing
             // else — no ordering, no substrings. Refuse rather than compare
             // against the stored bytes and answer something plausible.
-            const what = policy.hashed
-              ? `@hashed, which stores a one-way digest`
-              : `@encrypted(deterministic: true), which stores ciphertext under an IV derived from the value`
             throw new ValidationError([{ path: ['where', key], message:
-              `'${key}' is ${what} — it can answer equality (equals, not, in, notIn) and cannot answer '${op}', ` +
+              `'${key}' is ${encoder.label} — it can answer equality (equals, not, in, notIn) and cannot answer '${op}', ` +
               `because neither preserves ordering or substrings` }])
           }
         }
@@ -6228,7 +6169,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     async delete({ where } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const whereSql = buildWhere(where, params, null, null, null, null, arrayFields)
+      const whereSql = buildWhere(where, params, null, null, null, null, fieldKinds)
       if (!whereSql) throw new Error(`delete on "${tableName}" requires a where clause — use deleteMany({}) to delete all rows`)
       const delPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const delFinalSql = delPolicy ? `(${whereSql}) AND (${delPolicy.sql})` : whereSql
@@ -6255,7 +6196,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     async deleteMany({ where } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const whereSql = buildWhere(where, params, null, null, null, null, arrayFields)
+      const whereSql = buildWhere(where, params, null, null, null, null, fieldKinds)
       const delManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (delManyPolicy) params.push(...delManyPolicy.params)
       const dmFinalSql = whereSql && delManyPolicy ? `(${whereSql}) AND (${delManyPolicy.sql})`
@@ -7081,7 +7022,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const softDeleteCascadeMap = buildSoftDeleteCascadeMap(schema)
   const hasTemplatesMap      = buildHasTemplatesMap(schema)
   const boolMap        = buildBoolMap(schema)
-  const arrayMap       = buildArrayMap(schema)
+  const filterKindMap  = buildFilterKindMap(schema)
   const autoIdMap      = buildAutoIdMap(schema)
   const authDefaultMap     = buildAuthDefaultMap(schema)
   const fieldRefDefaultMap = buildFieldRefDefaultMap(schema)
@@ -7231,19 +7172,69 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       for (const v of Object.values(node)) fieldsIn(v, out)
       return out
     }
+    // An encoded column MAY appear in a predicate — policy.js encodes the operand
+    // the way the column was encoded, the same rewrite a `where` gets. What it
+    // cannot do is answer a comparison the encoding does not preserve, so what is
+    // judged here is the SHAPE of the comparison rather than the field appearing
+    // at all. The three refusals below are the three shapes with no answer.
+    const encodingProblem = (node, out = []) => {
+      if (!node || typeof node !== 'object') return out
+      if (Array.isArray(node)) { for (const n of node) encodingProblem(n, out); return out }
+
+      if (node.type === 'compare') {
+        const { left, right } = node
+        const fieldNode = left.type === 'field' ? left : right.type === 'field' ? right : null
+        if (fieldNode && keys.encryptedAny.has(fieldNode.name)) {
+          const name  = fieldNode.name
+          const other = fieldNode === left ? right : left
+          // `field == null` reads whether the column is set, not what it holds.
+          if (other.type === 'literal' && other.value === null) return out
+          if (keys.encrypted.has(name)) out.push(
+            `"${name}" is @encrypted under a random IV, so the same value stores different bytes on every write and no `
+            + `operand can be encoded to match it — declare it @encrypted(deterministic: true) or @hashed to compare it here`)
+          else if (node.op !== '==' && node.op !== '!=') out.push(
+            `"${name}" holds encoded bytes, which preserve equality and nothing else, so '${node.op}' cannot be answered`)
+          else if (other.type === 'field') out.push(
+            `"${name}" and "${other.name}" are compared column to column, and an encoded column can only be compared `
+            + `against a value the policy can encode`)
+          return out
+        }
+      }
+
+      if (node.type === 'field' && keys.encryptedAny.has(node.name)) {
+        out.push(`"${node.name}" holds encoded bytes and stands outside a comparison, where there is nothing to encode`)
+        return out
+      }
+
+      for (const v of Object.values(node)) encodingProblem(v, out)
+      return out
+    }
+
     for (const [op, bucket] of Object.entries(ops)) {
       for (const rule of [...bucket.allows, ...bucket.denies]) {
+        const decl = `${modelName}: the @@${bucket.allows.includes(rule) ? 'allow' : 'deny'}('${op}', …) policy`
         for (const name of fieldsIn(rule.expr)) {
-          const kind = keys.computed.has(name) ? 'computed' : keys.encryptedAny.has(name) ? 'encrypted' : null
-          if (!kind) continue
-          const why = kind === 'computed'
-            ? `"${name}" is @computed, so it is not a column and the comparison is between string constants`
-            : `"${name}" is @encrypted or @hashed — policy predicates are compiled without the operand rewrite a `
-              + `where clause gets, so the plaintext is compared against stored bytes and never matches`
+          if (!keys.computed.has(name)) continue
           throw new Error(
-            `${modelName}: the @@${bucket.allows.includes(rule) ? 'allow' : 'deny'}('${op}', …) policy compares a value no row can satisfy, ` +
-            `so every caller would read this model as empty — ${why}`)
+            `${decl} compares a value no row can satisfy, so every caller would read this model as empty — ` +
+            `"${name}" is @computed, so it is not a column and the comparison is between string constants`)
         }
+        // `create` is evaluated in JS against the data as written, which is
+        // plaintext, so every comparison form works there. `post-update` is
+        // evaluated in JS too, but against the row read BACK, and an encrypted
+        // column is @guarded(all) — stripped from that row, so the comparison is
+        // against undefined and denies every write.
+        if (op === 'create') continue
+        if (op === 'post-update') {
+          const named = fieldsIn(rule.expr).find(n => keys.encryptedAny.has(n))
+          if (named) throw new Error(
+            `${decl} cannot be answered — "${named}" holds encoded bytes and a post-update check reads the row back ` +
+            `through the field policy, which strips it, so every write would be rolled back`)
+          continue
+        }
+        const [problem] = encodingProblem(rule.expr)
+        if (problem) throw new Error(
+          `${decl} compares a value no row can satisfy, so every caller would read this model as empty — ${problem}`)
       }
     }
   }
@@ -7274,7 +7265,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const ctx = {
     now,
     relationMap, jsonMap, edgeMap, computedSets, fromMap,
-    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, arrayMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
+    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, filterKindMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // Default: parent values silently overwrite any child-supplied co-FK
     // values during nested writes — this is the safe choice that prevents
@@ -7292,7 +7283,13 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     policyMap,
     hasPolicies:   Object.keys(policyMap).length > 0,
     policyDebug,
-    encKey,
+    // A CELL, not a value. Every derived context — asSystem(), $setAuth(),
+    // $scopedBy() — is a spread of this one, and a spread copies a string by
+    // value: $rotateKey could update the root and every client already handed
+    // out kept decrypting with the old key, silently, because read()'s catch
+    // turns a failed GCM tag into `null` (FJS-236). A spread copies this
+    // object by REFERENCE, so there is one key and nothing to keep in step.
+    enc:           { key: encKey },
     isSystem:      false,
     hookRunner,
     emitter,
@@ -7360,7 +7357,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       ftsMap[model.name]               ?? null,
       boolMap[model.name]              ?? new Set(),
       enumMap[model.name]              ?? {},
-      arrayMap[model.name]             ?? new Set(),
+      filterKindMap[model.name]        ?? new Map(),
       softDeleteCascadeMap[model.name] ?? false,
       fieldPolicyMap[model.name]       ?? {},
       fromMap[model.name]              ?? {},
@@ -7398,7 +7395,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         view.name,
         view.name,
         new Set(), new Set(), new Set(),
-        false, null, new Set(), {}, new Set(),
+        false, null, new Set(), {}, new Map(),
         false, {}, {},
         ctx,
       )
@@ -7861,13 +7858,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // It exists for the same reason $checkWhere does. The ORM throws, which is
   // right below the boundary; a boundary that can answer 400 has to ask
   // without running the query, and must not grow a second copy of the rule.
-  // `reason` is 'computed' or 'unknown' — a boundary wants to say different
-  // sentences for "no such field" and "that field cannot be sorted".
+  // `reason` is 'computed', 'opaque' or 'unknown' — a boundary wants to say
+  // different sentences for "no such field", "that field is derived in JS" and
+  // "that column stores a serialisation, so its text is not the value".
   function $checkOrderBy(accessor, orderBy, opts = {}) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
-    const { sortable, relations, computed } = sortableKeysFor(model)
-    return collectOrderByKeyProblems(orderBy, sortable, relations, computed, opts.aggregates === true)
+    const { sortable, relations, computed, opaque } = sortableKeysFor(model)
+    return collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaque, opts.aggregates === true)
       .map(p => ({ ...p, message: p.message.replace('%MODEL%', model.name) }))
   }
 
@@ -7979,22 +7977,85 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
 
   // ── $rotateKey ─────────────────────────────────────────────────────────────
-  // Re-encrypts all @secret(rotate: true) fields using the current key → newKey.
-  // Runs in a single write transaction across all affected databases.
-  // Call this when rotating encryption keys. Restart the app with newKey after.
+  // Re-encrypts every key-reversible column using the current key → newKey and
+  // then swaps the client's key. One write transaction per affected database.
   //
   // Usage:
   //   const stats = await db.$rotateKey(process.env.NEW_ENCRYPTION_KEY)
   //   // → { users: { rows: 42, fields: 1 }, payments: { rows: 7, fields: 2 } }
   //
-  // Fields marked @secret(rotate: false) are skipped — they stay bound to
-  // the original key and must be migrated manually if the key changes.
+  // ── What it carries, and what it refuses to leave behind ───────────────────
+  //
+  // The key swap at the end is GLOBAL — one client holds one key — so a column
+  // this does not rewrite is not "left on the old key", it is UNREADABLE. That
+  // was the shape of FJS-253: rotation visited `@secret(rotate: true)` only, and
+  // a plain `@encrypted` column beside it read `null` afterwards with nothing
+  // thrown at any layer. Every key-reversible column is rotated now.
+  //
+  // Two kinds cannot be carried, and rotation REFUSES while either is present
+  // rather than destroying it:
+  //
+  //   @hashed                 one-way. There is no plaintext anywhere to re-key,
+  //                           so every match silently becomes 0 and no later fix
+  //                           can undo it.
+  //   @secret(rotate: false)  excluded from re-encryption by declaration.
+  //
+  // `{ orphan: ['Model.field'] }` is the deliberate opt-in. It is a list of names
+  // rather than a boolean so that acknowledging one column cannot silently
+  // acknowledge a second one added later.
 
-  async function $rotateKey(rawNewKey) {
-    // Early return if no @secret fields — nothing to rotate, no key required
-    if (!Object.keys(secretMap).length) return {}
+  // The one answer to "can a key rotation carry this column?", asked by the
+  // refusal and by the rotation loop so the two cannot disagree about which
+  // columns exist. Every encrypted column is in `fieldPolicyMap` — `@secret`
+  // expands to `@encrypted` at parse time — and `secretMap` only says which of
+  // them opted out.
+  function classifyForRotation() {
+    const carry    = {}
+    const orphaned = []
 
-    if (!ctx.encKey)
+    for (const [modelName, fields] of Object.entries(fieldPolicyMap)) {
+      for (const [fieldName, policy] of Object.entries(fields)) {
+        const key = `${modelName}.${fieldName}`
+
+        if (policy.hashed) {
+          orphaned.push({ key, reason: '@hashed — one-way, there is no plaintext to re-key, so every match becomes 0 permanently' })
+          continue
+        }
+        if (!policy.encrypted) continue
+
+        if (secretMap[modelName]?.[fieldName]?.rotate === false) {
+          orphaned.push({ key, reason: '@secret(rotate: false) — declared excluded from re-encryption' })
+          continue
+        }
+
+        ;(carry[modelName] ??= []).push(fieldName)
+      }
+    }
+
+    return { carry, orphaned }
+  }
+
+  async function $rotateKey(rawNewKey, { orphan = [] } = {}) {
+    const { carry, orphaned } = classifyForRotation()
+
+    // Nothing encrypted anywhere — no rotation, and no key required to say so.
+    if (!Object.keys(carry).length && !orphaned.length) return {}
+
+    // Refuse BEFORE the first write. A rotation that has already rewritten half
+    // the database and then complains is a database in two keys with nothing
+    // recording which rows are in which.
+    const acknowledged = new Set(orphan)
+    const unacked      = orphaned.filter(o => !acknowledged.has(o.key))
+    if (unacked.length) {
+      throw new Error(
+        `$rotateKey would leave ${unacked.length} column(s) unreadable and has rotated nothing:\n` +
+        unacked.map(o => `  ${o.key} — ${o.reason}`).join('\n') +
+        `\nThe key swap is global, so a column this cannot re-encrypt is not left on the old key — it is lost.\n` +
+        `Pass { orphan: [${unacked.map(o => `'${o.key}'`).join(', ')}] } to accept that deliberately.`
+      )
+    }
+
+    if (!ctx.enc.key)
       throw new Error('$rotateKey requires an encryption key on this client — pass { encryptionKey: process.env.ENCRYPTION_KEY } to createClient()')
 
     const newKey = normaliseKey(rawNewKey)
@@ -8005,10 +8066,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
     // Group rotatable fields by their target database so each DB gets one transaction
     const byDb = {}
-    for (const [modelName, fields] of Object.entries(secretMap)) {
-      const rotatableFields = Object.entries(fields)
-        .filter(([, opts]) => opts.rotate)
-        .map(([fieldName]) => fieldName)
+    for (const [modelName, rotatableFields] of Object.entries(carry)) {
       if (!rotatableFields.length) continue
 
       const modelDef = schema.models.find(m => m.name === modelName)
@@ -8051,7 +8109,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
               const vals = []
               for (const fieldName of rotatableFields) {
                 if (row[fieldName] == null) continue
-                const plain = decryptField(row[fieldName], ctx.encKey)
+                const plain = decryptField(row[fieldName], ctx.enc.key)
                 sets.push(`"${fieldName}" = ?`)
                 // Re-encrypt in the mode the field was DECLARED with, not the mode
                 // rotation happens to use. Rewriting a deterministic column with a
@@ -8079,8 +8137,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       }
     }
 
-    // Update ctx.encKey so subsequent reads/writes on this client use the new key
-    if (Object.keys(results).length > 0) ctx.encKey = newKey
+    // One assignment reaches every client derived from this one, including the
+    // memoised asSystem() proxy built before the rotation. That is the whole
+    // reason the key lives in a cell.
+    if (Object.keys(results).length > 0) ctx.enc.key = newKey
 
     return results
   }

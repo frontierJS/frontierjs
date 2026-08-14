@@ -1604,6 +1604,8 @@ litestone replicate [config.js]      WAL replication via Litestream
 litestone transform [config.js]      anonymize/shard pipeline (dev only)
 litestone jsonschema                 generate JSON Schema from schema
 litestone access                     write the access snapshot (--check in CI)
+litestone ddl                        write the DDL snapshot (--check in CI)
+litestone jsonschema --snapshot      write the JSON Schema snapshot (--check in CI)
 
 Global flags:
   --config=<path>       litestone.config.js

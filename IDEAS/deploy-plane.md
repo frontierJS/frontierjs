@@ -87,6 +87,38 @@ and **the cheapest fix for all three is one scaffold-and-deploy test in CI** —
 server. That test is a precondition for the sequence below, not a follow-up to it:
 build-once is a change to a pipeline nobody can currently prove works.
 
+**The first half of that test exists as of 2026-08-14.** CI's `scaffold` phase
+(`scripts/scaffold-build.mjs`) packs every publishable package, scaffolds an app
+against the tarballs, installs and builds it — so `fli new` → install → `bun run
+build` is now proven on every run, in ~6s. It caught `FJS-251` on its first
+outing, a one-string defect that broke every npm install while 836 sierra tests
+stayed green.
+
+**The deploy half landed the same day.** CI's `deploy` phase runs `fli new
+--source npm` → `make:deploy` → `deploy:local` and asserts a built image, a
+started container, migrations in the entrypoint, and a health answer — ~15s,
+full tier, skipped-with-a-name when there is no Docker daemon and a failure
+when `FJS_CI_REQUIRE_DOCKER=1` (the workflow sets it). **The advertised path now
+runs on every CI run, and it had never run end to end before.**
+
+Reintroducing `FJS-238` — the health path that drops the app's `apiPrefix` —
+was caught exactly: image built, container started, migrations ran, health
+failed on `/health` while the app served `/api/health`. That is the negative
+control for the whole phase.
+
+Building it also cost three more defects in `deploy:local` itself (`FJS-250`):
+it inherited the legacy CapRover steps and printed `✓ Deployed to undefined in
+NaNs`, every failure path exited 0, and `--port` had never worked. A pipeline
+nobody could prove worked turned out to contain a rehearsal command that could
+not fail.
+
+**It installs from npm, not from the working tree**, and that is the one thing
+still owed. A Docker build cannot see a `file:` tarball outside its context —
+the same wall `link:` hits — so the phase proves the *pipeline* containerises a
+real app rather than proving the working tree does. When `FJS-241` resolves by
+packing into the app instead of linking, the two phases converge and this
+becomes a working-tree test too.
+
 ---
 
 ## What to do instead
@@ -167,6 +199,50 @@ is that it cannot — the process holding the journal is the process being repla
 Basecamp's own upgrade goes through ring 0. One installer, used twice, and the plane
 never holds the knife to its own throat.
 
+### Ring 0 is a distribution problem, and it is the one place an image earns its keep
+
+Asked directly (2026-08-14): *should FrontierJS publish a dedicated Docker image?*
+For the framework, no — the runtime image a scaffolded app builds is
+`oven/bun:1-slim` and it lacks nothing that causes a problem. The things a
+"FrontierJS base image" would obviously carry turn out not to belong in it:
+**litestream runs on the host**, beside the container, watching the bind-mounted
+database (`--volume {dbPath}:/db`, and every check greps the host's process
+table) — so baking it in would be wrong rather than merely unnecessary. What
+remains is a maintenance burden: an image republished on every bun release and
+every CVE, where a stale one is strictly worse than upstream's.
+
+**Ring 0 is the exception, because it is not a build question.** Every other
+ring produces an artefact from a user's source. Ring 0 installs *our own
+product* on a machine that has nothing, and today that means the fresh box needs
+bun, the Basecamp source tree and a Docker build before a control plane exists
+to manage it. An installer whose job is "get the plane onto a bare server"
+should be a pull and a run.
+
+This is a different question from `FJS-D31`, which refused to republish
+**someone else's** binary. Basecamp is ours; publishing it is shipping a
+product, and the maintenance is justified by the thing users actually install.
+It also does not weaken *"no registry required — image lives on the server"*,
+which is a promise about **a user's app**, not about how the control plane
+arrives.
+
+**Ring 0 and build-once want the same missing capability.** `fli deploy` knows
+exactly one mode — pull source, build on the target. Build-once needs
+pull-a-digest-and-run; so does installing Basecamp from an image. Whatever adds
+that mode serves both, which is an argument for doing it once and deliberately
+rather than twice by accident.
+
+What ring 0 then needs, none of it decided:
+
+- **Where the image lives** and how it is addressed. The digest is the mandatory
+  part (same rule as §What to do instead); the registry is a strategy.
+- **First-run seeding** — the initial admin, `ENCRYPTION_KEY`, and where the
+  control plane's own SQLite database persists across an upgrade. It is a bind
+  mount for exactly the reasons the rest of this document assumes SQLite.
+- **Upgrade stays ring 0.** Pull a new digest, swap, health — the same installer,
+  never ring 2, for the reason stated below.
+- **What the image must not assume**: no litestream inside it, and no registry
+  requirement pushed down onto the apps Basecamp goes on to deploy.
+
 **On resident-process versus SSH-push, follow the seed, but let it degrade.** The
 schema has chosen a resident process. The failure mode to design against is a fleet
 bricked by an Outpost that will not start, so **the absence of a heartbeat must
@@ -214,6 +290,10 @@ was written to apply.
 - **Where the artefact store lives when there is no registry.** On the Basecamp host
   is the obvious answer and makes Basecamp a single point of failure for deploys —
   acceptable for a control plane, but it should be stated rather than discovered.
+- **Whether `fli deploy` grows a pull-a-digest mode, and whether that is the same
+  mode ring 0 uses to install Basecamp from an image.** It knows one mode today —
+  build on the target — and both build-once and ring 0 want the other one. Doing it
+  once is the whole argument; doing it twice is what happens if nobody asks.
 - **What ring 0 does about the Basecamp database.** `fli deploy`'s SQLite swap window
   is the control plane's own downtime, and it is the one application where somebody
   is likely watching a deploy through the thing being deployed.

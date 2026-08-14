@@ -103,10 +103,19 @@ relative to `apiPrefix` for the same reason.
 
 Injected into `db/schema.lite` by `fli auth:install`:
 
-- `users` — identity (`@@gate("9")`, `@@log(audit)`)
-- `credentials` — passwords + API keys (`@@gate("9")`)
-- `sessions` — active sessions (`@@gate("9")`, `@@log(audit)`)
-- `verifications` — reset + verify tokens (`@@gate("9")`)
+- `User` — identity. `@@gate("4.4.4.5")` — read, create and update USER(4),
+  delete ADMINISTRATOR(5) — bounded by `@@allow('update', id == auth().id ||
+  auth().isAdmin)` and `@allow('write', auth().isAdmin)` on `role` and
+  `emailVerified`. A level says what kind of caller, a policy says whose row, a
+  field policy says which columns; identity needs all three, and the columns a
+  gate is graded from are exactly the ones a caller must not write. `@@log(audit)`
+- `Credential` — passwords + API keys (`@@gate("8")` — SYSTEM)
+- `Session` — active sessions (`@@gate("8")`, `@@log(audit)`)
+- `Verification` — reset + verify tokens (`@@gate("8")`)
+
+`8` is for a model nothing outside `asSystem()` has anything to say to. That is
+true of credential material and false of the table an app's own screens list —
+see `litestone/docs/access-control.md` § The identity models.
 
 ## Escape hatch
 

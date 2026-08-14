@@ -424,7 +424,7 @@ const ATTR_DOCS: Record<string, string> = {
     'HMAC-SHA256. **One-way** — no ciphertext, no key recovers it, `$rotateKey` cannot touch it.\n\nEquality `where` filters work; the value never comes back, `asSystem()` included. Naming it in a `select`, `groupBy` or aggregate throws.\n\n```\nloginToken String @hashed\n// WHERE loginToken = tok   ✓ matches\n// user.loginToken          → undefined\n```\n\nString columns only. Does not compose with `@encrypted`, `@secret`, `@guarded` or `@allow`.',
 
   '@secret':
-    'Composite attribute — expands to `@encrypted + @guarded(all) + @log(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit logger database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()`, or `@secret(deterministic: true)` for a secret that must also be looked up by value.',
+    'Composite attribute — expands to `@encrypted + @guarded(all) + @log(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit logger database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()` — the column is then UNREADABLE after a rotation, because the key swap is global, and `$rotateKey` refuses while one exists unless it is orphaned by name. `@secret(deterministic: true)` is a secret that must also be looked up by value.',
 
   '@log':
     'Logs reads and writes of this field to a `logger` database.\n\n```\napiKey String @secret   // @log(audit) is implicit via @secret\nsalary Float @log(audit)\n```\n\nSee also: `@@log` for model-level logging.',

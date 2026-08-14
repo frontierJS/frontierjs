@@ -15,6 +15,13 @@ import { requireWorkspaceRole, applyStanding, getPagination } from '../../core/h
 import { dbOf, actorOf, slugify, narrowPatch } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
+import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
+// The roles are graded in core/gate.ts and the enum lives in schema.lite; the
+// map's KEYS are the one place this app already states the vocabulary, and a
+// data test holds it to the enum. Reading it here rather than restating the
+// five names is what keeps a role added tomorrow from being accepted by an API
+// that cannot grade it.
+import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 
 export function createWorkspacesService(app: BasecampApp) {
 
@@ -70,6 +77,23 @@ export function createWorkspacesService(app: BasecampApp) {
     const user = ctx.auth?.user as { userId?: string; accountId?: string } | undefined
     if (!user?.userId) throw new Unauthorized('Not authenticated')
     return user
+  }
+
+  /**
+   * A role off the wire, refused BY NAME rather than by a CHECK constraint.
+   *
+   * addMember and setMemberRole write a WorkspaceMember row by hand — this
+   * service's own model is Workspace, so autoValidate never sees the payload
+   * and an unknown role reached SQLite as a constraint failure at the end of
+   * the write rather than a 400 naming the field. The vocabulary is read from
+   * the map core/gate.ts grades on, which a data test holds to the enum: a role
+   * this app cannot grade is a role it must not accept.
+   */
+  function toRole(value: unknown): WorkspaceRole {
+    const roles = Object.keys(WORKSPACE_ROLE_LEVEL)
+    if (typeof value !== 'string' || !roles.includes(value))
+      throw new BadRequest(`role must be one of: ${roles.join(', ')}`)
+    return value as WorkspaceRole
   }
 
   /** Membership decides access, so it is read as system, not through the caller. */
@@ -190,7 +214,7 @@ export function createWorkspacesService(app: BasecampApp) {
         throw new Conflict('User is already a member of this workspace')
 
       return members(ctx).create({
-        data: { workspaceId: wsId, userId: target, role: role ?? 'developer',
+        data: { workspaceId: wsId, userId: target, role: toRole(role ?? 'developer'),
                 invitedBy: actorOf(ctx), invitedAt: new Date().toISOString() },
       })
     },
@@ -211,7 +235,7 @@ export function createWorkspacesService(app: BasecampApp) {
         if (owners <= 1) throw new Forbidden('Cannot demote the last owner of a workspace')
       }
 
-      return members(ctx).update({ where: { id: member.id }, data: { role } })
+      return members(ctx).update({ where: { id: member.id }, data: { role: toRole(role) } })
     },
 
     async removeMember(ctx: ServiceContext) {

@@ -34,7 +34,7 @@
           "default": "human"
         },
         "status": {
-          "type": "string",
+          "$ref": "#/$defs/UserStatus",
           "default": "pending_verification"
         },
         "username": {
@@ -57,12 +57,23 @@
         },
         "scopes": {
           "default": []
+        },
+        "isSystemAdmin": {
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false,
       "required": [
         "email"
       ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 4,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "account",
@@ -145,6 +156,12 @@
         "userId",
         "type"
       ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "user",
@@ -190,6 +207,12 @@
         "userId",
         "expiresAt"
       ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "user",
@@ -222,7 +245,13 @@
       "required": [
         "identifier",
         "expiresAt"
-      ]
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
     },
     "Account": {
       "type": "object",
@@ -258,6 +287,12 @@
         "slug",
         "displayName"
       ],
+      "x-gate": {
+        "read": 6,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "users",
@@ -305,6 +340,10 @@
         },
         "settings": {
           "default": {}
+        },
+        "status": {
+          "$ref": "#/$defs/WorkspaceStatus",
+          "default": "active"
         }
       },
       "additionalProperties": false,
@@ -314,6 +353,12 @@
         "slug",
         "ownerId"
       ],
+      "x-gate": {
+        "read": 1,
+        "create": 1,
+        "update": 5,
+        "delete": 6
+      },
       "x-relations": [
         {
           "field": "account",
@@ -468,6 +513,12 @@
         "workspaceId",
         "userId"
       ],
+      "x-gate": {
+        "read": 1,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -533,6 +584,12 @@
         "workspaceId",
         "name"
       ],
+      "x-gate": {
+        "read": 5,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -641,6 +698,12 @@
         "name",
         "tokenHint"
       ],
+      "x-gate": {
+        "read": 5,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -803,6 +866,13 @@
         "name",
         "slug"
       ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -878,6 +948,12 @@
         "kind",
         "message"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "server",
@@ -956,6 +1032,12 @@
         "serverId",
         "name"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "server",
@@ -1007,6 +1089,12 @@
         "name",
         "slug"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "appNetworks",
@@ -1054,6 +1142,12 @@
         "serverId",
         "networkId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "server",
@@ -1123,6 +1217,12 @@
         "name",
         "slug"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -1187,6 +1287,12 @@
         "name",
         "slug"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "project",
@@ -1291,6 +1397,12 @@
         "name",
         "slug"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "environment",
@@ -1430,6 +1542,12 @@
         "appId",
         "hostname"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "app",
@@ -1502,6 +1620,12 @@
         "appId",
         "serverId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "app",
@@ -1563,6 +1687,12 @@
         "appId",
         "networkId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "app",
@@ -1711,6 +1841,12 @@
         "appId",
         "workspaceId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 4
+      },
       "x-relations": [
         {
           "field": "app",
@@ -1816,6 +1952,12 @@
         "deploymentId",
         "name"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "deployment",
@@ -1929,6 +2071,12 @@
         "workspaceId",
         "name"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -2036,6 +2184,12 @@
       "required": [
         "jobId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "job",
@@ -2119,6 +2273,12 @@
         "slug",
         "script"
       ],
+      "x-gate": {
+        "read": 4,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -2226,6 +2386,12 @@
         "serverId",
         "script"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "recipe",
@@ -2311,6 +2477,12 @@
       "required": [
         "serverId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "server",
@@ -2403,6 +2575,12 @@
       "required": [
         "serverId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 8,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "server",
@@ -2473,6 +2651,12 @@
         "workspaceId",
         "key"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -2530,6 +2714,12 @@
         "flagId",
         "environmentId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 4
+      },
       "x-relations": [
         {
           "field": "flag",
@@ -2622,6 +2812,12 @@
         "name",
         "kind"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -2686,6 +2882,12 @@
         "name",
         "metricName"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -2736,6 +2938,12 @@
         "ruleId",
         "channelId"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
       "x-relations": [
         {
           "field": "rule",
@@ -2833,6 +3041,12 @@
         "subjectId",
         "message"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 4,
+        "delete": 8
+      },
       "x-relations": [
         {
           "field": "rule",
@@ -2899,6 +3113,12 @@
         "name",
         "slug"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 4
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -2965,6 +3185,12 @@
         "dashboardId",
         "kind"
       ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 4
+      },
       "x-relations": [
         {
           "field": "dashboard",
@@ -3051,6 +3277,12 @@
         "subjectType",
         "subjectId"
       ],
+      "x-gate": {
+        "read": 5,
+        "create": 8,
+        "update": 9,
+        "delete": 9
+      },
       "x-relations": [
         {
           "field": "workspace",
@@ -3103,6 +3335,23 @@
         "ai"
       ],
       "title": "UserKind"
+    },
+    "UserStatus": {
+      "type": "string",
+      "enum": [
+        "pending_verification",
+        "active",
+        "suspended"
+      ],
+      "title": "UserStatus"
+    },
+    "WorkspaceStatus": {
+      "type": "string",
+      "enum": [
+        "active",
+        "suspended"
+      ],
+      "title": "WorkspaceStatus"
     },
     "SecretKind": {
       "type": "string",

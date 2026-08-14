@@ -98,6 +98,39 @@ An array operator on a column that is not an array is refused by name:
 where clause: "has" is an array operator and "name" is not an array field
 ```
 
+### A string operator asks about text
+
+`contains` / `startsWith` / `endsWith` compile to `LIKE`, so they ask a question
+about the column's TEXT. Where the stored text is not the value, the answer used
+to be plausible and wrong rather than an error — on an array column `contains`
+substring-matched the stored document, which **looks** like `has`:
+
+```js
+db.post.findMany({ where: { tags: { contains: 'x' } } })
+// matches ["x"], and also ["xylophone"]
+// `contains: '","'` matched every array of two or more elements
+// `contains: '['`   matched all of them
+```
+
+All four kinds are refused now, naming the operator that was meant:
+
+| Column | Because |
+| --- | --- |
+| array | it would substring-match the document — use `has` / `hasSome` / `hasEvery` |
+| `Json` | it would match the serialised text, punctuation included — declare `@type(...)` to filter by a path |
+| `File` | it would match the reference document, not anything about the file |
+| `Boolean` | the value is stored as 0/1, so it can never match — compare to `true` / `false` |
+
+**`Int` and `DateTime` are deliberately left alone.** SQLite's coercion answers
+the question that was asked there, and `{ when: { contains: '2024-01' } }`
+against an ISO column is a genuinely useful way to ask for a month.
+
+A path INTO a typed `Json` column is untouched — that operand really is text:
+
+```js
+db.doc.findMany({ where: { addr: { city: { contains: 'Bos' } } } })   // fine
+```
+
 ## Values a filter cannot take
 
 A filter value has to be something SQLite can bind. An object is not, and it is
@@ -172,13 +205,38 @@ permanent and invisible. Both are checked when the client is built:
 createClient({ filters: { post: { comp: 'A' } } })
 // Error: createClient: the global filter for "post" cannot match any row — …
 
-// @@allow('read', owner == auth().email)  where owner is @encrypted
+// @@allow('read', owner == auth().email)  where owner is plain @encrypted
 // Error: Doc: the @@allow('read', …) policy compares a value no row can
 // satisfy, so every caller would read this model as empty — …
 ```
 
-A policy predicate is compiled without the rewrite a `where` gets, so an
-encrypted or hashed column cannot appear in one at all, in any mode (`FJS-214`).
+### An encoded column inside a policy
+
+A policy predicate takes the same operand rewrite a `where` does — the value is
+encoded the way the column was, then compared byte to byte — so
+`@encrypted(deterministic: true)` and `@hashed` columns work in `@@allow` /
+`@@deny` exactly as they work in a filter:
+
+```
+model Doc {
+  owner String @hashed
+  @@allow('read', owner == auth().email)
+}
+```
+
+The three shapes with no answer are refused when the client is built, because a
+policy that matches nothing reads as a table with no data:
+
+| Shape | Why |
+| --- | --- |
+| plain `@encrypted` | a random IV, so the same value stores different bytes on every write and no operand can be encoded to match it |
+| any operator but `==` / `!=` | both encodings preserve equality and nothing else |
+| column compared to column | neither side is a value the policy can encode |
+
+`@@allow('create', …)` is exempt — it is evaluated in JS against the data as
+written, which is still plaintext. `@@allow('post-update', …)` is refused
+instead: it reads the row back through the field policy, which strips an
+encrypted column, so the comparison would deny every write.
 
 ## Soft delete
 

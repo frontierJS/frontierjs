@@ -30,6 +30,9 @@ src/
     query.js       — buildWhere, buildOrderBy, boolean/date coercion
     plugin.js      — Plugin base class, PluginRunner, AccessDeniedError
     policy.js      — buildPolicyMap(), buildPolicyFilter(), checkCreatePolicy()
+    encryption.js  — @encrypted/@hashed primitives + comparisonEncoderFor():
+                     the one owner of "how a value becomes the bytes a column
+                     holds", asked by both a where and a policy predicate
 
   plugins/
     gate.js        — GatePlugin: level-based access control
@@ -50,6 +53,7 @@ src/
     cli.js         — litestone CLI (all commands)
     studio.html    — browser-based Studio UI
     repl-server.js — REPL server helper
+    ddl-snapshot.js — renderDdlSnapshot(): the emitted DDL as a committed file
     introspect.js  — generateLiteSchema(): reverse-engineer DB → .lite
     typegen.js     — generateTypeScript() → .d.ts
     retention.js   — JSONL/logger retention pruning
@@ -149,7 +153,8 @@ Type?      — optional (nullable)
 @encrypted(deterministic: true)  IV derived from the value — equality search AND readable
 @hashed                          HMAC-SHA256, one-way — matchable, never readable, not rotatable
 @secret                          @encrypted + @guarded(all) + @log(audit) + $rotateKey support
-@secret(rotate: false)           same but excluded from key rotation
+@secret(rotate: false)           same but excluded from key rotation — and therefore
+                                 unreadable after one; $rotateKey refuses while one exists
 @allow('read'|'write'|'all', expr)  field-level access policy
 @log(dbName)                     log reads/writes to a logger database
 @keepVersions                    on File? fields: skip old S3 object cleanup on update
@@ -759,7 +764,9 @@ litestone seed run [name] [--db=main] [--force]
 litestone introspect <db> [--out schema.lite] [--no-camel]
 litestone transform config.js [--preview] [--dry-run]
 litestone jsonschema [--out=./schemas/] [--format=flat]
+litestone jsonschema --snapshot [--check] [--stdout] [--out=<path>]
 litestone access [--check] [--json] [--stdout] [--out=<path>]
+litestone ddl [--check] [--stdout] [--pluralize] [--out=<path>]
 litestone replicate config.js
 litestone backup [dest] [--vacuum]
 litestone optimize [table]
@@ -1095,7 +1102,12 @@ from belief asserts a wish.
   check are evaluated in JS (`evalJs`). Every comparison form has to be handled
   in both — `field == null` was in neither and fell to `"col" = NULL`, so create
   allowed a row that read then hid (`FJS-195`). Adding a form to one half is
-  half a change.
+  half a change. **An encrypted column is where the two halves legitimately
+  differ**: the WHERE encodes its operand (`comparisonEncoderFor`, the same
+  rewrite a `where` gets, `FJS-214`), the JS evaluator compares plaintext
+  because `create` hands it the data as written. `post-update` gets the row read
+  BACK, where the column is stripped by `@guarded(all)` — refused at startup
+  rather than denying every write.
 - **Raw SQL requires `asSystem()`** once a schema declares access rules — `db.sql`
   and `db.$setAuth(u).sql` both throw. Raw statements enforce no `@@gate`,
   `@@allow`, `@guarded`, `@scoped` or `@@softDelete`; they all live above SQLite.
@@ -1158,6 +1170,13 @@ from belief asserts a wish.
   on a read, because a bad filter returns fewer rows and a bad sort returns the
   right rows in the wrong order. `@from` sorts fine (it is a subquery in the
   SELECT). `db.$checkOrderBy(accessor, orderBy)` asks without running the query.
+- **Nor can a column whose stored TEXT is a storage detail** — an array or a
+  `Json` document (a serialisation), a `File` (a reference), `@encrypted` or
+  `@hashed` (an encoding). SQLite orders by that text, so `[10]` sorts before
+  `[9]` and ciphertext reshuffles on every re-encryption. One bucket,
+  `reason: 'opaque'` (`FJS-200`). An implicit m2m (`Tag[]`) is an array in the
+  AST and a join table in SQLite — it is claimed as a RELATION before the array
+  bucket sees it, or `orderBy: { tags: { _count } }` stops compiling.
 - **A `@from` applies the TARGET model's `@@softDelete` and `@@hasTemplates`.**
   Same as `include: { _count: true }` over the same relation. `withDeleted: true`
   / `withTemplates: true` opt back in; an explicit `where:` composes on top.

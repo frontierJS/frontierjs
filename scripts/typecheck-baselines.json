@@ -2,6 +2,6 @@
   "//": "Invariant 14 — typecheck ceilings ratchet DOWN only. One number per package (directory name). Absent = 0 = must be clean. Lower it whenever a package improves: `bun run typecheck -- --update` writes the new low. Raising a number by hand is the thing this file exists to make visible in a diff.",
   "//measured": "2026-08-06, by running every package's typecheck.",
   "auth": 4,
-  "basecamp": 63,
+  "basecamp": 20,
   "junction": 198
 }

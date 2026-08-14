@@ -25,7 +25,7 @@
 // if a field is not in the schema it is not here, and a wrong enum value fails
 // the CHECK constraint at insert rather than sliding through.
 
-import { Factory, Seeder, runSeeder } from '@frontierjs/litestone'
+import { Factory, Seeder, runSeeder, apply } from '@frontierjs/litestone'
 import { createDatabase } from '@frontierjs/junction'
 import { createLitestoneAuth } from '@frontierjs/auth'
 
@@ -654,10 +654,14 @@ function slugify(s) {
 if (import.meta.main) {
   // Migrations first: seeding a database with no tables fails with a driver
   // error that names a table, not the missing step. This is the same call
-  // api/src/core/app.ts makes on boot.
-  const migrationsDir = new URL('./migrations', import.meta.url).pathname
+  // api/src/core/app.ts makes on boot, and it is litestone's runner for the
+  // same reason — migrations live in `db/migrations/main/` because the schema
+  // declares `database main`, and a runner that globs one level up finds
+  // nothing and reports success.
+  const migrationsDir = new URL('./migrations/main', import.meta.url).pathname
   const raw = createDatabase({ path: env.DATABASE_URL })
-  await raw.migrate(migrationsDir)
+  const migrated = await apply(raw.db, migrationsDir)
+  if (migrated.unmatched) throw new Error(`[seed] ${migrated.message} — db/migrations/main`)
   raw.close()
 
   const db = await createBasecampDb()

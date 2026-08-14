@@ -49,8 +49,15 @@ model User {
   id             String    @id @default(uuid())
   email          String    @email @unique @lower
   name           String?   @trim
-  emailVerified  Boolean   @default(false)
-  role           String    @default("user")
+  // The two columns a caller must not write about themselves. role is what an
+  // app's own resolver grades on, and marking your own address verified is
+  // skipping the verification. auth().isAdmin is the standing
+  // FrontierGateGetLevel and sessionGateLevel() both read for ADMINISTRATOR(5),
+  // so the level that may delete a person is the level that may set their role
+  // — one idea, not two. asSystem() writes both regardless, which is how this
+  // package sets them.
+  emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
+  role           String    @default("user") @allow('write', auth().isAdmin)
   accountId      Int?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now()) @updatedAt
@@ -60,13 +67,21 @@ model User {
   // people, and a signed-in caller edits their own profile. Delete is
   // ADMINISTRATOR — removing a person is not self-service.
   //
-  // A GATE IS PER MODEL, NOT PER ROW. Update at USER means any signed-in
-  // caller may write any user row, its role column included. "Their own row"
-  // is a @@allow('update', id == auth().id) and is not declared here.
+  // A GATE IS PER MODEL, NOT PER ROW, so the level alone would say *any
+  // signed-in caller may write any user row*. The policy is what makes it
+  // their own row, and an admin's the exception — the same standing the gate's
+  // delete position names. Together with the two field policies above, this is
+  // the whole shape an app needs: a level for what kind of caller, a policy for
+  // whose row, and a field policy for the columns the level itself is graded
+  // from. A column the caller can write is not a column a level can be graded
+  // from.
   //
-  // Registration is unaffected: @frontierjs/auth writes through asSystem().
+  // Registration is unaffected: every write this package makes goes through
+  // asSystem(), which is above the ladder. The three models below stay at 8 —
+  // they hold the credential material, and that is the case 8 is for.
   // Hand copy of packages/auth/schema.ts — change one, change both.
   @@gate("4.4.4.5")
+  @@allow('update', id == auth().id || auth().isAdmin)
   @@log(audit)
 }
 
@@ -119,7 +134,7 @@ model Verification {
 
 // ─── auth.ts scaffold ─────────────────────────────────────────────────────────
 
-const authScaffold = (db) => `import { createFjsAuth, createAuthCleanupJobs } from '@frontierjs/auth'
+const authScaffold = (db) => `import { createLitestoneAuth, createAuthCleanupJobs } from '@frontierjs/auth'
 import { createClient, GatePlugin, LEVELS }       from '@frontierjs/litestone'
 import { defineEnv }                               from '@frontierjs/junction'
 
@@ -133,13 +148,21 @@ export const env = defineEnv({
 
 // ─── Database ─────────────────────────────────────────────────────────────────
 
-export const db = await createClient('./db/schema.lite', {
-  encryption: { key: env.ENCRYPTION_KEY },
+export const db = await createClient({
+  path:          './db/schema.lite',
+  encryptionKey: env.ENCRYPTION_KEY,
   plugins: [
     new GatePlugin({
+      // STANDING, not a role string. isAdmin / isOwner / isSystemAdmin are what
+      // Litestone's own resolver reads and what schema.lite's @@allow and field
+      // policies read, so the level and the policies cannot disagree about who
+      // an administrator is. What 'admin' MEANS is this app's decision, made
+      // once in sessionFields below.
       getLevel(user) {
-        if (!user)                        return LEVELS.STRANGER
-        if (user.userType === 'admin')    return LEVELS.ADMINISTRATOR
+        if (!user)              return LEVELS.STRANGER
+        if (user.isSystemAdmin) return LEVELS.SYSADMIN
+        if (user.isOwner)       return LEVELS.OWNER
+        if (user.isAdmin)       return LEVELS.ADMINISTRATOR
         return LEVELS.USER
       }
     })
@@ -148,7 +171,13 @@ export const db = await createClient('./db/schema.lite', {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export const auth = createFjsAuth(db, {
+export const auth = createLitestoneAuth(db, {
+  // The one place this app says what 'admin' means. The User model ships a
+  // role string that auth stores and never interprets; the gate and the row
+  // and field policies all read isAdmin. Projecting it here means one owner
+  // rather than a string matched in three files.
+  sessionFields: (user) => ({ isAdmin: user.role === 'admin' }),
+
   sessionTtl:           '30 days',
   passwordResetTtl:     '1 hour',
   emailVerificationTtl: '24 hours',
@@ -181,12 +210,12 @@ const serverHint = `
 // ─── Add to api/src/server.ts ──────────────────────────────────────────────────
 
 import { auth, db, authCleanup }           from './auth.ts'
-import { createFjsAuthPlugin }             from '@frontierjs/auth'
+import { createAuthPlugin }             from '@frontierjs/auth'
 import { withLitestoneDb }                 from '@frontierjs/junction'
 
 const app = createApp({ auth })
 
-app.configure(createFjsAuthPlugin(auth, {
+app.configure(createAuthPlugin(auth, {
   prefix:    '/auth',
   cookieAuth: false,
 }))
@@ -217,7 +246,7 @@ What it does:
 - Injects `users`, `credentials`, `sessions`, `verifications` into `db/schema.lite`
 - Pushes the schema changes to the database
 - Generates `ENCRYPTION_KEY` and `AUTH_SECRET` in `.env`
-- Scaffolds `api/src/auth.ts` with `createFjsAuth` wired up
+- Scaffolds `api/src/auth.ts` with `createLitestoneAuth` wired up
 - Prints the two lines to add to `api/server.ts`
 
 ```js

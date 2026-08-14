@@ -445,12 +445,24 @@ if (flag.remote) {
           renderCheck('deploy lock', 'pass', 'clear')
         }
 
-        // Litestream — informational only
-        const lsRunning = ssh(`pgrep -x litestream > /dev/null && echo ok`)
-        if (lsRunning === 'ok') {
-          renderCheck('Litestream', 'info', 'running on server (continuous WAL replication)')
-        } else {
+        // Litestream is OPTIONAL, so its absence is informational — but a
+        // running one that cannot replicate is not informational, it is a
+        // believed backup that does not exist. That grades as a failure.
+        const ls = litestreamStatus((cmd) => ssh(cmd) ?? '')
+        if (!ls.running) {
           renderCheck('Litestream', 'info', 'not running on server (optional)')
+        } else if (ls.supported === false) {
+          renderCheck('Litestream', 'fail',
+            `${ls.version} is too old — ${LITESTREAM_MIN_LABEL}+ required. It is running and replicating NOTHING: ` +
+            `0.3.x cannot parse the STRICT tables litestone emits and loops on a sync error without exiting. ` +
+            `fix: upgrade litestream (https://litestream.io/install)`)
+          fail()
+        } else if (ls.supported === null) {
+          renderCheck('Litestream', 'warn',
+            `running, but its version could not be read — cannot confirm ${LITESTREAM_MIN_LABEL}+`)
+          warn()
+        } else {
+          renderCheck('Litestream', 'info', `running on server — ${ls.version}, continuous WAL replication`)
         }
 
       } else {

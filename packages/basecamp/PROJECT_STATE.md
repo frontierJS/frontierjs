@@ -1,6 +1,6 @@
 # Basecamp — project state
 
-Last reviewed by running: **2026-08-04**.
+Last reviewed by running: **2026-08-14**.
 
 > **Picking up this app?** `docs/UI_HANDOFF.md` is the API contract;
 > `docs/UI_PLAN.md` is what building the UI found. Run `bun run verify` before
@@ -133,7 +133,7 @@ them and took junction's default (3000). Now passed into `createApp`.
 ## The Data realm is the good half — read `db/README.md` before touching it
 
 Rebuilt 2026-08-03. `db/schema.lite` parses clean, and
-`db/migrations/001_initial_schema.sql` is **generated** from it by
+`db/migrations/main/20260801000000_initial_schema.sql` is **generated** from it by
 `bun db/generate.js` (`--check` fails CI on drift — never hand-edit the SQL).
 Verified by applying to a fresh database: 24 tables, 79 indexes, 13 triggers,
 `foreign_key_check` clean, every table `STRICT`, then driven through a real
@@ -151,10 +151,12 @@ Load-bearing decisions, all documented in `db/README.md`:
   `model credential` → **`Secret`** (auth owns `Credential` and the
   `db.credential` accessor — a Credential is how a *person* proves identity to
   Basecamp, a Secret is how *Basecamp* proves identity to a machine).
-- **Gates are declared in the schema, not in hooks.** `User` is `@@gate("8")`,
-  so **even SYSADMIN(7) cannot read it — any member list must go through
-  `asSystem()`**. `AuditEvent` update/delete are `LOCKED`, which `asSystem()`
-  does **not** pass. `Secret.data` is `@encrypted`, so an ADMIN listing secrets
+- **Gates are declared in the schema, not in hooks.** `User` reads at USER(4)
+  since auth moved its fragment (`FJS-170`); the member lists still go through
+  `asSystem()` because they were written when it was SYSTEM(8), and **what keeps
+  4 safe is a row policy and three field write policies rather than the level**
+  — see `db/README.md`. `AuditEvent` update/delete are `LOCKED`, which
+  `asSystem()` does **not** pass. `Secret.data` is `@encrypted`, so an ADMIN listing secrets
   gets a row with no `data` key at all. Proved by planting an SSH key through
   the real client: 0 occurrences in `strings bc.db`, 0 in the audit log.
 - **The audit logger is on** for all 16 non-event models, credentials and
@@ -584,6 +586,43 @@ screen would be a second owner of when the fleet gets touched. The mock's
 per-server disk BARS are also not built — they need free space on `/`, which is
 a different reading from `docker system df`.
 
+## What holds `User` at USER(4) (2026-08-14)
+
+`FJS-170` moved auth's own fragment from `@@gate("8")` to `"4.4.4.5"` so that an
+app can list its own people, and this app's hand copy moved with it. The level
+alone was not enough here, and the gap was open for three days:
+
+**a gate is per MODEL, so update at 4 was every signed-in caller writing every
+other person's row — `isSystemAdmin` included.** Measured against the app's own
+resolver rather than reasoned about: a `developer` listed every user in the
+database, rewrote another user's row, and set `isSystemAdmin: true` on their own,
+which `basecampGateLevel()` grades SYSADMIN(7). No route reached it — there is no
+`users` service and every User write in `api/src` goes through `asSystem()` — so
+it was a hole in the schema rather than a live one, which is the only reason it
+is a paragraph here and not an incident.
+
+Two declarations close it, neither of them a level:
+
+- **`@@allow('update', id == auth().id)`** — whose row. A policy filters, so the
+  cross-row write answers `null` rather than throwing; the test reads the other
+  row back through `asSystem()`, because the return value cannot prove it.
+- **`@allow('write', auth().isSystemAdmin)` on `isSystemAdmin`, `status` and
+  `kind`** — which columns. These are exactly what the resolver reads: the tier
+  itself, the status that grades `suspended` STRANGER, and the kind an API key's
+  owner must be. **A column the caller can write is not a column a level can be
+  graded from.**
+
+`asSystem()` passes both, so `/setup` still makes the first administrator and
+`/hub/users/` still grants the tier, suspends and creates bots — 271/271 in the
+browser, unchanged.
+
+**`@guarded(all)` was the wrong tool and looked like the right one.** It is a
+read-side lock: with it on `isSystemAdmin` the write still landed and the answer
+came back with the column absent, which reads as a refusal. `litestone`'s own
+`docs/schema.md` says *excluded from all operations unless `asSystem()`*, and
+`@encrypted` implies it while `Secret.data` is plainly written by an admin, so
+the sentence is wrong rather than the behaviour — `FJS-248`.
+
 ## The old UI mock, for reference
 
 `docs/mock/BasecampUI.jsx` is one **12,557-line** file: `import { useState } from
@@ -609,8 +648,8 @@ porting the JSX first would only produce more screens reading hardcoded arrays.
 
 **`@@gate` landed 2026-08-10 and closed `FJS-007`** — deferred to last, as
 decided 2026-08-06, and it cost nothing to defer: the admin zone everyone
-expected to break was already written through `asSystem()` because `User` is
-`@@gate("8")`. All 37 models declare a level; the ladder is per WORKSPACE
+expected to break was already written through `asSystem()` because `User` was
+`@@gate("8")` at the time. All 37 models declare a level; the ladder is per WORKSPACE
 (`api/src/core/gate.ts`), which is the part `example/api/gate.ts` could not
 supply.
 
@@ -652,8 +691,9 @@ not roll back on a model with a Json column (`FJS-151`).
    **Phase 10 is the sysadmin tier — `WorkspacesView`, `UsersView`, `FlagsView`
    (hub scope) and `SysOverviewView`.** Done. It was the last group whose
    blocker was an API rather than a model, and it was written against
-   `asSystem()` throughout because `User` is `@@gate("8")`, which even SYSADMIN
-   does not pass — so when the gates landed the day after, it needed no change.
+   `asSystem()` throughout because `User` was `@@gate("8")`, which even SYSADMIN
+   does not pass — so when the gates landed the day after, it needed no change,
+   and when auth moved the level to 4 it needed none either.
 
    **Two things ruled before it starts** (2026-08-10, written up in
    `../../HANDOFF.md` § Next): a sysadmin is a COLUMN — `isSystemAdmin Boolean
@@ -669,11 +709,13 @@ not roll back on a model with a Json column (`FJS-151`).
 
 | | |
 |---|---|
-| `bun run test` | 45 data-layer tests — schema, gates, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
-| `bun run verify` | **230** browser checks across all three realms, incl. an a11y pass on every screen |
+| `bun run test` | 68 data-layer tests — schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
+| `bun run verify` | **271** browser checks across all three realms, incl. an a11y pass on every screen |
 | `bun run verify:build` | the PRODUCTION build — the tags survive comment-stripping, and the page comes up in a real browser |
 | `bun run db:check` | fails if the migration has drifted from `db/schema.lite` |
-| `bun run typecheck` | 77 diagnostics, all the untyped-accessor class (`litestone types` pending) |
+| `bun run typecheck` | 20 diagnostics, at the committed baseline. Was 63 until `db/schema.d.ts` landed — two thirds of the count was rows read out of an untyped Proxy |
+| `bun run db:types` | regenerates `db/schema.d.ts` from the schema (`audience=system`). `bun run test` fails if the committed file is stale |
+| `bun run db:seed --force` | the only thing here that writes every model. Plain `db:seed` on a database that already holds an account fails on `account.slug` — that is the seeder saying *use `--force`* the long way |
 
 Nothing in this file was established by reading. The data claims were verified
 against a live database, the API claims over HTTP, and the UI claims by driving

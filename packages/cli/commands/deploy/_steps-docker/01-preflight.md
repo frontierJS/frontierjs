@@ -74,16 +74,30 @@ context.config.lockAcquired = true
 // Litestream runs as a separate process outside Docker — do not stop it.
 // We just need to know it's there so we can log it and remind the operator
 // that continuous replication is active throughout the deploy.
-let litestreamRunning = false
-try {
-  context.exec({ command: `ssh ${host} "pgrep -x litestream > /dev/null 2>&1"` })
-  litestreamRunning = true
-  log.info('Litestream: running — continuous WAL replication active')
-  log.info('  DB will be replicated throughout the deploy. Do not stop Litestream.')
-} catch {
+const ls = litestreamStatus((cmd) => {
+  try { return context.exec({ command: `ssh ${host} "${cmd}"`, stdio: 'pipe' })?.toString('utf8') ?? '' }
+  catch { return '' }
+})
+
+if (!ls.running) {
   log.info('Litestream: not running')
+} else if (ls.supported === false) {
+  // A warning rather than an abort: blocking a deploy on the replication tool
+  // would be worse than the state it describes, and an operator mid-incident
+  // needs the deploy. But it cannot be quiet — the whole defect was a check
+  // that called this healthy.
+  log.warn(`Litestream: ${ls.version} is TOO OLD — ${LITESTREAM_MIN_LABEL} or newer is required`)
+  log.warn('  It is running and replicating NOTHING: 0.3.x cannot parse the STRICT tables')
+  log.warn('  litestone emits, so it loops on a sync error without exiting.')
+  log.warn('  Treat this server as having NO replication until it is upgraded.')
+} else if (ls.supported === null) {
+  log.warn(`Litestream: running (pid ${ls.pid}), version unreadable — cannot confirm it is ${LITESTREAM_MIN_LABEL}+`)
+} else {
+  log.info(`Litestream: running — ${ls.version}, continuous WAL replication active`)
+  log.info('  DB will be replicated throughout the deploy. Do not stop Litestream.')
 }
-context.config.litestreamRunning = litestreamRunning
+
+context.config.litestreamRunning = ls.running === true && ls.supported !== false
 
 log.success(`Preflight passed → ${appId} (${target})`)
 ```

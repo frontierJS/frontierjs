@@ -74,6 +74,16 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   that is not (`FJS-166`).
 - The port broker implements the FJS port scheme; the scheme itself is documented
   in `packages/jetty/src/dev/fjs-ports.js`.
+- **`ws:exports` writes the published-surface snapshot, and it asks the packer.**
+  `bun pm pack --dry-run` per publishable package, then every `exports` subpath,
+  `bin`, `main` and `types` target is looked for in that listing. Two things it
+  is easy to get wrong and both were: npm's `files:` globs have their own rules
+  (a bare directory name means everything under it, README/LICENSE/package.json
+  are always in), so the listing is asked for rather than derived; and a `*` in
+  an `exports` target is **Node's subpath pattern, which matches across `/`** —
+  read as a shell glob it reports `@frontierjs/ui` as shipping none of its 64
+  components. The snapshot records top-level entries only, so adding a source
+  file does not move it.
 - **`core/checks.js` has two callers and one of them is not in this package.**
   `scripts/ci.mjs` imports it by relative path and runs it over this repo as the
   `structure` phase. Loosening a rule here loosens it for every app on the next

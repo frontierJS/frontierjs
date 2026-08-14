@@ -23,7 +23,7 @@ import { buildPristine, introspect, diffSchemas,
          generateMigrationSQL, summariseDiff }         from '../core/migrate.js'
 import { create, apply, status, verify,
          createForDatabase, listMigrationFiles,
-         appliedMigrations }                           from '../core/migrations.js'
+         describeSkipped, appliedMigrations }          from '../core/migrations.js'
 import { modelToAccessor }                             from '../core/ddl.js'
 
 // Assets that must survive `bun build --compile`. A text import is embedded in
@@ -217,6 +217,7 @@ const HELP = `
     ${cyan('litestone tenant migrate')}             migrate all tenants
     ${cyan('litestone jsonschema')}                   generate JSON Schema from schema.lite
     ${cyan('litestone access')}                       write the access snapshot ${dim('(--check in CI)')}
+    ${cyan('litestone ddl')}                          write the DDL snapshot ${dim('(--check in CI)')}
     ${cyan('litestone mutate')}                       mutate the schema, report what the checks miss
 
   ${bold('Options')}
@@ -245,7 +246,8 @@ const HELP = `
 async function loadConfig(configOverride) {
   // ── Resolution order ─────────────────────────────────────────────────────────
   //
-  // schema:     --schema flag  →  config schema:  →  sibling to config  →  ./schema.lite in cwd
+  // schema:     --schema flag  →  config schema:  →  sibling to config  →  ./schema.lite
+  //             in cwd  →  ./db/schema.lite (an FJS app keeps the Data realm there)
   // db:         --db flag      →  config db:      →  null (comes from database block in schema)
   // migrations: --migrations   →  config migrations:  →  sibling ./migrations to schema
   //
@@ -265,9 +267,15 @@ async function loadConfig(configOverride) {
     cfg    = mod.default ?? mod
     cfgDir = dirname(cfgAbs)
   } else {
-    // No --config — look for litestone.config.js in cwd
-    const defaultCfg = resolve('./litestone.config.js')
-    if (existsSync(defaultCfg)) {
+    // No --config — look for litestone.config.js in cwd, then in ./db/.
+    //
+    // `db/` is where an FJS app keeps the Data realm (root README § Project
+    // Structure), so an app root is the obvious place to run this from and the
+    // config is one level down. cwd is probed first: an app that puts one at
+    // its root means it.
+    const defaultCfg = [resolve('./litestone.config.js'), resolve('./db/litestone.config.js')]
+      .find(existsSync)
+    if (defaultCfg) {
       const mod = await import(`file://${defaultCfg}`)
       cfg    = mod.default ?? mod
       cfgDir = dirname(defaultCfg)
@@ -290,8 +298,12 @@ async function loadConfig(configOverride) {
   const schemaPath = getFlag('schema')
     ? resolve(getFlag('schema'))
     : fromCfg(cfg.schema, 'schema')
-      ?? (existsSync(resolve(cfgDir, 'schema.lite')) ? resolve(cfgDir, 'schema.lite') : null)
-      ?? (existsSync(resolve('./schema.lite'))        ? resolve('./schema.lite')        : null)
+      ?? (existsSync(resolve(cfgDir, 'schema.lite'))    ? resolve(cfgDir, 'schema.lite')    : null)
+      ?? (existsSync(resolve('./schema.lite'))           ? resolve('./schema.lite')           : null)
+      // Same reason as the config probe above — an FJS app's schema is db/schema.lite,
+      // so running from the app root looked for it one directory too high and
+      // reported "No schema found" about a file that was plainly there.
+      ?? (existsSync(resolve('./db/schema.lite'))        ? resolve('./db/schema.lite')        : null)
 
   // migrations dir resolves relative to schema file location when known
   const schemaDir = schemaPath ? dirname(schemaPath) : cfgDir
@@ -326,7 +338,8 @@ function loadSchema(schemaPath) {
   if (typeof schemaPath !== 'string' || !schemaPath.trim()) {
     fatal(
       `No schema found.\n` +
-      `     Looked for: ${cyan('--schema')} flag → ${cyan('schema:')} in litestone.config.js → ${cyan('./schema.lite')}\n` +
+      `     Looked for: ${cyan('--schema')} flag → ${cyan('schema:')} in litestone.config.js → ` +
+      `${cyan('./schema.lite')} → ${cyan('./db/schema.lite')}\n` +
       `     Fix: run this from your project directory, pass ${cyan('--schema=path/to/schema.lite')},\n` +
       `     or run ${cyan('litestone init')} to create a new schema.`
     )
@@ -692,6 +705,22 @@ async function cmdApply(cfg) {
       const result = await apply(rawDb, migrationsDir, lsClient)
       if (lsClient) lsClient.$close()
 
+      // Named whether or not anything ran: a directory holding three valid
+      // migrations and one misnamed file applies three and is silent about the
+      // fourth, which is the same omission one file at a time.
+      if (result.skipped?.length && !result.unmatched) {
+        console.warn(`  ${yellow('!')}  ${describeSkipped(result.skipped)}\n`)
+      }
+
+      // A directory holding .sql files that none of them matched is not a
+      // success. It used to print ✓ and exit 0, so a deploy migrated nothing
+      // and said so in the affirmative.
+      if (result.unmatched) {
+        console.error(`  ${red('✗')}  ${result.message}\n`)
+        anyFailed = true
+        continue
+      }
+
       if (result.message) {
         console.log(`  ${green('✓')}  ${result.message}\n`)
         continue
@@ -713,7 +742,7 @@ async function cmdApply(cfg) {
   }
 
   if (anyFailed) {
-    console.error(`\n  ${red('✗')}  One or more migrations failed — affected databases unchanged.\n`)
+    console.error(`\n  ${red('✗')}  One or more migrations failed or were unreadable — affected databases unchanged.\n`)
     process.exit(1)
   }
 
@@ -737,12 +766,14 @@ async function cmdStatus(cfg) {
     pending:  yellow('·'),
     modified: red('⚠'),
     orphaned: red('?'),
+    skipped:  red('✗'),
   }
   const stateLabel = {
     applied:  dim('applied '),
     pending:  yellow('pending '),
     modified: red('modified'),
     orphaned: red('orphaned'),
+    skipped:  red('skipped '),
   }
 
   try {
@@ -771,13 +802,15 @@ async function cmdStatus(cfg) {
       const counts = {
         pending:  rows.filter(r => r.state === 'pending').length,
         applied:  rows.filter(r => r.state === 'applied').length,
-        problems: rows.filter(r => r.state === 'modified' || r.state === 'orphaned').length,
+        problems: rows.filter(r => r.state === 'modified' || r.state === 'orphaned' || r.state === 'skipped').length,
       }
+      const skipped = rows.filter(r => r.state === 'skipped').map(r => r.file)
 
       console.log()
       if (counts.applied)  console.log(`  ${dim(`${counts.applied} applied`)}`)
       if (counts.pending)  console.log(`  ${yellow(`${counts.pending} pending`)}`)
       if (counts.problems) console.log(`  ${red(`${counts.problems} problem${counts.problems > 1 ? 's' : ''}`)}`)
+      if (skipped.length)  console.log(`  ${red(describeSkipped(skipped))}`)
       console.log()
     }
   } finally {
@@ -1316,6 +1349,36 @@ async function cmdStudio(cfg) {
   tapClient(db)
 
   // Build per-database migration status
+  // ── The schema as it is on disk, not as it was at boot ────────────────────
+  //
+  // Studio parses once at startup and holds the result for the life of the
+  // process. Every panel built on that parse describes the file as it was when
+  // the server started — and says so with the same confidence it would if the
+  // file had not moved. That is the drift the badge exists to report, and the
+  // access panel has to read THROUGH it or it would report on a stale surface
+  // while telling you the surface has changed.
+  //
+  // Re-parsed only when the bytes differ, so the common case is a string
+  // compare. An edit that does not parse keeps the last good result: a
+  // half-typed model should leave the panel showing the last thing that was
+  // true, not an empty schema.
+  const BOOT_SCHEMA_TEXT = (() => {
+    try { return readFileSync(resolve(cfg.schema), 'utf8') } catch { return null }
+  })()
+
+  let _liveParse = { text: BOOT_SCHEMA_TEXT, parsed: parseResult }
+
+  function currentSchemaParse() {
+    try {
+      const text = readFileSync(resolve(cfg.schema), 'utf8')
+      if (text === _liveParse.text) return _liveParse.parsed
+      const next = parse(text)
+      if (!next.valid) return _liveParse.parsed
+      _liveParse = { text, parsed: next }
+      return next
+    } catch { return _liveParse.parsed }
+  }
+
   function getAllMigrationStatus() {
     const result = {}
     for (const db of parseResult.schema.databases) {
@@ -1804,6 +1867,79 @@ async function cmdStudio(cfg) {
           }
 
           return json({ status: allStatus, diffs, multiDb: parseResult.schema.databases.some(db => !db.driver || db.driver === 'sqlite') })
+        }
+
+        // ── GET /api/access ─────────────────────────────────────────────
+        // The declared access surface, straight from deriveAccess(). One
+        // formatter existed for this — the committed access.snapshot.md — and
+        // it is good at being reviewed and bad at being read: 37 rows of
+        // "4.4.4.5" answers *what does this model require* and never *what can
+        // a level-4 caller do*. Same object, second reader.
+        //
+        // Read-only by construction, so --readonly needs no case here. The
+        // payload is the same information the repo already commits in plain
+        // text beside the schema, so it exposes nothing the schema did not.
+        if (path === '/api/access') {
+          const { deriveAccess } = await import('../access.js')
+          return json(deriveAccess(currentSchemaParse().schema))
+        }
+
+        // ── GET /api/drift ──────────────────────────────────────────────
+        // Three questions that are not the same question, kept apart on
+        // purpose: one badge saying "out of date" would blur them.
+        //
+        //   file      — has schema.lite changed since Studio parsed it?
+        //   snapshot  — does the committed access.snapshot.md still match it?
+        //   migrations— is anything pending/modified/orphaned?
+        //
+        // `file` is first because the other two are worthless without it:
+        // Studio parses once at boot and holds the result for the life of the
+        // process, so an edit made in an editor leaves every panel describing
+        // the previous version, confidently.
+        if (path === '/api/drift') {
+          const out = { file: null, snapshot: null, migrations: null }
+
+          // ── file ──
+          try {
+            const onDisk = readFileSync(resolve(cfg.schema), 'utf8')
+            out.file = {
+              path:    rel(resolve(cfg.schema)),
+              changed: onDisk !== BOOT_SCHEMA_TEXT,
+            }
+          } catch (e) { out.file = { error: e.message } }
+
+          // ── snapshot ──
+          // Rendered from what is on disk NOW, not from the boot parse, or a
+          // schema edited since startup would be compared against itself.
+          try {
+            const { deriveAccess, renderAccessSnapshot } = await import('../access.js')
+            const snapPath = join(dirname(resolve(cfg.schema)), 'access.snapshot.md')
+            if (!existsSync(snapPath)) {
+              // Absent is not "no drift" — it is "I cannot judge this", the
+              // same distinction db.$checkWhere makes for an unknown accessor.
+              out.snapshot = { exists: false, path: rel(snapPath) }
+            } else {
+              const live = currentSchemaParse()
+              const body = renderAccessSnapshot(deriveAccess(live.schema),
+                                                { source: basename(resolve(cfg.schema)) })
+              out.snapshot = {
+                exists:  true,
+                path:    rel(snapPath),
+                current: readFileSync(snapPath, 'utf8') === body,
+                command: `litestone access --schema ${rel(resolve(cfg.schema))}`,
+              }
+            }
+          } catch (e) { out.snapshot = { error: e.message } }
+
+          // ── migrations ──
+          try {
+            const counts = { pending: 0, modified: 0, orphaned: 0 }
+            for (const rows of Object.values(getAllMigrationStatus()))
+              for (const r of rows) if (counts[r.state] !== undefined) counts[r.state]++
+            out.migrations = counts
+          } catch (e) { out.migrations = { error: e.message } }
+
+          return json(out)
         }
 
         if (path === '/api/stats') return json(getDbStats())
@@ -2715,7 +2851,11 @@ async function cmdStudio(cfg) {
   })
 
   const displayHost = (hostname === '127.0.0.1' || hostname === '0.0.0.0') ? 'localhost' : hostname
-  const url = `http://${displayHost}:${port}`
+  // server.port, never the requested one: `--port=0` asks the OS for any free
+  // port, and printing the request back prints `:0`. That is what makes 0 the
+  // right thing for a test to ask for — a fixed number, however unlikely, can
+  // be taken by whatever else the run is doing.
+  const url = `http://${displayHost}:${server.port}`
   console.log(`  ${green('✓')}  Studio at ${cyan(url)}${hostname !== '127.0.0.1' ? dim(`  (listening on ${hostname})`) : ''}`)
   if (cfg.db) console.log(`  ${dim('db:')}     ${rel(resolve(cfg.db))}`)
   else {
@@ -2791,6 +2931,14 @@ async function cmdJsonSchema(cfg) {
   const { generateJsonSchema } = await import('../jsonschema.js')
   const parseResult = loadSchema(cfg.schema)
 
+  // ── --snapshot ───────────────────────────────────────────────────────────
+  //
+  // The committed, reviewable form of the same document. Generation is the
+  // command's own job either way; this is a second RENDERING, not a second
+  // generator — the raw JSON is what ships, and thousands of lines of it is
+  // where a removed keyword hides.
+  if (flag('snapshot')) { await jsonSchemaSnapshot(cfg, parseResult); return }
+
   const format            = getFlag('format') ?? 'definitions'
   const mode              = getFlag('mode')   ?? 'create'
   const outputPath        = getFlag('out')
@@ -2854,6 +3002,87 @@ async function cmdJsonSchema(cfg) {
   console.log()
 }
 
+// ─── JSON Schema snapshot ────────────────────────────────────────────────────
+//
+// litestone jsonschema --snapshot           — write jsonschema.snapshot.md
+// litestone jsonschema --snapshot --check   — exit 1 if the committed file is stale
+//
+// The bridge with three readers (junction validation, sierra's field rules, ui's
+// <Form>) and no build that breaks when it changes shape.
+
+async function jsonSchemaSnapshot(cfg, parseResult) {
+  const { renderJsonSchemaSnapshot } = await import('./jsonschema-snapshot.js')
+
+  const schemaPath = resolve(cfg.schema)
+  const outPath    = getFlag('out')
+    ? resolve(getFlag('out'))
+    : resolve(dirname(schemaPath), 'jsonschema.snapshot.md')
+
+  // BASENAME, for the reason cmdAccess and cmdDdl use one: the file is
+  // byte-compared, and a cwd-relative path renders differently from the app
+  // directory and from the repo root.
+  const body = renderJsonSchemaSnapshot(parseResult.schema, { source: basename(schemaPath) })
+
+  if (flag('stdout')) { process.stdout.write(body); return }
+
+  if (flag('check')) {
+    checkSnapshot(outPath, body, {
+      regen: 'litestone jsonschema --snapshot',
+      moved: 'The client contract changed. Run `litestone jsonschema --snapshot` and review the diff before committing.',
+    })
+    console.log()
+    return
+  }
+
+  writeFileSync(outPath, body, 'utf8')
+  const { size } = statSync(outPath)
+  console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${(size/1024).toFixed(1)}kb)`)}`)
+  console.log()
+}
+
+
+// ─── Snapshot --check ────────────────────────────────────────────────────────
+//
+// The half every snapshot command shares. A snapshot is a byte compare — the
+// file is what the schema produces now or it is stale — and the useful output is
+// the lines that moved, not the fact that something did.
+//
+// Exits the process rather than returning a verdict: a stale snapshot IS the
+// failure, and a caller that forgot to read a return value would pass CI in
+// silence. `scripts/ci.mjs`'s snapshots phase reruns the command in the header
+// of each committed snapshot with --check appended, so every generator that
+// writes one has to answer this way.
+
+function checkSnapshot(outPath, body, { regen, moved }) {
+  if (!existsSync(outPath))
+    fatal(`No snapshot at ${rel(outPath)} — run \`${regen}\` and commit it.`)
+
+  const committed = readFileSync(outPath, 'utf8')
+  if (committed === body) {
+    console.log(`  ${green('✓')}  ${rel(outPath)} is current`)
+    return
+  }
+
+  const was = committed.split('\n')
+  const now = body.split('\n')
+  const changed = []
+  for (let i = 0; i < Math.max(was.length, now.length); i++) {
+    if (was[i] === now[i]) continue
+    changed.push(`    ${red('-')} ${was[i] ?? dim('(absent)')}`)
+    changed.push(`    ${green('+')} ${now[i] ?? dim('(absent)')}`)
+    if (changed.length >= 20) break
+  }
+
+  console.log(`  ${red('✗')}  ${rel(outPath)} does not match the schema\n`)
+  console.log(changed.join('\n'))
+  if (changed.length >= 20) console.log(`    ${dim('…')}`)
+  console.log()
+  console.log(`  ${dim(moved)}`)
+  console.log()
+  process.exit(1)
+}
+
+
 // ─── Access snapshot ─────────────────────────────────────────────────────────
 //
 // litestone access             — write access.snapshot.md beside the schema
@@ -2896,34 +3125,13 @@ async function cmdAccess(cfg) {
                   `${counts.policied} policied · ${counts.protected} with protected fields`
 
   if (check) {
-    if (!existsSync(outPath))
-      fatal(`No snapshot at ${rel(outPath)} — run \`litestone access\` and commit it.`)
-
-    const committed = readFileSync(outPath, 'utf8')
-    if (committed === body) {
-      console.log(`  ${green('✓')}  ${rel(outPath)} is current`)
-      console.log(`  ${dim(summary)}`)
-      console.log()
-      return
-    }
-
-    const was = committed.split('\n')
-    const now = body.split('\n')
-    const changed = []
-    for (let i = 0; i < Math.max(was.length, now.length); i++) {
-      if (was[i] === now[i]) continue
-      changed.push(`    ${red('-')} ${was[i] ?? dim('(absent)')}`)
-      changed.push(`    ${green('+')} ${now[i] ?? dim('(absent)')}`)
-      if (changed.length >= 20) break
-    }
-
-    console.log(`  ${red('✗')}  ${rel(outPath)} does not match the schema\n`)
-    console.log(changed.join('\n'))
-    if (changed.length >= 20) console.log(`    ${dim('…')}`)
+    checkSnapshot(outPath, body, {
+      regen: 'litestone access',
+      moved: 'Access changed. Run `litestone access` and review the diff before committing.',
+    })
+    console.log(`  ${dim(summary)}`)
     console.log()
-    console.log(`  ${dim('Access changed. Run `litestone access` and review the diff before committing.')}`)
-    console.log()
-    process.exit(1)
+    return
   }
 
   writeFileSync(outPath, body, 'utf8')
@@ -2940,6 +3148,68 @@ async function cmdAccess(cfg) {
   console.log(`  ${dim('--json')}        ${dim('the structured table instead of the markdown')}`)
   console.log(`  ${dim('--stdout')}      ${dim('print instead of writing a file')}`)
   console.log(`  ${dim('--out=<path>')}  ${dim('default: access.snapshot.md beside the schema')}`)
+  console.log()
+}
+
+
+// ─── DDL snapshot ────────────────────────────────────────────────────────────
+//
+// litestone ddl             — write ddl.snapshot.sql beside the schema
+// litestone ddl --check     — exit 1 if the committed file is stale
+// litestone ddl --stdout    — print it
+//
+// The tables, indexes, triggers and views a fresh database is built from. A
+// migration shows what CHANGED; this shows what IS, which is what an app's
+// hand-written SQL binds to and what a rewritten emitter silently renames.
+
+async function cmdDdl(cfg) {
+  const toStdout = flag('stdout')
+  const check    = flag('check')
+
+  // Same trap as cmdAccess: a banner printed to stdout ends up inside the file
+  // when the caller redirects.
+  if (!toStdout) header('litestone ddl')
+
+  const { renderDdlSnapshot } = await import('./ddl-snapshot.js')
+  const parseResult = loadSchema(cfg.schema)
+  const pluralize   = flag('pluralize') || (cfg.pluralize ?? false)
+
+  const schemaPath = resolve(cfg.schema)
+  const outPath    = getFlag('out')
+    ? resolve(getFlag('out'))
+    : resolve(dirname(schemaPath), 'ddl.snapshot.sql')
+
+  // BASENAME, not a cwd-relative path — the file is byte-compared by --check,
+  // and a path would render differently from the app directory and from the
+  // repo root.
+  const body = renderDdlSnapshot(parseResult.schema, { source: basename(schemaPath), pluralize })
+
+  if (toStdout) { process.stdout.write(body); return }
+
+  const dbCount = parseResult.schema.databases?.length || 1
+  const summary = `${parseResult.schema.models.length} models · ${dbCount} database${dbCount === 1 ? '' : 's'}` +
+                  (pluralize ? ' · pluralized table names' : '')
+
+  if (check) {
+    checkSnapshot(outPath, body, {
+      regen: 'litestone ddl',
+      moved: 'The emitted schema changed. Run `litestone ddl` and review the diff before committing.',
+    })
+    console.log(`  ${dim(summary)}`)
+    console.log()
+    return
+  }
+
+  writeFileSync(outPath, body, 'utf8')
+  const { size } = statSync(outPath)
+
+  console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${(size/1024).toFixed(1)}kb)`)}`)
+  console.log(`  ${dim(summary)}`)
+  console.log()
+  console.log(`  ${dim('--check')}       ${dim('exit 1 if the committed snapshot is stale (CI)')}`)
+  console.log(`  ${dim('--stdout')}      ${dim('print instead of writing a file')}`)
+  console.log(`  ${dim('--pluralize')}   ${dim('pluralized table names (default: from config)')}`)
+  console.log(`  ${dim('--out=<path>')}  ${dim('default: ddl.snapshot.sql beside the schema')}`)
   console.log()
 }
 
@@ -4295,6 +4565,12 @@ async function main() {
   if (cmd === 'access') {
     const cfg = await loadConfig()
     await cmdAccess(cfg)
+    return
+  }
+
+  if (cmd === 'ddl') {
+    const cfg = await loadConfig()
+    await cmdDdl(cfg)
     return
   }
 

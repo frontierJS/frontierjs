@@ -19,7 +19,8 @@ export { introspect, buildPristine, buildPristineForDatabase, diffSchemas,
          generateMigrationSQL, summariseDiff,
          splitStatements, checksum }             from './core/migrate.js'
 export { create, apply, status, verify,
-         listMigrationFiles, slugify,
+         listMigrationFiles, unmatchedMigrationFiles,
+         describeSkipped, slugify,
          autoMigrate }                           from './core/migrations.js'
 
 export { generateJsonSchema }                     from './jsonschema.js'

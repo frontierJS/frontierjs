@@ -25,6 +25,12 @@ const MESA_EXTENSIONS = /\.(mesa|md)$/
 // src/build/mesa-plugin.js → the sierra package root
 const SIERRA_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
+// The package name as it appears under node_modules. Named rather than inlined
+// because the literal drifted to 'sierra' once and no suite in this repo could
+// see it — an app here resolves sierra to packages/sierra/, never to a
+// node_modules path (FJS-251).
+const SIERRA_PKG = '@frontierjs/sierra'
+
 /**
  * Locate a file in the installed @frontierjs/mesa, wherever it is.
  *
@@ -226,7 +232,14 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
       if (!compiler) return null
       // Skip .mesa files from node_modules except Sierra's own components.
       // Sierra's RouterView/ChainRenderer need compilation; other packages don't.
-      if (id.includes('/node_modules/') && !id.includes('/node_modules/sierra/')) return null
+      //
+      // The exception has to name the SCOPE. In this repo an app resolves sierra
+      // to packages/sierra/, which is not under node_modules at all, so the skip
+      // never fires and every suite passes — while an app installed from npm
+      // hands RouterView.mesa to rolldown untransformed and dies on "JSX syntax
+      // is disabled" at line 1 of a .mesa file. Dev survives, so it lands at the
+      // first build a real user runs.
+      if (id.includes('/node_modules/') && !id.includes(`/node_modules/${SIERRA_PKG}/`)) return null
 
       // Strip frontmatter before passing to Mesa compiler
       const { frontmatter, content: rawContent } = parseFrontmatter(source)

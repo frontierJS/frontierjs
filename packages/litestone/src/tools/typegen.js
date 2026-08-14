@@ -240,7 +240,16 @@ export function generateTypeScript(schema, opts = {}) {
   lines.push(
     `// ── Cursor pagination result ─────────────────────────────────────────────────`,
     ``,
-    `export interface CursorResult<T> {`,
+    `export interface TransitionOption {
+  name:    string | null
+  field:   string
+  from:    string | null
+  to:      string
+  gate:    number | null
+  allowed: boolean
+}
+
+export interface CursorResult<T> {`,
     `  items:      T[]`,
     `  nextCursor: string | null`,
     `  hasMore:    boolean`,
@@ -272,7 +281,18 @@ export function generateTypeScript(schema, opts = {}) {
     `  delete(args: { where: TWhere }): Promise<TRow | null>`,
     `  deleteMany(args?: { where?: TWhere }): Promise<{ count: number }>`,
     `  search(query: string, args?: { where?: TWhere; limit?: number; offset?: number }): Promise<TRow[]>`,
-    `  optimizeFts(): Promise<void>`,
+    `  optimizeFts(): Promise<{ optimized: boolean; table: string }>`,
+    ``,
+    `  // Reads whose shape is not one row or a count. Emitted because an app`,
+    `  // calls them: leaving one out types a real call as an error, which is`,
+    `  // the failure that makes a generated .d.ts worse than no types at all.`,
+    `  findManyAndCount(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any }): Promise<{ rows: TRow[]; total: number }>`,
+    `  exists(args?: { where?: TWhere }): Promise<boolean>`,
+    `  aggregate(args?: Record<string, unknown>): Promise<Record<string, any>>`,
+    `  groupBy(args: Record<string, unknown>): Promise<Record<string, any>[]>`,
+    `  query(args?: Record<string, unknown>): Promise<any>`,
+    `  /** @@transitions — [] on a model that declares none. */`,
+    `  transitions(idOrRow: TRow | string | number): Promise<TransitionOption[]>`,
     `}`,
     ``,
   )
@@ -314,6 +334,12 @@ export function generateTypeScript(schema, opts = {}) {
     `  // Auth scoping`,
     `  asSystem(): LitestoneClient`,
     `  $setAuth(user: Record<string, unknown>): LitestoneClient`,
+    `  $scopedBy(scope: Record<string, unknown>): LitestoneClient`,
+    ``,
+    `  // Is this key filterable / sortable? Asked rather than copied — every`,
+    `  // flavour of client answers, because it is a fact about the schema.`,
+    `  $checkWhere(accessor: string, where: Record<string, unknown>): { key: string; suggestion?: string; allowed?: string[] }[]`,
+    `  $checkOrderBy(accessor: string, orderBy: unknown): { key: string; reason: string; suggestion?: string; sortable?: string[]; message?: string }[]`,
     ``,
     `  // Transactions`,
     `  $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>`,
@@ -328,6 +354,7 @@ export function generateTypeScript(schema, opts = {}) {
     `  $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ path: string; size: number }>`,
     `  $attach(path: string, alias: string): void`,
     `  $detach(alias: string): void`,
+    `  $rotateKey(newKey: string): Promise<Record<string, { rows: number; fields: number }>>`,
     `  $close(): void`,
     ``,
     `  // Introspection`,
@@ -337,6 +364,8 @@ export function generateTypeScript(schema, opts = {}) {
     `  readonly $enums:      Record<string, string[]>`,
     `  readonly $cacheSize:  { read: number; write: number }`,
     `  readonly $attached:   string[]`,
+    `  readonly $rawDbs:     Record<string, unknown>`,
+    `  readonly $walStatus:  Record<string, unknown>`,
     `}`,
     ``,
   )
@@ -352,17 +381,25 @@ export function generateTypeScript(schema, opts = {}) {
     `  schema?:      string`,
     `  /** Pre-parsed result from parseFile() */`,
     `  parsed?:      Record<string, unknown>`,
-    `  db?:          string`,
-    `  encryption?:  { key: string }`,
-    `  computed?:    Record<string, Record<string, (row: unknown, ctx: unknown) => unknown>> | string`,
-    `  plugins?:     unknown[]`,
-    `  onQuery?:     (event: QueryEvent) => void | Promise<void>`,
-    `  onEvent?:     Record<string, (event: unknown, ctx: unknown) => void>`,
-    `  onLog?:       (entry: unknown, ctx: unknown) => Record<string, unknown> | void`,
-    `  filters?:     Record<string, Record<string, unknown> | ((ctx: unknown) => Record<string, unknown>)>`,
-    `  policyDebug?: boolean | 'verbose'`,
-    `  hooks?:       Record<string, unknown>`,
-    `  onEvent?:     Record<string, (event: unknown, ctx: unknown) => void>`,
+    `  /** MAIN's path. Overrides a declared \`database main\`; a second declared database keeps its own. */`,
+    `  db?:            string`,
+    `  /** ':memory:' moves every declared database, jsonl and logger included. */`,
+    `  databases?:     string | Record<string, { path?: string }>`,
+    `  /** 64 hex characters = 32 bytes. Required for @encrypted / @secret. */`,
+    `  encryptionKey?: string`,
+    `  computed?:      Record<string, Record<string, (row: unknown, ctx: unknown) => unknown>> | string`,
+    `  plugins?:       unknown[]`,
+    `  onQuery?:       (event: QueryEvent) => void | Promise<void>`,
+    `  onEvent?:       Record<string, (event: unknown, ctx: unknown) => void>`,
+    `  onLog?:         (entry: unknown, ctx: unknown) => Record<string, unknown> | void`,
+    `  filters?:       Record<string, Record<string, unknown> | ((ctx: unknown) => Record<string, unknown>)>`,
+    `  policyDebug?:   boolean | 'verbose'`,
+    `  hooks?:         Record<string, unknown>`,
+    `  access?:        Record<string, string>`,
+    `  readOnly?:      boolean`,
+    `  pluralize?:     boolean`,
+    `  scopes?:        Record<string, Record<string, unknown>>`,
+    `  now?:           () => Date | string`,
     `}`,
     ``,
     `export declare function createClient(`,
@@ -434,7 +471,11 @@ function fieldCreateSpec(field, schema, audience, modelNames) {
   const isAuthDefault = attributes.find(a => a.kind === 'default')?.value?.kind === 'call'
                      && attributes.find(a => a.kind === 'default')?.value?.fn === 'auth'
 
-  const tsType = fieldToTs(field, schema, modelNames, false)
+  // A nullable column accepts an explicit null on write, and that is not the
+  // same as omitting it: `null` CLEARS, absent leaves the column alone. Typing
+  // it `T` only made the documented idiom an error, which an app fixes by
+  // casting the client back to any.
+  const tsType = fieldToTs(field, schema, modelNames, false) + (type.optional ? ' | null' : '')
 
   // Optional in create if: has @default, is nullable, is @id (auto-increment), or auth()-stamped
   const optional = type.optional || isId || (hasDefault && !isAuthDefault)
@@ -453,7 +494,10 @@ function fieldUpdateSpec(field, schema, audience, modelNames) {
                     || attributes.some(a => a.kind === 'secret')
   if (isGuardedAll && audience === 'client') return null
 
-  const tsType = fieldToTs(field, schema, modelNames, false)
+  // Same as create, and it matters more here: clearing a nullable column is
+  // only expressible as an explicit null (Invariant 9 — test key presence, not
+  // `??`), so without this the one way to clear a field does not typecheck.
+  const tsType = fieldToTs(field, schema, modelNames, false) + (type.optional ? ' | null' : '')
   return { name, tsType, optional: true, comment: null }
 }
 

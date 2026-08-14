@@ -26,9 +26,27 @@ index.ts     public API
 - **`/auth/*` deliberately bypasses the Service abstraction** — login cannot be
   gated by login. That is a decision, not an omission.
 - **`schema.ts` is duplicated by the CLI**, in `packages/cli/commands/auth/install.md`.
-  Change one, change both — it is a hand copy and it has drifted before.
+  Change one, change both — it is a hand copy and it has drifted three times.
+  `tests/schema-accessors.test.ts` now compares what the two DECLARE (gate, row
+  policies, field policies) rather than trusting the instruction; comments may
+  differ, an access rule may not.
 - **`cookieAuth: true` works end to end** — the plugin declares the mode via
   `app.http.setAuthCookie('session')` and Junction reads it (FJS-002).
+- **`User` is `@@gate("4.4.4.5")` and the level is not what makes it safe.** A
+  gate is per MODEL, so that alone says *any signed-in caller may write any user
+  row*. The fragment ships the two declarations that bound it:
+  `@@allow('update', id == auth().id || auth().isAdmin)` for whose row, and
+  `@allow('write', auth().isAdmin)` on `role` and `emailVerified` for the columns
+  a resolver grades on — a column the caller can write is not a column a level
+  can be graded from. `8` stays on `Credential` / `Session` / `Verification`,
+  which is what 8 is for: a model nothing outside `asSystem()` has anything to
+  say to. Ruled in `DECISIONS.md` § Access control (2026-08-14).
+- **An app says what `'admin'` means once, in `sessionFields`.** The policies
+  read `auth().isAdmin` — the same standing `FrontierGateGetLevel` and
+  `sessionGateLevel()` grade ADMINISTRATOR(5) from — so an app whose resolver
+  keys on a role string must project it (`{ isAdmin: user.role === 'admin' }`)
+  or the level and the policy disagree, silently, because a policy filters
+  rather than refuses. Both scaffolds and `example/api/app.ts` do this.
 - **This package owns `model User`; apps EXTEND it, and their columns reach the
   session through `sessionFields` — nothing else.** `toContext()` is the single
   place every issued session is built, so the hook covers login,

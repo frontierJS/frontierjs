@@ -22,6 +22,7 @@
     "typecheck": "node ../../scripts/typecheck.mjs",
     "db:ddl": "bun db/generate.js",
     "db:check": "bun db/generate.js --check",
+    "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts",
     "db:seed": "bun db/seed.js",
     "db:tables": "sqlite3 db/basecamp.db '.schema'",
     "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit"
@@ -38,7 +39,7 @@
     "@frontierjs/ui": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "^1.3.14",
     "vite": "^8.0.3"
   },
   "engines": {

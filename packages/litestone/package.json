@@ -86,7 +86,8 @@
     "build:binary:all": "bun scripts/build-binary.js --all --clean",
     "build:lib": "bun scripts/build-lib.js",
     "build:lib:testing": "bun scripts/build-lib.js --with-testing",
-    "typecheck": "node ../../scripts/typecheck.mjs"
+    "typecheck": "node ../../scripts/typecheck.mjs",
+    "verify:studio": "node test/verify-studio-access.mjs"
   },
   "types": "./src/index.d.ts"
 }

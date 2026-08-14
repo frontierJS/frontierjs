@@ -28,7 +28,18 @@ import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { env, DEV_ENCRYPTION_KEY } from './env.ts'
 import { basecampGateLevel }       from './gate.ts'
 
-export type BasecampDb = Awaited<ReturnType<typeof createClient>>
+// db/schema.d.ts is GENERATED from db/schema.lite by `bun run db:types`, and
+// `bun run test` fails if it is stale. audience=system, because this is the
+// server: `Secret.data` is @encrypted and core/credentials.ts reads it through
+// asSystem(), so the client-audience file — which strips protected columns —
+// would type a real read as an error.
+import type { LitestoneClient } from '../../../db/schema.d.ts'
+
+// `createClient`'s own return type is the untyped client: every accessor is a
+// Proxy no static type describes, so every row read out of one was `unknown`
+// and had to be cast at the call site. The generated interface is the same
+// client with the schema's own shapes on it.
+export type BasecampDb = LitestoneClient
 
 const SCHEMA_PATH = new URL('../../../db/schema.lite', import.meta.url).pathname
 
@@ -42,6 +53,9 @@ export async function createBasecampDb(): Promise<BasecampDb> {
       'encrypted with a publicly-known key. Set it: openssl rand -hex 32'
     )
 
+  // The cast is the seam, and it is one line in one file: createClient answers
+  // litestone's own untyped LitestoneClient, and the generated interface is
+  // that same client with THIS schema's shapes on it. Nothing downstream casts.
   return createClient({
     path:          SCHEMA_PATH,
     encryptionKey: env.ENCRYPTION_KEY,
@@ -51,5 +65,5 @@ export async function createBasecampDb(): Promise<BasecampDb> {
     // user, which cannot express *admin of THIS workspace*. Every caller here
     // would grade USER(4) in every workspace, including ones they are not in.
     plugins: [new GatePlugin({ getLevel: basecampGateLevel })],
-  })
+  }) as unknown as BasecampDb
 }

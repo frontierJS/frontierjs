@@ -15,6 +15,187 @@ verify something, it says so.
 
 ---
 
+## `contains` on an array was a substring search wearing `has`'s clothes (2026-08-14)
+
+**`FJS-210`.** `{ tags: { contains: 'x' } }` on a `String[]` compiled to
+`LIKE '%x%'` over the stored `["x","y"]`. It matched — and so did
+`["xylophone"]`, and `contains: '","'` matched every array of two or more
+elements, and `contains: '['` matched all of them. The cases where a substring
+search and `has` agree are exactly the ones that hide the difference. On a
+`Boolean` the same operator answered `[]` in silence, the value being 0/1.
+
+Refused now on the four kinds where the stored text is not the value — array,
+`Json`, `File`, `Boolean` — each naming the operator that was meant. **`Int` and
+`DateTime` deliberately keep the answers they gave**: `{ when: { contains:
+'2024-01' } }` against an ISO column is a real way to ask for a month, and those
+cells are load-bearing in the crossing grid as `ok`. A path INTO a typed `Json`
+column is untouched, because that operand really is text.
+
+**The fix is one map, not one per question.** `buildWhere` already took an
+`arrayFields` Set for an unrelated reason — a bare array means `IN` on a scalar
+and `hasSome` on an array column, and the operand cannot say which. That is the
+same fact: what the column HOLDS. It is a `fieldKinds` Map now, so the builder's
+signature did not grow and `buildArrayMap` is deleted rather than left beside a
+second map of one fact.
+
+**Both `where` refusals became `ValidationError`s**, including the array-operator
+guard that predates this. Junction maps the name to a 400; a bare `Error` is a
+500, which tells the caller the server broke when they asked a column something
+it cannot answer.
+
+Six `210:ref` cells promoted in `matrix.test.ts`. One regression, caught by the
+suite: a schema `view` builds its table by hand and was still handed the old
+`Set`.
+
+Proven by litestone 1985, junction 1044, sierra `test:safety` 5/5, basecamp's own
+suite 72, the matrix 183, typecheck exit 0, and `example`: `verify` 37/37. The
+basecamp browser drive is still blocked — see the entry below, unchanged.
+
+## A sort key that was a serialisation (2026-08-14)
+
+**`FJS-200`: `orderBy` over an array, `Json`, `File` or encrypted column ordered
+rows by the stored TEXT**, and `$checkOrderBy` blessed it. `[10]` sorted before
+`[9]`; a Json document sorted by whichever key serialised first; ciphertext
+reshuffled on every re-encryption. Nothing anywhere refused it, so page 2 of a
+"sorted" list was plausible and wrong.
+
+`sortableKeysFor()` split a model's keys three ways and an array fell into
+`sortable` by default. There is a fourth bucket now — `reason: 'opaque'`, one
+message per kind. **`File` was added on the row's own principle** rather than
+named by it: the stored value is a reference document, the same failure in a
+different type. Junction's `autoSort` reads the new reason and says its own
+sentence, so `$checkOrderBy` stayed a bridge with both sides in step.
+
+**One regression, caught by the existing suite:** an implicit m2m (`tags Tag[]`)
+is an array in the AST and a join table in SQLite, so the array bucket took it
+and `orderBy: { tags: { _count } }` stopped compiling. Claimed as a relation
+first now. The eight `200:ref` cells in `matrix.test.ts` are promoted to `ref`.
+
+**Two things in the tree are broken and are not this** (both landed ~10:20–11:27
+while this was running, both in the parallel session's area):
+
+- **Basecamp cannot boot on a fresh database.** `db/migrations/001_…sql` moved to
+  `db/migrations/main/`, which is right for litestone's runner — but the app boots
+  through Junction's `dbClient.migrate(dir)`, and that globs `*.{sql,ts}` at the
+  TOP level only. It finds zero files, creates `_migrations`, applies nothing, and
+  the API answers `no such table: workspace` with a 200-shaped 500. `bun run
+  verify --reset` dies at the setup probe; a deploy would come up empty. Verified
+  by replicating the harness's own spawn and polling the probe for 60s.
+- **`bun run ci` crashes in its own reporter** — `renderOutput` reads
+  `stdout.trim()` on an undefined stdout (`scripts/ci.mjs:776`). `ci:fast` is
+  fine, and every suite passes run individually.
+
+So this change is proven by: litestone 1975, junction 1040, sierra 836 +
+`test:safety` 5/5, basecamp's own suite 72, the crossing matrix 183, typecheck
+clean with no baseline raised, `example`: `verify` 37/37, and `ci:fast`. The
+basecamp BROWSER drive could not run — see above.
+
+## The path a stranger walks, and the six things on it (2026-08-14)
+
+A review of *what does the happy path look like and what blocks it*, done by
+**running it** rather than reading the register: `fli new` from published
+packages, boot, probe, build. That found more than the register held.
+
+**The finding that reframes the rest.** Every id in `ISSUES.md` is a statement
+about the working tree, and a user's experience is a function of the tree **and
+the registry**, which drift independently. A scaffolded app today cannot log in —
+its `app.ts` and `sierra.config.js` are written for an `apiPrefix` that moves
+`/auth/*`, published auth mounts at `/auth/*` regardless, and `POST
+/api/auth/register` is a 404 reading *Service 'auth' not found*. Also: `fli new`
+tells you to make something answer `/api/health` while the app it wrote answers
+`/health`, and `frontier.config.js` points a deploy's health check at the first —
+which is `FJS-238` alive again on the published side, where it rolls a good
+deploy back. All fixed in the tree, none published. Filed as **`FJS-252`**;
+`fli ws:npm` already asks the registry and nothing runs it.
+
+**Six closed, all verified by running:**
+
+- **`FJS-193`** — `migrate apply` said *no migration files found* about a
+  directory holding a real one. The register named one cause and there were two:
+  basecamp's migration was misnamed `001_…` **and** sat one directory above
+  `migrations/main/`, which is where a schema declaring `database main` is read
+  from. `createTestEnv` reads loosely enough to replay it either way, so 68 green
+  tests never noticed. A directory with candidates and no matches is now a
+  refusal that exits 1; basecamp's migration applies for the first time.
+- **`FJS-157`** — the lockfile converges. Two causes: seven `"latest"` pins (two
+  `@types/bun` copies resolved at once), and `sierra`/`jetty` declaring
+  `@frontierjs/mesa` as a peer with no workspace devDependency, so bun
+  re-resolved it every install and wrote a nested tree carrying mesa's own
+  devDependencies. `--frozen-lockfile` now passes on a pristine copy, and the
+  workflow uses it.
+- **`FJS-036`** — the `scaffold` phase grew the step the row is actually about:
+  `fli scaffold Note` into the installed app, four generated files named
+  individually, then a second build.
+- **`FJS-213`** — the studio smoke test asks for port **0** and reads the bound
+  port back. That needed a product fix too: `cmdStudio` printed the REQUESTED
+  port, so `--port=0` announced `http://localhost:0`.
+- **`FJS-247`** — `verify:public` was three-red for a week. 21/21 now, with the
+  number's reason written beside it: at 4 of 4 the assertion cannot tell an
+  island that filters by `active` from one that renders everything.
+- **`FJS-177`** — already closed by a parallel session; basecamp is green.
+
+**`FJS-009` is narrowed, not closed, and the remainder is not fixable from a
+laptop.** Three of its four gaps are gone — tarball install, deploy, frozen
+lockfile. The workflow has still never been triggered, so the runner's Chrome and
+a genuinely fresh clone stay unproven until a commit reaches GitHub.
+
+**Two things to know:**
+
+- **`FJS-245` was issued twice** by two sessions in one window. The sierra build
+  defect is now `FJS-251`; junction's filtered-restore keeps 245, because
+  `DECISIONS.md` cites it and a settled register should not have ids rewritten
+  under it. Check the highest id in BOTH files immediately before filing.
+- **And `FJS-253` was issued twice, the same day, the same way.** litestone's
+  `$rotateKey` keeps it — that row is CLOSED and cited five times, including a
+  comment in `client.js` and two in the test file. cli's `extractServiceMeta` is
+  now **`FJS-254`**, renumbered because it is still open and carried two
+  citations. **The rule the second collision suggests**: when two rows share an
+  id, renumber the OPEN one with the fewer citations — rewriting an id inside
+  shipped `CHANGES.md` entries and source comments is the expensive direction,
+  and a closed row is a historical record.
+- **`scaffoldAndDeploy` fails in a sandboxed shell** and it is not a deploy
+  defect: the Docker daemon cannot see a private `/tmp`, so `docker build` reports
+  a context path that is plainly there. `FJS_CI_WORKDIR=$HOME/fjs-ci-work` fixes
+  it, and the finding now says so when it detects the shape.
+
+## One translation, made in one place and not the other (2026-08-14)
+
+**`FJS-214`: a `@@allow` comparing an encrypted column denied every row to
+everyone.** `@@allow('read', owner == auth().email)` emitted `"owner" = ?` bound
+with the plaintext while the column held ciphertext. It failed *closed*, which is
+why it lasted: a model nobody can read looks like a table with no data.
+
+A `where` had never had the bug, because `buildWhereWithEncryption` encodes the
+operand first. `policy.js` mentioned encryption nowhere — the same translation,
+owned in one place and absent from the other.
+
+`comparisonEncoderFor()` in the new `packages/litestone/src/core/encryption.js`
+is that owner now; the crypto primitives moved there out of `client.js`, which
+had kept them private, and both callers ask rather than decide. A policy over
+`@hashed` or `@encrypted(deterministic: true)` answers on every operation that
+compiles to a WHERE — verified with rows on **both** sides of the predicate,
+across read, update, delete and create.
+
+**The startup refusal narrowed from a field to a shape.** It used to refuse the
+presence of an encrypted field in any policy, which took the two modes that work
+down with the one that does not. It now names which shape has no answer: plain
+`@encrypted` (a random IV, so nothing can be encoded to match it), any operator
+but `==`/`!=`, and a column compared to a column.
+
+**Two ops are not WHEREs and had to be decided separately.** `create` is
+evaluated in JS against the data as written — plaintext, so every form works,
+and it is exempt. `post-update` is evaluated in JS against the row read *back*,
+where the column is `@guarded(all)` and stripped, so it would compare against
+`undefined` and roll back every write: refused at startup, which is new.
+
+Drives: litestone's own suite, `example`: `verify`, `basecamp`: `verify`,
+`sierra`: `test:safety`, then `bun run ci`. **CI was red on something else** —
+`packages/basecamp` sat in `knownTestFailures` for `FJS-177`, which was fixed
+earlier the same day, and a stale allowance is a failure by CI's own rule. Entry
+removed; that is the only change here outside litestone.
+
+---
+
 ## A bulk write that walked past the state machine (2026-08-14)
 
 **`FJS-044` was filed as an ergonomics gap and was not one.** The row said bulk

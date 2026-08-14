@@ -73,14 +73,22 @@ Specifically confirmed, because these were the open questions:
 - API keys: revocation and per-credential expiry both refuse correctly.
 - `deleteUser` cascades — sessions, credentials, and verifications all reach 0.
 
-**Gates genuinely enforce.** `@@gate("8")` is SYSTEM (`asSystem()` only — level
-table in `litestone/src/core/parser.js:1144`). All four models refused reads and
-writes from both an anonymous client and a `$setAuth`'d normal user, with
-`AccessDeniedError: "User.read" requires SYSTEM access`. This is *not* the
-"gates fail open" failure from `VERIFYING.md` — verified 7/7.
+**Gates genuinely enforce.** The three credential-material models are
+`@@gate("8")` — SYSTEM, `asSystem()` only — and refuse reads and writes from an
+anonymous client and a `$setAuth`'d normal user alike. `User` was 8 too until
+`FJS-170`, which is a level at which an app cannot list its own people; it now
+reads at USER(4) with the two declarations that bound the level rather than
+raise it, and the suite asserts the refusals rather than the levels: a stranger
+is refused by level, one user cannot write another's row, nobody writes their
+own `role` or `emailVerified`, an ADMINISTRATOR does both. This is *not* the
+"gates fail open" failure from `VERIFYING.md` — verified by running.
 
-**The CLI hand-copy is in sync.** `packages/cli/commands/auth/install.md` is
-byte-identical to `schema.ts` for all four models — verified per-model.
+**The CLI hand-copy is in sync, and a test says so now.** It has drifted
+three times, so `tests/schema-accessors.test.ts` parses both copies and compares
+what they DECLARE — gate, row policies, field policies, model for model. Prose
+asking two files to stay together is the thing that failed; comments may differ,
+an access rule may not. Verified by breaking it: dropping the row policy from the
+CLI copy turns the suite red.
 
 Rate limiting works: 5 registers then `429`, keyed per-IP off `ctx.ip`.
 
@@ -233,9 +241,10 @@ was never about the range).
 Was: 7 tests, all on schema fragments and accessor naming, with all 13 IAuth
 methods and all 8 routes untested. Now **64 tests across 3 files**:
 
-- `tests/flows.test.ts` (34) — every IAuth method on its failure paths, plus 5
-  gate-enforcement tests proving `@@gate("8")` refuses anonymous *and*
-  logged-in-user access to all four models.
+- `tests/flows.test.ts` — every IAuth method on its failure paths, plus the
+  Data-boundary block: the three credential models refuse anonymous and
+  signed-in callers alike, and `User`'s ladder is asserted through its
+  refusals — by level, by row, and by field.
 - `tests/routes.test.ts` (23) — the 8 routes against a real `createTestApp()`,
   every status code, rate limiting, and cookie mode.
 - `tests/schema-accessors.test.ts` (7) — unchanged.

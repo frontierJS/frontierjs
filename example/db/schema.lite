@@ -19,7 +19,9 @@
 /// Verification). api/db.ts appends them from `authSchemaFragments()` at
 /// startup rather than pasting a copy here, so there is one definition of them
 /// in the repo instead of two. The browser never sees them, which is correct —
-/// they are @@gate("8") and no UI is allowed to read them.
+/// the three credential-material models are @@gate("8"), and `User` reads at
+/// USER(4) with a row policy and two field policies bounding it: 8 is for a
+/// model nothing outside auth has anything to say to, not for identity.
 
 
 // ─── Databases ────────────────────────────────────────────────────────────

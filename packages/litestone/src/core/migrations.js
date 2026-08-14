@@ -19,6 +19,9 @@ import { generateDDLForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeS
 
 const MIGRATIONS_TABLE = `_litestone_migrations`
 const MIGRATION_FILE   = /^(\d{14})_([a-z0-9_]+)\.(sql|js)$/
+// Anything that was plausibly meant to be a migration. Only used to report what
+// MIGRATION_FILE rejected — never to widen what runs.
+const MIGRATION_CANDIDATE = /\.(sql|js)$/
 
 // ─── Tracking table ───────────────────────────────────────────────────────────
 
@@ -66,6 +69,26 @@ export function listMigrationFiles(dir) {
   return readdirSync(dir)
     .filter(f => MIGRATION_FILE.test(f))
     .sort()
+}
+
+// A `.sql`/`.js` file in the directory that MIGRATION_FILE does not match. The
+// ordering guarantee comes from the 14-digit timestamp, so the pattern cannot be
+// loosened — but a file it rejects has to be named, because the alternative is
+// `apply()` reading "none matched" as "there are none" and a fresh deploy
+// starting against an empty database while reporting success.
+export function unmatchedMigrationFiles(dir) {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter(f => MIGRATION_CANDIDATE.test(f) && !MIGRATION_FILE.test(f))
+    .sort()
+}
+
+// One sentence, so apply/status/verify and the CLI all say the same thing about
+// the same directory.
+export function describeSkipped(skipped) {
+  if (skipped.length === 0) return ''
+  return `${skipped.length} file(s) skipped — a migration is named ` +
+         `<14-digit timestamp>_<lower_snake_label>.sql|.js: ${skipped.join(', ')}`
 }
 
 // ─── CREATE ───────────────────────────────────────────────────────────────────
@@ -205,16 +228,26 @@ function runInTransaction(rawDb, stmts, record = null) {
 export async function apply(db, dir = './migrations', client = null) {
   const absDir  = resolve(dir)
   const files   = listMigrationFiles(absDir)
+  const skipped = unmatchedMigrationFiles(absDir)
 
   if (files.length === 0) {
-    return { applied: [], pending: 0, message: 'no migration files found' }
+    // Files present but none matched is a REFUSAL, not an empty directory. The
+    // two used to return the same "no migration files found" and the same exit
+    // code, which is how a deploy applied nothing and reported ✓.
+    if (skipped.length > 0) {
+      return {
+        applied: [], pending: 0, skipped, unmatched: true,
+        message: `no migration files matched — ${describeSkipped(skipped)}`,
+      }
+    }
+    return { applied: [], pending: 0, skipped, message: 'no migration files found' }
   }
 
   const appliedSet = new Set(appliedMigrations(db).map(m => m.name))
   const pending    = files.filter(f => !appliedSet.has(f))
 
   if (pending.length === 0) {
-    return { applied: [], pending: 0, message: '✓ all migrations already applied' }
+    return { applied: [], pending: 0, skipped, message: '✓ all migrations already applied' }
   }
 
   const results = []
@@ -274,7 +307,7 @@ export async function apply(db, dir = './migrations', client = null) {
       results.push({ file, ok: true, elapsed })
     } catch (e) {
       results.push({ file, ok: false, error: e.message })
-      return { applied: results, pending: pending.length, failed: file, error: e.message }
+      return { applied: results, pending: pending.length, skipped, failed: file, error: e.message }
     }
   }
 
@@ -294,7 +327,7 @@ export async function apply(db, dir = './migrations', client = null) {
     try { db.run('PRAGMA analysis_limit=400'); db.run('ANALYZE') } catch { /* analyze is advisory; never fail migrations on it */ }
   }
 
-  return { applied: results, pending: pending.length }
+  return { applied: results, pending: pending.length, skipped }
 }
 
 // ─── STATUS ───────────────────────────────────────────────────────────────────
@@ -327,6 +360,12 @@ export function status(db, dir = './migrations') {
     }
   }
 
+  // A .sql/.js the name pattern rejected. status(), apply() and verify() read
+  // one list, so a file invisible to one is invisible to none of the others.
+  for (const file of unmatchedMigrationFiles(absDir)) {
+    rows.push({ file, state: 'skipped', applied_at: null, tampered: false, sql: null })
+  }
+
   return rows
 }
 
@@ -357,10 +396,16 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
     }
   }
 
+  // A migration the name pattern rejected is the likeliest explanation for a
+  // drift nothing else accounts for, so it is named here rather than left for
+  // whoever thinks to run `migrate status`.
+  const skipped = rows.filter(r => r.state === 'skipped').map(r => r.file)
+
   return {
     state:   'drift',
     message: '⚠  live db has drifted from schema.lite',
     diff:    summariseDiff(diffResult),
+    ...(skipped.length ? { skipped, note: describeSkipped(skipped) } : {}),
   }
 }
 

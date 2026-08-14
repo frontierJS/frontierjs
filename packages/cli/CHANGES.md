@@ -1,5 +1,171 @@
 # Changes — @frontierjs/cli
 
+## 2026-08-14 — `fli ws:exports` — the published surface, committed
+
+`exports.snapshot.md` at the workspace root: per publishable package, the
+top-level entries its tarball actually contains, every `exports` subpath, `bin`,
+`main` and `types` target marked with whether that tarball holds it, and the
+peer ranges naming a sibling. `--check` byte-compares; the `snapshots` CI phase
+reruns it from the header the file carries.
+
+`FJS-251` broke every npm install past 836 green Sierra tests, because an app in
+this repo resolves a sibling to `packages/<name>/` and never to a `node_modules`
+path. `scaffold` catches that class end to end in about seven seconds; this is
+the cheap half — an entry point `files:` does not publish is decidable from the
+tarball listing alone.
+
+**The listing is asked of the packer**, `bun pm pack --dry-run` per package,
+because npm's `files:` semantics are their own thing (a bare directory name
+means everything under it; README, LICENSE and package.json are always in) and a
+second implementation would disagree with the publish exactly when it mattered.
+**A `*` in an `exports` target is Node's subpath pattern and matches across
+`/`** — read as a shell glob, the first run reported `@frontierjs/ui` as
+shipping none of its 64 components and `@frontierjs/css` none of its stylesheets.
+Top-level entries only, and no versions: a snapshot that moves on every commit or
+every release is one nobody reads on the change that mattered.
+
+## 2026-08-14 — the deploy checks ask litestream's version, not the process table
+
+`FJS-243`, the checking half. Three commands ran `pgrep -x litestream` and
+reported the answer as *replication is healthy*. It is not the same question.
+
+litestream 0.3.x cannot parse the STRICT tables litestone emits. Pointed at a
+litestone database it starts, prints `replicating to:`, and then loops forever
+on `malformed database schema … near "STRICT": syntax error` **without ever
+exiting** — a live process, an empty replica, and every check here agreeing it
+was fine. Demonstrated on this machine, which carries v0.3.4.
+
+`litestreamStatus()` in `deploy/_module.md` is now the one owner, and the three
+callers grade it differently on purpose:
+
+- **`01-preflight`** — a warning. Blocking a deploy on the replication tool is
+  worse than the state it describes, and an operator mid-incident needs the
+  deploy. It cannot be quiet, though: the defect was a check that called this
+  healthy.
+- **`deploy:status`** — says it plainly, with the version.
+- **`deploy:doctor`** — a **failure**. An absent litestream is optional; a
+  running one that replicates nothing is a believed backup that does not exist.
+
+A version it cannot read reports UNKNOWN, never fine — assuming is what the old
+check did. `LITESTREAM_MIN` is a hand copy of litestone's floor in
+`src/tools/replicate.js`: change one, change both. The CLI cannot import it,
+because litestream reaches the server as a binary.
+
+**Two regressions from the `FJS-250` narrowing surfaced here, both invisible to
+the parse sweep.** A command using a `_module.md` helper compiles whether or not
+the module defines it, so only running one says anything:
+
+- **`context.config` was initialised inside the steps runner**, so every command
+  in `commands/deploy/` had it by accident. Narrowing the inheritance left
+  `deploy:doctor` throwing `undefined is not an object` on
+  `context.config.abort = true`. It is per-run scratch and now exists for every
+  command — reading your own scratch object should not require being a pipeline.
+- **`deploy:rollback` and `deploy:setup` reached their steps by *setting*
+  `context.config.stepsDir`**, which only worked because they inherited `_steps/`
+  first. Setting stepsDir redirects a steps run; it does not start one. Both now
+  declare `steps:` in their frontmatter.
+
+**And steps are compiled with their namespace module now.** They were compiled
+with an empty one, so a helper was reachable from the orchestrator and
+`is not defined` from the step beside it — which pushes shared logic into
+whichever step needs it first and leaves the next to copy it. A step is the
+deepest part of a namespace, not a stranger to it.
+
+Verified by driving every deploy command against a fake `ssh` answering as a
+server running v0.3.4, v0.5.16, nothing, and an unparseable version — all four
+graded correctly at all three sites. Two new scenarios in `tests/zz-steps.test.js`
+pin the runtime halves, each checked against a negative control.
+
+## 2026-08-14 — `deploy:local` is a gate: it stops lying, and it can fail
+
+`FJS-250`, found while building CI's `deploy` phase on top of this command.
+Three defects, and each one on its own makes the command useless as a check.
+
+**`_steps/` was inherited by every sibling in its directory.** `runtime.js`
+attached `<dir>/_steps` to any `.md` beside it, and `commands/deploy/` still
+carries the legacy CapRover steps. So `deploy:local` printed its own plan and
+then ran them:
+
+```
+~ Would build: docker build -t demo:local -f deploy/Dockerfile .
+·   [1/3] 01-api
+~ ssh undefined "npm run deploy:api --prefix='undefined'"
+✓ Deployed to undefined in NaNs
+```
+
+The command whose whole purpose is a safe local rehearsal claimed a deployment
+that never happened. `deploy:status` and `deploy:logs` did the same.
+
+**Only the directory's index is the orchestrator now.** A non-index command opts
+in by naming the folder — `steps: _steps-docker` in its frontmatter — and a
+declared folder that does not exist is an error, not a silent skip. Every other
+steps folder in the tree (`db/import`, `db/reset`, `npm/release`,
+`workspace/publish`) sits beside nothing but an index, so none of them moved.
+
+**Every `deploy:local` failure path exited 0.** `log.error` writes a line and
+nothing more; the exit code comes from a thrown error. So a failed health check
+printed `✗ Health check failed`, returned, and the shell saw success — which is
+the one thing a gate may not do. All four paths throw now.
+
+**And `--port` had never worked.** The argv parser types a value by how it
+looks, before the command's declaration is consulted, so `--port 7100` arrived
+at a `type: string` flag as a number and was refused as *must be type string*.
+Fixed at the owner — the value is coerced toward the DECLARED type and then
+checked — which also unbroke `fli deploy:logs --tail 200`, the command's own
+documented example, and `cloudflare:dns`.
+
+Pinned by four scenarios in `tests/zz-steps.test.js` over a new
+`tests/fixtures/sibling-steps/`, each checked against a negative control:
+widening the rule back fails the sibling test.
+
+## 2026-08-14 — `fli scaffold <Model>` is run against a real installed app now
+
+`FJS-036`. The templates had been updated twice and never put through the command
+that uses them. CI's `scaffold` phase packed the working tree, installed a fresh
+app and built it — and stopped one step short of the thing the row is about:
+growing the app.
+
+It now runs `fli scaffold Note --fields 'title:string body:text'` against the
+installed app and builds again. Four generated files across all three realms, each
+named individually rather than trusted to the exit code — `fli scaffold` reports
+success per file, so a step that wrote nothing would otherwise pass:
+
+```
+db/schema.lite                        model Note { … }
+api/src/services/notes.service.ts     the plural accessor
+web/src/resources/Note.mesa           PascalCase singular — Invariant 19
+web/src/routes/notes/index.mesa
+```
+
+Two of those four names are Invariant 19 in executable form. The second build is
+what makes them more than files on disk.
+
+## 2026-08-14 — `auth:install` scaffolded an auth.ts that could not import
+
+Found while aligning the identity ladder, by running the shape the command
+writes rather than reading it. Three defects in one file, each of which fails at
+the first `bun run`:
+
+- `createFjsAuth` and `createFjsAuthPlugin` are not exported by
+  `@frontierjs/auth` — the names are `createLitestoneAuth` and
+  `createAuthPlugin`. `project/_module.md` detected an installed auth by
+  grepping for the same two absent names.
+- `createClient('./db/schema.lite', { … })` — `createClient` destructures a
+  single options object, so the positional form passes no schema at all.
+- `encryption: { key }` is not an option; the key is `encryptionKey`.
+
+Also aligned with the schema the same command writes: the generated `getLevel`
+graded `userType === 'admin'` while `schema.lite`'s row and field policies read
+`auth().isAdmin`, so a level and a policy disagreed about who an administrator
+is — silently, because a policy filters rather than refuses. The resolver now
+grades standing, and the generated `auth.ts` projects the app's own meaning of
+'admin' onto it once, in `sessionFields`.
+
+Verified by running the generated shape end to end against real packages:
+client boots, register and login work, `role: 'admin'` reaches the session as
+`isAdmin`, and an admin can write another user's role while an ordinary caller
+cannot.
+
 ## 2026-08-14 — `fli new --full` installs
 
 `--with litestream` named a package that exists neither on npm nor on disk.

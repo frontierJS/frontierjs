@@ -1,5 +1,375 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-14 — `litestone jsonschema --snapshot` — the client contract, diffable
+
+`generateJsonSchema` is the widest bridge in the repo: Junction validates
+requests against it, Sierra's `field-rules.js` re-checks the same rules in the
+browser, and `<Form>` renders a control from it. Three readers, one document,
+and **nothing breaks when a keyword stops being emitted** — a form just stops
+validating.
+
+`--snapshot` writes `jsonschema.snapshot.md` beside the schema: the `$defs`
+table (a name that disappears is a `$ref` resolving to nothing in a browser),
+every enum's values, and per model the gate, `x-version`, each relation, each
+`@@transitions` move with its own gate, then one row per field — type and
+default, required, `@label`, the keywords a validator branches on, and which
+rule names `x-messages` answers for. Each model closes with what CREATE mode
+accepts, which is the shape `FJS-095` lives in: a required column only the
+server can fill is refused before the request is ever made.
+
+A second RENDERING, not a second generator — the raw JSON is what ships, and
+thousands of lines of it is where a removed keyword hides. `--check` byte-
+compares, through the same `checkSnapshot()` as `access` and `ddl`.
+
+Two emitted shapes the first draft got wrong and now reads: a nullable
+`DateTime` arrives as an `anyOf` with the format on the branch, and a `Json`
+column carries no `type` at all.
+
+## 2026-08-14 — a string operator on a column that is not text
+
+`FJS-210`. `{ tags: { contains: 'x' } }` on a `String[]` compiled to `LIKE '%x%'`
+over the stored `["x","y"]`, so it matched — and matched `["xylophone"]` too,
+while `contains: '","'` matched every array of two or more elements and
+`contains: '['` matched all of them. It looked like `has` and was a substring
+search over a serialisation; the cases where the two agree are exactly the ones
+that hid it. On a `Boolean` the same operator answered `[]`, silently, because
+the value is stored as 0/1.
+
+Refused now, naming the operator that was meant — array (`has`), `Json`
+(`@type(...)` and a path), `File`, `Boolean`. **`Int` and `DateTime` keep the
+answers they already gave**: SQLite's coercion answers what was asked, and
+`{ when: { contains: '2024-01' } }` against an ISO column is a real way to ask
+for a month. A path INTO a typed `Json` column is untouched — that operand is
+text.
+
+**One map, not one per question.** `buildWhere` already took an `arrayFields`
+set for a different reason (a bare array means `IN` on a scalar and `hasSome` on
+an array column — the operand cannot say which). That set is now a
+`fieldKinds` Map of what the column HOLDS, which is the same fact both questions
+need, so the builder's signature did not grow and `buildArrayMap` is gone rather
+than sitting beside a second map of the same thing.
+
+**Both `where`-clause refusals are `ValidationError`s now**, the array-operator
+guard included. Junction maps the name to a 400; they were bare `Error`s, which
+is a 500, and a 500 says the server broke when the caller asked for something
+the column cannot answer.
+
+The six `210:ref` cells in `test/matrix.test.ts` are promoted to `ref`.
+
+## 2026-08-14 — a key rotation carries every reversible column, or refuses
+
+`FJS-253`, found while pinning `FJS-236` and the larger half of it. `$rotateKey`
+re-encrypted `@secret(rotate: true)` fields and then swapped the client's key for
+**all** encryption. Measured across five column kinds, four broke:
+
+```
+@secret                  rotated     reads "T"
+@secret(rotate: false)   untouched   reads null
+@encrypted               untouched   reads null
+@encrypted(det: true)    untouched   reads null, filters 0 rows
+@hashed                  untouched   matches 1 -> 0, permanently
+```
+
+Not a stale-key artefact — the bytes on disk were never rewritten, so a brand-new
+client with the new key could not read them either.
+
+Rotation now carries every key-reversible column, and **refuses before the first
+write** when the schema declares one it cannot. A rotation that rewrites half a
+database and then complains leaves it in two keys with nothing recording which
+rows are in which.
+
+```js
+await db.$rotateKey(newKey)
+// Error: $rotateKey would leave 2 column(s) unreadable and has rotated nothing:
+//   User.pw     — @hashed — one-way, there is no plaintext to re-key …
+//   User.legacy — @secret(rotate: false) — declared excluded from re-encryption
+// Pass { orphan: ['User.pw', 'User.legacy'] } to accept that deliberately.
+```
+
+`orphan` is a **list of names, not a boolean**: a column added later must not
+inherit an acknowledgement made for a different one. `classifyForRotation()` is
+the one answer to *can rotation carry this column*, asked by the refusal and by
+the loop, so the two cannot disagree about which columns exist.
+
+**`@secret(rotate: false)` keeps its name and loses its promise.** The docs said
+it stays *bound to the original encryption key*; one client holds one key and
+nothing retains the old one, so it never did. It is now documented as what it is —
+excluded from re-encryption, and unreadable after a rotation.
+
+A deterministic column stays FILTERABLE across a rotation, not merely readable:
+the where-encoder encodes its operand with the key before comparing, so a column
+re-encrypted in the wrong mode answers 0 rows with a 200 and no warning.
+
+## 2026-08-14 — the encryption key is a cell, not a copy
+
+`FJS-236`. `$rotateKey` ended with `ctx.encKey = newKey` on the root context, and
+every derived client is a spread of it. A spread copies a string by value, so the
+rotation reached the root and no client already handed out — and `read()`'s catch
+turned the resulting GCM failure into `null`, so the field read as **empty**
+rather than as broken.
+
+```
+ctx.enc = { key }        one object, shared by reference through every spread
+```
+
+Read at all ten sites (`client.js` x8, `policy.js` x2). One assignment now
+reaches `asSystem()` — memoised in `_systemProxy`, so it stayed wrong forever —
+`$setAuth()` and `$scopedBy()` alike, and a context added later inherits it
+without anyone remembering to propagate.
+
+`$setAuth` is not memoised, which is why a client made AFTER a rotation always
+worked and one made BEFORE did not. That is the difference that made this look
+intermittent.
+
+**The suite passed over it** because the only assertion was that the ciphertext
+had CHANGED — which a rotation that scrambled every row beyond recovery also
+satisfies. It reads the value back now, and three tests pin the derived clients;
+two were confirmed to fail against a simulated copy-by-value before being kept.
+
+**`FJS-253` is underneath this and is the larger half**: `$rotateKey` rotates
+`@secret` fields and swaps the key for *all* encryption, so a plain `@encrypted`
+column keeps ciphertext written under the old key and becomes unreadable and
+unfilterable. Pinned as asserted-still-broken.
+
+## 2026-08-14 — a column whose stored text is a storage detail is not a sort key
+
+`FJS-200`. `orderBy: { words: 'asc' }` on a `String[]` reached SQLite as an
+`ORDER BY` over the stored document, so rows came back ordered by the string
+`["x","y"]` — `[10]` before `[9]`, and a re-serialised row moving for no reason.
+`$checkOrderBy` answered `[]`, *no problems*, so Junction's `autoSort` passed it
+through and no boundary refused it either.
+
+`sortableKeysFor()` split a model's keys three ways — sortable, relations,
+computed — and an array column fell into `sortable` by default. It now has a
+fourth bucket, `reason: 'opaque'`:
+
+| Kind | Ordering by its text means |
+| --- | --- |
+| `String[]` · `Int[]` · `Enum[]` | the JSON document |
+| `Json`, typed or not | whichever key serialised first |
+| `File` | the storage reference |
+| `@encrypted` | ciphertext — stable only where the IV is derived from the value |
+| `@hashed` | the digest |
+
+**`File` was added on the row's own principle** rather than named by it: the
+stored value is a reference document, which is the same failure wearing a
+different type. Sorting *within* an array stays undefined, deliberately — the
+question was only whether the column may be a sort key at all.
+
+This is the rule `docs/sorting.md` already stated for `@computed` and never
+applied here: a bad sort key returns the right rows in the wrong order, which
+nothing can see, so it throws rather than warning.
+
+Junction reads the new `reason` and says its own sentence, so a 400 still
+separates *no such field* from *not a sort key* — `$checkOrderBy` is a bridge and
+both sides moved together.
+
+**One regression, caught by the existing suite.** An implicit many-to-many
+(`tags Tag[]`) is an array in the AST and a join table in SQLite, so the array
+bucket took it and `orderBy: { tags: { _count: 'asc' } }` stopped compiling. It
+is claimed as a relation first now, where `buildRelationOrderBy` owns the
+grammar.
+
+The eight `200:ref` cells in `test/matrix.test.ts` are promoted to `ref`.
+
+## 2026-08-14 — `litestone types` emitted a client no app could use
+
+Found by wiring it into basecamp, which is the first app to use it. Four
+defects, each one enough to send an app back to `any`:
+
+- **`TableClient` was missing six methods a real accessor has** —
+  `findManyAndCount`, `exists`, `aggregate`, `groupBy`, `query`, `transitions`.
+  basecamp calls `exists` 16 times and `findManyAndCount` 12, so the generated
+  file typed 28 correct calls as errors. A .d.ts that is missing a method is
+  worse than no types: the app either casts the client back to `any` — losing
+  everything the file was for — or stops regenerating it.
+- **`LitestoneClient` was missing six members** — `$scopedBy`, `$checkWhere`,
+  `$checkOrderBy`, `$rotateKey`, `$rawDbs`, `$walStatus`. The two `$check*` are
+  the seam Junction's `autoFilter`/`autoSort` are built on.
+- **`CreateClientOptions` declared `onEvent` twice** — a TS2300 that makes the
+  whole file unusable — and named `encryption: { key }`, which `createClient`
+  does not destructure. The real option is `encryptionKey`, and the wrong shape
+  is an app that boots with no key and fails on its first `@secret`.
+- **A nullable column was typed `T` on write, so clearing one did not
+  typecheck.** An explicit `null` CLEARS and absent leaves the column alone
+  (Invariant 9) — the one way to clear a field was a type error. Create and
+  Update now emit `field?: T | null` for a nullable column, and a required
+  column stays required.
+
+Three tests hold it: two ask a LIVE client what it has and require the emitted
+interface to declare each name — a method added to the client and not to the
+generator now fails — and one pins the options shape, including that no key is
+emitted twice.
+
+
+
+## 2026-08-14 — `litestone ddl`, and a snapshot that names its own generator
+
+The access snapshot's sibling. `litestone ddl` writes `ddl.snapshot.sql` beside
+the schema — every `CREATE TABLE`, index, FTS table, `updatedAt` trigger, join
+table and view, one section per declared database, with `jsonl`/`logger` named
+and skipped. `--check` byte-compares the committed file the way `access` does;
+both now go through one `checkSnapshot()` rather than two copies of the diff.
+
+Access covers a rule nothing below the API can show you. This covers the
+opposite: a name everything above it binds to. Columns are emitted verbatim
+camelCase and `DateTime` as ISO-8601 TEXT, and an app's own tests go through the
+client that changed with the emitter, so a renamed column is invisible in the
+app it breaks.
+
+**Both snapshots now carry a machine-readable header** — `<!-- generated by:
+litestone access --schema schema.lite -->`, `-- generated by: litestone ddl
+--schema schema.lite`. `scripts/ci.mjs`'s `access` phase was one hardcoded
+command; it is now `snapshots`, which walks every committed `*.snapshot.*`,
+reruns the command in its header with `--check` from the file's own directory,
+and refuses a command that is not a known binary with a shell-free argv. A new
+kind of snapshot costs a generator, not a CI edit.
+
+
+## 2026-08-14 — Studio shows the access surface, and says when it has drifted
+
+`deriveAccess()` already returned the whole access surface as an object and had
+exactly one reader — the committed `access.snapshot.md`. That file is good at
+being **reviewed** (the `access` CI phase byte-compares it, so a widened gate
+arrives as a diff) and bad at being **read**: 37 rows of `"4.4.4.5"` answers
+*what does this model require* and never *what can a level-4 caller do*.
+
+**`GET /api/access`** is `deriveAccess()` and nothing else. **Access** panel,
+four views over that one payload: the gate matrix as a grid, policies shown
+beside the gate they compose with, protected fields, and **By level** — pick a
+standing 0–8 and see the whole schema from it, computed with the same
+`expectedVerdict()` the gate ladder is graded against.
+
+**`GET /api/drift`** and a header badge, answering three questions kept apart
+because one "out of date" would blur them: has the schema **file** changed since
+Studio parsed it, is the committed **snapshot** still true, are there **pending**
+migrations. The first matters most and was invisible: Studio parses once at boot,
+so a schema edited in an editor left every panel describing the previous version
+with full confidence. Both the badge and the access panel now read through
+`currentSchemaParse()`, which re-parses only when the bytes differ and keeps the
+last good parse through a half-typed edit.
+
+**No "regenerate snapshot" button, deliberately.** The committed file is a review
+artefact; one click that rewrites it to match whatever the schema now says turns
+that review into a formality. The badge hands back the command instead.
+
+Found while building it: **Studio never opened the panel its URL named.**
+`showTool` was bound to `hashchange` only, so a fresh load of `#query` showed
+Browse while the hash sat there disagreeing — against the file's own note that
+*"a Studio link can name the panel it opens"*.
+
+`bun run verify:studio` drives all of it in a real Chrome against a real server —
+21 assertions, starts and stops its own studio.
+
+
+## 2026-08-14 — `studio --port=0` binds a free port and says which one
+
+`FJS-213`. `cmdStudio` printed the port it was ASKED for, so `--port=0` announced
+`http://localhost:0` — a URL nothing can reach, describing a server that is up.
+It prints `server.port` now.
+
+That makes 0 the right thing for a test to ask for, which is what the defect was
+about: `cli-smoke`'s studio test picked `5100 + Math.random() * 800` from a range
+nothing reserves, and lost the draw twice in four `bun run ci` runs while passing
+3/3 alone. A fixed number would only move the collision.
+
+## 2026-08-14 — a migration file the name pattern rejects is named, not skipped
+
+`FJS-193`. `listMigrationFiles` matches only litestone's own
+`<14-digit>_<lower_snake_label>` name, and `apply()` read the empty list it
+returns as *there are none* rather than *none of these matched*. A directory
+holding one real, hand-named migration therefore reported `✓ no migration files
+found` and exited 0 — a fresh deploy starting against an empty database and
+saying so in the affirmative.
+
+The pattern is not loosened: the ordering guarantee comes from the timestamp.
+What changed is that the rejects are now visible.
+
+```
+unmatchedMigrationFiles(dir)   every .sql/.js MIGRATION_FILE turned down
+describeSkipped(files)         one sentence, so apply/status/verify agree
+```
+
+`apply()` carries `skipped` on every return and sets `unmatched: true` when the
+directory held candidates and none matched — a **refusal**, which the CLI prints
+as `✗` and exits 1 on. The two used to share one tick and one exit code. A
+misnamed file beside three valid ones is reported too, because silence one file
+at a time is the same omission. `status()` gives it a `skipped` row; `verify()`'s
+drift branch names it, since a skipped migration is the likeliest explanation for
+a drift nothing else accounts for.
+
+**`createTestEnv` reads the directory more loosely on purpose, and now says so.**
+It replays a hand-named `001_initial.sql` because a person meant it; it warns once
+per file that `migrate apply` will not. The two readers disagreeing was the state
+this defect lived in — a suite green against a database no deploy could build.
+
+
+## 2026-08-14 — `db/` is a default location for the schema and the config
+
+`litestone access` run from `packages/basecamp` reported *No schema found* about a
+schema that was plainly there. An FJS app keeps the Data realm in `db/` (root
+`README.md` § Project Structure), so an app root is the obvious place to run these
+from — and resolution looked in the cwd and stopped, one directory too high.
+
+Two probes added, cwd still first so an app that puts either at its root wins:
+
+```
+schema:  --schema  →  config schema:  →  beside the config  →  ./schema.lite  →  ./db/schema.lite
+config:  --config  →  ./litestone.config.js  →  ./db/litestone.config.js
+```
+
+The config probe matters as much as the schema one: basecamp's `litestone.config.js`
+is in `db/`, so finding it also resolves `db:` and `migrations:` rather than the
+schema alone. The *No schema found* message now names all four places it looked —
+it listed three, and the one people expected was not among them.
+
+## 2026-08-14 — a policy may compare an encrypted column
+
+`FJS-214`. `@@allow('read', owner == auth().email)` over an encrypted `owner`
+emitted `"owner" = ?` bound with the plaintext address while the column held
+ciphertext, so the owner read their own row and got `[]`. It failed **closed**,
+which is why it survived: a model that denies every row to every caller looks
+exactly like a table with no data.
+
+A `where` had never had the problem, because `buildWhereWithEncryption` rewrites
+the operand to the encoding the column uses before comparing. `policy.js`
+contained no reference to encryption at all — the same translation, made in one
+place and not the other.
+
+**`comparisonEncoderFor()` is now the one owner of that translation**, in a new
+`src/core/encryption.js` that also holds the primitives client.js used to keep
+private. Both callers ask it rather than deciding: `rewriteEncryptedWhere` for a
+filter, `compileSql` for a predicate. They cannot drift apart again, and the
+encoder is chosen once per column kind rather than twice.
+
+So a policy over `@hashed` or `@encrypted(deterministic: true)` answers, on
+every operation that compiles to a WHERE:
+
+```
+model Doc {
+  owner String @hashed
+  @@allow('read',   owner == auth().email)
+  @@allow('update', owner == auth().email)
+}
+```
+
+**The startup refusal stays for the shapes an encoding cannot answer, and now
+says which one.** Plain `@encrypted` stores a random IV, so the same value
+writes different bytes every time and no operand can be encoded to match it; an
+operator other than `==` / `!=` asks for ordering neither encoding preserves;
+and a column compared against a column has no value to encode. Before, the check
+refused the mere presence of the field, which is why the two modes that do work
+were refused along with the one that does not.
+
+`create` is exempt — it is evaluated in JS against the data as written, which is
+still plaintext, so every comparison form works there. `post-update` is refused
+instead, and that is new: it is evaluated in JS too, but against the row read
+**back**, where an encrypted column is `@guarded(all)` and stripped — so the
+comparison would be against `undefined` and would roll back every write.
+
+Verified with rows on both sides of the predicate, in both modes, plus the
+`example` and `basecamp` drives and sierra's `test:safety`.
+
 ## 2026-08-14 — `backup` copied the wrong databases; `replicate` covered one
 
 `FJS-246`, `FJS-242`, `FJS-243`. Found by making `replicate` schema-driven and

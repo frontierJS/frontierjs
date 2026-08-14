@@ -137,7 +137,9 @@ open editor correctly stale after one lands.
 @encrypted(deterministic: true)  IV derived from the value — equality WHERE works, and it reads back
 @hashed                          HMAC-SHA256, one-way — matchable in a WHERE, never readable
 @secret                          @encrypted + @guarded(all) + @log(auditDb)
-@secret(rotate: false)           same but excluded from $rotateKey
+@secret(rotate: false)           same but excluded from $rotateKey — and therefore
+                                 unreadable after one, since the key swap is global.
+                                 $rotateKey refuses while one exists
 ```
 
 ### Field-level policy

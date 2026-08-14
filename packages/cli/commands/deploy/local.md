@@ -24,13 +24,16 @@ flags:
 ---
 
 ```js
+// Every failure below THROWS. `log.error` only writes a line — the exit code
+// comes from a thrown error and nothing else — so these used to report a
+// problem and exit 0, which makes this command unusable as a gate: the CI
+// phase that runs it, and a person reading `echo $?`, both saw success.
 const frontierConfig = await loadFrontierConfig(context.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf) {
-  log.error('No deploy block found in frontier.config.js')
   log.info('Run fli make:deploy to scaffold a deploy config')
-  return
+  throw new Error('No deploy block found in frontier.config.js')
 }
 
 const appId      = deployConf.app_id ?? context.paths.root.split('/').pop()
@@ -48,9 +51,8 @@ const { resolve }    = await import('path')
 
 const dockerfilePath = resolve(context.paths.root, dockerfile)
 if (!existsSync(dockerfilePath)) {
-  log.error(`Dockerfile not found: ${dockerfile}`)
   log.info('Run fli make:deploy to scaffold one, or set deploy.api.dockerfile in frontier.config.js')
-  return
+  throw new Error(`Dockerfile not found: ${dockerfile}`)
 }
 
 const envFilePath = resolve(context.paths.root, envFile)
@@ -76,11 +78,11 @@ if (flag.clean) {
   // Check if test container already exists
   try {
     context.exec({ command: `docker inspect ${container} > /dev/null 2>&1` })
-    log.error(`Container '${container}' already exists`)
     log.info('Stop it first with:  docker rm -f ' + container)
     log.info('Or rerun with:       fli deploy:local --clean')
-    return
-  } catch {
+    throw new Error(`Container '${container}' already exists`)
+  } catch (err) {
+    if (/already exists/.test(err?.message ?? '')) throw err
     // Good — doesn't exist yet
   }
 }
@@ -136,14 +138,13 @@ for (let i = 1; i <= attempts; i++) {
 }
 
 if (!healthy) {
-  log.error(`Health check failed after ${attempts * intervalMs / 1000}s`)
   log.info('')
   log.info('Container logs:')
   echo('')
   context.exec({ command: `docker logs --tail 50 ${container}` })
   echo('')
   log.info(`Stop the container with:  docker rm -f ${container}`)
-  return
+  throw new Error(`Health check failed after ${attempts * intervalMs / 1000}s — http://localhost:${port}${healthPath}`)
 }
 
 log.success(`Health check passed → http://localhost:${port}${healthPath}`)

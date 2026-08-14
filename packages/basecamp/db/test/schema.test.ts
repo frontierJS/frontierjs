@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { parseFile, generateDDL, createClient, GatePlugin, LEVELS } from '../../../litestone/src/index.js'
+import { parseFile, generateDDL, createClient, GatePlugin, LEVELS, listMigrationFiles } from '../../../litestone/src/index.js'
 import { createTestEnv } from '../../../litestone/src/testing.js'
 import { introspect }     from '../../../litestone/src/core/migrate.js'
 // The app's own resolver, not a stand-in. A gate test against a hand-written
@@ -37,7 +37,13 @@ import { USER_STATUSES, WORKSPACE_STATUSES } from '../../api/src/services/hub/hu
 
 const SCHEMA     = join(import.meta.dir, '..', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', 'migrations')
-const MIGRATION  = join(MIGRATIONS, '001_initial_schema.sql')
+// Asked rather than spelled, and asked at the path `migrate apply` reads: this
+// schema declares `database main`, so litestone looks in migrations/main/, and
+// `listMigrationFiles` is the only definition of which files there it will run.
+// A file this finds is a file a deploy applies — which is the whole claim the
+// rest of this file rests on, and was false in two ways at once (FJS-193).
+const MAIN_MIGRATIONS = join(MIGRATIONS, 'main')
+const MIGRATION       = join(MAIN_MIGRATIONS, listMigrationFiles(MAIN_MIGRATIONS)[0] ?? '')
 const ENC_KEY    = '0'.repeat(64)
 
 // Every environment this file opens, so nothing is left holding a connection.
@@ -185,6 +191,19 @@ describe('schema.lite', () => {
 // ─── The generated migration ─────────────────────────────────────────────────
 
 describe('generated migration', () => {
+  test('is where `litestone migrate apply` looks, under a name it matches', () => {
+    // The claim every other test here rests on. It was false in two ways at
+    // once and nothing said so: the file was named 001_… (which the name
+    // pattern rejects) and sat directly under migrations/ (while a schema
+    // declaring `database main` is read from migrations/main/). createTestEnv
+    // reads the directory loosely, so the suite was green against a database a
+    // deploy could not build — `migrate apply` reported "no migration files
+    // found" and exited 0. FJS-193.
+    const found = listMigrationFiles(MAIN_MIGRATIONS)
+    expect(found.length).toBeGreaterThan(0)
+    expect(existsSync(MIGRATION)).toBe(true)
+  })
+
   test('is in sync with schema.lite', () => {
     // Same comparison `bun run db:check` makes — a hand-edit to the SQL fails here.
     const r      = parseFile(SCHEMA)
@@ -403,7 +422,7 @@ describe('the gate ladder', () => {
     db.$close()
   })
 
-  test('isSystemAdmin outranks membership — and still cannot read User', async () => {
+  test('isSystemAdmin outranks membership', async () => {
     const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
@@ -412,10 +431,66 @@ describe('the gate ladder', () => {
     // No membership anywhere, so the workspace ladder gives nothing.
     const sa = db.$setAuth({ id: 'u9', userId: 'u9', isSystemAdmin: true })
     expect((await sa.secret.findMany({ limit: 1 })).length).toBe(1)
-    // The identity models are @@gate("8"): the hub's own screens read them
-    // through asSystem() for exactly this reason, and that is auth's design
-    // rather than a workaround.
-    await expect(sa.user.findMany({ limit: 1 })).rejects.toThrow(/SYSTEM access/)
+    // The three models holding credential material stay SYSTEM — a level no
+    // request reaches — while `User` reads at 4, because an app's own screens
+    // list its people. The hub still reads through asSystem(), which is what
+    // makes it a hub rather than a screen every developer can open.
+    await expect(sa.credential.findMany({ limit: 1 })).rejects.toThrow(/SYSTEM access/)
+    await expect(sa.session.findMany({ limit: 1 })).rejects.toThrow(/SYSTEM access/)
+    db.$close()
+  })
+
+  // `User` gates read AND update at USER(4) — auth's ladder, so that an app can
+  // list its people and a person can edit their own profile. A gate is per
+  // MODEL, so on its own that is every signed-in caller writing every other
+  // person's row, including the column their own level is graded from. These
+  // three are what makes the level safe to hold, and none of them is a level:
+  // a row policy for whose row, and a field write policy for which columns.
+  test('a member reads every person and writes only their own row', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const other = await sys.user.create({ data: { email: 'other@example.com', name: 'Other' } })
+    await sys.user.create({ data: { id: 'u1', email: 'u1@example.com', name: 'Me' } })
+
+    const dev = db.$setAuth(as('developer'))
+    expect((await dev.user.findMany({ limit: 10 })).length).toBe(2)
+    expect((await dev.user.update({ where: { id: 'u1' }, data: { displayName: 'mine' } })).displayName)
+      .toBe('mine')
+
+    // A policy FILTERS where a gate refuses, so the cross-row write matches no
+    // row and answers null rather than throwing. Reading the row back is what
+    // proves it, not the return value.
+    await dev.user.update({ where: { id: other.id }, data: { name: 'rewritten' } })
+    expect((await sys.user.findUnique({ where: { id: other.id } })).name).toBe('Other')
+    db.$close()
+  })
+
+  test('nobody promotes themselves onto the hub tier', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    await sys.user.create({ data: { id: 'u1', email: 'u1@example.com', name: 'Me' } })
+
+    // Every column basecampGateLevel() reads is a column the caller must not
+    // write: isSystemAdmin IS the hub tier, and `suspended` is the status that
+    // grades STRANGER — a caller who can lift their own suspension is not
+    // suspended. `kind` decides who may own an API key.
+    const dev = db.$setAuth(as('developer'))
+    await dev.user.update({ where: { id: 'u1' }, data: {
+      isSystemAdmin: true, status: 'active', kind: 'bot', displayName: 'ok',
+    } })
+    const row = await sys.user.findUnique({ where: { id: 'u1' } })
+    expect(row.isSystemAdmin).toBe(false)
+    expect(row.status).toBe('pending_verification')
+    expect(row.kind).toBe('human')
+    // A field write policy DROPS the field; the rest of the write lands, which
+    // is why the assertion above is the one that matters.
+    expect(row.displayName).toBe('ok')
+
+    // The hub's own path — asSystem() — is above all of it. That is how the
+    // first system administrator is made in /setup and every later one granted
+    // from /hub/users/.
+    expect((await sys.user.update({ where: { id: 'u1' }, data: { isSystemAdmin: true } })).isSystemAdmin)
+      .toBe(true)
     db.$close()
   })
 

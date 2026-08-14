@@ -12,6 +12,17 @@ import { execSync } from 'child_process'
 const { released, repo, startTime } = context.config
 if (!released?.length) return
 
+// --no-push is handled HERE rather than as a `skip:` predicate so the run still
+// reports what it did, and says what is left to do. A skipped step prints one
+// line about itself and nothing about the release.
+if (flag['no-push']) {
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+  log.success(`Published ${released.length} package(s) in ${elapsed}s`)
+  log.info('  --no-push: the release commit and tags are local. Push with:')
+  log.info(`    git -C ${repo ?? released[0].dir} push origin HEAD --tags`)
+  return
+}
+
 // One repo means one push. The old per-package loop pushed the same branch
 // once per member, so a sixteen-package release was fifteen no-ops.
 const targets = repo

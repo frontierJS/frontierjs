@@ -54,6 +54,26 @@ field == value        field != value  field > value  field >= value  field < val
 expr1 && expr2        expr1 || expr2  !expr
 ```
 
+### Comparing an encrypted column
+
+A predicate over an encoded column encodes its operand the same way the column
+was encoded, which is the rewrite a `where` gets — so a `@hashed` or
+`@encrypted(deterministic: true)` column is comparable in a policy:
+
+```
+model Doc {
+  owner String @hashed
+  @@allow('read', owner == auth().email)
+}
+```
+
+Plain `@encrypted` is not: a random IV means the same value stores different
+bytes on every write, so no operand can be encoded to match it. That, a
+comparison other than `==` / `!=`, and a column compared against another column
+are all refused when the client is built rather than compiling to a predicate no
+row satisfies — see [filtering.md](filtering.md) § An encoded column inside a
+policy for the table and the `create` / `post-update` exceptions.
+
 ### `now()` and the clock
 
 `now()` resolves **once per policy evaluation**, not once per occurrence — so
@@ -259,6 +279,53 @@ Missing keys cascade: `read` defaults to `STRANGER` (0), `create` from `read`,
 
 Both forms compile to the same gate; use whichever reads better — new schemas
 and all documentation examples use the named form.
+
+## The identity models — the one recipe worth copying
+
+`8` is not a strong `5`. It means *nothing outside `asSystem()` has anything to
+say to this model*, which is true of a table holding credential material and
+false of the table your own screens list. `@frontierjs/auth` ships the
+distinction:
+
+```prisma
+model User {
+  emailVerified  Boolean  @default(false) @allow('write', auth().isAdmin)
+  role           String   @default("user") @allow('write', auth().isAdmin)
+
+  @@gate("4.4.4.5")
+  @@allow('update', id == auth().id || auth().isAdmin)
+}
+
+model Credential { …  @@gate("8") }   // the password hash, the API key HMAC
+model Session    { …  @@gate("8") }   // the bearer token
+model Verification { … @@gate("8") }  // the reset token
+```
+
+Three declarations answering three different questions, and **you need all
+three**:
+
+| Declaration | Question | What it does when it refuses |
+|---|---|---|
+| `@@gate` | what KIND of caller | throws, naming the model and the level |
+| `@@allow` | WHOSE row | filters — the write matches nothing and answers |
+| field `@allow('write', …)` | WHICH columns | drops the field, keeps the rest of the write |
+
+A gate is per model, never per row, so `@@gate("4.4.4.5")` on its own says *any
+signed-in caller may write any user row*. That is not an argument for raising
+the level — at `8` an app cannot list its own people, and every screen that
+needs to ends up in `asSystem()`, where nothing is enforced at all. It is an
+argument for declaring the other two.
+
+**The field policies are the part people leave out, and they are the security
+half.** Whatever your `getLevel` reads — `role`, `isAdmin`, a `status` column, a
+tenant's membership — is a column that must not be writable by the caller being
+graded, or the ladder grades a caller on a value the caller chose. Write the
+policy against the same standing the level is graded from (`auth().isAdmin`
+here) so the two cannot disagree about who an administrator is.
+
+Because a policy filters rather than throws, **the refused write returns
+normally**. Test it by reading the row back through `asSystem()`; the return
+value cannot tell you.
 
 ## Combining both systems
 

@@ -17,6 +17,7 @@ import { createCaravan }     from '@frontierjs/caravan'
 
 import { env }                       from './env.ts'
 import { buildInfra }                from '../infra/index.ts'
+import { apply }                                 from '@frontierjs/litestone'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './db.ts'
 import { createSecretResolver }          from './credentials.ts'
@@ -50,9 +51,25 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   //
   // Migrations run first, so the Litestone client opens a database whose
   // tables already exist.
-  const migrationsDir = new URL('../../../db/migrations', import.meta.url).pathname
+  //
+  // Applied by LITESTONE's runner, not junction's `dbClient.migrate(dir)`.
+  // Two reasons, both learned the hard way (FJS-193):
+  //
+  //   · Migrations live per DATABASE — `db/migrations/main/` — because the
+  //     schema declares `database main`. junction's runner globs one level and
+  //     is blind to the subdirectory.
+  //   · It answers "nothing to do" for a directory it cannot read, so a boot
+  //     against a fresh database created no tables and said nothing; the app
+  //     then answered `no such table: workspace` on the first request.
+  //     Litestone's `apply` separates *no files* from *no files MATCHED*.
+  //
+  // SQL only here: a JS migration is handed a Litestone client, and the client
+  // is built below — against the database these migrations create.
+  const migrationsDir = new URL('../../../db/migrations/main', import.meta.url).pathname
   const dbClient      = createDatabase({ path: env.DATABASE_URL, log: env.DB_LOG })
-  await dbClient.migrate(migrationsDir)
+  const migrated      = await apply(dbClient.db, migrationsDir)
+  if (migrated.unmatched)
+    throw new Error(`[basecamp] ${migrated.message} — db/migrations/main`)
 
   const rawDb = dbClient.db
   const db    = await createBasecampDb()
@@ -375,8 +392,11 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
         return ctx.json({ message: 'Reset not available in production' }, 403)
 
       // Order matters: children before parents, since FKs are ON.
+      // Indexed by name: the accessors are known, the LOOP is what makes this
+      // dynamic, so the cast is here rather than a per-accessor branch.
+      const byName = sys as unknown as Record<string, { deleteMany(args: object): Promise<unknown> }>
       for (const model of ['workspaceMember', 'session', 'credential', 'verification', 'workspace', 'user', 'account'])
-        await sys[model].deleteMany({})
+        await byName[model].deleteMany({})
 
       logger.warn('setup data wiped via DELETE /setup (dev only)')
       return ctx.json({ ok: true, message: 'Setup data cleared — reload to run setup again' })

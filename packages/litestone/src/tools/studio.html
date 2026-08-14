@@ -135,6 +135,7 @@
   padding:        0;
   overflow:       hidden;
   min-inline-size: 0;
+  background: #011;
 }
 
 .view:not([hidden]) {
@@ -836,6 +837,11 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
   <span class="badge muted" id="dbPath">—</span>
   <button class="badge info" id="tenantBadge" hidden title="Return to the main project" onclick="tenantClose()">🏢 —</button>
   <span class="badge warning" id="readonlyBadge" hidden>read-only</span>
+  <!-- Says something has MOVED; the panel it opens says what. Three separate
+       drifts share it (schema file, access snapshot, migrations) and the title
+       names whichever ones are live, because "out of date" about three
+       different questions is not an answer to any of them. -->
+  <button class="badge warning" id="driftBadge" hidden onclick="driftOpen()"></button>
   <div class="cluster" id="dbFilterPills" hidden></div>
   <div class="cluster" id="headerStats">
     <span class="text-muted"><b id="hdrSize">—</b> size</span>
@@ -872,6 +878,10 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
       <li><a class="navlink" id="navSchema" href="#schema">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
         Schema
+      </a></li>
+      <li><a class="navlink" id="navAccess" href="#access">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Access
       </a></li>
       <li><a class="navlink" id="navMigrations" href="#migrations">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
@@ -1027,6 +1037,23 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
   </article>
 
   <!-- ── Migrations ─────────────────────────────────────────────────────── -->
+  <article class="view" id="panelAccess" hidden>
+    <div class="bar">
+      <strong>Access</strong>
+      <div class="cluster" role="tablist" aria-label="Access view">
+        <button class="pill" id="acTabGates"    role="tab" onclick="acShow('gates')">Gates</button>
+        <button class="pill" id="acTabLevel"    role="tab" onclick="acShow('level')">By level</button>
+        <button class="pill" id="acTabPolicies" role="tab" onclick="acShow('policies')">Policies</button>
+        <button class="pill" id="acTabFields"   role="tab" onclick="acShow('fields')">Fields</button>
+      </div>
+      <div class="spacer"></div>
+      <span class="text-muted" id="acCounts"></span>
+    </div>
+    <div class="data-grid-wrap stack" id="acPanel">
+      <div class="empty"><span class="spinner"></span> Loading…</div>
+    </div>
+  </article>
+
   <article class="view" id="panelMigrations" hidden>
     <div class="bar">
       <strong>Migrations</strong>
@@ -1315,6 +1342,13 @@ async function boot() {
   multiDb   = info.multiDb   || false
   databases = info.databases || []
 
+  // The badge is polled rather than pushed: the schema file is edited OUTSIDE
+  // Studio (an editor, a branch switch), so there is no event to listen for.
+  // 5s is slow enough to cost nothing and fast enough that the answer is not
+  // stale by the time anyone looks at it.
+  driftLoad()
+  setInterval(driftLoad, 5000)
+
   // Header path — show "Multi-DB" when schema has multiple databases
   document.getElementById('dbPath').textContent = multiDb
     ? `Multi-DB (${databases.length} databases)`
@@ -1338,6 +1372,13 @@ async function boot() {
 
   // Load users into auth picker
   loadAuthUsers()
+
+  // Open the panel the URL names. showTool was bound to `hashchange` only, so
+  // a link to #query landed on Browse and the hash sat there disagreeing with
+  // the page — the file's own note says "a Studio link can name the panel it
+  // opens", and until now it could not. A bare load has no hash and falls to
+  // the default.
+  showTool(location.hash.slice(1) || 'browse')
 }
 
 
@@ -2474,6 +2515,259 @@ async function loadMigrations() {
   document.getElementById('btnMigAuto').hidden   = !hasDiff
 }
 
+// ── Access ────────────────────────────────────────────────────────────────────
+//
+// One payload (GET /api/access = deriveAccess) read four ways. The snapshot
+// committed beside the schema is the same object rendered as markdown; that one
+// is for REVIEW — a widened gate has to be explained in a diff — and this one is
+// for reading. Both, never either, which is why nothing here writes the file.
+//
+// Tone carries meaning in @frontierjs/css, so it is spent only where there is
+// something to say: STRANGER means unauthenticated callers reach this, SYSTEM
+// and LOCKED mean nothing short of asSystem() does. The levels in between are
+// the ordinary case and are left muted — a gradient of colour across 0–9 would
+// be editorialising about which gate is "good".
+
+let _access = null
+let _acView = 'gates'
+let _acLevel = 4
+
+const AC_OPS = ['read', 'create', 'update', 'delete']
+
+// Mirrors LEVELS in plugins/gate.js. A hand copy, like sessionGateLevel's —
+// Studio is a browser page and cannot import the module.
+const AC_LEVELS = ['STRANGER','VISITOR','READER','CREATOR','USER','ADMINISTRATOR','OWNER','SYSADMIN','SYSTEM','LOCKED']
+
+function acLevelLabel(n) { return AC_LEVELS[n] ?? `LEVEL_${n}` }
+
+// The same predicate access.js grades the gate ladder with. Restating it is the
+// one thing this file must get exactly right, so it is three lines and no more.
+function acVerdict(required, level) {
+  if (required === 9) return false                 // LOCKED — no exceptions
+  if (required === 8) return level === 8           // SYSTEM — asSystem() only
+  return level >= required
+}
+
+function acTone(required) {
+  if (required <= 1) return 'warning'              // reachable without signing in
+  if (required >= 8) return 'info'                 // asSystem() or nothing
+  return 'muted'
+}
+
+async function acInit() {
+  if (_access) { acRender(); return }
+  const panel = document.getElementById('acPanel')
+  try {
+    _access = await api('/access')
+    if (_access.error) throw new Error(_access.error)
+    acRender()
+  } catch (e) {
+    panel.innerHTML = `<div class="alert danger"><div class="alert-content">${esc(e.message)}</div></div>`
+  }
+}
+
+function acShow(view) { _acView = view; acRender() }
+
+function acRender() {
+  if (!_access) return
+  const c = _access.counts
+  document.getElementById('acCounts').textContent =
+    `${c.models} models · ${c.gated} gated · ${c.unrestricted} unrestricted · ` +
+    `${c.policied} policied · ${c.protected} with protected fields`
+
+  for (const v of ['gates','level','policies','fields']) {
+    const tab = document.getElementById('acTab' + cap(v === 'level' ? 'level' : v))
+    if (tab) tab.setAttribute('aria-selected', String(v === _acView))
+  }
+
+  const panel = document.getElementById('acPanel')
+  panel.innerHTML =
+    _acView === 'gates'    ? acGates()
+    : _acView === 'level'  ? acByLevel()
+    : _acView === 'policies' ? acPolicies()
+    : acFields()
+}
+
+// ── Gates ──
+// A grid rather than the snapshot's table of "4.4.4.5" strings: the useful
+// question is which model breaks the pattern its neighbours follow, and that is
+// a glance in a grid and a careful read in a column of numbers.
+function acGates() {
+  const gated = _access.models.filter(m => m.gate)
+  const open  = _access.models.filter(m => !m.gate)
+
+  const rows = gated.map(m => `
+    <tr>
+      <td><b>${esc(m.name)}</b></td>
+      ${AC_OPS.map(op => {
+        const n = m.gate[op]
+        return `<td><span class="badge ${acTone(n)}" title="${esc(acLevelLabel(n))} — level ${n}">${n} ${esc(acLevelLabel(n))}</span></td>`
+      }).join('')}
+      <td class="text-muted"><code>${esc(m.gateSource)}</code></td>
+    </tr>`).join('')
+
+  const openNote = open.length
+    ? `<div class="alert warning"><div class="alert-content">
+         <b>${open.length} model${open.length === 1 ? '' : 's'} declare no <code>@@gate</code></b> —
+         ${open.map(m => esc(m.name)).join(', ')}. A model with no gate is open at this layer.
+       </div></div>`
+    : ''
+
+  return openNote + `
+    <table class="table">
+      <thead><tr><th>Model</th>${AC_OPS.map(o => `<th>${o}</th>`).join('')}<th>declared</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`
+}
+
+// ── By level ──
+// The question the markdown file cannot answer, and the reason this panel is
+// worth building: pick a standing, see the whole schema from it.
+function acByLevel() {
+  const gated = _access.models.filter(m => m.gate)
+  const ladder = AC_LEVELS.slice(0, 9).map((label, n) =>
+    `<button class="pill${n === _acLevel ? '' : ' outlined'}" onclick="acSetLevel(${n})">${n} ${esc(label)}</button>`
+  ).join('')
+
+  const rows = gated.map(m => `
+    <tr>
+      <td><b>${esc(m.name)}</b></td>
+      ${AC_OPS.map(op => {
+        const allowed = acVerdict(m.gate[op], _acLevel)
+        return `<td>${allowed
+          ? '<span class="badge success">allow</span>'
+          : `<span class="badge muted" title="needs level ${m.gate[op]} — ${esc(acLevelLabel(m.gate[op]))}">deny</span>`}</td>`
+      }).join('')}
+    </tr>`).join('')
+
+  const permitted = gated.reduce((n, m) => n + AC_OPS.filter(op => acVerdict(m.gate[op], _acLevel)).length, 0)
+  const total     = gated.length * AC_OPS.length
+
+  return `
+    <div class="cluster" style="padding:.5rem 0">${ladder}</div>
+    <div class="alert info"><div class="alert-content">
+      At <b>${_acLevel} ${esc(acLevelLabel(_acLevel))}</b>, <b>${permitted}</b> of ${total}
+      model-operations are permitted by <code>@@gate</code>.
+      Row policies (<code>@@allow</code>/<code>@@deny</code>) filter on top of this and are not
+      evaluated here — they need a principal, not a level. See <b>Policies</b>.
+    </div></div>
+    <table class="table">
+      <thead><tr><th>Model</th>${AC_OPS.map(o => `<th>${o}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`
+}
+
+function acSetLevel(n) { _acLevel = n; acRender() }
+
+// ── Policies ──
+// Shown beside the gate on purpose: a gate REFUSES and a policy FILTERS, so
+// "gate passes, policy excludes you" is an empty screen with a 200 rather than
+// a 401. The snapshot keeps them in separate sections; the confusion they cause
+// is exactly that they compose.
+function acPolicies() {
+  const withPolicies = _access.models.filter(m => Object.keys(m.policies).length)
+  if (!withPolicies.length)
+    return `<div class="empty">No model declares <code>@@allow</code> or <code>@@deny</code>.</div>`
+
+  return withPolicies.map(m => `
+    <article class="card outlined">
+      <div class="surface-header">
+        <span><b>${esc(m.name)}</b></span>
+        ${m.gate ? `<span class="text-muted">gate <code>${esc(m.gateSource)}</code></span>` : ''}
+      </div>
+      <table class="table">
+        <thead><tr><th>Operation</th><th>Rule</th><th>Predicate</th></tr></thead>
+        <tbody>${Object.entries(m.policies).map(([op, p]) => [
+          ...p.allows.map(a => `<tr><td>${esc(op)}</td><td><span class="badge success">allow</span></td><td><code>${esc(a.expr)}</code>${a.message ? `<br><span class="text-muted">${esc(a.message)}</span>` : ''}</td></tr>`),
+          ...p.denies.map(d => `<tr><td>${esc(op)}</td><td><span class="badge danger">deny</span></td><td><code>${esc(d.expr)}</code>${d.message ? `<br><span class="text-muted">${esc(d.message)}</span>` : ''}</td></tr>`),
+        ].join('')).join('')}</tbody>
+      </table>
+    </article>`).join('')
+}
+
+// ── Fields ──
+function acFields() {
+  const withFields = _access.models.filter(m => m.fields.length)
+  if (!withFields.length)
+    return `<div class="empty">No field declares protection.</div>`
+
+  const rows = withFields.flatMap(m => m.fields.map(f => `
+    <tr>
+      <td><b>${esc(m.name)}</b></td>
+      <td><code>${esc(f.name)}</code></td>
+      <td>${f.protection ? `<span class="badge info">${esc(f.protection)}</span>` : ''}</td>
+      <td>${f.allows.map(a => `<code>@allow('${esc(a.operations.join("','"))}', ${esc(a.expr)})</code>`).join('<br>')}</td>
+    </tr>`)).join('')
+
+  return `
+    <div class="alert info"><div class="alert-content">
+      <code>@guarded</code> needs a system context. <code>@encrypted</code>/<code>@secret</code> are
+      ciphertext at rest. <code>@hashed</code> is one-way — matchable, never readable.
+      A field <code>@allow</code> hides the value rather than refusing the row.
+    </div></div>
+    <table class="table">
+      <thead><tr><th>Model</th><th>Field</th><th>Protection</th><th>Field policy</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`
+}
+
+// ── Drift ─────────────────────────────────────────────────────────────────────
+//
+// Three questions kept apart. `file` is checked first and matters most: Studio
+// parses the schema once at boot, so a file edited since then leaves every panel
+// describing the previous version with full confidence. The other two are read
+// THROUGH the current file (see currentSchemaParse on the server), so they stay
+// answers about what is on disk rather than about what Studio remembers.
+//
+// Deliberately NOT offered here: a "regenerate snapshot" button. The committed
+// snapshot is a review artefact — a widened gate has to be explained in a diff —
+// and one click that rewrites it to match whatever the schema now says turns
+// that review into a formality. The command is handed back instead.
+
+let _drift = null
+
+async function driftLoad() {
+  try {
+    _drift = await api('/drift')
+    driftRender()
+  } catch { /* a failed poll is not worth a toast every 5s */ }
+}
+
+function driftRender() {
+  const badge = document.getElementById('driftBadge')
+  if (!_drift) { badge.hidden = true; return }
+
+  const parts = []
+  if (_drift.file?.changed)                     parts.push('schema file edited since Studio started')
+  if (_drift.snapshot?.exists === false)        parts.push('no access snapshot committed')
+  else if (_drift.snapshot?.current === false)  parts.push('access snapshot is stale')
+  const m = _drift.migrations || {}
+  if (m.pending)  parts.push(`${m.pending} migration${m.pending === 1 ? '' : 's'} pending`)
+  if (m.modified) parts.push(`${m.modified} migration file${m.modified === 1 ? '' : 's'} modified after apply`)
+  if (m.orphaned) parts.push(`${m.orphaned} applied migration${m.orphaned === 1 ? '' : 's'} with no file`)
+
+  badge.hidden = parts.length === 0
+  if (!parts.length) return
+  badge.textContent = `⚠ ${parts.length} drift`
+  badge.title = parts.join('\n')
+}
+
+// The badge points at whichever panel owns the answer. File drift has no panel
+// of its own — it is answered by reloading, which is what re-reads the schema.
+function driftOpen() {
+  if (!_drift) return
+  if (_drift.file?.changed) {
+    if (confirm('The schema file has changed since Studio started.\n\nReload to read it?')) location.reload()
+    return
+  }
+  if (_drift.snapshot && _drift.snapshot.current === false) {
+    alert(`The committed access snapshot no longer matches the schema.\n\n` +
+          `${_drift.snapshot.path}\n\nRegenerate and review the diff with:\n\n  ${_drift.snapshot.command}`)
+    return
+  }
+  showTool('migrations')
+}
+
 // ── Migration actions ─────────────────────────────────────────────────────────
 
 async function migApplyPending() {
@@ -2751,7 +3045,7 @@ async function loadStats() {
 
 // ── Tool navigation ───────────────────────────────────────────────────────────
 
-const TOOLS = ['browse','query','schema','migrations','stats','repl','qlog','tenants','transform','perf','lite']
+const TOOLS = ['browse','query','schema','access','migrations','stats','repl','qlog','tenants','transform','perf','lite']
 
 // The tool is in the location hash, so back/forward work and a Studio link can
 // name the panel it opens. The nav is anchors for the same reason: a <div
@@ -2766,6 +3060,7 @@ function showTool(tool) {
     if (t === tool) link.setAttribute('aria-current', 'page')
     else            link.removeAttribute('aria-current')
   }
+  if (tool === 'access')     acInit()
   if (tool === 'migrations') loadMigrations()
   if (tool === 'stats')      { loadStats(); loadDiskUsage(); renderRotateKey() }
   if (tool === 'transform')  txInit()

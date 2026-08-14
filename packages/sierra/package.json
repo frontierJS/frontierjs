@@ -20,6 +20,9 @@
     "./presence": "./src/presence/index.js",
     "./devtools": "./src/devtools/index.js"
   },
+  "bin": {
+    "sierra": "./src/tools/cli.js"
+  },
   "scripts": {
     "test": "vitest run",
     "test:safety": "bun tests/static-safety-real.mjs",
@@ -32,7 +35,9 @@
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
+    "@frontierjs/junction": "workspace:*",
     "@frontierjs/litestone": "workspace:*",
+    "@frontierjs/mesa": "workspace:*",
     "happy-dom": "^20.11.1",
     "vite": "^8.0.3",
     "vitest": "^4.1.2"

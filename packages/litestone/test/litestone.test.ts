@@ -5438,6 +5438,137 @@ describe('@secret field attribute', () => {
     expect(statsAfter.token).toMatch(/^v1\./)
     expect(statsAfter.token).not.toBe(statsBefore.token)
 
+    // And it is still the value that was written. Asserting only that the
+    // ciphertext MOVED is satisfied by a rotation that scrambled every row
+    // beyond recovery, which is what let FJS-236 live here for as long as it
+    // did — the one read-back test built a brand-new client, the single path
+    // that always worked.
+    expect(((await db.asSystem().secret.findFirst({})) as any).token).toBe('rotate-me')
+
+    db.$close()
+  })
+
+  // ── The key is a cell, not a copy (FJS-236) ──────────────────────────────
+  //
+  // Every derived client — asSystem(), $setAuth(), $scopedBy() — is a spread of
+  // the root context. A spread copies a string by VALUE, so `ctx.encKey =
+  // newKey` updated the root and nothing else, and read()'s catch turned the
+  // resulting GCM failure into `null`: the field read as EMPTY rather than as
+  // broken. Each of these is a client that existed BEFORE the rotation.
+
+  test('$rotateKey — the client that rotated can still read what it re-encrypted', async () => {
+    const db  = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-self', { encryptionKey: ENC_KEY })
+    const sys = db.asSystem()                       // memoised, and taken FIRST
+    await sys.secret.create({ data: { id: 1, token: 'tok-abc' } })
+    expect(((await sys.secret.findUnique({ where: { id: 1 } })) as any).token).toBe('tok-abc')
+
+    await db.$rotateKey(NEW_KEY)
+
+    // The proxy handed out before the rotation, and a fresh one: asSystem() is
+    // memoised in `_systemProxy`, so these are the same object and both used to
+    // answer null.
+    expect(((await sys.secret.findUnique({ where: { id: 1 } })) as any).token).toBe('tok-abc')
+    expect(((await db.asSystem().secret.findUnique({ where: { id: 1 } })) as any).token).toBe('tok-abc')
+    db.$close()
+  })
+
+  test('$rotateKey — a scoped client made before the rotation reads through it', async () => {
+    // $setAuth is NOT memoised, so a client made AFTER the rotation always
+    // worked and one made BEFORE did not. That difference is what made the
+    // defect look intermittent.
+    const db     = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-scoped', { encryptionKey: ENC_KEY })
+    const before = db.$setAuth({ id: 'u1' })
+    await db.asSystem().secret.create({ data: { id: 1, token: 'scoped-value' } })
+
+    await db.$rotateKey(NEW_KEY)
+
+    expect(((await before.asSystem().secret.findUnique({ where: { id: 1 } })) as any).token).toBe('scoped-value')
+    db.$close()
+  })
+
+  test('$rotateKey carries every key-reversible column, not just @secret', async () => {
+    // FJS-253. Rotation visited `@secret(rotate: true)` only and then swapped
+    // the client's key for ALL encryption, so a plain @encrypted column beside
+    // it kept ciphertext written under the old key and read `null` — nothing
+    // thrown at any layer, and unrecoverable by a fresh client too, because the
+    // bytes on disk were never rewritten.
+    const db = await makeDb(
+      `model Secret { id Int @id; email String @encrypted(deterministic: true); note String @encrypted; token String @secret }`,
+      'rotate-carries',
+      { encryptionKey: ENC_KEY },
+    )
+    const sys = db.asSystem()
+    await sys.secret.create({ data: { id: 1, email: 'a@b.co', note: 'N', token: 'T' } })
+
+    const before = db.$db.query(`SELECT email, note, token FROM secret`).get() as any
+    const stats  = await db.$rotateKey(NEW_KEY)
+    const after  = db.$db.query(`SELECT email, note, token FROM secret`).get() as any
+
+    // All three ciphertexts moved — the assertion the old test made about one.
+    expect(after.email).not.toBe(before.email)
+    expect(after.note).not.toBe(before.note)
+    expect(after.token).not.toBe(before.token)
+    expect(stats.Secret.fields).toBe(3)
+
+    const row = (await sys.secret.findUnique({ where: { id: 1 } })) as any
+    expect(row.email).toBe('a@b.co')
+    expect(row.note).toBe('N')
+    expect(row.token).toBe('T')
+
+    // A deterministic column has to stay FILTERABLE, not merely readable: the
+    // where-encoder encodes the operand with the key before comparing, so a
+    // column re-encrypted in the wrong mode answers 0 rows with a 200 and no
+    // warning.
+    expect(await sys.secret.count({ where: { email: 'a@b.co' } })).toBe(1)
+    db.$close()
+  })
+
+  test('$rotateKey refuses while a column it cannot carry exists, and rotates nothing', async () => {
+    // The refusal comes BEFORE the first write. A rotation that rewrites half a
+    // database and then complains leaves it in two keys, with nothing recording
+    // which rows are in which.
+    const db = await makeDb(
+      `model Secret { id Int @id; pw String @hashed; token String @secret }`,
+      'rotate-refuses',
+      { encryptionKey: ENC_KEY },
+    )
+    await db.asSystem().secret.create({ data: { id: 1, pw: 'secret-pw', token: 'T' } })
+    const before = db.$db.query(`SELECT pw, token FROM secret`).get() as any
+
+    await expect(db.$rotateKey(NEW_KEY)).rejects.toThrow(/Secret\.pw/)
+    await expect(db.$rotateKey(NEW_KEY)).rejects.toThrow(/@hashed/)
+
+    // Nothing moved, and the key did not swap either — the client is exactly
+    // where it was.
+    const after = db.$db.query(`SELECT pw, token FROM secret`).get() as any
+    expect(after.token).toBe(before.token)
+    expect(after.pw).toBe(before.pw)
+    expect(((await db.asSystem().secret.findUnique({ where: { id: 1 } })) as any).token).toBe('T')
+    expect(await db.asSystem().secret.count({ where: { pw: 'secret-pw' } })).toBe(1)
+    db.$close()
+  })
+
+  test('$rotateKey — acknowledging one orphan does not acknowledge the next', async () => {
+    // Why `orphan` is a list of names and not a boolean: a column added later
+    // must not inherit an acknowledgement made for a different one.
+    const db = await makeDb(
+      `model Secret { id Int @id; pw String @hashed; kept String @secret(rotate: false); token String @secret }`,
+      'rotate-partial-ack',
+      { encryptionKey: ENC_KEY },
+    )
+    await db.asSystem().secret.create({ data: { id: 1, pw: 'p', kept: 'K', token: 'T' } })
+
+    // Both named → refused, naming both.
+    await expect(db.$rotateKey(NEW_KEY)).rejects.toThrow(/Secret\.kept/)
+    // One named → still refused, and only the OTHER one is reported.
+    const err = await db.$rotateKey(NEW_KEY, { orphan: ['Secret.pw'] }).catch((e: Error) => e)
+    expect((err as Error).message).toContain('Secret.kept')
+    expect((err as Error).message).not.toContain('Secret.pw —')
+
+    // Both named → it proceeds, and the two orphans are left as declared.
+    const stats = await db.$rotateKey(NEW_KEY, { orphan: ['Secret.pw', 'Secret.kept'] })
+    expect(stats.Secret.fields).toBe(1)   // token alone
+    expect(((await db.asSystem().secret.findUnique({ where: { id: 1 } })) as any).token).toBe('T')
     db.$close()
   })
 
@@ -5473,7 +5604,7 @@ describe('@secret field attribute', () => {
     dbNew.$close()
   })
 
-  test('@secret(rotate: false) field is skipped by $rotateKey', async () => {
+  test('@secret(rotate: false) field is skipped by $rotateKey — and orphaned by it', async () => {
     const db = await makeDb(
       `model Secret { id Int @id; fixed String @secret(rotate: false); rotateable String @secret }`,
       'rotate-skip',
@@ -5482,13 +5613,21 @@ describe('@secret field attribute', () => {
     await db.secret.create({ data: { fixed: 'stays', rotateable: 'changes' } })
 
     const before = db.$db.query(`SELECT fixed, rotateable FROM secret`).get() as any
-    await db.$rotateKey(NEW_KEY)
+    // Skipped is not free: the key swap is global, so `fixed` is unreadable
+    // after this, and rotation says so rather than doing it quietly (FJS-253).
+    await db.$rotateKey(NEW_KEY, { orphan: ['Secret.fixed'] })
     const after = db.$db.query(`SELECT fixed, rotateable FROM secret`).get() as any
 
     // fixed stays the same ciphertext
     expect(after.fixed).toBe(before.fixed)
     // rotateable has a new ciphertext
     expect(after.rotateable).not.toBe(before.rotateable)
+
+    // …and `fixed` now reads as empty, which is the cost the caller accepted by
+    // naming it. Stated here so the trade is written down where it happens.
+    const row = (await db.asSystem().secret.findFirst({})) as any
+    expect(row.fixed).toBeNull()
+    expect(row.rotateable).toBe('changes')
     db.$close()
   })
 
@@ -9803,6 +9942,84 @@ describe('lock primitive — _locks table auto-created', () => {
     ).all()
     expect(tables.length).toBe(1)
     db.$close()
+  })
+})
+
+// ─── generateTypeScript — the emitted surface must be the REAL surface ────────
+//
+// A generated .d.ts that omits a method is worse than no types at all: it types
+// a correct call as an error, and the app either casts the client back to `any`
+// — losing everything the file was for — or stops using the generator. Both
+// happened. basecamp calls `exists` 16 times and `findManyAndCount` 12, and
+// neither was emitted.
+//
+// So this asks a live client what it has rather than restating a list. A method
+// added to the client and not to the generator fails here.
+
+describe('generateTypeScript — emits the surface a real client has', () => {
+  const TS_SURFACE_SCHEMA = `
+    model Thing {
+      id     Int    @id
+      name   String
+      status String @default("draft")
+    }
+  `
+
+  test('every table method on a live client is declared on TableClient', async () => {
+    const db  = await createClient({ schema: TS_SURFACE_SCHEMA, db: ':memory:' })
+    const dts = generateTypeScript(parse(TS_SURFACE_SCHEMA).schema)
+    const iface = dts.slice(dts.indexOf('export interface TableClient'), dts.indexOf('export interface QueryEvent'))
+
+    // A Litestone accessor is a Proxy — it has no own keys to enumerate, and it
+    // THROWS on an unknown property, which is what makes this a real question:
+    // a name that is not there cannot be probed into existence.
+    const methods = [
+      'findMany', 'findFirst', 'findUnique', 'findFirstOrThrow', 'findUniqueOrThrow',
+      'findManyCursor', 'findManyAndCount', 'count', 'exists', 'aggregate', 'groupBy',
+      'query', 'create', 'createMany', 'update', 'updateMany', 'upsert', 'upsertMany',
+      'remove', 'removeMany', 'restore', 'delete', 'deleteMany', 'search',
+      'optimizeFts', 'transitions',
+    ]
+    for (const m of methods) {
+      expect(typeof (db.thing as any)[m]).toBe('function')   // the client really has it
+      expect(iface).toContain(`${m}(`)                       // …and the .d.ts says so
+    }
+    db.$close()
+  })
+
+  test('every client member a live client exposes is declared on LitestoneClient', async () => {
+    const db  = await createClient({ schema: TS_SURFACE_SCHEMA, db: ':memory:' })
+    const dts = generateTypeScript(parse(TS_SURFACE_SCHEMA).schema)
+    const iface = dts.slice(dts.indexOf('export interface LitestoneClient'), dts.indexOf('export interface CreateClientOptions'))
+
+    const members = [
+      'asSystem', '$setAuth', '$scopedBy', '$transaction', 'sql', '$tapQuery',
+      '$backup', '$attach', '$detach', '$rotateKey', '$close',
+      '$checkWhere', '$checkOrderBy',
+      '$schema', '$databases', '$softDelete', '$enums', '$cacheSize', '$attached',
+      '$rawDbs', '$walStatus',
+    ]
+    for (const m of members) {
+      expect((db as any)[m]).toBeDefined()
+      expect(iface).toContain(m)
+    }
+    db.$close()
+  })
+
+  test('CreateClientOptions names the options createClient actually destructures', () => {
+    const dts  = generateTypeScript(parse(TS_SURFACE_SCHEMA).schema)
+    const opts = dts.slice(dts.indexOf('export interface CreateClientOptions'), dts.indexOf('export declare function createClient'))
+    // encryptionKey, not `encryption: { key }` — the wrong shape here is a
+    // scaffold that boots without encryption and fails on the first @secret.
+    expect(opts).toContain('encryptionKey?:')
+    expect(opts).not.toContain('encryption?:')
+    expect(opts).toContain('databases?:')
+    // A duplicate key is a TS2300 that makes the whole file unusable, and it
+    // shipped: onEvent was emitted twice.
+    for (const key of ['onEvent', 'onQuery', 'hooks', 'plugins', 'db']) {
+      const hits = opts.split('\n').filter(l => l.trim().startsWith(`${key}?:`) || l.trim().startsWith(`${key}:`))
+      expect(hits.length).toBe(1)
+    }
   })
 })
 
@@ -14921,6 +15138,71 @@ describe('orderBy key validation', () => {
     expect(unknownProblem.reason).toBe('unknown')
     expect(unknownProblem.suggestion).toBe('name')
     db.$close()
+  })
+
+  // A column whose stored text is a serialisation or an encoding. SQLite orders
+  // by that text, so the rows come back in an order nobody asked for and nothing
+  // about the answer says so — the failure sorting has and filtering does not
+  // (FJS-200).
+  describe('a column whose stored text is a storage detail is not a sort key', () => {
+    const OPAQUE = `model Doc {
+      id    Int @id @default(autoincrement())
+      title String
+      words String[]
+      nums  Int[]
+      meta  Json?
+      doc   File?
+      ssn   String? @encrypted
+      tag   String? @encrypted(deterministic: true)
+      token String? @hashed
+    }`
+    const opaqueDb = (name: string) => makeDb(OPAQUE, name, { encryptionKey: 'a'.repeat(64) })
+
+    test('every kind of it is refused by name, and says which kind', async () => {
+      const db = await opaqueDb('sort-opaque')
+      const want: [string, RegExp][] = [
+        ['words', /an array column/],
+        ['nums',  /an array column/],
+        ['meta',  /a Json column/],
+        ['doc',   /a File column/],
+        ['ssn',   /@encrypted/],
+        ['tag',   /@encrypted/],
+        ['token', /@hashed/],
+      ]
+      for (const [key, why] of want) {
+        await expect(db.asSystem().doc.findMany({ orderBy: { [key]: 'asc' } })).rejects.toThrow(why)
+      }
+      db.$close()
+    })
+
+    test('the ordinary columns beside them still sort', async () => {
+      const db = await opaqueDb('sort-opaque-ok')
+      await db.asSystem().doc.create({ data: { title: 'b', words: ['x'] } })
+      await db.asSystem().doc.create({ data: { title: 'a', words: ['y'] } })
+      const rows = await db.asSystem().doc.findMany({ orderBy: { title: 'asc' } })
+      expect(rows.map((r: any) => r.title)).toEqual(['a', 'b'])
+      db.$close()
+    })
+
+    test('$checkOrderBy says `opaque`, so a boundary can answer 400 without running it', async () => {
+      const db = await opaqueDb('sort-opaque-check')
+      const [p] = db.$checkOrderBy('doc', { words: 'asc' })
+      expect(p.reason).toBe('opaque')
+      expect(p.suggestion).toBeNull()
+      expect(p.sortable).toContain('title')
+      expect(p.sortable).not.toContain('words')
+      // Same contract as the computed bucket: every flavour answers identically.
+      for (const c of [db.asSystem(), db.$setAuth({ id: 1 })])
+        expect(c.$checkOrderBy('doc', { meta: 'asc' })[0].reason).toBe('opaque')
+      db.$close()
+    })
+
+    test('a write that carries an orderBy is refused too', async () => {
+      const db = await opaqueDb('sort-opaque-write')
+      await expect(db.asSystem().doc.updateMany({ where: {}, data: { title: 'z' }, orderBy: { nums: 'asc' } }))
+        .rejects.toThrow(/an array column/)
+      db.$close()
+    })
   })
 
   test('$checkOrderBy on an unknown accessor answers [] — cannot judge is not wrong', async () => {
@@ -21740,6 +22022,52 @@ describe('array fields — @default', () => {
 // the IN moves inside json_each. It used to compile to `"tags" IN (?, ?)`,
 // which asks a JSON document whether it equals 'x', and answered nothing.
 
+// The rest of the family: a string operator asks about TEXT, and a column that
+// does not hold text answers plausibly and wrongly rather than failing. Int and
+// DateTime are deliberately left alone — SQLite's coercion answers what was
+// asked there, and a month against an ISO column is a real use (FJS-210).
+describe('a string operator on a column that is not text', () => {
+  const S = `type Addr { city String  zip String }
+  model Doc {
+    id    Int @id @default(autoincrement())
+    title String
+    flag  Boolean @default(false)
+    meta  Json?
+    addr  Json?   @type(Addr)
+    num   Int
+    when  DateTime
+  }`
+  let db: any
+  beforeAll(async () => {
+    db = await makeDb(S, 'text-ops')
+    await db.doc.create({ data: { title: 'alpha', flag: true,  meta: { z: 1 }, addr: { city: 'Boston', zip: '02101' }, num: 7,  when: new Date('2024-01-15') } })
+    await db.doc.create({ data: { title: 'beta',  flag: false, meta: { a: 2 }, addr: { city: 'Austin', zip: '73301' }, num: 42, when: new Date('2025-06-01') } })
+  })
+
+  test('a Boolean is stored as 0/1, so it can never match — and used to answer []', async () => {
+    await expect(db.doc.findMany({ where: { flag: { contains: 'tru' } } }))
+      .rejects.toThrow(/"flag" is a Boolean, stored as 0\/1/)
+  })
+
+  test('a Json document would match its own serialised text', async () => {
+    await expect(db.doc.findMany({ where: { meta: { contains: 'z' } } }))
+      .rejects.toThrow(/"meta" holds a JSON document/)
+    await expect(db.doc.findMany({ where: { addr: { contains: 'Boston' } } }))
+      .rejects.toThrow(/declare @type\(\.\.\.\) on the column to filter by a path/)
+  })
+
+  test('a path INTO a typed Json column is untouched — that operand is text', async () => {
+    const rows = await db.doc.findMany({ where: { addr: { city: { contains: 'Bos' } } } })
+    expect(rows.map((r: any) => r.id)).toEqual([1])
+  })
+
+  test('Int and DateTime keep the answers they already gave', async () => {
+    expect((await db.doc.findMany({ where: { num:  { contains: '7' } } })).map((r: any) => r.id)).toEqual([1])
+    expect((await db.doc.findMany({ where: { when: { contains: '2024-01' } } })).map((r: any) => r.id)).toEqual([1])
+    expect((await db.doc.findMany({ where: { title: { contains: 'lph' } } })).map((r: any) => r.id)).toEqual([1])
+  })
+})
+
 describe('where on an array column', () => {
   const SCHEMA = `
     enum Kind { a b c }
@@ -21836,6 +22164,25 @@ describe('where on an array column', () => {
     // names neither the field nor the operator.
     await expect(db.m.findMany({ where: { name: { has: 'x' } } }))
       .rejects.toThrow(/"has" is an array operator and "name" is not an array field/)
+  })
+
+  // `contains` on an array column is a substring search over the stored JSON
+  // that LOOKS like `has`, and the cases where the two agree are exactly the
+  // ones that hide it (FJS-210).
+  test('a string operator is refused, and says `has` is the one that was meant', async () => {
+    for (const op of ['contains', 'startsWith', 'endsWith']) {
+      await expect(db.m.findMany({ where: { tags: { [op]: 'x' } } }))
+        .rejects.toThrow(new RegExp(`"tags" holds a JSON array, so "${op}" would substring-match`))
+    }
+    // The two that made it look like it worked: a real element, and punctuation
+    // from the serialisation itself.
+    await expect(db.m.findMany({ where: { tags: { contains: '","' } } })).rejects.toThrow(/use "has"/)
+    await expect(db.m.findMany({ where: { tags: { contains: '[' } } })).rejects.toThrow(/use "has"/)
+    // Refused as a caller error, so a boundary can answer 400 rather than 500.
+    await expect(db.m.findMany({ where: { tags: { contains: 'x' } } }))
+      .rejects.toThrow(expect.objectContaining({ name: 'ValidationError' }))
+    // What was meant still answers.
+    expect(await find({ tags: { has: 'x' } })).toEqual([1])
   })
 
   test('an enum array reads the same way', async () => {
@@ -22312,23 +22659,79 @@ describe('a predicate that can never match is refused at startup', () => {
     })).rejects.toThrow(/global filter.*cannot match/s)
   })
 
-  test('a @@allow policy comparing a protected field — every mode of it', async () => {
-    // policy.js compiles predicates without the operand rewrite a where gets, so
-    // the plaintext is compared against stored bytes. Fails CLOSED: the model reads
-    // as empty for every caller, which looks like a table with no data. True of all
-    // three modes — a stable encoding is still not the plaintext (FJS-214).
+  test('a @@allow policy comparing a protected field — only the mode with no answer', async () => {
+    // A policy over an encoded column compiles the operand through the same
+    // encoder a `where` uses, so the two matchable modes answer. Plain @encrypted
+    // stores a random IV, so nothing can be encoded to match it and it stays a
+    // refusal — the shape that read as an empty table for every caller (FJS-214).
     const mk = (decl: string) => `model Doc {
       id Int @id @default(autoincrement())
       title String
       owner String ${decl}
       @@allow('read', owner == auth().email)
     }`
-    await expect(makeDb(mk('@encrypted(deterministic: true)'), 'tier2-pol-d', { encryptionKey: 'a'.repeat(64) }))
-      .rejects.toThrow(/policy compares a value no row can satisfy/)
-    await expect(makeDb(mk('@hashed'), 'tier2-pol-h', { encryptionKey: 'a'.repeat(64) }))
-      .rejects.toThrow(/policy compares a value no row can satisfy/)
     await expect(makeDb(mk('@encrypted'), 'tier2-pol', { encryptionKey: 'a'.repeat(64) }))
-      .rejects.toThrow(/@encrypted/)
+      .rejects.toThrow(/@encrypted under a random IV/)
+
+    // Rows on BOTH sides: a policy that admits everything and a policy that never
+    // ran are the same observation.
+    for (const [decl, name] of [['@encrypted(deterministic: true)', 'tier2-pol-d'], ['@hashed', 'tier2-pol-h']]) {
+      const db = await makeDb(mk(decl), name, { encryptionKey: 'a'.repeat(64) })
+      await db.asSystem().doc.create({ data: { title: 'mine',   owner: 'a@x.com' } })
+      await db.asSystem().doc.create({ data: { title: 'theirs', owner: 'b@x.com' } })
+      const mine = await db.$setAuth({ id: 1, email: 'a@x.com' }).doc.findMany()
+      expect(mine.map((r: any) => r.title)).toEqual(['mine'])
+      expect(await db.$setAuth({ id: 2, email: 'c@x.com' }).doc.count()).toBe(0)
+      expect(await db.$setAuth(null).doc.count()).toBe(0)
+    }
+  })
+
+  test('a comparison the encoding cannot answer is still refused', async () => {
+    // Both encodings preserve equality and nothing else, and neither side of a
+    // column-to-column comparison is a value the policy can encode.
+    const key = { encryptionKey: 'a'.repeat(64) }
+    await expect(makeDb(`model Doc {
+      id Int @id @default(autoincrement())
+      owner String @hashed
+      @@allow('read', owner > auth().email)
+    }`, 'tier2-pol-gt', key)).rejects.toThrow(/preserve equality and nothing else/)
+
+    await expect(makeDb(`model Doc {
+      id Int @id @default(autoincrement())
+      owner   String @hashed
+      manager String
+      @@allow('read', owner == manager)
+    }`, 'tier2-pol-cc', key)).rejects.toThrow(/compared column to column/)
+
+    // Evaluated in JS against the row read BACK, which has the column stripped.
+    await expect(makeDb(`model Doc {
+      id Int @id @default(autoincrement())
+      owner String @hashed
+      @@allow('post-update', owner == auth().email)
+    }`, 'tier2-pol-pu', key)).rejects.toThrow(/post-update check reads the row back/)
+  })
+
+  test('update, delete and create each apply the policy to the encoded column', async () => {
+    // read is a WHERE, create is evaluated in JS against the plaintext data, and
+    // update/delete are WHEREs of their own — one encoder, four call sites.
+    const db = await makeDb(`model Doc {
+      id Int @id @default(autoincrement())
+      title String
+      owner String @hashed
+      @@allow('read',   owner == auth().email)
+      @@allow('create', owner == auth().email)
+      @@allow('update', owner == auth().email)
+      @@allow('delete', owner == auth().email)
+    }`, 'tier2-pol-ops', { encryptionKey: 'a'.repeat(64) })
+    await db.asSystem().doc.create({ data: { title: 'mine',   owner: 'a@x.com' } })
+    await db.asSystem().doc.create({ data: { title: 'theirs', owner: 'b@x.com' } })
+
+    const me = db.$setAuth({ id: 1, email: 'a@x.com' })
+    expect(await me.doc.updateMany({ where: {}, data: { title: 'edited' } })).toEqual({ count: 1 })
+    expect(await me.doc.create({ data: { title: 'new', owner: 'a@x.com' } })).toBeTruthy()
+    await expect(me.doc.create({ data: { title: 'no', owner: 'b@x.com' } })).rejects.toThrow()
+    expect(await me.doc.removeMany({ where: {} })).toEqual({ count: 2 })
+    expect(await db.asSystem().doc.count()).toBe(1)   // theirs, untouched
   })
 
   test('an ordinary policy and an ordinary global filter still build', async () => {

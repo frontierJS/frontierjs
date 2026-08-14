@@ -26,8 +26,15 @@ model User {
   id             String    @id @default(uuid())
   email          String    @email @unique @lower
   name           String?   @trim
-  emailVerified  Boolean   @default(false)
-  role           String    @default("user")
+  // The two columns a caller must not write about themselves. role is what an
+  // app's own resolver grades on, and marking your own address verified is
+  // skipping the verification. auth().isAdmin is the standing
+  // FrontierGateGetLevel and sessionGateLevel() both read for ADMINISTRATOR(5),
+  // so the level that may delete a person is the level that may set their role
+  // — one idea, not two. asSystem() writes both regardless, which is how this
+  // package sets them.
+  emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
+  role           String    @default("user") @allow('write', auth().isAdmin)
   accountId      Int?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now()) @updatedAt
@@ -37,16 +44,20 @@ model User {
   // people, and a signed-in caller edits their own profile. Delete is
   // ADMINISTRATOR — removing a person is not self-service.
   //
-  // A GATE IS PER MODEL, NOT PER ROW. Update at USER means any signed-in
-  // caller may write any user row, its role column included. "Their own row"
-  // is a @@allow('update', id == auth().id), which is a different question and
-  // is not declared here — an app that exposes User through a service owes
-  // itself that policy or an ownership hook.
+  // A GATE IS PER MODEL, NOT PER ROW, so the level alone would say *any
+  // signed-in caller may write any user row*. The policy is what makes it
+  // their own row, and an admin's the exception — the same standing the gate's
+  // delete position names. Together with the two field policies above, this is
+  // the whole shape an app needs: a level for what kind of caller, a policy for
+  // whose row, and a field policy for the columns the level itself is graded
+  // from. A column the caller can write is not a column a level can be graded
+  // from.
   //
-  // Registration is unaffected either way: every write this package makes goes
-  // through asSystem(), which is above the ladder. The three models below stay
-  // at 8 — they hold the credential material.
+  // Registration is unaffected: every write this package makes goes through
+  // asSystem(), which is above the ladder. The three models below stay at 8 —
+  // they hold the credential material, and that is the case 8 is for.
   @@gate("4.4.4.5")
+  @@allow('update', id == auth().id || auth().isAdmin)
   @@log(audit)
 }
 

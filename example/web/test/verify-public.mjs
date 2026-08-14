@@ -338,9 +338,14 @@ const expected = {
   'lazy.beforeScroll':     ['CatalogList'],
   'lazy.afterScroll':      ['CatalogList', 'LiveStock'],
 
-  'live.wentLive':         '4 of 4 products can be ordered today.',
-  'live.count':            4,
-  'live.pricesFromApi':    { count: 4, allNumeric: true },
+  // 3 of 4, and the gap is the assertion. The seed's fourth product is
+  // `active: false`, so an island that renders every row it was given and one
+  // that filters by `active` are distinguishable here — at 4 of 4 they are not.
+  // The drive said 4 for a week after the seed gained the inactive row, which
+  // is the other reason to write the number down beside its reason (FJS-247).
+  'live.wentLive':         '3 of 4 products can be ordered today.',
+  'live.count':            3,
+  'live.pricesFromApi':    { count: 3, allNumeric: true },
   'live.calledApi':        ['/api/products'],
 
   'style.themeApplied':    { brand: '#0d83dd', badgeStyled: true },

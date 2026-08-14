@@ -1,5 +1,75 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-14 — `sierra routes` — the route table as a committed file
+
+The UI realm's snapshot, beside the Data realm's (`litestone access`,
+`litestone ddl`) and the API realm's (`junction surface`). `sierra routes
+--config config/sierra.config.js` writes `routes.snapshot.md`: every URL with
+its file, the layout the scanner resolved, the params, the merged declared meta,
+and what each `_module.mesa` wraps. `--check` byte-compares it; `scripts/ci.mjs`
+reruns it from the header the file carries. New `sierra` bin, `src/tools/`.
+
+**A route table is a naming convention over a file tree.** A rename moves a URL
+somebody already published, a `_module.mesa` one directory up rewraps every page
+beneath it, and a page declaring `reset` opts out of the chrome every other page
+has — none of which is referred to by name anywhere in the app, so none of it is
+greppable and no test fails when it moves.
+
+**On a `static` target `publishes:` leads the file**, in its own section ahead of
+the routes, for the reason the access snapshot leads with Unrestricted: it is the
+line that turns a check off. The prerender build taps every read `load()` makes
+and compares it against that model's `@@gate`, fail-closed; `publishes: N` is the
+override, and it lives in one page's frontmatter. Declared on a non-static target
+it is inert, and the snapshot says so under its own heading rather than listing it
+beside the real ones.
+
+Run it from the app's **web root** — `routesDir` is relative to Vite's root, not
+to the config's location (Invariant 3). One config is one target, and the name
+carries: `sierra.static.config.js` → `routes.static.snapshot.md`.
+
+## 2026-08-14 — every app installed from npm can build
+
+`FJS-251`. The mesa plugin skips `.mesa` under `node_modules` — another
+package's components are that package's problem — with one exception for
+Sierra's own `RouterView` and `ChainRenderer`, which ship uncompiled. The
+exception named the wrong package:
+
+```js
+!id.includes('/node_modules/sierra/')     // the package is @frontierjs/sierra
+```
+
+So it never matched, both components went to rolldown untransformed, and the
+build died on
+
+```
+JSX syntax is disabled and should be enabled via the parser options
+  ../node_modules/@frontierjs/sierra/src/components/RouterView.mesa:1:1
+```
+
+**Nothing in this repo could see it.** An app here resolves sierra to
+`packages/sierra/`, which is not a node_modules path at all, so the skip never
+fires and `verify:build` passes. Dev survives too — the transform runs the same
+way, so the failure waits for the first *production build a real user runs*.
+`virtual-sierra.js` had the scoped name right twenty lines away in a sibling
+file, which is the shape of the whole defect: one literal, drifted, unwitnessed.
+
+The name is now a constant (`SIERRA_PKG`) rather than an inlined string, because
+inlining is what let it drift.
+
+Reproduced before fixing, against the published 0.1.2: `fli new demo --yes
+--auth --source npm`, `bun run build` → exit 1. With the fix → exit 0, four
+route chunks, sitemap, speculation rules.
+
+`tests/node-modules-allowance.test.js` pins it by driving the real `transform`
+with ids shaped the way an **installed** app produces them. That detail is the
+test: one written with workspace paths passes against the bug. Checked against a
+negative control — restoring the old literal fails it — rather than trusted for
+passing.
+
+What this does not close: nothing in CI scaffolds an app and builds it, so the
+next defect of this shape is equally invisible. `FJS-241` and
+`IDEAS/deploy-plane.md` both ask for that test.
+
 ## 2026-08-10 — no signals to declare, so no `externalSignals` to declare them in
 
 `FJS-060`, closed by removing the last thing it applied to.

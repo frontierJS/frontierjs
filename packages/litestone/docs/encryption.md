@@ -176,16 +176,33 @@ every equality filter over it answering nothing.
 
 ## Key rotation
 
-Re-encrypts all `@secret(rotate: true)` fields (the default) with the new key:
+Re-encrypts every key-reversible column — `@encrypted` in both modes, and `@secret` — with the new key, then swaps the client's key:
 
 ```js
 const stats = await db.$rotateKey(newKey)
 // → { users: { rows: 42, fields: 1 }, orders: { rows: 18, fields: 2 } }
 ```
 
-`@secret(rotate: false)` fields are skipped — useful for legacy keys that should stay bound to the original encryption key. `@hashed` fields are not rotatable at all: there is no plaintext to re-key.
+**The key swap is global, so a column rotation cannot rewrite is not left on the old key — it is unreadable.** One client holds one key. Two kinds cannot be carried, and `$rotateKey` refuses while either is present rather than destroying it:
 
-**The client that calls `$rotateKey` cannot read its own output** — `asSystem()` is memoised over a snapshot of the key, so it keeps the old one and every affected field reads as `null`. Build a fresh client, or restart, after rotating. `FJS-236`.
+| Declaration | Why it cannot be carried |
+| --- | --- |
+| `@hashed` | One-way. There is no plaintext anywhere to re-key, so every match becomes 0 permanently and no later fix can undo it. |
+| `@secret(rotate: false)` | Declared excluded from re-encryption. It does **not** stay bound to the original key — nothing retains that key. |
+
+```js
+await db.$rotateKey(newKey)
+// Error: $rotateKey would leave 2 column(s) unreadable and has rotated nothing:
+//   User.pw    — @hashed — one-way, there is no plaintext to re-key …
+//   User.legacy — @secret(rotate: false) — declared excluded from re-encryption
+// Pass { orphan: ['User.pw', 'User.legacy'] } to accept that deliberately.
+
+await db.$rotateKey(newKey, { orphan: ['User.pw', 'User.legacy'] })   // proceeds
+```
+
+`orphan` is a list of names rather than a boolean so that acknowledging one column cannot silently acknowledge a second one added later.
+
+The client that rotated keeps working — the key lives in one cell every derived client reads through, so `asSystem()`, `$setAuth()` and `$scopedBy()` all see the new key immediately.
 
 ## Multi-tenant key-per-tenant
 

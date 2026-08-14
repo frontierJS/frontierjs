@@ -26,8 +26,9 @@
 //   Delegates to a to-one related model's policy via EXISTS subquery.
 //   Cycle-safe: visited set prevents infinite recursion.
 
-import { AccessDeniedError } from './plugin.js'
-import { modelToTableName }  from './ddl.js'
+import { AccessDeniedError }   from './plugin.js'
+import { modelToTableName }    from './ddl.js'
+import { comparisonEncoderFor } from './encryption.js'
 
 // ─── Debug logger ─────────────────────────────────────────────────────────────
 // policyDebug: true     — logs SQL filters + denials
@@ -211,6 +212,55 @@ function sqlOp(op) {
   return op === '==' ? '=' : op === '!=' ? '!=' : op
 }
 
+// ─── An encoded column inside a predicate ─────────────────────────────────────
+// A `where` encodes its operand before comparing (client.js rewriteEncryptedWhere);
+// a policy predicate must make the SAME translation, or the plaintext is compared
+// against the stored bytes, nothing matches, and the model reads as empty for every
+// caller with nothing raised. `comparisonEncoderFor` is the one owner of the choice
+// of encoding, so the two paths cannot drift apart again.
+//
+// Only equality survives an encoding and a column under a random IV survives
+// nothing. createClient refuses both against the schema, so a throw from here means
+// a predicate reached the compiler some other way — it is a backstop, not the
+// message a developer is meant to read.
+function encodedCompare(node, params, ctx, modelName, relationMap) {
+  if (!ctx.enc?.key) return null
+
+  const { left, right } = node
+  const fieldNode = left.type === 'field' ? left : right.type === 'field' ? right : null
+  if (!fieldNode) return null
+
+  const rel = relationMap[modelName]?.[fieldNode.name]
+  const col = rel?.kind === 'belongsTo' ? rel.foreignKey : fieldNode.name
+  const enc = comparisonEncoderFor(ctx.fieldPolicyMap?.[modelName]?.[col])
+  if (!enc) return null
+
+  const subject = `"${modelName}.${col}" is ${enc.label}`
+  if (!enc.encode) throw new Error(
+    `${subject} — the same value stores different bytes every write, so no operand can be encoded to match it. ` +
+    `Declare it @encrypted(deterministic: true) or @hashed for a policy to compare it`)
+  if (node.op !== '==' && node.op !== '!=') throw new Error(
+    `${subject} — it can answer equality and cannot answer '${node.op}', because neither encoding preserves ordering`)
+
+  const other = fieldNode === left ? right : left
+  if (other.type === 'field') throw new Error(
+    `${subject} — it is compared against the column "${other.name}", and only a value the policy can encode ` +
+    `may be compared against an encoded column`)
+
+  const raw = other.type === 'literal' ? other.value
+            : other.type === 'auth'    ? (other.field ? (ctx.auth?.[other.field] ?? null) : (ctx.auth?.id ?? null))
+            : other.type === 'now'     ? ctx._now
+            : undefined
+  if (raw === undefined) throw new Error(
+    `${subject} — it is compared against something with no value to encode`)
+
+  // An auth field the caller does not carry stays null, so the comparison is
+  // against NULL and denies. That is the direction to fail in: encoding the
+  // absence would match every row whose column holds the encoding of null.
+  params.push(raw === null ? null : enc.encode(raw, ctx.enc.key))
+  return `"${col}" ${sqlOp(node.op)} ?`
+}
+
 function compileSql(node, params, ctx, modelName, op, policyMap, schema, relationMap, visited) {
   switch (node.type) {
 
@@ -273,6 +323,11 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
         const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : right.name
         return `"${fk}" ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
       }
+
+      // A column holding encoded bytes is compared against the operand encoded the
+      // same way — after the null branches above, which stay a plain IS NULL.
+      const encoded = encodedCompare(node, params, ctx, modelName, relationMap)
+      if (encoded) return encoded
 
       // field == auth()  →  resolve FK if it's a belongsTo relation
       if (left.type === 'field' && right.type === 'auth' && right.field === null) {

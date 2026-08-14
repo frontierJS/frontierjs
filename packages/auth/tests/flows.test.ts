@@ -481,16 +481,47 @@ describe('the gate walls the credential tables off, and User is readable by a us
     expect(await h.sys.user.findUnique({ where: { id: victim.id } })).toBeNull()
   })
 
-  // The gate is a floor on the MODEL, not an ownership rule on the row. This
-  // test states the consequence rather than pretending otherwise: at USER,
-  // one caller may write another caller's row. Row ownership is a
-  // @@allow('update', id == auth().id), which auth does not declare.
-  test('update at USER is not ownership — a user may write ANOTHER user\'s row', async () => {
-    const other  = await h.sys.user.create({ data: { email: `other-${Date.now()}@example.com` } })
+  // The gate is a floor on the MODEL, not an ownership rule on the row — so
+  // update at USER would mean any signed-in caller writes any user row. The
+  // policy is what makes it their own, and these four tests are the reason it
+  // is declared here rather than left to each app: the fragment ships the level
+  // AND what bounds it. A policy FILTERS, so the refused write matches no row
+  // and answers rather than throwing — every assertion reads the row back.
+  test('a user may not write ANOTHER user\'s row', async () => {
+    const other  = await h.sys.user.create({ data: { email: `other-${Date.now()}@example.com`, name: 'Other' } })
     const scoped = h.db.$setAuth({ id: 'someone-else', role: 'user' })
     await scoped.user.update({ where: { id: other.id }, data: { name: 'written by a stranger' } })
-    const after = await h.sys.user.findUnique({ where: { id: other.id } })
-    expect(after!.name).toBe('written by a stranger')
+    expect((await h.sys.user.findUnique({ where: { id: other.id } }))!.name).toBe('Other')
+  })
+
+  test('…and may write their own', async () => {
+    const me     = await h.sys.user.create({ data: { email: `me-${Date.now()}@example.com`, name: 'Me' } })
+    const scoped = h.db.$setAuth({ id: me.id, role: 'user' })
+    await scoped.user.update({ where: { id: me.id }, data: { name: 'renamed' } })
+    expect((await h.sys.user.findUnique({ where: { id: me.id } }))!.name).toBe('renamed')
+  })
+
+  test('a user cannot promote themselves — `role` and `emailVerified` are dropped', async () => {
+    const me     = await h.sys.user.create({ data: { email: `climb-${Date.now()}@example.com`, name: 'Me' } })
+    const scoped = h.db.$setAuth({ id: me.id, role: 'user' })
+    await scoped.user.update({ where: { id: me.id }, data: {
+      role: 'admin', emailVerified: true, name: 'still lands',
+    } })
+    const after = await h.sys.user.findUnique({ where: { id: me.id } })
+    // A field write policy drops the field and keeps the rest of the write,
+    // which is why the name assertion is here: it proves the update ran.
+    expect(after!.role).toBe('user')
+    expect(after!.emailVerified).toBe(false)
+    expect(after!.name).toBe('still lands')
+  })
+
+  test('an ADMINISTRATOR writes another user\'s row, and their role', async () => {
+    const target = await h.sys.user.create({ data: { email: `target-${Date.now()}@example.com`, name: 'Target' } })
+    const scoped = h.db.$setAuth({ id: 'boss', isAdmin: true })
+    await scoped.user.update({ where: { id: target.id }, data: { name: 'by admin', role: 'editor' } })
+    const after = await h.sys.user.findUnique({ where: { id: target.id } })
+    expect(after!.name).toBe('by admin')
+    expect(after!.role).toBe('editor')
   })
 
   test('registration is unaffected by the ladder — it writes asSystem()', async () => {

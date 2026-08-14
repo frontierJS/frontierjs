@@ -223,8 +223,14 @@ model User {
   account        Account?  @relation(fields: [accountId], references: [id])
 
   // ── Basecamp additions ──
-  kind           UserKind   @default(human)
-  status         UserStatus @default(pending_verification)
+  //
+  // `kind` and `status` are the hub's to write, so they are system-write like
+  // `isSystemAdmin` below and for the same reason: basecampGateLevel() grades
+  // `status == 'suspended'` STRANGER, and api-keys refuses an owner whose
+  // `kind` is not `bot`. A column a caller can write is not a column a level
+  // can be graded from.
+  kind           UserKind   @default(human) @allow('write', auth().isSystemAdmin)
+  status         UserStatus @default(pending_verification) @allow('write', auth().isSystemAdmin)
   username       String?    @trim
   displayName    String?    @trim
   avatarUrl      String?
@@ -240,10 +246,17 @@ model User {
   // is the one this app enforces on, `role` is enforced nowhere.
   //
   // The NAME is load-bearing beyond this app: `isSystemAdmin` is what
-  // sessionGateLevel() grades SYSADMIN(7) on (junction core/litestone.ts), so
-  // the column that fills this screen is the one @@gate will read when
-  // FJS-007 lands. core/session-auth.ts is what puts it on the session.
-  isSystemAdmin  Boolean    @default(false)
+  // sessionGateLevel() grades SYSADMIN(7) on (junction core/litestone.ts), and
+  // basecampGateLevel() grades it too. core/session-auth.ts is what puts it on
+  // the session.
+  //
+  // `@guarded(all)` because the gate reads it: the model gates update at
+  // USER(4), so without this any signed-in caller writes the column their own
+  // level is computed from and lands on the hub tier. Granting it is the hub's
+  // act and the hub writes through asSystem(), which passes; every read that
+  // matters — session-auth building the session, /hub/users/ listing people —
+  // is asSystem() for the same reason.
+  isSystemAdmin  Boolean    @default(false) @allow('write', auth().isSystemAdmin)
 
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now()) @updatedAt
@@ -253,7 +266,14 @@ model User {
   deployments    Deployment[]
   apiKeys        ApiKey[]
 
+  // Read at USER(4) is auth's own ladder — an app's screens list its people.
+  // Update at USER(4) is per MODEL, so on its own it says any signed-in caller
+  // may rewrite any other person's row; the policy is what makes it their own
+  // row. Everything this app writes to a person goes through the hub, and the
+  // hub is asSystem(), which passes the policy — so nothing legitimate here
+  // depends on the update path a caller reaches.
   @@gate("4.4.4.5")
+  @@allow('update', id == auth().id)
   @@softDelete
   @@log(audit)
   @@unique([accountId, username])

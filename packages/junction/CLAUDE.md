@@ -38,6 +38,10 @@ src/
     middleware.ts, body.ts, health.ts, presence.ts, static.ts, types.ts
 
   client/index.ts   the browser client — WS first, HTTP fallback
+  ../tools/surface.ts  `junction surface` — the committed surface.snapshot.md,
+                    read off a BUILT app (describe() + buildRoutes()), --check in CI
+  ../tools/errors-snapshot.ts  `junction errors` — the committed errors.snapshot.md,
+                    every row a value actually thrown through toFrameworkError()
   auth/             IAuth types (implemented by @frontierjs/auth) + providers
   plugins/          manifest, openapi, webhooks, email, devtools, shims
   mail/  cache/  scheduler/  events/  storage/  workers/  ai/  testing/
@@ -137,6 +141,18 @@ src/
   called a `restoreMany` a Litestone table does not have, so every filtered
   restore was a 500 (`FJS-245`) — declared on `LitestoneTable`, which is why
   nothing typed it.
+- **The API surface is committed, and nothing in a source file can answer it.**
+  `junction surface --app <module> [--services <dir>]` writes `surface.snapshot.md`
+  off a built app — methods after the policy, actions as `collectActions` resolved
+  them, the hook chain in RUN order with the derived hooks leading it, every
+  mounted path with `apiPrefix` applied, plugins in configure order. `--check` is
+  the CI half (`snapshots` phase). Two constraints on the app it is pointed at:
+  it must expose the app **without listening** (a built `App` or a factory — the
+  same contract `@frontierjs/testing` takes as `api:`; guard an entry's
+  `app.start()` with `import.meta.main`), and autoloaded services need
+  `--services`, because that phase is `needsHost` and resolves against `Bun.main`.
+  The snapshot lives at the APP ROOT: an app is built with the cwd its own scripts
+  use, and CI reruns the command from the snapshot's directory.
 - **`hasRoute()` is a matching question, not an existence one** — every app
   registers `GET /{service}`, which matches almost anything. Use
   `hasExactRoute(method, path)` / `routePaths(method)`. For the whole surface at
@@ -210,6 +226,16 @@ src/
   `runWithMeta`, so anything reading it applied to half the transports.
 - **`fromStatusCode` maps fourteen codes to classes; the rest keep the status and
   lose the class.** Give an error you own a `status` and it arrives intact.
+- **What a thrown value becomes is committed, and it is EXECUTED.**
+  `junction errors` writes `errors.snapshot.md` at this package root: every class
+  with its status, one row per branch `toFrameworkError` can take, the status →
+  class table, and **Litestone's real error classes constructed and run through
+  the boundary**. Nothing above `toFrameworkError` reads anything but the result,
+  so a class that gains a `status` silently stops being a 500 and one that never
+  had one silently is a 500 — neither breaks a test, because nothing asserts on a
+  category nobody named. The cross-package rows are the ones that drift, and they
+  are where `FJS-255` was found: the three lock errors declare `retryable` and no
+  `status`, so each reaches a caller as a 500. `--check` in CI (`snapshots`).
 
 ## Proving a change
 

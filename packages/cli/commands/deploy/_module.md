@@ -68,6 +68,49 @@ const resolveSide = (deployConf, target, side) => {
   return { server, user, path, host: `${user}@${server}` }
 }
 
+// ─── litestreamStatus ─────────────────────────────────────────────────────────
+// `pgrep -x litestream` answers *is a process by that name alive*, which is not
+// *is a supported version replicating anything*. Three commands asked the first
+// and reported the second (`FJS-243`).
+//
+// litestream 0.3.x cannot parse the STRICT tables litestone emits. Pointed at a
+// litestone database it starts, prints `replicating to:`, and then loops forever
+// on `malformed database schema … near "STRICT": syntax error` **without ever
+// exiting** — so the process table says healthy, every check here agreed, and
+// the replica stayed empty. Demonstrated, not theorised: v0.3.4 does exactly
+// this today.
+//
+// LITESTREAM_MIN is a hand copy of litestone's own floor in
+// `src/tools/replicate.js` — change one, change both. This side cannot import
+// it: litestream reaches the server as a binary and litestone reaches it as a
+// dependency of the app, neither of which the CLI can resolve from here.
+//
+// `run` takes a remote shell command and returns its stdout as a string, so the
+// three callers keep their own ssh plumbing.
+const LITESTREAM_MIN = { major: 0, minor: 5 }
+
+const litestreamStatus = (run) => {
+  const pid = (run(`pgrep -x litestream 2>/dev/null || echo ''`) ?? '').trim()
+  if (!pid) return { running: false }
+
+  const raw = (run(`litestream version 2>/dev/null || echo ''`) ?? '').trim()
+  const m   = raw.match(/v?(\d+)\.(\d+)\.(\d+)/)
+
+  // A version we cannot read is UNKNOWN, not fine. Saying so is the whole point:
+  // the failure this replaces was a check that assumed.
+  if (!m) return { running: true, pid, version: null, supported: null }
+
+  const major = Number(m[1])
+  const minor = Number(m[2])
+  const supported =
+    major > LITESTREAM_MIN.major ||
+    (major === LITESTREAM_MIN.major && minor >= LITESTREAM_MIN.minor)
+
+  return { running: true, pid, version: m[0], supported }
+}
+
+const LITESTREAM_MIN_LABEL = `v${LITESTREAM_MIN.major}.${LITESTREAM_MIN.minor}`
+
 // ─── distinctHosts ────────────────────────────────────────────────────────────
 // The machines a run touches, deduplicated by host AND path — the SSH check, the
 // deploy lock, the git pull and the cleanup are per machine, not per side, and
