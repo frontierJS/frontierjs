@@ -41,7 +41,7 @@ title: Disk cleanup
 
   // Every load is numbered and only the newest may write to the screen. This is
   // one of the two screens fed by a machine on a timer rather than by a person
-  // clicking: several agents reporting at once start several loads, and a
+  // clicking: several outposts reporting at once start several loads, and a
   // slower earlier one landing last shows the fleet as it was two reports ago.
   const inflight = { seq: 0 }
 
@@ -72,7 +72,7 @@ title: Disk cleanup
   load()
   $: session.workspaceId, () => load()
 
-  // A report from any agent, and every step of a sweep, land here as a push.
+  // A report from any outpost, and every step of a sweep, land here as a push.
   const READS = new Set(['get', 'find', 'usage', 'targets'])
   const off = cleanup.service.on('*', (method) => {
     if (READS.has(method)) return
@@ -110,11 +110,11 @@ title: Disk cleanup
       })
       toasts.success(
         `Cleanup queued on ${res.queued} server(s)`,
-        res.unreachable.length ? `No agent on ${res.unreachable.join(', ')}` : 'Each machine reports what it freed',
+        res.unreachable.length ? `No outpost on ${res.unreachable.join(', ')}` : 'Each machine reports what it freed',
       )
       await load()
     } catch (e) {
-      // 'No agent is registered …' and 'Unknown reclaim target(s) …' both arrive
+      // 'No outpost is registered …' and 'Unknown reclaim target(s) …' both arrive
       // here. Neither is guessable from the card.
       error = e.message
     } finally {
@@ -232,8 +232,8 @@ title: Disk cleanup
           </div>
         {:else}
           <p class="text-sm text-muted">
-            No agent has reported this machine's disk. An empty picture is not an empty disk —
-            an agent reports on its first check-in.
+            No outpost has reported this machine's disk. An empty picture is not an empty disk —
+            an outpost reports on its first check-in.
           </p>
         {/if}
 
@@ -272,7 +272,7 @@ title: Disk cleanup
           <tr>
             <td>{run.serverName ?? run.serverId}</td>
             <td><Pill tone={statusTone(run.status)}>{run.status}</Pill></td>
-            <!-- What the agent said it freed, never what was estimated before
+            <!-- What the outpost said it freed, never what was estimated before
                  it ran. The two differ, and only one of them happened. -->
             <td class="text-sm">{size(run.freedBytes)}</td>
             <td class="text-sm text-muted">{(run.targets ?? []).join(', ')}</td>

@@ -1,0 +1,40 @@
+{
+  "name": "@frontierjs/testing",
+  "version": "0.1.0",
+  "description": "The Testing realm for FrontierJS — one environment across Data and API.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Kobami",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "peerDependencies": {
+    "@frontierjs/junction": "^0.1.0",
+    "@frontierjs/litestone": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@frontierjs/junction": "workspace:*",
+    "@frontierjs/litestone": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/testing"
+  }
+}

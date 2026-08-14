@@ -11,7 +11,7 @@ export type Protocol =
 
 export type TargetKind =
   | 'provider'  // external REST API — Hetzner, GitHub, NetBird
-  | 'agent'     // remote server agent
+  | 'outpost'     // remote server outpost
   | 'local'     // local unix process
 
 // ─── Target ─────────────────────────────────────────────────
@@ -77,7 +77,7 @@ export class CredentialError extends Error {
 //
 // Every method is async so a networked registry (Redis, Postgres, an
 // HTTP service) is implementable — required for running more than one
-// replica against a shared set of dynamically registered agents.
+// replica against a shared set of dynamically registered outposts.
 // Implementations must return copies, not live references, from
 // get() and list().
 

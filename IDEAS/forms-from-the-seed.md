@@ -115,3 +115,10 @@ one-line entry in the table above.
   Strictly harder, and it needs the control table this proposes to exist first.
 - `one-mental-model.md` — the argument that the same fact should be stated once.
 - `ecosystem-gaps.md` 4 — where `FJS-D12` is argued.
+- `ecosystem-gaps.md` 15 — conditional fields. **A blocker on the field list this
+  file wants to generate**: a form whose fields appear and disappear with another
+  field's value cannot have its field set derived until something says so, and it is
+  currently the one part of a generated form that stays hand-written.
+- `bulk-data.md` — the import screen is the same generator's other output. Same
+  inputs (writable columns, enum members, `@label`, per-field messages), same
+  error protocol (`toFieldErrors`), a different shape on the page.

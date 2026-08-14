@@ -12,7 +12,7 @@
     "zx": "^8.8.5"
   },
   "scripts": {
-    "test": "bun test tests/compiler.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js tests/deploy-helpers.test.js tests/project-root.test.js && bun test tests/zz-steps.test.js tests/deploy-dispatch.test.js",
+    "test": "bun test tests/compiler.test.js tests/checks.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js tests/deploy-helpers.test.js tests/project-root.test.js && bun test tests/zz-steps.test.js tests/deploy-dispatch.test.js",
     "test:watch": "bun test --watch",
     "test:steps": "bun test tests/zz-steps.test.js",
     "test:deploy": "bun test tests/deploy-helpers.test.js tests/deploy-dispatch.test.js",

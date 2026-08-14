@@ -6,14 +6,14 @@ title: Recipes
   //
   // This is the screen where the app does something it cannot make safe by
   // declaring a vocabulary. A dashboard widget names a KIND and a cleanup names
-  // TARGETS; a recipe is a script, and once an agent has it there is no model
+  // TARGETS; a recipe is a script, and once an outpost has it there is no model
   // to grade and no policy to apply. So this screen states the two things that
   // do hold — authoring is an admin act, and every run keeps the script it ran
   // — rather than dressing the danger up as a control.
   //
   // What is on screen is never simulated. The mock streams invented output line
   // by line from a fixed table; here a run row goes `pending → running →` an
-  // exit code, pushed from the engine, and a machine with no agent is refused
+  // exit code, pushed from the engine, and a machine with no outpost is refused
   // at the click with the name of the machine in the sentence.
   import { session } from '../../session.js'
   import { recipes } from '../../resources/Recipe.mesa'
@@ -41,7 +41,7 @@ title: Recipes
   let loading   = true
   let busy      = null
   let creating  = false
-  let target    = ''        // '' = every server with an agent
+  let target    = ''        // '' = every server with an outpost
   let draft     = recipes.make()
 
   // The kit's controls take a value and hand back an event; they are NOT bound
@@ -112,12 +112,12 @@ title: Recipes
       selected  = { ...res, runs: res.runs }
       toasts.success(
         `${recipe.name} queued on ${res.queued} server(s)`,
-        res.unreachable.length ? `No agent on ${res.unreachable.join(', ')}` : 'Output appears as each machine answers',
+        res.unreachable.length ? `No outpost on ${res.unreachable.join(', ')}` : 'Output appears as each machine answers',
       )
       await load()
     } catch (e) {
-      // 'No agent is registered for …' arrives here, naming the machines. The
-      // button is never pre-emptively disabled for it: whether an agent has
+      // 'No outpost is registered for …' arrives here, naming the machines. The
+      // button is never pre-emptively disabled for it: whether an outpost has
       // checked in is the server's answer, not something this screen knows.
       error = e.message
     } finally {
@@ -165,7 +165,7 @@ title: Recipes
 </div>
 
 <Callout tone="warning" title="A recipe is arbitrary code on a real machine">
-  Nothing here can bound what a script does: the agent runs it with the privileges the agent
+  Nothing here can bound what a script does: the outpost runs it with the privileges the outpost
   has, whoever asked. Writing one is an admin act, running one is recorded against you, and
   every run keeps the script it actually ran — an output read against a script that has since
   been edited is not evidence.
@@ -187,7 +187,7 @@ title: Recipes
              value={draft.name} oninput={(e) => write('name', e.target.value)} />
       <Input name="description" id="description" hint="Briefly what this script does"
              value={draft.description} oninput={(e) => write('description', e.target.value)} />
-      <Textarea name="script" id="script" rows="8" hint="Runs as the agent's user — there is no sandbox"
+      <Textarea name="script" id="script" rows="8" hint="Runs as the outpost's user — there is no sandbox"
                 value={draft.script} oninput={(e) => write('script', e.target.value)} />
       <Button type="submit" variant="primary">Save recipe</Button>
     </Form>
@@ -196,7 +196,7 @@ title: Recipes
 
 <div class="cluster" id="recipe-target">
   <label class="visually-hidden" for="run-target">Where to run</label>
-  <Select id="run-target" value={target} placeholder="Every server with an agent"
+  <Select id="run-target" value={target} placeholder="Every server with an outpost"
           options={fleet.map(s => ({ value: s.id, label: s.name }))}
           oninput={(e) => target = e.target.value}
           onchange={(e) => target = e.target.value} />

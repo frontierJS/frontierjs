@@ -69,7 +69,7 @@ at all (`slices.md`, `framework-shape.md`).
 
 | Name | Realm | What it is | Source |
 | --- | --- | --- | --- |
-| **`stow`** | API | Object storage drivers — S3 / R2 / GCS. `IFileStorage` is a clean interface with exactly one implementation (local disk). Small work; blocks every container and multi-node deploy. | `ecosystem-gaps.md` tier-1 item 3 |
+| ~~**`stow`**~~ | API | **Retired as a package name 2026-08-12.** It was reserved for object-storage drivers on the belief that none existed; litestone has shipped an S3/R2/B2/MinIO provider over hand-written sigv4 signing for some time, with `File` columns and presigned URLs. What is left is not a package — it is that Junction's separate local-disk `IFileStorage` is a **second** abstraction for the same job (Invariant 4), to be delegated or retired. | `ecosystem-gaps.md` item 3 |
 | **`ledger`** | Slice | Billing — models + service + webhooks + portal route. The canonical first slice and the proof the format works. | `ecosystem-gaps.md` tier-1 item 2 |
 | **`warden`** | API | **The answer to the linear ladder.** Named permissions and roles layered over the 0–9 scale, so `@@gate("4")` stays the default and orthogonal permissions stop forcing a retreat into hooks. | `PROS_AND_CONS.md` con 2 |
 | **`lantern`** | API | Observability — real spans (there is a `correlationId` and a seam list, not a tree), request-correlated logs, metrics, and the local dev dashboard unifying `project:view` + devtools + traces + an API explorer. | `operational-edge.md` item 3, `framework-shape.md` item 4 |
@@ -95,7 +95,9 @@ which is most apps, fairly early.
 | Name | What it is |
 | --- | --- |
 | **`charts`** | Dataviz over the `css` tokens. `foundry` will want it immediately; every admin needs it. |
-| **`media`** | Image resizing and transforms. Paired with `stow`. |
+| **`media`** | Image resizing and transforms. Paired with litestone's `FileStorage` plugin, which is where the bytes already are. |
+| **`chronos`** | Time semantics from the seed — instant vs zoned wall-clock vs plain date, whose zone resolves a value, and the small useful subset of recurrence. Named here mostly to ask whether it is a package at all: it is probably a litestone declaration plus an `Intl` reader, and the thing to avoid is writing a date library. Note the collision — `packages/datetime-kit/` is a README with no package under it and may be this, or may be a component kit that should not share the name. | `time-and-recurrence.md` |
+| **`porter`** | Bulk data — the derived import template, the per-row report, and an export that is a `find` rather than a table scan. Named provisionally and probably wrongly: the template and validator belong beside `foundry`'s generator, the parser already lives in litestone's seeder, and what is genuinely new is a screen. A candidate for *not a package*. | `bulk-data.md` |
 | **`flags`** | Feature flags — one model plus a plugin exposing `app.features`. A good early test that the slice format is real, precisely because it is small. |
 | **`shift`** | The upgrade codemod tool. Deferred not for low value but because it needs a stable surface to move between; worth reserving the name. |
 

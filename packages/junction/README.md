@@ -312,6 +312,16 @@ createService({
 
 **Short-circuit**: set `ctx.result` in a `before` hook to skip the method. This is how caching hooks work.
 
+**`after` means after the METHOD, not after the call succeeded.** Hooks run in
+sequence, so an `after` hook that sends an email runs, and a *later* `after`
+hook throwing then makes the whole call report failure — the client sees a
+rejected create whose email has already gone. There is no commit-scoped phase to
+put the effect in: Junction is not aware of a transaction, and `$transaction` on
+the Litestone client relates to no hook phase. Rails states the choice as
+`after_save` vs `after_commit`; Junction offers only the first. Put an
+irreversible effect **last** in the `after` chain, or dispatch it to
+`@frontierjs/caravan` and let the queue own delivery. `FJS-089` is the open row.
+
 **Built-in hooks**: `authenticate`, `requireRole`, `paginate`, `protect`, `allow`, `timestamps`, `logTiming`, `circuitBreaker`, `rateLimit`.
 
 `protect()` supports dot-path notation for nested fields:
@@ -368,6 +378,18 @@ const off = app.events.onAny((event, data) => {
 
 // Useful for audit logs, metrics, and webhook fan-out
 ```
+
+**`IEventBus.stats()`** — how many are listening, and to what. `hasListeners()`
+answers a yes/no, which is the wrong question when an announcement goes missing:
+
+```typescript
+app.events.stats()
+// { events: { 'orders:created': 2, '__any__': 1 }, total: 3 }
+```
+
+`'*'` and `'__any__'` keep their own keys — a subscriber to everything is a
+different fact from a subscriber to one thing — and an event whose last handler
+unsubscribed is omitted rather than reported as zero.
 
 ### 3. Custom methods as first-class citizens
 
@@ -640,8 +662,14 @@ const app = createApp({
   config: { ...config, apiPrefix: '/api/v1' },
 })
 // All services now at: /api/v1/users, /api/v1/notes, etc.
-// /health and /metrics are unaffected
 ```
+
+**Every route registered through `app.get`/`app.post`/… moves with it**, not
+just the service routes: `/api/v1/health`, `/api/v1/auth/login`,
+`/api/v1/webhooks`. A route that must sit at a fixed path — a callback URL
+somebody else owns, a probe path an orchestrator owns — is registered on
+`app.http.router` directly, the layer beneath the shortcuts, which applies
+nothing.
 
 Default is `''` — services mount at `/{service}`. Handles missing/extra slashes automatically, so `api`, `/api` and `/api/` all mean the same thing.
 
@@ -649,7 +677,49 @@ The browser client takes the same option and must be given the same value:
 
 ```typescript
 createJunctionClient({ url, apiPrefix: '/api/v1' })
+// authenticate() then posts to /api/v1/auth/login — `authPrefix` is the auth
+// plugin's own prefix and stays relative to this one.
 ```
+
+---
+
+## Idempotency-Key
+
+A mutating request carrying an `Idempotency-Key` header executes **once**. The
+repeat replays the first call's answer without running the pipeline again — no
+second hook, no second row, no second broadcast.
+
+```bash
+curl -X POST localhost:3000/orders -H 'Idempotency-Key: 8f3c…' -d '{...}'   # runs
+curl -X POST localhost:3000/orders -H 'Idempotency-Key: 8f3c…' -d '{...}'   # replays
+```
+
+The key is scoped to the service, the method **and the principal**: replay skips
+the hook pipeline, so it skips the auth checks in it, and a key shared across
+callers would hand one caller another's answer. Reads are never replayed.
+
+Two cases worth knowing:
+
+- **A failed call releases its key.** A caller is entitled to retry a request
+  that did not succeed, and remembering the failure would answer the retry with
+  the failure.
+- **A duplicate arriving while the first is still running** is a `409` with
+  `retryable: true` — the first may yet succeed, and then the request is
+  answerable. It is not executed in parallel, which is the outcome the key
+  exists to prevent.
+
+```typescript
+config: {
+  idempotency: {
+    enabled:    true,          // default
+    ttl:        '24 hours',    // how long a completed key is remembered
+    pendingTtl: '2 minutes',   // how long the in-flight marker lives
+  }
+}
+```
+
+Backed by the app cache, so it is per-process: two instances behind a load
+balancer do not share it. Nothing is stored unless a caller sends a key.
 
 ---
 
@@ -674,7 +744,7 @@ createService({
 |---|---|---|---|
 | `port` | `number` | `3000` | HTTP port |
 | `hostname` | `string` | `'0.0.0.0'` | Bind address |
-| `apiPrefix` | `string` | `''` | Prefix for auto-routed service URLs — `''` mounts them at `/{service}` |
+| `apiPrefix` | `string` | `''` | Prefix for every route the app registers — `''` mounts services at `/{service}` |
 | `http.drainTimeout` | `number` | `5000` | ms to drain requests on shutdown |
 | `http.compress` | `boolean` | `true` | gzip responses |
 | `http.maxBodySize` | `number` | `262144` | max request body bytes |
@@ -921,7 +991,7 @@ app.services.register(createService({
 }))
 ```
 
-### `methods:` — what a service does *not* answer
+### `methods:` — the surface, declared
 
 A model service answers every CRUD verb through the base **with validation**,
 whether or not your file declares one. Writing only `find()` does not make a
@@ -946,6 +1016,25 @@ createService({ name: 'tickets', methods: ['find', 'create', 'approve'] })
   fails immediately instead of silently blocking `get`.
 - `/manifest`, `/metrics` and the OpenAPI spec all filter by the policy, so what
   a service answers and what it advertises cannot drift.
+
+**The list also DECLARES the actions.** With no `methods:`, an action is found by
+scanning the definition for a function whose key is not a known option — which
+works, is what most services do, and cannot see a name an option already owns.
+Declaring it is the way in:
+
+```typescript
+createService({
+  name:    'reports',
+  model:   'Report',
+  methods: ['find', 'get', 'cache'],       // 'cache' is an ACTION here
+  async cache(ctx) { … },                  // undeclared, this is eaten as config
+})
+```
+
+`cache`, `schema`, `channel` and the other option names were previously
+impossible as action names, silently. In TypeScript a *typed* option still needs
+a cast — `cache` is declared `CacheDeclaration` and cannot also be a function —
+so the runtime honours the declaration and the type does not know about it.
 
 Because the policy is structural rather than authorization, it is checked ahead
 of the hook pipeline — an anonymous caller gets 405, not 401.
@@ -1307,9 +1396,16 @@ const rows = await posts.findData({ status: 'published' })  // rows only
 // and in the browser. find means a list; a service answering one thing gives it
 // a name and is called as an action, which is handed back whole.
 
+// populate — load relations with the rows. The component declares its own
+// shape instead of a hook over-fetching server-side to cover every caller.
+const withAuthor = await posts.find({}, { populate: 'author' })
+const both       = await posts.find({}, { populate: ['author', 'comments'] })
+const justTheName = await posts.find({}, { populate: 'author:name+email' })
+
 // get(id) or get(query) → T  (query form uses $first routing)
 const post    = await posts.get(1)
 const first   = await posts.get({ status: 'draft' })   // findFirst
+const full    = await posts.get(1, { populate: 'author' })
 
 // create(data) → T
 const newPost = await posts.create({ title: 'Hello', body: 'World' })
@@ -1533,6 +1629,36 @@ app.service('users').hooks({
 ---
 
 
+## What is actually mounted
+
+The HTTP surface is emergent: services auto-mount, plugins register their own,
+and `hasRoute()` answers a *matching* question — every app registers
+`GET /{service}`, which matches almost anything. So "is this mounted, and
+where" needs the router asked rather than guessed.
+
+```typescript
+app.configure(manifestPlugin({ db }))   // devOnly by default
+```
+
+`GET /manifest` then carries `routes` beside the services, hooks and channels:
+
+```json
+{ "method": "GET", "path": "/api/auth/login", "kind": "raw" }
+{ "method": "GET", "path": "/api/{service}",  "kind": "service" }
+```
+
+`kind: 'service'` is one of the auto-mounted CRUD templates; `kind: 'raw'` is
+what a plugin or the app registered, which is the surface nothing else
+describes. `buildRoutes(app)` is the same answer in-process.
+
+From the CLI, against a running app:
+
+```bash
+fli api:routes            # everything
+fli api:routes --raw      # just what a plugin or the app registered
+fli api:routes --json
+```
+
 ## Tier 1 Plugins
 
 First-party plugins built specifically for Junction. Each is a separate package that wires into Junction via `app.configure()` and integrates cleanly with the hook pipeline, `/metrics`, and the plugin lifecycle.
@@ -1596,7 +1722,7 @@ Dead jobs (exhausted retries) stay in the database — use `app.jobs.retry(id)` 
 
 ### `@frontierjs/conduit` — Outbound Transport
 
-One interface for talking to third-party systems — REST APIs, server agents, local processes. Abstracts HTTP, WebSocket, and Unix socket protocols behind a single `send()` call.
+One interface for talking to third-party systems — REST APIs, server Outposts, local processes. Abstracts HTTP, WebSocket, and Unix socket protocols behind a single `send()` call.
 
 ```ts
 import { conduit }           from '@frontierjs/conduit'
@@ -1625,20 +1751,20 @@ const result = await app.conduit.send({
   path:   '/servers',
 })
 
-// Register targets at runtime (e.g. when an agent connects)
+// Register targets at runtime (e.g. when an Outpost connects)
 await app.conduit.register({
-  id:       'agent:srv-abc',
-  kind:     'agent',
+  id:       'outpost:srv-abc',
+  kind:     'outpost',
   protocol: 'websocket',
   address:  'ws://10.0.0.5:7700',
-  auth:     { type: 'hmac', secret: process.env.AGENT_SECRET },
+  auth:     { type: 'hmac', ref: 'OUTPOST_SECRET' },   // a REF, resolved at send time — never the material
 })
 ```
 
-Streaming for agents that push data:
+Streaming for Outposts that push data:
 
 ```ts
-for await (const chunk of app.conduit.stream({ target: 'agent:srv-abc', method: 'logs' })) {
+for await (const chunk of app.conduit.stream({ target: 'outpost:srv-abc', method: 'logs' })) {
   console.log(chunk.data)
 }
 ```
@@ -1647,7 +1773,7 @@ Conduit stats appear in `GET /metrics` under `conduit`:
 
 ```json
 "conduit": {
-  "targets": { "total": 3, "byKind": { "provider": 1, "agent": 2 }, "byProtocol": { "http": 1, "websocket": 2 } }
+  "targets": { "total": 3, "byKind": { "provider": 1, "outpost": 2 }, "byProtocol": { "http": 1, "websocket": 2 } }
 }
 ```
 

@@ -34,13 +34,13 @@
 ///   5 ADMIN      admin
 ///   6 OWNER      owner
 ///   7 SYSADMIN   User.isSystemAdmin — the hub tier
-///   8 SYSTEM     asSystem() only: engines, agents, seeds, migrations
+///   8 SYSTEM     asSystem() only: engines, outposts, seeds, migrations
 ///   9 LOCKED     nothing passes, asSystem() included
 ///
 /// Reading the gates below: "2.4.4.5" is R.C.U.D — a viewer reads, a developer
 /// creates and updates, an admin deletes. A missing position inherits the one
 /// before it, so "5" is admin for all four and "2.5" is read-by-anyone,
-/// written-by-admin. 8 in a write position means only an engine or an agent
+/// written-by-admin. 8 in a write position means only an engine or an outpost
 /// writes this; 9 means not even they do.
 ///
 /// The levels are not a design drawn on paper — they are the requireWorkspaceRole
@@ -58,7 +58,7 @@
 ///
 /// A policy FILTERS, where a gate REFUSES. So the failure shape of a wrong one
 /// is an empty screen and no error: any read that legitimately crosses a
-/// workspace has to be asSystem() — the three engines, the hub and the agent's
+/// workspace has to be asSystem() — the three engines, the hub and the outpost's
 /// heartbeat all are.
 ///
 /// ALSO ENFORCED AT THE DATA BOUNDARY, independently of any level: @guarded and
@@ -200,9 +200,11 @@ enum WidgetKind {
 //   2. `@secret` → `@guarded(all)` on the Credential/Session token columns.
 //      Not for the logging reason any more — log entries redact protected
 //      fields as of 2026-08-03, so `@secret` is safe here. What still defers it
-//      is encryption: `@secret` implies `@encrypted`, and `Session.token` is
-//      looked up BY VALUE, which needs `@encrypted(searchable: true)`.
-//      Credential.value already holds a hash, so encrypting it buys little.
+//      was encryption: `@secret` implies `@encrypted`, and `Session.token` is
+//      looked up BY VALUE, which a random IV cannot answer. That is no longer a
+//      blocker — `Session.token` is matched and never displayed, which is exactly
+//      `@hashed`, and `@secret(deterministic: true)` covers a secret that must be
+//      both looked up and read back. Credential.value already holds a hash.
 //      Revisit in the API pass alongside the rest of the auth wiring.
 //
 // `@@log(audit)` is kept, as auth ships it.
@@ -522,8 +524,8 @@ model Server {
   sshUser          String       @default("root")
   sshKeyId         String?
 
-  agentVersion     String?
-  agentUrl         String?
+  outpostVersion     String?
+  outpostUrl         String?
   lastHeartbeatAt  DateTime?
 
   plan             Json         @default("{}")
@@ -550,7 +552,7 @@ model Server {
   // and delete from a scoped client, and checked in JS before a create.
   //
   // The paths that legitimately cross a workspace are the three engines, the
-  // hub and the agent's heartbeat, and every one of them already goes through
+  // hub and the outpost's heartbeat, and every one of them already goes through
   // asSystem(), which bypasses this. A path that is NOT system and names no
   // workspace matches nothing — quietly, since a policy filters rather than
   // refuses. That is the failure shape to look for if a screen empties.
@@ -580,14 +582,14 @@ model ServerEvent {
 // A persistent volume on a server. **Observed, not declared.**
 //
 // Every other model here is something a person created and Basecamp then acts
-// on. A volume is the other direction: Docker made it, the agent found it, and
+// on. A volume is the other direction: Docker made it, the outpost found it, and
 // this table is Basecamp's picture of what is out there. So there is no
 // `create` — a row appears because a server reported it, and disappears when a
 // report no longer mentions it.
 //
 // Which is also why deleting a row is not deleting a volume. The volume lives
 // on the server; removing the record would leave the disk exactly as full and
-// the fleet one row less honest. `volumes.remove` asks the agent, through
+// the fleet one row less honest. `volumes.remove` asks the outpost, through
 // Conduit, and only then forgets the row.
 //
 // No `workspaceId`, for the reason ServerEvent has none: a volume is
@@ -603,12 +605,12 @@ model Volume {
   driver       String    @default("local")
   mountPoint   String?
 
-  // Bytes, not gigabytes. The agent reports bytes, the screen decides whether
+  // Bytes, not gigabytes. The outpost reports bytes, the screen decides whether
   // that reads better as MB or GB, and a rounded number stored is a number
   // nothing can un-round — `0.01 GB` in the mock is 10.7 MB.
   sizeBytes    Int       @default(0)
 
-  // What the agent last saw mounting it. Container NAMES, not App ids: mapping
+  // What the outpost last saw mounting it. Container NAMES, not App ids: mapping
   // a container back to an App is a guess, and a wrong join here would put a
   // volume under the wrong app on the app screen.
   inUse        Boolean   @default(false)
@@ -618,12 +620,12 @@ model Volume {
   // is Docker's, and is the only one that answers "how long has this been
   // lying around"; `discoveredAt` is when this row appeared; `lastSeenAt` is
   // how stale the picture is, which is the difference between "no volumes" and
-  // "no agent".
+  // "no outpost".
   createdOnServer DateTime?
   discoveredAt    DateTime @default(now())
   lastSeenAt      DateTime @default(now())
 
-  @@gate("2.8.8.5")
+  @@gate("2.5.5.5")
   @@log(audit)
   @@unique([serverId, name])
   @@index([serverId])
@@ -979,8 +981,8 @@ model JobRun {
 // reason it does not is worth stating: a stored query is dangerous because the
 // Data boundary grades a CALLER against a MODEL, and a string cannot be
 // graded, so the row would be run at whoever opened it. A script is not run
-// here at all. It is handed to an agent and run on a machine, where there is
-// no model, no caller and no grade — it runs at whatever the agent has, every
+// here at all. It is handed to an outpost and run on a machine, where there is
+// no model, no caller and no grade — it runs at whatever the outpost has, every
 // time, for everyone. A vocabulary buys nothing against that.
 //
 // So the safeguard is the record instead. Authoring a recipe is an admin act,
@@ -1012,11 +1014,11 @@ model Recipe {
   description    String?    @length(0, 500)
 
   // The script itself. Bounded so a paste cannot become a row nothing can
-  // render; the agent's own limits are stricter than anything declarable here.
+  // render; the outpost's own limits are stricter than anything declarable here.
   script         String     @length(1, 20000)
 
   // Per recipe, not per run: how long a script may take is a property of the
-  // script. The agent is told, and the run is stamped `timeout` if it exceeds.
+  // script. The outpost is told, and the run is stamped `timeout` if it exceeds.
   timeoutSeconds Int        @default(300) @gte(5) @lte(3600)
 
   // Bookkeeping the list reads, written by the engine. `runCount` is a counter
@@ -1072,7 +1074,7 @@ model RecipeRun {
   @@index([serverId])
 }
 
-// What the agent last saw about a machine's disk. OBSERVED, like Volume: a row
+// What the outpost last saw about a machine's disk. OBSERVED, like Volume: a row
 // exists because a server reported it, and there is no way to author one.
 //
 // Two things a reclaim screen wants are deliberately absent, both because
@@ -1118,7 +1120,7 @@ model DiskUsage {
   @@unique([serverId])
 }
 
-// A reclaim sweep on ONE server — queued, then carried out by an agent.
+// A reclaim sweep on ONE server — queued, then carried out by an outpost.
 //
 // It is a record of what was actually freed, which is why it is a row rather
 // than a toast: "we cleaned the fleet last Tuesday" is the question a disk
@@ -1140,7 +1142,7 @@ model CleanupRun {
 
   requestedBy String?
 
-  // What the agent said it freed, never what was estimated before it ran. The
+  // What the outpost said it freed, never what was estimated before it ran. The
   // screen shows an estimate; only this is what happened.
   freedBytes  Int       @default(0)
   detail      Json      @default("{}")

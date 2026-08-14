@@ -5,7 +5,8 @@ title: New lead
   // The whole form is derived. Look for a field list, a type, an enum value, a
   // required flag or the name of the account resource in this file — none of
   // them are here, because all of them are in db/schema.lite.
-  import { leads, accounts } from '../../resources/leads.mesa'
+  import { leads }    from '../../resources/Lead.mesa'
+  import { accounts } from '../../resources/Account.mesa'
   import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
   import { goto } from '@frontierjs/sierra/router'
   import { session } from '../../session.js'

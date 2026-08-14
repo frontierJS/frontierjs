@@ -80,11 +80,11 @@ describe('plugin lifecycle against a real app', () => {
   it('a target registered before start survives boot()', async () => {
     const app = await createTestApp()
     app.configure(conduitPlugin({ credentials: secrets() }))
-    await conduitOf(app).register(providerTarget({ id: 'agent:early' }))
+    await conduitOf(app).register(providerTarget({ id: 'outpost:early' }))
 
     await app._startForTest()
 
-    expect(await conduitOf(app).resolve('agent:early')).not.toBeNull()
+    expect(await conduitOf(app).resolve('outpost:early')).not.toBeNull()
   })
 
   it('shutdown() destroys the conduit — later sends fail closed', async () => {
@@ -197,7 +197,7 @@ describe('management service over real routes', () => {
   })
 
   // The whole point of moving credentials behind a resolver: this endpoint
-  // used to enumerate every provider token and agent secret in the system.
+  // used to enumerate every provider token and outpost secret in the system.
   it('never returns secret material, only refs', async () => {
     const app = await createTestApp()
     app.configure(conduitPlugin({

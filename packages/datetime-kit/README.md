@@ -1,4 +1,5 @@
-# datetime-kit (currently in a differnt repo)
+
+# datetime-kit
 
 A lightweight JavaScript library that extends the native Date prototype with powerful formatting capabilities using modern Intl APIs.
 

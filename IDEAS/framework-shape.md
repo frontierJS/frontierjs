@@ -105,14 +105,20 @@ more value than closing this seam.**
 Prerequisite question: does this render through the css package (giving it its
 first consumer and settling that package's fate) or stay unstyled and slot-driven?
 
-### 2. Storage drivers.
+### 2. Storage drivers. — **corrected 2026-08-12**
 
-`IFileStorage` in `packages/junction/src/storage/filestorage/index.ts` is a clean
-interface with exactly one implementation — `createFileStorage(name, rootDir)`,
-local disk. A grep for `S3Client`/`aws-sdk`/`presignedUrl` finds nothing outside
-test fixtures. Any container, serverless, or multi-node deploy breaks on this.
-It is a driver against an interface that already exists: cheap, unblocks real
-deployment.
+This item read *"a grep for `S3Client`/`aws-sdk`/`presignedUrl` finds nothing outside
+test fixtures."* The grep was run against Junction only, and the answer is different
+one package down: **Litestone ships an S3 provider** (`src/storage/providers/s3.js`
+over a hand-written `sigv4.js` — signed requests and presigned URLs, no SDK), driving
+R2, B2, MinIO and S3 from the `FileStorage` plugin, documented and tested.
+
+`IFileStorage` in `packages/junction/src/storage/filestorage/index.ts` really is
+local-disk-only. So the remaining work is not a driver — it is that **two file-storage
+abstractions exist and one of them cannot reach object storage**, which is an
+Invariant 4 question (one owner per translation) rather than a missing feature.
+Delegate Junction's to Litestone's plugin, or retire it. Full note in
+`IDEAS/ecosystem-gaps.md` §3.
 
 ### 3. A Release story.
 

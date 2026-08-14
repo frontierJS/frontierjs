@@ -7,7 +7,7 @@
 // `AlertRule` and `AlertEvent` have been in db/schema.lite since the Data realm
 // was rebuilt and had **no API surface at all** — two models nothing could
 // read. This is the service, not the evaluator: nothing here decides that a
-// rule has been breached. That belongs with whatever measures (an agent
+// rule has been breached. That belongs with whatever measures (an outpost
 // heartbeat, an observability adapter), and is deliberately not invented here,
 // because a rule that fires from the browser's idea of the truth is theatre.
 // `AlertEvent` rows are therefore written by the system today and read here.

@@ -61,7 +61,7 @@ upgrade request headers: {"auth":null,"sig":null}
 frame sent on wire: {"id":"7c35…","type":"request","method":"POST","path":"/deploy","body":{"image":"v2"}}
 ```
 
-No `Authorization` on the upgrade, no signature in the frame, no credential anywhere. WebSocket is the documented transport for *"persistent agent connections"* — the control plane that issues `deploy`, `pull`, `stop`. Any process that can reach the agent's WS port can drive it. The target descriptor cheerfully carries a secret that is never used, so the configuration reads as secured while the wire is not.
+No `Authorization` on the upgrade, no signature in the frame, no credential anywhere. WebSocket is the documented transport for *"persistent outpost connections"* — the control plane that issues `deploy`, `pull`, `stop`. Any process that can reach the outpost's WS port can drive it. The target descriptor cheerfully carries a secret that is never used, so the configuration reads as secured while the wire is not.
 
 **Fix:** make auth a mandatory step in `BaseTransport` (a template method the subclass cannot skip) rather than a helper each transport opts into. Send credentials on the WS upgrade request and sign each frame.
 
@@ -73,10 +73,10 @@ No `Authorization` on the upgrade, no signature in the frame, no credential anyw
 
 ```json
 find() -> [{"id":"provider:hetzner", … "auth":{"type":"bearer","token":"HETZNER-LIVE-TOKEN-xyz"}},
-           {"id":"agent:srv-1",      … "auth":{"type":"hmac","secret":"AGENT-HMAC-SECRET-abc"}}]
+           {"id":"outpost:srv-1",      … "auth":{"type":"hmac","secret":"AGENT-HMAC-SECRET-abc"}}]
 ```
 
-One `GET /api/conduit/targets` enumerates every provider token and every agent HMAC secret in the system.
+One `GET /api/conduit/targets` enumerates every provider token and every outpost HMAC secret in the system.
 
 Worse, nothing enforces the auth the design assumes. `types.ts:151` carries the author's own note — `// TODO: review auth + path config before enabling in prod` — and the registered service has no hooks of its own:
 
@@ -104,7 +104,7 @@ The comment frames this as GET-only, but `rawBody` is undefined for *any* reques
 | `POST /reboot` **no body** | `null`                 |
 | `GET /status`              | `null`                 |
 
-`POST /reboot`, `POST /stop`, `DELETE /servers/42` — every bodyless command reaches the agent unsigned. If the agent enforces signatures these fail confusingly at runtime; if it doesn't, they are unauthenticated. Either way the caller gets no signal.
+`POST /reboot`, `POST /stop`, `DELETE /servers/42` — every bodyless command reaches the outpost unsigned. If the outpost enforces signatures these fail confusingly at runtime; if it doesn't, they are unauthenticated. Either way the caller gets no signal.
 
 Separately, the scheme signs **only the body** — no timestamp, no nonce, no method or path binding. A captured signature replays forever, and against any path on that target. That is below the standard of care for a control plane (compare GitHub/Stripe webhook signing, which bind a timestamp).
 
@@ -180,7 +180,7 @@ Each `open` handler runs `this.ws = ws` and `startPing(ws)`, so `this.ws` and `t
 
 `src/transports/websocket.ts:187–195` — the `close` handler rejects `pending` but never touches `streamListeners`.
 
-Verified with an agent that sends one chunk then closes without `stream_end`:
+Verified with an outpost that sends one chunk then closes without `stream_end`:
 
 ```
 chunks received: ["line-1"]
@@ -201,7 +201,7 @@ The README states `stream()` *"throws a `ConduitStreamError` if the stream canno
 NO THROW — stream yielded 0 chunks and ended silently
 ```
 
-"The agent is unreachable" is indistinguishable from "the agent had no logs". The core layer gets this right for `target_not_found` (`conduit.ts:91`); the transport contradicts it.
+"The outpost is unreachable" is indistinguishable from "the outpost had no logs". The core layer gets this right for `target_not_found` (`conduit.ts:91`); the transport contradicts it.
 
 ### 2.4 `send()` throws on non-serialisable bodies, contradicting the never-throw contract
 
@@ -278,7 +278,7 @@ Two `?` — the second parameter is silently mangled. Relatedly, GET parameters 
 
 `src/types.ts:40–47` — `get(id): TargetDescriptor | null`, not `Promise<…>`.
 
-`IConduit.resolve()`/`list()` are async and the store is presented as the pluggable backend, but the synchronous signature makes Redis, Postgres or any HTTP-backed registry **impossible to implement**. The two shipped stores are in-memory and SQLite, both single-node. Conduit is therefore effectively single-instance for dynamically registered agents: run two Hub replicas and an agent that registers against one is invisible to the other. That is a significant constraint to discover after adoption, and it is not mentioned in the README.
+`IConduit.resolve()`/`list()` are async and the store is presented as the pluggable backend, but the synchronous signature makes Redis, Postgres or any HTTP-backed registry **impossible to implement**. The two shipped stores are in-memory and SQLite, both single-node. Conduit is therefore effectively single-instance for dynamically registered outposts: run two Hub replicas and an outpost that registers against one is invisible to the other. That is a significant constraint to discover after adoption, and it is not mentioned in the README.
 
 Knock-on: `stats()` calls `store.list()` (`conduit.ts:118`), so every `/metrics` scrape does a full table scan and a `JSON.parse` per row, deserialising every secret into memory — while the interface comment advertises it as a cheap *"synchronous snapshot"*.
 
@@ -308,7 +308,7 @@ The `/metrics` wiring exists but exposes almost nothing you would want at 3 a.m.
 - **`stats()` returns target counts only** — verified: `{"targets":{"total":2,"byKind":{…},"byProtocol":{…}}}`. No request counts, error rates, latency, retry counts, or per-target health. For an outbound integration layer these are the primary signals.
 - **`duration_ms` is `0` on every error** (`base.ts:56`) and, on success, measures only the *last* attempt (`http.ts:58`, timer created per attempt). Verified: a 3.5 s four-attempt failure reported `duration_ms: 0`. Latency telemetry is unusable for exactly the requests you care about.
 - **Hooks are sync-only, unguarded, and incomplete** — `(req) => void` cannot export a span; a throwing hook takes down `send()`; there is no `onRetry`, so retries are invisible; and `stream()` fires only `onRequest`, never response, error or completion.
-- **No correlation or trace context** is propagated to targets. Nothing ties a Hub request to the agent call it produced.
+- **No correlation or trace context** is propagated to targets. Nothing ties a Hub request to the outpost call it produced.
 
 `register()` reaches into `app._metricsProviders` behind an `instanceof Map` guard (`plugin.ts:47`) — the same private-field reach-in the Junction audit flagged in §6. If Junction renames the field, metrics silently disappear with no error.
 

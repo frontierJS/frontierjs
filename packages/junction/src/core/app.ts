@@ -386,6 +386,11 @@ export function createApp(opts: AppOptions = {}): App {
     : { ...defaultConfig } as AppConfig
   const _configPath = opts.configPath ?? './api/config'
 
+  // Every route registered through app.get/post/put/patch/delete is mounted
+  // under this. Normalised once — an app may write 'api', '/api' or '/api/'.
+  const _apiPrefix = normalizePrefix(config.apiPrefix)
+  const prefixPath = (path: string): string => `${_apiPrefix}${path}`
+
   // ── Subsystems ───────────────────────────────────────────────────────
   const logger    = opts.logger ?? createLogger({ level: opts.logLevel })
   const services  = new ServiceRegistry()
@@ -745,11 +750,19 @@ export function createApp(opts: AppOptions = {}): App {
     },
 
     // ── Route shortcuts ──────────────────────────────────────────
-    get(path, handler, mw)    { http.router.get(path, handler, mw);    return app },
-    post(path, handler, mw)   { http.router.post(path, handler, mw);   return app },
-    put(path, handler, mw)    { http.router.put(path, handler, mw);    return app },
-    patch(path, handler, mw)  { http.router.patch(path, handler, mw);  return app },
-    delete(path, handler, mw) { http.router.delete(path, handler, mw); return app },
+    // apiPrefix is applied HERE, and nowhere else. It used to be applied by
+    // registerServiceRoutes alone, so a plugin's app.get() landed at the root
+    // while every service beside it moved: four plugins hand-resolved
+    // config.apiPrefix to compensate, @frontierjs/auth did not, and an app with
+    // apiPrefix: '/api' served its services under /api and its login at /auth
+    // (FJS-012). A route that must sit at the root — a fixed callback URL, a
+    // probe path an orchestrator owns — goes through app.http.router directly,
+    // which is the layer beneath this one and applies nothing.
+    get(path, handler, mw)    { http.router.get(prefixPath(path), handler, mw);    return app },
+    post(path, handler, mw)   { http.router.post(prefixPath(path), handler, mw);   return app },
+    put(path, handler, mw)    { http.router.put(prefixPath(path), handler, mw);    return app },
+    patch(path, handler, mw)  { http.router.patch(prefixPath(path), handler, mw);  return app },
+    delete(path, handler, mw) { http.router.delete(prefixPath(path), handler, mw); return app },
 
     // ── WebSocket shortcut ────────────────────────────────────────
     ws(path, handlers)        { http.ws(path, handlers);               return app },
@@ -993,7 +1006,7 @@ export function createApp(opts: AppOptions = {}): App {
       // Service routes are registered AFTER plugins so plugin middleware wraps
       // them. Registering at createApp() time would add them before
       // CORS/helmet/rateLimit patched the router, so they'd never get those headers.
-      { name: 'service-routes', run: () => registerServiceRoutes(app, config.apiPrefix ?? '') },
+      { name: 'service-routes', run: () => registerServiceRoutes(app) },
 
       // Compile merged hook pipelines for every service now, and for any service
       // registered later (e.g. in a plugin's ready(), or by user code after start()).
@@ -1124,15 +1137,24 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
   }))
 }
 
+/**
+ * `apiPrefix` → a path segment: strip surrounding slashes, re-add the leading
+ * one. '' stays ''. The browser client applies the identical transform to the
+ * prefix it is given; the two must agree or nothing meets.
+ */
+export function normalizePrefix(prefix: string | undefined): string {
+  const stripped = (prefix ?? '').replace(/^\/|\/$/g, '')
+  return stripped ? `/${stripped}` : ''
+}
+
 // Maps {prefix}/users → services.users (CRUD)
 // Maps {prefix}/users/123 → services.users (with id=123)
 // Maps {prefix}/servers/123/reboot → servers.reboot (custom method)
+//
+// The prefix is NOT applied here: app.get/post/... apply it to every route
+// alike, so adding it here too would mount the services at /api/api/users.
 
-export function registerServiceRoutes(app: App, prefix: string): void {
-
-  // Normalise — strip surrounding slashes, re-add leading slash
-  const stripped = prefix.replace(/^\/|\/$/g, '')
-  const p = stripped ? `/${stripped}` : ''
+export function registerServiceRoutes(app: App): void {
 
   // ── CRUD handler ──────────────────────────────────────────────────
   const crudHandler: RouteHandler = async (ctx) => {
@@ -1185,16 +1207,16 @@ export function registerServiceRoutes(app: App, prefix: string): void {
   // ── Route registration ────────────────────────────────────────────
 
   // Collection — find, create, bulk patch/delete, upsert
-  app.get(`${p}/{service}`,        crudHandler)
-  app.post(`${p}/{service}`,       crudHandler)
-  app.patch(`${p}/{service}`,      crudHandler)
-  app.delete(`${p}/{service}`,     crudHandler)
-  app.put(`${p}/{service}`,        crudHandler)   // bulk restore
+  app.get(`/{service}`,        crudHandler)
+  app.post(`/{service}`,       crudHandler)
+  app.patch(`/{service}`,      crudHandler)
+  app.delete(`/{service}`,     crudHandler)
+  app.put(`/{service}`,        crudHandler)   // bulk restore
 
   // Resource — get, patch, delete, restore, custom actions (via X-Service-Method)
-  app.get(`${p}/{service}/{id}`,    crudHandler)
-  app.post(`${p}/{service}/{id}`,   crudHandler)  // custom actions
-  app.patch(`${p}/{service}/{id}`,  crudHandler)
-  app.put(`${p}/{service}/{id}`,    crudHandler)  // restore via header
-  app.delete(`${p}/{service}/{id}`, crudHandler)
+  app.get(`/{service}/{id}`,    crudHandler)
+  app.post(`/{service}/{id}`,   crudHandler)  // custom actions
+  app.patch(`/{service}/{id}`,  crudHandler)
+  app.put(`/{service}/{id}`,    crudHandler)  // restore via header
+  app.delete(`/{service}/{id}`, crudHandler)
 }

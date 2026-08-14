@@ -146,7 +146,8 @@ Type?      — optional (nullable)
 @guarded                         excluded unless asSystem()
 @guarded(all)                    excluded from everything unless asSystem()
 @encrypted                       AES-256-GCM encrypted at rest (implies @guarded(all))
-@encrypted(searchable: true)     HMAC-indexed for encrypted equality search
+@encrypted(deterministic: true)  IV derived from the value — equality search AND readable
+@hashed                          HMAC-SHA256, one-way — matchable, never readable, not rotatable
 @secret                          @encrypted + @guarded(all) + @log(audit) + $rotateKey support
 @secret(rotate: false)           same but excluded from key rotation
 @allow('read'|'write'|'all', expr)  field-level access policy
@@ -499,6 +500,13 @@ export default {
     fullName: row => [row.firstName, row.lastName].filter(Boolean).join(' '),
     isActive: row => !row.deletedAt,
 
+    // Declaring the inputs narrows the SELECT to them. The row handed to a
+    // declared fn carries only those names, and reading anything else throws.
+    initials: {
+      needs:   ['firstName', 'lastName'],
+      compute: row => `${row.firstName[0]}${row.lastName[0]}`,
+    },
+
     $validate: [{
       check:   data => !data.email?.includes('+'),
       message: 'Email aliases not allowed',
@@ -751,6 +759,7 @@ litestone seed run [name] [--db=main] [--force]
 litestone introspect <db> [--out schema.lite] [--no-camel]
 litestone transform config.js [--preview] [--dry-run]
 litestone jsonschema [--out=./schemas/] [--format=flat]
+litestone access [--check] [--json] [--stdout] [--out=<path>]
 litestone replicate config.js
 litestone backup [dest] [--vacuum]
 litestone optimize [table]
@@ -848,9 +857,45 @@ test cases must stay stable.
 ## Testing utilities (`./testing` subpath)
 
 ```js
-import { makeTestClient, Factory, defineFactory, truncate, reset, snapshot, restore,
-         generateFactory, generateGateMatrix, generateValidationCases,
-         factoryFrom, loadFixture, parseCsv } from '@frontierjs/litestone/testing'
+import { createTestEnv, makeTestClient, Factory, defineFactory, truncate, reset,
+         snapshot, restore, generateFactory, generateGateMatrix,
+         generateValidationCases, deriveAccess, renderAccessSnapshot, gateLadder,
+         expectedVerdict, factoryFrom, loadFixture, parseCsv,
+         readOnly, schemaMutants, mutationScore } from '@frontierjs/litestone/testing'
+
+// The environment: migrated database, client, factories, principal. Tables
+// arrive as a file copy from a template migrated once per schema per process —
+// 476ms → 13ms per database on a 37-model schema.
+// `migrations:` replays the committed files instead of generating DDL, so the
+// tests run against the database a deploy produces. basecamp uses it.
+const env = await createTestEnv({
+  schema:     'db/schema.lite',
+  migrations: 'db/migrations',
+  plugins:    [myGatePlugin],
+})
+
+env.actingAs(user)                  // the app's own getLevel — anything about behaviour
+await env.atLevel(4)                // a SYNTHETIC standing — the gate grid only
+await env.verifyGateLadder()        // every gated model × every level × all four ops
+await env.verifyReadLadder()        // the read column alone — no fixtures needed
+await env.verifyConstraints()       // every declared rule, against a real write
+await env.verifyFieldProtection()   // @guarded/@encrypted/@secret, actually read
+await env.verifyRowPolicies()       // @@allow/@@deny, rows on BOTH sides
+
+// Mutate the schema, run the ORIGINAL's checks against the mutant's database.
+// A mutant nothing notices is a hole in the SUITE, and it names itself.
+const { score, survived } = await mutationScore({
+  schema, build: (text) => createTestEnv({ schema: text }),
+})
+env.seal(); env.reset(); env.close()
+
+// Arrange / Act / Assert as three clients rather than three comments. `setup` is
+// the arrange every scenario shares — run once, restored by each phases() call.
+const fx = await env.setup(({ factories }) => factories.account.createOne())
+const t  = env.phases({ as: developer })
+const lead = await t.arrange(({ factories }) => factories.lead.createOne())
+await t.act(as => as.lead.remove({ where: { id: lead.id } }))
+await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
 
 const { db, factories } = await makeTestClient(schemaText, {
   seed:          42,           // deterministic RNG seed
@@ -869,10 +914,15 @@ await reset(db)                // truncate all tables in dependency order
 const clean = snapshot(db)
 restore(db, clean)
 
-// Test generation
-const matrix  = generateGateMatrix(schema, 'Post')        // gate allow/deny cases
+// Test generation — the second argument is the MODEL name, never the accessor
+const matrix  = generateGateMatrix(schema, 'Post')        // every op × every level 0–8
+const edges   = generateGateMatrix(schema, 'Post', { levels: 'edges' })  // 2 per op
 const cases   = generateValidationCases(schema, 'User')   // valid + invalid + boundary
 const factory = factoryFrom(schema, 'User', db)
+
+// The declared access surface — gates, policies, protected fields, transition
+// gates. `litestone access` renders it to the committed access.snapshot.md.
+const access  = deriveAccess(schema)
 ```
 
 ---
@@ -945,6 +995,8 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 
 **No ILIKE** — use `WHERE LOWER(name) LIKE '%term%'`
 
+**A plain object in `bun:sqlite`'s parameter list voids every positional binding in that statement.** It is read as a named-parameter bag, and a statement built with `?` matches none of its keys — so nothing is bound, including the WHERE, and no error is raised. `SELECT ? IS NULL` passed `{x:1}` answers 1; `UPDATE t SET a = ? WHERE id = ?` passed `({x:1}, 1)` changes no rows, because the id was voided along with the value. Every symptom of FJS-199 is this one fact wearing different clothes. Anything that reaches `run`/`query`/`prepare` with a caller-supplied value has to know the value is a bindable primitive first.
+
 **`json_extract` returns native types** — `json_extract(data, '$.id')` returns integer; comparing to string silently fails. Cast: `CAST(json_extract(data, '$.id') AS TEXT)`
 
 **`sqlite_sequence` is a historical counter** — shows total rows ever created, not current count.
@@ -962,8 +1014,76 @@ realm every other package sits on: `example`: `bun run verify` and `basecamp`:
 `bun run verify`, plus `sierra`: `bun run test:safety` — the five checks that run
 against a real client rather than a stand-in.
 
+**`test/matrix.test.ts` is where a CROSSING is answered.** 14 column kinds × 12
+operations, one cell each, under one invariant — *no cell may silently return a
+wrong answer*: supported, or refused **by name**. Adding a column kind or an
+operation means filling its row or column; a missing cell fails rather than being
+skipped, because every defect in the 2026-08-11/12 sweep lived in an intersection
+that each feature's own suite passed. A cell reading `200:ref` is open FJS-200,
+asserted **still broken** — fix it and the matrix goes red telling you to promote
+the cell, so a fix cannot leave the grid stale. Fill cells from
+`MATRIX_REPORT=1 bun test test/matrix.test.ts`, never by hand: a grid written
+from belief asserts a wish.
+
 **Traps that cost time here, all verified by running:**
 
+- **A `@from(first/last)` field is an id in SQL and a ROW after `read()`.** The
+  subquery resolves the target's primary key; `resolveFromRowRefs` fetches the
+  rows in one batched query and swaps them in, before `applyComputed` so a
+  parent computed reading `row.lastOrder.amount` sees a row. It was a
+  `json_object` of the target's columns, which filtered out the *virtual*
+  attributes and left the *protective* ones — so it returned `@guarded(all)`,
+  `@omit(all)` and `@encrypted` values to any caller (`FJS-223`) while missing
+  the target's own `@computed`/`@from` (`FJS-222`). Protections live in `read()`;
+  anything that assembles a row without it will leak them. The three include
+  branches share `finishRelated` for the same reason — each had its own copy of
+  deserialize → compute → shape, and a step added to one missed the other two.
+- **A tree read goes through the ordinary read path, and it has to stay that
+  way.** `findMany({ recursive })` resolves ids in a CTE and fetches the rows
+  with `findMany`, so the gate, the policy, the select and the derived fields
+  have one owner each. It was a second SELECT path once, and it asked none of
+  them past the anchor row: a caller refused on the model read its whole subtree
+  (`FJS-216`). The walk carries the anchor's visibility predicate, so an
+  invisible node hides its branch — reparenting orphans upward hands back the
+  children of a refused row. Only `findMany` walks a tree; every other read
+  refuses `recursive` by name.
+- **A generated expectation must not come from the code it grades.**
+  `expectedVerdict()` in `access.js` restates what `@@gate` means and does not
+  call `levelPasses()` in the gate plugin, which is the opposite of the rule
+  everywhere else here. It is not an oversight: when `gateLadder` asked the
+  plugin, deleting a branch from the plugin produced **zero** mismatches across
+  333 executed assertions. One exhaustive test over every (required × level) pair
+  holds the two statements together. Describing the gate (the access snapshot)
+  shares the predicate; grading it may not.
+- **A row policy has TWO implementations and they can disagree** — see the
+  policy note below. `verifyRowPolicies` grades one against the other, which is
+  a real oracle rather than a restatement. `create` is not covered because
+  `evalJs` is its only implementation, and grading it with `evalJs` is circular.
+- **Rows on one side of a predicate prove nothing.** A policy that admits
+  everything and a policy that is not applied at all are the same observation.
+  Reported as `error`, never as a pass.
+- **A mutation score that counts its own harness failures is worthless.** Only a
+  verdict disagreement kills a mutant. Counting the `error` and `skipped`
+  outcomes was worth 36 points on a 14-mutant schema: every mutant came back with
+  the same 22 error rows and the score read 93% while four mutations went
+  completely unnoticed. Same rule as the gate matrix, one level up.
+- **Mutation is code-only and quote-aware.** An attribute named inside a doc
+  comment is prose; editing it produces a mutant identical in behaviour, which
+  survives everything. `example` reported four surviving `guarded-drop` mutants
+  on a model with no `@guarded` field before this.
+- **A UNIQUE collision is indistinguishable from a validator working.** Both are
+  a throw on a write that should have been refused, so a constraint runner that
+  counts any throw as *rejected* passes against a validator that does nothing.
+  `verifyConstraints` checks for `ValidationError` by name and reports anything
+  else as `error`; its first run on basecamp was 23 such rows, none about
+  basecamp. Three separate guards keep them out — see the comment there before
+  changing how it creates rows.
+- **A row policy is compiled twice, into two languages, and they can disagree.**
+  `read`/`update` become a WHERE (`compileSql`); `create` and the post-update
+  check are evaluated in JS (`evalJs`). Every comparison form has to be handled
+  in both — `field == null` was in neither and fell to `"col" = NULL`, so create
+  allowed a row that read then hid (`FJS-195`). Adding a form to one half is
+  half a change.
 - **Raw SQL requires `asSystem()`** once a schema declares access rules — `db.sql`
   and `db.$setAuth(u).sql` both throw. Raw statements enforce no `@@gate`,
   `@@allow`, `@guarded`, `@scoped` or `@@softDelete`; they all live above SQLite.
@@ -977,9 +1097,30 @@ against a real client rather than a stand-in.
   model that stage, only `null` grades down.
 - **`sessionGateLevel()` is duplicated in Junction** (which this package may not
   import). Change one, change both.
-- **`createClient({ db })` is ignored when the schema declares `database main`** —
-  the declaration wins, so a test that believes it is in-memory is writing the
-  declared file and accumulating state across runs.
+- **`createClient({ db })` names MAIN's path and nothing else.** It overrides a
+  declared `database main`, so `db: ':memory:'` is the in-memory test client. A
+  SECOND declared database keeps its declared path regardless — `databases:
+  ':memory:'` is the shorthand that moves every one of them, jsonl and logger
+  included. Most specific wins: `databases: ':memory:'` > `databases: { main }` >
+  `db` > the declaration.
+- **A bulk write prepares one statement per row SHAPE, and the shapes come from
+  the rows.** `createMany`/`upsertMany` no longer take the column list from row
+  0, so a batch may be ragged; rows still insert in caller order, because an
+  autoincrement id is assigned in insert order. What a row does NOT carry, it
+  does not write — the column takes its DDL default.
+- **A key set to `undefined` is dropped from a write payload.** Only `null`
+  clears (Invariant 9). `{ views: form.views }` off a form with no views field
+  used to bind NULL and defeat the column's default.
+- **An enum array has no CHECK behind it.** `targets ReclaimTarget[]` is a JSON
+  TEXT column; SQLite cannot read a JSON array's elements without `json_each`,
+  and a CHECK may not contain the subquery that would take. Membership is
+  enforced at the client boundary only — the same tier as `@minItems` and
+  `Int[]` element typing. Raw SQL writes anything.
+- **A bare array in a `where` is not `equals`, on either kind of column.** It
+  means *the column's value is in this list* — `IN` for a scalar, `IN` inside
+  `json_each` for an array column, which is `hasSome`. **Prisma reads it as an
+  exact match**, so a schema ported from there filters wider than it did. The
+  exact, ordered comparison is `{ equals: [...] }`.
 - **Columns are emitted verbatim camelCase; `DateTime` is ISO-8601 TEXT.** Hand-
   written SQL assuming snake_case or epoch-ms will not match.
 - **The audit logger defers one event-loop tick** — `fireLog()` writes via
@@ -998,10 +1139,15 @@ against a real client rather than a stand-in.
 - **A `@from` applies the TARGET model's `@@softDelete` and `@@hasTemplates`.**
   Same as `include: { _count: true }` over the same relation. `withDeleted: true`
   / `withTemplates: true` opt back in; an explicit `where:` composes on top.
-- **A `@computed` field resolves its own dependencies — you never list them.**
-  Naming one in a `select` sets `needsAllDbCols`, so the SQL widens to `SELECT *`
-  and the result is trimmed after. `@from` values are resolved first, so a
-  computed field may read one. **Six sites build SELECTs of their own** — the
+- **A `@computed` field the `select` did not name is not computed at all**, and
+  one that declares `needs` narrows the SELECT to what it listed. A **bare** fn
+  still widens to `SELECT *` — undeclared has to mean fetch everything — so one
+  bare fn in a select widens it for the declared ones too. A declared fn is
+  handed only its declared names and **throws** on any other read; that guard is
+  what makes the narrow fetch safe, because the alternative is `undefined` and a
+  plausible answer. `@from` values are resolved first, so a computed field may
+  read one, and naming one in `needs` emits just that subquery.
+  **Six sites build SELECTs of their own** — the
   query pipeline, `findManyCursor`, `search()`, `resolveIncludes` (×3 relation
   shapes) — and each has to append the `@from` subqueries itself;
   `fromSelectExpr()` / `deserializeFromRow()` are the shared definition.
@@ -1020,11 +1166,20 @@ against a real client rather than a stand-in.
   what made `@@softDelete` + `@@fts` unusable: FTS5 answers a repeated `'delete'`
   for one docid with `database disk image is malformed`, and only when the extra
   delete empties the structure — above one row it corrupts in silence.
-- **A generated trigger is diffed and migrated; a hand-written one is not.**
-  `introspect()` reads triggers into `__triggers`, and a rebuilt table has its
-  generated triggers restated (a rebuild drops the table, and its triggers with
-  it). Only names litestone owns — `*_fts_*`, `*_updatedAt` — are ever dropped.
-  A trigger the app wrote survives an ordinary migration and is **lost** by a
-  rebuild, with nothing said (`FJS-183`, open).
+- **A migration only drops what litestone named.** Triggers: `*_fts_*`,
+  `*_updatedAt`. Indexes: `idx_<table>_<fields>`. Anything the app created
+  survives an ordinary migration — `introspect()` reads triggers into
+  `__triggers` and a rebuilt table has its generated triggers restated, because
+  a rebuild drops the table and its triggers with it. **A rebuild destroys an
+  app-created trigger or index and litestone does not support carrying one
+  through** (ruled, `FJS-183`); the generated migration names what it is about
+  to destroy, and `autoMigrate` applies that SQL without showing it.
+- **A view over a rebuilt table IS carried through** — dropped before, restated
+  verbatim after, schema-declared and hand-made alike; left in place it takes
+  the migration down, because `ALTER TABLE … RENAME` reparses every view. Each
+  restored view is then read once inside the transaction, so one the rebuild
+  invalidated refuses the migration instead of surviving broken. Not catchable
+  when the body double-quotes the column — SQLite reads `"scratch"` as a string
+  literal and reports nothing.
 - **`encryptionKey` is parsed as hex**, so a 64-*character* key is not necessarily
   a 32-byte one.

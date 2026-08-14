@@ -1654,6 +1654,7 @@ body.readonly button[onclick^="saveCurrentQuery"], body.readonly button[onclick^
         <button class="edit-btn danger" onclick="deleteSelectedRow()" title="Delete selected row(s)" id="btnDeleteRow" style="display:none;opacity:.5" disabled>🗑</button>
         <button class="export-btn" onclick="openImport()" title="Import rows from CSV or JSON" id="btnImport" style="display:none">⬆ Import</button>
         <input type="file" id="importFile" accept=".csv,.json,application/json,text/csv" style="display:none" onchange="importFileChosen(this.files[0])">
+        <button class="export-btn" onclick="openQueryView()" title="The Litestone query behind this view — copy it, or send it to the REPL" id="btnViewQuery" style="display:none">{ } Query</button>
         <button class="export-btn" onclick="exportTable('csv')" title="Export the FULL table (respects search + show-deleted) as CSV">⬇ CSV</button>
         <button class="export-btn" onclick="exportTable('json')" title="Export the FULL table (respects search + show-deleted) as JSON">⬇ JSON</button>
         <div class="pagination">
@@ -2000,6 +2001,8 @@ let multiDb       = false
 let databases     = []   // [{ name, driver }] from /api/info
 let activeDbFilter = null   // null = All; string = filter to that db name
 let currentAuth   = null  // null = asSystem(), object = $setAuth(user)
+let currentQuery  = null  // the Litestone query the server ran for this view
+let currentPaged  = false // past page 1 — the copied query describes page 1 only
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
@@ -2385,6 +2388,7 @@ function selectTable(name, { skipLoad = false } = {}) {
   // Import works on any table that supports create (incl. jsonl append)
   document.getElementById('btnImport').style.display = name ? '' : 'none'
   document.getElementById('btnRowDetail').style.display = name ? '' : 'none'
+  if (!name) document.getElementById('btnViewQuery').style.display = 'none'
   closeRowDetail()
   updateBulkButtons()
   closeNewRow()
@@ -2417,6 +2421,9 @@ async function loadTable(name) {
   allRows      = data.items || []
   filteredRows = allRows
   currentTotal = data.total ?? null
+  currentQuery = data.query || null
+  currentPaged = Boolean(data.paged)
+  document.getElementById('btnViewQuery').style.display = currentQuery ? '' : 'none'
   selectedIds.clear()
   updateBulkButtons()
 
@@ -4899,6 +4906,61 @@ async function openRowDetail() {
 }
 
 function closeRowDetail() { document.getElementById('rowDrawer').style.display = 'none' }
+
+// ── The query behind the view ─────────────────────────────────────────────────
+// Browse builds a real Litestone query on every load; this is where it becomes
+// visible. The REPL already goes object → rows, so this closes the loop the
+// other way.
+
+function openQueryView() {
+  if (!currentQuery) return
+  const drawer = document.getElementById('rowDrawer')
+  drawer.style.display = ''
+  // The search box fans out across every searchable field rather than filtering
+  // one, so the `where` it produces surprises people. Say so next to it.
+  const note = currentQuery.args.where
+    ? 'The search box matches every searchable field, so `where` is an OR across the model.'
+    : 'No search text, so this view has no filter.'
+  const paged = currentPaged
+    ? '<div style="font-size:11px;color:var(--warn,#e0a030);padding:6px 0">You are past page 1. Cursor paging is not included — this query describes page 1 of the same filter and sort.</div>'
+    : ''
+  drawer.innerHTML = `
+    <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.1)">
+      <span style="font-weight:600">Query · ${esc(currentQuery.accessor)}</span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="edit-btn" onclick="closeRowDetail()">✕</button>
+    </div>
+    <div style="padding:12px 16px">
+      <div class="perf-section-header">Litestone</div>
+      <pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;background:rgba(255,255,255,0.04);border-radius:6px;padding:10px;margin:8px 0">${esc(currentQuery.code)}</pre>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn" onclick="copyQueryView()">Copy</button>
+        <button class="btn" onclick="queryViewToRepl()">Send to REPL</button>
+      </div>
+      ${paged}
+      <div style="font-size:11px;color:var(--muted);padding:4px 0">${esc(note)}</div>
+      <div style="font-size:11px;color:var(--muted);padding:4px 0">${esc(currentQuery.clientNote)} The client is part of the query — the same arguments through a different one return different rows.</div>
+    </div>`
+}
+
+function copyQueryView() {
+  if (!currentQuery) return
+  navigator.clipboard.writeText(currentQuery.code)
+    .then(() => toast('Query copied', 'ok'))
+    .catch(() => toast('Copy failed', 'err'))
+}
+
+function queryViewToRepl() {
+  if (!currentQuery) return
+  closeRowDetail()
+  showTool('repl')
+  const input = document.getElementById('replInput')
+  if (!input) { toast('REPL not available', 'err'); return }
+  // /api/repl binds `db` from the same auth selector Browse reads, so the REPL
+  // form states no client — restating one would scope the call twice.
+  input.value = currentQuery.replCode
+  input.focus()
+}
 
 function drawerJump(table, val) {
   closeRowDetail()

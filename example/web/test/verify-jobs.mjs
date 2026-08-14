@@ -21,7 +21,7 @@ const API = process.env.API_URL ?? 'http://localhost:8110'
 const REF = 'ORD-JOBS-1'
 
 try {
-  const r = await fetch(`${API}/health`)
+  const r = await fetch(`${API}/api/health`)
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
 } catch (e) {
   console.error(`Cannot reach api (bun run api) at ${API} — ${e.message}`)
@@ -48,7 +48,7 @@ let orderId = null
 let auth    = null
 
 try {
-  const login = await fetch(`${API}/auth/login`, {
+  const login = await fetch(`${API}/api/auth/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'alex@shop.test', password: 'correct-horse-battery' }),
   })
@@ -69,14 +69,15 @@ try {
 
   // ── 1. the queue is mounted and declares what it runs ──────────────────
   //
-  // Caravan's admin routes are RAW app.get routes, so `apiPrefix: '/api'` does
-  // NOT apply to them — /jobs, not /api/jobs (FJS-012). Worth asserting: the
-  // path is the thing most likely to be wrong after a config change, and a 404
-  // here is indistinguishable from "no jobs" if you only look at the body.
-  const listRes = await fetch(`${API}/jobs`)
+  // Caravan's admin routes are raw app.get routes, and app.get applies the
+  // app's apiPrefix like it does to everything else — /api/jobs (FJS-012).
+  // Worth asserting: the path is the thing most likely to be wrong after a
+  // config change, and a 404 here is indistinguishable from "no jobs" if you
+  // only look at the body.
+  const listRes = await fetch(`${API}/api/jobs`)
   t('admin.list', { status: listRes.status, isArray: Array.isArray(await listRes.json()) })
 
-  const schedules = await (await fetch(`${API}/jobs/schedules`)).json()
+  const schedules = await (await fetch(`${API}/api/jobs/schedules`)).json()
   t('cron.registered', {
     names: schedules.map(s => s.name),
     cron:  schedules.find(s => s.name === 'sweep-abandoned')?.cron ?? null,
@@ -119,7 +120,7 @@ try {
 
   // ── 4. the job record itself ───────────────────────────────────────────
   const job = await until(async () => {
-    const jobs = await (await fetch(`${API}/jobs?limit=500`)).json()
+    const jobs = await (await fetch(`${API}/api/jobs?limit=500`)).json()
     return jobs.find(j => j.unique_key === `book-courier:${orderId}` && j.status === 'done') ?? null
   })
   t('job.record', job ? {
@@ -145,7 +146,7 @@ try {
   // also whichever order held id 5 last time — an absolute count reports the
   // previous run's booking as a duplicate of this one's.
   const bookingsFor = async () =>
-    (await (await fetch(`${API}/jobs?limit=500`)).json())
+    (await (await fetch(`${API}/api/jobs?limit=500`)).json())
       .filter(j => j.unique_key === `book-courier:${orderId}`).length
   const bookingsBefore = await bookingsFor()
 
@@ -171,13 +172,13 @@ try {
   const before = await (await fetch(`${API}/api/orders`)).json()
   const pendingBefore = before.data.filter(o => o.status === 'pending').map(o => o.reference)
 
-  const run = await fetch(`${API}/jobs/run/sweep-abandoned`, {
+  const run = await fetch(`${API}/api/jobs/run/sweep-abandoned`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ days: 0 }),
   })
   const { id: sweepId } = await run.json()
   const sweepJob = await until(async () => {
-    const j = await (await fetch(`${API}/jobs/${sweepId}`)).json()
+    const j = await (await fetch(`${API}/api/jobs/${sweepId}`)).json()
     return j.status === 'done' || j.status === 'failed' ? j : null
   })
 

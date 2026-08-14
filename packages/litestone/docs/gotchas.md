@@ -182,7 +182,9 @@ value was missing, and only on read-back.
 
 A Json field is now serialized before encryption and parsed after decryption,
 keyed on the declared type. `@secret`, `$rotateKey` and
-`@encrypted(searchable: true)` all work on a Json field.
+`@encrypted(deterministic: true)` all work on a Json field. `@hashed` does not —
+it requires a `String` column, because a digest is text and nothing parses back
+out of it.
 
 **Rows written before the fix are not recoverable** — the original never reached
 the cipher. They decrypt to the literal string `'[object Object]'` rather than

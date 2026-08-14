@@ -241,6 +241,15 @@ export function fromStatusCode(code: number, message?: string): FrameworkError {
     503: Unavailable,
     504: Timeout,
   }
-  const Cls = map[code] ?? GeneralError
-  return new Cls(message)
+  const Cls = map[code]
+  if (Cls) return new Cls(message)
+
+  // No class for this status. Keep the STATUS anyway when it is one: a thrown
+  // `{ status: 423 }` used to arrive as a 500, which is not a narrower answer
+  // but a different category — the client stops retrying and the 5xx pages
+  // someone. Only the class is unknown, and the class is the part nothing on
+  // the wire reads.
+  const err = new GeneralError(message)
+  if (Number.isInteger(code) && code >= 400 && code <= 599) err.code = code
+  return err
 }

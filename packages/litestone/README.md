@@ -304,7 +304,8 @@ model User {
 @guarded                         excluded unless asSystem()
 @guarded(all)                    excluded everywhere unless asSystem()
 @encrypted                       AES-256-GCM at rest (implies @guarded(all))
-@encrypted(searchable: true)     HMAC-indexed encrypted equality search
+@encrypted(deterministic: true)  encrypted equality search, and the value still reads back
+@hashed                          one-way digest — matchable, never readable
 @secret                          @encrypted + @guarded(all) + @log(auditDb)
 @allow('read'|'write'|'all', expr)   field-level conditional visibility
 @log(dbName)                     field-level audit log to a logger database
@@ -585,9 +586,10 @@ Reserved: `SYSTEM=8` (asSystem() only)  `LOCKED=9` (impassable — not even asSy
 
 ```prisma
 model User {
-  ssn    String  @encrypted                   // AES-256-GCM, guarded — asSystem() only
-  email  String  @encrypted(searchable: true)  // HMAC-indexed — equality WHERE works
-  apiKey String  @secret                       // @encrypted + @guarded(all) + @log(audit)
+  ssn    String  @encrypted                        // AES-256-GCM, guarded — asSystem() only
+  email  String  @encrypted(deterministic: true)   // equality WHERE works, and it reads back
+  pwHash String  @hashed                           // one-way — matchable, never readable
+  apiKey String  @secret                           // @encrypted + @guarded(all) + @log(audit)
 }
 ```
 
@@ -596,9 +598,10 @@ const db = await createClient({ path: './schema.lite',
   encryptionKey: process.env.ENC_KEY,     // 64 hex chars = 32 bytes
 })
 
-// searchable: true allows WHERE on encrypted fields
-await db.user.findFirst({ where: { email: 'alice@example.com' } })  // ✓ works
-await db.user.findFirst({ where: { ssn: '123-45-6789' } })           // → always null (not searchable)
+// A stable encoding is what makes a WHERE possible — deterministic ciphertext or a digest
+await db.user.findFirst({ where: { email: 'alice@example.com' } })  // ✓ works, and email reads back
+await db.user.findFirst({ where: { pwHash: submitted } })            // ✓ works, and pwHash never reads back
+await db.user.findFirst({ where: { ssn: '123-45-6789' } })           // ✗ refused: random IV, nothing can match
 
 // Rotate encryption key
 await db.$rotateKey(newKey)
@@ -1491,7 +1494,7 @@ for (const { op, level, label, expect: expected } of matrix) {
 ### generateValidationCases — constraint boundary data
 
 ```js
-const { valid, invalid, boundary } = generateValidationCases(schema, 'leads')
+const { valid, invalid, boundary } = generateValidationCases(schema, 'Lead')
 
 // valid   — a complete valid record (correct by construction)
 // invalid — one failing case per constraint: { field, value, rule, expect: 'fail', message }
@@ -1600,6 +1603,7 @@ litestone introspect                 reverse-engineer db → schema.lite
 litestone replicate [config.js]      WAL replication via Litestream
 litestone transform [config.js]      anonymize/shard pipeline (dev only)
 litestone jsonschema                 generate JSON Schema from schema
+litestone access                     write the access snapshot (--check in CI)
 
 Global flags:
   --config=<path>       litestone.config.js

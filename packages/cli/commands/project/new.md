@@ -374,7 +374,7 @@ function makeApiAppTs(useAuth) {
 // \`app.start()\` call lives in api/index.ts so that test code can import this
 // file without binding a port.
 
-import { createApp, cors, requestLogger, correlationId, healthPlugin, channels } from '@frontierjs/junction'
+import { createApp, requestLogger, correlationId, healthPlugin, manifestPlugin, channels } from '@frontierjs/junction'
 import { auth, authPlugin } from './core/auth.ts'
 import { withDb }           from './core/hooks.ts'
 import { env }              from './core/env.ts'
@@ -388,15 +388,28 @@ const app = createApp({
 })
 
 // ─── Middleware ───────────────────────────────────────────────────────────
-app.configure(cors({ origins: ['*'], credentials: true }))
+// CORS is declared in config/junction.config.js and installed from there — a
+// second app.configure(cors(...)) here registers a SECOND wildcard OPTIONS
+// route and patches the router's middleware twice, which is what this file
+// used to do. Configure it by hand only when the app also uses csrf(), which
+// has to come after it.
 app.configure(correlationId())
 app.configure(requestLogger())
 
 // ─── Health ───────────────────────────────────────────────────────────────
-// GET /health and /metrics. frontier.config.js points the deploy's health
-// check at /health, and a deploy rolls back when it does not answer — so this
-// is load-bearing the first time the app leaves the laptop.
+// GET /api/health and /api/metrics — under the app's apiPrefix, like every
+// route it registers. frontier.config.js points the deploy's health check at
+// the same path, and a deploy rolls back when it does not answer, so this is
+// load-bearing the first time the app leaves the laptop.
 app.configure(healthPlugin())
+
+// ─── Introspection ────────────────────────────────────────────────────────
+// GET /api/manifest — services, hooks, channels, plugins, and every route the
+// router will answer, read off live runtime state. fli api:routes reads it:
+// the HTTP surface is emergent (services auto-mount, plugins register their
+// own), so running the app is the only way to ask what it serves. devOnly by
+// default — a production build 404s here.
+app.configure(manifestPlugin())
 
 // ─── Real-time ────────────────────────────────────────────────────────────
 // Registers the /ws route. Without it the browser client has nothing to
@@ -405,7 +418,8 @@ app.configure(healthPlugin())
 app.configure(channels())
 
 // ─── Auth routes ──────────────────────────────────────────────────────────
-// Mounts /auth/register, /auth/login, /auth/logout, /auth/me, etc.
+// Mounts /api/auth/register, /api/auth/login, /api/auth/logout, /api/auth/me,
+// etc. — apiPrefix moves the plugin's routes with everything else.
 app.configure(authPlugin)
 
 // ─── Per-request db scoping ──────────────────────────────────────────────
@@ -426,7 +440,7 @@ export default app
   return `// api/src/app.ts
 // The construction site — createApp + every plugin registration lives here.
 
-import { createApp, cors, requestLogger, correlationId, healthPlugin, channels } from '@frontierjs/junction'
+import { createApp, requestLogger, correlationId, healthPlugin, manifestPlugin, channels } from '@frontierjs/junction'
 import { withDb }                                        from './core/hooks.ts'
 import { env }                                           from './core/env.ts'
 
@@ -438,14 +452,26 @@ const app = createApp({
 })
 
 // ─── Middleware ───────────────────────────────────────────────────────────
-app.configure(cors({ origins: ['*'], credentials: true }))
+// CORS is declared in config/junction.config.js and installed from there — a
+// second app.configure(cors(...)) here registers a SECOND wildcard OPTIONS
+// route and patches the router's middleware twice, which is what this file
+// used to do. Configure it by hand only when the app also uses csrf(), which
+// has to come after it.
 app.configure(correlationId())
 app.configure(requestLogger())
 
 // ─── Health ───────────────────────────────────────────────────────────────
-// GET /health and /metrics. The deploy's health check reads /health and rolls
-// back when it does not answer.
+// GET /api/health and /api/metrics — under the app's apiPrefix. The deploy's
+// health check reads the same path and rolls back when it does not answer.
 app.configure(healthPlugin())
+
+// ─── Introspection ────────────────────────────────────────────────────────
+// GET /api/manifest — services, hooks, channels, plugins, and every route the
+// router will answer, read off live runtime state. fli api:routes reads it:
+// the HTTP surface is emergent (services auto-mount, plugins register their
+// own), so running the app is the only way to ask what it serves. devOnly by
+// default — a production build 404s here.
+app.configure(manifestPlugin())
 
 // ─── Real-time ────────────────────────────────────────────────────────────
 // Registers the /ws route the browser client upgrades to.
@@ -671,12 +697,10 @@ export default defineConfig({
     port:       parseInt(process.env.WEB_PORT ?? process.env.FLI_PORT_FE ?? '8000'),
     strictPort: true,
     proxy: {
+      // One entry: apiPrefix moves every route the app registers, raw ones
+      // and the auth plugin's included, so they are all under /api. /ws is
+      // the socket, which is not a route.
       '/api':     { target: API, changeOrigin: true },
-      // Raw app.get routes take no apiPrefix, so /auth is a sibling of /api
-      // rather than a path inside it.
-      '/auth':    { target: API, changeOrigin: true },
-      '/session': { target: API, changeOrigin: true },
-      '/health':  { target: API, changeOrigin: true },
       '/ws':      { target: API, ws: true },
     },
   },
@@ -880,7 +904,7 @@ title: Sign in
     loading = true
     error   = ''
     try {
-      const res = await fetch('/auth/login', {
+      const res = await fetch('/api/auth/login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ email, password }),

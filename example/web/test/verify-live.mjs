@@ -41,7 +41,7 @@ const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 // orders keep the states verify.mjs expects.
 const REF = 'ORD-LIVE-1'
 
-for (const [name, url] of [['api (bun run api)', `${API}/health`], ['web (bun run web)', UI]]) {
+for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]]) {
   try {
     const r = await fetch(url)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -177,7 +177,7 @@ try {
   const framesBefore = inbound.length
 
   // ── sign in OUT of band. Nothing below touches the browser. ─────────────
-  const login = await fetch(`${API}/auth/login`, {
+  const login = await fetch(`${API}/api/auth/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'alex@shop.test', password: 'correct-horse-battery' }),
   })

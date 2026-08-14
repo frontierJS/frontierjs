@@ -38,9 +38,9 @@ export const env = defineEnv({
   ENCRYPTION_KEY: { required: true, minLength: 64,
                     default: DEV_ENCRYPTION_KEY },
 
-  // ── Agent communication ───────────────────────────────────
-  AGENT_SECRET: { required: true, minLength: 16,
-                  default: 'agent-dev-secret' },
+  // ── Outpost communication ───────────────────────────────────
+  OUTPOST_SECRET: { required: true, minLength: 16,
+                  default: 'outpost-dev-secret' },
 
   // ── Mail (Resend) ─────────────────────────────────────────
   RESEND_API_KEY: {},

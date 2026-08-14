@@ -78,7 +78,7 @@ title: Home
 
 {#if session.level > 0}
   <Alert tone="success">
-    Signed in at level {session.level}{session.role ? ' as ' + session.role : ''}. The server graded this, not the browser — see <code>GET /session</code>.
+    Signed in at level {session.level}{session.role ? ' as ' + session.role : ''}. The server graded this, not the browser — see <code>GET /api/session</code>.
   </Alert>
 {:else}
   <Alert tone="info">

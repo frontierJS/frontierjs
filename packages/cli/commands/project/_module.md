@@ -47,7 +47,9 @@ const scanFiles = (dir, ...exts) => {
 // ─── extractServiceMeta ───────────────────────────────────────────────────────
 // Reads a .service.ts file and extracts name, model, hooks, custom methods.
 // Covers createService({ hooks: { before: { ... }, after: { ... } } })
-// and the chained svc.hooks({ ... }) form.
+// and the chained svc.hooks({ ... }) form. Actions come from `methods:` when
+// the file declares one, and from a pattern scan when it does not — the same
+// order junction resolves them in.
 
 const extractServiceMeta = (src, filename) => {
   const name  = src.match(/name\s*:\s*['"](\w+)['"]/)
@@ -75,17 +77,30 @@ const extractServiceMeta = (src, filename) => {
     }
   }
 
-  // Custom methods: any function key not in the CRUD reserved set
+  // Actions. A `methods:` list DECLARES them (junction reads it that way since
+  // FJS-D01), so prefer it: it is the only form that catches an action assigned
+  // from a module-level const — `refund: move('refund')` takes no visible ctx
+  // and the pattern scan below cannot see it at all.
   const RESERVED = new Set([
-    'find','get','create','patch','remove','restore',
+    'find','get','create','patch','remove','restore','update',
     'createService','hooks',
   ])
-  const customRe = /(?:async\s+)?(\w+)\s*(?:\([^)]*ctx[^)]*\)|:\s*async\s*(?:\([^)]*ctx[^)]*\)))/g
   const customMethods = []
-  let cm
-  while ((cm = customRe.exec(src)) !== null) {
-    if (!RESERVED.has(cm[1]) && cm[1] !== 'function' && /^[a-z]/.test(cm[1])) {
-      customMethods.push(cm[1])
+
+  const declared = src.match(/methods\s*:\s*\[([^\]]*)\]/)
+  if (declared) {
+    for (const raw of declared[1].split(',')) {
+      const nm = raw.trim().replace(/['"]/g, '')
+      if (nm && !RESERVED.has(nm)) customMethods.push(nm)
+    }
+  } else {
+    // Undeclared — the pattern scan, which is what junction itself falls back to.
+    const customRe = /(?:async\s+)?(\w+)\s*(?:\([^)]*ctx[^)]*\)|:\s*async\s*(?:\([^)]*ctx[^)]*\)))/g
+    let cm
+    while ((cm = customRe.exec(src)) !== null) {
+      if (!RESERVED.has(cm[1]) && cm[1] !== 'function' && /^[a-z]/.test(cm[1])) {
+        customMethods.push(cm[1])
+      }
     }
   }
 

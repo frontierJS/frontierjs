@@ -27,7 +27,7 @@ const API  = process.env.API_URL       ?? 'http://localhost:8110'
 const SINK = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
 const REF  = 'ORD-NOTIFY-1'
 
-for (const [name, url] of [['api (bun run api)', `${API}/health`], ['the mail sink', `${SINK}/outbox`]]) {
+for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['the mail sink', `${SINK}/outbox`]]) {
   try {
     const r = await fetch(url)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -52,7 +52,7 @@ async function until(fn, ms = 15_000) {
 }
 
 async function signIn(email) {
-  const res = await fetch(`${API}/auth/login`, {
+  const res = await fetch(`${API}/api/auth/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password: 'correct-horse-battery' }),
   })
@@ -99,11 +99,11 @@ try {
   // against somebody else's work and silently never sent. Production does not
   // delete orders; a drive that creates and deletes one every run does. Clear
   // it rather than race it.
-  const live = (await (await fetch(`${API}/jobs?limit=500`)).json())
+  const live = (await (await fetch(`${API}/api/jobs?limit=500`)).json())
     .filter(j => j.unique_key === `announce-payment:${orderId}` &&
                  (j.status === 'pending' || j.status === 'running'))
   for (const job of live)
-    await fetch(`${API}/jobs/${job.id}/cancel`, { method: 'POST' })
+    await fetch(`${API}/api/jobs/${job.id}/cancel`, { method: 'POST' })
 
   // ── 1. paying answers without waiting for anybody ──────────────────────
   const before = Date.now()
@@ -234,10 +234,10 @@ try {
   // swallows THIS dispatch, the staged 500 is never consumed, and it detonates
   // in the next run instead — which is how a fault-injection test poisons the
   // suite rather than the run that armed it.
-  for (const job of (await (await fetch(`${API}/jobs?limit=500`)).json())
+  for (const job of (await (await fetch(`${API}/api/jobs?limit=500`)).json())
         .filter(j => j.unique_key === `announce-payment:${secondId}` &&
                      (j.status === 'pending' || j.status === 'running')))
-    await fetch(`${API}/jobs/${job.id}/cancel`, { method: 'POST' })
+    await fetch(`${API}/api/jobs/${job.id}/cancel`, { method: 'POST' })
 
   await fetch(`${API}/api/orders/${secondId}`, {
     method: 'POST', headers: { ...admin, 'x-service-method': 'pay' }, body: '{}',
@@ -248,7 +248,7 @@ try {
   // cancelled corpses from earlier runs — ids are reused, and a cancelled job
   // keeps the error that got it cancelled.
   const failed = await until(async () => {
-    const jobs = await (await fetch(`${API}/jobs?limit=500`)).json()
+    const jobs = await (await fetch(`${API}/api/jobs?limit=500`)).json()
     return jobs.find(j => j.unique_key === `announce-payment:${secondId}` &&
                           j.error && j.status === 'pending') ?? null
   })

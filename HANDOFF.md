@@ -1,4 +1,4 @@
-# Handoff — 2026-08-10
+# Handoff — 2026-08-13
 
 > **Basecamp declares `@@gate` on all 37 models and `@@allow` on one** — `Server`,
 > as of 2026-08-10. The gate ladder is per WORKSPACE, not per user, which is why
@@ -12,6 +12,279 @@ Everything below was verified by running it, not by reading. Where I could not
 verify something, it says so.
 
 **Sessions are recorded here, newest first.**
+
+---
+
+## The service split — FJS-D01 ruled and executed (2026-08-13)
+
+**Ruled: go on the definition/compiled split only.** Export tiering (`FJS-046`)
+and the middleware/hook renaming (`FJS-017`) were in the original proposal and
+are refused — they stay open on their own merits. Inline action keys are
+supported permanently; **no app was migrated** (56 basecamp actions, 7 in the
+examples, all untouched and all still passing).
+
+The shape came from reading Feathers 5 (Dove) source rather than memory, and the
+adaptation is written up in `DECISIONS.md` § API design. The user's call, and the
+better one: **`methods:` becomes the declaration site** rather than inventing an
+`actions: {}` block — Junction already had the key, it was just being validated
+*against* a scan instead of being believed.
+
+**Phase 0 — a bug found while planning (`FJS-231`).** Every autoloaded
+`createBaseService` service ran its `@@gate` and its validator **twice per
+request**: a base returns the MERGED hook map, the autoloader spreads a base back
+through `createService`, and the second pass appended the derived layer again.
+Nothing caught it because nothing was wrong on the wire — the symptom was cost.
+Fixed by marking the four derived hooks (a WeakSet, invisible to a spread) and
+skipping one already present. Marked, never matched by name: a user hook called
+`gateAuth` is not ours, and letting it suppress the real one is fail-open.
+
+**Phase 1 — one parse step.** `collectActions` runs at construction into
+`_actions`; dispatch, `/manifest`, OpenAPI and `/metrics` read the table instead
+of six consumers re-applying the deny-list rule. `Service` lost its index
+signature (`ServiceDefinition` keeps it — you *write* actions there), which took
+the baseline **211 → 201** on one line: `keyof Service` was `string | number`, so
+`Omit<Service, …>` collapsed and every `base.find` read as `unknown`.
+
+**Phase 2 — one owner for the pipeline.** `pipelines(appHooks)` memoised on the
+app map's identity and a version `hooks()` bumps. Deleted: `_pipelines`,
+`_compiledPipelines`, its hand invalidation, four writers, the registry's
+`hooks()` monkey-patch, and the ladder in `callService` where the cache
+**outranked the app hooks the transport had just passed**. A call now always runs
+the hooks it was handed — the inverted test is the point of the phase.
+
+**Phase 3 — `describe()` and the marker.** One answer to *what is this service*,
+so three readers stopped reaching into `_meta`/`_schemas`/`_hookMap`.
+`Symbol.for('junction.service')` replaces the loader's `typeof hooks !== 'function'`
+discriminant; non-enumerable, so a spread copy is correctly seen as unbuilt.
+Baseline **201 → 199**.
+
+**Phase 4a — scaffolds.** Deliberately did NOT emit a `methods:` list into the
+CRUD-only scaffold: it would be identical to the default and would 405 the first
+action someone added without updating it. What shipped is the useful half — the
+scaffold comment shows the declaration form, and `fli`'s service parser reads
+`methods:` first, which is the only form that can see an action assigned from a
+module-level const (`refund: move('refund')` was invisible to it).
+
+**Deviation worth knowing:** the plan said Phase 3 drops the dispatch fallback
+for an action attached AFTER construction. It stays, with its one-time warn. It
+costs one property read on a path that already missed the table, and it turns a
+breaking 404 into a warned upgrade for anyone doing that outside this repo.
+
+Verified: junction 991 · testing 23 · conduit 193 · auth 88 · cli 363+25 ·
+typecheck 199 (ratcheted twice) · `ci:fast` · `example` verify 37 / live 14 /
+jobs 8 · `basecamp` verify 271/271 — the last three re-run after Phase 3, not
+carried over from Phase 1.
+
+**Still open here:** `FJS-034` is now a corrected row — 199 errors, of which the
+bulk is tests and examples, not `service.ts`. `FJS-046` and `FJS-017` are
+untouched by the ruling.
+
+---
+
+## Three things you could not ask Junction for (2026-08-13)
+
+Same session as the batch below, second half. All additive, no rulings needed.
+
+**`populate` on the browser client** (`FJS-084`). The wire and the server had
+supported `$populate` from the start; the client had no way to say it, so a
+component could not declare its own data shape. Both builders emit it now — the
+query string and the WS frame, because the client prefers the socket whenever
+one is up. **A by-id `get` carries `params` too**; they were accepted and
+dropped on that path, which is the shape a detail page wants most. Sierra needed
+no code change, only docs — `findParams` was already threaded.
+
+**`buildRoutes(app)` + `fli api:routes`** (`FJS-091`). `routePaths()` existed
+and nothing assembled it. The surface is emergent, so it reads the router rather
+than the registry, splits `service` from `raw`, and rides `/manifest`.
+**`manifestPlugin()` is now configured in `example/` and in `fli new`'s
+scaffold** — a command about a plugin nobody configures is not a command.
+
+That last one paid for itself on its first run: `fli api:routes` against a
+freshly scaffolded app printed `OPTIONS /*` **twice**. The scaffold configured
+CORS by hand *and* through `config.http.cors`, so every FJS app has been running
+doubled CORS middleware since the config path started working. Scaffold fixed;
+the framework half — a second registration of the same exact route is silent and
+the second handler shadows the first — is `FJS-225`.
+
+**`IEventBus.stats()`** (`FJS-143`). `{ events, total }`. Basecamp's hub card
+stated the gap on the screen; it prints the number now.
+
+**`FJS-089` was ruled defer-and-document**: `after` means after the METHOD, not
+after the call succeeded. README and the package file say so, with the two
+workarounds. The row stays open for the phase itself.
+
+Verified: junction 959 pass / typecheck at baseline, cli 363+25, sierra 832,
+`ci:fast` green, `example`: `verify` 37, `verify:live` 14, `verify:jobs` 8,
+`basecamp`: `verify` 271/271 (270 + the subscriber count, which replaced the
+check that asserted the card's *we cannot measure this* copy), plus
+`fli api:routes` run against both a scaffolded app and `example`.
+
+**`FJS-D01` was unruled at the time of writing** — ruled and executed later the
+same day, see the entry above. The measurement stands and is why the register's
+claim needed correcting: of junction's 211 typecheck errors, **137 were in
+`tests/` and `example/`, 72 in `src/`**, and only 8 were the
+`unknown`-not-assignable shape. The refactor was worth doing on design grounds,
+not to move that number.
+
+---
+
+## Junction's three silent declarations (2026-08-13)
+
+`FJS-012`, `FJS-013` and `FJS-088` closed together because they are one shape:
+something Junction declares, reads as handled, and does not do.
+
+**`apiPrefix` has one owner now** — the `app.get`/`post`/`put`/`patch`/`delete`
+shortcuts. It used to be applied by `registerServiceRoutes` alone, so a plugin's
+route stayed at the root while the services beside it moved; four plugins in
+junction hand-resolved `app.config.apiPrefix` to compensate, and
+`@frontierjs/auth`, being another package, did not. An app with
+`apiPrefix: '/api'` therefore served its login at `/auth` while the browser
+client looked under the prefix. The four copies are deleted,
+`registerServiceRoutes` registers bare `/{service}` paths, and `app.http.router`
+is the escape for a path that must not move.
+
+**This moves paths in every app that sets a prefix, which is the fix, not
+fallout.** `example` now serves `/api/auth/login`, `/api/session`, `/api/jobs`
+and `/api/health`; its vite proxy went from four entries to one, and `fli new`'s
+scaffold and caravan's `CLAUDE.md` both said the old thing. If a drive suddenly
+404s on a path you remember, that is this.
+
+**An `Idempotency-Key` executes once.** It was parsed into request metadata and
+consumed by nothing. `core/idempotency.ts` claims it in `callService` — the one
+path every transport takes — so a repeat replays the first answer and runs no
+hooks. Keyed by `(service, method, principal, key)` because replay skips the
+pipeline and therefore the auth in it. A failed call releases the key; an
+in-flight duplicate is a **retryable** 409; the in-flight marker has its own
+2-minute TTL so a throw between claim and settle cannot lock a caller out for a
+day.
+
+**Found while doing it: the WS path established no request metadata at all.**
+It wrapped nothing in `runWithMeta`, so `requestMeta()` was `undefined` for every
+socket call — the correlation id was as HTTP-only as the key. Both now ride the
+frame's `meta`. That is the hazard the package file already warns about (the two
+transports build their context separately and a difference is silent) showing up
+in a third place.
+
+**A model service with no field rules says so** — `autoValidate` stored `null`
+for a `$defs` miss and for a definition that would not compile, and warned on
+neither. It warns once per model now, but only when the accessor resolves to a
+real table: a service with no model is a supported shape, and `getTable` already
+names every spelling when someone calls an unused CRUD method on one.
+
+Verified by running: junction 942 pass / typecheck at baseline, auth 88,
+caravan 79, sierra 832, testing 23, `bun run ci:fast` green, `basecamp: verify`
+270/270, and all six `example` drives — `verify` 37, `verify:build` 37,
+`verify:ui` 27, `verify:live` 14, `verify:jobs` 8, `verify:notify` 9,
+`verify:public` 21 — against a **restarted** API, since a dev server serves the
+code it started with.
+
+One thing worth knowing for the next person: a single failing test in
+`tests/client.test.ts` took 25 unrelated tests down with it in the full-suite
+run, across three other files that bind fixed ports. Alone they all passed. Not
+chased, not filed — but a red suite here may be one real failure wearing 26
+faces.
+
+---
+
+## `fli check` — architecture rules, and a dead production build (2026-08-12)
+
+Ten rules in `packages/cli/core/checks.js`. `fli check` runs them against a
+client app; `scripts/ci.mjs` imports the same module by relative path and runs it
+as a new **`structure` phase** (CI is six phases now, not five). One engine on
+purpose — two implementations of one rule is how a framework ends up breaking
+rules it publishes.
+
+**The membership test is that a violation is SILENT**, which is sharper than
+"greppable" and threw out half the candidates: *no TS in a JS package* is loud
+the moment anything runs. What survived is half invariants no compiler enforces
+(model names, `src/resources/`, resource filenames, one Resource per file) and
+half hazards with no invariant at all — and the second half earned its place
+immediately.
+
+**`FJS-198`: `packages/sierra/example`'s production build shipped no JavaScript
+and no CSS.** The `index.html` explained in a comment that the theme goes on the
+body tag; vite injects the built `<script>` at the first TEXTUAL match and does
+not skip comments, so the script and the stylesheet both landed *inside* the
+comment. The build succeeded, the file looked right, the page was inert. The
+hazard is documented in the root `CLAUDE.md` and the repo's own example was the
+thing violating it — which is the whole argument for checking a rule rather than
+writing it down. Fixed and rebuilt; the tags now land outside the comment.
+
+Also found and fixed: `resources/leads.mesa` (lowercase, three Resources in one
+file) split into `Lead.mesa` / `Account.mesa` / `Tag.mesa`, and `ui/IDEAS.md`
+moved to `ui/docs/`.
+
+**The two false positives became rules**, which is the more useful half of a
+first run. A Resource over no model may take its own service noun singularised —
+basecamp's `Hub.mesa` is `createResource('hub')` and is correct. A schema with
+neither `api/` nor `web/` beside it is a fixture, not an app that got the layout
+wrong. A check that scolds every fixture in a repo is a check people turn off.
+
+**No ignore comment.** An exception is a named entry with a reason in
+`ci-allowances.json` under `structure`, keyed `'<rule>:<path>'`, and a stale one
+is reported. The one live entry is `packages/css/AGENTS.md` — a fifth root
+markdown file that is the same *kind* of thing as `CLAUDE.md`. **Whether
+Invariant 17 grows to name `AGENTS.md` is an open ruling**, deliberately left as
+an allowance rather than a quiet edit to the invariant.
+
+**Not mine, and left alone:** `bun run ci`'s coverage phase fails on
+`packages/datetime-kit`, which is exempt as *claimed, not built* and now has an
+untracked `package.json`, `src/` and `test/`. Another session is building it; the
+exemption is theirs to remove when it lands.
+
+## Testing realm — Phase 5's transport parity (2026-08-12)
+
+`env.verifyTransportParity()` in `@frontierjs/testing`. `listen: true` binds a
+real port — asked for as 0 and read back, so parallel suites cannot collide — and
+the runner puts the same call down HTTP and WS under the same principal and
+compares the answers. Calls default to every CRUD method of every service
+registered with a `model:`, fixtures from litestone's new `sampleWrites`, plus a
+`$limit`-bearing find because directives reach the two transports by different
+routes.
+
+**The oracle is two real transports.** Same shape as `verifyRowPolicies` grading
+`compileSql` against `evalJs`, and there is genuinely nothing shared to collapse
+into: HTTP goes URL → router → `bridge.toContext()`, WS goes frame → `channels()`
+→ `bridge.internal()`. Neither side restates what the answer should be, so a
+mismatch names both and a person decides which is the bug.
+
+**Two junction defects on the first two runs**, which is the argument for the
+category. `FJS-196` — any status junction has no error class for arrived as a
+500, so a deliberate 423 paged someone. `FJS-197` — `ctx.id` was a string over
+HTTP (a path segment can be nothing else) and whatever JSON type the client sent
+over the socket, so a handler comparing it to a row's id was correct in dev and
+wrong in production, or the reverse, depending on whether a socket was up.
+
+**What the build settled, all three found by running it:**
+
+- **A derived check that cannot connect must say so.** The browser client falls
+  back to HTTP when no socket is live, so an app without `channels()` would have
+  been HTTP compared against HTTP — agreement on everything, certifying a
+  transport never spoken to. Reported as a row. So is an empty call list.
+- **Volatility is measured, not named**, and the WS attempt goes BETWEEN the two
+  HTTP ones. Two back-to-back calls can land in the same millisecond, mark
+  `deletedAt` stable, and then the third lands a millisecond later and reads as a
+  transport difference. Bracketing means the HTTP pair spans at least as much
+  time as the HTTP↔WS gap does.
+- **Port claiming (Phase 2's open item) is answered differently than planned** —
+  port 0 cannot collide at all, where the broker only makes a collision less
+  likely. `listen: <number>` is the door for a port something external was told
+  about in advance.
+
+Also here: the **Bridge index triage** that sizes the rest of Phase 5 —
+`IDEAS/testing-realm.md` § The triage. About eleven of the ~30 entries are
+boundaries in Rainsberger's sense; two are now built; the top four are hand
+copies or lookup tables, which are the cheapest pairs to generate.
+
+Verified: `bun run ci` green; `@frontierjs/testing` 23 tests; junction 925;
+litestone 1695. Sabotaged the server back to reading `params` instead of `meta`
+— the defect that motivated this — and got 15 rows across three principals,
+naming the bulk-write refusal and the lost `$limit`.
+
+Not done: the parity runner has never been pointed at `example` or `basecamp`.
+Both build their app at module scope and start it on import, so neither can be
+handed a test env's client without restructuring — worth doing, and it is where
+the next real findings are.
 
 ---
 

@@ -1,6 +1,6 @@
 // ============================================================
 // Conduit — WebSocket Transport
-// Persistent connection to server agents.
+// Persistent connection to server outposts.
 // Handles reconnection, request/response framing, streaming.
 // ============================================================
 
@@ -140,7 +140,7 @@ export class WebSocketTransport extends BaseTransport {
       throw err
     }
 
-    // Throw rather than return: an unreachable agent and an agent with no
+    // Throw rather than return: an unreachable outpost and an outpost with no
     // output are otherwise indistinguishable to the consumer, and the
     // documented contract is that stream() throws when it cannot be
     // established (§2.3).

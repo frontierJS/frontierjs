@@ -27,7 +27,7 @@ export function wsOf(ctx: ServiceContext): string {
   return ctx.locals.workspaceId as string
 }
 
-/** The acting user's id, or 'system' for engine/agent paths. */
+/** The acting user's id, or 'system' for engine/outpost paths. */
 export function actorOf(ctx: ServiceContext): string {
   return (ctx.auth?.user as { userId?: string } | undefined)?.userId ?? 'system'
 }

@@ -65,7 +65,7 @@ export const WIDGET_KINDS: WidgetKindSpec[] = [
   {
     kind:        'server_health',
     label:       'Server health',
-    description: 'CPU, memory and disk for one server, as its agent last reported them.',
+    description: 'CPU, memory and disk for one server, as its outpost last reported them.',
     subject:     'server',
     required:    true,
     config:      [],

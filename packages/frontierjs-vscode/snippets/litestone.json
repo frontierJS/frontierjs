@@ -244,10 +244,16 @@
     "description": "AES-256-GCM encrypted at rest"
   },
 
-  "@encrypted(searchable)": {
-    "prefix": "@encryptedsearch",
-    "body": ["@encrypted(searchable: true)"],
-    "description": "Encrypted with HMAC index for equality search"
+  "@encrypted(deterministic)": {
+    "prefix": "@encrypteddet",
+    "body": ["@encrypted(deterministic: true)"],
+    "description": "Encrypted, equality-searchable, and still readable"
+  },
+
+  "@hashed": {
+    "prefix": "@hashed",
+    "body": ["@hashed"],
+    "description": "One-way HMAC — matchable in a where, never readable"
   },
 
   "@secret": {

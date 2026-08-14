@@ -810,6 +810,86 @@ const _compiledFor = new WeakMap<object, Map<string, {
   patch:  import('./schema.ts').CompiledSchema
 } | null>>()
 
+// Accessors already warned about, per client.
+const _warnedUnvalidated = new WeakMap<object, Set<string>>()
+
+/**
+ * Does this accessor name a table on the client?
+ *
+ * A real Litestone client is a Proxy that THROWS on an unknown accessor, so
+ * every candidate is probed inside a try — the same shape getTable uses.
+ */
+function _hasTable(client: Record<string, unknown>, accessor: string): boolean {
+  for (const candidate of accessorCandidates(accessor)) {
+    try {
+      if (client[candidate]) return true
+    } catch { /* not a table under this spelling — try the next */ }
+  }
+  return false
+}
+
+/**
+ * A model-backed write reached no field rules. Say so, once.
+ *
+ * Silence here is the whole defect: a service whose $defs lookup misses accepts
+ * unvalidated input and reports nothing, so a schema declaring @email, @length
+ * and @gte enforces none of them and the first sign is bad data in the table.
+ *
+ * Only warned when the accessor DOES resolve to a table: a service with no
+ * model at all is a supported shape (custom actions only, or its own create()),
+ * and calling an unused CRUD method on one already fails with getTable's
+ * diagnostic, which names every spelling tried.
+ */
+function _warnUnvalidated(
+  client:   Record<string, unknown>,
+  accessor: string,
+  service:  string,
+  reason:   string
+): void {
+  if (!_hasTable(client, accessor)) return
+
+  let seen = _warnedUnvalidated.get(client)
+  if (!seen) { seen = new Set(); _warnedUnvalidated.set(client, seen) }
+  if (seen.has(accessor)) return
+  seen.add(accessor)
+
+  console.warn(
+    `[Junction] service '${service}': writes are NOT validated. The model '${accessor}' ` +
+    `exists on the db client, but ${reason}, so @email/@length/@gte and every other ` +
+    `field rule the schema declares are unenforced on create/update/patch. ` +
+    `Model names are PascalCase singular, so 'model Post' is reached as 'post'.`
+  )
+}
+
+// ─── Derived-hook marking ───────────────────────────────────────────────────
+//
+// The four hooks below are installed BY the framework, from the schema, and a
+// service can pass through the merge twice: the autoloader spreads a built base
+// back through createService, whose hooks map already carries this layer. The
+// mark is what lets that second merge recognise its own work and skip it
+// (`FJS-231`) — without it every autoloaded service graded its @@gate and ran
+// its validator twice per request.
+//
+// A mark rather than the function's name: dedupe on name alone would let a USER
+// hook that happens to be called `gateAuth` suppress the real one, which is
+// fail-open on the thing that enforces access.
+
+// A WeakSet rather than a property on the function: it adds nothing a spread,
+// a serialiser or an equality check can see, and membership follows the
+// function itself — which is what survives being copied between hook maps.
+const _derivedHooks = new WeakSet<Function>()
+
+/** Tag a framework-derived hook. */
+export function markDerived<T extends Function>(fn: T): T {
+  _derivedHooks.add(fn)
+  return fn
+}
+
+/** Was this hook installed by the framework rather than by an app? */
+export function isDerivedHook(fn: unknown): boolean {
+  return typeof fn === 'function' && _derivedHooks.has(fn)
+}
+
 /**
  * before-hook that validates ctx.data against the model's schema.
  *
@@ -834,6 +914,11 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
       const defsKey = resolveDefsKey(jsonSchema, accessor, client.$schema)
       if (!defsKey) {
         perModel.set(accessor, null)
+        _warnUnvalidated(
+          client as Record<string, unknown>, accessor, ctx.service,
+          `no definition in the generated schema matches ` +
+          `'${accessorCandidates(accessor).join("' / '")}'`
+        )
       } else {
         try {
           // jsonSchemaToJunctionSchema returns a spec; createSchema compiles it.
@@ -841,8 +926,13 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
             create: createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema, 'create')),
             patch:  createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema, 'update')),
           })
-        } catch {
+        } catch (err) {
           perModel.set(accessor, null)
+          _warnUnvalidated(
+            client as Record<string, unknown>, accessor, ctx.service,
+            `its definition '${defsKey}' would not compile ` +
+            `(${(err as Error)?.message ?? String(err)})`
+          )
         }
       }
     }

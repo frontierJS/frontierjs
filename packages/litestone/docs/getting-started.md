@@ -51,7 +51,7 @@ const db = await createClient({
   // parsed: parseResult,          // pre-parsed result (for multi-file schemas)
   // schema: `model t { id Int @id }`, // inline schema string
 
-  db:            './app.db',       // DB path (omit if schema has database blocks)
+  db:            './app.db',       // path for MAIN — overrides a declared `database main`
   encryptionKey: process.env.ENC_KEY,  // 64-char hex = 32 bytes (required for @encrypted/@secret)
   computed:      './db/computed.js',   // app-layer computed fields
 
@@ -89,6 +89,21 @@ const db = await createClient({
   // readOnly: true,
 })
 ```
+
+### Where the database file comes from
+
+Four things can decide it, most specific first:
+
+| | |
+| --- | --- |
+| `databases: ':memory:'` | every SQLite database in the schema, plus a tmpdir for each jsonl/logger one |
+| `databases: { name: { path } }` | one named database |
+| `db: './app.db'` | **main only** — a second declared database keeps its declared path |
+| `database main { path ... }` | the schema's own declaration |
+
+`db` overrides the declaration, so `db: ':memory:'` is the in-memory client to
+reach for in a test. Use `databases: ':memory:'` when the schema declares more
+than one database and the test should touch no file at all.
 
 ## Auth scoping
 

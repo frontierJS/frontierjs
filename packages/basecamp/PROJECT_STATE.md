@@ -89,7 +89,7 @@ in the audit log** — the redaction fix, in a real app.
    code writes `ctx.locals`. Stale Feathers idioms; worth fixing upstream.
 2. **`before: { all: [...] }` really does mean all.** `servers.heartbeat`
    carried a comment claiming exemption from `authenticate` while sitting behind
-   it, so the agent could never check in — every heartbeat 401'd. `sessionScope`
+   it, so the outpost could never check in — every heartbeat 401'd. `sessionScope`
    in `hooks.ts` now takes an explicit `except` list.
 3. **`$limit`/`$offset` never reach a service.** They are transport syntax
    parsed onto `ctx.directives`; `getPagination` read `ctx.query.$limit` and
@@ -180,7 +180,7 @@ the column comes back null.
 
 `web/` is a Sierra SPA over every service: first-run setup, login, a navigation
 guard, the workspace switcher, Projects → Environments → Apps, deployments with
-a live step timeline, the server fleet (drain/reboot/sync, event trail, agent
+a live step timeline, the server fleet (drain/reboot/sync, event trail, outpost
 heartbeats), jobs with run history, and an admin zone (members, audit trail,
 adapters). `bun run verify --reset` drives all of it in a real browser and
 asserts **90 facts**, including an accessibility pass on every screen.
@@ -243,7 +243,7 @@ checks**, up from 90; eight of them drive this. Details and what it found are in
   `ActionQueue` cannot disagree.
 - **The shell subscribes, it does not poll.** A resource store is a module
   singleton fed by the WebSocket: servers/deployments/jobs load once per
-  *workspace*, and an agent reporting 95% CPU reaches the notice bar with
+  *workspace*, and an outpost reporting 95% CPU reaches the notice bar with
   nothing asking again. That is the shape of the check — a heartbeat over HTTP,
   a notice on screen, **no reload**.
 - **The shell is now `@frontierjs/ui` throughout**, and `<Toaster>` has a first
@@ -276,7 +276,7 @@ Phase 2 of the rebuild — the two mock screens whose data already existed.
 of what an operator does. It now runs as `after: { all }` and decides what
 counts the way Junction decides what to announce: everything but `find`/`get`,
 and `ctx.dispatch = false` opts out. `servers.heartbeat` is excluded **by name**
-— an agent on a timer would bury every human action, and `dispatch = false`
+— an outpost on a timer would bury every human action, and `dispatch = false`
 would have silenced the channel the live status pill depends on. Two more:
 a custom action answers the row rather than the envelope, so reading only
 `.data` filed every action against `subjectId: 'unknown'`; and an actor-less
@@ -527,8 +527,8 @@ They were built together because each is the other's argument. **A vocabulary
 cannot bound a script, so the record does.** Yesterday's saved-view ruling does
 not transfer: a stored query is dangerous because it is executed at the Data
 boundary, where `@@gate` and `@@allow` grade a caller against a model and a
-string cannot be graded. A script is handed to an agent and run on a machine —
-no model, no caller, no grade, at whatever privilege the agent has. A vocabulary
+string cannot be graded. A script is handed to an outpost and run on a machine —
+no model, no caller, no grade, at whatever privilege the outpost has. A vocabulary
 of allowed scripts buys nothing against that.
 
 So the safeguards are opposite. A cleanup stores target NAMES from a fixed list
@@ -542,7 +542,7 @@ end up pasting the script into a terminal instead.
   executions with N exit codes; a recipe is editable, and output read against a
   script that has since changed is not evidence.
 - **Neither screen executes anything.** Both queue on Caravan's new `fleet`
-  queue, and `api/src/engine/fleet.engine.ts` asks the agent through
+  queue, and `api/src/engine/fleet.engine.ts` asks the outpost through
   `app.conduit` — one file for both, because the shape is one shape and only the
   safeguards differ. A non-zero exit is recorded and never retried; a timeout is
   its own state.
@@ -554,7 +554,7 @@ end up pasting the script into a terminal instead.
   undo.
 - **Nothing is stored twice.** `DiskUsage` counts no volumes (`Volume` owns
   per-disk sizes) and stamps no last-cleanup (`CleanupRun` owns when a sweep
-  ran). A sweep's answer carries the agent's fresh `usage` snapshot, written
+  ran). A sweep's answer carries the outpost's fresh `usage` snapshot, written
   through the same function the report endpoint uses.
 
 ### What building it found
@@ -628,7 +628,7 @@ not roll back on a model with a Json column (`FJS-151`).
    between them. The line is never the work: **a policy filters where a gate
    refuses**, so a read that legitimately crosses a workspace and is not
    `asSystem()` starts matching nothing, with no error — an empty screen. The
-   three engines, the hub and the agent endpoints are already `asSystem()`, and
+   three engines, the hub and the outpost endpoints are already `asSystem()`, and
    that audit is what has to precede each declaration.
 3. **An invitation flow.** `/auth/register` creates a user with no account and
    no workspace, so every scoped request 400s and they cannot create a workspace

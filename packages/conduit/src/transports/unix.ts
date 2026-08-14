@@ -1,7 +1,7 @@
 // ============================================================
 // Conduit — Unix Socket Transport
 // Local inter-process communication.
-// Hub talking to a local agent process on the same machine.
+// Hub talking to a local outpost process on the same machine.
 // ============================================================
 
 import { HttpTransport } from './http.ts'

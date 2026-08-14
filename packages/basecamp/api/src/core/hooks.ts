@@ -149,7 +149,7 @@ export async function applyStanding(
  * It refuses nothing. A request naming a workspace the caller is not in gets a
  * principal with no role, which @@gate grades VISITOR(1) and scopeToWorkspace
  * turns into a sentence. Refusing here would 403 the services that legitimately
- * run with no workspace at all — /workspaces, /hub, the agent endpoints.
+ * run with no workspace at all — /workspaces, /hub, the outpost endpoints.
  */
 export function withWorkspaceStanding(app: BasecampApp): AroundHook {
   return async (ctx, next) => {
@@ -248,9 +248,9 @@ export function requireSystemAdmin(): Hook {
 // an escape hatch for methods that are not called by a person.
 //
 // This exists because `before: { all: [authenticate, ...] }` applies to EVERY
-// method, agent endpoints included. servers.heartbeat carried a comment saying
+// method, outpost endpoints included. servers.heartbeat carried a comment saying
 // it was exempt ("HMAC auth at Conduit transport level — no session hook")
-// while sitting behind that `all`, so the agent could never check in: every
+// while sitting behind that `all`, so the outpost could never check in: every
 // heartbeat 401'd. A comment is not an exemption.
 
 export function sessionScope(app: BasecampApp, opts: { except?: string[] } = {}): Hook {
@@ -289,7 +289,7 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
 // Failures are swallowed — audit log must never break the request.
 //
 // `except` is `service.method` names that mutate but must not be recorded. The
-// one entry today is `servers.heartbeat`: an agent checks in on a timer, so a
+// one entry today is `servers.heartbeat`: an outpost checks in on a timer, so a
 // fleet of fifty would write six figures of rows a day and bury every action a
 // person took. It is deliberately NOT `ctx.dispatch = false` — that would also
 // silence the channel, and the live status pill on the server screen is fed by
@@ -328,7 +328,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
           workspaceId: (ctx.locals.workspaceId as string | undefined) ?? null,
           actorId:     session?.userId ?? null,
           // No session is not an anonymous user — it is the engine, a job or an
-          // agent acting for itself. `AuditEvent.actorType` defaults to 'user',
+          // outpost acting for itself. `AuditEvent.actorType` defaults to 'user',
           // so leaving it unstated would file every machine write under people.
           actorType:   session ? (session.authMethod === 'api_key' ? 'api_key' : 'user') : 'system',
           action:      `${ctx.service}.${ctx.method}`,

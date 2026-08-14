@@ -68,7 +68,7 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   `scopeToWorkspace`. Adding the next one is an audit before it is a line: **a
   policy filters where a gate refuses**, so any read crossing a workspace that
   is not `asSystem()` starts matching nothing, quietly. The engines, the hub and
-  the agent endpoints already are; a new one is the thing to check. `db/README.md`
+  the outpost endpoints already are; a new one is the thing to check. `db/README.md`
   § Access control is the depth, `db/test/schema.test.ts` runs it with no
   service in the picture.
 - **`asSystem()` is what a system path needs, and a transaction used to lose
@@ -109,7 +109,7 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   `ctx.params.user.user_id` and `ctx.params.headers` throughout — every one
   `undefined`, so role checks silently passed for everyone. Fixing an occurrence
   means moving to `ctx.auth` / `ctx.client.headers` / `ctx.route`.
-- **`before: { all: [...] }` hits every method**, agent endpoints included.
+- **`before: { all: [...] }` hits every method**, outpost endpoints included.
 - **Leaving a method out does not remove it.** `createService({ model })` brings
   Junction's Litestone base, which answers every CRUD verb the service does not
   declare — with validation, so a well-formed payload is written. `POST /volumes`
@@ -122,7 +122,7 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   so every send fails `auth_failed` naming credential `undefined` — and the
   material is written into the registry, which `GET /conduit-targets` returns.
   `core/credentials.ts` resolves `secret:<id>` and `env:<NAME>`. Nothing had
-  ever sent to an agent, so neither half showed for two phases.
+  ever sent to an outpost, so neither half showed for two phases.
 - **`bun run db:seed` is the only thing here that writes every model, and no
   suite runs it.** It had been broken for two phases when that was noticed:
   Phase 3 turned `severity` into an enum and left the seed writing `'high'`,

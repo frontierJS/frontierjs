@@ -143,7 +143,7 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
       jobs:        { concurrency: 5 },
       sync:        { concurrency: 2 },
       // Recipes and disk sweeps. Held low on purpose: both run a command on a
-      // real machine through its agent, and twenty at once is twenty machines
+      // real machine through its outpost, and twenty at once is twenty machines
       // busy at the same moment rather than a fleet that stays serving.
       fleet:       { concurrency: 2 },
     },
@@ -247,7 +247,7 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
       // The hook itself decides what counts (find/get and dispatch:false are
       // out) and takes the exceptions by name.
       all: [
-        // Both exceptions are an agent on a timer. Fifty machines reporting
+        // Both exceptions are an outpost on a timer. Fifty machines reporting
         // their disks every minute buries every action a person took, and an
         // audit trail nobody can read is an audit trail nobody reads.
         // Deliberately NOT `ctx.dispatch = false` — that would also silence the

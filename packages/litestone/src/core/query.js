@@ -48,6 +48,10 @@ const JSON_LEAF_OPS = new Set([
   'contains', 'startsWith', 'endsWith',
 ])
 
+// Operators that read the column as a JSON array. Asking one of a scalar column
+// is a caller error, not a SQLite error — see the guard in buildWhere.
+const ARRAY_OPS = new Set(['has', 'hasEvery', 'hasSome', 'hasNone', 'isEmpty'])
+
 // Decides whether the object value on a typed-JSON field is a path traversal
 // (recurse into sub-keys) or a leaf operator block (apply directly to the
 // whole JSON value — currently a no-op since we always traverse). The signal
@@ -194,8 +198,18 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 //   { addr: { city: { contains: 'Bos' } } }    → CAST(json_extract(addr, '$.city') AS TEXT) LIKE ?
 //
 // typedJsonMap: { fieldName: typeDecl } — only typed-Json fields appear here.
+//
+// Array columns (when arrayFields is provided):
+//   { tags: ['x', 'y'] }              the row holds x OR y   — IN over the elements
+//   { tags: { equals: [...] } }       the row IS exactly that — ordered
+//   { tags: { has, hasEvery, hasSome, hasNone, isEmpty } }
+//
+// arrayFields: Set<fieldName> for THIS model. A bare array cannot be read off
+// the operand — `{ id: [1,2] }` and `{ tags: ['x','y'] }` are the same shape and
+// mean different SQL — so without the set the array column silently compiles to
+// `"tags" IN ('x','y')`, which asks a JSON document whether it equals 'x'.
 
-export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null) {
+export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null, arrayFields = null) {
   if (!where) return ''
   if (typeof where === 'string') return where
 
@@ -223,6 +237,16 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     if (typeof v === 'symbol') {
       throw new Error(`where clause: field "${fieldName}" was given a symbol — symbols can't be used in queries`)
     }
+    // A plain object is the one unbindable value the driver does NOT throw on:
+    // bun:sqlite reads it as a bag of NAMED parameters, and a statement built
+    // with positional `?` matches none of its keys — so it runs with EVERY
+    // binding dropped, including the WHERE, and reports no error. The read
+    // answers nothing and the write changes nothing. Arrays and Dates are
+    // legitimate operands and never reach here as a single value.
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      throw new Error(`where clause: field "${fieldName}" was given an object where a value was expected — ` +
+                      `an operator object belongs one level up (\`${fieldName}: { gt: 1 }\`), and a nested object needs @type(...) on the column`)
+    }
     return v
   }
   // Bound to the current key being processed in the loop below. `pushFor(k)(v)`
@@ -233,17 +257,17 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
   for (const [key, val] of Object.entries(where)) {
     if (key === 'AND') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, arrayFields)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
       continue
     }
     if (key === 'OR') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, arrayFields)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' OR ')})`)
       continue
     }
     if (key === 'NOT') {
-      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter)
+      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter, arrayFields)
       if (inner) clauses.push(`NOT (${inner})`)
       continue
     }
@@ -306,10 +330,19 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     // error tells the caller which field caused it.
     const push = pushFor(key)
 
+    const isArrayCol = arrayFields?.has(key) ?? false
+
     if (typeof val !== 'object' || Array.isArray(val) || val instanceof Date) {
       if (Array.isArray(val)) {
+        if (!val.length) { clauses.push('0 = 1'); continue }
         val.forEach(v => push(typeof v === 'boolean' ? (v ? 1 : 0) : v))
-        clauses.push(`${col} IN (${val.map(() => '?').join(', ')})`)
+        // The shorthand says the same thing either way — the column's value is
+        // in this list. A scalar has one value; an array column supplies its
+        // elements, so the IN moves inside json_each. For an exact, ordered
+        // match, say `equals`.
+        clauses.push(isArrayCol
+          ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${val.map(() => '?').join(', ')}))`
+          : `${col} IN (${val.map(() => '?').join(', ')})`)
       } else if (typeof val === 'boolean' && isFromExpr && col.includes('EXISTS')) {
         // EXISTS subquery — already returns 0/1; emit directly or negate
         clauses.push(val ? col : `NOT ${col}`)
@@ -321,6 +354,14 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     }
 
     for (const [op, operand] of Object.entries(val)) {
+      // json_each and json() raise "malformed JSON" on a column that is not a
+      // JSON document — a message naming neither the field nor the operator.
+      // Say it here instead, while both are still in hand.
+      if (ARRAY_OPS.has(op) && arrayFields && !isArrayCol)
+        throw new Error(
+          `where clause: "${op}" is an array operator and "${key}" is not an array field`
+        )
+
       switch (op) {
         case 'gt':         push(operand);              clauses.push(`${col} > ?`);           break
         case 'gte':        push(operand);              clauses.push(`${col} >= ?`);          break
@@ -329,16 +370,24 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         case 'contains':   push(`%${operand}%`);       clauses.push(`${col} LIKE ?`);        break
         case 'startsWith': push(`${operand}%`);        clauses.push(`${col} LIKE ?`);        break
         case 'endsWith':   push(`%${operand}`);        clauses.push(`${col} LIKE ?`);        break
+        // `in` and the bare-array shorthand are documented as the same question,
+        // so they have to compile the same way: on an array column the row
+        // supplies several values and the IN moves inside json_each. Without
+        // this the shorthand answered and its own explicit spelling did not.
         case 'in':
           if (!operand?.length) { clauses.push('0 = 1'); break }
           operand.forEach(v => push(v))
-          clauses.push(`${col} IN (${operand.map(() => '?').join(', ')})`)
+          clauses.push(isArrayCol
+            ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${operand.map(() => '?').join(', ')}))`
+            : `${col} IN (${operand.map(() => '?').join(', ')})`)
           break
         case 'notIn':
           if (!operand?.length) break
           operand.forEach(v => push(v))
           // Include NULL rows — NOT IN silently excludes them in SQLite
-          clauses.push(`(${col} NOT IN (${operand.map(() => '?').join(', ')}) OR ${col} IS NULL)`)
+          clauses.push(isArrayCol
+            ? `NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${operand.map(() => '?').join(', ')}))`
+            : `(${col} NOT IN (${operand.map(() => '?').join(', ')}) OR ${col} IS NULL)`)
           break
         case 'has':
           // element exists in JSON array: json_each(col) WHERE value = ?
@@ -361,16 +410,47 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
             clauses.push(`(${parts.join(' OR ')})`)
           }
           break
+        case 'hasNone':
+          // none of these elements present
+          if (!operand?.length) break
+          operand.forEach(v => push(v))
+          clauses.push(`NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${operand.map(() => '?').join(', ')}))`)
+          break
         case 'isEmpty':
           clauses.push(operand ? `json_array_length(${col}) = 0` : `json_array_length(${col}) > 0`)
           break
+        case 'equals':
+          // The exact set, in order. json() on both sides normalises whitespace,
+          // so a row a JS migration wrote as `[ "x", "y" ]` still matches.
+          if (isArrayCol && Array.isArray(operand)) {
+            push(JSON.stringify(operand))
+            clauses.push(`json(${col}) = json(?)`)
+            break
+          }
+          if (operand === null) { clauses.push(`${col} IS NULL`); break }
+          push(typeof operand === 'boolean' ? (operand ? 1 : 0) : operand)
+          clauses.push(`${col} = ?`)
+          break
         case 'not':
           if (operand === null) { clauses.push(`${col} IS NOT NULL`); break }
+          if (Array.isArray(operand)) {
+            // Without this the array falls into `col != ?` with one placeholder
+            // and N bindings, and SQLite answers about placeholder counts.
+            if (isArrayCol) {
+              push(JSON.stringify(operand))
+              clauses.push(`json(${col}) != json(?)`)
+            } else {
+              if (!operand.length) break
+              operand.forEach(v => push(v))
+              clauses.push(`(${col} NOT IN (${operand.map(() => '?').join(', ')}) OR ${col} IS NULL)`)
+            }
+            break
+          }
           push(operand)
           clauses.push(`${col} != ?`)
           break
         default:
-          throw new Error(`Unknown where operator: "${op}"`)
+          throw new Error(`Unknown where operator "${op}" on field "${key}"`)
       }
     }
   }
@@ -676,28 +756,31 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, relationM
 //     relationSelects:  object       — { relName: true | { select: {...} } }
 //     requestedFields:  Set<string>  — all fields the user wants back
 //     injectedFKs:      Set<string>  — FK cols added for joins but not requested
-//     needsAllDbCols:   boolean      — true when computed fields are selected
-//                                      (we fetch * so fns have their dependencies)
+//     needsAllDbCols:   boolean      — true when a computed field that declares
+//                                      no `needs` is selected (we fetch * so its
+//                                      fn has whatever it reads)
 //   }
 //
 // Rules:
 //   - Relation fields in select are treated as includes (with optional nested select)
-//   - @computed fields have no DB column — we SELECT * when any are requested so
-//     their extension functions can access any DB column they depend on
+//   - A @computed field has no DB column. One that declares `needs` contributes
+//     exactly those columns; one that does not widens the whole SELECT to *
 //   - FK columns needed for include resolution are injected into the SQL SELECT
 //     and then stripped from results unless the user also selected them
 
-export function parseSelectArg(select, modelName, relationMap, computedSets, include, fromSets) {
+export function parseSelectArg(select, modelName, relationMap, computedSets, include, fromSets, computedFns) {
   if (!select) return null
 
   const tableRels      = relationMap?.[modelName] ?? {}
   const tableComputed  = computedSets?.[modelName] ?? new Set()
   const tableFrom      = fromSets?.[modelName] ?? new Set()
+  const tableFns       = computedFns?.[modelName] ?? null
 
   const dbFields        = {}    // user-requested DB column names
   const relationSelects = {}    // relation name → true | { select }
   const requestedFields = new Set()
   const requestedFrom   = new Set()  // @from fields explicitly selected
+  const computedDeps    = []         // names a selected @computed field declared
   let   needsAllDbCols  = false
 
   for (const [key, val] of Object.entries(select)) {
@@ -710,8 +793,12 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
       relationSelects[key] = typeof val === 'object' && val !== true ? val : true
 
     } else if (tableComputed.has(key)) {
-      // @computed field — no DB column, needs all DB cols so fn has its deps
-      needsAllDbCols = true
+      // @computed field — no DB column of its own. Collected rather than
+      // resolved here: a LATER key may be a computed field with no `needs`,
+      // and that widens to * and makes every dep gathered so far moot.
+      const needs = tableFns?.[key]?.needs
+      if (needs) computedDeps.push(...needs)
+      else       needsAllDbCols = true
 
     } else if (tableFrom.has(key)) {
       // @from field — subquery is injected at buildSQL time, track for trimming
@@ -731,6 +818,16 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
         requestedFields.add(relName)
         relationSelects[relName] = relVal
       }
+    }
+  }
+
+  // Inject the dependencies a selected @computed field declared. They are NOT
+  // added to requestedFields, so trimToSelect strips them again afterwards —
+  // asking for a computed field must not smuggle its inputs into the result.
+  if (!needsAllDbCols) {
+    for (const name of computedDeps) {
+      if (tableFrom.has(name)) requestedFrom.add(name)
+      else if (!(name in dbFields)) dbFields[name] = true
     }
   }
 

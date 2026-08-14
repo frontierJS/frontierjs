@@ -1,5 +1,1065 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-13 — `@encrypted(searchable: true)` is gone; `@encrypted(deterministic: true)` and `@hashed` replace it
+
+**The old attribute stored an HMAC and no ciphertext, under a name that promises
+the value comes back.** The plaintext was destroyed on write, `asSystem()` was
+handed the digest as if it were the value, and `docs/encryption.md` said it stored
+the HMAC *alongside* the ciphertext, which was never true — the example field it
+chose was `email`. Following the page lost every address in the table with nothing
+thrown at any point. Closes `FJS-211`.
+
+Three modes now, on one axis — **can this value be read back?**
+
+|  | recoverable | not recoverable |
+| --- | --- | --- |
+| **not filterable** | `@encrypted` (random IV, `v1.`) | — |
+| **filterable (equality)** | `@encrypted(deterministic: true)` (`v1d.`) | `@hashed` (`v1h.`) |
+
+The empty cell stays empty: a value you can neither read nor match is a value you
+deleted, which is what the old attribute quietly built.
+
+**`deterministic: true`** is AES-256-GCM with the IV derived from the plaintext
+under a separate salt, so the same value stores the same bytes and an equality
+filter works — and it is still ciphertext, so it decrypts and `$rotateKey` re-keys
+it. GCM breaks catastrophically on nonce reuse across *different* plaintexts;
+deriving the nonce from the plaintext makes that a hash collision rather than an
+accident, and reuse across identical plaintexts is the property being bought. Same
+construction Rails ships for `deterministic:`. It trades one thing and the doc says
+so: equal values are visibly equal in the column to anyone holding the file. Every
+searchable-encryption scheme leaks that, blind indexes included.
+
+**`@hashed`** is HMAC-SHA256 and nothing else — no ciphertext, no key that recovers
+it, not rotatable. It is a separate attribute rather than an option on `@encrypted`
+because an option inherits its parent's promise. It refuses to compose with
+`@encrypted`, `@secret`, `@guarded` or `@allow`, and requires a `String` column.
+
+**Every read path refuses a digest, `asSystem()` included** — there is nothing to
+lift the guard to. A row lacks the field; naming it in a `select`, a `groupBy` or an
+aggregate **throws**. Those last two are the ones worth stating: they project a
+column straight out of SQLite without building a row, so `by: ['token']` answered a
+list of digests and `_max` answered one. Handing back something that looks like a
+value is precisely how the old attribute lost data — it gets displayed, mailed,
+exported and written into the next table before anyone notices the plaintext is
+gone.
+
+**`@secret(deterministic: true)`** composes, for a secret that must be both looked up
+and rotated. `$rotateKey` now re-encrypts each field in the mode it was **declared**
+with; rewriting a deterministic column under a random IV would leave it readable and
+every equality filter over it answering nothing, silently, until someone searched.
+
+**The old spelling is refused at parse time, not translated.** The two meanings it
+stood in for are the whole decision, and guessing either one silently is how the
+value was lost. **A column already holding `v1s.` values is unrecoverable** — an HMAC
+has no inverse — so nothing reads the prefix and the migration is re-collecting the
+values from wherever they still exist.
+
+Both matchable modes share one WHERE rewrite (encode the operand the way the column
+was encoded) and one refusal for everything else, so the suite asks the same
+questions of both rather than trusting the second encoder to have inherited the
+first's fixes. `test/matrix.test.ts` gains a `hashed` kind and renames `encSearch` to
+`encDet`; its write cells verify by MATCHING the new value, since reading a digest
+back is the one thing the column does not do.
+
+Found while building this, filed and not fixed here: `FJS-236` (`$rotateKey` leaves
+the client it was called on unable to read its own output, because `asSystem()` is
+memoised over a snapshot of the key — predates this work) and `FJS-235`
+(`@guarded(all)` blocks reads and not writes, and cannot be paired with
+`@allow('write', …)` to cover both).
+
+Also: `src/core/client.js` held a **raw NUL byte** in a `cols.join()` separator, which
+made `grep` classify the largest file in the package as binary and skip it in silence.
+It is the `'\x00'` escape now — same string, and the file is searchable again.
+
+## 2026-08-13 — one clock per evaluation, and it can be frozen
+
+`now()` in a policy expression resolved at the point it was **reached**, so
+`@@allow('read', startAt < now() && now() < endAt)` bound two timestamps
+microseconds apart, and `evalJs` called `new Date()` again on its own side.
+Harmless for an access check, wrong in principle, and fatal for the reporting
+shape the `@@scope` ruling depends on: a query with no single "as of" instant
+can return a row satisfying a contradiction and will not reconcile with a
+re-run. It is now resolved once per evaluation, carried on a prototype view of
+`ctx` so every nested compile — a `check(field)` delegation recurses — reads the
+same moment.
+
+**`createClient({ now })`** is the injection point, taking a function returning
+a `Date` or an ISO string. It reaches both halves of the policy compiler and
+`@@softDelete`'s stamp, so a frozen clock freezes every timestamp litestone
+writes rather than only the ones a policy compares against. That is what makes
+a time-dependent test deterministic and a report reproducible, and it is the
+prerequisite the `FJS-D28` ruling named before `@@scope`/`@@order` can land.
+
+Closes `FJS-227`.
+
+## 2026-08-13 — `@from(first/last)` returns a row that was actually read
+
+`@from(Order, last: true)` built the row as `json_object('field', …)` over the
+target's columns. That list filtered out the **virtual** attributes — `@computed`,
+`@from`, `@generated` — and left the **protective** ones alone, because those are
+applied by `read()` and a hand-built JSON object never reaches it. So the one
+`@from` shape that returns a row returned it raw: `@guarded(all)` and `@omit(all)`
+values in plaintext and `@encrypted` ciphertext, to an ordinary scoped caller,
+while the target's own derived fields were missing.
+
+The subquery now resolves the row's **id** and the row comes back through a real
+read of the target — the same move as the recursive walk a day earlier, for the
+same reason. Three ways to one row now produce one shape, which is what the test
+asserts: a direct read, an `include`, and a `@from(last: true)` agree key for key.
+
+Batched: one query per field across every row in hand, so a `findMany` of a
+hundred parents costs one extra query. Resolution happens before `applyComputed`,
+so a `@computed` on the *parent* reading `row.lastOrder.amount` still sees a row.
+
+**Two behaviour changes.** The target's row policy now applies, as it always did
+to an `include` — a `@@allow` on the target can make the field `null`. And the
+default `orderBy` for `first`/`last` is now the **target's** id column; it was the
+declaring model's, which is the same name often enough to hide the difference.
+
+The three include branches each finished their rows with their own copy of
+deserialize → compute → shape; they now share one `finishRelated`, which is why
+the fix reached all three rather than only the one that was tested.
+
+Closes `FJS-222`, `FJS-223`. Opens `FJS-224` for the residue: the pick is made
+before the policy is known, so a denied row is `null` rather than the next
+visible one.
+
+## 2026-08-12 — `@from` reads the relation you meant
+
+**A `@from` on a relation to the same model answered `0`, always.** The subquery
+correlates a table to itself, and unaliased the correlation was captured by its
+own scope: `(SELECT COUNT(*) FROM "task" WHERE "taskId" = "task"."id")` reads
+that `"task"."id"` as the **inner** row, so it counted rows whose FK equalled
+their own id — none. A parent with two children read `childCount: 0`, typed,
+present and wrong. The target is now aliased in every `@from` subquery, not only
+when the names collide: a rule that holds conditionally is a rule with two
+implementations, and this one already cost a silent wrong answer.
+
+**An ambiguous `@from` is refused rather than resolved by declaration order.**
+Two relations can join one pair of models — `sender`/`recipient` both point at
+`User` — and `@from(Message, count: true)` took whichever came first in the file
+and said nothing. The other count was unaskable, and the one you got answered a
+different question with nothing in the value to distinguish them. It is now a
+schema error naming both candidates and the cure, and **`via:`** is the cure:
+
+```prisma
+sentCount Int @from(Message, count: true, via: sent)        // the field on this model
+gotCount  Int @from(Message, count: true, via: recipient)   // or the one on the target
+```
+
+`via` names either side — the field here, the field there, the `@relation` name
+they share, or the FK column. A name matching none is refused with the candidates
+listed. The word is `recursive`'s, deliberately: it is the same question about
+the same kind of ambiguity, and a second word for it would be a second thing to
+learn.
+
+`parent` + `children` is one relation and still needs no `via`. Nothing in this
+repo's seven schemas is newly refused.
+
+Closes `FJS-220`, `FJS-221`.
+
+## 2026-08-12 — a tree read is a read
+
+`findMany({ recursive })` was a second implementation of `findMany`. It built
+its own SQL and returned before the plugin runner, so `@@gate` was never asked;
+it composed the row policy and the soft-delete filter into the CTE's **anchor**
+SELECT and nowhere else, so every row below the row you named arrived
+unfiltered. A caller refused on a model could read its whole subtree by asking
+for the children of a row it could see. Fail-open, and it broke Invariant 6 for
+one option of one method.
+
+The fix was to delete the second read path rather than thread three filters
+through it. The CTE now resolves **ids only** and the rows come back through the
+ordinary `findMany`, which is what applies the gate, the select, the includes
+and the derived fields — one owner each, instead of a copy here that had drifted
+out of all four. The walk carries the same visibility predicate as the anchor,
+so a node the caller cannot see hides its subtree; that is the deliberate
+reading, matching what `@@softDelete(cascade)` already does on the write side,
+and the alternative reparents orphans up into the visible tree.
+
+Three things that were silently ignored now say so. `count`, `findFirst`,
+`findUnique`, `exists`, `aggregate` and `groupBy` **refuse `recursive` by
+name** — `count({ recursive })` counted the anchors and answered a plausible
+number for a question nobody asked. `nested: true` refuses `limit`/`offset`,
+which would cut branches out of the middle of a tree. And `select` is honoured,
+where before a caller that narrowed its read got every column back.
+
+**A row can no longer be made its own ancestor.** The write is refused naming
+the field, which is the only place that can — nothing about a tree read can say
+which of a thousand rows was pointed at wrongly. A loop already stored is
+survived rather than trusted: the walk tracks the path it came by. The `GROUP BY`
+that dedupes the answer means the path column changes no result, only the work —
+without it a two-row loop is ended by the depth ceiling alone, so it scans
+`maxDepth` rows.
+
+`_depth` is now the distance from the anchor in **both** directions (it started
+at 1 walking up and 0 walking down), the anchor is never in its own result, and
+`orderBy: { _depth }` works — it was written into the old path but unreachable,
+because the orderBy validator rejected the key before the branch ran.
+
+Closes `FJS-216`, `FJS-217`, `FJS-218`, `FJS-219`. Nothing in this repo declares
+a self-relation, which is why all four survived: the feature had documentation
+and eleven tests, and no drive.
+
+## 2026-08-12 — a filter that cannot match now says so
+
+`$checkWhere` gains `reason` and `message`, matching `$checkOrderBy`'s contract
+exactly — `'computed'`, `'encrypted'` or `'unknown'`, so a boundary can say a
+different sentence for each, and `allowed` now lists only keys that can actually
+be filtered rather than every field name. `filterableKeysFor()` is the sibling of
+`sortableKeysFor()` and the one definition of the split; both `$checkWhere` and
+the per-query check ask it, so the rule cannot grow a second copy. A relation
+stays filterable — `posts: { some: … }` is a legal where.
+
+On a read an unfilterable key warns. On a **write** it throws, which is what an
+unknown key already did: an `updateMany` that quietly touches no row is worse
+than one that says why.
+
+**Two predicates are refused when the client is built, not per query.** A global
+filter and a `@@allow` are each named once and used for every read, so a mistake
+in one is permanent and invisible — the model reads as empty for every caller
+forever, which looks exactly like a table with no data. Both are decided by the
+schema alone, so both are answerable at startup, which is also the only altitude
+where the fix is a schema edit rather than a caught exception. The static filter
+form is checked; the function form takes a `ctx` and cannot be judged without
+one, so it still goes through the per-query check.
+
+The policy case turned out to be broader than the read case. `policy.js` contains
+no reference to encryption at all, so a predicate comparing **any** `@encrypted`
+field — searchable or not — compares plaintext against stored bytes and denies
+every row. A `where` on the same field works, because `buildWhereWithEncryption`
+rewrites the operand first. Guarded here, tracked as `FJS-214`, because the real
+fix is one owner for *compare a value to an encrypted column*.
+
+What made the `@computed` case worth refusing rather than warning: SQLite reads
+an unresolvable double-quoted identifier as a **string literal**, so
+`WHERE "comp" = ?` is a comparison of two constants — `{ comp: 'A' }` matches
+nothing and `{ comp: 'comp' }` matches **every row**, including rows whose
+computed value is something else. Not "fewer rows you can see": a wrong answer in
+the dangerous direction (`FJS-215`).
+
+**Tier 3, ruled: an unfilterable key throws on a read too.** Not because silence
+is untidy, but because the alternative is not "fewer rows" — SQLite reads an
+unresolvable double-quoted identifier as a string literal, so `{ comp: 'A' }`
+answers nothing and `{ comp: 'comp' }` answers **every row**, including rows whose
+computed value is something else. A filter returning rows that do not match it
+cannot be reported by a warning in a log nobody reads.
+
+**An unknown key still only warns on a read.** That trade was ruled on separately
+and its rationale holds: a typo returns fewer rows and leaves something to
+notice. A key that is real, spelled right and impossible leaves nothing. Two
+tests asserted the old silence as expected and were rewritten; nothing else in
+1,895 tests moved, which is the argument that the change is scoped.
+
+**`@encrypted(searchable: true)` now answers every spelling of equality.**
+`rewriteEncryptedWhere` hashed the scalar form only — `typeof val !== 'object'` —
+so `{ in: [x] }` compared plaintext against digests and answered nothing, and
+`{ not: x }` answered **every row, the excluded one included**, because a
+plaintext never equals a digest. `equals`, `not`, `in`, `notIn` and the
+bare-array shorthand each hash their operands now; an operator a digest cannot
+answer is refused naming the field, since a digest preserves equality and nothing
+else.
+
+19 tests across the three tiers, mutation-checked.
+
+## 2026-08-12 — six silences, found by the matrix and closed
+
+**A plain object in a bind position dropped every binding in the statement.**
+`bun:sqlite` reads one as a bag of *named* parameters, and a statement built with
+positional `?` matches none of its keys — so it ran with nothing bound, **the
+WHERE included**, and raised no error. `SELECT ? IS NULL` given `{x:1}` answers
+`1`. That one fact produced four unrelated-looking symptoms: `update` returned
+`null` (its WHERE had been voided, so it matched no row, which litestone reports
+as *no such row*), `updateMany` said `NOT NULL constraint failed` about a column
+whose value was never bound, `create`/`upsert` threw the driver's raw
+`Binding expected string, TypedArray, …` naming no field, and a **read** answered
+`[]` — the worst of them, because a read has no `changes` to notice. Now refused
+naming the field, on reads and writes alike, and the write message says litestone
+has no atomic update operators, since `{ views: { increment: 1 } }` is the shape
+that gets here (`FJS-D27` asks whether it should have them). Functions and
+symbols are named on the write path too rather than left to the driver.
+
+**A `@computed` or `@generated` field is refused instead of dropped.** Both were
+absent from the writable-key set, so a write naming one went out through the
+*unknown-key* strip — which is silent by design, because that strip is the
+mass-assignment protection. Declared-but-unwritable is a different thing wearing
+the same clothes, and the caller has to hear about it: the refusal says which
+kind it is. An unknown key is still stripped without a word.
+
+**`updateMany` with nothing left to set emitted `UPDATE "t" SET  WHERE …`** and
+SQLite answered `near "WHERE": syntax error`. Reachable from an ordinary form post
+whose fields no longer match the model — again because stripping unknown keys is
+the protection working. It now answers the matched count, which is what `update`
+already did with the same input. SET and WHERE parameters are collected in
+separate arrays and joined at the end; sharing one made the statement depend on
+which half was built first, which is why the case could not be handled where it
+belonged.
+
+**`in` and `notIn` now read an array column's elements.** `filtering.md`
+documents the bare array as meaning `in`, and after FJS-189 the shorthand
+answered while its own explicit spelling did not — `{ words: ['x','y'] }` found
+the row and `{ words: { in: ['x','y'] } }` found nothing. The bare-array branch
+had `arrayFields` and the `in` branch was never given it.
+
+**`groupBy` and `aggregate` hydrate the values they return.** They handed back
+SQLite's own, so an array column came back as its JSON text, a `Boolean` as `0`/`1`
+and a `Json` as a string — a value's TYPE depended on which method asked for it.
+Applied only where the value is still in the column's domain: the `by` keys and
+`_min`/`_max`. **Not** `_sum`/`_avg`, where the number is no longer of the
+column's type — the sum of a Boolean column is a count, and coercing it back would
+answer `3` as `false`.
+
+**An unknown where operator names its field**: `Unknown where operator "tier" on
+field "meta"`, not `Unknown where operator: "tier"`.
+
+`@encrypted(searchable: true)`'s documentation said it stores an HMAC "alongside
+the ciphertext". There is no ciphertext — the column holds the digest and nothing
+else, so **the plaintext is destroyed on write and cannot be read back**. The
+behaviour is deliberate and asserted by a test; the page now says so in a warning
+before the example, and no longer uses `email` as that example. Whether the
+attribute should keep the `@encrypted` name is `FJS-211`.
+
+Closes FJS-199, 203, 208, 209, 212, and half of 206. 26 tests, mutation-checked.
+
+## 2026-08-12 — the crossing matrix
+
+`test/matrix.test.ts`. Every defect found in this sweep was a **crossing** — two
+features that each work alone, whose intersection nobody owned and nobody tested.
+An enum that is also an array. An array reached by a `where`. An array given a
+`@default`. A bulk write over rows of different shapes. Feature-by-feature tests
+cannot find these, because each feature passes its own suite.
+
+So the crossings are declared as a grid, 14 column kinds × 12 operations, under
+one invariant: **no cell may silently return a wrong answer.** A cell is
+supported, or it is refused *by name* — the runner checks a refusal actually
+contains the field name, because a raw SQLite message is a refusal nobody can act
+on. Silence is the only outcome never allowed, being the one a caller cannot see.
+
+**A known defect is a cell, not an omission.** `200:ref` means *FJS-200, and this
+should refuse*; the runner asserts the defect is **still there** and goes red when
+it is fixed, naming the cell and telling you to promote it. Same ratchet as the
+typecheck baselines, and the reason a fix cannot leave the grid stale — the
+register went wrong in the closing direction before (`FJS-043` sat open for eight
+days after being fixed), and a grid nobody re-grades would do it again.
+
+Every declared kind × every declared op must have a cell; a missing one fails
+rather than being skipped. Adding a column kind means answering the question
+twelve times. That is the point — it makes a crossing somebody's job.
+
+The grid was filled from what the code **does**, not what it should do:
+`MATRIX_REPORT=1 bun test test/matrix.test.ts` prints the observed grid ready to
+paste. Filling it by hand from belief is how a grid ends up asserting a wish.
+
+It found eight defects on its first run, three of them silent — `FJS-208` through
+`FJS-212`, plus evidence that widened `FJS-201`, `FJS-203` and `FJS-206`. The one
+worth naming here: `@encrypted(searchable: true)` stores only an HMAC, so the
+plaintext is **destroyed on write and unrecoverable**, while `encryption.md` says
+it is kept "alongside the ciphertext" (`FJS-211`).
+
+Relation kinds, `@edge`, `@sequence`, `File` and the cursor/window/FTS operations
+are **not** in the grid yet, and the file says so rather than leaving the gap
+silent.
+
+## 2026-08-12 — `sampleWrites()`
+
+One seeded row per model, plus the payloads a create and a patch would carry, with
+every required FK pointed at a parent the same call made. The Data-realm half of
+deriving a call list: mapping a model onto the service that exposes it is an
+API-realm fact this package cannot see (Invariant 1), so what comes back is keyed
+by model name and the caller does the mapping. `@frontierjs/testing`'s transport
+parity runner is the first consumer.
+
+Server-owned columns are absent from the create payload — over the wire they are
+`readOnly` in the model's JSON Schema, so sending one is a 400 about the fixture
+rather than an answer about the rule under test.
+
+**A model that cannot be seeded comes back as `{ error }` rather than being
+dropped.** An absent key reads as *this model has nothing to test*, which is how a
+derived suite silently stops covering the model whose fixture broke.
+
+It builds its `withParents()` chains through the existing memoised `_chains`, so
+it does not re-enter the sequence trap that has now cost four rounds of false
+results.
+
+## 2026-08-12 — `env.verifyRowPolicies()`, and `litestone mutate`
+
+**A gate refuses and a policy filters**, which is why this needed its own runner
+and why it was the last mutant nothing could see: deleting an `@@allow` raises
+nothing anywhere. It returns MORE rows, and more rows is not an error — it is a
+disclosure with a 200 on it.
+
+**The oracle is a second implementation, not a restatement.** Litestone compiles
+a policy twice, into two languages: `compileSql` for reads (a WHERE) and
+`evalJs` for creates (JavaScript). This reads rows through the compiled WHERE and
+asks `evalJs` which should have come back. That is the opposite of the oracle
+problem — and the same comparison found `field == null` compiling to
+`"col" = NULL` while the JS side was right (FJS-195). Verified by reverting that
+fix: 3 mismatches.
+
+Covers `read`, `update` and `delete`, all of which compile into a WHERE.
+**`create` is deliberately absent**: it is checked by `evalJs` and nothing else,
+so grading it with `evalJs` would be circular and there is no second
+implementation to compare against.
+
+**Rows are placed on both sides deliberately**, with values taken off the
+predicate itself — the principal's own value for an `auth()` comparison, the
+literal for a literal one. Three things had to be right for that to work, each
+found by running it against basecamp:
+
+- **the field is usually a FOREIGN KEY.** `workspaceId == auth().workspaceId` is
+  the whole of basecamp's tenancy, so a made-up value breaks the FK and the row
+  never exists. Every matching-side candidate was lost that way, leaving one row
+  with all of it excluded.
+- **a generated sentinel must satisfy the column's own validators**, or the
+  insert fails and the row is on neither side.
+- **a targeted value and a miss value are not interchangeable.**
+  `verifyFieldProtection` seeded with whichever came first and hid the row from
+  the very reader it was about to check.
+
+**Rows on one side only are reported, not passed.** A policy that admits
+everything and a policy that is not applied at all are the same observation when
+every row matches. `example`'s own `title != null` over a required column is
+exactly that, and the runner says so.
+
+**`litestone mutate` / `fli test:mutate`** run the sweep by hand and print the
+survivors with their line numbers. Not a CI phase: basecamp is 232 mutants at
+several seconds each. `--kinds` narrows it.
+
+`example` now scores **97%** with one survivor — a nullable `@unique`, which
+SQLite cannot be made to refuse. Both real schemas are clean on all four checks.
+
+## 2026-08-12 — schema mutation testing, and the two checks it demanded
+
+```js
+const r = await mutationScore({ schema, build: (text) => createTestEnv({ schema: text }) })
+// example: 30 mutants, 97% killed, one survivor, 3s
+```
+
+**Mutate the schema, not the code.** Drop a `@@gate`, grade one down, remove a
+`@guarded`, widen a `@length`, delete an `@@allow` — then run the suite derived
+from the ORIGINAL schema against a database built from the mutant. A `.lite` file
+is small and declarative, so the mutation space is enumerable rather than
+combinatorial: 30 mutants for `example`.
+
+**Expectations from the original, database from the mutant.** Deriving both from
+the mutant is the oracle problem at its purest — drop a `@@gate` and the ladder
+loses the rows that would have caught it, so every mutant survives and the score
+reads 100%. `verifyGateLadder`, `verifyConstraints` and `verifyFieldProtection`
+all take `{ against }` for this.
+
+**The score named two holes and both are now closed.**
+
+- `verifyGateLadder` executes **all four operations**, not just read. Create
+  needs a valid row, update and delete need one already there; the factory
+  machinery `verifyConstraints` proved out supplies them. Until it did, lowering
+  a create or delete gate was a mutation nothing could see.
+- `verifyFieldProtection` reads every `@guarded`/`@encrypted`/`@secret` field at
+  SYSADMIN(7) and asserts the key is **absent** — and separately that
+  `asSystem()` still gets it, because a column absent for everyone is broken
+  rather than protected.
+- `verifyConstraints` gained `@unique`, the one declared rule whose failing value
+  cannot be generated: it has to be taken off a row that already exists.
+
+`allow-drop` still survives. Row policies need rows on both sides of a predicate,
+and nothing executed asks — the finding, stated, rather than a gap in a count.
+
+**An `error` row never counts as a kill.** This was worth 36 points. Every mutant
+came back with the same 22 error rows and the score read 93% while four mutations
+went completely unnoticed. A mutation score that counts its own harness failures
+as successes is the oracle problem wearing a percentage.
+
+**Two more traps the runs surfaced, both fixed:**
+
+- *Mutating prose.* `example` reported four surviving `guarded-drop` mutants on a
+  model with no `@guarded` field — the matches were inside a doc comment
+  explaining what `@guarded` is not. A mutant that edits a comment is behaviourally
+  identical to the original and survives everything, so every documented attribute
+  name was quietly costing a point. Mutation is now quote-aware and code-only.
+- *A schema the framework will not LOAD is a kill, not an error.* `parse()`
+  accepts a non-monotonic `@@gate("4.3.4.5")` and the gate plugin refuses it at
+  construction, so the two halves of "is this schema legal" do not agree and only
+  the second is reached.
+
+**A row policy makes one direction ungradeable, and only one.** A policy filters,
+so it can turn an allow into a deny and never the reverse — `Server.create` on
+basecamp reports `allow` from the schema and `deny` from the client, and the
+policy is the correct answer. Skipping BOTH directions cost a real kill: a
+lowered read gate on a model that happens to declare an `@@allow` stopped being
+graded at all.
+
+Clean on `example` and `basecamp`. Basecamp's ladder takes ~5.7s (37 models × 4
+ops × 9 levels, with a restore between rows) — an audit, not a unit test.
+
+## 2026-08-12 — `env.verifyConstraints()`
+
+`verifyReadLadder`'s sibling. `generateGateMatrix` and `generateValidationCases`
+both **describe** a schema, and describing is where a generator's value stops;
+this executes the constraint cases against the real write path and returns the
+ones that disagreed.
+
+```js
+expect(await env.verifyConstraints()).toEqual([])
+```
+
+**The oracle is structural, not textual.** The schema declares a rule, so a value
+violating it must be refused — the message is not asserted, which is what keeps
+the expectation independent of the code producing it. A rule that reaches the
+browser through `x-messages` and is ignored by the server is what it exists for.
+
+Runs as SYSTEM, because the question is enforcement and a `@@gate` refusing the
+write first would answer *rejected* for every case including the ones nothing
+validates. Rolls its rows back, so it is safe to call mid-suite.
+
+**Three outcomes, not two.** A write that fails for an unrelated reason is
+`error`, never `rejected` — calling it a refusal is the trap, because it makes a
+broken validator look enforced. It is reported rather than swallowed: a case that
+could not run is a hole in the coverage the count implies. A model whose row
+cannot be built at all (a required self-reference) reports once and the run
+continues.
+
+**Three collision guards, each measured on basecamp's 37 models.** One factory
+clone per model (a re-clone writes sequence 1 every time); `fresh: true` parents
+(reused parents give identical FKs and collide on a `@@unique` over them — 1
+case); and a restore between models (two models sharing a parent each build one
+from their own seq 1 — 57 cases). Every one of those failures looks exactly like
+the validator working, which is why the `error` outcome had to exist before the
+runner could be trusted. Its first run on basecamp reported 23 mismatches, none
+of them about basecamp.
+
+Clean on `example` (22ms) and `basecamp` (157ms). Mutation-checked against both:
+disabling `@gte` reports 2 and 10, `@email` 1 and 1, `@length` 8 and 46.
+Basecamp's own suite now asserts it.
+
+## 2026-08-12 — `field == null` in a row policy (FJS-195)
+
+`@@allow('read', ownerId == null)` compiled to `"ownerId" = NULL`, which SQLite
+answers NULL — never true. So the policy hid every unowned row and raised
+nothing: an empty list with a 200, which is the failure mode `@@allow` has by
+design and the reason a wrong one is so hard to see.
+
+Worse than half-wrong. `create` is evaluated by `evalJs`, which compares with
+`===` and had always been right, so a caller could create a row and then not see
+it — the two halves of one rule disagreeing. The `auth() == null` form was
+already special-cased in both paths; the `field == null` form was in neither.
+
+Now emits `IS NULL` / `IS NOT NULL`, resolving a `belongsTo` field to its FK the
+same way `field == auth()` does. Found by the first vertical test through
+`@frontierjs/testing`, whose fixture schema wrote the natural thing. 3 tests,
+mutation-checked at 3 red.
+
+## 2026-08-12 — `env.setup()`, the hoisted arrange
+
+```js
+const fx = await env.setup(({ factories }) => factories.account.createOne())
+
+test('…', async () => {
+  const t = env.phases({ as: developer })     // rows are back at fx
+})
+```
+
+Runs once, snapshots what it wrote, and every later `phases()` call restores it.
+The restore is a truncate + bulk re-insert of the exact rows — cheaper than
+re-running factories through validation, hooks, gates and FTS. With
+template-clone already off the per-test bill, the fixture is what dominates a
+suite's runtime, and this is the part that stops paying it per test.
+
+`setup` takes the **same tools** `arrange` takes, so hoisting a line out of a
+test is a move rather than a rewrite. The value it returns survives the restore:
+rows go back with the ids they had.
+
+Refused twice, and refused after the first scenario has run. Both are one
+failure — a baseline that does not describe what the tests around it started
+from — and it is order-dependent, so nothing else would catch it.
+
+`seal`/`reset` are untouched and keep their own snapshot; `phases()` restores
+`setup`'s baseline and nothing else. Mutation-checked: dropping the per-scenario
+restore or the second-setup guard turns one test red each.
+
+## 2026-08-12 — `readOnly` and `env.phases()`
+
+**Arrange / Act / Assert as three different clients rather than three comments.**
+
+```js
+const t = env.phases({ as: developer })
+const lead = await t.arrange(({ factories }) => factories.lead.createOne())
+await t.act(as => as.lead.remove({ where: { id: lead.id } }))
+await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
+```
+
+`arrange` gets the **system** client, so a gate that refuses the principal does
+not refuse the fixtures. `act` gets the **principal's** client and runs once —
+a scenario with two acts cannot say which one an assertion is about, and setup
+after the act is part of the act, which is what would stop `arrange` being
+hoisted and cached. `assert` gets the principal's **read-only** client, which is
+the pair of properties that phase actually needs: graded, so *the row exists*
+cannot stand in for *this user can see it*; and unable to write, which is what
+makes retrying a scenario sound.
+
+The body stays linear. Callback phases would thread state through return values
+and stop a line being commented out to bisect, and the enforcement does not need
+them — it comes from what is in scope.
+
+**`readOnly(client)` is an allow-list, not a deny-list of the writes.** A write
+method added to litestone later would pass straight through a deny-list, and the
+whole value of this is that it cannot. The doors back out to a writable client
+are refused by name: `asSystem`, `$setAuth`, `sql`, `$rawDbs`, `$transaction`.
+`asSystem` needed naming specifically — it is the one escape that is not
+`$`-prefixed, and it first "passed" only because it fell through to the table
+branch and failed as *not a function*, which is an accident, not a guard.
+
+Mutation-checked: turning the allow-list into a passthrough, dropping the
+`asSystem` guard, or dropping the one-act rule turns 2, 1 and 1 tests red.
+
+Not tied to a runner — `phases()` is called inside whatever `test()` the package
+uses, so bun and Vitest both get it without an adapter.
+
+## 2026-08-12 — the validation generator, run against a real client for the first time
+
+**Nothing had ever executed a generated validation case.** `generateValidationCases`
+shipped with unit tests over its *output* and none over whether a client agreed
+with it. Running all of them found **five** defects, four of which made the
+generator produce tests that fail against a correct implementation.
+
+**`cases.valid` was not valid.** `generateFactory` had no case for `@time`,
+`@date` or `@datetime` on a **String** column — those are string formats, not
+column types, so `day String @date` got the generic `"Day 1"`. Every case is
+built as `{ ...valid, [field]: bad }`, so one such field made *every* generated
+case for the model fail, naming a field it was not testing. "Correct by
+construction" was a claim with nothing behind it.
+
+**An authored message was ignored.** A field declaring `@email("Use your work
+address")` generated a case predicting the DEFAULT wording, so the documented
+`rejects.toThrow(c.message)` failed against a client behaving correctly. The
+message now comes from the attribute, falling back to the shared table.
+
+Reading `DEFAULT_MESSAGES` is not the oracle problem the gate matrix had, and the
+distinction is worth stating: the claim under test is *this value is rejected*,
+which is derived here from the attribute's presence. The message is a **label**,
+and the table is the one definition of it that Junction and Sierra also read
+through `x-messages`. Sharing a label is fine; sharing a verdict is not.
+
+**`@phone`, `@time` and every array rule generated nothing at all** — enforced,
+untested, silently. `@minItems`, `@maxItems` and `@uniqueItems` now produce
+invalid and boundary cases; arrays were skipped wholesale before.
+
+**The fix that matters is the test, not the five repairs.** Every generated case
+now runs against a real client: invalid ones must be refused *with the message
+the case predicted*, boundary ones must be accepted, and every field carrying an
+attribute must produce at least one case. Mutation-checked — dropping the custom
+message, the `@time` factory branch or the array cases turns 2, 3 and 2 tests red
+respectively.
+
+Found and filed rather than fixed: **`FJS-194`** — the array validators are
+enforced inline in `writeData` rather than through `DEFAULT_MESSAGES`, so
+`@minItems(2, "Pick at least two")` reaches the browser through `x-messages` and
+is ignored by the server, and the same rule refuses with different wording
+depending on which side saw it.
+
+## 2026-08-11 — `createTestEnv`, and a database per test that costs a file copy
+
+**Applying the DDL was the per-test cost, and it produces the same bytes every
+time.** `src/testdb.js` migrates once per schema per process into a template and
+every client after the first is `copyFileSync`. Measured on basecamp's 37-model
+schema: **476ms → 13ms per database**, and litestone's own suite went 41.5s to
+33.7s without a test changing. `makeTestClient` uses it too, so the win is not
+opt-in. In SQLite, a database per test is a file copy — which makes the isolation
+everyone else pays for with transactions cheaper here than transactions are.
+
+**`createTestEnv({ schema })`** is the environment: a migrated database, a
+client, factories and a principal in one call. `schema` takes the text or a path.
+
+**Two auth doors, deliberately not one.** `actingAs(user)` grades through the
+app's own `getLevel`; `atLevel(n)` grades synthetically for walking the gate
+grid. A matrix driven by `atLevel` passes in full while the app's resolver is
+broken, because the resolver was never called — so `atLevel` is for the grid and
+everything about behaviour uses `actingAs`. `atLevel` opens a second client (a
+level is fixed at construction, so it cannot be a property of a call), dropping
+any caller-installed `GatePlugin` and keeping every other plugin; `atLevel(8)` is
+`asSystem()`, since `getLevel` is clamped to 0–7.
+
+**`migrations:` builds the template by replaying the committed migration files**
+rather than generating DDL from the schema — a directory, a `.sql` path, or an
+array of either. That is Encore's actual shape, and it is what basecamp's suite
+needed: all 61 of its tests are about the database a deploy produces, and they
+had been replaying `001_initial_schema.sql` by hand for exactly that reason.
+Converting them cut that file's runtime from **58s to 9.5s** and gained a test
+nothing had asked before — build a database each way, introspect both, compare.
+They agree.
+
+A directory is read more loosely here than `listMigrationFiles` reads one: every
+`.sql`, not only litestone's generated `<14-digit>_<label>.sql`. A hand-written
+`001_initial.sql` is a real migration, and a template that skipped it would
+produce an empty database and a wall of *no such table*. A `.js` migration is
+refused by name rather than skipped — it is handed a client, and a template is
+built on a raw connection. `migrationStatements(path)` is exported from
+`core/migrations.js` so the comment-and-transaction stripping has one owner
+rather than a second copy in the template builder.
+
+**`verifyReadLadder()` runs the read column of every gated model at every level
+against a real client, with no fixtures** — a read either refuses or answers.
+333 assertions on basecamp in 214ms. Each mismatch is a sentence naming the
+model, the operation and the level.
+
+### The oracle has to be independent of the thing it grades
+
+The first cut had `gateLadder()` ask `levelPasses()` for its expected verdict —
+one definition, no duplication, and the reasoning that got it there was the same
+reasoning that made `levelPasses` an export in the first place. It was wrong.
+Deleting a branch from the plugin outright produced **zero mismatches across 333
+executed assertions**, because the expectation moved with the enforcement.
+
+`expectedVerdict(required, level)` in `access.js` now states what `@@gate` means,
+and deliberately does not call `levelPasses()`. One exhaustive test over every
+(required 0–9 × level 0–8) pair holds the two statements together, so a
+divergence fails there — loudly, in one place — instead of silently disarming
+every suite downstream. Re-run against a real off-by-one (`>=` → `>`): 34 of 333
+mismatches, each naming its model and level.
+
+The distinction is between describing and verifying. The access snapshot
+describes what the plugin enforces and should share its predicate. A runner
+grades the plugin and must not.
+
+**Also fixed while writing its test: a read that throws for a non-gate reason
+was counted as a refusal.** An `@@external` model emits no DDL, so every read
+fails with *no such table* — and the ladder called that a pass at all six levels
+its gate refuses. Only an `AccessDeniedError` counts as `deny`; anything else is
+reported as `error` regardless of what the schema expected.
+
+## 2026-08-11 — `litestone access`, and a gate matrix that covers the ladder
+
+**A schema's access rules were only readable by reading the schema.** `@@gate`
+refuses and `@@allow` filters, both below the API, and a wrong policy is an empty
+screen with a 200 rather than an error — so a gate that moved was invisible until
+something was refused in production.
+
+`litestone access` writes `access.snapshot.md` beside the schema: gates per model
+per operation, each row policy as the predicate it was written as, protected
+fields, and gated transitions. Commit it and read its diff. `--check` re-derives
+and exits 1 when the committed file is stale, which is the half that makes it a
+gate rather than a document. `--json` gives the structured table.
+
+Two properties are load-bearing and both are pinned by tests. Models render sorted
+by name rather than in schema order, and empty sections are omitted — a model
+inserted mid-file otherwise shifts every row below it and the diff stops naming
+what changed. And the render is byte-deterministic, because `--check` compares the
+whole file and a check that cries wolf gets disabled.
+
+**`generateGateMatrix` now covers the whole ladder.** It emitted two cases per
+operation — the required level and the one below — which proves the comparison
+operator and nothing else; a gate granting at 6 and again at 2 passed. The default
+is now every operation against every reachable level (0–8), 36 cases per model,
+with `{ levels: 'edges' }` for the old shape. Cases carry `required` alongside
+`level`.
+
+Verdicts come from `levelPasses(required, userLevel)`, newly exported from the gate
+plugin and now the single definition of "does this level pass this gate" —
+`checkLevel` guards on it and keeps its three distinct messages. Anything that
+*describes* a gate rather than enforcing it asks that function, because a second
+copy is an artefact certifying access the plugin does not grant.
+
+Also fixed: two usage comments and two doc examples called these generators with an
+accessor (`'posts'`, `'leads'`) where the code matches on the model name and throws,
+and `docs/testing.md` showed the level being passed on the user object
+(`$setAuth({ id, level })`), which the plugin ignores — the level comes from
+`getLevel`, clamped to 0–7, so SYSTEM is reachable only through `asSystem()`.
+
+## 2026-08-11 — a bare array in a `where` reaches an array column
+
+`findMany({ where: { tags: ['x', 'y'] } })` against `tags String[]` returned `[]`
+for a row whose tags were exactly that. The bare array is litestone's shorthand
+for `IN`, and `"tags" IN ('x','y')` asks a JSON document whether it equals `'x'`.
+`$checkWhere` reported nothing — the key IS a real field — so `autoFilter` passed
+it through as a valid filter. The one shape a caller reaches for first was the
+one shape that silently answered nothing.
+
+The shorthand now says the same thing on both kinds of column — **the column's
+value is in this list** — and the SQL stays an `IN` either way:
+
+```sql
+-- { status: ['active','pending'] }   "status" IN (?, ?)
+-- { tags:   ['x','y'] }              EXISTS (SELECT 1 FROM json_each("tags") WHERE value IN (?, ?))
+```
+
+A scalar has one value to test; an array column supplies its elements. On an
+array column that is `hasSome`, reached without a new word.
+
+**It is deliberately not `equals`, which is where Prisma reads it the other way.**
+Both readings can be silently wrong for a caller who meant the other, but they
+fail in opposite directions: `equals` fails to *zero rows*, the shorthand fails
+to *too many*. A wrong empty result is the failure this change exists to remove,
+so re-introducing one as the default reading would have been the wrong trade.
+
+### What came with it
+
+| | |
+| --- | --- |
+| `equals` | new. `json(col) = json(?)` on an array column, ordinary equality on a scalar. `json()` on both sides so a row a JS migration wrote as `[ "x", "y" ]` still matches |
+| `hasNone` | new. The counterpart to `hasSome` |
+| `not: [...]` | fell into `col != ?` with one placeholder and N bindings, so SQLite answered *expected 1 values, received 2* — about placeholder counts, naming neither the field nor the reason. Now NOT-equals on an array column, `NOT IN` on a scalar |
+| `has`/`hasEvery`/`hasSome`/`isEmpty` on a scalar column | raised `malformed JSON` from `json_each`, naming neither the field nor the operator. Now refused by name |
+| `{ tags: [] }` | emitted `IN ()`, which is not valid SQLite. Now matches nothing, like `in: []` |
+
+`equals` and `not` compare the whole document and are therefore
+**order-sensitive** — `['y','x']` does not match a row stored `['x','y']`. That
+matches PostgreSQL array equality, and so Prisma's.
+
+### The plumbing
+
+`buildWhere` could not tell the two readings apart, because they are the same
+shape: `{ id: [1,2] }` and `{ tags: ['x','y'] }` differ only in what the column
+is. It now takes an `arrayFields` set for the model, built once by
+`buildArrayMap` beside the bool and enum maps, and threaded to every path that
+builds its own WHERE — `delete`, `deleteMany`, a relation filter (the TARGET
+model's set), an `include` filter, and a `_count` include.
+
+## 2026-08-11 — a set of enum values is a column
+
+`targets ReclaimTarget[]` was refused at parse time, so a declared vocabulary of
+MANY values had no home in the seed. An app wrote `String[]` and validated the
+members somewhere else, or declared the enum anyway and kept two homes with
+nothing joining them — which is how `AlertRule.severity` came to default to a
+value its own API refused.
+
+```prisma
+enum ReclaimTarget { logs  cache  artifacts }
+
+model ReclaimRule {
+  id      Int @id
+  targets ReclaimTarget[]
+}
+```
+
+One declaration now feeds the column (JSON TEXT under the same
+`json_type = 'array'` CHECK every array carries), the generated type
+(`ReclaimTarget[]`), the JSON Schema and the picker. The `$ref` goes on the
+**items** rather than the field — a picker reading the field's own schema would
+otherwise offer one choice for a column that holds several. Every member is
+checked on create and update, and the error names all of the bad ones.
+
+**There is no membership CHECK and there cannot be.** Reading a JSON array's
+elements needs `json_each`, that needs a subquery, and SQLite forbids a subquery
+inside a CHECK. `enumCheck` returns null for an array rather than emitting
+`IN (...)`, which would compare the whole document against one value and fail
+every non-empty set. So the client is the boundary here, the same tier
+`@minItems`, `@uniqueItems` and `Int[]` element typing already sit at.
+
+### `@default` on an array field
+
+`tags String[] @default("x")` parsed and migrated into a column whose own
+default violates its own CHECK, then failed the first insert that relied on it
+with `CHECK constraint failed` — naming the constraint, not the schema line.
+A `@default` on an array field must now be a JSON array string; `@default("[]")`
+still passes, `@default(a)` and `@default(1)` are schema errors.
+
+## 2026-08-11 — a bulk write takes its columns from each row
+
+`createMany` built one prepared statement from `Object.keys(rows[0])`, so row 0
+decided what every other row was allowed to write:
+
+```js
+createMany({ data: [{ id: 1, title: 'a' },
+                    { id: 2, title: 'b', subtitle: 'HELLO', views: 99 }] })
+// → { count: 2 }, and row 2 has subtitle null, views 0. Nothing said.
+
+createMany({ data: [{ id: 1, title: 'b', subtitle: 'HELLO', views: 99 },
+                    { id: 2, title: 'a' }] })
+// → SQLiteError: NOT NULL constraint failed: post.views
+```
+
+The same two rows, in the same call, either lost data or threw — on their order
+alone, and one of the two was silent. A column absent from a later row was bound
+as an explicit NULL, and that defeats the DDL `DEFAULT` that would have filled it.
+
+Now one prepared statement per row SHAPE, cached by column list. A uniform batch
+— the ordinary case — prepares exactly one and reports the SQL it always did.
+Rows still insert in **caller order** rather than grouped by shape, because an
+`@id @default(autoincrement())` is assigned in insert order and grouping would
+renumber the caller's rows. `upsertMany` had the identical defect and is fixed
+the same way, with the `ON CONFLICT DO UPDATE SET` clause derived per shape.
+
+### A key set to `undefined` means absent
+
+The same NULL bind hit one row with no batch involved: `{ views: form.views }`
+off a form with no views field put a present-but-undefined key in the payload,
+which became `views = NULL` and failed a NOT NULL column. `writeData` now drops
+an undefined-valued key along with the unknown ones, so only `null` clears —
+create, createMany and update alike.
+
+## 2026-08-11 — `db` names main's path
+
+`createClient({ db })` was consulted only to invent an implicit main when the
+schema declared none. Against a schema that declares one it did nothing and said
+nothing, so `db: ':memory:'` wrote the declared file and a test that believed it
+was in-memory accumulated state across runs. basecamp carried a nine-line
+comment warning about it instead of passing the option.
+
+`db` now names main's path either way. Most specific wins:
+
+| | |
+| --- | --- |
+| `databases: ':memory:'` | every SQLite database, plus a tmpdir per jsonl/logger one |
+| `databases: { name: { path } }` | one named database |
+| `db` | **main only** |
+| `database main { path ... }` | the declaration |
+
+It reaches main and nothing else — a second declared database keeps its declared
+path, which is the whole distinction between the two options.
+
+## 2026-08-11 — a migration only drops what litestone named
+
+An index created outside the schema — in a JS migration, or straight against the
+database — was live-and-not-pristine, which lands in `indexes.dropped`. Since
+`hasChanges` counts that list, **its presence was itself the change**. Measured:
+
+```
+1 first autoMigrate    : in-sync
+2 app adds an index    : ["note_title_idx"]
+3 restart, same schema : in-sync   ["note_title_idx"]     ← survives
+4 an UNRELATED nullable column added
+                       : migrated  []                     ← gone
+```
+
+The DDL-hash fast path is what hides it. The index survives every restart until
+someone makes an unrelated change, and dies with it. No error, no rebuild — a
+query plan collapses and the app is only slower.
+
+Every index litestone generates for a model table is `idx_<table>_<fields>`, so
+the prefix is what it owns. Removing an `@@index` still drops `idx_note_title`;
+`note_title_idx` is now left alone. An index the app happens to name
+`idx_<table>_…` is still litestone's, since that is the name litestone would
+generate for the same declaration.
+
+**A rebuild is a separate matter and stays unsupported.** It drops the table,
+which takes every trigger and index on it; litestone's own are regenerable and
+restated, and the app's exist only in the live database. Rather than lose them
+silently, the generated migration now names them before the SQL that destroys
+them:
+
+```sql
+-- "note": this rebuild DROPS the table, which destroys:
+--     trigger "note_audit"
+--     index "note_title_idx"
+-- Litestone did not create these and cannot restate them — recreate
+-- them below, or in a JS migration that runs after this file.
+```
+
+`FJS-187` fixed; `FJS-183` ruled and left open to revisit. 4 tests,
+mutation-checked.
+
+### A `view` over a model made that model impossible to migrate
+
+A rebuild ends in `ALTER TABLE "note__new" RENAME TO "note"`, and SQLite
+reparses every view in the schema on a rename. A view still pointing at the
+table the rebuild just dropped is an error:
+
+```
+model Note { id Int @id  title String  scratch String }
+view NoteV { title String  @@sql("SELECT title FROM note") }
+
+→ drop `scratch`
+→ SQLiteError: error in view NoteV: no such table: main.note
+```
+
+Litestone's own `view` declaration against litestone's own migrations. Declare
+one over a model and that model could never drop a column, change a type,
+change a foreign key or change `@@strict` again — the migration failed
+identically every time, naming the view rather than the cause. A hand-made view
+did the same.
+
+**A view is not in the trigger's class.** It is a stored `SELECT` with no state
+and no side effects, so it can be dropped before the rebuild and put back
+verbatim after, which is now what happens — schema-declared and app-created
+alike. A view the schema redefines in the same migration is left to the
+changed-views block instead, since restating its old body would fail on exactly
+the change the new body was written for.
+
+One sharp edge closes with it. SQLite does not resolve a view body at `CREATE`
+time, so a view over a column the rebuild dropped comes back without complaint
+and fails in whatever reads it. Each restored view is now read once inside the
+migration's transaction, so a view the change invalidated refuses the migration
+rather than surviving broken. That cannot catch a body written `SELECT
+"scratch"` with the column double-quoted — SQLite resolves an unknown
+double-quoted identifier as a string literal and reports nothing, the same trap
+`rebuildSQL` already carries a comment about.
+
+`FJS-188`. 6 tests, mutation-checked.
+
+## 2026-08-11 — a `@computed` field may declare what it reads
+
+`applyComputed` iterated the whole extension map and knew nothing about
+`select`. Measured on a model with two computed fields:
+
+```
+findMany({ select: { id: true, title: true } })
+→ both fns ran, over rows carrying only id and title, and both results
+  were then thrown away by trimToSelect
+```
+
+The waste is the smaller half. The row those fns received was the one the select
+had already narrowed, so a fn reading an unselected column saw `undefined` and
+answered something plausible. That is the third appearance of one failure: the
+same shape was chased across `findManyCursor` and all three `include` shapes,
+and again across a relation `orderBy`, both times as a missing `@from` field.
+Here the select path itself was the narrowing.
+
+A computed field outside the caller's select is no longer computed. That removes
+the waste and the partial row together — there is no path left on which a fn
+runs over a row shaped by a select that did not ask for it.
+
+The other half is the fetch. Selecting a computed field set `needsAllDbCols`, so
+the SQL widened to `SELECT *`, which defeats a covering index, decrypts
+`@encrypted` columns nobody asked for, and emits **every** `@from` correlated
+subquery on the model — the `*` branch is what appends them, so three `@from`
+fields cost three subqueries per row for a computed field needing none.
+
+A fn may now declare its inputs:
+
+```js
+export default {
+  Client: {
+    chattiness: { needs: ['noteCount'], compute: row => row.noteCount * 2 },
+  },
+}
+```
+
+The SELECT carries exactly those names, a `@from` among them emits just that
+subquery, and all of them are trimmed from the result — asking for a computed
+field does not smuggle its inputs back. A bare fn keeps the old behaviour and
+the old `*`, because undeclared has to mean *fetch everything*; one bare fn in a
+select widens it for the declared ones too.
+
+**The declaration is enforced rather than trusted.** The row a declared fn
+receives carries exactly the declared names and reading anything else throws,
+naming the field and the list. Without that, adding a line to the fn and
+forgetting the list would answer `undefined` — strictly worse than fetching
+every column, and the same silence the first half of this change exists to end.
+`in` is left alone, so feature-detection still works. A `needs` naming something
+that is not a readable field of the model is refused at `createClient`, where
+the list is written, rather than at a read that would answer nothing.
+
+Narrowing reaches `findManyCursor` and `search()`, which build their own
+SELECTs, and a nested `select` under an `include`.
+
+`FJS-184`, `FJS-185`. 16 tests, mutation-checked.
+
+### Found by it: `search()` dropped every row when the select omitted the id
+
+`search()` runs two queries — the FTS5 table for `rowid` + `rank`, then the base
+table for the rows, rejoined by id to restore rank order. The second took the
+caller's `select` verbatim, so:
+
+```
+db.message.search('sqlite', { select: { title: true } })   → []
+```
+
+No error, no partial answer: *no results* for a query that has them, and the
+more precisely a caller asked the more completely it failed. Pre-existing and
+unrelated to the change above, but found by it — narrowing a computed field's
+fetch is what makes an id-less select common rather than rare. The id is now
+injected when a narrowed select omits it, and dropped again by the trim.
+
+`FJS-186`. 3 tests.
+
 ## 2026-08-11 — `@@softDelete` + `@@fts` corrupted the index on every soft delete
 
 Found while splitting a test fixture in two to avoid it. The pair was unusable:

@@ -1602,18 +1602,40 @@ function extractJSON(text) {
   }
 }
 
-async function callClaude(prompt, maxTokens = 1500) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+// Vite's dev server proxies this to api.anthropic.com and attaches the credential
+// there — see vite.config.js. Posting to the real host from here would need the key
+// in the bundle, and the built page has no proxy, so its recogniser cannot work.
+const API_URL = '/anthropic/v1/messages'
+const MODEL   = 'claude-opus-5'
+
+async function callClaude(prompt, maxTokens = 8000) {
+  const response = await fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: MODEL,
       max_tokens: maxTokens,
+      // Recognition is catalogue matching, not deep reasoning; medium keeps the
+      // thinking spend down without flattening the property/variant/novel call.
+      output_config: { effort: 'medium' },
       messages: [{ role: 'user', content: prompt }]
     })
   })
-  if (!response.ok) throw new Error(`API ${response.status}`)
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(`API ${response.status}${detail ? ` — ${detail.slice(0, 300)}` : ''}`)
+  }
   const data = await response.json()
+  // A declined request is a 200 with an empty content array, so reading content
+  // straight through turns a refusal into an unrelated parse failure.
+  if (data.stop_reason === 'refusal') {
+    throw new Error(`Refused by safety classifiers (${data.stop_details?.category ?? 'unspecified'})`)
+  }
+  // Thinking is on by default and shares max_tokens with the answer, so a turn that
+  // runs out arrives as well-formed JSON cut mid-object rather than as an error.
+  if (data.stop_reason === 'max_tokens') {
+    throw new Error(`Truncated at max_tokens (${maxTokens}) — raise it and retry`)
+  }
   const text = data.content
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
@@ -2062,7 +2084,7 @@ Return ONLY JSON (no fences):
 
 If the description doesn't describe a recognizable system (too vague, or no catalog entities apply), set is_genuine_miss: true with an empty flows array.`
 
-  return await callClaude(prompt, 4000)
+  return await callClaude(prompt, 16000)
 }
 
 export default function EntitiesAndPatterns() {

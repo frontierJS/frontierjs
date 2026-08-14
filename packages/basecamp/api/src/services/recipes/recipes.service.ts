@@ -2,7 +2,7 @@
 // Saved shell scripts, run on machines in the fleet.
 //
 // Mounted at /recipes. Custom methods dispatch on X-Service-Method:
-//   run  — queue this recipe on one server or on every server with an agent
+//   run  — queue this recipe on one server or on every server with an outpost
 //   runs — the history for one recipe, read-shaped
 //
 // **A recipe is arbitrary code, and no vocabulary can make it safe.** The
@@ -10,9 +10,9 @@
 // — does not transfer here, and the reason is the interesting part. A stored
 // query is dangerous because the Data boundary grades a CALLER against a MODEL
 // and a string cannot be graded, so the row would run at whoever opened it. A
-// script is not run at this boundary at all: it is handed to an agent and run
+// script is not run at this boundary at all: it is handed to an outpost and run
 // on a machine, where there is no model, no caller and no grade. It runs at
-// whatever the agent has, every time, for everyone.
+// whatever the outpost has, every time, for everyone.
 //
 // So the safeguard is the record, and the split between authoring and running:
 //
@@ -28,7 +28,7 @@
 // failed", which is the answer an operator most needs.
 //
 // Execution is not here. `run` queues, and `engine/fleet.engine.ts` carries it
-// out through `app.conduit` at the `agent:<id>` target a heartbeat registers —
+// out through `app.conduit` at the `outpost:<id>` target a heartbeat registers —
 // a script with a five-minute timeout on twenty machines is not an HTTP
 // request, and a request that dies mid-fleet leaves half of it done with
 // nothing recording which half.
@@ -146,7 +146,7 @@ export function createRecipesService(app: BasecampApp) {
 
     // ── run — POST /recipes/:id  X-Service-Method: run ────────────────
     // Queue this recipe. `{ serverId }` names one machine; omitting it means
-    // every machine in the workspace an agent has registered for.
+    // every machine in the workspace an outpost has registered for.
     //
     // Nothing is executed here. The rows are written `pending` and the engine
     // picks them up, so the answer to the click is *what was queued and where*
@@ -164,21 +164,21 @@ export function createRecipesService(app: BasecampApp) {
       if (!app.conduit)
         throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
 
-      // A machine with no registered agent cannot be reached, and queueing a
+      // A machine with no registered outpost cannot be reached, and queueing a
       // run against it would produce a row that fails a minute later for a
-      // reason the operator could have been told at the click. An agent
+      // reason the operator could have been told at the click. An outpost
       // registers itself on its first heartbeat.
       const reachable: string[] = []
       const unreachable: string[] = []
       for (const id of candidates) {
-        if (await app.conduit.resolve(`agent:${id}`)) reachable.push(id)
+        if (await app.conduit.resolve(`outpost:${id}`)) reachable.push(id)
         else unreachable.push(fleet.get(id) as string)
       }
 
       if (!reachable.length)
         throw new BadRequest(
-          `No agent is registered for ${unreachable.join(', ')} — nothing was run. ` +
-          'An agent registers itself on its first heartbeat.'
+          `No outpost is registered for ${unreachable.join(', ')} — nothing was run. ` +
+          'An outpost registers itself on its first heartbeat.'
         )
 
       const script = recipe.script as string

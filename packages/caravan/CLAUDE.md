@@ -34,8 +34,10 @@ src/
 - **`GET /jobs` pages at 50, newest first.** The queue accumulates every job every
   drive has ever run, so an unbounded scan stops before the row you are asking
   about and reads as "there is no such job". Pass `?limit=500`.
-- Raw routes here take **no `apiPrefix`** — it is `/jobs`, not `/api/jobs`. An
-  app proxying to the API needs its own entry for that path.
+- The admin routes are raw `app.get`/`app.post` routes, and **`app.get` applies
+  the app's `apiPrefix`** — an app under `/api` serves them at `/api/jobs`. They
+  used to sit at `/jobs` regardless, which is what made a separate proxy entry
+  necessary (`FJS-012`).
 - An old `jobs.db` is migrated on open; the schema and the code used to disagree
   in both directions (a raw `UNIQUE constraint failed` out of an HTTP request one
   way, a job that silently never ran the other).

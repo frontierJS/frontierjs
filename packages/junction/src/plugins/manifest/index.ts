@@ -18,7 +18,6 @@
 
 import type { App, Plugin } from '../../core/app.ts'
 import type { HookMap }     from '../../core/hooks.ts'
-import { customMethodNames, isMethodAllowed, allowedMethodNames } from '../../core/service.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -38,11 +37,27 @@ export interface ManifestPluginOptions {
 export interface AppManifest {
   app:      AppMeta
   services: ServiceManifest[]
+  routes:   RouteManifest[]
   channels: ChannelManifest[]
   appHooks: HookManifest
   plugins:  string[]
   schema?:  unknown   // generateJsonSchema output — present when opts.schema provided
   // Migrations are served separately via GET {prefix}/migrations — not embedded here.
+}
+
+export interface RouteManifest {
+  method:   string
+  path:     string
+  /**
+   * `service` — one of the auto-mounted CRUD routes; `raw` — anything a plugin
+   * or the app registered itself.
+   *
+   * The distinction is the useful half: the service routes are derivable from
+   * the service list, and the raw ones are the surface nothing else describes.
+   */
+  kind:     'service' | 'raw'
+  /** Present on a service route — which service answers it. */
+  service?: string
 }
 
 export interface AppMeta {
@@ -93,14 +108,14 @@ export function manifestPlugin(opts: ManifestPluginOptions = {}): Plugin {
     // Synchronous: the awaits below are inside route handlers, not here.
     register(app: App): void {
       if (devOnly && process.env.NODE_ENV === 'production') return
-      const prefix = (app.config as Record<string, unknown>).apiPrefix as string ?? ''
 
-      app.get(`${prefix}${route}`, async () =>
+      // app.get applies apiPrefix — see the route shortcuts in core/app.ts.
+      app.get(route, async () =>
         Response.json(await buildManifest(app, opts))
       )
 
       if (opts.db) {
-        app.get(`${prefix}${migrationsRoute}`, async () =>
+        app.get(migrationsRoute, async () =>
           Response.json(await buildMigrations(opts))
         )
       }
@@ -129,6 +144,7 @@ async function buildManifest(app: App, opts: ManifestPluginOptions): Promise<App
   return {
     app:      buildAppMeta(app),
     services: buildServices(app),
+    routes:   buildRoutes(app),
     channels: buildChannels(app),
     appHooks: serializeHookMap(app._appHooks),
     plugins:  app._plugins ?? [],
@@ -161,28 +177,54 @@ function buildAppMeta(app: App): AppMeta {
 }
 
 function buildServices(app: App): ServiceManifest[] {
+  // Straight off describe(). This used to read `_meta`, `_hookMap` and the
+  // action rule directly, through a cast — three internals, and three chances
+  // to describe a different service than the one that answers the request. The
+  // hardcoded method list here was also a fourth spelling of the CRUD set, and
+  // it omitted `update`.
   return app.services.values().map(svc => {
-    const s    = svc as Record<string, unknown>
-    const meta = (s._meta as Record<string, unknown>) ?? {}
-
-    // Was a local STANDARD_KEYS copy that had drifted — it omitted `update`
-    // and `_update`, so every service advertised `update` as a custom action.
-    const customMethods = customMethodNames(svc).filter(m => isMethodAllowed(svc, m))
-
+    const d = svc.describe()
     return {
-      name:       svc.name,
-      model:      svc.model ?? svc.name,
+      name:       d.name,
+      model:      d.model,
       // Policy-filtered: advertising a verb the service answers 405 to is worse
       // than not advertising it, because a generated client would call it.
-      // The hardcoded list was also a fourth spelling of the CRUD set and
-      // omitted `update` — allowedMethodNames() is the one source now.
-      methods:    allowedMethodNames(svc),
-      hooks:      serializeHookMap(svc._hookMap),
-      softDelete: !!(meta.softDelete),
-      cache:      !!(meta.cache),
-      idField:    (meta.idField as string) ?? 'id',
+      methods:    d.methods,
+      hooks:      serializeHookMap(d.hooks),
+      softDelete: !!d.softDelete,
+      cache:      d.cache,
+      idField:    d.idField,
     }
   })
+}
+
+/**
+ * Every path the router will answer, by method.
+ *
+ * The surface is emergent — services auto-mount, plugins register their own —
+ * and `hasRoute()` is a MATCHING question, not an existence one: every app
+ * registers `GET /{service}`, which matches almost anything. So "what is
+ * actually mounted" had no cheap answer and a route in the wrong place was
+ * invisible until something 404'd (`FJS-091`; `FJS-012` is what it cost).
+ *
+ * Read off the router rather than rebuilt from the registry, so a path that is
+ * mounted appears here whether or not anything meant to mount it.
+ */
+export function buildRoutes(app: App): RouteManifest[] {
+  const router = (app as { http?: { router?: { routePaths?: (m: string) => string[] } } })
+    .http?.router
+  if (typeof router?.routePaths !== 'function') return []
+
+  const out: RouteManifest[] = []
+  for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']) {
+    for (const path of router.routePaths(method)) {
+      // The CRUD handler is registered against the `{service}` template, so a
+      // service route names no service — it names all of them.
+      const isService = path.includes('/{service}')
+      out.push({ method, path, kind: isService ? 'service' : 'raw' })
+    }
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))
 }
 
 function buildChannels(app: App): ChannelManifest[] {

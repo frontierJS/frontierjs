@@ -1,8 +1,10 @@
 <script module>
-  // src/resources/leads.mesa — the Resource layer.
+  // src/resources/Lead.mesa — the Resource layer.
   //
   // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
   // No markup: everything is module scope, which is what <script module> means.
+  // The file is named for the MODEL, singular, one Resource in it (invariant 19)
+  // — which is what makes the directory listing the index of what this app has.
   //
   // Read this file next to db/schema.lite. Nothing here restates anything there:
   // no field list, no types, no enum values, no required list, no relations.
@@ -27,10 +29,4 @@
     // second ''. Rewrite blanks on nullable fields on the way out.
     blankToNull: true,
   })
-
-  // `accounts` exists to populate the picker for Lead.accountId. Which resource
-  // that is was not written here either — see how NewLead.mesa derives it from
-  // leads.relations.account.model.
-  export const accounts = createResource('accounts')
-  export const tags     = createResource('tags')
 </script>

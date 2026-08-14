@@ -16,6 +16,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { parseFile, generateDDL, createClient, GatePlugin, LEVELS } from '../../../litestone/src/index.js'
+import { createTestEnv } from '../../../litestone/src/testing.js'
+import { introspect }     from '../../../litestone/src/core/migrate.js'
 // The app's own resolver, not a stand-in. A gate test against a hand-written
 // getLevel proves the levels in this file, not the ones the API runs — and the
 // two disagreeing is exactly the failure @@gate exists to prevent.
@@ -34,13 +36,58 @@ import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
 import { USER_STATUSES, WORKSPACE_STATUSES } from '../../api/src/services/hub/hub.service.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', 'schema.lite')
-const MIGRATION  = join(import.meta.dir, '..', 'migrations', '001_initial_schema.sql')
+const MIGRATIONS = join(import.meta.dir, '..', 'migrations')
+const MIGRATION  = join(MIGRATIONS, '001_initial_schema.sql')
 const ENC_KEY    = '0'.repeat(64)
 
-let dir: string
+// Every environment this file opens, so nothing is left holding a connection.
+const envs:    any[] = []
+const rawDirs: string[] = []
 
-function freshDb(name = 'bc.db') {
-  const path = join(dir, `${Math.random().toString(36).slice(2)}-${name}`)
+/**
+ * A client on a throwaway database built from the COMMITTED MIGRATION.
+ *
+ * `migrations:` rather than the schema's generated DDL, and that is the whole
+ * point of this file: the assertions below are about the database a deploy
+ * produces, not about one derived from the same `.lite` the assertions read.
+ *
+ * `createTestEnv` owns three things this used to do by hand. It redirects the
+ * declared `database main { path env("DATABASE_URL", …) }` into a throwaway
+ * directory — a declaration WINS over `createClient({ db })` silently, and when
+ * this file passed `db: dbPath` every test quietly opened the DEVELOPMENT
+ * database and wrote to it. It builds the tables once per process and copies
+ * them per call. And it hands back `system` already scoped.
+ */
+// `any`: a Litestone client is a Proxy whose accessors are the schema's models,
+// which no static type here knows. Every test in this file would otherwise open
+// with the same cast.
+async function makeEnv(opts: Record<string, unknown> = {}): Promise<any> {
+  // The same GatePlugin core/db.ts installs. Leaving it out does NOT give an
+  // ungated client — a schema declaring any @@gate installs Litestone's default
+  // resolver instead, which grades a plain principal USER(4) and would have
+  // these tests asserting against levels no request in this app ever gets.
+  const env = await createTestEnv({
+    schema:        SCHEMA,
+    migrations:    MIGRATIONS,
+    encryptionKey: ENC_KEY,
+    plugins:       [new GatePlugin({ getLevel: basecampGateLevel })],
+    ...opts,
+  })
+  envs.push(env)
+  return env
+}
+
+/** The client alone, which is all but one test needs. */
+async function client(opts: Record<string, unknown> = {}): Promise<any> {
+  return (await makeEnv(opts)).db
+}
+
+/**
+ * A raw database with the migration replayed, for the two tests that inspect
+ * what the migration BUILT rather than what a client does with it.
+ */
+function freshDb(): string {
+  const path = join(scratchDir('ddl'), 'bc.db')
   const raw  = new Database(path)
   raw.run(readFileSync(MIGRATION, 'utf8'))
   raw.close()
@@ -48,34 +95,15 @@ function freshDb(name = 'bc.db') {
 }
 
 /**
- * A client on a throwaway database.
- *
- * The path is steered through DATABASE_URL, not the `db` option, because
- * schema.lite declares `database main { path env("DATABASE_URL", …) }` and a
- * declaration WINS over `createClient({ db })` — silently, with no error and no
- * warning. When this file passed `db: dbPath`, every test quietly opened the
- * DEVELOPMENT database instead: assertions started reading rows from local
- * dev data (a Secret named 'deploy-key' where the test had written 'k'), and
- * the tests were writing to it too.
- *
- * env() is read when the schema is parsed, so it has to be set before the call
- * rather than passed to it.
+ * A throwaway directory this file owns. The env owns its own (`env.dir`); this
+ * is for the two things that need one BEFORE a client exists — the raw
+ * migration replay, and the `audit` logger database, whose path has to be
+ * passed in as a client option.
  */
-// `any`: a Litestone client is a Proxy whose accessors are the schema's models,
-// which no static type here knows. Every test in this file would otherwise open
-// with the same cast.
-async function client(dbPath: string, opts: Record<string, unknown> = {}): Promise<any> {
-  process.env.DATABASE_URL = dbPath
-  // The same GatePlugin core/db.ts installs. Leaving it out does NOT give an
-  // ungated client — a schema declaring any @@gate installs Litestone's default
-  // resolver instead, which grades a plain principal USER(4) and would have
-  // these tests asserting against levels no request in this app ever gets.
-  return createClient({
-    path:          SCHEMA,
-    encryptionKey: ENC_KEY,
-    plugins:       [new GatePlugin({ getLevel: basecampGateLevel })],
-    ...opts,
-  })
+function scratchDir(label: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `basecamp-${label}-`))
+  rawDirs.push(dir)
+  return dir
 }
 
 /** A principal with standing in a workspace, as applyStanding() builds one. */
@@ -83,8 +111,10 @@ function as(memberRole: string, extra: Record<string, unknown> = {}) {
   return { id: 'u1', userId: 'u1', memberRole, ...extra }
 }
 
-beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'basecamp-db-')) })
-afterAll(()  => { rmSync(dir, { recursive: true, force: true }) })
+afterAll(() => {
+  for (const env of envs) env.close()
+  for (const dir of rawDirs) rmSync(dir, { recursive: true, force: true })
+})
 
 // ─── The schema itself ───────────────────────────────────────────────────────
 
@@ -191,6 +221,25 @@ describe('generated migration', () => {
     raw.close()
   })
 
+  test('the database the migrations build is the one schema.lite declares', async () => {
+    // The text check above compares the initial migration against generateDDL,
+    // which stops meaning anything the moment a second migration file exists —
+    // a concatenation of two files does not contain the whole current DDL.
+    // This asks the durable question instead: build a database each way and
+    // compare what SQLite ended up with. Every other test in this file runs
+    // against the migration, so this is what keeps that honest.
+    const fromMigrations = await makeEnv()
+    const fromSchema     = await makeEnv({ migrations: undefined })
+
+    const a = introspect(fromMigrations.db.$rawDbs.main)
+    const b = introspect(fromSchema.db.$rawDbs.main)
+    const tablesOf  = (s: any) => Object.keys(s.tables ?? s).sort()
+    const columnsOf = (s: any, t: string) => Object.keys((s.tables ?? s)[t].columns ?? {}).sort()
+
+    expect(tablesOf(a)).toEqual(tablesOf(b))
+    for (const t of tablesOf(a)) expect([t, columnsOf(a, t)]).toEqual([t, columnsOf(b, t)])
+  })
+
   test('columns are verbatim camelCase, not snake_case', () => {
     const raw  = new Database(freshDb())
     const cols = raw.query('SELECT name FROM pragma_table_info(?)').all('workspace_member').map((r: any) => r.name)
@@ -205,20 +254,19 @@ describe('generated migration', () => {
 
 describe('Secret.data protection', () => {
   test('is encrypted at rest — the key is not in the database file', async () => {
-    const path = freshDb()
-    const db   = await client(path)
-    const sys  = db.asSystem()
-    const ws   = await seedWorkspace(sys)
-    const KEY  = JSON.stringify({ priv: 'SSH-PRIVATE-KEY-DO-NOT-LEAK' })
+    const env = await makeEnv()
+    const sys = env.system
+    const ws  = await seedWorkspace(sys)
+    const KEY = JSON.stringify({ priv: 'SSH-PRIVATE-KEY-DO-NOT-LEAK' })
 
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'deploy-key', kind: 'ssh_key', data: KEY } })
-    db.$close()
+    env.close()
 
-    expect(readFileSync(path, 'latin1')).not.toContain('SSH-PRIVATE-KEY-DO-NOT-LEAK')
+    expect(readFileSync(env.path, 'latin1')).not.toContain('SSH-PRIVATE-KEY-DO-NOT-LEAK')
   })
 
   test('round-trips intact for a system reader', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
     const KEY = JSON.stringify({ priv: 'ROUND-TRIP' })
@@ -229,7 +277,7 @@ describe('Secret.data protection', () => {
   })
 
   test('the data column is absent entirely for a non-system reader', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{"priv":"x"}' } })
@@ -260,11 +308,11 @@ describe('Secret.data protection', () => {
 
 describe('audit logging', () => {
   test('records that a secret was written without recording the secret', async () => {
-    const auditDir = join(dir, `audit-${Math.random().toString(36).slice(2)}`)
+    const auditDir = scratchDir('audit')
     const cwd      = process.cwd()
-    process.chdir(dir)                     // logger path is CWD-relative
+    process.chdir(auditDir)                // logger path is CWD-relative
 
-    const db  = await client(freshDb(), { databases: { audit: { path: auditDir } } })
+    const db  = await client({ databases: { audit: { path: auditDir } } })
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
 
@@ -306,7 +354,7 @@ describe('audit logging', () => {
 describe('the gate ladder', () => {
 
   test('a viewer reads the fleet and creates nothing', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
     await sys.app.create({ data: {
@@ -321,7 +369,7 @@ describe('the gate ladder', () => {
   })
 
   test('a developer writes apps and cannot read a secret', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
@@ -337,7 +385,7 @@ describe('the gate ladder', () => {
   })
 
   test('an admin reads secrets; only an owner deletes the workspace', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
@@ -356,7 +404,7 @@ describe('the gate ladder', () => {
   })
 
   test('isSystemAdmin outranks membership — and still cannot read User', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
@@ -375,7 +423,7 @@ describe('the gate ladder', () => {
     // The app refuses a suspended caller at two doors already (login, and an
     // app-level before hook). This is the third, and it is the only one an
     // engine calling a service in-process passes through.
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
     await sys.app.create({ data: {
@@ -391,7 +439,7 @@ describe('the gate ladder', () => {
     // VISITOR(1) is the level a fresh login holds before it names a workspace,
     // and Workspace is the one model it must be able to read — otherwise the
     // screen that lists the workspaces you could act in cannot load.
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     await seedWorkspace(sys)
 
@@ -406,7 +454,7 @@ describe('the gate ladder', () => {
     // either — the one gate here that is aimed at the app rather than at its
     // callers. It is also why db/seed.js --force cannot clear the table and
     // lets the workspace FK cascade do it.
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
     const ev  = await sys.auditEvent.create({ data: {
@@ -478,7 +526,7 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
   }
 
   test('a caller reads the servers of the workspace on their principal, and no others', async () => {
-    const db      = await client(freshDb())
+    const db      = await client()
     const sys     = db.asSystem()
     const { a }   = await twoTenants(sys)
 
@@ -491,7 +539,7 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
   })
 
   test('naming another workspace does not reach its rows', async () => {
-    const db          = await client(freshDb())
+    const db          = await client()
     const sys         = db.asSystem()
     const { a, b }    = await twoTenants(sys)
     const other       = await sys.server.findFirst({ where: { workspaceId: b.id } })
@@ -504,7 +552,7 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
   })
 
   test('a server cannot be created into, or moved into, another workspace', async () => {
-    const db       = await client(freshDb())
+    const db       = await client()
     const sys      = db.asSystem()
     const { a, b } = await twoTenants(sys)
     const mine     = await sys.server.findFirst({ where: { workspaceId: a.id } })
@@ -524,7 +572,7 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
     // The include path builds its own SQL, and until litestone FJS-150 it applied
     // no policy at all — so this is the leak the declaration would otherwise
     // still have: one join away from a model that filters correctly.
-    const db       = await client(freshDb())
+    const db       = await client()
     const sys      = await db.asSystem()
     const { a, b } = await twoTenants(sys)
 
@@ -541,13 +589,13 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
     // A policy filters; it does not refuse. So a path that forgot to resolve a
     // workspace and is not asSystem() produces an empty screen rather than an
     // error, and that is what to look for when one goes blank.
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem()
     await twoTenants(sys)
 
     expect(await db.$setAuth(as('owner')).server.findMany({})).toEqual([])
     // asSystem() is the deliberate way across — the engines, the hub and the
-    // agent's heartbeat all take it.
+    // outpost's heartbeat all take it.
     expect((await sys.server.findMany({})).length).toBe(2)
     db.$close()
   })
@@ -572,7 +620,7 @@ describe('AlertRuleChannel — the join that replaced a Json array of ids', () =
   }
 
   test('a link to a channel that does not exist is refused', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { rule } = await seedRuleAndChannel(sys)
 
@@ -585,7 +633,7 @@ describe('AlertRuleChannel — the join that replaced a Json array of ids', () =
   })
 
   test('the same channel cannot be attached to a rule twice', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { rule, chan } = await seedRuleAndChannel(sys)
 
@@ -597,7 +645,7 @@ describe('AlertRuleChannel — the join that replaced a Json array of ids', () =
   })
 
   test('deleting a channel takes its links with it — no rule is left pointing at nothing', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { rule, chan } = await seedRuleAndChannel(sys)
     await sys.alertRuleChannel.create({ data: { ruleId: rule.id, channelId: chan.id } })
@@ -650,7 +698,7 @@ describe('ApiKey — the token Basecamp issues', () => {
   test('scopes round-trip as an array, not as the string "[]"', async () => {
     // FJS-120: a JSON Schema default of "[]" on an array field used to reach
     // the boundary as the two characters rather than an empty list.
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { key } = await seedKey(sys, { scopes: ['servers:read', 'projects:write'] })
 
@@ -664,7 +712,7 @@ describe('ApiKey — the token Basecamp issues', () => {
   })
 
   test('a key cannot be created in a workspace that does not exist', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { user } = await seedKey(sys)
 
@@ -675,7 +723,7 @@ describe('ApiKey — the token Basecamp issues', () => {
   })
 
   test('two keys in one workspace cannot share a name', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { ws, user } = await seedKey(sys)
 
@@ -689,7 +737,7 @@ describe('ApiKey — the token Basecamp issues', () => {
     // ApiKey declares no @@softDelete on purpose: revoked is visible and
     // deleted is gone, two states rather than four. So a revoke has to leave
     // something an ordinary read can still see.
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { key } = await seedKey(sys)
 
@@ -704,7 +752,7 @@ describe('ApiKey — the token Basecamp issues', () => {
   })
 
   test('deleting the workspace takes its keys with it', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { ws, key } = await seedKey(sys)
 
@@ -719,11 +767,11 @@ describe('ApiKey — the token Basecamp issues', () => {
     // @@log(audit) on ApiKey. Handing out and taking away access is the class
     // of thing the trail exists for, so it is asserted rather than assumed —
     // and the hint is not a secret, so unlike Secret.data it may appear.
-    const auditDir = join(dir, `audit-apikey-${Math.random().toString(36).slice(2)}`)
+    const auditDir = scratchDir('audit-apikey')
     const cwd      = process.cwd()
-    process.chdir(dir)                     // logger path is CWD-relative
+    process.chdir(auditDir)                // logger path is CWD-relative
 
-    const db  = await client(freshDb(), { databases: { audit: { path: auditDir } } })
+    const db  = await client({ databases: { audit: { path: auditDir } } })
     const sys = db.asSystem() as any
     const { key } = await seedKey(sys)
     await sys.apiKey.update({
@@ -748,7 +796,7 @@ describe('auth compatibility', () => {
   test('createUser({email, name, role}) succeeds — Basecamp adds no required column', async () => {
     // auth.ts writes exactly these three fields. Any Basecamp addition to User
     // that is NOT nullable or defaulted makes user creation throw.
-    const db   = await client(freshDb())
+    const db   = await client()
     const user = await db.asSystem().user.create({
       data: { email: 'sam@example.com', name: 'Sam', role: 'user' },
     })
@@ -759,7 +807,7 @@ describe('auth compatibility', () => {
   })
 
   test('accountId is String — an Int column could not hold Account.id', async () => {
-    const db   = await client(freshDb())
+    const db   = await client()
     const sys  = db.asSystem()
     const acct = await sys.account.create({ data: { slug: 'acme', displayName: 'Acme' } })
     const user = await sys.user.create({ data: { email: 'a@b.co', accountId: acct.id } })
@@ -770,11 +818,11 @@ describe('auth compatibility', () => {
 })
 
 // ─── Volumes ─────────────────────────────────────────────────────────────────
-// The first OBSERVED model here — Docker made the disk, an agent found it, and
+// The first OBSERVED model here — Docker made the disk, an outpost found it, and
 // the table is a picture rather than a record. What these pin is the part of
 // that which is a schema decision: where its tenancy comes from, that the same
 // disk cannot be recorded twice, and that its size is stored in the unit the
-// agent reports.
+// outpost reports.
 
 describe('Volume — observed, not declared', () => {
   async function seedServer(sys: any) {
@@ -803,7 +851,7 @@ describe('Volume — observed, not declared', () => {
   })
 
   test('the same disk cannot be recorded twice on one server', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { server } = await seedServer(sys)
 
@@ -816,7 +864,7 @@ describe('Volume — observed, not declared', () => {
   })
 
   test('a volume goes when its server does — nothing observes a machine that is gone', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { server } = await seedServer(sys)
 
@@ -830,7 +878,7 @@ describe('Volume — observed, not declared', () => {
   })
 
   test('containers round-trip as an array of names', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const { server } = await seedServer(sys)
 
@@ -892,7 +940,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
   })
 
   test('a kind outside the vocabulary is refused by the column', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     const board = await sys.dashboard.create({
@@ -906,7 +954,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
   })
 
   test('a widget whose server is really deleted keeps its place and loses its subject', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     const server = await sys.server.create({
@@ -931,7 +979,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
   })
 
   test('widgets go when their dashboard does', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     const board = await sys.dashboard.create({
@@ -948,7 +996,7 @@ describe('Dashboard — a declared vocabulary, not a stored query', () => {
   })
 
   test('two dashboards in one workspace cannot share a name', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
 
@@ -988,7 +1036,7 @@ describe('Recipe and CleanupRun — the arbitrary act and the declared one', () 
   })
 
   test('a run keeps the script it ran — editing the recipe does not rewrite history', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     const server = await seedServer(sys, ws)
@@ -1011,7 +1059,7 @@ describe('Recipe and CleanupRun — the arbitrary act and the declared one', () 
   })
 
   test('runs go when their recipe or their server does', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     const [a, b] = [await seedServer(sys, ws, 'a-01'), await seedServer(sys, ws, 'b-01')]
@@ -1062,7 +1110,7 @@ describe('Recipe and CleanupRun — the arbitrary act and the declared one', () 
     const start = ddl.indexOf('CREATE TABLE IF NOT EXISTS "disk_usage"')
     const table = ddl.slice(start, start + ddl.slice(start).indexOf(') STRICT;'))
 
-    // UNIQUE(serverId) is what makes an agent report an upsert rather than an
+    // UNIQUE(serverId) is what makes an outpost report an upsert rather than an
     // append — without it a machine checking in every minute grows a row a
     // minute and the screen shows the first one it finds.
     expect(table).toContain('UNIQUE ("serverId")')
@@ -1078,7 +1126,7 @@ describe('Recipe and CleanupRun — the arbitrary act and the declared one', () 
   })
 
   test('the same server cannot hold two disk pictures', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     const server = await seedServer(sys, ws)
@@ -1110,7 +1158,7 @@ describe('the hub tier — suspension, and who may grant it', () => {
   })
 
   test('a status outside the vocabulary is refused by the column', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
 
@@ -1123,7 +1171,7 @@ describe('the hub tier — suspension, and who may grant it', () => {
   })
 
   test('suspension is not deletion — the rows and their children stay', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
     await sys.project.create({
@@ -1143,7 +1191,7 @@ describe('the hub tier — suspension, and who may grant it', () => {
   })
 
   test('the privileged bit is its own column, and it is off by default', async () => {
-    const db  = await client(freshDb())
+    const db  = await client()
     const sys = db.asSystem() as any
     const user = await sys.user.create({ data: { email: `y${Math.random().toString(36).slice(2, 8)}@x.co` } })
 
@@ -1177,3 +1225,45 @@ async function seedWorkspace(sys: any) {
     data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${Math.random().toString(36).slice(2, 8)}`, ownerId: user.id },
   })
 }
+
+// ─── Declared constraints, executed ──────────────────────────────────────────
+// The other half of the access snapshot's argument. `db/access.snapshot.md`
+// DESCRIBES what the schema declares and CI fails a stale one; this asks whether
+// the declarations are enforced by a real write. A rule that reaches the browser
+// through `x-messages` and is ignored by the server is the failure it exists for.
+
+describe('the access and constraints this schema declares are enforced', () => {
+  test('every rule on every model, against a real write', async () => {
+    const env = await makeEnv()
+    // Each row is already a sentence naming the model, the field and the rule.
+    expect((await env.verifyConstraints()).map((m: any) => m.message)).toEqual([])
+  }, 60_000)
+
+  test('every protected field is absent below SYSTEM, and present at it', async () => {
+    // The column boundary, not the row one. Secret.data is @guarded under a gate
+    // that admits ADMINISTRATOR(5), so the field policy is the only thing
+    // between an admin and a private key — and a column absent for EVERYONE
+    // would pass a check that only looked at the first half.
+    const env = await makeEnv()
+    expect((await env.verifyFieldProtection()).map((m: any) => m.message)).toEqual([])
+  }, 60_000)
+
+  test('every row policy, on rows both sides of its predicate', async () => {
+    // A gate refuses and a policy FILTERS, so a wrong one is an empty screen
+    // with a 200 and nothing raises anywhere. This grades the compiled WHERE
+    // against litestone's own JS evaluator — two independent implementations of
+    // one rule. `Server`'s workspace tenancy is the live case.
+    const env = await makeEnv()
+    expect((await env.verifyRowPolicies()).map((m: any) => m.message)).toEqual([])
+  }, 60_000)
+
+  test('every gated model, every level, all four operations', async () => {
+    // 37 models x 4 ops x 9 levels. `skipped` rows are Server.create, whose
+    // @@allow refuses a synthetic principal before the gate is reached — a
+    // policy filters, so it can only ever turn an allow into a deny.
+    const env = await makeEnv()
+    const rows = await env.verifyGateLadder()
+    const graded = rows.filter((m: any) => m.got !== 'skipped')
+    expect(graded.map((m: any) => m.message)).toEqual([])
+  }, 120_000)
+})

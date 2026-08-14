@@ -76,6 +76,42 @@ so nothing can say "this row is provisional" or "put that row back".
 `FJS-011` is also what blocks optimism specifically: a store that cannot remove
 a row on a filter miss cannot roll one back either.
 
+### Hole 4 — pagination is `offset`, and `offset` is wrong for the case this framework is best at
+
+Added 2026-08-12, from a sweep for what a developer still wires up by hand. Verified:
+`ctx.directives` is `{limit, offset, orderBy, select}` and the word *cursor* does not
+occur in Junction's bridge or core. Offset is the only paging the framework has.
+
+Offset paging is correct for a static table and wrong for a moving one, in a way that
+is invisible while you build it. Rows shift under the reader between page 1 and page 2,
+so an item that moved up is shown twice and an item that moved down is never shown at
+all — no error, no gap, just a list that is quietly missing things. At depth it is also
+the slow query, because `LIMIT 20 OFFSET 40000` counts forty thousand rows to discard
+them.
+
+**It sits worst next to the framework's best feature.** A `channel:` subscription pushes
+inserts and deletes into a store that is simultaneously paging by position, and there is
+no coherent answer to *what does page 3 mean now* — offset paging and live queries are
+each fine and are incompatible. That interaction is the reason this belongs in this file
+rather than as an API-realm feature request.
+
+The replacement is well understood everywhere and fiddly to hand-roll: a cursor is a
+position in a **total** order, so it needs the sort key plus a unique tiebreaker, an
+encoding, and a direction. **The reason it belongs to FJS rather than to the
+application is that the framework already knows both halves.** `db.$checkOrderBy()` is
+the one definition of what may be sorted by and why — and its `reason` field already
+separates *no such field* from *`@computed`, so SQLite can neither sort nor paginate by
+it*, which is exactly the distinction a cursor has to make. The schema states the
+unique keys. So the tiebreaker is derivable, an illegal cursor is refusable by the same
+mechanism that already refuses an illegal sort, and the seam to add it to is one that
+already exists on every flavour of client.
+
+Two things to decide rather than assume. **A cursor is opaque or it is not** — an
+encoded key is a promise the client will not construct one, and the moment it is
+readable somebody filters on it. And **`offset` stays**, because a numbered page is a
+legitimate UI and `Pagination.mesa` renders one; the question is which is the default
+and whether a live resource may use offset at all.
+
 ## The idea
 
 One owner for the lifetime of a client-side value, the way `toFieldErrors` is

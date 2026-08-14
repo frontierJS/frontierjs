@@ -130,6 +130,16 @@ export interface FileRef {
   uploadedAt: string
 }
 
+export type ComputedFn = (row: Record<string, unknown>, ctx: LitestoneCtx) => unknown
+
+/** `needs` lists the stored columns and `@from` fields the fn reads. */
+export interface ComputedSpec {
+  needs:   string[]
+  compute: ComputedFn
+}
+
+export type ComputedField = ComputedFn | ComputedSpec
+
 // ─── createClient options ─────────────────────────────────────────────────────
 
 export interface CreateClientOptions {
@@ -139,7 +149,10 @@ export interface CreateClientOptions {
   schema?:        string
   /** Pre-parsed result from parseFile() */
   parsed?:        ParseResult
-  /** Override db path (single-DB schemas without a database block) */
+  /**
+   * Path for the MAIN database. Overrides a declared `database main`; any other
+   * declared database keeps its own path — `databases: ':memory:'` moves them all.
+   */
   db?:            string
   /** 64-char hex — required for @encrypted / @secret fields */
   encryptionKey?: string
@@ -158,8 +171,15 @@ export interface CreateClientOptions {
   allowChildFkOverride?: boolean
   /** Plugins — GatePlugin, FileStorage, custom */
   plugins?:       Plugin[]
-  /** Computed field functions, or path to a file exporting them */
-  computed?:      Record<string, Record<string, (row: Record<string, unknown>, ctx: LitestoneCtx) => unknown>> | string
+  /**
+   * Computed field functions, or path to a file exporting them.
+   *
+   * A bare function is handed the whole row and forces `SELECT *` whenever the
+   * field is named in a `select`. The `{ needs, compute }` form narrows the
+   * fetch to the listed columns, and the row it receives carries only those —
+   * reading anything else throws.
+   */
+  computed?:      Record<string, Record<string, ComputedField>> | string
   /** Permanent WHERE clauses applied to every query on a model */
   filters?:       Record<string, Record<string, unknown> | ((ctx: LitestoneCtx) => Record<string, unknown>)>
   /** Before/after hooks for reads and writes */

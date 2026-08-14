@@ -43,10 +43,10 @@ export function createJobEngine(app: BasecampApp) {
     if (!job.command) throw new Error('Job has no command configured')
 
     const serverId    = job.appId ? await resolveServer(job.appId) : null
-    const agentTarget = serverId ? `agent:${serverId}` : null
+    const outpostTarget = serverId ? `outpost:${serverId}` : null
 
-    // No agent — try local:basecamp sidecar target
-    if (!agentTarget) {
+    // No outpost — try local:basecamp sidecar target
+    if (!outpostTarget) {
       const local = await app.conduit.resolve('local:basecamp')
       if (!local) throw new Error('No server assigned and no local target registered')
 
@@ -63,7 +63,7 @@ export function createJobEngine(app: BasecampApp) {
     }
 
     const result = await app.conduit.send<{ exit_code: number; stdout: string; stderr: string }>({
-      target:     agentTarget,
+      target:     outpostTarget,
       method:     'POST',
       path:       '/exec',
       body:       { command: job.command, timeout_s: job.timeoutSeconds, job_id: job.id },

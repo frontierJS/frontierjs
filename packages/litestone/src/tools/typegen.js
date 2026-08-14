@@ -388,6 +388,10 @@ function fieldRowSpec(field, schema, audience, modelNames) {
                     || attributes.some(a => a.kind === 'secret')
   if (isGuardedAll && audience === 'client') return null
 
+  // @hashed — stripped for EVERY audience, asSystem() included. The row type says
+  // what a read returns, and a read of a digest returns nothing.
+  if (attributes.some(a => a.kind === 'hashed')) return null
+
   const tsType  = fieldToTs(field, schema, modelNames)
   const optional = type.optional || isGuardedAll  // guarded fields may be absent even in system reads
 

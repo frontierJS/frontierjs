@@ -697,6 +697,58 @@ describe('protect() dot-path support', () => {
 
 import { createEventBus } from '../src/events/index.ts'
 
+// FJS-143: hasListeners() answers a yes/no, which is the wrong question for
+// anyone chasing a missing announcement — *the bus is idle* and *four things
+// are subscribed to three events* were the same answer, and the handler map is
+// closure-private so nothing could count them.
+
+describe('IEventBus.stats()', () => {
+
+  it('counts subscribers per event, and in total', () => {
+    const bus = createEventBus()
+    bus.on('users:created', () => {})
+    bus.on('users:created', () => {})
+    bus.on('notes:patched', () => {})
+
+    expect(bus.stats()).toEqual({
+      events: { 'users:created': 2, 'notes:patched': 1 },
+      total:  3,
+    })
+  })
+
+  it('an empty bus reports zero, not an absence', () => {
+    expect(createEventBus().stats()).toEqual({ events: {}, total: 0 })
+  })
+
+  it('wildcards are their own keys — a subscriber to everything is a different fact', () => {
+    const bus = createEventBus()
+    bus.on('*', () => {})
+    bus.onAny(() => {})
+    const stats = bus.stats()
+    expect(stats.events['*']).toBe(1)
+    expect(stats.events['__any__']).toBe(1)
+    expect(stats.total).toBe(2)
+  })
+
+  it('an unsubscribed event disappears rather than reporting zero', () => {
+    // off() deletes the handler and leaves the Set behind, so the naive
+    // implementation would say something is subscribed to an event nothing is
+    // subscribed to.
+    const bus = createEventBus()
+    const off = bus.on('ping', () => {})
+    off()
+    expect(bus.stats()).toEqual({ events: {}, total: 0 })
+  })
+
+  it('a once() handler stops being counted after it fires', async () => {
+    const bus = createEventBus()
+    bus.once('boot', () => {})
+    expect(bus.stats().total).toBe(1)
+    await bus.emit('boot', {})
+    expect(bus.stats().total).toBe(0)
+  })
+})
+
 describe('IEventBus.onAny()', () => {
 
   it('receives all events with their names', async () => {
@@ -2666,62 +2718,90 @@ describe('allowBulk guard', () => {
   })
 })
 
-// ─── _compiledPipelines — per-request merge eliminated after start() ──────
+// ─── pipelines() — one owner ──────────────────────────────────────────────
+//
+// There used to be a `_compiledPipelines` cache: four writers, a hand
+// invalidation inside hooks(), a registry that monkey-patched hooks() to
+// recompile, and a three-way ladder in callService where the cache BEAT the app
+// hooks the transport had just handed over. A stale entry was a wrong answer,
+// not a slow one.
+//
+// pipelines(appHooks) is memoised on both inputs — the app map by identity, the
+// service's own by a version hooks() bumps — so staleness is unreachable rather
+// than remembered.
 
-describe('_compiledPipelines', () => {
+describe('pipelines — one owner', () => {
 
-  it('are null before start and populated after app.hooks() + start()', async () => {
+  it('memoises on the app hooks it is given', async () => {
+    const svc = createService({ name: 'pings', find: async () => [] })
+    const h1  = { before: { all: [async function a() {}] } }
+    const h2  = { before: { all: [async function b() {}] } }
+
+    expect(svc.pipelines(h1)).toBe(svc.pipelines(h1))
+    expect(svc.pipelines(h2)).not.toBe(svc.pipelines(h1))
+  })
+
+  it('a later hooks() call changes the answer — nothing has to invalidate', async () => {
+    const svc = createService({ name: 'pings', find: async () => [] })
+    const h   = { before: { all: [async function app() {}] } }
+
+    const first = svc.pipelines(h)
+    svc.hooks({ before: { find: [async function late() {}] } })
+    const second = svc.pipelines(h)
+
+    expect(second).not.toBe(first)
+    expect(second['find']!.before.some(f => f.name === 'late')).toBe(true)
+  })
+
+  it('the app hook survives alongside the derived ones', async () => {
     const order: string[] = []
-
     const app = await createTestApp({
-      services: [() => createService({
-        name: 'pings',
-        find: async () => [{ pong: true }],
-      })]
+      services: [() => createService({ name: 'pings', find: async () => [{ pong: true }] })]
     })
+    app.hooks({ before: { all: [async function appBefore() { order.push('app:before') }] } })
 
-    // Before hooks are applied, _compiledPipelines should be undefined
-    expect(app.services.get('pings')!._compiledPipelines).toBeUndefined()
-
-    // Apply app-level hooks
-    app.hooks({ before: { all: [async (ctx) => { order.push('app:before') }] } })
-
-    // Simulate what start() does — compile pipelines
-    const { resolvePipelines, mergeHookMaps } = await import('../src/core/hooks.ts')
-    const svc = app.services.get('pings')!
-    svc._compiledPipelines = resolvePipelines(mergeHookMaps(app._appHooks, svc._hookMap))
-
-    expect(svc._compiledPipelines).toBeDefined()
-    expect(svc._compiledPipelines!['find']).toBeDefined()
-    // What this test pins is that the pipeline was compiled at all, and that
-    // the app's own hook survived alongside the derived ones. It used to assert
-    // `.length === 2` and broke the day a second derived hook was added
-    // (autoFilter) — the count is a framework detail this test does not own,
-    // exactly as tests/telemetry.test.ts already says about the same list.
-    const before = svc._compiledPipelines!['find'].before
+    // What this pins is that the pipeline resolved at all, and that the app's
+    // own hook survived alongside the derived ones. It used to assert
+    // `.length === 2` and broke the day a second derived hook was added.
+    const before = app.services.get('pings')!.pipelines(app._appHooks)['find']!.before
     expect(before.some(h => h.name === 'gateAuth')).toBe(true)
     expect(before.filter(h => !DERIVED_HOOKS.has(h.name)).length).toBe(1)
   })
 
-  it('compiled pipelines are used in callService instead of re-merging', async () => {
-    const callCount = { merge: 0 }
+  it('a call ALWAYS runs the app hooks it was handed', async () => {
+    // The inversion. The old cache took precedence over this argument, so a
+    // caller could pass hooks and watch them not run — which is why staleness
+    // was a correctness bug. Warm with one map, call with another.
+    const ran: string[] = []
+    const svc = createService({ name: 'things', find: async () => [{ id: '1' }] })
 
-    const svc = createService({
-      name: 'things',
-      find: async () => [{ id: '1' }],
-    })
-
-    // Pre-bake compiled pipelines (as app.start() does)
-    const { resolvePipelines, mergeHookMaps } = await import('../src/core/hooks.ts')
-    const appHooks = { before: { all: [async () => {}] } }
-    svc._compiledPipelines = resolvePipelines(mergeHookMaps(appHooks, svc._hookMap))
+    const warm = { before: { all: [async function warmHook() { ran.push('warm') }] } }
+    const live = { before: { all: [async function liveHook() { ran.push('live') }] } }
+    svc.pipelines(warm)
 
     const ctx = testCtx('things', 'find')
-    // callService should use _compiledPipelines — passing appHooks here
-    // should still work but the compiled version takes precedence
-    await callService(svc, ctx, appHooks)
+    await callService(svc, ctx, live)
+
     expect(ctx.error).toBeNull()
-    expect(Array.isArray((ctx.result as { data: unknown[] }).data)).toBe(true)
+    expect(ran).toEqual(['live'])
+  })
+
+  it('a service registered after setAppHooks runs the app hooks on its first call', async () => {
+    // The plugin-ready() path. It used to depend on register() writing the
+    // cache; now it depends on nothing but the memo key.
+    const ran: string[] = []
+    const app = await createTestApp({
+      services: [() => createService({ name: 'first', find: async () => [] })]
+    })
+    app.hooks({ before: { all: [async function appBefore() { ran.push('app') }] } })
+    await request(app).get('/first')          // forces start + setAppHooks
+
+    const late = createService({ name: 'late', find: async () => [{ id: '1' }] })
+    app.services.register(late)
+
+    const res = await request(app).get('/late')
+    expect(res.status).toBe(200)
+    expect(ran.filter(r => r === 'app').length).toBeGreaterThanOrEqual(2)
   })
 })
 
@@ -3513,6 +3593,21 @@ describe('apiPrefix config', () => {
     expect(res.status).toBe(200)
   })
 
+  it('moves a plugin\'s own routes too, not just the service routes', async () => {
+    // FJS-012: apiPrefix used to be applied by registerServiceRoutes alone, so
+    // a plugin calling app.get() landed at the root while the services beside
+    // it moved. @frontierjs/auth is the case that cost the most — an app under
+    // /api served its login at /auth, and the browser client's default looked
+    // for it under the prefix.
+    const app = await createTestApp({
+      config: { apiPrefix: '/api' },
+      services: [() => createService({ name: 'items', find: async () => [] })],
+    })
+    app.get('/thing', (ctx) => ctx.json({ ok: true }))    // what a plugin's register() does
+    expect((await request(app).get('/api/thing')).status).toBe(200)
+    expect((await request(app).get('/thing')).status).toBe(404)
+  })
+
   it('handles prefix with trailing slash gracefully', async () => {
     const app = await createTestApp({
       config: { apiPrefix: '/api/v4/' },
@@ -4037,12 +4132,12 @@ describe('cors() preflight and header correctness', () => {
 // ─── Model-less service wiring ────────────────────────────────────────────
 // Regression test for the bug where the (now removed) createLitestoneService
 // returned a plain ServiceDefinition object instead of calling createService(),
-// meaning _hookMap and _pipelines were undefined and app.start() crashed in
-// _recompileAll → mergeHookMaps.
+// meaning the hook state was undefined and app.start() crashed while warming
+// every registered service.
 //
 // createService is now the only factory, so these assert the same invariants
-// on the model-less path it absorbed: a built service always carries compiled
-// pipeline state, survives start(), routes, and applies its declared hooks.
+// on the model-less path it absorbed: a built service can always answer for its
+// own pipelines, survives start(), routes, and applies its declared hooks.
 
 describe('createService — model-less (explicit CRUD methods)', () => {
 
@@ -4055,9 +4150,10 @@ describe('createService — model-less (explicit CRUD methods)', () => {
       patch:  async (ctx) => ctx.data,
       remove: async () => null,
     })
-    // Must have the internal fields createService() adds
+    // Must have the internal state createService() adds
     expect(svc._hookMap).toBeDefined()
-    expect(svc._pipelines).toBeDefined()
+    expect(typeof svc.pipelines).toBe('function')
+    expect(svc.pipelines()['find']).toBeDefined()
   })
 
   it('app.start() does not crash when a litestone service is registered', async () => {

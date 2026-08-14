@@ -8,7 +8,7 @@
 //   import { createTestConduit } from '@frontierjs/conduit/testing'
 //
 //   const { conduit, stubs } = await createTestConduit({
-//     'agent:srv_abc': {
+//     'outpost:srv_abc': {
 //       '/deploy':       { deployed: true },
 //       '/health-check': { healthy: true },
 //     },
@@ -19,10 +19,10 @@
 //
 //   // run code under test that calls app.conduit.send(...)
 //
-//   expect(stubs['agent:srv_abc'].calls).toHaveLength(2)
-//   expect(stubs['agent:srv_abc'].calls[0].path).toBe('/deploy')
+//   expect(stubs['outpost:srv_abc'].calls).toHaveLength(2)
+//   expect(stubs['outpost:srv_abc'].calls[0].path).toBe('/deploy')
 //
-//   stubs['agent:srv_abc'].reset()
+//   stubs['outpost:srv_abc'].reset()
 // ============================================================
 
 import { createConduit }     from './conduit.ts'
@@ -99,6 +99,6 @@ export async function createTestConduit<T extends StubMocks>(
 
 function inferKind(targetId: string): TargetDescriptor['kind'] {
   if (targetId.startsWith('provider:')) return 'provider'
-  if (targetId.startsWith('agent:'))    return 'agent'
+  if (targetId.startsWith('outpost:'))    return 'outpost'
   return 'local'
 }

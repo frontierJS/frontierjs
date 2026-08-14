@@ -232,8 +232,8 @@ function _wrapDebug(client) {
  * @param {object} config              junction config from sierra.config.js
  * @param {string} [config.apiPrefix]  URL prefix for service routes. Must match
  *        the server's `apiPrefix`. Default '' — services at /{service}.
- * @param {string} [config.authPrefix] URL prefix for @frontierjs/auth routes,
- *        default '/auth'. Independent of apiPrefix.
+ * @param {string} [config.authPrefix] The auth plugin's own prefix, default
+ *        '/auth' — relative to apiPrefix, as the plugin's option is.
  * @param {boolean|'verbose'} [config.debug]
  *        `true`      — log every service call with request/response payloads
  *        `'verbose'` — additionally log every client event

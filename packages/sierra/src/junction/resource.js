@@ -30,7 +30,7 @@
  *     id:      string | null,
  *     data:    object | null,
  *     query:   object,      // filters — what travels over the wire
- *     findParams: object,   // Junction FindParams — { limit, offset, orderBy, select }
+ *     findParams: object,   // Junction FindParams — { limit, offset, orderBy, select, populate }
  *     params:  object,      // client-side only — never sent to the server
  *     result:  any,         // populated after a successful call
  *     error:   Error | null // populated in error phase
@@ -43,7 +43,8 @@
  *
  *   ctx.findParams is the separate, structured half of the wire request — the
  *   FindParams object Junction's client serializes into $limit/$offset/
- *   $orderBy/$select for both HTTP and WebSocket. Hooks set pagination here:
+ *   $orderBy/$select/$populate for both HTTP and WebSocket. Hooks set
+ *   pagination here, and a view that needs a relation asks for it here:
  *
  *     before: { find: [ctx => { ctx.findParams.limit = 50 }] }
  *
@@ -787,7 +788,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // ── service proxy ──────────────────────────────────────────────────────────
 
-  // params is Junction's FindParams — { limit, offset, orderBy, select }. It is
+  // params is Junction's FindParams — { limit, offset, orderBy, select,
+  // populate }. It is
   // threaded to the client proxy, which serializes it for whichever transport
   // is live. It used to be accepted here and dropped on the floor, so paging an
   // ordered list through a resource silently returned the server's default page.

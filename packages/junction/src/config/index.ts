@@ -58,6 +58,12 @@ export interface AppConfig {
     maxSize:    number   // max keys in memory
   }
 
+  // Replay protection for a request carrying an Idempotency-Key. Applies to
+  // mutating calls only, and only when the caller sent a key — see
+  // core/idempotency.ts. Backed by the app cache, so it is per-process:
+  // two instances behind a load balancer do not share it.
+  idempotency?: import('../core/idempotency.ts').IdempotencyConfig
+
   // Workers
   workers: {
     dir:        string
@@ -111,6 +117,12 @@ export const defaultConfig: AppConfig = {
   cache: {
     defaultTtl: '5 minutes',
     maxSize:    10_000,
+  },
+
+  idempotency: {
+    enabled:    true,
+    ttl:        '24 hours',
+    pendingTtl: '2 minutes',
   },
 
   workers: {

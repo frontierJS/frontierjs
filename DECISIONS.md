@@ -10,6 +10,57 @@ Format: **decision — why — where it lives.**
 
 ## Naming & vocabulary
 
+**2026-08-13 · `FJS-D29` — the process a fleet server runs is an OUTPOST, and
+infrastructure gets place nouns while AI gets personified ones.** Basecamp's
+resident process was called an *agent*. So is the thing `IDEAS/agent-surface.md`
+proposes to expose over MCP. **The collision was already in the tree**, not a
+risk to guard against: one word, two meanings, both written down, in a repo whose
+`UserKind` enum already has an `ai` member and whose junction batteries already
+include AI.
+
+**Outpost** is the ruling. It is exact — a small permanent installation at a
+distance from the main body, which holds a position and reports back — and the
+cardinality matches, one per `Server`. It pairs with Basecamp in a sentence that
+needs no gloss: *Basecamp installs an Outpost on every server.*
+
+**The rule underneath it is the part that keeps working.** Every AI-flavoured
+word is a **person**: agent, assistant, copilot, scout, ranger, worker. So:
+
+> **Infrastructure takes place nouns. AI takes personified nouns.**
+
+A place noun cannot drift into meaning a model, which is a stronger guarantee
+than picking a different word and hoping. It also decides the next collision
+without another argument, and it is why `scout`, `ranger` and `warden` were
+rejected here despite fitting the frontier theme.
+
+The technically-honest alternatives were all taken, which is worth recording so
+nobody re-proposes them: `daemon` is `AppType.daemon`, `worker` is **both**
+`ServerRole.worker` and `AppType.worker`, `node` is Node.js in a JavaScript
+framework, `runner` belongs to CI, `minion` to Salt, and `depot`/`porter`/
+`warden`/`marshal` are already claimed in `IDEAS/package-map.md`.
+
+**Ruled now rather than later because three of the renamed names are wire
+contracts and nothing speaks them yet.** The Conduit target `outpost:<server-id>`,
+the target `kind`, and the snake_case heartbeat payload (`outpost_version`,
+`outpost_url`) are the protocol between Basecamp and a process that has not been
+written. Basecamp's own half *is* written — both engines dispatch through it —
+so the caller exists and the callee does not, which is the last moment this is a
+find-and-replace instead of a compatibility window.
+
+**What did not change.** `userAgent` is an HTTP header and stays. `CHANGES.md`
+entries and closed `ISSUES.md` rows keep the word, because they describe what was
+true when they were written. `db/legacy-sql/002_server_agent.sql` keeps its
+filename — it is history, and `db/README.md` explains that it never worked.
+The architecture question is still open: whether a server runs a resident process
+at all, or Basecamp pushes over SSH, is argued in `IDEAS/deploy-plane.md` and
+ruled nowhere. **This decision reserves the name, not the design.**
+*Lives in:* `packages/basecamp/db/schema.lite` (`outpostVersion`, `outpostUrl`),
+`api/src/engine/fleet.engine.ts`, `api/src/engine/deployment.engine.ts`,
+`api/src/services/servers/servers.service.ts`, `docs/VISION.md`,
+`IDEAS/deploy-plane.md`.
+
+---
+
 **2026-08-08 · A resource file is named for its noun — PascalCase, singular —
 one Resource per file.** `App.mesa`, not `apps.mesa`. Repo Invariant 19.
 
@@ -334,7 +385,7 @@ The refusal names both ways forward: `asSystem().sql` to bypass deliberately, or
 
 **Scoped raw SQL as a capability — a per-identity view set — is NOT built.**
 `IDEAS/scoped-sql.md` designs it; it is a feature where this is a defect, and
-the consumer that made it urgent (`herald`, the agent surface) does not exist.
+the consumer that made it urgent (`herald`, the AI agent surface) does not exist.
 Revisit with `herald`.
 
 *Lives in:* `packages/litestone/src/core/client.js`
@@ -384,6 +435,101 @@ have been observed in practice; the warn infrastructure makes it nearly free.
 `test/elegance-fixes.test.ts` and the rewritten block in `test/litestone.test.ts`
 ("write payload — unknown fields are silently stripped").
 
+**2026-08-13 · Clock-relative derived fields: `@derived(expr)`, evaluated at query time.**
+Supersedes the ruling written earlier the same day, which said no such tier
+should exist. That ruling's reason does not hold: SQLite refuses a
+non-deterministic function in a `GENERATED ALWAYS` column, because the column is
+part of the table — it has no objection to the same expression in a `SELECT`, a
+`WHERE` or an `ORDER BY`. Verified: `(dueAt < ? AND completedAt IS NULL)` works
+in all three positions against one bound instant. The restriction was about a
+storage strategy and was mistaken for a restriction on derivation.
+
+```prisma
+overdue Boolean @derived(dueAt < now() && completedAt == null)
+```
+
+Compiles three ways from one declaration — a SELECT expression for the value, a
+substitution into `WHERE` to filter by it, a substitution into `ORDER BY` to
+sort by it. This is not new machinery: `@from` already substitutes its subquery
+into all three, and `where: { subCount: { gt: 1 } }` already works. A `@derived`
+field is the same seam carrying a scalar expression instead of a subquery, with
+the request's single instant (see `FJS-227`) as the bound parameter.
+
+**Not `@generated`, and not a raw SQL string.** `@generated` creates a real
+column — stored, migrated, indexable — and an attribute that sometimes creates a
+column and sometimes does not is a migration trap. And the body must be the
+**declarative expression language** `@@allow` already uses, not SQL text,
+because a SQL string cannot travel: the browser cannot evaluate it. Being data
+is the whole point.
+
+**The client half is the reason this tier earns its place.** The JSON Schema
+carries the expression and its dependency on `now()`, so a Mesa component knows
+both that the value decays and how to recompute it — against the **viewer's**
+clock and timezone, on a timer, without a refetch. Server and client can
+therefore disagree by a few seconds; the viewer's clock wins for display, which
+is correct. Litestone already compiles this language two ways (`compileSql`,
+`evalJs`) and `verifyRowPolicies` already grades one against the other, so the
+client evaluator is a function that exists and is tested. Unlike the four
+`x-litestone-*` keys with no reader anywhere, this extension ships with its
+consumer.
+
+**The expression language gains a ternary**, right-associative and nestable:
+`dueAt < now() ? 1 : 0`. It compiles to `CASE WHEN … THEN … ELSE … END` in SQL
+and to a ternary in JS — **both halves or neither**, since a form added to one
+compiler and not the other is the `FJS-195` defect exactly. This is also the
+point at which the language stops being predicate-only and starts producing
+*values*, so a `@derived` field's declared type is checked against its branches
+at parse time.
+
+**What survives of "store the boundary, not the state":** it was right about
+what to *store* and wrong as a claim about what can be *derived*. `dueAt` is
+still the column; `overdue` is a projection of it, not a second copy of the
+truth. Nothing about a row's state is duplicated, so nothing can drift.
+
+**Scopes shrink back to query shape.** A derived boolean gives
+`where: { overdue: true }` for free, which was most of what a schema-level
+`@@scope` was for. The existing `createClient({ scopes })` registry — named
+fragments, chaining, all read methods, documented merge rules — keeps the cases
+that are about the *shape* of a query rather than a fact about a row: bundled
+`orderBy`, `limit`, `include`, and composition.
+
+**2026-08-13 · Amended the same day: three tiers, not two. `@@scope` is
+reinstated.** The paragraph above collapsed two different things into the
+function registry, and the cell it emptied is one nothing else fills.
+
+| | Declared in | Materialises a property? | A browser can name it? |
+| --- | --- | --- | --- |
+| `@derived(expr)` | schema | **yes** — row, generated type, JSON Schema, generated form | yes — `where: { overdue: true }` |
+| `@@scope(name, expr)` | schema | **no** — a name and a predicate | yes — `where: { $scope: 'overdue' }` |
+| `createClient({ scopes })` | JS config | no | **no** — server-side only, `db.task.overdue()` |
+
+**The registry cannot be named by a browser, and that is the whole argument.**
+Sierra's `createResource` sends a `where` **object** over HTTP; it cannot invoke
+`db.task.overdue()`. Ruling that scopes live in the registry therefore moved
+every query-shape scope to server-only without saying so. `$scope` is the one
+spelling that travels.
+
+The second cost is shape. `@derived` buys its filter by adding a property to the
+model — carried in every SELECT, present in the generated type, in the JSON
+Schema, and in any form built from it. Where the predicate is only ever a way to
+*ask*, that surface is waste and it misdescribes the model.
+
+`@@scope` is also about half the work: predicate-only, so `compileSql` alone —
+no `evalJs` value branch, no dependency on the ternary (`FJS-234`), no branch
+type-checking, no client evaluator, no JSON Schema property. What it adds is a
+published name list, so `$checkWhere` accepts `$scope` and the client knows which
+names are legal.
+
+**The rule that keeps them apart: if the UI ever renders it, it is `@derived`; if
+it only ever appears in a `WHERE`, it is `@@scope`.** A `@@scope` may reference a
+`@derived` field.
+
+`{ $scope: 'overdue', status: 'open' }` conjoins, and `$scope: ['overdue',
+'mine']` is legal and also conjoins. Invariant 8 holds without an exception: a
+`$scope` value is a **name looked up in a declared table**, never text
+interpolated into a pattern — state that at the site, because it is exactly the
+shape the invariant warns about.
+
 ## Migrations (Litestone)
 
 **2026-08-01 · The executor owns the transaction.**
@@ -403,6 +549,58 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+**2026-08-13 · A service is a definition and a compiled runtime, and `methods:`
+declares.** (`FJS-D01`, closing `FJS-016`.)
+
+A Junction service was *options + methods + internals in one object*, ending in
+`[method: string]: unknown` so actions hung off the same namespace as
+configuration. Two things followed, and both had already shipped bugs.
+
+Nothing could ask what a key meant. "Option or action" was answered by
+exclusion — two hand-maintained sets — and six consumers re-applied that rule.
+The sets had drifted across five copies once; the option-forwarding list, a
+third statement of the same fact, stopped at `hooks` and made
+`createService({model, softDelete})` **hard-delete rows** where
+`createBaseService` soft-deleted them.
+
+Nothing said when a service was finished being built. `hooks()` mutated the live
+service and had to remember to null a cache that four writers touched, the
+registry monkey-patched `hooks()` on the instance to recompile, and `callService`
+read a ladder in which the cache **beat the app hooks the transport had just
+handed it** — so a stale entry was a wrong answer, not a slow one.
+
+**Ruled: go on the split, and only the split.** Export tiering (`FJS-046`) and
+the middleware/hook renaming (`FJS-017`) were part of the original proposal and
+are refused here; they stay open on their own merits.
+
+The shape is Feathers 5's, adapted rather than copied:
+
+| Feathers 5 | Junction |
+| --- | --- |
+| options are a separate `app.use()` argument | options stay on the definition; the built `Service` loses its index signature |
+| options behind a `SERVICE` symbol | `describe()` — one answer for /manifest, OpenAPI and /metrics |
+| custom methods **declared** in `methods:` | `methods:` declares; the scan is the compat fallback |
+| a per-method hook manager owns the chain | `pipelines(appHooks)`, memoised on both inputs |
+| `wrapService` guards re-wrapping | `Symbol.for('junction.service')`, and the loader tests it |
+
+**`methods:` inverts.** It used to be validated *against* the scan; it is now the
+source of truth, which is what makes an action nameable after an option key —
+`cache`, `schema` and `channel` were eaten by the deny-list with no error at any
+point. Absent, the scan runs exactly as before, so **inline actions stay
+supported permanently and no app was migrated**. The one caveat is honest: an
+option that is *typed* on `ServiceDefinition` needs a cast to be an action, since
+`cache` cannot also be declared a function.
+
+**What is not adopted:** Feathers' `Object.create(service)` prototype wrapper.
+Feathers wraps user-authored instances it did not construct; Junction's factory
+already returns a fresh object, and a prototype member is invisible to `{...svc}`
+— which the autoloader and a dozen tests depend on.
+
+**The measured result:** the typecheck baseline 211 → 199, one deleted line
+accounting for most of it. Not the justification, though — the register claimed
+the baseline was mostly this defect and it was not: 137 of the 211 were in tests
+and examples. The justification is four bugs of one class, fixed four times.
 
 **2026-08-10 · A method may answer what it likes; an ANNOUNCEMENT is about a
 row, so it carries one.** (`FJS-D08`, closing `FJS-020`.)
@@ -547,9 +745,9 @@ question — something stored on a row that later decides what happens — but t
 argument above turns on a fact that is not true here. **A stored query is
 dangerous because it is executed at the Data boundary, where `@@gate` and
 `@@allow` grade a caller against a model and a string cannot be graded.** A
-script is not executed at that boundary at all: it is handed to an agent and run
+script is not executed at that boundary at all: it is handed to an Outpost and run
 on a machine, where there is no model, no caller and no grade. It runs at
-whatever the agent has, for everyone, every time. A vocabulary of allowed
+whatever the Outpost has, for everyone, every time. A vocabulary of allowed
 scripts would buy nothing — the danger is not *which read it stands for*, it is
 that it is code.
 
@@ -561,7 +759,7 @@ So the safeguards are different in kind:
 | Refusal | an unknown target, by name | none possible |
 | Authoring | developer | **admin or owner** |
 | Running | developer | developer |
-| Record | what the agent said it freed | the script AS RUN, per server |
+| Record | what the Outpost said it freed | the script AS RUN, per server |
 
 **Authoring and running split, and that split is the point.** Writing the script
 is the privileged act; running a vetted one is the ordinary act somebody on the
@@ -584,6 +782,14 @@ let `AlertRule.severity` default to a value its own API refused. So the list has
 one home in the service, the API refuses anything outside it by name, the screen
 fetches it rather than copying it, and a data test asserts the schema declares no
 competing enum.
+
+**The premise expired 2026-08-11.** `FJS-141` is closed: `targets
+ReclaimTarget[]` parses, and the members are checked at the Data boundary. What
+does NOT follow is that the enum belongs there automatically — the CHECK this
+paragraph asked for still cannot exist (SQLite forbids the subquery `json_each`
+would take), so the schema declaration buys the type, the JSON Schema `$def` and
+one home, not a database-enforced one. Moving basecamp's list into the schema is
+a live option and a migration; the decision above stands until someone takes it.
 *Lives in:* `packages/basecamp/api/src/services/cleanup/targets.ts`,
 `api/src/services/recipes/recipes.service.ts`, `api/src/engine/fleet.engine.ts`,
 `db/schema.lite` § FLEET ACTIONS; tests in `db/test/schema.test.ts` § Recipe and

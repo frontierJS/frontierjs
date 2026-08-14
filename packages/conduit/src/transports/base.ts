@@ -123,7 +123,7 @@ export abstract class BaseTransport {
         //     like anything else
         //
         // Compare GitHub and Stripe webhook signing, which bind a timestamp
-        // for the same reason. The receiving agent must recompute this
+        // for the same reason. The receiving outpost must recompute this
         // exact string and reject signatures outside its freshness window.
         const canonical = [
           method,

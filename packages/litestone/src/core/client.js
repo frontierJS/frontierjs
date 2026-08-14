@@ -543,19 +543,36 @@ function applySequences(data, modelName, sequenceMap, writeDb) {
 import { createCipheriv, createDecipheriv, randomBytes, createHmac } from 'crypto'
 
 // ─── Encryption ───────────────────────────────────────────────────────────────
-// Two modes:
-//   Standard (@encrypted)              — AES-256-GCM, random IV, non-deterministic
-//   Searchable (@encrypted(searchable)) — HMAC-SHA256, deterministic, queryable
+// Three modes, along one axis — can the value be read back?
 //
-// Ciphertext format (base64url):
-//   standard:   v1.<base64url(iv + tag + ciphertext)>
-//   searchable: v1s.<base64url(hmac)>
+//   @encrypted                      v1.   AES-256-GCM, RANDOM iv    recoverable, not filterable
+//   @encrypted(deterministic: true) v1d.  AES-256-GCM, DERIVED iv   recoverable, equality-filterable
+//   @hashed                         v1h.  HMAC-SHA256               NOT recoverable, equality-filterable
+//
+// There is no fourth cell: a value that can be neither read nor matched is a value
+// that was deleted.
+//
+// `v1s.` was a fourth prefix that stored an HMAC under the @encrypted name and is
+// gone. Nothing reads it: a column holding one is unrecoverable, so recognising the
+// prefix could only produce a friendlier way to say the same loss. See CHANGES.md.
+//
+// Payload (base64url) is `iv + tag + ciphertext` for both AES modes, so one
+// decrypt path serves them; @hashed has no decrypt path at all.
 
 const ENC_PREFIX      = 'v1.'
-const ENC_S_PREFIX    = 'v1s.'
+const ENC_D_PREFIX    = 'v1d.'
+const HASH_PREFIX     = 'v1h.'
 const GCM_IV_LEN      = 12
 const GCM_TAG_LEN     = 16
 const HMAC_ALG        = 'sha256'
+
+// Domain separation. The IV and the digest are both HMACs of the same plaintext
+// under the same root key, so without distinct salts a deterministic field's IV
+// and a @hashed field's stored digest would be the same 12/32 bytes of the same
+// function — and the IV travels in the clear inside the payload, which would hand
+// out a prefix of the digest for free.
+const IV_SALT         = Buffer.from('litestone/iv/v1')
+const HASH_SALT       = Buffer.from('litestone/hash/v1')
 
 function encryptField(plaintext, key) {
   if (plaintext == null) return plaintext
@@ -569,8 +586,12 @@ function encryptField(plaintext, key) {
 
 function decryptField(ciphertext, key) {
   if (ciphertext == null) return ciphertext
-  if (!String(ciphertext).startsWith(ENC_PREFIX)) return ciphertext  // not encrypted
-  const payload    = Buffer.from(String(ciphertext).slice(ENC_PREFIX.length), 'base64url')
+  const s      = String(ciphertext)
+  const prefix = s.startsWith(ENC_D_PREFIX) ? ENC_D_PREFIX
+               : s.startsWith(ENC_PREFIX)   ? ENC_PREFIX
+               : null
+  if (!prefix) return ciphertext  // not encrypted
+  const payload    = Buffer.from(s.slice(prefix.length), 'base64url')
   const iv         = payload.subarray(0, GCM_IV_LEN)
   const tag        = payload.subarray(GCM_IV_LEN, GCM_IV_LEN + GCM_TAG_LEN)
   const encrypted  = payload.subarray(GCM_IV_LEN + GCM_TAG_LEN)
@@ -579,15 +600,47 @@ function decryptField(ciphertext, key) {
   return decipher.update(encrypted) + decipher.final('utf8')
 }
 
-function encryptSearchable(plaintext, key) {
+// The IV is a FUNCTION of the plaintext, which is the entire mechanism: the same
+// value encrypts to the same bytes, so `WHERE col = ?` works after encrypting the
+// operand the same way.
+//
+// GCM breaks catastrophically on nonce reuse across DIFFERENT plaintexts — the
+// keystream repeats and XORing two ciphertexts reveals both. Deriving the nonce
+// from the plaintext makes that a SHA-256 collision rather than an accident, and
+// reuse across IDENTICAL plaintexts is not a weakness, it is the property being
+// bought. Same construction Rails ships for `deterministic: true`.
+//
+// The trade this makes, and it is not hidden: equal values are visibly equal in the
+// column to anyone holding the database. That is true of every searchable-encryption
+// scheme — a blind index leaks exactly the same fact — and it is why this is opt-in
+// per field rather than the default.
+function deriveIv(plaintext, key) {
+  return createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), IV_SALT]))
+    .update(String(plaintext)).digest().subarray(0, GCM_IV_LEN)
+}
+
+function encryptDeterministic(plaintext, key) {
   if (plaintext == null) return plaintext
-  const hmac = createHmac(HMAC_ALG, key).update(String(plaintext)).digest('base64url')
-  return ENC_S_PREFIX + hmac
+  const iv         = deriveIv(plaintext, key)
+  const cipher     = createCipheriv('aes-256-gcm', key, iv)
+  const encrypted  = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()])
+  const tag        = cipher.getAuthTag()
+  const payload    = Buffer.concat([iv, tag, encrypted])
+  return ENC_D_PREFIX + payload.toString('base64url')
+}
+
+// @hashed. One way, by construction and by name — there is no inverse of an HMAC,
+// so nothing here has a partner function elsewhere in this file.
+function hashField(plaintext, key) {
+  if (plaintext == null) return plaintext
+  const hmac = createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), HASH_SALT]))
+    .update(String(plaintext)).digest('base64url')
+  return HASH_PREFIX + hmac
 }
 
 function isCiphertext(value) {
   const s = String(value ?? '')
-  return s.startsWith(ENC_PREFIX) || s.startsWith(ENC_S_PREFIX)
+  return s.startsWith(ENC_PREFIX) || s.startsWith(ENC_D_PREFIX) || s.startsWith(HASH_PREFIX)
 }
 
 // Normalise key: hex string, Buffer, or Uint8Array → 32-byte Buffer
@@ -601,7 +654,8 @@ function normaliseKey(raw) {
 // Per model, per field:
 //   omit:      'lists' | 'all' | null
 //   guarded:   'select' | 'all' | null
-//   encrypted: { searchable: bool } | null
+//   encrypted: { deterministic: bool } | null
+//   hashed:    bool
 //
 // @encrypted implies guarded: 'all'
 
@@ -678,9 +732,10 @@ function buildFieldPolicyMap(schema) {
       const omitAttr      = field.attributes.find(a => a.kind === 'omit')
       const guardedAttr   = field.attributes.find(a => a.kind === 'guarded')
       const encryptedAttr = field.attributes.find(a => a.kind === 'encrypted')
+      const hashedAttr    = field.attributes.find(a => a.kind === 'hashed')
       const fieldAllows   = field.attributes.filter(a => a.kind === 'fieldAllow')
 
-      if (!omitAttr && !guardedAttr && !encryptedAttr && !fieldAllows.length) continue
+      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !fieldAllows.length) continue
 
       // Build per-op allow expression lists: { read: [expr,...], write: [expr,...] }
       const allow = fieldAllows.length ? { read: [], write: [] } : null
@@ -693,7 +748,10 @@ function buildFieldPolicyMap(schema) {
         omit:      omitAttr?.level    ?? null,
         guarded:   encryptedAttr      ? 'all'
                    : guardedAttr?.level ?? null,
-        encrypted: encryptedAttr ? { searchable: encryptedAttr.searchable ?? false } : null,
+        encrypted: encryptedAttr ? { deterministic: encryptedAttr.deterministic ?? false } : null,
+        // @hashed is not a flavour of encrypted — no ciphertext, no decrypt, and it
+        // strips from asSystem() too, which no other protection does.
+        hashed:    !!hashedAttr,
         allow,    // null if no @allow on this field
         // Whether the DECLARED type is Json. Captured here, beside the other
         // per-field facts, because the encrypt/decrypt steps both need it and
@@ -774,15 +832,17 @@ function buildFromMap(schema, pluralize = false) {
 
     for (const field of fromFields) {
       const attr = field.attributes.find(a => a.kind === 'from')
-      const { target, op, opValue, where, orderBy, withDeleted, withTemplates } = attr
+      const { target, op, opValue, where, orderBy, via, withDeleted, withTemplates } = attr
 
       const targetModel = schema.models.find(m => m.name === target)
       if (!targetModel) continue
       const targetTable = modelToTableName(targetModel, pluralize)
 
       // FK column on the target table + the column it references on THIS model.
-      const fk = inferFromFk(model, targetModel)
-      if (!fk) continue  // unreachable for a validated schema; see inferFromFk
+      const fk = inferFromFk(model, targetModel, via)
+      // Unreachable for a validated schema — validate() refuses an @from with
+      // no relation behind it, an ambiguous one, and a via naming nothing.
+      if (!fk || fk.ambiguous || fk.unresolvedVia) continue
       const { fkCol, refCol } = fk
       const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
 
@@ -795,43 +855,64 @@ function buildFromMap(schema, pluralize = false) {
 
       // `%SELF%` is substituted per variant below — it is the only part of the
       // subquery that has to know what the outer table is called in this query.
-      const whereParts = [`"${fkCol}" = %SELF%."${refCol}"`]
-      if (targetSoftDelete && !withDeleted)   whereParts.push(`"deletedAt" IS NULL`)
-      if (targetHtField    && !withTemplates) whereParts.push(`"${targetHtField}" = 0`)
+      //
+      // The target is aliased because a self-referential @from correlates a
+      // table to itself: unaliased, `"task"."id"` inside the subquery binds to
+      // the subquery's OWN task, so `@from(Task, count: true)` counted rows
+      // whose FK equalled their own id — none — and answered 0 for every row.
+      // Aliased once here rather than only when the names collide: a rule that
+      // holds conditionally is a rule with two implementations.
+      //
+      // Every @from subquery uses the SAME alias, and that is safe only while a
+      // correlation names `%SELF%` — the outer table, or `t` under a relation
+      // orderBy — and never `_from`. Two subqueries side by side are separate
+      // scopes; one nested in another shadows the name harmlessly because the
+      // inner never has to reach the outer's alias. Correlate via `_from` and
+      // this becomes a silent wrong answer again.
+      const whereParts = [`_from."${fkCol}" = %SELF%."${refCol}"`]
+      if (targetSoftDelete && !withDeleted)   whereParts.push(`_from."deletedAt" IS NULL`)
+      if (targetHtField    && !withTemplates) whereParts.push(`_from."${targetHtField}" = 0`)
       if (where) whereParts.push(`(${where})`)
       const whereClause = whereParts.join(' AND ')
 
-      let subquerySql, isObject = false
+      let subquerySql, isObject = false, rowRef = null
 
       switch (op) {
         case 'last':
         case 'first': {
-          isObject = true
-          const orderField = orderBy ?? idField
+          // Resolve the row's ID here and fetch the row itself through a real
+          // read of the target (resolveFromRowRefs). Encoding it as a
+          // json_object of the target's columns meant this was the one @from
+          // shape that returned a row without read() ever seeing it: the
+          // target's @computed and @from fields were absent and its @guarded,
+          // @omit and @encrypted ones were present, in plaintext or ciphertext.
+          // Those protections live in read(), and hand-built JSON never reaches
+          // it. Same shape as the recursive walk: ids in SQL, rows through the
+          // ordinary path.
+          const targetPk = targetModel.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+          // Ordering is over the TARGET, so the default is the target's own id
+          // column — `idField` here is the declaring model's, which is the same
+          // name often enough to hide the difference.
+          const orderField = orderBy ?? targetPk
           const dir = op === 'last' ? 'DESC' : 'ASC'
-          // Build json_object(...) from all scalar fields of target model
-          const scalarFields = targetModel.fields.filter(f =>
-            f.type.kind !== 'relation' &&
-            !f.attributes.some(a => a.kind === 'computed' || a.kind === 'from' || a.kind === 'generated' || a.kind === 'funcCall')
-          )
-          const jsonArgs = scalarFields.map(f => `'${f.name}', "${f.name}"`).join(', ')
-          subquerySql = `(SELECT json_object(${jsonArgs}) FROM "${targetTable}" WHERE ${whereClause} ORDER BY "${orderField}" ${dir} LIMIT 1)`
+          subquerySql = `(SELECT _from."${targetPk}" FROM "${targetTable}" AS _from WHERE ${whereClause} ORDER BY _from."${orderField}" ${dir} LIMIT 1)`
+          rowRef = { model: targetModel.name, pk: targetPk }
           break
         }
         case 'count':
-          subquerySql = `(SELECT COUNT(*) FROM "${targetTable}" WHERE ${whereClause})`
+          subquerySql = `(SELECT COUNT(*) FROM "${targetTable}" AS _from WHERE ${whereClause})`
           break
         case 'sum':
-          subquerySql = `(SELECT COALESCE(SUM("${opValue}"), 0) FROM "${targetTable}" WHERE ${whereClause})`
+          subquerySql = `(SELECT COALESCE(SUM(_from."${opValue}"), 0) FROM "${targetTable}" AS _from WHERE ${whereClause})`
           break
         case 'max':
-          subquerySql = `(SELECT MAX("${opValue}") FROM "${targetTable}" WHERE ${whereClause})`
+          subquerySql = `(SELECT MAX(_from."${opValue}") FROM "${targetTable}" AS _from WHERE ${whereClause})`
           break
         case 'min':
-          subquerySql = `(SELECT MIN("${opValue}") FROM "${targetTable}" WHERE ${whereClause})`
+          subquerySql = `(SELECT MIN(_from."${opValue}") FROM "${targetTable}" AS _from WHERE ${whereClause})`
           break
         case 'exists':
-          subquerySql = `(SELECT EXISTS(SELECT 1 FROM "${targetTable}" WHERE ${whereClause}))`
+          subquerySql = `(SELECT EXISTS(SELECT 1 FROM "${targetTable}" AS _from WHERE ${whereClause}))`
           break
       }
 
@@ -840,6 +921,7 @@ function buildFromMap(schema, pluralize = false) {
         subquerySqlAliased: subquerySql.replaceAll('%SELF%', 't'),
         isObject,
         isBool: op === 'exists',
+        rowRef,
       }
     }
   }
@@ -865,6 +947,57 @@ function fromSelectExpr(fromFields, aliased = false) {
   return entries
     .map(([n, f]) => `${aliased ? f.subquerySqlAliased : f.subquerySql} AS "${n}"`)
     .join(', ')
+}
+
+// ─── @from(first/last) — the row behind the reference ────────────────────────
+// The subquery answers an id; the row comes back through a real read of the
+// target, so it carries the target's @computed and @from fields and is stripped
+// of its @guarded / @omit / @encrypted ones. One query per field across all the
+// rows in hand, not one per row.
+//
+// The pick happens in SQL, before the target's ROW policy can be applied: the
+// subquery is built once at startup and a policy binds ctx.auth per request. So
+// a row the caller may not read makes the field null rather than falling
+// through to the next visible one. FJS-224.
+//
+// `depth` bounds a chain of references — A.last → B, B.last → A is a cycle, and
+// a cycle here is an infinite fetch rather than a wrong answer.
+function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
+  if (!rows?.length || !fromFields || depth > 3) return rows
+  for (const [name, def] of Object.entries(fromFields)) {
+    if (!def.rowRef) continue
+    const { model: target, pk } = def.rowRef
+    const ids = [...new Set(rows.map(r => r[name]).filter(v => v != null))]
+    if (!ids.length) {
+      for (const r of rows) if (name in r) r[name] = null
+      continue
+    }
+    const tModel = ctx.schema?.models.find(m => m.name === target)
+    const tTable = tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target
+    const tFrom  = ctx.fromMap?.[target] ?? null
+    const policy = ctx.hasPolicies
+      ? buildPolicyFilter(target, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+      : null
+    const fromCols = tFrom ? fromSelectExpr(tFrom) : null
+    const ph  = ids.map(() => '?').join(', ')
+    const sql = `SELECT *${fromCols ? `, ${fromCols}` : ''} FROM "${tTable}" ` +
+                `WHERE "${pk}" IN (${ph})${policy ? ` AND (${policy.sql})` : ''}`
+
+    let got = readDb.query(sql).all(...ids, ...(policy?.params ?? []))
+      .map(r => deserializeFromRow(
+        coerceBooleans(deserializeRow(r, ctx.jsonMap?.[target] ?? new Set()), ctx.boolMap?.[target] ?? new Set()),
+        tFrom))
+    // A referenced row may reference one of its own.
+    resolveFromRowRefs(readDb, got, tFrom, ctx, depth + 1)
+    got = got.map(r => applyComputed(r, target, ctx.computedFns, ctx))
+    const fp = ctx.fieldPolicyMap?.[target]
+    if (fp && Object.keys(fp).length)
+      got = got.map(r => applyFieldPolicyTo(r, target, fp, ctx, { mode: 'single' }))
+
+    const byId = new Map(got.map(r => [r[pk], r]))
+    for (const r of rows) if (name in r) r[name] = r[name] == null ? null : (byId.get(r[name]) ?? null)
+  }
+  return rows
 }
 
 function deserializeFromRow(row, fromFields) {
@@ -900,6 +1033,27 @@ function buildBoolMap(schema) {
   for (const model of schema.models) {
     map[model.name] = new Set(
       model.fields.filter(f => f.type.name === 'Boolean').map(f => f.name)
+    )
+  }
+  return map
+}
+
+
+// ─── Array map ────────────────────────────────────────────────────────────────
+// { modelName: Set<fieldName> } — columns holding a JSON array.
+//
+// buildWhere reads it to decide what a bare array in a `where` means, which it
+// cannot tell from the operand: `{ id: [1,2] }` is an IN over one value and
+// `{ tags: ['x','y'] }` is an IN over the row's several. An implicit m2m field
+// is excluded — it has no column, and a relation filter owns it.
+
+function buildArrayMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    map[model.name] = new Set(
+      model.fields
+        .filter(f => f.type.array && f.type.kind !== 'relation' && f.type.kind !== 'implicitM2M')
+        .map(f => f.name)
     )
   }
   return map
@@ -947,6 +1101,7 @@ function buildEnumMap(schema) {
           values:   enumValues[field.type.name],
           enumName: field.type.name,
           optional: field.type.optional,
+          array:    !!field.type.array,
         }
       }
     }
@@ -1160,15 +1315,60 @@ const _whereWarnOnce = new Set()
 // and the AND/OR/NOT descent — rather than Junction growing a second one that
 // drifts. Returns [] when the where is fine, so `if (problems.length)` reads
 // naturally at the call site.
-function collectWhereKeyProblems(where, allowed, out = []) {
+// Which keys of a model may appear in a where, split by WHY not — the sibling of
+// sortableKeysFor, and the same reason for existing: a caller that refuses has to
+// say which kind of wrong it is.
+//
+// A relation IS filterable (`posts: { some: … }`), so relations stay in.
+function filterableKeysFor(model) {
+  const filterable   = new Set()
+  const computed     = new Set()
+  const encrypted    = new Set()
+  // Every field whose column holds encoded bytes, matchable or not. A `where`
+  // rewrites a matchable one before comparing; policy.js has no such step, so
+  // inside a policy predicate EVERY kind compares plaintext against stored bytes.
+  const encryptedAny = new Set()
+  for (const f of model.fields) {
+    if (f.attributes?.some(a => a.kind === 'encrypted' || a.kind === 'secret' || a.kind === 'hashed')) encryptedAny.add(f.name)
+    if (f.attributes?.some(a => a.kind === 'computed')) { computed.add(f.name); continue }
+    // Plain @encrypted stores AES-GCM ciphertext under a RANDOM IV, so a plaintext
+    // comparison cannot match any row — see rewriteEncryptedWhere, which already
+    // proves this and compiles a contradiction. `deterministic: true` derives the IV
+    // from the value and @hashed digests it; both are stable, so both ARE comparable.
+    if (f.attributes?.some(a => a.kind === 'hashed')) { filterable.add(f.name); continue }
+    const enc = f.attributes?.find(a => a.kind === 'encrypted' || a.kind === 'secret')
+    if (enc && !enc.deterministic) { encrypted.add(f.name); continue }
+    filterable.add(f.name)
+  }
+  return { filterable, computed, encrypted, encryptedAny }
+}
+
+const WHERE_REASONS = {
+  computed:  (k) => `'${k}' is a @computed field on %MODEL% — it is derived in JS after the row is read, so SQLite cannot filter by it. `
+                  + `It is not a column, and comparing one is comparing string constants: it matches every row when the value happens to equal '${k}', and none otherwise. `
+                  + `To filter by a derived value make it @from or @generated, or store it`,
+  encrypted: (k) => `'${k}' is @encrypted on %MODEL% — the column holds ciphertext under a random IV, so no plaintext can ever equal it and this filter matches nothing. `
+                  + `Use @encrypted(deterministic: true) if the value must be both looked up and read back, @hashed if it only ever needs matching, `
+                  + `or filter on a column that is not encrypted`,
+  unknown:   (k) => `Unknown field '${k}' in where for %MODEL%`,
+}
+
+function collectWhereKeyProblems(where, filterable, computed, encrypted, out = []) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return out
   for (const [k, v] of Object.entries(where)) {
     if (k === 'AND' || k === 'OR' || k === 'NOT') {
-      for (const w of Array.isArray(v) ? v : [v]) collectWhereKeyProblems(w, allowed, out)
+      for (const w of Array.isArray(v) ? v : [v]) collectWhereKeyProblems(w, filterable, computed, encrypted, out)
       continue
     }
-    if (k === '$raw' || allowed.has(k)) continue
-    out.push({ key: k, suggestion: suggestKey(k, allowed), allowed: [...allowed].sort() })
+    if (k === '$raw' || filterable.has(k)) continue
+    const reason = computed.has(k) ? 'computed' : encrypted.has(k) ? 'encrypted' : 'unknown'
+    out.push({
+      key:        k,
+      reason,
+      suggestion: reason === 'unknown' ? suggestKey(k, filterable) : null,
+      allowed:    [...filterable].sort(),
+      message:    WHERE_REASONS[reason](k),
+    })
   }
   return out
 }
@@ -1247,19 +1447,24 @@ function collectOrderByKeyProblems(orderBy, sortable, relations, computed, allow
   return out
 }
 
-function checkWhereKeys(where, allowed, modelName, method, isWrite) {
-  if (!where || typeof where !== 'object' || Array.isArray(where)) return
-  for (const [k, v] of Object.entries(where)) {
-    if (k === 'AND' || k === 'OR' || k === 'NOT') {
-      for (const w of Array.isArray(v) ? v : [v]) checkWhereKeys(w, allowed, modelName, method, isWrite)
-      continue
-    }
-    if (k === '$raw' || allowed.has(k)) continue
-    const hint = suggestKey(k, allowed)
-    const msg = `Unknown field '${k}' in where for ${modelName}.${method}.` +
-      (hint ? ` Did you mean: ${hint}?` : ` Valid fields: ${[...allowed].sort().join(', ')}`)
-    if (isWrite) throw new ValidationError([{ path: ['where', k], message: msg }])
-    const once = `${modelName}.${k}`
+function checkWhereKeys(where, keys, modelName, method, isWrite) {
+  const problems = collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted)
+  for (const p of problems) {
+    const msg = p.reason === 'unknown'
+      ? `Unknown field '${p.key}' in where for ${modelName}.${method}.` +
+        (p.suggestion ? ` Did you mean: ${p.suggestion}?` : ` Valid fields: ${p.allowed.join(', ')}`)
+      : p.message.replace('%MODEL%', `${modelName}.${method}`)
+    // An UNKNOWN key warns on a read: it is a typo, the caller has a hint, and
+    // that trade was ruled on deliberately (sorting.md). A key that is real and
+    // spelled right but cannot be compared is a different thing and throws,
+    // because there is nothing to notice — `{ comp: 'A' }` answers `[]`, which
+    // reads as *no data*, and `{ comp: 'comp' }` answers EVERY row, because
+    // SQLite resolves the unresolvable identifier as a string literal and
+    // compares two constants. A filter that returns rows not matching it cannot
+    // be reported by warning at a log nobody is reading.
+    if (isWrite || p.reason !== 'unknown')
+      throw new ValidationError([{ path: ['where', p.key], message: msg }])
+    const once = `${modelName}.${p.key}`
     if (!_whereWarnOnce.has(once)) {
       _whereWarnOnce.add(once)
       console.warn(`[litestone] ${msg}`)
@@ -1279,14 +1484,16 @@ const ARG_WRITE_METHODS = [
 // (jsonl cache, per-scope rebuilds) never accumulate nested wrappers.
 function withArgValidation(table, model, ctx) {
   if (!table || !model) return table
-  const allowed = new Set(model.fields.map(f => f.name))
-  for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) allowed.add(d.as)
+  const whereKeys = filterableKeysFor(model)
+  for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) whereKeys.filterable.add(d.as)
   const modelName = model.name
   const { sortable, relations, computed } = sortableKeysFor(model)
 
   const checkOrderBy = (args, method) => {
+    // `_depth` is a column only a tree read has, so it is sortable only there.
+    const sortableHere = args?.recursive ? new Set([...sortable, '_depth']) : sortable
     const problems = collectOrderByKeyProblems(
-      args?.orderBy, sortable, relations, computed,
+      args?.orderBy, sortableHere, relations, computed,
       method === 'groupBy' || method === 'aggregate',
     )
     if (!problems.length) return
@@ -1317,7 +1524,7 @@ function withArgValidation(table, model, ctx) {
     if (typeof fn !== 'function') return
     out[method] = async (args = {}) => {
       checkTakeSkip(args, method)
-      checkWhereKeys(args?.where, allowed, modelName, method, isWrite)
+      checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite)
       checkOrderBy(args, method)
       return fn.call(table, args)
     }
@@ -1330,7 +1537,7 @@ function withArgValidation(table, model, ctx) {
     const fn = table.search
     out.search = async (q, opts = {}) => {
       checkTakeSkip(opts, 'search')
-      checkWhereKeys(opts?.where, allowed, modelName, 'search', false)
+      checkWhereKeys(opts?.where, whereKeys, modelName, 'search', false)
       return fn.call(table, q, opts)
     }
   }
@@ -1447,9 +1654,12 @@ function buildFtsMap(schema) {
   return map
 }
 
-// Current ISO timestamp for soft deletes
-function nowISO() {
-  return new Date().toISOString()
+// Current ISO timestamp for soft deletes. Takes the client's clock when one was
+// injected, so a frozen `now` freezes every timestamp litestone writes rather
+// than only the ones a policy compares against.
+function nowISO(clock) {
+  const raw = typeof clock === 'function' ? clock() : new Date()
+  return raw instanceof Date ? raw.toISOString() : String(raw)
 }
 
 // ─── Extensions loading ───────────────────────────────────────────────────────
@@ -1465,6 +1675,91 @@ async function loadComputedFields(computedInput) {
     return mod.default ?? mod
   } catch (e) {
     throw new Error(`Failed to load computed functions file: ${abs}\n  ${e.message}`)
+  }
+}
+
+// A computed field either declares what it reads or it does not, and the two
+// are stored the same way so nothing downstream has to ask which form was
+// written:
+//
+//   fullName: row => …                                    → needs: null
+//   initials: { needs: ['firstName'], compute: row => … }  → needs: ['firstName']
+//
+// `needs: null` means *fetch everything* — the original behaviour, and still
+// the right answer for a fn whose inputs cannot be listed.
+//
+// Keys beginning with `$` are not fields ($validate is a cross-field validator
+// array) and travel through untouched.
+function normaliseComputed(computedFns, schema) {
+  if (!computedFns) return {}
+
+  const readableFields = {}
+  for (const model of schema.models) {
+    readableFields[model.name] = new Set(
+      model.fields
+        .filter(f => f.type.kind !== 'relation' && f.type.kind !== 'implicitM2M' &&
+                     !f.attributes.some(a => a.kind === 'computed'))
+        .map(f => f.name)
+    )
+  }
+
+  const out = {}
+  for (const [modelName, fields] of Object.entries(computedFns)) {
+    if (!fields || typeof fields !== 'object') { out[modelName] = fields; continue }
+    const bag = out[modelName] = {}
+
+    for (const [field, spec] of Object.entries(fields)) {
+      if (field.startsWith('$')) { bag[field] = spec; continue }
+
+      if (typeof spec === 'function') { bag[field] = { compute: spec, needs: null }; continue }
+
+      if (!spec || typeof spec !== 'object' || typeof spec.compute !== 'function')
+        throw new Error(
+          `Computed field '${modelName}.${field}' must be a function, or ` +
+          `{ needs: [...], compute: fn } — got ${spec === null ? 'null' : typeof spec}`
+        )
+
+      if (!Array.isArray(spec.needs))
+        throw new Error(`Computed field '${modelName}.${field}': 'needs' must be an array of field names`)
+
+      // A name that is not a column of this model would be silently undefined
+      // at read time, which is the whole failure this declaration exists to
+      // stop — so it is refused here, where the list is written.
+      const known = readableFields[modelName]
+      if (known) {
+        const bad = spec.needs.filter(n => !known.has(n))
+        if (bad.length)
+          throw new Error(
+            `Computed field '${modelName}.${field}': needs ${bad.map(n => `'${n}'`).join(', ')}, ` +
+            `which ${bad.length > 1 ? 'are' : 'is'} not a readable field of ${modelName}. ` +
+            `A computed field may read stored columns and @from fields, not relations ` +
+            `or other computed fields`
+          )
+      }
+
+      const needs = [...spec.needs]
+      bag[field] = { compute: spec.compute, needs, handler: needsHandler(modelName, field, needs) }
+    }
+  }
+  return out
+}
+
+// The row a `needs` fn receives carries exactly what it declared. Reading
+// anything else throws instead of answering undefined — without that, adding a
+// line to the fn and forgetting the list converts a working computed field into
+// a silently wrong one, which is strictly worse than fetching every column.
+//
+// `in` is left alone so feature-detection still works, and the handler is built
+// once per field rather than once per row.
+function needsHandler(modelName, field, needs) {
+  return {
+    get(target, key) {
+      if (typeof key === 'symbol' || key === 'then' || key in target) return target[key]
+      throw new Error(
+        `Computed field '${modelName}.${field}' read '${String(key)}', which it does not declare. ` +
+        `needs: [${needs.map(n => `'${n}'`).join(', ')}]`
+      )
+    },
   }
 }
 
@@ -1528,15 +1823,28 @@ function makeReadRouter(readDb, writeDb, txState) {
 
 // ─── Computed fields ──────────────────────────────────────────────────────────
 
-function applyComputed(row, modelName, computedFns, ctx) {
+// `wanted` is the caller's select, or null for "the whole row". A computed fn
+// outside it is not run at all: its value would be trimmed away a moment later,
+// and running it over a row narrowed by that same select is how a fn ends up
+// computing from undefined.
+function applyComputed(row, modelName, computedFns, ctx, wanted = null) {
   if (!row) return row
   const fns = computedFns?.[modelName]
   if (!fns) return row
   const out = { ...row }
-  for (const [field, fn] of Object.entries(fns)) {
-    if (typeof fn === 'function') out[field] = fn(out, ctx)
+  for (const field in fns) {
+    const plan = fns[field]
+    if (typeof plan?.compute !== 'function') continue
+    if (wanted && !wanted.has(field)) continue
+    out[field] = plan.compute(plan.needs ? needsView(out, plan) : out, ctx)
   }
   return out
+}
+
+function needsView(row, plan) {
+  const view = {}
+  for (const name of plan.needs) view[name] = row[name]
+  return new Proxy(view, plan.handler)
 }
 
 // ─── Strip unwritable fields ──────────────────────────────────────────────────
@@ -1607,13 +1915,24 @@ function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'list', s
 
   for (const fieldName in fieldPolicy) {
     const policy = fieldPolicy[fieldName]
-    const { omit, guarded, encrypted, allow } = policy
+    const { omit, guarded, encrypted, hashed, allow } = policy
     const explicitlySelected = selectedFields?.has(fieldName)
 
     // ── Determine if field should be stripped ────────────────────────────
     let strip = false
 
-    if (encrypted) {
+    if (hashed) {
+      // The one protection asSystem() does not lift, because there is nothing to
+      // lift it to: an HMAC has no inverse, so a "read" could only hand back the
+      // digest. Handing back a digest is what destroyed data under the old
+      // `searchable: true` — it looks like a value, so it gets displayed, mailed,
+      // exported and written into the next table before anyone notices the plaintext
+      // is gone. Naming the field costs a throw and saves that.
+      if (explicitlySelected) throw new ValidationError([{ path: ['select', fieldName], message:
+        `'${fieldName}' is @hashed on ${modelName} — the column holds a one-way digest, so there is no value to select. ` +
+        `It can be matched in a where and never read back. If this field has to be readable, it wants @encrypted(deterministic: true)` }])
+      strip = true
+    } else if (encrypted) {
       strip = !isSystem
     } else if (guarded === 'all') {
       strip = !isSystem
@@ -1774,7 +2093,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         let whereExtra = ''
         const whereParams = []
         if (where) {
-          const ws = buildWhere(where, whereParams)
+          const ws = buildWhere(where, whereParams, null, null, null, null, ctx.arrayMap?.[rel.targetModel])
           if (ws) whereExtra = ` AND (${ws})`
         }
         const polExtra = countPolicy ? ` AND (${countPolicy.sql})` : ''
@@ -1819,6 +2138,20 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         ? rows_.map(r => applyFieldPolicyTo(r, rel.targetModel, targetFieldPolicy, ctx, opts))
         : rows_
 
+    // Deserialize → resolve any @from row references → compute → apply the
+    // target's field rules. One definition: the three branches below build three
+    // different SELECTs and each used to finish its rows with its own copy of
+    // this expression, so a step added to one was absent from the other two.
+    const finishRelated = (rawRows, opts, requested = null) => {
+      const staged = rawRows.map(r => deserializeFromRow(
+        coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()),
+        targetFrom))
+      resolveFromRowRefs(readDb, staged, targetFrom, ctx)
+      return shapeRelated(
+        staged.map(r => applyComputed(r, rel.targetModel, computedFns, ctx, requested)),
+        opts)
+    }
+
     const nestedInclude = typeof relInclude === 'object' && relInclude !== true
       ? relInclude.include ?? null : null
     const nestedSelect  = typeof relInclude === 'object' && relInclude !== true
@@ -1829,7 +2162,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
     const relWhereSql = (extraAlias) => {
       if (!relWhere) return { clause: '', params: [] }
       const p = []
-      const ws = buildWhere(relWhere, p, null, extraAlias ?? null, null)
+      const ws = buildWhere(relWhere, p, null, extraAlias ?? null, null, null, ctx.arrayMap?.[rel.targetModel])
       return { clause: ws ? ` AND (${ws})` : '', params: p }
     }
     // Soft delete mode for related table
@@ -1867,7 +2200,8 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       const parsedNested = nestedSelect
         ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
-                         targetFrom ? { [rel.targetModel]: new Set(Object.keys(targetFrom)) } : null)
+                         targetFrom ? { [rel.targetModel]: new Set(Object.keys(targetFrom)) } : null,
+                         computedFns)
         : null
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
@@ -1897,13 +2231,14 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       // Per-include where filter (belongsTo: filters the parent → nulls if excluded)
       const rw = relWhereSql(null)
 
-      const related = shapeRelated(readDb
-        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rw.clause}${policyClause}`)
-        .all(...sdParams, ...rw.params, ...policyParams)
-        .map(r => applyComputed(deserializeFromRow(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), targetFrom), rel.targetModel, computedFns, ctx)),
+      const related = finishRelated(
+        readDb
+          .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rw.clause}${policyClause}`)
+          .all(...sdParams, ...rw.params, ...policyParams),
         parsedNested
           ? { mode: 'select', selectedFields: parsedNested.requestedFields }
-          : { mode: 'single' })
+          : { mode: 'single' },
+        parsedNested?.requestedFields)
 
       const mergedInclude = { ...(nestedInclude ?? {}), ...(parsedNested?.relationSelects ?? {}) }
       if (Object.keys(mergedInclude).length)
@@ -1960,9 +2295,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         return bag
       })
 
-      const related = shapeRelated(rawRows
-        .map(r => applyComputed(deserializeFromRow(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), targetFrom), rel.targetModel, computedFns, ctx)),
-        { mode: 'list' })
+      const related = finishRelated(rawRows, { mode: 'list' })
 
       // Attach namespaced edge values onto each shaped target row.
       if (edgeDescs.length) {
@@ -1993,7 +2326,8 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       const parsedNested = nestedSelect
         ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
-                         targetFrom ? { [rel.targetModel]: new Set(Object.keys(targetFrom)) } : null)
+                         targetFrom ? { [rel.targetModel]: new Set(Object.keys(targetFrom)) } : null,
+                         computedFns)
         : null
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
@@ -2014,13 +2348,14 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (htClause) sdWhere = `${sdWhere} AND ${htClause}`
       const rwH = relWhereSql(null)
 
-      const related = shapeRelated(readDb
-        .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}${policyClause}`)
-        .all(...pkValues, ...rwH.params, ...policyParams)
-        .map(r => applyComputed(deserializeFromRow(coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()), targetFrom), rel.targetModel, computedFns, ctx)),
+      const related = finishRelated(
+        readDb
+          .query(`SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}${policyClause}`)
+          .all(...pkValues, ...rwH.params, ...policyParams),
         parsedNested
           ? { mode: 'select', selectedFields: parsedNested.requestedFields }
-          : { mode: 'list' })
+          : { mode: 'list' },
+        parsedNested?.requestedFields)
 
       const mergedInclude = { ...(nestedInclude ?? {}), ...(parsedNested?.relationSelects ?? {}) }
       if (Object.keys(mergedInclude).length)
@@ -2203,6 +2538,7 @@ function makeTable(
   ftsFields,
   boolFields,
   enumFields,
+  arrayFields,
   softDeleteCascade,
   fieldPolicy,
   fromFields,
@@ -2211,6 +2547,21 @@ function makeTable(
   const { relationMap, computedSets, computedFns, tx, hookRunner, emitter, globalFilters } = ctx
   const plugins = ctx.plugins   // PluginRunner
   const hasFieldPolicy = Object.keys(fieldPolicy).length > 0
+
+  // @hashed says the value never comes back. `read()` enforces that for rows, but
+  // groupBy and aggregate do not build rows — they project the column straight out
+  // of SQLite, so `by: ['token']` answered a list of digests and `_max` answered
+  // one. Both are reads of a value declared unreadable, and both were silent.
+  // Refuse by name at every path that can name a column, not only the row path.
+  function refuseUnreadable(op, names) {
+    if (!hasFieldPolicy) return
+    for (const name of names) {
+      if (!fieldPolicy[name]?.hashed) continue
+      throw new ValidationError([{ path: [op, name], message:
+        `'${name}' is @hashed on ${modelName} — the column holds a one-way digest, so ${op} would answer the digest ` +
+        `rather than the value. A digest can be matched in a where and never read back, by any caller` }])
+    }
+  }
 
   // @@hasTemplates marker column name, or null if this model doesn't opt in.
   // Read paths inject `<field> = false` by default; `withTemplates` /
@@ -2234,11 +2585,19 @@ function makeTable(
   // user passes one we want to surface the typo with a helpful hint.
   const _modelForKeys = ctx.models?.[modelName]
   const _allowedWriteKeys = new Set()
+  // name → why it cannot be written. Kept separately because these names are
+  // absent from _allowedWriteKeys and would otherwise be dropped by the
+  // unknown-key strip, which is silent by design — so a caller who set a
+  // @generated column learned nothing, on a write that could never land.
+  const _virtualWriteKeys = new Map()
   if (_modelForKeys) {
     for (const f of _modelForKeys.fields) {
       const isComputed  = f.attributes?.find(a => a.kind === 'computed')
       const isGenerated = f.attributes?.find(a => a.kind === 'generated' || a.kind === 'funcCall')
       if (!isComputed && !isGenerated) _allowedWriteKeys.add(f.name)
+      else _virtualWriteKeys.set(f.name, isComputed
+        ? `${f.name} is @computed — it is derived in JS on read and is not a column, so it cannot be written`
+        : `${f.name} is @generated — its value comes from its expression and cannot be written`)
     }
   }
   const _modelRels = ctx.relationMap?.[modelName] ?? {}
@@ -2780,10 +3139,39 @@ function makeTable(
     return vals ? { ...row, ...vals } : row
   }
 
+  // Which computed fields this read should run. `selectedFields` is the
+  // caller's select and answers it on every path that has one; `computedFields`
+  // is for a path that builds its own SELECT and must not also opt into the
+  // field-policy meaning of `selectedFields` (findManyCursor, search).
+  function computedWanted(opts) {
+    return opts.computedFields ?? opts.selectedFields ?? null
+  }
+
+  // The JSON-parse and boolean-coerce pass, shared by read/readAll.
+  function shapeScalars(r) {
+    if (!_hasJson && !_hasBool) return r
+    const out = { ...r }
+    if (_hasJson) {
+      for (const field of jsonFields) {
+        if (field in out && typeof out[field] === 'string') {
+          try { out[field] = JSON.parse(out[field]) } catch {}
+        }
+      }
+    }
+    if (_hasBool) {
+      for (const field of boolFields) {
+        if (field in out && out[field] !== null) out[field] = out[field] === 1 || out[field] === true
+      }
+    }
+    return out
+  }
+
   function read(row, opts = {}) {
     if (!row) return null
     if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return row
     let r = opts.hydrateFrom ? hydrateFromFields(row) : row
+    // Row references resolve before applyComputed below, so a @computed field
+    // over `row.lastOrder.amount` still sees a row rather than its id.
     if (_hasJson || _hasBool) {
       const out = { ...r }
       if (_hasJson) {
@@ -2802,14 +3190,30 @@ function makeTable(
       }
       r = out
     }
-    if (_hasFrom) r = deserializeFromFields(r)
-    if (_hasComputed) r = applyComputed(r, modelName, computedFns, ctx)
+    if (_hasFrom) {
+      r = deserializeFromFields(r)
+      if (_hasRowRef) resolveFromRowRefs(readDb, [r], _tableFrom, ctx)
+    }
+    if (_hasComputed) r = applyComputed(r, modelName, computedFns, ctx, computedWanted(opts))
     if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
     return r
   }
   function readAll(rows, opts = {}) {
     // Fast path — no transforms needed, return rows as-is
     if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return rows
+    const wanted = computedWanted(opts)
+    // Two passes when a row reference is in play: every row's id is resolved in
+    // one query, then the per-row transforms run. One pass would be a query per
+    // row, and applyComputed would run before the row it reads exists.
+    if (_hasRowRef) {
+      const staged = rows.map(r => deserializeFromFields(shapeScalars(r)))
+      resolveFromRowRefs(readDb, staged, _tableFrom, ctx)
+      return staged.map(r => {
+        let out = _hasComputed ? applyComputed(r, modelName, computedFns, ctx, wanted) : r
+        if (hasFieldPolicy) out = applyFieldPolicy(out, opts)
+        return out
+      })
+    }
     return rows.map(r => {
       if (_hasJson || _hasBool) {
         const out = { ...r }
@@ -2830,7 +3234,7 @@ function makeTable(
         r = out
       }
       if (_hasFrom)      r = deserializeFromFields(r)
-      if (_hasComputed)  r = applyComputed(r, modelName, computedFns, ctx)
+      if (_hasComputed)  r = applyComputed(r, modelName, computedFns, ctx, wanted)
       if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
       return r
     })
@@ -2847,10 +3251,25 @@ function makeTable(
     // whitelisting. (Deliberate policy choice 2026-08-01; typos in required
     // fields still surface via the required-field check below, and typo'd
     // *filters* are handled separately in where validation.)
+    // A key set to `undefined` is dropped with them. The column list comes from
+    // Object.keys, so a present-but-undefined key becomes an explicit NULL bind
+    // — which defeats the DDL DEFAULT and fails a NOT NULL column. `{ views:
+    // form.views }` off a form that had no views field is the shape that hits
+    // it. Only `null` clears (Invariant 9).
     if (model && data && typeof data === 'object' && !Array.isArray(data)) {
       let cleaned = null
       for (const k of Object.keys(data)) {
+        if (data[k] === undefined) {
+          if (!cleaned) cleaned = { ...data }
+          delete cleaned[k]
+          continue
+        }
         if (_allowedWriteKeys.has(k) || _edgeNamespaces.has(k)) continue
+        // Stripping an UNKNOWN key silently is the mass-assignment protection.
+        // Stripping a key the model declares but cannot store is a different
+        // thing wearing the same clothes, and the caller has to hear about it.
+        const why = _virtualWriteKeys.get(k)
+        if (why) throw new ValidationError([{ path: [k], message: why }])
         if (!cleaned) cleaned = { ...data }
         delete cleaned[k]
       }
@@ -2915,10 +3334,10 @@ function makeTable(
       }
     }
 
-    // Encrypt @encrypted fields before write
+    // Encrypt @encrypted / hash @hashed fields before write
     if (ctx.encKey && hasFieldPolicy) {
       for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
-        if (!policy.encrypted) continue
+        if (!policy.encrypted && !policy.hashed) continue
         if (!(fieldName in transformed)) continue
         const val = transformed[fieldName]
         if (val == null) continue
@@ -2933,15 +3352,31 @@ function makeTable(
         // still a JSON string as the column type says.
         const plain = policy.json ? JSON.stringify(val) : val
 
-        transformed[fieldName] = policy.encrypted.searchable
-          ? encryptSearchable(plain, ctx.encKey)
-          : encryptField(plain, ctx.encKey)
+        transformed[fieldName] = policy.hashed                 ? hashField(plain, ctx.encKey)
+                               : policy.encrypted.deterministic ? encryptDeterministic(plain, ctx.encKey)
+                               :                                  encryptField(plain, ctx.encKey)
       }
     }
 
     // Validate enum fields with friendly errors before hitting SQLite's CHECK
     for (const [field, meta] of Object.entries(enumFields)) {
       const val = transformed[field]
+      // An enum ARRAY has no CHECK behind it — SQLite cannot read the elements
+      // of a JSON array without a subquery, and a CHECK may not contain one. So
+      // this loop IS the boundary for a set-valued enum, not a nicer message in
+      // front of one. Array-ness, @minItems and friends were checked above.
+      if (meta.array) {
+        if (!Array.isArray(val)) continue
+        const bad = val.filter(v => !meta.values.has(String(v)))
+        if (bad.length) {
+          throw new ValidationError([{
+            path:    [field],
+            message: `invalid ${meta.enumName} value${bad.length > 1 ? 's' : ''} ` +
+                     `${bad.map(v => `"${v}"`).join(', ')} — must be one of: ${[...meta.values].join(', ')}`,
+          }])
+        }
+        continue
+      }
       if (val == null) {
         if (!meta.optional && field in transformed)
           throw new ValidationError([{ path: [field], message: `must be one of: ${[...meta.values].join(', ')}` }])
@@ -2966,18 +3401,48 @@ function makeTable(
       }
     }
 
-    return serializeRow(
+    const row = serializeRow(
       serializeBooleans(
         stripVirtual(transformed, generatedFields, computedFields, _hasFrom ? Object.keys(fromFields) : null),
         boolFields
       ),
       jsonFields
     )
+
+    // Everything above has run, so every remaining value is about to become a
+    // bind parameter. A plain object here is the one unbindable value bun:sqlite
+    // does not throw on — it reads it as a bag of NAMED parameters, matches none
+    // of the statement's positional `?`, and executes with EVERY binding dropped
+    // including the WHERE. The write silently changes nothing and `update`
+    // reports it as "no such row". Json columns are already text by this point,
+    // so anything still an object is genuinely unbindable.
+    for (const [k, v] of Object.entries(row)) {
+      if (typeof v === 'function')
+        throw new ValidationError([{ path: [k], message: `${k} was given a function — you probably forgot to call it` }])
+      if (typeof v === 'symbol')
+        throw new ValidationError([{ path: [k], message: `${k} was given a symbol — symbols cannot be stored` }])
+      if (v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && !ArrayBuffer.isView(v))
+        throw new ValidationError([{ path: [k], message:
+          `${k} was given an object where a value was expected — litestone has no atomic update operators, ` +
+          `so \`{ ${k}: { increment: 1 } }\` is not a value; read, change and write it back` }])
+    }
+    return row
   }
 
-  // ── Encrypt WHERE values for @encrypted(searchable) fields ───────────────
-  // Wraps buildWhere so that equality comparisons on searchable encrypted
-  // fields automatically hash the query value before comparing ciphertext.
+  // Hydration for the grouped and aggregated paths, which return SQLite's own
+  // values rather than going through a row read — so an array column came back
+  // as its JSON text and a Boolean as 0/1, and a value's TYPE depended on which
+  // method asked for it.
+  //
+  // Only for values still in the column's own domain: the `by` keys of a
+  // groupBy, and `_min`/`_max`. NOT `_sum`/`_avg`, where the number is no longer
+  // of the column's type — the sum of a Boolean column is a count, and coercing
+  // that back would answer 3 as `false`.
+  const hydrateCols = (obj) => obj ? coerceBooleans(deserializeRow(obj, jsonFields), boolFields) : obj
+
+  // ── Encode WHERE values for matchable protected fields ───────────────────
+  // Wraps buildWhere so an equality comparison on an @encrypted(deterministic) or
+  // @hashed field encodes the operand the same way the column was encoded first.
   // _fromExprMap is defined later (after _fromEntries) and passed into buildWhere.
   // tableAlias is optional — passed only when the outer FROM uses an alias
   // (e.g. relation orderBy adds JOINs, so columns need `t.` qualification).
@@ -2999,7 +3464,7 @@ function makeTable(
     const innerOf = (w) => {
       if (!w || (typeof w === 'object' && !Object.keys(w).length)) return ''
       const p = []
-      const sql = buildWhere(w, p, null, 't', null, relationFilterSql)
+      const sql = buildWhere(w, p, null, 't', null, relationFilterSql, ctx.arrayMap?.[rel.targetModel])
       return { sql, p }
     }
 
@@ -3037,7 +3502,7 @@ function makeTable(
 
   function buildWhereWithEncryption(where, params, tableAlias = null, outerIsAliased = tableAlias === 't') {
     const fromMap = outerIsAliased ? _fromExprMapAliased : _fromExprMap
-    if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter)
+    if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, arrayFields)
     let rewritten = where
     if (ctx.encKey) {
       rewritten = rewriteEncryptedWhere(where)
@@ -3046,7 +3511,7 @@ function makeTable(
         return `${prefix}"id" IS NULL AND ${prefix}"id" IS NOT NULL`
       }
     }
-    return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter)
+    return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, arrayFields)
   }
 
   function rewriteEncryptedWhere(where) {
@@ -3060,11 +3525,47 @@ function makeTable(
         continue
       }
       const policy = fieldPolicy[key]
-      if (policy?.encrypted?.searchable && val !== null && typeof val !== 'object') {
-        // Scalar equality on searchable encrypted field — hash the query value
-        out[key] = encryptSearchable(val, ctx.encKey)
-      } else if (policy?.encrypted && !policy.encrypted.searchable && val !== null) {
-        // Non-searchable encrypted field in WHERE — stored ciphertext never equals
+
+      // Both matchable modes take the SAME rewrite — encode the operand the way the
+      // column was encoded, then compare bytes to bytes. Only the encoder differs,
+      // and only equality survives either encoding.
+      const encode = policy?.hashed                  ? (v) => hashField(v, ctx.encKey)
+                   : policy?.encrypted?.deterministic ? (v) => encryptDeterministic(v, ctx.encKey)
+                   : null
+
+      if (encode && val !== null && typeof val !== 'object') {
+        out[key] = encode(val)
+      } else if (encode && Array.isArray(val)) {
+        // The bare-array shorthand is `in`, so it encodes like `in`.
+        out[key] = val.map(v => v === null ? null : encode(v))
+      } else if (encode && val !== null && typeof val === 'object') {
+        // An OPERATOR object. Each spelling of equality has to be encoded on its
+        // own — the scalar branch above covers `{ email: x }` and nothing else, so
+        // `{ in: [x] }` compared plaintext against stored bytes and answered
+        // nothing, and `{ not: x }` answered EVERY row, the excluded one included,
+        // because plaintext never equals ciphertext.
+        const rewritten = {}
+        for (const [op, operand] of Object.entries(val)) {
+          const enc = (v) => v === null ? null : encode(v)
+          if (op === 'equals' || op === 'not') {
+            rewritten[op] = enc(operand)
+          } else if (op === 'in' || op === 'notIn') {
+            rewritten[op] = Array.isArray(operand) ? operand.map(enc) : operand
+          } else {
+            // Deterministic encryption and an HMAC preserve equality and nothing
+            // else — no ordering, no substrings. Refuse rather than compare
+            // against the stored bytes and answer something plausible.
+            const what = policy.hashed
+              ? `@hashed, which stores a one-way digest`
+              : `@encrypted(deterministic: true), which stores ciphertext under an IV derived from the value`
+            throw new ValidationError([{ path: ['where', key], message:
+              `'${key}' is ${what} — it can answer equality (equals, not, in, notIn) and cannot answer '${op}', ` +
+              `because neither preserves ordering or substrings` }])
+          }
+        }
+        out[key] = rewritten
+      } else if (policy?.encrypted && !policy.encrypted.deterministic && val !== null) {
+        // Plain @encrypted field in WHERE — stored ciphertext never equals
         // the plaintext query value, so this WHERE can never match. Return a
         // condition on the id field that can never match.
         return { __impossible: true }
@@ -3101,6 +3602,8 @@ function makeTable(
   // These are always present — no include needed.
   const _fromEntries  = Object.entries(fromFields)   // [fieldName, { subquerySql, isObject }]
   const _hasFrom      = _fromEntries.length > 0
+  const _tableFrom    = fromFields
+  const _hasRowRef    = _fromEntries.some(([, d]) => d.rowRef)
   // Pre-build fromExprMap for buildWhere — substitutes @from field keys with their subquery SQL.
   // Two maps: a relation orderBy aliases the outer table to `t`, and the
   // correlation inside each subquery has to name whichever one this query used.
@@ -3320,7 +3823,7 @@ function makeTable(
   const _fromSets = _hasFrom ? { [modelName]: new Set(Object.keys(fromFields)) } : null
 
   function parseArgs(select, include) {
-    return parseSelectArg(select, modelName, relationMap, computedSets, include, _fromSets)
+    return parseSelectArg(select, modelName, relationMap, computedSets, include, _fromSets, computedFns)
   }
 
   function withIncludes(rows, ps, rawInclude) {
@@ -3359,6 +3862,45 @@ function makeTable(
 
   // Compose: apply hasTemplates filter on top of soft-delete-filtered where.
   // Both filters AND together at the WHERE level — orthogonal concerns.
+  // `recursive` is a findMany shape. A method that cannot walk a tree has to
+  // say so: count({ recursive }) counted the ANCHORS and answered a plausible
+  // number for a question nobody asked.
+  function refuseRecursive(op, args) {
+    if (args?.recursive)
+      throw new ValidationError([{ path: ['recursive'], message:
+        `${op}() does not take 'recursive' — only findMany walks a tree. Read the length of the findMany({ recursive }) result, or pass on the ids it gives you` }])
+  }
+
+  // A row that is its own ancestor has no root for a tree read to start from,
+  // and the walk only survives it because of the depth ceiling. Refusing the
+  // write that closes the loop is both cheaper than carrying it on every read
+  // and the only place that can name the field that was wrong.
+  function assertNoParentCycle(rowIds, data) {
+    const rels = ctx.selfRelationMap?.[modelName]
+    if (!rels?.length || !data) return
+    for (const rel of rels) {
+      if (!(rel.fkField in data)) continue
+      const parentId = data[rel.fkField]
+      if (parentId == null) continue
+      const up = (id) => readDb.query(`SELECT "${rel.fkField}" AS p FROM "${tableName}" WHERE "${rel.referencedField}" = ?`).get(id)?.p ?? null
+      for (const rowId of rowIds) {
+        if (rowId == null) continue
+        if (rowId === parentId)
+          throw new ValidationError([{ path: [rel.fkField], message:
+            `${rel.fkField} points at the row itself — a row cannot be its own ${rel.relationField}` }])
+        const seen = new Set([parentId])
+        let cur = up(parentId)
+        while (cur != null && !seen.has(cur)) {
+          if (cur === rowId)
+            throw new ValidationError([{ path: [rel.fkField], message:
+              `${rel.fkField} would make "${rowId}" its own ancestor — the ${rel.relationField} chain above ${parentId} already passes through it` }])
+          seen.add(cur)
+          cur = up(cur)
+        }
+      }
+    }
+  }
+
   function applyHtFilter(where, mode) {
     if (!hasTemplates) return where
     return injectHasTemplatesFilter(where, mode, hasTemplatesField)
@@ -3558,7 +4100,16 @@ function makeTable(
     // ── findMany ────────────────────────────────────────────────────────────
     async findMany(args = {}) {
       // ── Recursive CTE path ───────────────────────────────────────────────
+      // A tree read is a read: the plugin door, the row policy and the
+      // soft-delete filter all apply, and they apply at every level. The walk
+      // carries the same visibility predicate as the anchor, so a row the
+      // caller cannot see hides its whole subtree — the alternative hands back
+      // the children of a row the caller was refused. The CTE resolves ids
+      // only and the rows come back through findMany, so select / include /
+      // @computed / @from keep one owner instead of a second copy here.
       if (args.recursive) {
+        if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
+
         const rec = args.recursive === true
           ? { direction: 'descendants' }
           : { direction: 'descendants', ...args.recursive }
@@ -3567,125 +4118,143 @@ function makeTable(
         if (!selfRels?.length)
           throw new Error(`findMany({ recursive }) — model '${tableName}' has no self-referential relation`)
 
-        // Resolve which self-relation(s) to traverse
+        // The CTE names four columns of its own; a model column of the same
+        // name would resolve to the CTE inside the walk and answer nonsense.
+        const reserved = ['_id', '_pid', '_depth', '_path']
+        for (const f of ctx.models[modelName]?.fields ?? [])
+          if (reserved.includes(f.name))
+            throw new Error(`findMany({ recursive }) — '${tableName}' declares a field named '${f.name}', which the tree query uses for itself`)
+
         let relsToUse = selfRels
         if (rec.via) {
           const found = selfRels.find(r => r.relationField === rec.via || r.fkField === rec.via)
           if (!found) throw new Error(`findMany({ recursive }) — 'via: "${rec.via}"' not found on model '${tableName}'`)
           relsToUse = [found]
         }
+        if (rec.nested && (args.limit != null || args.offset != null))
+          throw new ValidationError([{ path: ['recursive'], message:
+            `recursive: { nested: true } cannot take limit or offset — they would cut branches out of the tree. Use maxDepth, or take the flat result and page that` }])
 
         const multiRel = relsToUse.length > 1
+        const mode     = sdMode(args)
+        const htm      = htMode(args)
+        const maxDepth = rec.maxDepth ?? 1000
 
-        // Run one CTE per self-relation and union results
-        const allRows = []
+        // Built once, bound at every level it appears in: the anchor SELECT and
+        // each step of the walk.
+        const visParams = []
+        const visWhere  = applyHtFilter(softDelete ? injectSoftDeleteFilter(null, mode) : null, htm)
+        let   visSql    = visWhere ? buildWhereWithEncryption(visWhere, visParams) : null
+        const readPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
+        if (readPolicy) {
+          visSql = visSql ? `(${visSql}) AND (${readPolicy.sql})` : readPolicy.sql
+          visParams.push(...readPolicy.params)
+        }
+
+        const idField = relsToUse[0].referencedField
+        const found   = new Map()   // id → { depth, via }
+
         for (const rel of relsToUse) {
           const { fkField, referencedField } = rel
 
-          // Build anchor WHERE (same filters as normal findMany)
           const anchorParams = []
-          const anchorWhere  = args.where
-          const sdFilteredWhere = softDelete ? injectSoftDeleteFilter(anchorWhere, 'live') : anchorWhere
-          const htFilteredWhere = applyHtFilter(sdFilteredWhere, 'instances')
-          const anchorSql    = buildWhereWithEncryption(htFilteredWhere, anchorParams)
-          const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-
-          let anchorFilter = anchorSql ?? ''
-          if (policyResult) {
-            anchorFilter = anchorFilter ? `(${anchorFilter}) AND (${policyResult.sql})` : policyResult.sql
-            anchorParams.push(...policyResult.params)
+          const anchorSql    = args.where ? buildWhereWithEncryption(args.where, anchorParams) : null
+          let   anchorFilter = anchorSql ?? ''
+          if (visSql) {
+            anchorFilter = anchorFilter ? `(${anchorFilter}) AND (${visSql})` : visSql
+            anchorParams.push(...visParams)
           }
 
-          const maxDepth = rec.maxDepth ?? 1000
+          // SQLite has no CYCLE clause. The GROUP BY below already dedupes the
+          // ANSWER, so _path is about the walk: without it a stored cycle is
+          // ended only by the depth ceiling, so a two-row loop scans maxDepth
+          // rows — 1000 by default, and whatever a caller raised it to.
+          const step = rec.direction === 'ancestors'
+            ? `"${tableName}"."${referencedField}" = _t._pid`
+            : `"${tableName}"."${fkField}" = _t._id`
 
-          let cteSql, cteParams
-
-          if (rec.direction === 'descendants') {
-            // Start at anchor nodes, walk down via fkField → referencedField
-            cteSql = `
-WITH RECURSIVE _tree("${referencedField}", _depth) AS (
-  SELECT "${referencedField}", 0 FROM "${tableName}"
-  ${anchorFilter ? `WHERE ${anchorFilter}` : ''}
+          const cteSql = `
+WITH RECURSIVE _t(_id, _pid, _depth, _path) AS (
+  SELECT "${referencedField}", "${fkField}", 0, ',' || "${referencedField}" || ','
+  FROM "${tableName}"${anchorFilter ? `\n  WHERE ${anchorFilter}` : ''}
   UNION ALL
-  SELECT c."${referencedField}", t._depth + 1
-  FROM "${tableName}" c
-  JOIN _tree t ON c."${fkField}" = t."${referencedField}"
-  WHERE t._depth < ${maxDepth}
+  SELECT "${tableName}"."${referencedField}", "${tableName}"."${fkField}", _t._depth + 1,
+         _t._path || "${tableName}"."${referencedField}" || ','
+  FROM "${tableName}" JOIN _t ON ${step}
+  WHERE _t._depth < ${Number(maxDepth)}
+    AND instr(_t._path, ',' || "${tableName}"."${referencedField}" || ',') = 0${visSql ? `\n    AND (${visSql})` : ''}
 )
-SELECT "${tableName}".*, _tree._depth
-FROM "${tableName}"
-JOIN _tree ON "${tableName}"."${referencedField}" = _tree."${referencedField}"
-WHERE _tree._depth > 0`
-            cteParams = [...anchorParams]
-          } else {
-            // ancestors — start at anchor, walk up via referencedField → fkField
-            cteSql = `
-WITH RECURSIVE _tree("${fkField}", _depth) AS (
-  SELECT "${fkField}", 1 FROM "${tableName}"
-  ${anchorFilter ? `WHERE ${anchorFilter}` : ''}
-  UNION ALL
-  SELECT c."${fkField}", t._depth + 1
-  FROM "${tableName}" c
-  JOIN _tree t ON c."${referencedField}" = t."${fkField}"
-  WHERE t._depth < ${maxDepth} AND t."${fkField}" IS NOT NULL
-)
-SELECT "${tableName}".*, _tree._depth
-FROM "${tableName}"
-JOIN _tree ON "${tableName}"."${referencedField}" = _tree."${fkField}"
-WHERE _tree."${fkField}" IS NOT NULL`
-            cteParams = [...anchorParams]
-          }
+SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
 
-          // Apply orderBy / limit / offset to the outer query
-          if (args.orderBy) {
-            const orderParts = []
-            const ob = Array.isArray(args.orderBy) ? args.orderBy : [args.orderBy]
-            for (const o of ob) {
-              for (const [k, v] of Object.entries(o)) {
-                if (k === '_depth') orderParts.push(`_tree._depth ${v === 'desc' ? 'DESC' : 'ASC'}`)
-                else orderParts.push(`"${tableName}"."${k}" ${v === 'desc' ? 'DESC' : 'ASC'}`)
-              }
-            }
-            if (orderParts.length) cteSql += ` ORDER BY ${orderParts.join(', ')}`
-          }
-          if (args.limit  != null) cteSql += ` LIMIT ${Number(args.limit)}`
-          if (args.offset != null) cteSql += ` OFFSET ${Number(args.offset)}`
+          const cteParams = visSql ? [...anchorParams, ...visParams] : anchorParams
+          const _nt  = needsTiming()
+          const _t0  = _nt ? performance.now() : 0
+          const hits = readDb.query(cteSql).all(...cteParams)
+          if (_nt) fireQuery({ operation: 'findMany', args, sql: cteSql, params: cteParams, duration: performance.now() - _t0, rowCount: hits.length })
 
-          const raw = readAll(readDb.query(cteSql.trim()).all(...cteParams), { mode: 'list' })
-          fireQuery({ operation: 'findMany', args, sql: cteSql, params: cteParams, duration: 0, rowCount: raw.length })
-
-          // Inject _depth and optionally _via
-          for (const row of raw) {
-            row._depth = row._depth ?? 0
-            if (multiRel) row._via = rel.fkField
+          for (const h of hits) {
+            const prev = found.get(h._id)
+            if (!prev || h._depth < prev.depth) found.set(h._id, { depth: h._depth, via: rel.fkField })
           }
-          allRows.push(...raw)
         }
 
-        // Deduplicate by referencedField when multi-relation union
-        const idField = relsToUse[0].referencedField
-        const seen = new Set()
-        const deduped = multiRel
-          ? allRows.filter(r => { const k = `${r[idField]}:${r._via}`; if (seen.has(k)) return false; seen.add(k); return true })
-          : allRows
+        // Depth 0 is the anchor itself. It is not part of its own subtree, and
+        // it is only fetched at all so `nested` can tell a root from a child.
+        const wanted = [...found.entries()].filter(([, v]) => rec.nested || v.depth > 0).map(([id]) => id)
+        if (!wanted.length) return []
 
-        if (!rec.nested) return deduped
+        const obList      = args.orderBy ? (Array.isArray(args.orderBy) ? args.orderBy : [args.orderBy]) : []
+        const byDepth     = obList.some(o => '_depth' in o)
+        const obColumns   = obList.map(o => { const c = { ...o }; delete c._depth; return c }).filter(o => Object.keys(o).length)
 
-        // Build nested tree structure
-        const idKey = relsToUse[0].referencedField
+        // The rows themselves come back through the ordinary read, which is
+        // what applies the gate, the select, the includes and the derived fields.
+        let rows = await this.findMany({
+          ...args,
+          recursive: undefined,
+          where:     { [idField]: { in: wanted } },
+          orderBy:   byDepth ? undefined : (obColumns.length ? obColumns : undefined),
+          limit:     byDepth || rec.nested ? undefined : args.limit,
+          offset:    byDepth || rec.nested ? undefined : args.offset,
+        })
+
+        for (const row of rows) {
+          const hit = found.get(row[idField])
+          row._depth = hit?.depth ?? 0
+          if (multiRel) row._via = hit?.via
+        }
+
+        if (byDepth) {
+          rows = [...rows].sort((a, b) => {
+            for (const o of obList) {
+              for (const [k, v] of Object.entries(o)) {
+                const av = k === '_depth' ? a._depth : a[k]
+                const bv = k === '_depth' ? b._depth : b[k]
+                if (av === bv) continue
+                const dir = (typeof v === 'object' ? v?.dir : v) === 'desc' ? -1 : 1
+                return (av > bv ? 1 : -1) * dir
+              }
+            }
+            return 0
+          })
+          if (!rec.nested) {
+            const from = args.offset ?? 0
+            rows = rows.slice(from, args.limit != null ? from + args.limit : undefined)
+          }
+        }
+
+        if (!rec.nested) return rows
+
+        // Nested — the anchor is the frame, not a node, so its children are the
+        // roots and it does not appear in the result.
+        const byId  = new Map(rows.map(r => [r[idField], Object.assign(r, { children: [] })]))
         const fkKey = relsToUse[0].fkField
-        const anchorIds = new Set()
-        // Get anchor node IDs from a quick findMany
-        const anchors = await this.findMany({ ...args, recursive: undefined })
-        for (const a of anchors) anchorIds.add(a[idKey])
-
-        const byId = {}
-        for (const row of deduped) { byId[row[idKey]] = { ...row, children: [] } }
         const roots = []
-        for (const row of deduped) {
-          const parent = byId[row[fkKey]]
-          if (parent && !anchorIds.has(row[idKey])) parent.children.push(byId[row[idKey]])
-          else if (anchorIds.has(row[fkKey]) || !parent) roots.push(byId[row[idKey]])
+        for (const node of byId.values()) {
+          if (node._depth === 0) continue
+          const parent = byId.get(node[fkKey])
+          if (parent && parent._depth > 0) parent.children.push(node)
+          else roots.push(node)
         }
         return roots
       }
@@ -3727,6 +4296,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
 
     // ── findFirst ───────────────────────────────────────────────────────────
     async findFirst(args = {}) {
+      refuseRecursive('findFirst', args)
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'findFirst', args, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('findFirst')) hookRunner.runBefore(hctx, ctx)
@@ -3751,6 +4321,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
 
     // ── findUnique ──────────────────────────────────────────────────────────
     async findUnique(args = {}) {
+      refuseRecursive('findUnique', args)
       // ── Ultra-fast path: findUnique({ where: { <pk>: value } }) ──
       // Skip buildSQL, parseArgs, soft-delete filter assembly entirely.
       // Bypass conditions are pre-checked at table-build time (_canFastFindUnique).
@@ -3816,6 +4387,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
 
     // ── count ───────────────────────────────────────────────────────────────
     async count(args = {}) {
+      refuseRecursive('count', args)
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'count', args, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('count')) hookRunner.runBefore(hctx, ctx)
@@ -3858,6 +4430,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
     // db.user.exists({ where: { email: 'alice@example.com' } })
     // → true | false
     async exists(args = {}) {
+      refuseRecursive('exists', args)
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'exists', args, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('exists')) hookRunner.runBefore(hctx, ctx)
@@ -3898,6 +4471,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
     // db.user.findManyAndCount({ where, orderBy, limit, offset, select, include })
     // → { rows: [...], total: 42 }
     async findManyAndCount(args = {}) {
+      refuseRecursive('findManyAndCount', args)
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'findMany', args, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('findMany')) hookRunner.runBefore(hctx, ctx)
@@ -3974,7 +4548,10 @@ WHERE _tree."${fkField}" IS NOT NULL`
     // db.order.aggregate({ _sum: { amount: true }, _avg: { amount: true }, _count: true, _min: { amount: true }, _max: { amount: true }, where: {...} })
     // Returns: { _sum: { amount: 1200 }, _avg: { amount: 40 }, _count: 30, _min: { amount: 5 }, _max: { amount: 200 } }
     async aggregate(args = {}) {
+      refuseRecursive('aggregate', args)
       const { where, _count, _sum, _avg, _min, _max, _stringAgg } = args
+      refuseUnreadable('aggregate', [_sum, _avg, _min, _max, _stringAgg]
+        .filter(v => v && typeof v === 'object').flatMap(v => Object.keys(v)))
       const params = []
 
       // Build WHERE (reuses count() pattern)
@@ -4053,6 +4630,7 @@ WHERE _tree."${fkField}" IS NOT NULL`
           if (!wanted) continue
           result[agg][field] = raw[`${agg}__${field}`] ?? null
         }
+        if (agg === '_min' || agg === '_max') result[agg] = hydrateCols(result[agg])
       }
       if (_stringAgg) {
         result._stringAgg = { [_stringAgg.field]: raw[`__stringAgg__${_stringAgg.field}`] ?? null }
@@ -4068,9 +4646,12 @@ WHERE _tree."${fkField}" IS NOT NULL`
     // db.order.groupBy({ by: ['status'], _count: true, _sum: { amount: true }, where: {...}, having: {...}, orderBy: {...}, limit, offset })
     // Returns: [{ status: 'paid', _count: 10, _sum: { amount: 500 } }, ...]
     async groupBy(args = {}) {
+      refuseRecursive('groupBy', args)
       const { by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps } = args
       const interval = args.interval   // { fieldName: 'unit' }
       if (!by?.length) throw new Error('groupBy() requires a "by" array of field names')
+      refuseUnreadable('groupBy', [...by, ...[_sum, _avg, _min, _max, _stringAgg]
+        .filter(v => v && typeof v === 'object').flatMap(v => Object.keys(v))])
 
       // ── Interval / date truncation ───────────────────────────────────────
       // interval: { createdAt: 'month' }
@@ -4366,8 +4947,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       // Shape results
       return raw.map(r => {
-        const out = {}
+        let out = {}
         for (const f of by) out[f] = r[f]
+        out = hydrateCols(out)
         if (_count) out._count = r.__count ?? 0
         for (const agg of ['_sum', '_avg', '_min', '_max']) {
           const spec = args[agg]
@@ -4377,6 +4959,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             if (!wanted) continue
             out[agg][field] = r[`${agg}__${field}`] ?? null
           }
+          if (agg === '_min' || agg === '_max') out[agg] = hydrateCols(out[agg])
         }
         if (_stringAgg) {
           out._stringAgg = { [_stringAgg.field]: r[`__stringAgg__${_stringAgg.field}`] ?? null }
@@ -4427,6 +5010,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       const hctx = hookRunner ? { model: modelName, operation: 'create', args: { data, include, select }, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('create')) { hookRunner.runBefore(hctx, ctx); data = hctx.args.data }
+      if (ctx.selfRelationMap?.[modelName])
+        assertNoParentCycle([data?.[ctx.selfRelationMap[modelName][0].referencedField]], data)
       const row   = writeData(data, { requireAll: true })
       const cols  = Object.keys(row)
       // cols can be empty when all fields are optional and none were supplied,
@@ -4505,20 +5090,41 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           return writeData(d, { requireAll: true })
         })
 
-        // Derive column list from the first processed row (post-transforms)
-        const cols = Object.keys(rows[0])
-        _cmSql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
-              + (tableHasAnyLog ? ` RETURNING *` : '')
-        const stmt = writeDb.prepare(_cmSql)
+        // One prepared statement PER ROW SHAPE, not one for the batch. Rows are
+        // not required to be uniform: deriving the column list from row 0 made
+        // row 0 decide what every other row may write, so a wider row silently
+        // lost its extra columns and a narrower one bound NULL over a column
+        // the caller never mentioned — defeating its DDL DEFAULT.
+        // Rows are still inserted in caller order, because an autoincrement id
+        // is assigned in insert order and grouping would renumber them.
+        const stmts = new Map()
+        const stmtFor = (cols) => {
+          // '\x00' as an ESCAPE, never a raw NUL byte in the source: a literal NUL
+          // makes grep classify this file as binary and skip it silently, which
+          // hides every match in the largest file in the package.
+          const key = cols.join('\x00')
+          let entry = stmts.get(key)
+          if (!entry) {
+            const sql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+                      + (tableHasAnyLog ? ` RETURNING *` : '')
+            entry = { cols, sql, stmt: writeDb.prepare(sql) }
+            stmts.set(key, entry)
+          }
+          return entry
+        }
         // RETURNING on a logged model: an @id @default(autoincrement()) row has no
         // id until SQLite assigns one, and a log entry naming no rows is not a trail.
         if (tableHasAnyLog) _cmInserted = []
         for (const row of rows) {
+          const { cols, stmt } = stmtFor(Object.keys(row))
           const args = cols.map(c => row[c] ?? null)
           if (tableHasAnyLog) { const r = stmt.get(...args); if (r) _cmInserted.push(r) }
           else stmt.run(...args)
           count++
         }
+        // A mixed batch has no single SQL to report. Uniform — the ordinary
+        // case — reports exactly what it did before.
+        _cmSql = [...stmts.values()].map(e => e.sql).join('\n')
       })
       fireQuery({ operation: 'createMany', args: { data }, sql: _cmSql, params: null, duration: _nt ? performance.now() - _cmT0 : 0, rowCount: count })
       if (_cmInserted?.length) emitLogs('create', _cmInserted)
@@ -4569,6 +5175,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
       const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
       if (!whereSql) throw new Error(`update on "${tableName}" requires a where clause`)
+      if (ctx.selfRelationMap?.[modelName] && ctx.selfRelationMap[modelName].some(r => r.fkField in (data ?? {}))) {
+        const _idf = ctx.selfRelationMap[modelName][0].referencedField
+        assertNoParentCycle(
+          readDb.query(`SELECT "${_idf}" AS _id FROM "${tableName}" WHERE ${whereSql}`).all(...whereParams).map(r => r._id),
+          data,
+        )
+      }
       // Append update policy filter to WHERE
       const updatePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const finalWhereSql = updatePolicy ? `(${whereSql}) AND (${updatePolicy.sql})` : whereSql
@@ -4717,19 +5330,38 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // would leave every open editor's version looking current.
       const _umVersion = ctx.versionMap?.[modelName]
       if (_umVersion && data && _umVersion in data) { data = { ...data }; delete data[_umVersion] }
-      const row      = writeData(data)
-      const params   = []
+      const row       = writeData(data)
+      // SET params and WHERE params are collected apart and joined at the end.
+      // Sharing one array made the statement depend on the order the two halves
+      // happened to be built in, which is why the empty-SET case below could not
+      // be handled where it belongs.
+      const setParams = []
       const setCols  = [
-        ...Object.keys(row).map(c => { params.push(row[c] ?? null); return `"${c}" = ?` }),
+        ...Object.keys(row).map(c => { setParams.push(row[c] ?? null); return `"${c}" = ?` }),
         ...(_umVersion ? [`"${_umVersion}" = "${_umVersion}" + 1`] : []),
       ].join(', ')
+      const whereParams = []
       const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
       const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
-      const whereSql = buildWhereWithEncryption(effectiveWhere, params)
+      const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
       const updateManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      if (updateManyPolicy) params.push(...updateManyPolicy.params)
+      if (updateManyPolicy) whereParams.push(...updateManyPolicy.params)
       const finalWhere = whereSql && updateManyPolicy ? `(${whereSql}) AND (${updateManyPolicy.sql})`
                        : whereSql || updateManyPolicy?.sql || null
+
+      // No columns left to set. `UPDATE "t" SET  WHERE …` is a SQL syntax error,
+      // and the payload that lands here is an ordinary form post whose fields no
+      // longer match the model — stripping unknown keys is the mass-assignment
+      // protection doing its job, so this is reachable without any mistake at the
+      // call site. `update` answers the unchanged row; the bulk analogue is the
+      // count of rows the where matched, having written nothing to them.
+      if (!setCols) {
+        const _cSql = `SELECT COUNT(*) AS n FROM "${tableName}"${finalWhere ? ` WHERE ${finalWhere}` : ''}`
+        const count = readDb.query(_cSql).get(...whereParams)?.n ?? 0
+        fireQuery({ operation: 'updateMany', args: { where, data }, sql: _cSql, params: whereParams, duration: 0, rowCount: count })
+        return { count }
+      }
+      const params = [...setParams, ...whereParams]
       // A logged model takes RETURNING so the trail can name the rows it changed.
       // Still one statement — bulk ops record WHICH rows and WHAT operation, never
       // their contents (same shape as createMany; see emitLogs).
@@ -4911,33 +5543,49 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           return writeData(d, { requireAll: true })
         })
 
-        const cols    = Object.keys(rows[0])
         const target  = conflictTarget
           ? (Array.isArray(conflictTarget) ? conflictTarget : [conflictTarget])
           : [idField]
 
-        // Build UPDATE SET clause — only the fields that aren't in the conflict target
-        // An explicit `update:` list still wins outright — naming an author
-        // column there is a deliberate request to move it on conflict.
-        const updateCols = updateFields
-          ? (Array.isArray(updateFields) ? updateFields : [updateFields]).filter(c => cols.includes(c))
-          : cols.filter(c => !target.includes(c) && !authorCols.has(c))
+        // One statement per row shape — see createMany. The SET clause is
+        // derived from the shape's own columns, so a row carrying a column the
+        // batch's first row omitted updates it on conflict rather than losing it.
+        const stmts = new Map()
+        const stmtFor = (cols) => {
+          const key = cols.join(' ')
+          let entry = stmts.get(key)
+          if (entry) return entry
 
-        sql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
+          // Build UPDATE SET clause — only the fields that aren't in the conflict target
+          // An explicit `update:` list still wins outright — naming an author
+          // column there is a deliberate request to move it on conflict.
+          const updateCols = updateFields
+            ? (Array.isArray(updateFields) ? updateFields : [updateFields]).filter(c => cols.includes(c))
+            : cols.filter(c => !target.includes(c) && !authorCols.has(c))
 
-        // @version rides the INSERT at 1 and is BUMPED on conflict, never taken
-        // from `excluded` — that would reset an existing row to 1 and make every
-        // stale editor's version look current again.
-        const setPairs = updateCols
-          .filter(c => c !== usVersion)
-          .map(c => `"${c}" = excluded."${c}"`)
-        if (usVersion) setPairs.push(`"${usVersion}" = "${tableName}"."${usVersion}" + 1`)
+          let s = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
 
-        if (setPairs.length) {
-          const conflictSql = target.map(c => `"${c}"`).join(', ')
-          sql += ` ON CONFLICT(${conflictSql}) DO UPDATE SET ${setPairs.join(', ')}`
-        } else {
-          sql += ` ON CONFLICT DO NOTHING`
+          // @version rides the INSERT at 1 and is BUMPED on conflict, never taken
+          // from `excluded` — that would reset an existing row to 1 and make every
+          // stale editor's version look current again.
+          const setPairs = updateCols
+            .filter(c => c !== usVersion)
+            .map(c => `"${c}" = excluded."${c}"`)
+          if (usVersion) setPairs.push(`"${usVersion}" = "${tableName}"."${usVersion}" + 1`)
+
+          if (setPairs.length) {
+            const conflictSql = target.map(c => `"${c}"`).join(', ')
+            s += ` ON CONFLICT(${conflictSql}) DO UPDATE SET ${setPairs.join(', ')}`
+          } else {
+            s += ` ON CONFLICT DO NOTHING`
+          }
+
+          // RETURNING on a logged model, so the entry names rows by their real id —
+          // see createMany. ON CONFLICT DO NOTHING returns nothing for a skipped row.
+          if (tableHasAnyLog) s += ` RETURNING *`
+          entry = { cols, sql: s, stmt: writeDb.prepare(s) }
+          stmts.set(key, entry)
+          return entry
         }
 
         // Which conflict keys already exist — read BEFORE the writes, or every
@@ -4955,11 +5603,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           _usUpdated = []
         }
 
-        // RETURNING on a logged model, so the entry names rows by their real id —
-        // see createMany. ON CONFLICT DO NOTHING returns nothing for a skipped row.
-        if (tableHasAnyLog) sql += ` RETURNING *`
-        const stmt = writeDb.prepare(sql)
         for (const row of rows) {
+          const { cols, stmt } = stmtFor(Object.keys(row))
           const args = cols.map(c => row[c] ?? null)
           if (tableHasAnyLog) {
             const written = stmt.get(...args)
@@ -4969,6 +5614,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           }
           count++
         }
+        sql = [...stmts.values()].map(e => e.sql).join('\n')
       })
       fireQuery({ operation: 'upsertMany', args: { data, conflictTarget, update: updateFields }, sql, params: null, duration: _nt ? performance.now() - _usT0 : 0, rowCount: count })
       if (_usCreated?.length) emitLogs('create', _usCreated)
@@ -4999,7 +5645,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // RETURNING row (soft delete only changes deletedAt, which was NULL).
 
       if (softDelete) {
-        const ts = nowISO()
+        const ts = nowISO(ctx.now)
         const _rmSql = `UPDATE "${tableName}" SET "deletedAt" = ? WHERE ${removeFinalSql} RETURNING *`
         const _nt = needsTiming()
         const _rmT0 = _nt ? performance.now() : 0
@@ -5076,7 +5722,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         : []
 
       if (softDelete) {
-        const ts = nowISO()
+        const ts = nowISO(ctx.now)
 
         // If cascading, fetch affected PKs first so we can cascade precisely
         if (softDeleteCascade) {
@@ -5205,6 +5851,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // The orderBy fields must be present in the SELECT — they're injected automatically.
 
     async findManyCursor(args = {}) {
+      refuseRecursive('findManyCursor', args)
       const {
         cursor,
         limit    = 20,
@@ -5298,7 +5945,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const pageRows = hasMore ? rawRows.slice(0, limit) : rawRows
 
       // Deserialize + compute
-      const rows = readAll(pageRows)
+      const rows = readAll(pageRows, { computedFields: ps?.requestedFields })
 
       // Resolve includes
       withIncludes(rows, ps, include)
@@ -5453,6 +6100,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       const ps         = parseArgs(select, include)
       let   sqlCols    = ps?.sqlCols ?? '*'
+      // Step 3 rejoins these rows to the FTS hits by "id" — the column the FTS5
+      // table declares as its content_rowid. A narrowed select that did not
+      // happen to name it matched nothing, so search answered an empty list: no
+      // error, no explanation, just "no results" for a query that has them.
+      // The trim below drops it again, since it is not in requestedFields.
+      if (ps && sqlCols !== '*' && !ps.requestedFields.has('id')) {
+        sqlCols = `"id", ${sqlCols}`
+      }
+
       // Step 2 builds its own SELECT, so it appends the @from subqueries itself
       // — the same reason findManyCursor and resolveIncludes do.
       if (_hasFrom) {
@@ -5465,7 +6121,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
       let   baseSql    = `SELECT ${sqlCols} FROM "${tableName}" WHERE ${whereSql}`
 
-      const baseRows = readAll(readDb.query(baseSql).all(...baseParams))
+      const baseRows = readAll(readDb.query(baseSql).all(...baseParams), { computedFields: ps?.requestedFields })
       if (!baseRows.length) return []
 
       // ── Step 3: attach rank + extras, sort by original FTS rank order ──────
@@ -5494,7 +6150,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     async delete({ where } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const whereSql = buildWhere(where, params)
+      const whereSql = buildWhere(where, params, null, null, null, null, arrayFields)
       if (!whereSql) throw new Error(`delete on "${tableName}" requires a where clause — use deleteMany({}) to delete all rows`)
       const delPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const delFinalSql = delPolicy ? `(${whereSql}) AND (${delPolicy.sql})` : whereSql
@@ -5521,7 +6177,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     async deleteMany({ where } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const whereSql = buildWhere(where, params)
+      const whereSql = buildWhere(where, params, null, null, null, null, arrayFields)
       const delManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (delManyPolicy) params.push(...delManyPolicy.params)
       const dmFinalSql = whereSql && delManyPolicy ? `(${whereSql}) AND (${delManyPolicy.sql})`
@@ -5741,7 +6397,8 @@ function resolveAccessConfig(accessConfig, readOnly, schema) {
 //
 // Rules:
 //   - Each database block in schema gets its own connection pair
-//   - 'main' must be declared in schema OR dbPath option provided
+//   - 'main' must be declared in schema OR dbPath option provided; when both,
+//     dbPath arrives as dbOverrides.main and overrides the declaration
 //   - access: 'readwrite' (default) | 'readonly' | false (no connection)
 //   - jsonl/logger driver: no SQLite connections — path stored only
 function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = false) {
@@ -5974,6 +6631,9 @@ export async function createClient({
   onLog,
   onQuery,
   policyDebug = false,
+  now,                   // () => Date | ISO string — the clock every time-dependent
+                         // rule reads. Injected so a test can freeze it and a report
+                         // can pin it; absent means the wall clock.
   scopes:     scopeRegistry = {},   // { ModelName: { scopeName: scopeDef, ... } }
   allowChildFkOverride = false,     // false (default) → parent's co-FK silently overwrites child's value
                                     // true → explicit child value wins; missing values still auto-filled
@@ -6057,8 +6717,14 @@ export async function createClient({
     ? Object.fromEntries((schema.databases ?? [])
         .filter(d => !d.driver || d.driver === 'sqlite')
         .map(d => [d.name, { path: ':memory:' }]))
-    : (dbOverrides ?? {})
+    : { ...(dbOverrides ?? {}) }
   const resolvedDbPath = inMemory ? ':memory:' : dbPath
+
+  // `db` names main's path, whether or not the schema declares `database main`.
+  // It used to apply only when the declaration was absent, so a test passing
+  // db: ':memory:' against a schema that declares one wrote the declared file
+  // and said nothing. The more specific channel still wins.
+  if (dbPath && !inMemory && !resolvedOverrides.main) resolvedOverrides.main = { path: dbPath }
 
   const dbRegistry  = buildDbRegistry(schema, resolvedDbPath, resolvedOverrides, resolveAccessConfig(accessConfig, readOnly, schema), inMemory)
   const modelDbMap  = buildModelDbMap(schema)
@@ -6304,7 +6970,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     }
   }
 
-  const computedFns   = await loadComputedFields(computedInput)
+  const computedFns   = normaliseComputed(await loadComputedFields(computedInput), schema)
 
   // ── Lock primitive — auto-creates _locks in main db on first use ──────────
   let _isSystemCtx = false
@@ -6337,6 +7003,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const softDeleteCascadeMap = buildSoftDeleteCascadeMap(schema)
   const hasTemplatesMap      = buildHasTemplatesMap(schema)
   const boolMap        = buildBoolMap(schema)
+  const arrayMap       = buildArrayMap(schema)
   const autoIdMap      = buildAutoIdMap(schema)
   const authDefaultMap     = buildAuthDefaultMap(schema)
   const fieldRefDefaultMap = buildFieldRefDefaultMap(schema)
@@ -6449,6 +7116,60 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Normalise global filters: { tableName: whereObject | (ctx) => whereObject }
   const globalFilters = filters ?? {}
 
+  // ── A predicate that can never match is refused HERE, once ────────────────
+  //
+  // A `@@allow` over an @encrypted column and a global filter over a @computed
+  // one both compile to a comparison no row satisfies, so the model reads as
+  // empty for every caller, forever, with no error — a policy that silently
+  // denies everything looks exactly like a table with no data. Both are decided
+  // by the schema alone, so they are answerable once at startup instead of on
+  // every query, which is also the only altitude where the fix is a schema edit
+  // rather than a caught exception.
+  //
+  // Static filters only: a function form is given `ctx` and cannot be judged
+  // without one. Its keys go through the ordinary per-query check.
+  for (const [accessor, f] of Object.entries(globalFilters)) {
+    if (typeof f === 'function' || !f) continue
+    const model = schema.models.find(m =>
+      m.name === accessor || m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
+    if (!model?.fields) continue
+    const keys = filterableKeysFor(model)
+    const bad  = collectWhereKeyProblems(f, keys.filterable, keys.computed, keys.encrypted)
+                   .find(p => p.reason !== 'unknown')
+    if (bad) throw new Error(
+      `createClient: the global filter for "${accessor}" cannot match any row — ` +
+      bad.message.replace('%MODEL%', model.name))
+  }
+
+  for (const [modelName, ops] of Object.entries(policyMap)) {
+    const model = schema.models.find(m => m.name === modelName)
+    if (!model?.fields) continue
+    const keys = filterableKeysFor(model)
+    // A field node is `{ type: 'field', name }` wherever it sits in the tree.
+    const fieldsIn = (node, out = []) => {
+      if (!node || typeof node !== 'object') return out
+      if (Array.isArray(node)) { for (const n of node) fieldsIn(n, out); return out }
+      if (node.type === 'field' && node.name) out.push(node.name)
+      for (const v of Object.values(node)) fieldsIn(v, out)
+      return out
+    }
+    for (const [op, bucket] of Object.entries(ops)) {
+      for (const rule of [...bucket.allows, ...bucket.denies]) {
+        for (const name of fieldsIn(rule.expr)) {
+          const kind = keys.computed.has(name) ? 'computed' : keys.encryptedAny.has(name) ? 'encrypted' : null
+          if (!kind) continue
+          const why = kind === 'computed'
+            ? `"${name}" is @computed, so it is not a column and the comparison is between string constants`
+            : `"${name}" is @encrypted or @hashed — policy predicates are compiled without the operand rewrite a `
+              + `where clause gets, so the plaintext is compared against stored bytes and never matches`
+          throw new Error(
+            `${modelName}: the @@${bucket.allows.includes(rule) ? 'allow' : 'deny'}('${op}', …) policy compares a value no row can satisfy, ` +
+            `so every caller would read this model as empty — ${why}`)
+        }
+      }
+    }
+  }
+
   // ── Default gate enforcement ──────────────────────────────────────────────
   // A model that declares @@gate gets enforcement even when the app installs
   // no GatePlugin — the declaration is the contract, and a declared gate that
@@ -6473,8 +7194,9 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
 
   // Shared context threaded through include resolution + table ops
   const ctx = {
+    now,
     relationMap, jsonMap, edgeMap, computedSets, fromMap,
-    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
+    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, enumMap, arrayMap, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // Default: parent values silently overwrite any child-supplied co-FK
     // values during nested writes — this is the safe choice that prevents
@@ -6560,6 +7282,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       ftsMap[model.name]               ?? null,
       boolMap[model.name]              ?? new Set(),
       enumMap[model.name]              ?? {},
+      arrayMap[model.name]             ?? new Set(),
       softDeleteCascadeMap[model.name] ?? false,
       fieldPolicyMap[model.name]       ?? {},
       fromMap[model.name]              ?? {},
@@ -6597,7 +7320,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         view.name,
         view.name,
         new Set(), new Set(), new Set(),
-        false, null, new Set(), {},
+        false, null, new Set(), {}, new Set(),
         false, {}, {},
         ctx,
       )
@@ -7037,9 +7760,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   function $checkWhere(accessor, where) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
-    const allowed = new Set(model.fields.map(f => f.name))
-    for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) allowed.add(d.as)
-    return collectWhereKeyProblems(where, allowed)
+    const keys = filterableKeysFor(model)
+    for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) keys.filterable.add(d.as)
+    return collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted)
+      .map(p => ({ ...p, message: p.message.replace('%MODEL%', model.name) }))
   }
 
   function modelForAccessor(accessor) {
@@ -7255,7 +7979,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
                 if (row[fieldName] == null) continue
                 const plain = decryptField(row[fieldName], ctx.encKey)
                 sets.push(`"${fieldName}" = ?`)
-                vals.push(encryptField(plain, newKey))
+                // Re-encrypt in the mode the field was DECLARED with, not the mode
+                // rotation happens to use. Rewriting a deterministic column with a
+                // random IV would leave every value readable and every equality
+                // filter over it answering nothing, silently, until someone searched.
+                const mode = fieldPolicyMap?.[modelName]?.[fieldName]
+                vals.push(mode?.encrypted?.deterministic
+                  ? encryptDeterministic(plain, newKey)
+                  : encryptField(plain, newKey))
               }
               if (!sets.length) continue
               // rawDb.query() caches the prepared statement per distinct SQL shape

@@ -1,7 +1,7 @@
 // src/engine/fleet.engine.ts
 // The two things this app asks a MACHINE to do — run a recipe, sweep its disk.
 //
-// One file for both, because they are one shape: resolve the agent, send one
+// One file for both, because they are one shape: resolve the outpost, send one
 // request through Conduit, record what came back on the run row, tell the open
 // screens. What differs is the safeguard around each, and that lives in the
 // services (`recipes` is admin to author, `cleanup` names declared targets) —
@@ -18,7 +18,7 @@
 import { applyDiskReport } from '../services/cleanup/cleanup.service.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 
-/** Output kept per run, per stream. An agent that cats a log file can answer
+/** Output kept per run, per stream. An outpost that cats a log file can answer
  *  megabytes, and a row nothing can render is a row nobody reads — the tail is
  *  what a person wants anyway, so the head is what gets cut. */
 const OUTPUT_LIMIT = 32_000
@@ -62,10 +62,10 @@ export function createFleetEngine(app: BasecampApp) {
     return app.conduit
   }
 
-  /** The agent for a server, or null. Registered on heartbeat, so null means
+  /** The outpost for a server, or null. Registered on heartbeat, so null means
    *  the machine has never checked in with a URL. */
-  async function agentFor(serverId: string): Promise<string | null> {
-    const target = `agent:${serverId}`
+  async function outpostFor(serverId: string): Promise<string | null> {
+    const target = `outpost:${serverId}`
     return await outbound().resolve(target).catch(() => null) ? target : null
   }
 
@@ -113,11 +113,11 @@ export function createFleetEngine(app: BasecampApp) {
       push(workspaceId, 'recipes patched', { id: run.recipeId })
     }
 
-    const target = await agentFor(run.serverId as string)
+    const target = await outpostFor(run.serverId as string)
     if (!target) {
-      // Not thrown: there is nothing to retry. The machine has no agent, and
+      // Not thrown: there is nothing to retry. The machine has no outpost, and
       // the row saying so is the answer.
-      await finish({ status: 'failed', error: 'No agent is registered for this server' })
+      await finish({ status: 'failed', error: 'No outpost is registered for this server' })
       return
     }
 
@@ -185,9 +185,9 @@ export function createFleetEngine(app: BasecampApp) {
       return updated
     }
 
-    const target = await agentFor(run.serverId as string)
+    const target = await outpostFor(run.serverId as string)
     if (!target) {
-      await finish({ status: 'failed', error: 'No agent is registered for this server' })
+      await finish({ status: 'failed', error: 'No outpost is registered for this server' })
       return
     }
 
@@ -216,15 +216,15 @@ export function createFleetEngine(app: BasecampApp) {
 
     const freedBytes = Math.max(0, Math.round(Number(res.data?.freed_bytes ?? 0)))
 
-    // Exactly the volumes the agent says it removed, never the ones it was
-    // asked about. Same rule `volumes.prune` follows: an agent that could
+    // Exactly the volumes the outpost says it removed, never the ones it was
+    // asked about. Same rule `volumes.prune` follows: an outpost that could
     // delete three of five leaves the fourth on disk, and forgetting the row
     // is how that disk becomes invisible.
     const gone = Array.isArray(res.data?.volumes) ? res.data!.volumes! : []
     if (gone.length)
       await db.volume.deleteMany({ where: { serverId: run.serverId, name: { in: gone } } })
 
-    // The agent has just run `docker system df` to work out what it freed, so
+    // The outpost has just run `docker system df` to work out what it freed, so
     // its answer is a fresher picture than the last report. Written through the
     // same function the report endpoint uses, so the two cannot disagree about
     // which key means what.

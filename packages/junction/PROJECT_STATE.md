@@ -78,8 +78,6 @@ predate that.
 
 Open items for this package are in the repo-wide register, not here:
 **`FJS-010`** litestone `onEvent` has no subscriber ·
-**`FJS-012`** no `apiPrefix` on plugin routes ·
-**`FJS-013`** `createLitestoneService` conflates accessor with model name ·
 **`FJS-016`** service definition vs runtime ·
 **`FJS-017`** middleware vs hooks ·
 **`FJS-018`** types stop at the server ·

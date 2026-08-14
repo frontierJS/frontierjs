@@ -37,7 +37,7 @@ export interface MigrationResult {
 // ─── Default pragmas ──────────────────────────────────────────────────────
 // These are the settings every SQLite app in production needs.
 // WAL mode is particularly important — it allows concurrent reads
-// without blocking writes, critical when many agents heartbeat simultaneously.
+// without blocking writes, critical when many Outposts heartbeat simultaneously.
 
 const PRODUCTION_PRAGMAS = [
   'PRAGMA journal_mode = WAL',     // concurrent reads + no write blocking

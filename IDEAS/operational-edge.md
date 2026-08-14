@@ -141,6 +141,52 @@ secrets are scoped, and who is allowed to spend the resources.
 
 ---
 
+## The fourth, found later — durable workflows
+
+Added 2026-08-12, from a sweep for missing *categories*. The three above were the
+maintainer's list; this one is the category the domain map already names and nothing
+owns.
+
+Domain 5 reads *"Automation & Orchestration — Caravan (working) · Orion (planned,
+absent)"*. Probed: `packages/orion/mockup/api-engine` is 63 tracked files with a
+`package.json`, a `src/`, a `vitest.config.ts` and tests — a DAG executor with a typed
+expression language, an event layer, a plugin system and a worker pool — sitting two
+levels below the `packages/*` glob, so nothing installs it, runs it, or tests it
+(`ISSUES.md` `FJS-D14`). The word *workflow* appears in three `IDEAS/` files and is the
+subject of none.
+
+**What exists is the two ends without the middle.** A Caravan job is one unit of work,
+retried. `@@transitions` is one row moving through a declared state machine. What has
+no noun is the thing between them: **a multi-step process that survives a restart,
+compensates when a later step fails, and has a point past which it can only go
+forward.** Order fulfilment, onboarding, anything with a human approval in it, anything
+that calls three third parties in sequence. Temporal built a company on this category,
+which is the evidence that it is one.
+
+Two reasons to raise it now rather than when someone needs it.
+
+**It is arriving anyway, unnamed.** `IDEAS/release-transitions.md` specifies a journal
+of idempotent steps, resumable after a restart, with compensable steps before a
+declared pivot and forward-only recovery after it. That is a durable workflow engine
+with exactly one workflow in it. Built without noticing, the same machinery gets
+written twice and the second one will not match the first — which is the failure mode
+`ARCHITECT.md` §2 calls a term doing two jobs, one realm early.
+
+**The vocabulary is already imported and it is not ours.** The deployment research took
+*saga*, *pivot transaction*, *compensable* and *forward-only* from the distributed
+transactions literature because they were exact. If those words are going to live in
+this repo they should be ruled once, for both uses, rather than defined in a Release
+record and rediscovered by an orchestration one.
+
+The FJS-specific position, if it is taken: a workflow whose steps are **Services** and
+whose state is a **Model** is declared in the same seed as everything else, so it
+inherits gates, audit and the derived test suites — where Temporal's alternative is a
+separate runtime with its own security model. That is the usual shape of an FJS answer,
+and it is also the reason not to start from `orion`'s DAG executor without asking
+whether a DAG is the right noun.
+
+---
+
 ## Verdict
 
 Against Laravel, FJS is behind on breadth of batteries. Against Encore it is **more

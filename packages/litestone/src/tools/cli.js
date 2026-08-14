@@ -2,7 +2,7 @@
 // litestone CLI
 
 import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSync } from 'fs'
-import { resolve, relative, join, dirname }       from 'path'
+import { resolve, relative, join, dirname, basename } from 'path'
 import { Database }                                from 'bun:sqlite'
 
 // Imports of sibling source files MUST use literal relative specifiers — never
@@ -216,6 +216,8 @@ const HELP = `
     ${cyan('litestone tenant delete <id>')}         delete a tenant
     ${cyan('litestone tenant migrate')}             migrate all tenants
     ${cyan('litestone jsonschema')}                   generate JSON Schema from schema.lite
+    ${cyan('litestone access')}                       write the access snapshot ${dim('(--check in CI)')}
+    ${cyan('litestone mutate')}                       mutate the schema, report what the checks miss
 
   ${bold('Options')}
     ${dim('--schema=<path>')}     path to schema.lite         ${dim('(auto-detected if omitted)')}
@@ -1318,7 +1320,7 @@ async function cmdStudio(cfg) {
       else if ((t === 'Int' || t === 'Float') && numeric) or.push({ [f.name]: num })
       else if (t === 'DateTime' && /^\d{4}(-\d{2})?(-\d{2})?/.test(q)) or.push({ [f.name]: { gte: q, lt: q + '~' } })
     }
-    // No searchable field matches this query shape → return an impossible
+    // No matchable protected field fits this query shape → return an impossible
     // filter (empty `in` compiles to 0 = 1) so the result is "no rows"
     // rather than silently unfiltered.
     return or.length ? { OR: or } : { [model.fields[0]?.name ?? 'id']: { in: [] } }
@@ -1334,6 +1336,54 @@ async function cmdStudio(cfg) {
     // Tie-break on id (when present and not already the sort column) so
     // cursor pagination stays stable on non-unique sort columns.
     return (hasId && orderBy.col !== 'id') ? [{ [orderBy.col]: dir }, { id: 'asc' }] : { [orderBy.col]: dir }
+  }
+
+  // ── "Give me this view as a query" ────────────────────────────────────────
+  // Browse already builds a real Litestone query object on every load and then
+  // throws it away. These render it back so the view can be copied into a
+  // service or the REPL.
+
+  // JS source, not JSON: unquoted keys where legal, single quotes, so what is
+  // copied can be pasted. JSON.stringify would quote every key and force the
+  // reader to edit it before it matches anything else in the codebase.
+  const IDENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+  function jsLiteral(v, indent = '') {
+    if (v === null || v === undefined) return String(v)
+    if (typeof v === 'string')  return `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+    if (typeof v !== 'object')  return String(v)
+    const inner = indent + '  '
+    if (Array.isArray(v)) {
+      if (!v.length) return '[]'
+      const parts = v.map(x => jsLiteral(x, inner))
+      const flat  = `[${parts.join(', ')}]`
+      return flat.length <= 72 ? flat : `[\n${parts.map(p => inner + p).join(',\n')}\n${indent}]`
+    }
+    const entries = Object.entries(v).filter(([, val]) => val !== undefined)
+    if (!entries.length) return '{}'
+    const parts = entries.map(([k, val]) => `${IDENT.test(k) ? k : `'${k}'`}: ${jsLiteral(val, inner)}`)
+    const flat  = `{ ${parts.join(', ')} }`
+    return flat.length <= 72 ? flat : `{\n${parts.map(p => inner + p).join(',\n')}\n${indent}}`
+  }
+
+  // The client flavour is part of the query. A view browsed as a user and the
+  // same args run through asSystem() return different rows, so emitting the
+  // args alone hands back something that silently does not reproduce the view.
+  function buildViewQuery(accessor, authCtx, args) {
+    const argsCode = jsLiteral(args)
+    const client   = authCtx ? 'db.$setAuth(user)' : 'db.asSystem()'
+    // The REPL binds `db` already scoped from the auth selector, so its form
+    // states no client — restating one there would scope the call twice.
+    return {
+      accessor,
+      client,
+      clientNote: authCtx
+        ? `Browsed as ${authCtx.email ?? authCtx.name ?? `#${authCtx.id}`} — \`user\` stands in for that principal.`
+        : 'Browsed with no principal selected, which Studio runs as asSystem().',
+      args,
+      argsCode,
+      code:     `await ${client}.${accessor}.findMany(${argsCode})`,
+      replCode: `db.${accessor}.findMany(${argsCode})`,
+    }
   }
 
   // Bind to loopback by default — Studio exposes raw SQL, a JS REPL, and
@@ -1419,7 +1469,16 @@ async function cmdStudio(cfg) {
           const columns  = model.fields
             .filter(f => f.type.kind !== 'relation' && !f.attributes.find(a => a.kind === 'computed'))
             .map(f => f.name) ?? []
-          return json({ ...result, columns, total })
+          // findMany, not findManyCursor: `cursor` is opaque paging state that
+          // means nothing pasted elsewhere. The filter and the sort are the
+          // parts worth copying, so the query describes page one of this view.
+          const query = buildViewQuery(accessor, authCtx, {
+            where,
+            orderBy: ob,
+            limit,
+            ...(withDeleted ? { withDeleted: true } : {}),
+          })
+          return json({ ...result, columns, total, query, paged: Boolean(cursor) })
         }
 
         // POST /api/row/restore — un-soft-delete a single row
@@ -2482,6 +2541,177 @@ async function cmdJsonSchema(cfg) {
   console.log(`  ${dim('--format=definitions|flat')}  ${dim('(default: definitions)')}`)
   console.log(`  ${dim('--include-timestamps')}       ${dim('include createdAt/updatedAt')}`)
   console.log(`  ${dim('--include-deleted-at')}       ${dim('include deletedAt')}`)
+  console.log()
+}
+
+// ─── Access snapshot ─────────────────────────────────────────────────────────
+//
+// litestone access             — write access.snapshot.md beside the schema
+// litestone access --check     — exit 1 if the committed file is stale
+// litestone access --stdout    — print it
+// litestone access --json      — the structured table instead of the markdown
+//
+// --check is the CI half. Committing the snapshot is what makes a gate change
+// reviewable; nothing enforces that it was regenerated except this.
+
+async function cmdAccess(cfg) {
+  const toStdout = flag('stdout')
+  const asJson   = flag('json')
+  const check    = flag('check')
+
+  // Same trap as cmdTypes and cmdJsonSchema: a banner printed to stdout ends up
+  // inside the file when the caller redirects.
+  if (!toStdout) header('litestone access')
+
+  const { deriveAccess, renderAccessSnapshot } = await import('../access.js')
+  const parseResult = loadSchema(cfg.schema)
+  const access      = deriveAccess(parseResult.schema)
+
+  const schemaPath = resolve(cfg.schema)
+  const outPath    = getFlag('out')
+    ? resolve(getFlag('out'))
+    : resolve(dirname(schemaPath), asJson ? 'access.snapshot.json' : 'access.snapshot.md')
+
+  // The schema is named by BASENAME, not by a path relative to cwd: the file is
+  // byte-compared by --check, and a cwd-relative path made the same schema
+  // render differently from the app directory and from the repo root.
+  const body = asJson
+    ? JSON.stringify(access, null, 2) + '\n'
+    : renderAccessSnapshot(access, { source: basename(schemaPath) })
+
+  if (toStdout) { process.stdout.write(body); return }
+
+  const { counts } = access
+  const summary = `${counts.models} models · ${counts.gated} gated · ${counts.unrestricted} unrestricted · ` +
+                  `${counts.policied} policied · ${counts.protected} with protected fields`
+
+  if (check) {
+    if (!existsSync(outPath))
+      fatal(`No snapshot at ${rel(outPath)} — run \`litestone access\` and commit it.`)
+
+    const committed = readFileSync(outPath, 'utf8')
+    if (committed === body) {
+      console.log(`  ${green('✓')}  ${rel(outPath)} is current`)
+      console.log(`  ${dim(summary)}`)
+      console.log()
+      return
+    }
+
+    const was = committed.split('\n')
+    const now = body.split('\n')
+    const changed = []
+    for (let i = 0; i < Math.max(was.length, now.length); i++) {
+      if (was[i] === now[i]) continue
+      changed.push(`    ${red('-')} ${was[i] ?? dim('(absent)')}`)
+      changed.push(`    ${green('+')} ${now[i] ?? dim('(absent)')}`)
+      if (changed.length >= 20) break
+    }
+
+    console.log(`  ${red('✗')}  ${rel(outPath)} does not match the schema\n`)
+    console.log(changed.join('\n'))
+    if (changed.length >= 20) console.log(`    ${dim('…')}`)
+    console.log()
+    console.log(`  ${dim('Access changed. Run `litestone access` and review the diff before committing.')}`)
+    console.log()
+    process.exit(1)
+  }
+
+  writeFileSync(outPath, body, 'utf8')
+  const { size } = statSync(outPath)
+
+  console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${(size/1024).toFixed(1)}kb)`)}`)
+  console.log(`  ${dim(summary)}`)
+
+  if (counts.unrestricted)
+    console.log(`  ${yellow('!')}  ${counts.unrestricted} model${counts.unrestricted!==1?'s':''} declare neither @@gate nor @@allow — every caller reaches every row`)
+
+  console.log()
+  console.log(`  ${dim('--check')}       ${dim('exit 1 if the committed snapshot is stale (CI)')}`)
+  console.log(`  ${dim('--json')}        ${dim('the structured table instead of the markdown')}`)
+  console.log(`  ${dim('--stdout')}      ${dim('print instead of writing a file')}`)
+  console.log(`  ${dim('--out=<path>')}  ${dim('default: access.snapshot.md beside the schema')}`)
+  console.log()
+}
+
+
+// ─── Mutate — the completeness proof ─────────────────────────────────────────
+//
+// Mutate the schema, build a database from each mutant, and run the checks
+// derived from the ORIGINAL schema against it. A mutant nothing notices is a
+// hole in the checks, and it names itself.
+//
+// Run by hand, not in CI: basecamp is 232 mutants at several seconds each. It
+// answers "did my last change to a check make it weaker", which is a question
+// asked when something changes rather than on every push.
+
+async function cmdMutate(cfg) {
+  header('litestone mutate')
+
+  const { schemaMutants, mutationScore, createTestEnv } = await import('../testing.js')
+  const schemaPath = resolve(cfg.schema)
+  const schemaText = readFileSync(schemaPath, 'utf8')
+  const kinds      = getFlag('kinds')?.split(',').map(s => s.trim()).filter(Boolean) ?? null
+
+  const all = schemaMutants(schemaText, { kinds })
+  if (!all.length) fatal(
+    `No mutants for ${rel(schemaPath)}${kinds ? ` with --kinds=${kinds.join(',')}` : ''}. ` +
+    `A schema declaring no @@gate, @@allow, @guarded or field validator has nothing to mutate.`
+  )
+
+  console.log(`  ${dim(`${all.length} mutants · ${basename(schemaPath)}`)}`)
+  console.log()
+
+  // Progress as it goes: a 232-mutant run is minutes, and a silent one is
+  // indistinguishable from a hung one.
+  let done = 0
+  const started = Date.now()
+  const result  = await mutationScore({
+    schema: schemaText,
+    kinds,
+    build:  (text) => createTestEnv({ schema: text, encryptionKey: cfg.encryptionKey }),
+    // Only on a terminal: `\r` does not erase in a pipe or a log, so a
+    // redirected run collected one progress line per tick on a single row.
+    onMutant: () => {
+      done++
+      if (!process.stdout.isTTY) return
+      if (done % 5 === 0 || done === all.length) process.stdout.write(`\r  ${dim(`${done}/${all.length}`)}   `)
+    },
+  })
+  if (process.stdout.isTTY) process.stdout.write('\r                    \r')
+
+  const pct   = result.graded ? Math.round(result.score * 100) : 100
+  const mark  = result.survived.length ? yellow('!') : green('✓')
+  const secs  = ((Date.now() - started) / 1000).toFixed(0)
+
+  console.log(`  ${mark}  ${pct}% killed  ${dim(`${result.killed}/${result.graded} graded · ${secs}s`)}`)
+  if (result.refused.length) console.log(`  ${dim(`${result.refused.length} refused by the parser or the loader — a schema that cannot ship`)}`)
+  console.log()
+
+  if (result.errored.length) {
+    console.log(`  ${red('✗')}  ${result.errored.length} mutant(s) could not be graded — the checks fell over:`)
+    for (const e of result.errored.slice(0, 5)) console.log(`     ${dim('·')} ${e.describe} ${dim(`— ${e.thrown}`)}`)
+    console.log()
+  }
+
+  if (!result.survived.length) {
+    console.log(`  ${dim('Every mutant was noticed. Nothing to do.')}`)
+  } else {
+    console.log(`  ${yellow(`${result.survived.length} SURVIVED`)} ${dim('— nothing in the checks can see these changes')}`)
+    console.log()
+    const byKind = {}
+    for (const s of result.survived) (byKind[s.kind] ??= []).push(s)
+    for (const [kind, rows] of Object.entries(byKind)) {
+      console.log(`    ${kind}  ${dim(`(${rows.length})`)}`)
+      for (const r of rows) console.log(`      ${dim(`${basename(schemaPath)}:${r.lineNo}`)}  ${r.describe}`)
+    }
+    console.log()
+    console.log(`  ${dim('A survivor is a fact about the CHECKS, not the schema. Two are expected:')}`)
+    console.log(`  ${dim('a nullable @unique (SQLite takes any number of NULLs) and a create-only')}`)
+    console.log(`  ${dim('policy (checked by evalJs alone, so nothing independent can grade it).')}`)
+  }
+
+  console.log()
+  console.log(`  ${dim('--kinds=<a,b>')}  ${dim(`narrow: ${[...new Set(all.map(m => m.kind))].join(', ')}`)}`)
   console.log()
 }
 
@@ -3636,6 +3866,18 @@ async function main() {
   if (cmd === 'jsonschema') {
     const cfg = await loadConfig()
     await cmdJsonSchema(cfg)
+    return
+  }
+
+  if (cmd === 'access') {
+    const cfg = await loadConfig()
+    await cmdAccess(cfg)
+    return
+  }
+
+  if (cmd === 'mutate') {
+    const cfg = await loadConfig()
+    await cmdMutate(cfg)
     return
   }
 

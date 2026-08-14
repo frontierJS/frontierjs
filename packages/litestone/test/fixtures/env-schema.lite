@@ -1,0 +1,10 @@
+// Fixture for createTestEnv's "takes a path" test. Kept minimal on purpose —
+// what it proves is that `schema:` accepts a file, not anything about the DDL.
+
+model Account { id Int @id; name String }
+
+model Doc {
+  id    Int    @id
+  title String
+  @@gate("2.4.4.6")
+}

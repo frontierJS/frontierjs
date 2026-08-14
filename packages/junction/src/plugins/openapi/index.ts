@@ -29,7 +29,7 @@
 
 import type { App, Plugin }      from '../../core/app.ts'
 import type { CompiledSchema, Schema, FieldDef } from '../../core/schema.ts'
-import { customMethodNames, isMethodAllowed } from '../../core/service.ts'
+import { actionNames, isMethodAllowed } from '../../core/service.ts'
 
 // ─── Options ──────────────────────────────────────────────────────────────
 
@@ -376,7 +376,7 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions): OASpec {
 
     // Auto-schemas from a service's explicit `schema` option — manual
     // opts.schemas take precedence
-    const autoSchemas = (service as Record<string, unknown>)._schemas as
+    const autoSchemas = service.describe().schemas as
       { create?: import('../../core/schema.ts').CompiledSchema; patch?: import('../../core/schema.ts').CompiledSchema } | undefined
 
     const svcSchemas: ServiceSchemas = {
@@ -407,7 +407,7 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions): OASpec {
     // `_update`, so both were documented as custom actions on every service).
     // Policy-filtered: a documented endpoint that answers 405 is worse than an
     // undocumented one, because a generated client will call it.
-    const customMethods = customMethodNames(service).filter(m => isMethodAllowed(service, m))
+    const customMethods = service.describe().actions.filter(m => isMethodAllowed(service, m))
     // Custom actions — dispatched via X-Service-Method header on POST /{id}.
     // Each action gets its own path entry for Swagger UI discoverability.
     // The path slug is documentation-only; the wire format uses the header.
@@ -477,8 +477,10 @@ export function openapi(opts: OpenAPIOptions): Plugin {
         const existing = app._openapiExtraPaths ?? {}
         ;app._openapiExtraPaths = { ...existing, ...paths }
       }
-      const prefix   = (app.config as Record<string, unknown>).apiPrefix as string ?? ''
-      const endpoint = opts.path ?? `${prefix}/openapi.json`
+      // app.get applies apiPrefix — see the route shortcuts in core/app.ts.
+      // The spec's own `paths` still carry the prefix, because they describe
+      // URLs a client will call rather than routes this app registers.
+      const endpoint = opts.path ?? '/openapi.json'
 
       // The registry is static after boot, so generate + stringify the spec
       // ONCE on first request instead of rebuilding the whole document

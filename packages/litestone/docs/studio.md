@@ -16,6 +16,36 @@ Paginated table viewer for every model. Features:
 - Soft-delete toggle — switch between live rows, deleted rows, and all rows
 - Database filter pills for multi-database schemas
 - Pagination with configurable page size
+- **`{ } Query`** — the Litestone query behind the current view, to copy or send to the REPL
+
+#### `{ } Query`
+
+Browse builds a real query object on every load. The button shows it:
+
+```js
+await db.asSystem().product.findMany({
+  where: { OR: [{ name: { contains: 'wid' } }, { sku: { contains: 'wid' } }] },
+  orderBy: [{ name: 'desc' }, { id: 'asc' }],
+  limit: 50
+})
+```
+
+**The client is part of what it emits**, because it is part of the query — the same
+arguments through a different client return different rows. A view browsed with no
+principal selected emits `db.asSystem()`; one browsed as a user emits
+`db.$setAuth(user)` and names which user stood behind it. *Send to REPL* drops the
+client instead, because the REPL binds `db` from the same auth selector and stating
+one there would scope the call twice.
+
+Two things it does not carry. The search box is not a per-field filter — it matches
+every searchable String field, every numeric field when the text parses as a number,
+and a date prefix on `DateTime`, so the `where` is an `OR` across the model rather
+than the one condition you might expect. And cursor paging is left out: the query
+describes page one of the same filter and sort, which the drawer says when you are
+past it.
+
+Verified by `bench/studio-query-view.mjs`, which executes the emitted source and
+compares its rows against the grid's.
 
 ### SQL Query
 

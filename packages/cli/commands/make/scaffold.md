@@ -159,6 +159,15 @@ export function create${pascalPlural}Service() {
     // does not re-check them per subscriber. For per-tenant delivery make
     // \`channel\` a function of the context; set it to false to turn it off.
     channel: '${plural}',
+
+    // Adding an action? Declare it, and the CRUD you keep, in one list:
+    //
+    //   methods: ['find', 'get', 'create', 'patch', 'remove', 'approve'],
+    //   async approve(ctx) { … },
+    //
+    // The list is the surface — anything absent answers 405 naming what is
+    // offered, which is also how a verb is removed. Left out entirely, every
+    // CRUD verb is answered and actions are found by scanning.
   })
 }
 `

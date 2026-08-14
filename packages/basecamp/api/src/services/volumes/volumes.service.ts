@@ -2,13 +2,13 @@
 // Persistent Docker volumes across the fleet.
 //
 // Mounted at /volumes. Custom methods dispatch on X-Service-Method:
-//   report — the agent's, no session, per server, replaces that server's set
+//   report — the outpost's, no session, per server, replaces that server's set
 //   usage  — fleet totals, read-shaped, addresses the COLLECTION
-//   prune  — delete every unused volume, really, through the agent
+//   prune  — delete every unused volume, really, through the outpost
 //
 // **A volume is OBSERVED, not declared** — the first model in this app that is.
 // Everything else here is something a person created and Basecamp then acts on;
-// a volume exists because Docker made it and an agent found it. So there is no
+// a volume exists because Docker made it and an outpost found it. So there is no
 // `create` — and declaring none is not how you get none. `model:` brings
 // Junction's Litestone base with it, which SUPPLIES every CRUD verb the service
 // does not declare, so `POST /volumes` answered 201 and wrote a row no disk
@@ -17,9 +17,9 @@
 //
 // **Deleting a row is not deleting a volume.** The disk stays exactly as full,
 // and the fleet is one row less honest. `remove` and `prune` therefore ASK the
-// agent — through `app.conduit`, the outbound boundary, at the `agent:<id>`
-// target `servers.heartbeat` registers — and only forget the row once the agent
-// says it is gone. Nothing is registered for a server whose agent has never
+// outpost — through `app.conduit`, the outbound boundary, at the `outpost:<id>`
+// target `servers.heartbeat` registers — and only forget the row once the outpost
+// says it is gone. Nothing is registered for a server whose outpost has never
 // checked in, and that is a refusal in words rather than a silent local delete.
 // Same posture `channels.test` takes: an action that reported success without
 // leaving the process would be worse than no action, because the row
@@ -32,7 +32,7 @@
 // core/resource.ts cannot be used here for exactly that reason; `serversOf()`
 // below is the one place this join is written.
 //
-// Sizes are BYTES. The agent reports bytes, the screen decides whether that
+// Sizes are BYTES. The outpost reports bytes, the screen decides whether that
 // reads better as MB or GB, and a rounded number stored is a number nothing can
 // un-round — `0.01 GB` in the mock is 10.7 MB.
 
@@ -42,7 +42,7 @@ import { dbOf, wsOf, actorOf }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
 import type { ServiceContext }  from '@frontierjs/junction'
 
-// ─── The agent's wire contract ───────────────────────────────────────────
+// ─── The outpost's wire contract ───────────────────────────────────────────
 // snake_case, like the heartbeat payload and unlike every other call into this
 // app: the schema's camelCase applies to MODEL fields, and these are not model
 // fields — they are what `docker volume inspect` calls things, relayed. A
@@ -95,23 +95,23 @@ export function createVolumesService(app: BasecampApp) {
   }
 
   /**
-   * The agent for a server, or a refusal naming what is missing.
+   * The outpost for a server, or a refusal naming what is missing.
    *
-   * A target is registered on heartbeat (`servers.service.ts`), so "no agent"
+   * A target is registered on heartbeat (`servers.service.ts`), so "no outpost"
    * means the machine has never checked in with a URL — which is a real state
    * an operator needs told, not an error to swallow. Deleting the row anyway
    * would leave the disk full and the fleet's picture wrong in the one
    * direction nothing can detect.
    */
-  async function agentFor(serverId: string, serverName: string): Promise<string> {
+  async function outpostFor(serverId: string, serverName: string): Promise<string> {
     if (!app.conduit)
       throw new BadRequest('Outbound delivery is not configured on this server — no conduit plugin')
 
-    const target = `agent:${serverId}`
+    const target = `outpost:${serverId}`
     if (!await app.conduit.resolve(target))
       throw new BadRequest(
-        `No agent is registered for '${serverName}' — the volume was left alone. ` +
-        'An agent registers itself on its first heartbeat.'
+        `No outpost is registered for '${serverName}' — the volume was left alone. ` +
+        'An outpost registers itself on its first heartbeat.'
       )
     return target
   }
@@ -135,7 +135,7 @@ export function createVolumesService(app: BasecampApp) {
     // anything the service leaves out — validated, so a well-formed payload is
     // written. `POST /volumes` answered 201 and wrote a row no disk
     // corresponded to until this line existed. `create`, `update` and `patch`
-    // are all absent on purpose: a volume is what an agent last reported, and
+    // are all absent on purpose: a volume is what an outpost last reported, and
     // editing the record edits the picture rather than the machine.
     methods: ['find', 'get', 'remove', 'usage', 'report', 'prune'],
 
@@ -224,10 +224,10 @@ export function createVolumesService(app: BasecampApp) {
     },
 
     // ── report — POST /volumes  X-Service-Method: report ──────────────
-    // The agent's endpoint, and the only way a row gets here.
+    // The outpost's endpoint, and the only way a row gets here.
     //
     // It addresses the COLLECTION: there is no subject volume, and the server
-    // is named in the body because the agent knows which machine it is and not
+    // is named in the body because the outpost knows which machine it is and not
     // which rows Basecamp holds. A collection-level action was unreachable from
     // either client until `FJS-122`.
     //
@@ -241,7 +241,7 @@ export function createVolumesService(app: BasecampApp) {
       if (!serverId)         throw new BadRequest('server_id is required')
       if (!Array.isArray(data.volumes)) throw new BadRequest('volumes must be an array')
 
-      // asSystem(): an agent holds no session and there is no user to scope to.
+      // asSystem(): an outpost holds no session and there is no user to scope to.
       // The same call `servers.heartbeat` makes, for the same reason.
       const server = await sys().server.findUnique({ where: { id: serverId } })
       if (!server) throw new NotFound(`Server '${serverId}' not found`)
@@ -312,7 +312,7 @@ export function createVolumesService(app: BasecampApp) {
         )
       }
 
-      const target = await agentFor(volume.serverId as string, server)
+      const target = await outpostFor(volume.serverId as string, server)
       const res    = await app.conduit!.send({
         target,
         method: 'DELETE',
@@ -323,7 +323,7 @@ export function createVolumesService(app: BasecampApp) {
       // the server still has is invisible until the next report puts it back —
       // and in between, an operator has been told the disk was freed.
       if (res.error)
-        throw new BadRequest(`The agent on '${server}' could not remove '${name}' (${res.error.kind}): ${res.error.message}`)
+        throw new BadRequest(`The outpost on '${server}' could not remove '${name}' (${res.error.kind}): ${res.error.message}`)
 
       await dbOf(ctx).volume.delete({ where: { id: volume.id } })
       await recordEvent(ctx, volume.serverId as string, 'volume_removed',
@@ -338,7 +338,7 @@ export function createVolumesService(app: BasecampApp) {
     //
     // One request per server carrying the names, rather than one per volume:
     // pruning is what `docker volume prune` does in a single call, and forty
-    // round trips to the same agent is forty chances to half-finish.
+    // round trips to the same outpost is forty chances to half-finish.
     async prune(ctx: ServiceContext) {
       const fleet    = await serversOf(ctx)
       const serverId = (ctx.data as { serverId?: string } | null)?.serverId
@@ -364,9 +364,9 @@ export function createVolumesService(app: BasecampApp) {
         const server = fleet.get(id) as string
         let target: string
         try {
-          target = await agentFor(id, server)
+          target = await outpostFor(id, server)
         } catch {
-          // One unreachable agent does not cancel the rest of the fleet — but
+          // One unreachable outpost does not cancel the rest of the fleet — but
           // it is named in the answer, because a prune that silently covered
           // four servers out of five reads as a prune of all five.
           unreachable.push(server)
@@ -379,8 +379,8 @@ export function createVolumesService(app: BasecampApp) {
         })
         if (res.error) { unreachable.push(`${server} (${res.error.kind})`); continue }
 
-        // Exactly what the agent says it removed, never the list we asked it
-        // to. An agent that could only delete three of five has a fourth still
+        // Exactly what the outpost says it removed, never the list we asked it
+        // to. An outpost that could only delete three of five has a fourth still
         // on disk, and forgetting it here is how a volume becomes invisible.
         const removed = new Set(((res.data as { removed?: string[] } | null)?.removed ?? []))
         const gone    = volumes.filter(v => removed.has(v.name as string))
@@ -398,14 +398,14 @@ export function createVolumesService(app: BasecampApp) {
       // `{ forgotten: [] }` with a 200 is the shape an operator reads as "there
       // was nothing to do", which is the opposite of what happened.
       if (!forgotten.length && unreachable.length)
-        throw new BadRequest(`Nothing was pruned — no agent answered on ${unreachable.join(', ')}`)
+        throw new BadRequest(`Nothing was pruned — no outpost answered on ${unreachable.join(', ')}`)
 
       return { requested: unused.length, forgotten, freedBytes, unreachable }
     },
 
     hooks: {
       before: {
-        // `report` is the agent's endpoint — no session, no workspace header.
+        // `report` is the outpost's endpoint — no session, no workspace header.
         // It must be exempted HERE; a comment on the method is not an
         // exemption, and that mistake 401'd every server check-in once.
         all:    [sessionScope(app, { except: ['report'] })],

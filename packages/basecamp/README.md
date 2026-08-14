@@ -143,11 +143,11 @@ is generated from it; editing that SQL by hand is how the two drift apart, and
 |---|---|---|
 | **Data** | ✅ Done | 24 models, 15 enums, gates pending. Migration generated and verified against a fresh database. 19 tests. |
 | **API** | ✅ Done | 9 services + 2 engines on Litestone accessors, zero raw SQL. Auth via `@frontierjs/auth`. Verified over HTTP end to end. |
-| **UI** | ✅ Built | Sierra SPA covering every service: setup, login, guard, workspace switcher, Projects → Environments → Apps, deployments with a live step timeline, the server fleet (drain/reboot/sync, event trail, agent heartbeats), jobs with run history, and an admin zone (members, audit trail, adapters). `bun run verify` drives all of it in a real browser — **90 checks**, including an accessibility pass on every screen. `docs/UI_PLAN.md` has what building it found. |
+| **UI** | ✅ Built | Sierra SPA covering every service: setup, login, guard, workspace switcher, Projects → Environments → Apps, deployments with a live step timeline, the server fleet (drain/reboot/sync, event trail, outpost heartbeats), jobs with run history, and an admin zone (members, audit trail, adapters). `bun run verify` drives all of it in a real browser — **90 checks**, including an accessibility pass on every screen. `docs/UI_PLAN.md` has what building it found. |
 
 What works today, checked by running it: first-run setup, password login,
 workspaces and membership, projects → environments → apps, environment
-variables, servers (including agent heartbeat and drain/undrain), jobs, and
+variables, servers (including outpost heartbeat and drain/undrain), jobs, and
 deployments — where the engine runs through Caravan and advances a release
 step by step.
 

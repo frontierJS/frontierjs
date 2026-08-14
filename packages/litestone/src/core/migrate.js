@@ -293,12 +293,30 @@ function diffColumns(pristineCols, liveCols) {
 
 function indexKey(idx) { return `${idx.unique ? 'u' : ''}:${[...idx.cols].sort().join(',')}` }
 
-function diffIndexes(pristineIdxs, liveIdxs) {
+// Every index litestone generates for a model table is named
+// `idx_<table>_<fields>` (createIndexes in ddl.js), so the prefix is what
+// litestone owns. An index with any other name was created by the app — in a JS
+// migration, or straight against the database — and litestone did not put it
+// there, so it does not take it away. Before this, an index the app added was
+// live-and-not-pristine, which lands in `dropped`, and the next schema change of
+// ANY kind removed it: not an error, not a rebuild, just a query plan that
+// silently collapsed.
+//
+// A hand-made index NAMED `idx_<table>_…` is still dropped. That is the name
+// litestone would generate for the same `@@index`, so treating it as litestone's
+// is the honest reading, and stated in docs/migrations.md.
+//
+// Join and side tables need no exception: their generated indexes exist
+// identically in pristine and live, so they never reach `dropped`.
+const ownedIndex = (name, table) => name.startsWith(`idx_${table}_`)
+
+function diffIndexes(pristineIdxs, liveIdxs, table) {
   const pm = new Map(pristineIdxs.map(i => [indexKey(i), i]))
   const lm = new Map(liveIdxs.map(i => [indexKey(i), i]))
   return {
     added:   pristineIdxs.filter(i => !lm.has(indexKey(i))),
-    dropped: liveIdxs.filter(i => !pm.has(indexKey(i))),
+    dropped: liveIdxs.filter(i => !pm.has(indexKey(i)) && ownedIndex(i.name, table)),
+    foreign: liveIdxs.filter(i => !pm.has(indexKey(i)) && !ownedIndex(i.name, table)),
   }
 }
 
@@ -384,7 +402,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     const l = live[name]
 
     const cols         = diffColumns(p.columns, l.columns)
-    const indexes      = diffIndexes(p.indexes, l.indexes)
+    const indexes      = diffIndexes(p.indexes, l.indexes, name)
     const fkChanged    = !fksEqual(p.foreignKeys, l.foreignKeys)
     const strictChanged = p.strict !== l.strict
 
@@ -435,6 +453,42 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     .filter(([name, l]) => !pristineTrigs[name] && OWNED_TRIGGER.test(name) &&
                            inScope(l.table) && !rebuilding.has(l.table))
     .map(([name, l]) => ({ name, table: l.table }))
+
+  // A rebuild drops the table, and a trigger the app wrote exists only in the
+  // live database — there is nothing to restate it from. Litestone does not
+  // support carrying one through a rebuild (FJS-183); what it can do is say so
+  // where the author will read it, rather than let a behaviour disappear.
+  //
+  // A VIEW is not in that class, and must not be treated as if it were: a view
+  // is a stored SELECT with no state and no side effects, so it can be dropped
+  // and recreated verbatim. Left in place it does not merely disappear — it
+  // takes the whole migration down, because `ALTER TABLE … RENAME` reparses
+  // every view in the schema and one pointing at the table just dropped is an
+  // error. A model carrying a `view` over it was un-rebuildable.
+  const viewsOn = (table) => {
+    // Over-approximate on purpose: dropping and recreating a view that did not
+    // need it costs nothing, and missing one costs the migration.
+    const re = new RegExp(`\\b${table.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+    return Object.entries(liveViews)
+      .filter(([, v]) => re.test(v.sql.replace(/"/g, ' ')))
+  }
+  const changedViewNames = new Set(changedViews.map(v => v.name))
+
+  for (const d of tableDiffs) {
+    if (!d.needsRebuild) continue
+    d.foreignTriggers = Object.entries(liveTrigs)
+      .filter(([name, l]) => l.table === d.name && !OWNED_TRIGGER.test(name))
+      .map(([name]) => name)
+
+    const dependent = viewsOn(d.name)
+    d.dropViews = dependent.map(([name]) => name)
+    // A view the schema is redefining anyway is recreated at the end of the
+    // migration from its NEW body. Restating the old one in between would fail
+    // where the rebuild is what the new body accounts for.
+    d.restoreViews = dependent
+      .filter(([name]) => !changedViewNames.has(name))
+      .map(([name, v]) => ({ name, sql: v.sql }))
+  }
 
   return {
     newTables,
@@ -580,6 +634,23 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
           continue
         }
 
+        // Said before the SQL, because after it the objects are already gone.
+        const lost = [
+          ...(d.foreignTriggers ?? []).map(n => `trigger "${n}"`),
+          ...(d.indexes.foreign ?? []).map(i => `index "${i.name}"`),
+        ]
+        if (lost.length) {
+          lines.push(`-- "${d.name}": this rebuild DROPS the table, which destroys:`)
+          for (const l of lost) lines.push(`--     ${l}`)
+          lines.push(`-- Litestone did not create these and cannot restate them — recreate`)
+          lines.push(`-- them below, or in a JS migration that runs after this file.`)
+        }
+        // Out of the way before the rename, which reparses every view.
+        if (d.dropViews?.length) {
+          lines.push(`-- "${d.name}": views over it, dropped for the rebuild and restored after`)
+          for (const v of d.dropViews) lines.push(`DROP VIEW IF EXISTS "${v}";`)
+          lines.push(``)
+        }
         lines.push(rebuildSQL(model, parseResult, pluralize, d))
         lines.push(``)
         const idxSQL = generateIndexDDL(model, false, { pluralize })
@@ -588,6 +659,16 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
           lines.push(idxSQL.join('\n'))
           lines.push(``)
         }
+        for (const v of d.restoreViews ?? []) {
+          lines.push(v.sql.trim().replace(/;?$/, ';'))
+          // SQLite does not resolve a view body at CREATE time, so a view over a
+          // column this rebuild just dropped is recreated happily and fails only
+          // when something selects from it — in production, months later. Read
+          // zero rows from it here instead: inside the migration's transaction,
+          // so a view the schema change invalidated rolls the whole thing back.
+          lines.push(`SELECT 1 FROM "${v.name}" LIMIT 0;`)
+        }
+        if (d.restoreViews?.length) lines.push(``)
         continue
       }
 

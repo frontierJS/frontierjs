@@ -97,7 +97,7 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
  * App-level before hook: a suspended principal acts on nothing.
  *
  * Registered under `before: { all: [...] }` in app.ts, so it covers every
- * service and every method including the agent endpoints — which is correct:
+ * service and every method including the outpost endpoints — which is correct:
  * an API key belonging to a suspended user is exactly the token that should
  * stop working.
  *

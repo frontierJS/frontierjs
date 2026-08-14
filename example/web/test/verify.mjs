@@ -35,7 +35,7 @@ const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 // ─── preflight ────────────────────────────────────────────────────────────
 // A 502 from Vite because the API is down produces a page full of plausible
 // empty tables, which reads as a product failure. Say which process is missing.
-for (const [name, url] of [['api (bun run api)', `${API}/health`], ['web (bun run web)', UI]]) {
+for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]]) {
   try {
     const r = await fetch(url)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)

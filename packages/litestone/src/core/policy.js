@@ -68,7 +68,26 @@ export function buildPolicyMap(schema) {
 
 // Returns { sql, params } to AND-merge into a query WHERE, or null (no filter).
 // Pass op = 'read' | 'update' | 'delete' for SQL-based enforcement.
+// ─── One clock per evaluation ────────────────────────────────────────────────
+// `now()` used to resolve where it was REACHED, so `startAt < now() && now() <
+// endAt` bound two timestamps microseconds apart and a report had no single
+// "as of" instant to reconcile against. Resolved once per policy evaluation and
+// carried on a prototype view of ctx — O(1), and every nested compile (a
+// `check(field)` delegation recurses) reads the same moment.
+//
+// `createClient({ now })` is the injection point: a test freezes it and a
+// report pins it, which is the only way a time-dependent assertion is
+// deterministic.
+export function atOneInstant(ctx) {
+  if (ctx?._now) return ctx
+  const raw  = typeof ctx?.now === 'function' ? ctx.now() : new Date()
+  const view = Object.create(ctx ?? null)
+  view._now  = raw instanceof Date ? raw.toISOString() : String(raw)
+  return view
+}
+
 export function buildPolicyFilter(modelName, op, ctx, policyMap, schema, relationMap) {
+  ctx = atOneInstant(ctx)
   if (ctx.isSystem) {
     if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[2mskipped (asSystem)[0m')
     return null
@@ -97,6 +116,7 @@ export function buildPolicyFilter(modelName, op, ctx, policyMap, schema, relatio
 // Throws AccessDeniedError if the create policy denies the operation.
 // Evaluates purely in JS against the data being created (no SQL — INSERT has no WHERE).
 export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relationMap) {
+  ctx = atOneInstant(ctx)
   if (ctx.isSystem) {
     if (ctx.policyDebug === 'verbose') plog(ctx, 'create', modelName, '[2mskipped (asSystem)[0m')
     return
@@ -132,6 +152,7 @@ export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relat
 // Evaluates a post-update policy against a row object in JS.
 // Call after the write, inside a transaction — throw to trigger rollback.
 export function checkPostUpdatePolicy(modelName, row, ctx, policyMap, schema, relationMap) {
+  ctx = atOneInstant(ctx)
   if (ctx.isSystem) {
     if (ctx.policyDebug === 'verbose') plog(ctx, 'post-update', modelName, '[2mskipped (asSystem)[0m')
     return
@@ -217,7 +238,7 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
       return '?'
 
     case 'now':
-      params.push(new Date().toISOString())
+      params.push(ctx._now)
       return '?'
 
     case 'compare': {
@@ -233,6 +254,24 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
         const val = right.field ? (ctx.auth?.[right.field] ?? null) : (ctx.auth?.id ?? null)
         params.push(val)
         return node.op === '==' ? '? IS NULL' : '? IS NOT NULL'
+      }
+
+      // field == null  /  field != null
+      //
+      // SQLite answers NULL — never true — for `"col" = NULL`, so a policy
+      // written this way filtered every row out and raised nothing: an empty
+      // screen with a 200, which is the failure mode `@@allow` has by design.
+      // The JS evaluator below compares with `===` and always got this right,
+      // so create ALLOWED a row that read then hid.
+      if (left.type === 'field' && right.type === 'literal' && right.value === null) {
+        const rel = relationMap[modelName]?.[left.name]
+        const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : left.name
+        return `"${fk}" ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
+      }
+      if (right.type === 'field' && left.type === 'literal' && left.value === null) {
+        const rel = relationMap[modelName]?.[right.name]
+        const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : right.name
+        return `"${fk}" ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
       }
 
       // field == auth()  →  resolve FK if it's a belongsTo relation
@@ -298,7 +337,7 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap) {
     case 'auth':
       return node.field ? (ctx.auth?.[node.field] ?? null) : ctx.auth
 
-    case 'now':     return new Date().toISOString()
+    case 'now':     return ctx._now
 
     case 'check':
       // For create: related row doesn't exist yet — conservatively allow

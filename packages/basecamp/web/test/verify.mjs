@@ -8,7 +8,7 @@
  *
  * It covers first-run setup, login and the navigation guard; workspace
  * switching; Projects → Environments → Apps; deployments including the live
- * step timeline; the server fleet, its custom methods and the agent heartbeat;
+ * step timeline; the server fleet, its custom methods and the outpost heartbeat;
  * jobs and their run history; the admin zone; and an accessibility pass on
  * every screen.
  *
@@ -42,11 +42,11 @@ const PKG  = join(HERE, '../..')            // packages/basecamp
 const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
 const API_PORT = 8120
 const WEB_PORT = 8020
-// The fake Basecamp agent. `volumes.remove` refuses to forget a row until the
+// The fake Basecamp outpost. `volumes.remove` refuses to forget a row until the
 // machine says the disk is gone, so proving the happy path needs something
-// that answers as an agent — the same reason the channels checks send a real
+// that answers as an outpost — the same reason the channels checks send a real
 // webhook at a URL that does not resolve, one step further along.
-const AGENT_PORT = 3011
+const OUTPOST_PORT = 3011
 const BASE     = `http://localhost:${WEB_PORT}`
 const PROFILE  = '/tmp/fjs-basecamp-verify-profile'
 
@@ -88,7 +88,7 @@ async function portFree(port) {
 // Chrome's debugging port is NOT in this list — it is asked for as 0 and read
 // back, which is the only thing that makes two harnesses on one machine safe.
 // See the browser block below for what a fixed one cost.
-for (const [port, who] of [[API_PORT, 'API'], [WEB_PORT, 'web'], [AGENT_PORT, 'agent sink']]) {
+for (const [port, who] of [[API_PORT, 'API'], [WEB_PORT, 'web'], [OUTPOST_PORT, 'outpost sink']]) {
   if (!(await portFree(port))) {
     console.error(`\n  Port ${port} (${who}) is in use — stop it first:\n\n    bun run stop\n`)
     process.exit(1)
@@ -108,24 +108,24 @@ if (process.argv.includes('--reset')) {
 children.push(spawn('bun', ['api/src/index.ts'], { cwd: PKG, stdio: 'ignore' }))
 children.push(spawn('bun', ['run', 'web'],       { cwd: PKG, stdio: 'ignore' }))
 
-// ─── The agent sink ───────────────────────────────────────────────────────
-// Stands in for the Basecamp agent on gateway-01. It records what it was asked
+// ─── The outpost sink ───────────────────────────────────────────────────────
+// Stands in for the Basecamp outpost on gateway-01. It records what it was asked
 // to do, which is the half a database check cannot see: a `remove` that deleted
 // the row and never left the process looks identical from the outside, and the
 // disk stays exactly as full.
 //
-// It is not asked to be a good agent — no HMAC verification, no real disk. What
+// It is not asked to be a good outpost — no HMAC verification, no real disk. What
 // it proves is that the request was MADE, and with which name.
-const agentSaw = { deleted: [], pruned: [], ran: [], swept: [] }
+const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [] }
 {
   const http  = await import('node:http')
-  const agent = http.createServer((req, res) => {
+  const outpost = http.createServer((req, res) => {
     let body = ''
     req.on('data', c => { body += c })
     req.on('end', () => {
       res.setHeader('content-type', 'application/json')
       if (req.method === 'DELETE' && req.url.startsWith('/volumes/')) {
-        agentSaw.deleted.push(decodeURIComponent(req.url.slice('/volumes/'.length)))
+        outpostSaw.deleted.push(decodeURIComponent(req.url.slice('/volumes/'.length)))
         return res.end(JSON.stringify({ ok: true }))
       }
       // A recipe run. The command it was handed is the half nothing else can
@@ -133,7 +133,7 @@ const agentSaw = { deleted: [], pruned: [], ran: [], swept: [] }
       // a machine was ever asked to do anything.
       if (req.method === 'POST' && req.url === '/exec') {
         const command = JSON.parse(body || '{}').command ?? ''
-        agentSaw.ran.push(command)
+        outpostSaw.ran.push(command)
         return res.end(JSON.stringify({
           exit_code: command.includes('exit 3') ? 3 : 0,
           stdout:    'Filesystem      Size  Used Avail Use%\n/dev/vda1        79G   42G   34G  55%',
@@ -145,7 +145,7 @@ const agentSaw = { deleted: [], pruned: [], ran: [], swept: [] }
       // asking again a second later would be a second answer to one question.
       if (req.method === 'POST' && req.url === '/system/prune') {
         const sent = JSON.parse(body || '{}')
-        agentSaw.swept.push((sent.targets ?? []).join('+'))
+        outpostSaw.swept.push((sent.targets ?? []).join('+'))
         return res.end(JSON.stringify({
           freed_bytes: 3 * 1024 ** 3,
           removed:     { images: 22, containers: 2, build_cache_bytes: 2 * 1024 ** 3 },
@@ -159,19 +159,19 @@ const agentSaw = { deleted: [], pruned: [], ran: [], swept: [] }
       }
       if (req.method === 'POST' && req.url === '/volumes/prune') {
         const names = (JSON.parse(body || '{}').names ?? [])
-        agentSaw.pruned.push(...names)
+        outpostSaw.pruned.push(...names)
         // Answering the names back is the contract prune relies on: it forgets
-        // exactly what the agent says it removed, never what it asked for.
+        // exactly what the outpost says it removed, never what it asked for.
         return res.end(JSON.stringify({ removed: names }))
       }
       res.statusCode = 404
-      res.end(JSON.stringify({ message: 'not an agent route' }))
+      res.end(JSON.stringify({ message: 'not an outpost route' }))
     })
   })
-  agent.listen(AGENT_PORT)
+  outpost.listen(OUTPOST_PORT)
   // `children` is killed in cleanup(); a server is not a child process, so it
   // gets a kill() of its own rather than a second teardown path to forget.
-  children.push({ kill: () => agent.close() })
+  children.push({ kill: () => outpost.close() })
 }
 
 let probe = null
@@ -743,18 +743,18 @@ check('pending offers no drain',
   await evaluate(`document.getElementById('server-actions')?.textContent ?? ''`),
   t => !t.includes('Drain'))
 
-// The agent's own endpoint — no session, authenticated at the transport, and
+// The outpost's own endpoint — no session, authenticated at the transport, and
 // the only path in the app a machine uses. Bringing the server online this way
 // is also what makes the drain path reachable.
 const serverId = serverPath.split('/').filter(Boolean)[1]
-// The heartbeat payload is the AGENT's contract and it is snake_case
-// (`agent_version`), unlike every other call in this file — the schema's
+// The heartbeat payload is the OUTPOST's contract and it is snake_case
+// (`outpost_version`), unlike every other call in this file — the schema's
 // camelCase applies to model fields, and these are not model fields. Sending
-// `agentVersion` is not an error: it is ignored, and the page reports the
-// agent as 'not installed' while everything else looks fine.
+// `outpostVersion` is not an error: it is ignored, and the page reports the
+// outpost as 'not installed' while everything else looks fine.
 await apiCall(`/servers/${serverId}`, {
   method: 'POST', workspace: firstWs.id,
-  body: { agent_version: '0.4.1', health: { cpu: 12, memory: 41 } },
+  body: { outpost_version: '0.4.1', health: { cpu: 12, memory: 41 } },
   header: { 'x-service-method': 'heartbeat' },
 })
 // No reload: the heartbeat published to the workspace channel and the open page
@@ -764,7 +764,7 @@ check('a heartbeat brings the server online with no reload',
   'online')
 check('…and its health arrives with it',
   await evaluate(`document.body.textContent`), t => t.includes('cpu') && t.includes('12'))
-check('…and the agent version it reported',
+check('…and the outpost version it reported',
   await evaluate(`document.body.textContent`), t => t.includes('0.4.1'))
 
 // Now the transitions, through the buttons.
@@ -807,13 +807,13 @@ check('…and it is still here', await path(), serverPath)
 // notice engine is src/notices.js, a leaf module both the shell and the home
 // screen call, so "needs attention" has one definition.
 
-// Pressure reported by the agent. Nothing here reloads: the heartbeat
+// Pressure reported by the outpost. Nothing here reloads: the heartbeat
 // publishes to the workspace channel, the shell's servers store takes the
 // push, and the notice is DERIVED from the store — so this asserts the whole
 // chain, not a re-fetch.
 await apiCall(`/servers/${serverId}`, {
   method: 'POST', workspace: firstWs.id,
-  body: { agent_version: '0.4.1', health: { cpu: 95, memory: 41 } },
+  body: { outpost_version: '0.4.1', health: { cpu: 95, memory: 41 } },
   header: { 'x-service-method': 'heartbeat' },
 })
 check('a notice appears with no reload, off the same push the page reads',
@@ -1318,7 +1318,7 @@ check('a revoked key is still listed — revocation is a state, not a deletion',
 // screen is showing.
 const REPORT = (volumes) => fetch(`http://localhost:${API_PORT}/volumes`, {
   method:  'POST',
-  // No authorization header, deliberately. An agent holds no session; if
+  // No authorization header, deliberately. An outpost holds no session; if
   // `report` were not exempted from sessionScope this 401s, which is exactly
   // how every server check-in failed once.
   headers: { 'content-type': 'application/json', accept: 'application/json',
@@ -1342,7 +1342,7 @@ const report = await REPORT([
   { name: 'orphan-tmp',  mountpoint: '/var/lib/docker/volumes/orphan-tmp/_data',
     size_bytes: 100 * 1024 ** 2, in_use: false, containers: [] },
 ])
-check('an agent with no session can report what it found', report.added, 3)
+check('an outpost with no session can report what it found', report.added, 3)
 
 await goto('/volumes/')
 check('volumes render', await heading(), 'Volumes')
@@ -1366,38 +1366,38 @@ check('a mounted volume refuses to be deleted, naming what holds it',
   await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('mounted by')),
   t => t.includes('pg-data-svc') && t.includes('stop the container first'))
 
-// No agent has registered yet: gateway-01's heartbeats have carried no URL. The
+// No outpost has registered yet: gateway-01's heartbeats have carried no URL. The
 // row must SURVIVE, because forgetting it would leave the disk full and the
 // fleet's picture wrong in the one direction nothing can detect.
 await evaluate(`[...document.querySelectorAll('#volume-list button')]
   .find(b => b.getAttribute('aria-label') === 'Delete build-cache').click()`)
-check('with no agent to ask, the record is left alone and it says so',
-  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('agent')),
-  t => t.includes('No agent is registered'))
+check('with no outpost to ask, the record is left alone and it says so',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('outpost')),
+  t => t.includes('No outpost is registered'))
 check('…and the volume is still listed',
   await evaluate(`document.getElementById('volume-list')?.textContent ?? ''`),
   t => t.includes('build-cache'))
 
-// Register the agent, the only way one ever is: a heartbeat carrying a URL.
+// Register the outpost, the only way one ever is: a heartbeat carrying a URL.
 // gateway-01 is already online, so this exercises the half that used to sit
 // inside the status transition and therefore never ran for a live machine.
 await apiCall(`/servers/${serverId}`, {
   method: 'POST', workspace: secondWs.id,
-  body: { agent_version: '0.4.1', health: { cpu: 12, memory: 41 },
-          agent_url: `http://localhost:${AGENT_PORT}` },
+  body: { outpost_version: '0.4.1', health: { cpu: 12, memory: 41 },
+          outpost_url: `http://localhost:${OUTPOST_PORT}` },
   header: { 'x-service-method': 'heartbeat' },
 })
 
 await goto('/volumes/')
 await evaluate(`[...document.querySelectorAll('#volume-list button')]
   .find(b => b.getAttribute('aria-label') === 'Delete build-cache').click()`)
-check('with an agent, the row goes',
+check('with an outpost, the row goes',
   await waitFor(`document.getElementById('volume-list')?.textContent ?? ''`, t => !t.includes('build-cache')),
   t => !t.includes('build-cache'))
 // The check that makes the one above mean anything. A remove that deleted the
 // row without leaving the process looks identical from the browser.
 check('…because the disk was deleted on the machine first',
-  agentSaw.deleted.join(','), 'build-cache')
+  outpostSaw.deleted.join(','), 'build-cache')
 check('…and the reclaimable total went down with it',
   await evaluate(`document.getElementById('volume-usage')?.textContent ?? ''`),
   t => t.includes('2 volumes') && t.includes('1 unused'))
@@ -1406,8 +1406,8 @@ await click('Prune unused')
 check('prune says how many it took',
   await waitFor(`document.querySelector('.toast-stack')?.textContent ?? ''`, t => t.includes('Pruned')),
   t => t.includes('Pruned 1 volume(s)'))
-check('…having asked the agent, and forgotten only what it confirmed',
-  agentSaw.pruned.join(','), 'orphan-tmp')
+check('…having asked the outpost, and forgotten only what it confirmed',
+  outpostSaw.pruned.join(','), 'orphan-tmp')
 check('…leaving nothing reclaimable',
   await waitFor(`document.getElementById('volume-usage')?.textContent ?? ''`, t => t.includes('0 unused')),
   t => t.includes('1 volumes') && t.includes('0 unused'))
@@ -1415,7 +1415,7 @@ check('…leaving nothing reclaimable',
 // A report is the whole truth about one machine at one moment, so a volume
 // missing from it is a volume that no longer exists. Nothing here reloads: the
 // report published to the workspace channel and the open page took the push,
-// which is the whole reason an agent endpoint announces at all.
+// which is the whole reason an outpost endpoint announces at all.
 const second = await REPORT([
   { name: 'pg-data', size_bytes: 6 * 1024 ** 3, in_use: true, containers: ['pg-data-svc'] },
   { name: 'metrics', size_bytes: 512 * 1024 ** 2, in_use: false, containers: [] },
@@ -1587,8 +1587,8 @@ check('…and an actor id is resolved to a person',
 // browser (`FJS-104`). The drain above wrote both: an audit row for the person
 // and a server event for the transition.
 check('the fleet\'s own events are in the feed, not only the human trail',
-  await waitFor(`document.getElementById('activity-rows')?.textContent ?? ''`, t => t.includes('agent')),
-  t => t.includes('agent'))
+  await waitFor(`document.getElementById('activity-rows')?.textContent ?? ''`, t => t.includes('outpost')),
+  t => t.includes('outpost'))
 
 const kindCount = await evaluate(`document.querySelectorAll('#activity-kinds button').length`)
 check('the kind filter is built from what happened, not declared', kindCount, n => n > 1)
@@ -1614,7 +1614,7 @@ check('and the project is gone',
 // and with what.
 //
 // The browser is in Skunkworks — the workspace the volumes checks left it in —
-// where `gateway-01` has a registered agent and the sink above is answering as
+// where `gateway-01` has a registered outpost and the sink above is answering as
 // it. That is what makes both screens reachable without inventing a second one.
 
 await goto('/recipes/')
@@ -1644,23 +1644,23 @@ check('a recipe is saved and listed',
   await waitFor(`document.getElementById('recipe-list')?.textContent ?? ''`, t => t.includes('Nameless')),
   t => t.includes('Nameless'))
 
-// A machine with no agent is refused AT THE CLICK, naming the machine — not
+// A machine with no outpost is refused AT THE CLICK, naming the machine — not
 // queued and failed a minute later where nobody is looking.
-const agentless = await apiCall('/servers', {
-  method: 'POST', workspace: secondWs.id, body: { name: 'no-agent-01' },
+const outpostless = await apiCall('/servers', {
+  method: 'POST', workspace: secondWs.id, body: { name: 'no-outpost-01' },
 })
 await goto('/recipes/')
 await evaluate(`(() => {
   const sel = document.getElementById('run-target')
-  sel.value = ${JSON.stringify(agentless.id)}
+  sel.value = ${JSON.stringify(outpostless.id)}
   sel.dispatchEvent(new Event('input',  { bubbles: true }))
   sel.dispatchEvent(new Event('change', { bubbles: true }))
 })()`)
 await evaluate(`[...document.querySelectorAll('#recipe-list button')]
   .find(b => b.getAttribute('aria-label') === 'Run Nameless').click()`)
-check('running on a machine with no agent is refused, naming it',
-  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('agent')),
-  t => t.includes('no-agent-01') && t.includes('No agent is registered'))
+check('running on a machine with no outpost is refused, naming it',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('outpost')),
+  t => t.includes('no-outpost-01') && t.includes('No outpost is registered'))
 
 // Now the machine that has one. The queue carries it, the engine sends it, and
 // the run row fills in from a channel push with nothing polling.
@@ -1678,8 +1678,8 @@ check('a run finishes and the exit code is on screen',
   t => t.includes('success') && t.includes('gateway-01'))
 // The check that makes the one above mean anything: a run row saying success
 // proves the engine wrote a row, not that any machine was asked.
-check('…because the script really reached the agent',
-  agentSaw.ran.join('|'), t => t.includes('df -h /'))
+check('…because the script really reached the outpost',
+  outpostSaw.ran.join('|'), t => t.includes('df -h /'))
 check('…and its output is the machine\'s, not the recipe\'s text',
   await evaluate(`document.getElementById('recipe-detail')?.textContent ?? ''`),
   t => t.includes('/dev/vda1'))
@@ -1719,7 +1719,7 @@ check('a machine that has never reported says so, rather than showing zeroes',
   await evaluate(`document.getElementById('cleanup-list')?.textContent ?? ''`),
   t => t.includes('never reported'))
 
-// The agent's endpoint — no session, like the volume report and the heartbeat.
+// The outpost's endpoint — no session, like the volume report and the heartbeat.
 const disk = await fetch(`http://localhost:${API_PORT}/cleanup`, {
   method:  'POST',
   headers: { 'content-type': 'application/json', accept: 'application/json',
@@ -1731,7 +1731,7 @@ const disk = await fetch(`http://localhost:${API_PORT}/cleanup`, {
     build_cache: { size_bytes: 8 * 1024 ** 3, reclaimable_bytes: 8 * 1024 ** 3 },
   }),
 })
-check('an agent with no session can report a disk', disk.status, 200)
+check('an outpost with no session can report a disk', disk.status, 200)
 
 await goto('/cleanup/')
 check('the figures on screen are the ones Docker measured',
@@ -1754,12 +1754,12 @@ await evaluate(`[...document.querySelectorAll('#cleanup-list button')]
 check('a sweep records what the machine says it freed',
   await waitFor(`document.getElementById('cleanup-history')?.textContent ?? ''`, t => t.includes('3.0 GB')),
   t => t.includes('3.0 GB') && t.includes('success'))
-check('…having asked the agent for exactly the targets that were ticked',
-  agentSaw.swept.join('|'), t => t.includes('unused_images') && !t.includes('unused_volumes'))
-// The agent answers a fresh picture with what it freed, written through the
+check('…having asked the outpost for exactly the targets that were ticked',
+  outpostSaw.swept.join('|'), t => t.includes('unused_images') && !t.includes('unused_volumes'))
+// The outpost answers a fresh picture with what it freed, written through the
 // same path the report endpoint uses — so the screen is not left showing what
 // was there before the sweep.
-check('…and the picture is the one the agent left behind',
+check('…and the picture is the one the outpost left behind',
   await waitFor(`document.getElementById('cleanup-summary')?.textContent ?? ''`, t => t.includes('0 B')),
   t => t.includes('0 B reclaimable'))
 
@@ -1809,11 +1809,15 @@ check('the runtime is measured, not declared',
 check('every configured queue is listed, including the one added last',
   await evaluate(`document.getElementById('hub-queues')?.textContent ?? ''`),
   t => t.includes('fleet') && t.includes('deployments'))
-// The mock shows a subscriber COUNT the in-process bus cannot produce. The
-// screen states that rather than printing a number nothing measured.
-check('…and the two figures that cannot be measured say so',
+// The subscriber count is real now — IEventBus.stats() (FJS-143). It was the
+// second thing this card could not measure; CPU is the one that remains, and
+// the screen still says so rather than printing a plausible number.
+check('the event-bus subscriber count is measured',
+  await evaluate(`document.getElementById('hub-stats')?.textContent ?? ''`),
+  t => /\d+ event subscribers/.test(t))
+check('…and the figure that cannot be measured still says so',
   await evaluate(`document.body.textContent`),
-  t => t.includes('cannot produce') && t.includes('CPU'))
+  t => t.includes('CPU') && t.includes('not measured'))
 
 // ── Workspaces: a cross-tenant read the workspaces service refuses to do ──
 await goto('/hub/workspaces/')

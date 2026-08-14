@@ -80,6 +80,28 @@ Checks are **rules with identities**, so an app can acknowledge one deliberately
 (`doctor.ignore`) and so a check can be cited by name in a message. A framework that
 cannot be told "yes, I meant that" gets switched off entirely.
 
+## The boundary with a linter — settle it before either is built
+
+Added 2026-08-12. The repo has no linter today (`IDEAS/tooling-decisions.md` §1), and
+when one arrives the risk is not the tool, it is the overlap: `:id` in a raw route,
+`ctx.params` in a service context and a service missing `model:` all **look** like lint
+rules, so somebody will write four of the checks above a second time in a place that
+feels natural.
+
+> **A linter owns generic JavaScript correctness. `fli doctor` owns everything derived
+> from the seed. Neither reimplements the other, and the VS Code extension surfaces
+> both rather than implementing either.**
+
+The line is not arbitrary. Doctor's inputs are `parseFile()`, the service registry and
+`project:map --json`, and almost every check above is **cross-file** — *does this
+resource name resolve to a model* cannot be answered from the file it appears in, which
+is the one thing a lint rule sees. And the two file types where FJS's real mistakes live,
+`.lite` and `.mesa`, are not JavaScript, so no linter reaches them without a bespoke
+plugin that would duplicate the compiler this repo already ships.
+
+Two registries that disagree is the shape Invariant 4 exists to prevent, and it is
+cheaper to state the sentence now than to unpick it later.
+
 ## What would have to be built
 
 1. **A rule registry** — id, severity, a predicate over some input, a message naming
@@ -121,4 +143,6 @@ rules are an afternoon.
 - `IDEAS/static-safety.md` — one check that must be build-time rather than scan-time
 - `IDEAS/agent-surface.md` — the same "make it hard to get wrong" argument, one layer
   down
+- `IDEAS/tooling-decisions.md` — the linter that has to be told where its edge is, and
+  the rest of the tooling this project has never chosen
 - `IDEAS/overview.md` — where this sits in the ranking

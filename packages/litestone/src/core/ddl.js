@@ -250,6 +250,11 @@ function tableConstraints(model, schema, pluralize = false) {
 
 function enumCheck(field, schema) {
   if (field.type.kind !== 'enum') return null
+  // An enum ARRAY is JSON text. `IN (...)` would compare the whole document
+  // against a single value, so every non-empty array fails the constraint.
+  // Reading its elements needs json_each, and a CHECK may not contain the
+  // subquery that would take — membership is checked at the client boundary.
+  if (field.type.array) return null
   const enumDef = schema.enums.find(e => e.name === field.type.name)
   if (!enumDef) return null
   const values = enumDef.values.map(v => `'${v.name}'`).join(', ')

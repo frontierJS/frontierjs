@@ -729,42 +729,75 @@ class Parser {
         return { kind: 'guarded', level: 'select' }
       }
       case 'encrypted': {
-        // @encrypted → implies @guarded(all), AES-256-GCM on write/read
-        // @encrypted(searchable: true) → deterministic HMAC, usable in WHERE
-        let searchable = false
+        // @encrypted                       → AES-256-GCM under a random IV. Implies
+        //                                    @guarded(all). Not filterable.
+        // @encrypted(deterministic: true)  → AES-256-GCM under an IV derived from the
+        //                                    plaintext. Same value encrypts the same
+        //                                    way, so equality filters work — and it is
+        //                                    still ciphertext, so it reads back.
+        //
+        // `searchable: true` was the old spelling and it did something else entirely:
+        // it stored an HMAC and no ciphertext, destroying the plaintext on write. It is
+        // refused by name rather than translated, because the two candidate meanings —
+        // "I can look this up AND read it" and "I can only ever match it" — are the
+        // whole decision, and guessing either one silently is how the value was lost.
+        let deterministic = false
         if (this.check(TK.LPAREN)) {
           this.eat(TK.LPAREN)
           const key = this.eat(TK.IDENT).value
           this.eat(TK.COLON)
           const val = this.eat(TK.BOOL).value
           this.eat(TK.RPAREN)
-          if (key !== 'searchable') throw new ParseError(`@encrypted only accepts (searchable: true/false), got (${key})`, this.peek())
-          searchable = val === true || val === 'true'
+          if (key === 'searchable')
+            throw new ParseError(
+              `@encrypted(searchable: true) no longer exists — it stored a one-way HMAC and destroyed the plaintext. ` +
+              `Use @encrypted(deterministic: true) for a value you need to look up AND read back, ` +
+              `or @hashed for one you only ever need to match. Existing v1s. columns cannot be recovered by either.`,
+              this.peek())
+          if (key !== 'deterministic')
+            throw new ParseError(`@encrypted only accepts (deterministic: true/false), got (${key})`, this.peek())
+          deterministic = val === true || val === 'true'
         }
-        return { kind: 'encrypted', searchable }
+        return { kind: 'encrypted', deterministic }
       }
+
+      // ── @hashed — one-way, matchable, never readable ────────────────────────
+      // HMAC-SHA256, no ciphertext, no key that recovers it. Equality filters work;
+      // a read strips it, and asking for it by name throws. Not an option on
+      // @encrypted, because an option inherits the parent's promise and the parent
+      // promises the value comes back.
+      case 'hashed': return { kind: 'hashed' }
+
       case 'check':    return { kind: 'check',     expr: this.parseParenString() }
 
       // ── @secret — composite encrypted+guarded+logged field ─────────────────
-      // @secret                   — rotatable (default)
-      // @secret(rotate: false)    — permanently bound to original key
+      // @secret                        — rotatable (default)
+      // @secret(rotate: false)         — permanently bound to original key
+      // @secret(deterministic: true)   — the same value stores the same bytes, so
+      //                                  the secret can be looked up by equality
+      //                                  and still rotated. An API key is both.
       //
       // Expands at parse time (expandSecretAttributes) to:
       //   @encrypted @guarded(all) @log(<first logger db>)   (log only if logger db declared)
       // The { kind: 'secret', rotate } attr is kept for key rotation tracking.
       case 'secret': {
-        let rotate = true
+        let rotate        = true
+        let deterministic = false
         if (this.check(TK.LPAREN)) {
           this.eat(TK.LPAREN)
-          const key = this.eat(TK.IDENT).value
-          this.eat(TK.COLON)
-          const val = this.eat(TK.BOOL).value
+          while (!this.check(TK.RPAREN)) {
+            const key = this.eat(TK.IDENT).value
+            this.eat(TK.COLON)
+            const val  = this.eat(TK.BOOL).value
+            const bool = val === true || val === 'true'
+            if      (key === 'rotate')        rotate = bool
+            else if (key === 'deterministic') deterministic = bool
+            else throw new ParseError(`@secret only accepts (rotate: true/false) and (deterministic: true/false), got (${key})`, this.peek())
+            this.maybeEat(TK.COMMA)
+          }
           this.eat(TK.RPAREN)
-          if (key !== 'rotate')
-            throw new ParseError(`@secret only accepts (rotate: true/false), got (${key})`, this.peek())
-          rotate = val === true || val === 'true'
         }
-        return { kind: 'secret', rotate }
+        return { kind: 'secret', rotate, deterministic }
       }
 
       // ── Field-level access policy ─────────────────────────────────────────
@@ -1120,7 +1153,7 @@ class Parser {
     this.eat(TK.COMMA)
 
     // Parse key: value pairs
-    let op = null, opValue = null, where = null, orderBy = null
+    let op = null, opValue = null, where = null, orderBy = null, via = null
     let withDeleted = false, withTemplates = false
 
     while (!this.check(TK.RPAREN)) {
@@ -1158,6 +1191,12 @@ class Parser {
           orderBy = this.eat(TK.IDENT).value
           break
         }
+        // Which relation this reads, when more than one joins the two models.
+        // Names either side — the field on this model or the one on the target.
+        case 'via': {
+          via = this.eat(TK.IDENT).value
+          break
+        }
         // A @from reads the target model through the target model's own
         // defaults — soft-deleted and template rows are out, exactly as they
         // are for a direct read or an include. These opt back in, and they are
@@ -1180,7 +1219,7 @@ class Parser {
 
     this.eat(TK.RPAREN)
     if (!op) throw new ParseError(`@from requires an operation (last, first, count, sum, max, min, exists)`, this.peek())
-    return { target, op, opValue, where: where ?? null, orderBy: orderBy ?? null, withDeleted, withTemplates }
+    return { target, op, opValue, where: where ?? null, orderBy: orderBy ?? null, via, withDeleted, withTemplates }
   }
 
   parseParenString() {
@@ -2103,12 +2142,13 @@ function expandSecretAttributes(schema) {
 
   for (const model of schema.models) {
     for (const field of model.fields) {
-      if (!field.attributes.some(a => a.kind === 'secret')) continue
+      const secretAttr = field.attributes.find(a => a.kind === 'secret')
+      if (!secretAttr) continue
 
       // Synthesize @encrypted + @guarded(all) unconditionally.
       // If the field already had an explicit @encrypted or @guarded, this produces
       // duplicates — validate() catches those as conflict errors.
-      field.attributes.push({ kind: 'encrypted', searchable: false })
+      field.attributes.push({ kind: 'encrypted', deterministic: !!secretAttr.deterministic })
       field.attributes.push({ kind: 'guarded', level: 'all' })
 
       // Synthesize @log(<loggerDb>) — audit writes only by default.
@@ -2357,21 +2397,45 @@ const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1)
  * Returns `{ fkCol, refCol }` — the FK column on the target table and the
  * column it references on `model` — or `null` when no relation joins them.
  */
-export function inferFromFk(model, targetModel) {
+export function inferFromFk(model, targetModel, via = null) {
   const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
 
-  // A field on the target whose type is this model and which owns the FK.
+  // Every field on the target whose type is this model and which owns the FK.
+  // More than one is not exotic — sender/recipient both point at User, and a
+  // self-relational model offers parent and children before an app writes
+  // anything unusual. Picking the first silently is the failure this collects
+  // for: the count that comes back is plausible and answers the other question.
+  const candidates = []
   for (const f of targetModel.fields) {
     if (f.type.name !== model.name) continue
     const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
     if (!rel) continue
-    return {
-      fkCol:  Array.isArray(rel.fields)     ? rel.fields[0]     : rel.fields,
+    candidates.push({
+      field:  f.name,
+      name:   rel.name ?? null,
+      fkCol:  Array.isArray(rel.fields) ? rel.fields[0] : rel.fields,
       // Relations may reference a non-PK @unique column, so read it rather than
       // assuming the primary key.
       refCol: (Array.isArray(rel.references) ? rel.references[0] : rel.references) ?? idField,
-    }
+    })
   }
+
+  if (via) {
+    // `via` may name the field on the target (`sender`), its FK column
+    // (`senderId`), the @relation name, or the field on THIS model (`sent`) —
+    // which reaches the target through the relation name they share.
+    const own     = model.fields.find(f => f.name === via && f.type.name === targetModel.name)
+    const ownName = own?.attributes.find(a => a.kind === 'relation')?.name ?? null
+    const hit = candidates.find(c =>
+      c.field === via || c.fkCol === via || (c.name && c.name === via) ||
+      (ownName && c.name === ownName))
+    return hit
+      ? { fkCol: hit.fkCol, refCol: hit.refCol }
+      : { unresolvedVia: via, candidates }
+  }
+
+  if (candidates.length > 1) return { ambiguous: candidates }
+  if (candidates.length === 1) return { fkCol: candidates[0].fkCol, refCol: candidates[0].refCol }
 
   // Fallback: a column named after the model, e.g. Account → AccountId.
   const fallback = targetModel.fields.find(f => f.name === `${model.name}Id`)
@@ -2449,16 +2513,36 @@ function validate(schema) {
           errors.push(`Model '${model.name}': unknown onDelete action '${rel.onDelete}'`)
       }
 
-      // Array type validation — only String, Int, and File support []
+      // Array type validation — String, Int, File and a declared enum support [].
+      // An enum array is a SET of declared values, stored as a JSON TEXT column
+      // like any other array. Membership is checked at the client boundary, not
+      // by a CHECK: SQLite forbids a subquery in one, and reading the elements
+      // of a JSON array needs json_each, which is a table-valued function.
       if (field.type.array) {
         const arrayAllowed = new Set(['String', 'Int', 'File'])
         const isImplicitM2M = modelNames.has(field.type.name)
           && (field.type.kind !== 'relation' || !field.attributes.some(a => a.kind === 'relation' && a.fields))
-        if (!arrayAllowed.has(field.type.name) && field.type.kind !== 'relation' && !isImplicitM2M) {
-          errors.push(`Model '${model.name}', field '${field.name}': array [] is only supported for Text, Integer, File, or a model name for many-to-many (got ${field.type.name})`)
+        if (!arrayAllowed.has(field.type.name) && !enumNames.has(field.type.name)
+            && field.type.kind !== 'relation' && !isImplicitM2M) {
+          errors.push(`Model '${model.name}', field '${field.name}': array [] is only supported for Text, Integer, File, an enum name, or a model name for many-to-many (got ${field.type.name})`)
         }
         // Mark as implicit m2m relation
-        if (isImplicitM2M) field.type.kind = 'implicitM2M' 
+        if (isImplicitM2M) field.type.kind = 'implicitM2M'
+
+        // An array column is JSON TEXT under a json_type = 'array' CHECK, and a
+        // @default is emitted into the DDL verbatim. @default("x") therefore
+        // parsed, migrated, and then failed the CHECK on the first insert that
+        // relied on it — a schema error surfacing as a constraint violation.
+        const arrDef = field.attributes.find(a => a.kind === 'default')
+        if (arrDef && field.type.kind !== 'relation' && field.type.kind !== 'implicitM2M') {
+          const v = arrDef.value
+          let ok = false
+          if (v?.kind === 'string') {
+            try { ok = Array.isArray(JSON.parse(v.value)) } catch { ok = false }
+          }
+          if (!ok)
+            errors.push(`Model '${model.name}', field '${field.name}': @default on an array field must be a JSON array string, e.g. @default("[]") — an array column is stored as JSON text`)
+        }
       }
 
       // Json fields can't be part of indexes (warn, not error)
@@ -2715,6 +2799,36 @@ function validate(schema) {
   }
 
 
+  // ── @hashed validation ──────────────────────────────────────────────────────
+  // @hashed is not a flavour of @encrypted and does not compose with one: there is
+  // no ciphertext to guard, to rotate, or to hand back under a read policy. Every
+  // combination below is a schema that states two different fates for one column.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'hashed')) continue
+
+      if (field.attributes.some(a => a.kind === 'encrypted'))
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @encrypted — @hashed is one-way and there is no ciphertext to decrypt. Pick @encrypted(deterministic: true) if the value has to read back`)
+      if (field.attributes.some(a => a.kind === 'secret'))
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @secret — @secret implies @encrypted and $rotateKey, and a digest can do neither`)
+      if (field.attributes.some(a => a.kind === 'guarded'))
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @guarded — @hashed already strips the field from every read, asSystem() included`)
+      if (field.attributes.some(a => a.kind === 'fieldAllow'))
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @allow — no caller can read a digest, so a read policy over one has nothing to permit`)
+
+      // A digest is TEXT. Hashing a number or a date and comparing it works, but the
+      // column's declared type would then describe something it no longer holds.
+      if (field.type?.name !== 'String')
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed requires a String field — the column holds a base64url digest, not a ${field.type?.name}`)
+      if (field.type?.array)
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed cannot be applied to an array — each element would need its own digest and no filter could address one`)
+
+      const dbAttr = model.attributes.find(a => a.kind === 'db')
+      if (dbAttr && jsonlNames.has(dbAttr.name))
+        errors.push(`Model '${model.name}', field '${field.name}': @hashed is not supported on jsonl databases`)
+    }
+  }
+
   // ── @allow (field-level) validation ─────────────────────────────────────────
   for (const model of schema.models) {
     for (const field of model.fields) {
@@ -2800,8 +2914,24 @@ function validate(schema) {
       // builder runs, so the two cannot disagree: if this passes, buildFromMap
       // produces a subquery; if it fails, buildFromMap would have skipped the
       // field and the column would be absent from every row with no error.
-      if (targetModel && !inferFromFk(model, targetModel))
+      const fromFk = targetModel ? inferFromFk(model, targetModel, fromAttr.via) : null
+      if (targetModel && !fromFk)
         errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ...) — no relation from '${target}' back to '${model.name}'. Declare '${target}.${lowerFirst(model.name)} ${model.name} @relation(fields: [...], references: [...])'`)
+      // More than one relation joins the two models, so the field has to say
+      // which. Refused rather than resolved by declaration order: the wrong
+      // choice answers a plausible number for the other question, and nothing
+      // about the value it returns says which relation produced it.
+      if (fromFk?.ambiguous)
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @from(${target}, ...) is ambiguous — ` +
+          `${fromFk.ambiguous.length} relations join '${model.name}' and '${target}' ` +
+          `(${fromFk.ambiguous.map(c => `${target}.${c.field}`).join(', ')}). ` +
+          `Say which with via: — @from(${target}, ..., via: ${fromFk.ambiguous[0].field})`)
+      if (fromFk?.unresolvedVia)
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @from(${target}, ..., via: ${fromFk.unresolvedVia}) — ` +
+          `'${fromFk.unresolvedVia}' names no relation between '${model.name}' and '${target}'. ` +
+          `Candidates: ${fromFk.candidates.map(c => `${target}.${c.field}`).join(', ') || '(none)'}`)
       // Can't mix with other virtual attributes
       if (field.attributes.some(a => a.kind === 'computed'))
         errors.push(`Model '${model.name}', field '${field.name}': @from conflicts with @computed`)

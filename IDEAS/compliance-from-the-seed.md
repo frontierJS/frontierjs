@@ -80,6 +80,44 @@ Conduit's declared targets make "what does this app phone home to" answerable. H
 it joins the data map — a target that receives a `@pii` field is a processor, and
 naming it is a legal requirement, not a nicety.
 
+### 6. Support mode — bounded, audited impersonation
+
+Added 2026-08-12, from an ecosystem sweep of the app lifecycle. The word
+*impersonation* occurs nowhere in `IDEAS/`, and it is the most common day-two task in
+any real application: **a customer says it is broken and nobody can reproduce it.**
+
+Everywhere else this is hand-rolled and frightening, for a structural reason. Where
+authorization lives in handlers, there is no way to express *act as this person and no
+higher*, so what gets built is a god-mode switch — a support agent browsing as an
+administrator, with an audit trail that records the victim rather than the operator.
+Every part of that is a breach waiting for a bad afternoon.
+
+FJS can express the bounded version because the bound is already declared:
+
+- **The level is the user's, not the operator's.** `sessionGateLevel` resolves the
+  impersonated principal, so a support session cannot exceed what that person can do —
+  the ceiling is enforced at the Data boundary by the same mechanism as every other
+  request, not by a check somebody remembered to write.
+- **Attribution is the operator, not the subject.** The audit entry names who really
+  acted, which is the opposite of what a hand-rolled switch produces, and it is what
+  makes the feature defensible to the buyer this record is written for.
+- **Protected fields stay protected.** Invariant 7 already redacts
+  `@encrypted`/`@guarded`/`@secret` in the trail, and support mode must not become the
+  one path where a person reads a column the schema says nobody reads. Seeing *what the
+  user sees* and seeing *everything about the user* are different features; this is the
+  first.
+- **It is bounded in time and recorded as an episode**, not a flag on a session — a
+  support session has a start, an end, a reason, and a subject who can be told it
+  happened.
+
+That last point is where this stops being a convenience and joins the rest of this
+file: a subject access request that can answer *who looked at my record, when, and why*
+is a stronger artifact than one that only lists the data.
+
+Wants the audit trail to be complete first, so it sits behind the same dependency as
+`IDEAS/time-travel.md` — a support episode that a bulk write can escape is not an
+episode.
+
 ## Why this is a wedge, not a feature
 
 Compliance is the rare area where **the buyer is not the developer**. A framework

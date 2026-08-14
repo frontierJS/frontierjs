@@ -47,7 +47,7 @@ title: Servers
   $: session.workspaceId, () => load()
 
   // Live. Every mutation on this service publishes to workspace:<id>, and so
-  // does the agent heartbeat — which is the interesting one: a machine
+  // does the outpost heartbeat — which is the interesting one: a machine
   // checking in is not a person clicking, and this list should show it without
   // anyone touching the page.
   // The published event is named after the METHOD that produced it, so a

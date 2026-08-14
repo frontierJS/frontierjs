@@ -197,7 +197,13 @@ export class HttpTransport {
 
   // ─── Start server ──────────────────────────────────────────────────
 
-  start(): ReturnType<typeof Bun.serve> {
+  /**
+   * `port` overrides the configured one for this bind only. It exists for a
+   * caller that wants 0 — an OS-chosen free port, read back from `.port` — which
+   * is what makes a test server parallel-safe. Configuration stays untouched, so
+   * a restart binds what the app declared.
+   */
+  start(port?: number): ReturnType<typeof Bun.serve> {
 
     // Build route cache — must happen before first request
     this.router.build()
@@ -205,7 +211,7 @@ export class HttpTransport {
     setMaxQueuedBytes(this._opts.wsMaxQueued)
 
     this._server = Bun.serve({
-      port:     this._opts.port,
+      port:     port ?? this._opts.port,
       hostname: this._opts.hostname,
 
       fetch: (req, server) => this._handle(req, server),
@@ -225,6 +231,16 @@ export class HttpTransport {
     })
 
     return this._server
+  }
+
+  /**
+   * The port actually bound, or null before start(). Configured `port: 0` asks
+   * the OS for a free one, and without this there is no way to learn which —
+   * which is the difference between a parallel-safe test server and a suite
+   * that collides on a fixed number and reports it as the app being broken.
+   */
+  get port(): number | null {
+    return this._server?.port ?? null
   }
 
   // Swap the auth implementation used for session resolution. Public API —

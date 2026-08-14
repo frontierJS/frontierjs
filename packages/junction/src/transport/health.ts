@@ -16,7 +16,6 @@
 // If no auth is configured the endpoints are public — fine for internal
 // networks, should be locked down for internet-facing deployments.
 
-import { customMethodNames, isMethodAllowed, allowedMethodNames } from '../core/service.ts'
 import type { App }              from '../core/app.ts'
 import type { TransportContext } from './types.ts'
 
@@ -246,20 +245,17 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
             // Powers the REPL `services` command's full route display.
             details: Object.fromEntries(
               app.services.list().map(name => {
-                const svc = app.services.get(name)!
+                const d = app.services.get(name)!.describe()
                 return [name, {
-                  // customMethodNames() is the ONE predicate for "is this an
-                  // action", shared with the manifest and OpenAPI plugins.
-                  // This used to read `svc.actions`, a key no service has —
-                  // createService copies custom methods straight onto the
-                  // service object — so /metrics reported `actions: []` for
-                  // every service, always, while /manifest listed them
-                  // correctly. Two answers to one question; now one.
+                  // describe() is the one answer, shared with /manifest and the
+                  // OpenAPI generator. This used to read `svc.actions`, a key no
+                  // service has, so /metrics reported `actions: []` for every
+                  // service, always, while /manifest listed them correctly.
                   // Policy-filtered, so an action a `methods:` allow-list
                   // withholds is not reported as available.
-                  actions:   customMethodNames(svc).filter(m => isMethodAllowed(svc, m)),
-                  methods:   allowedMethodNames(svc),
-                  allowBulk: !!(svc as unknown as { allowBulk?: boolean }).allowBulk,
+                  actions:   d.actions.filter(m => d.methods.includes(m)),
+                  methods:   d.methods,
+                  allowBulk: d.allowBulk,
                 }]
               })
             ),

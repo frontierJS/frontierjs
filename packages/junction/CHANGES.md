@@ -1,5 +1,213 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-13 — the README's Conduit example taught two things that cannot work
+
+Found while sweeping for `FJS-D29` (*agent* → *Outpost*), and the naming was the
+smaller half.
+
+**`kind: 'agent'` no longer exists** — the union member is `'outpost'`, so the
+example as written was a type error for anyone who copied it.
+
+**`auth: { type: 'hmac', secret: process.env.AGENT_SECRET }` never worked at all.**
+A Conduit target carries a **ref**, resolved at send time; the HMAC signer reads
+`ref` and nothing else. The documented form type-checks through the cast and then
+fails every send with `auth_failed` naming credential `undefined` — *and* writes
+the material into the registry, which `GET /conduit-targets` hands back. That is
+the exact defect Basecamp hit and recorded in its own `CLAUDE.md`; the README has
+been teaching it since.
+
+Both fixed in place, with the ref/material distinction stated in the sample.
+
+## 2026-08-13 — a service is a definition and a compiled runtime
+
+`FJS-D01`, closing `FJS-016`. The ruling and the Feathers 5 comparison are in
+`DECISIONS.md` § API design; this is what moved.
+
+**The derived hooks install once** (`FJS-231`, found while planning this). A base
+returns the MERGED hook map, the autoloader spreads a base back through
+`createService`, and the second pass appended the schema-derived layer again — so
+every autoloaded one-line service graded its `@@gate` and ran its validator
+**twice per request**. Nothing caught it because nothing was wrong on the wire.
+The four derived hooks are marked now (a WeakSet, invisible to a spread) and a
+marked hook already present is skipped. Marked rather than matched by name: a
+user hook called `gateAuth` is not ours, and letting it suppress the real one is
+fail-open on the thing that enforces access.
+
+**`methods:` declares.** It used to be an allow-list validated *against* a scan
+of the object; it is now the source of truth, which is Feathers' shape and what
+makes an action nameable after an option key — `cache`, `schema` and `channel`
+were eaten by the deny-list with no error at declaration, at call, or anywhere
+else. With no `methods:` the scan runs exactly as before, so every inline action
+keeps working and no app in this repo changed.
+
+**One parse step, one table.** `collectActions` runs at construction and lands in
+`_actions`; dispatch, `/manifest`, the OpenAPI spec and `/metrics` read it
+instead of each re-deciding what counts as an action. An action attached to a
+service *after* construction still dispatches and warns once naming itself — that
+was never a supported shape, but a silent 404 is the worst way to learn it.
+
+**`describe()`** — `{ name, model, actions, methods, allowBulk, softDelete,
+cache, idField, hooks, schemas? }`. The three advertisers stopped reaching into
+`_meta`, `_schemas` and `_hookMap` through casts. Three readers of four
+internals was three chances to describe a different service than the one that
+answers the request, and `/metrics` did exactly that: it read `svc.actions`, a
+key no service has, and reported `[]` for every service while `/manifest` listed
+them correctly.
+
+**`pipelines(appHooks)` is the one owner.** Gone: `_pipelines`,
+`_compiledPipelines`, its hand invalidation, the four writers, the registry's
+`hooks()` monkey-patch, and the three-way ladder in `callService` where the cache
+**outranked the app hooks the transport had just passed**. The memo is keyed on
+both inputs — the app map by identity, the service's own by a version `hooks()`
+bumps — so a stale answer is unreachable rather than remembered, and a call now
+always runs the hooks it was handed. One `svc.hooks()` call used to merge and
+resolve twice and pass through `undefined` in between; it merges once now.
+
+One hazard worth knowing: `app.hooks()` REASSIGNS `app._appHooks` rather than
+mutating it, which is what makes identity a sound key. Anything that starts
+mutating it in place defeats the memo silently.
+
+**A built service is marked** — `Symbol.for('junction.service')`, non-enumerable,
+and `createService` returns an already-marked object unchanged. The autoloader
+tests the marker instead of asking `typeof service.hooks !== 'function'`, which
+answered *was this built?* by inspecting one field's type. Non-enumerable
+matters: `{...svc}` is a copy of the fields, not a service, and it is correctly
+seen as unbuilt.
+
+**Breaking, internals only:** `Service._pipelines` and `Service._compiledPipelines`
+are gone; `Service` no longer has an index signature, so `svc.someAction` needs a
+cast in TypeScript (`ServiceDefinition` keeps its signature — you *write* actions
+there). Nothing outside this package read either field.
+
+Typecheck baseline **211 → 199**, most of it one deleted line: an index signature
+made `keyof Service` `string | number`, so `Omit<Service, …>` collapsed and every
+`base.find` read as `unknown`.
+
+Verified: junction 991 · testing 23 · conduit 193 · auth 88 · cli 363+25 ·
+`example` verify 37 / live 14 / jobs 8 · `basecamp` verify 271/271.
+
+## 2026-08-13 — three things you could not ask for
+
+**The browser client can ask for a relation.** `FindParams` gained `populate`,
+emitted as `$populate` on the query string and on the WebSocket frame alike.
+The wire and the server had supported it from the start — the bridge parsed it,
+the service destructured `include` — so the only thing missing was the way to
+say it, which meant a component could not declare its own data shape and
+over-fetching was a decision made server-side in a hook. The server's spelling
+travels unchanged (`'customer'`, `['a','b']`, `'customer:name+email'`), so there
+is one grammar rather than a client dialect. A by-id `get` carries `params` too;
+they used to be accepted and dropped on that path. `FJS-084`.
+
+**`buildRoutes(app)` and the routes half of `/manifest`.** The HTTP surface is
+emergent — services auto-mount, plugins register their own — and `hasRoute()`
+answers a matching question, so *what is actually mounted* had no cheap answer.
+`buildRoutes` reads the router rather than rebuilding from the registry, and
+splits the auto-mounted `{service}` templates from everything a plugin or the
+app registered. `fli api:routes` is the caller. `FJS-091`.
+
+It found a defect on its first run against a scaffolded app: two identical
+`OPTIONS /*` routes, because the scaffold configured CORS by hand *and* through
+`config.http.cors`. `FJS-225`.
+
+**`IEventBus.stats()`** — `{ events: Record<string, number>, total }`, beside
+`hasListeners` rather than replacing it. A yes/no is the wrong resolution for
+anyone chasing a missing announcement, and the handler map is closure-private,
+so nothing could count subscribers. An event whose last handler unsubscribed is
+omitted rather than reported as zero. `FJS-143`.
+
+**Documented rather than fixed:** `after` means after the METHOD, not after the
+call succeeded. A later `after` hook throwing makes the call report failure with
+an earlier hook's email already sent, and there is no commit-scoped phase to put
+the effect in. README and `CLAUDE.md` now say so, with the two workarounds.
+`FJS-089` stays open for the phase itself.
+
+## 2026-08-13 — one owner for `apiPrefix`; an Idempotency-Key means something; a `$defs` miss is audible
+
+Three things that read as handled and were not.
+
+**`apiPrefix` moves every route the app registers, not just the service ones.**
+It used to be applied by `registerServiceRoutes` alone, so a plugin's
+`app.get()` landed at the root while the services beside it moved. Four plugins
+in this package hand-resolved `app.config.apiPrefix` to compensate;
+`@frontierjs/auth` did not, and an app under `/api` therefore served its login
+at `/auth` — with the browser client's default looking for it under the prefix,
+so the two ends never met. The shortcuts (`get/post/put/patch/delete`) now apply
+it, `registerServiceRoutes` registers bare `/{service}` paths like every other
+caller, and the four copies are gone. A route that must sit at a fixed path —
+somebody else's callback URL, a probe path an orchestrator owns — is registered
+on `app.http.router` directly, the layer beneath the shortcuts, which applies
+nothing. The client's `authPrefix` composes with `apiPrefix` for the same
+reason the plugin's `prefix` option does. `FJS-012`.
+
+This moves paths in any app that sets a prefix, which is the fix rather than a
+side effect of it: `example` now serves `/api/auth/login`, `/api/session`,
+`/api/jobs` and `/api/health`, and one vite proxy entry replaced four.
+
+**An `Idempotency-Key` executes once.** The header was parsed into request
+metadata and consumed by nothing, so a double-submitted create ran twice while
+carrying the value that says not to — and Conduit spends the opposite side of
+the same contract outbound, asking other people's APIs for a guarantee this one
+advertised and did not provide. `core/idempotency.ts` claims the key in
+`callService`, the one path every transport takes, so a repeat replays the first
+answer without running the pipeline: no second hook, no second write, no second
+announcement. Scoped to `(service, method, principal, key)` — replay skips the
+pipeline and therefore the auth checks in it, so a key shared across principals
+would hand one caller another's answer. A **failed** call releases its key,
+because a failed request is one the caller may retry; a duplicate arriving while
+the first is still running is a **retryable** 409 rather than a second parallel
+execution. `config.idempotency` (`enabled`/`ttl`/`pendingTtl`) is on by default
+and inert unless a caller sends a key. `FJS-088`.
+
+The in-flight marker carries its own short TTL. It is the one entry nothing is
+guaranteed to clear — a throw between the claim and the settle would otherwise
+leave a key answering 409 for a day, turning one failure into a caller who can
+never retry.
+
+**The WebSocket path establishes request metadata at all.** It wrapped nothing
+in `runWithMeta`, so `requestMeta()` was `undefined` for every socket call and
+the correlation id was as HTTP-only as the idempotency key. Both now ride the
+frame's `meta`, beside the id and the workspace.
+
+**A model service with no field rules says so.** `autoValidate` stored `null`
+for a `$defs` miss — and for a definition that would not compile — and said
+nothing either way, so a service accepted unvalidated input in silence while the
+schema declared `@email`, `@length` and `@gte`. It warns once per model now,
+naming the service, the spellings tried and the compiler's own message. Only
+when the accessor does resolve to a table: a service with no model at all is a
+supported shape, and `getTable` already names every spelling when an unused CRUD
+method is called on one. `FJS-013`.
+
+## 2026-08-12 — `ctx.id` is a string on both transports
+
+Over HTTP the id is a path segment and can only ever be a string. Over the socket
+it rides a JSON frame, so `patch(42, …)` handed a service the number `42` while
+`PATCH /leads/42` handed it `'42'`. A handler comparing `ctx.id` to a row's own
+id, or using it as a Map key, answered differently depending on whether a socket
+was connected — and the browser client prefers the socket whenever one is up, so
+the same code is correct in dev and wrong in production, or the reverse. The WS
+handler now matches the transport that has no choice. `FJS-197`.
+
+Found by `@frontierjs/testing`'s `verifyTransportParity()` on its first run
+against a custom action, which is the one method shape the derived call set does
+not cover.
+
+## 2026-08-12 — a thrown status keeps its status, and a test server can bind port 0
+
+`fromStatusCode` mapped fourteen codes to error classes and everything else to
+`GeneralError`, whose `code` is 500. So an app throwing `{ status: 423 }` or
+`{ status: 451 }` got a server error on the wire — not a narrower answer but a
+different category, where the client stops retrying and the 5xx pages someone for
+a refusal the app stated deliberately. An unmapped code in 400–599 now keeps its
+status and loses only the class name, which is the part nothing on the wire reads.
+`FJS-196`. It survived because every error junction itself throws has a class.
+
+`http.start(port?)` and `http.port`. The argument overrides the configured port
+for one bind and leaves configuration untouched; the getter reads back what was
+bound. Together they are how a caller asks for **port 0** — an OS-chosen free
+port — which is what makes a test server parallel-safe, and without the getter
+there is no way to learn which port that was. `@frontierjs/testing`'s
+`listen: true` is the first caller.
+
 ## 2026-08-11 — `autoSort`: an unknown `$orderBy` key is a 400, not an unsorted 200
 
 `autoFilter`'s sibling, closing the quieter half of the same failure. An unknown

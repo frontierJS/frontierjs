@@ -77,14 +77,32 @@ no invoicing, no billing webhooks, no proration or trials.
   payment provider, and Junction's webhooks plugin is the right inbound one. Nothing
   is built on either.
 
-### 3. Object storage driver
+### 3. Object storage driver — ~~missing~~ **shipped in the wrong package; the gap is a duplicate abstraction**
 
-`IFileStorage` (`packages/junction/src/storage/filestorage/index.ts`) is a clean
-contract with exactly one implementation: local disk. No S3, R2 or GCS anywhere.
+**Re-derived 2026-08-12 and the original claim was wrong.** It said *"exactly one
+implementation: local disk. No S3, R2 or GCS anywhere."* That is true of the file it
+names and false of the repo.
 
-- **Laravel equivalent:** Flysystem drivers
-- **Why it blocks:** any container, serverless or multi-node deployment
-- **Size:** small — a driver against an interface that already exists
+Litestone ships a complete object-storage plugin: `src/storage/providers/s3.js` against
+`src/storage/sigv4.js` — request signing and presigned URLs written by hand, no AWS SDK
+— documented in `packages/litestone/docs/file-storage.md` for R2, B2, MinIO and S3,
+with a `local` fallback for dev, a `keyPattern` template, `@accept` MIME filtering,
+`@keepVersions`, and `File`/`File[]` as schema types whose rows are cleaned up on
+delete. It is tested.
+
+**So the real finding is worse than a missing driver and cheaper to fix: there are two
+file-storage abstractions in the repo and only one of them can reach S3.** Junction's
+`IFileStorage` is a separate 280-line interface over local disk, unaware of Litestone's.
+That is an Invariant 4 problem — one owner per translation — rather than a feature gap,
+and the question is whether Junction's should delegate to Litestone's plugin or be
+retired.
+
+- **Why it still matters:** an app that stores files through Junction's interface rather
+  than a `File` column still cannot run on more than one node
+- **Size:** small, and it is a reconciliation rather than a build
+- **Lesson for this file:** the claim was three words long, sat in the index for
+  months, and was wrong because it grepped one package. Six index rows have now been
+  found stale this way
 
 ### 4. Internationalization
 
@@ -244,6 +262,115 @@ transport. Every response is buffered and returned whole.
   the precedent for "outside" exists.
 - **Interaction:** pairs with item 11 — a stream that cannot be rate-limited is worse
   than no stream.
+
+### 13. Security advisories and dependency posture
+
+Added 2026-08-12, from an ecosystem sweep of the app lifecycle. The words *CVE* and
+*vulnerability* occur nowhere in `IDEAS/`, and nothing in `fli` answers **am I
+affected**.
+
+Laravel, Rails and Django each have a published advisory channel, a supported-version
+policy, and a one-command audit of the dependency tree. This is not a differentiator
+for any of them — it is the floor, and an evaluator finds its absence in about thirty
+seconds. It matters more here than for a hosted framework, because FJS asks people to
+run the thing themselves.
+
+Mostly not code:
+
+- **A stated support policy.** Which versions get fixes, for how long. Pre-alpha is an
+  answer, as long as it is written down.
+- **An advisory format and a channel.** One file shape, published once per issue.
+- **`fli` answering *am I affected*.** The FJS-specific half: an advisory names a
+  package and a version range, and `project:map --json` already knows what the app
+  actually uses. So the answer is a comparison rather than a scan — and it can be
+  narrower than a scanner, because the app model knows which surfaces are *reachable*,
+  not merely installed.
+
+Interaction with `IDEAS/slices.md`: the moment a third party can ship a slice, the
+advisory channel has to cover slices too, and a registry (item 3.6 in the overview)
+without one is a supply chain with no way to say *stop using this*. Better to have the
+format before the registry than after.
+
+### 14. Inbound integrations — everything points outward
+
+Added 2026-08-12, from the same sweep as item 13. Probed, and the direction is
+consistent everywhere:
+
+- **Conduit is outbound** — declared targets, `app.conduit.send()`. Its own one-liner in
+  `CLAUDE.md` says *outbound boundary*.
+- **The webhooks plugin is outbound** — `packages/junction/src/plugins/webhooks/index.ts`
+  opens *"At-least-once webhook delivery for Junction"*, and the architecture comment
+  reads bus → pending row → deliver → retry → dead. It signs what it sends.
+- **Notifications are outbound.** Mail is outbound.
+
+**Nothing in the framework receives.** There is no inbound webhook endpoint, no
+signature verification on the way in, no replay window, no dedupe of a delivery the
+sender retried, and no declared mapping from an external payload to a Service call.
+Domain 4 in `ARCHITECT.md` describes itself as *"Conduit (shipped, narrow)"* and this is
+the direction the narrowness is in.
+
+The practical evidence is that FJS users run something else for it. An n8n or a Zapier
+beside the app is not a preference; it is the only available answer to *Stripe posts
+here, do something*. `IDEAS/release-transitions.md` phase 2 makes that instance a
+declared attached service, which is the right treatment for a tool you have chosen —
+but it is not an answer to whether the app can receive its own events without one.
+
+What makes this FJS-shaped rather than a route with a body parser:
+
+- **An inbound payload maps to a Service call**, and a Service is already typed by the
+  seed — so the mapping is validated at the boundary by the mechanism that validates
+  everything else, rather than by hand in a handler.
+- **The idempotency problem is already on the table.** A retried delivery must not run
+  twice, which is the same key discipline `IDEAS/release-transitions.md` needs for
+  journal steps and the same lesson `CLAUDE.md` records against Caravan's `unique` —
+  three places wanting one definition of *this work already happened*.
+- **Verification is a declaration, not a snippet.** A secret, an algorithm, a timestamp
+  tolerance. The outbound half already states all three in the plugin quoted above; the
+  inbound half is the mirror of code that exists.
+
+Interaction worth noting before either is built: an inbound endpoint is a door in a
+`@@gate`-protected application that a stranger must be able to knock on, which is the
+same exemption `/auth/*` already takes and should be argued once for both rather than
+twice.
+
+### 15. The small sharp edges
+
+Added 2026-08-12 from a sweep asking what a developer still wires up by hand. Three
+that are too small to be records and too common to lose. Each is a day or two, each is
+currently written from scratch in every application, and each has a known correct
+answer that people only find after shipping the wrong one.
+
+**User-defined ordering.** Drag-to-reorder a list. The naïve `position: Int` requires
+rewriting every row after the one that moved, which is a write storm and a race, and
+`0 hits` is what a grep for `fractional`, `reorder` or `sortOrder` returns across
+`IDEAS/` and the parser. The known answer is a fractional or lexicographic rank —
+insert between two neighbours, touch one row — plus a rebalance for the pathological
+case. It is a field type with a comparison rule, which puts it in the same family as
+`IDEAS/declared-semantics.md`. Wants `$checkOrderBy` to know the column is a rank
+rather than a number, so the client sorts by it without being told.
+
+**Conditional fields in a form.** *Show the VAT number only when the country is in the
+EU; require it when shown.* Every form in every business application has one and it is
+always imperative code in the page. `IDEAS/cascading-fields.md` is the Data-realm
+cousin — carrying a value to related rows — and is not this: this is a field's
+*visibility and requiredness* depending on another field's current value, in the
+browser, before anything is submitted. It matters more here than elsewhere because
+`<Form>` now derives labels, constraints and messages from the schema, so a
+hand-written conditional is the one part of a generated form that is not generated —
+and `IDEAS/forms-from-the-seed.md` 1.1a cannot generate a field list without an answer
+for the fields that are sometimes not in it. The hazard to state up front: a
+client-side condition is an affordance, so the server must still validate, which is the
+same split `x-gate` already draws.
+
+**`@@softDelete` and `@unique` do not agree.** A soft-deleted row still occupies its
+unique index, so deleting a user and re-registering the same email fails with a
+constraint violation that names nothing the user did. Both features ship, the
+interaction is undefined, and every application discovers it in production. The
+answers are known and none is free — a partial index, a nulled column, or a tombstone
+suffix — and the point of recording it here is that **this is a ruling the framework
+should make once**, not a trap each app finds. It also lands on
+`IDEAS/compliance-from-the-seed.md`'s open question about retention and soft delete,
+which is the same collision seen from the legal end.
 
 ---
 

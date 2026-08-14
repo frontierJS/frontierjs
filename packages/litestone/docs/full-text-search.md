@@ -47,6 +47,11 @@ const snippets = await db.message.search('hello', {
 
 Results are ordered by FTS5 rank (relevance) by default.
 
+`search()` runs two queries — the FTS5 table for the matching rowids, then the
+base table for the rows — and rejoins them by id to restore rank order. A
+`select` need not name the id: it is fetched for that join and trimmed from the
+result like any other injected column.
+
 ## With @@softDelete
 
 The index mirrors the table — soft-deleted rows stay in it, and `search()` is

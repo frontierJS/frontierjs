@@ -153,22 +153,33 @@ function makeLevelCache(getLevel, auth) {
 
 // ─── Access check ─────────────────────────────────────────────────────────────
 
+// The one definition of "does this level pass this gate". Anything that
+// *describes* the gate rather than enforcing it — the generated matrix, the
+// access snapshot — asks this rather than restating the comparison, because a
+// second copy is an artefact that certifies access the plugin does not grant.
+export function levelPasses(required, userLevel) {
+  if (required === 9) return false               // LOCKED — asSystem() included
+  if (required === 8) return userLevel === 8     // SYSTEM — SYSADMIN(7) is not it
+  return userLevel >= required
+}
+
 function checkLevel(required, userLevel, model, operation) {
+  if (levelPasses(required, userLevel)) return
+
   if (required === 9)
     throw new AccessDeniedError(
       `"${model}.${operation}" is LOCKED — not accessible via ORM`,
       { model, operation, required, got: userLevel }
     )
-  if (required === 8 && userLevel !== 8)
+  if (required === 8)
     throw new AccessDeniedError(
       `"${model}.${operation}" requires SYSTEM access (use asSystem())`,
       { model, operation, required, got: userLevel }
     )
-  if (userLevel < required)
-    throw new AccessDeniedError(
-      `"${model}.${operation}" requires level ${required}, user has level ${userLevel}`,
-      { model, operation, required, got: userLevel }
-    )
+  throw new AccessDeniedError(
+    `"${model}.${operation}" requires level ${required}, user has level ${userLevel}`,
+    { model, operation, required, got: userLevel }
+  )
 }
 
 // ─── Nested write preflight ───────────────────────────────────────────────────

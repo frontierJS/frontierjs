@@ -638,12 +638,9 @@ export function webhooks(opts: WebhookOptions): Plugin {
       // if the app has no auth configured, the routes respond 401 in
       // production (never open) and remain open only in development.
 
-      // Default '' — Junction's own default (core/app.ts registerServiceRoutes),
-      // so these sit alongside the service routes wherever the app put them.
-      // This defaulted to '/api', which parked them under a prefix no other
-      // route in a default app uses.
-      const apiPrefix = (app.config as import('../../config/index.ts').AppConfig).apiPrefix ?? ''
-
+      // These sit alongside the service routes wherever the app put them:
+      // app.get/post/delete apply apiPrefix themselves (core/app.ts). This
+      // used to hand-resolve it here, one of four copies of the same read.
       type RouteCtx = Parameters<Parameters<typeof app.get>[1]>[0]
       const guard = (ctx: RouteCtx): ReturnType<RouteCtx['json']> | null => {
         if (ctx.user) return null                                    // authenticated session
@@ -659,13 +656,13 @@ export function webhooks(opts: WebhookOptions): Plugin {
       const redact = ({ secret: _secret, ...rest }: WebhookRegistration) => rest
 
       // Registration
-      app.get(`${apiPrefix}/webhooks`, async (ctx) => {
+      app.get(`/webhooks`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
         const hooks = await store.list()
         return ctx.json(hooks.map(redact))
       })
 
-      app.post(`${apiPrefix}/webhooks`, async (ctx) => {
+      app.post(`/webhooks`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
         const body = ctx.body as { url?: string; events?: string[]; secret?: string }
         if (!body?.url)           return ctx.json({ error: 'url required' }, 400)
@@ -674,14 +671,14 @@ export function webhooks(opts: WebhookOptions): Plugin {
         return ctx.json(hook, 201)   // includes secret — the one and only time
       })
 
-      app.get(`${apiPrefix}/webhooks/{id}`, async (ctx) => {
+      app.get(`/webhooks/{id}`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
         const hook = await store.getRegistration(ctx.params.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
         return ctx.json(redact(hook))
       })
 
-      app.delete(`${apiPrefix}/webhooks/{id}`, async (ctx) => {
+      app.delete(`/webhooks/{id}`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
         const hook = await store.getRegistration(ctx.params.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
@@ -690,7 +687,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
       })
 
       // Test ping
-      app.post(`${apiPrefix}/webhooks/{id}/test`, async (ctx) => {
+      app.post(`/webhooks/{id}/test`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
         const hook = await store.getRegistration(ctx.params.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
@@ -711,7 +708,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
       })
 
       // Delivery history
-      app.get(`${apiPrefix}/webhook-deliveries`, async (ctx) => {
+      app.get(`/webhook-deliveries`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
         const webhookId  = ctx.query.webhookId
         const limit      = parseInt(ctx.query.limit ?? '50', 10)
@@ -719,7 +716,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
         return ctx.json(deliveries)
       })
 
-      app.get(`${apiPrefix}/webhook-deliveries/{id}`, async (ctx) => {
+      app.get(`/webhook-deliveries/{id}`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
         const d = await store.getDelivery(ctx.params.id)
         if (!d) return ctx.json({ error: 'Not found' }, 404)
@@ -727,7 +724,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
       })
 
       // Manual retry
-      app.post(`${apiPrefix}/webhook-deliveries/{id}/retry`, async (ctx) => {
+      app.post(`/webhook-deliveries/{id}/retry`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
         const result = await manager.retry(ctx.params.id)
         if (!result) return ctx.json({ error: 'Not found' }, 404)

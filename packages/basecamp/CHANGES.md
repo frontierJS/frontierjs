@@ -2,6 +2,50 @@
 
 Newest first. What changed and why; the current state is `PROJECT_STATE.md`.
 
+## 2026-08-13 — the process a server runs is an Outpost, not an agent
+
+`FJS-D29`. The word had two meanings in this repo already — the resident fleet
+process here, and the MCP caller `IDEAS/agent-surface.md` proposes — in a codebase
+whose `UserKind` enum has an `ai` member. The rule that settles it and the next one:
+**infrastructure takes place nouns, AI takes personified nouns.**
+
+Renamed: `Server.outpostVersion` / `outpostUrl` (migration regenerated from the seed
+with `bun db/generate.js`, never hand-edited), the Conduit target `outpost:<server-id>`
+and its `kind`, the snake_case heartbeat payload `outpost_version` / `outpost_url`,
+`OUTPOST_SECRET`, `outpostFor()` in `fleet.engine.ts`, `outpostTarget` in
+`deployment.engine.ts`, and the prose throughout the schema, services, screens and
+the drive.
+
+**Three of those are wire contracts, which is why this happened now rather than
+later.** Basecamp's half of the protocol is written — both engines dispatch through
+Conduit and `servers.service.ts` registers the target on heartbeat — and the machine's
+half does not exist. The caller existed and the callee did not, so this was a
+find-and-replace instead of a compatibility window.
+
+`@frontierjs/conduit` moved with it: its `TargetKind` union carried an `'agent'`
+member, and `testing.ts` derives the kind from the id prefix, so a target id that no
+longer started with `agent:` would have graded as the wrong kind.
+
+`bun run verify --reset` 271/271, which covers the heartbeat, the Conduit dispatch
+and the *"No outpost is registered"* refusal. `bun run test` 65/66 — the one failure
+is `FJS-177`, unrelated and already allowed in CI.
+
+Not renamed: `userAgent` (an HTTP header), `db/legacy-sql/002_server_agent.sql` (it is
+history and `db/README.md` explains it never worked), and the entries above this one.
+
+## 2026-08-13 — the hub prints the subscriber count it used to apologise for
+
+`IEventBus` grew `stats()` in Junction (`FJS-143`), so the hub's badge shows
+`N event subscribers` instead of *has listeners / idle*, and the "Not shown
+here" card drops the paragraph explaining why the number could not exist. CPU is
+the one figure left on that card, and it still says so rather than printing
+something derived from a single reading.
+
+The drive's assertion changed with it: it used to check the screen contained the
+words *cannot produce*, which is a check that passes hardest exactly when the
+gap is never closed. It now asserts the number is there and rendered.
+`verify` 271/271 (`--reset`).
+
 ## 2026-08-10 — the first `@@allow`, and what it found under it
 
 `Server` declares row-level tenancy in the schema:
@@ -16,7 +60,7 @@ refuses**: any read that legitimately crosses a workspace and is not
 `asSystem()` stops matching, with no error and a 200. Here that audit came out
 clean, which is the only reason this was a one-line change: the three engines
 each open with `app.data.asSystem()` and say why, the hub reads through
-`asSystem()` because `User` is gated above SYSADMIN, and the agent's heartbeat
+`asSystem()` because `User` is gated above SYSADMIN, and the outpost's heartbeat
 does too. `workspaceId` reaches `auth()` the way `memberRole` does —
 `applyStanding()` puts both on the principal for the workspace being addressed.
 
@@ -214,7 +258,7 @@ Phase 9: `/recipes/` and `/cleanup/`, over four new models — `Recipe`,
 **A vocabulary cannot bound a script, so the record does.** The obvious move was
 to apply yesterday's saved-view ruling again, and it does not transfer: a stored
 query is dangerous because it is executed at the Data boundary, where `@@gate`
-and `@@allow` grade a caller against a model; a script is handed to an agent and
+and `@@allow` grade a caller against a model; a script is handed to an outpost and
 run on a machine, where there is no model and no grade at all. So the two
 screens carry opposite safeguards. A cleanup stores target NAMES from a fixed
 list and refuses anything else by name; a recipe stores code, authoring it is
@@ -228,8 +272,8 @@ the script into a terminal instead.
 **One run row per SERVER**, because a fleet run is N executions with N exit
 codes and a single row must pick one status for *three succeeded and two
 failed*. Neither screen executes anything: both queue on Caravan's new `fleet`
-queue and `api/src/engine/fleet.engine.ts` asks the agent through `app.conduit`
-— one file for both, because the shape is one shape (resolve the agent, send,
+queue and `api/src/engine/fleet.engine.ts` asks the outpost through `app.conduit`
+— one file for both, because the shape is one shape (resolve the outpost, send,
 record, push) and only the safeguards differ.
 
 **Every number on the cleanup screen was measured by Docker.** `DiskUsage`
@@ -243,7 +287,7 @@ off by default.
 
 `DiskUsage` counts no volumes and stamps no last-cleanup: `Volume` owns per-disk
 sizes and `CleanupRun` owns when a sweep ran. A sweep's answer carries a fresh
-`usage` snapshot from the agent that just measured it, written through the same
+`usage` snapshot from the outpost that just measured it, written through the same
 function the report endpoint uses, and volumes it removed are forgotten only by
 the names it confirms — the rule `volumes.prune` already follows.
 
@@ -329,16 +373,16 @@ no screen and no seed data. 17 services. Details in `docs/SCREENS.md` § Phase 7
 
 **A volume is OBSERVED, not declared.** Every other model in this app is
 something a person created and Basecamp then acts on. A volume exists because
-Docker made it and an agent found it, so the service has no `create` — a row
+Docker made it and an outpost found it, so the service has no `create` — a row
 appears because a machine reported it, through `report`, which replaces that
 server's whole set and is exempted from `sessionScope` by name the way
 `servers.heartbeat` is.
 
 **Deleting a row is not deleting a volume.** `remove` and `prune` ask the
-agent, through `app.conduit`, at the `agent:<id>` target a heartbeat registers,
+outpost, through `app.conduit`, at the `outpost:<id>` target a heartbeat registers,
 and forget the row only once the machine says the disk is gone — `prune`
-forgets exactly the names the agent confirms, never the ones it asked about. A
-server whose agent has never checked in refuses in words and keeps the row: the
+forgets exactly the names the outpost confirms, never the ones it asked about. A
+server whose outpost has never checked in refuses in words and keeps the row: the
 alternative leaves the disk full and the fleet's picture wrong in the one
 direction nothing can detect. A mounted volume refuses too, naming the
 containers.
@@ -349,18 +393,18 @@ decides MB or GB.
 
 ### What building it found
 
-- **Nothing had ever sent to an agent, and it could not have.**
+- **Nothing had ever sent to an outpost, and it could not have.**
   `servers.heartbeat` registered the conduit target with
   `auth: { type: 'hmac', secret }`, but conduit's hmac signer reads **`ref`** —
-  so every outbound call to an agent failed `auth_failed` naming credential
+  so every outbound call to an outpost failed `auth_failed` naming credential
   `undefined`, and the shared secret was written into the registry in plaintext
   where `GET /conduit-targets` hands it back. Both halves gone: the target
-  carries `env:AGENT_SECRET` and `createSecretResolver` resolves an `env:` ref
+  carries `env:OUTPOST_SECRET` and `createSecretResolver` resolves an `env:` ref
   through `core/env.ts`, so an undeclared name fails closed. The literal it used
-  to sign with was not the app's `AGENT_SECRET` either.
-- **The agent was only registered on a status transition**, inside the
+  to sign with was not the app's `OUTPOST_SECRET` either.
+- **The outpost was only registered on a status transition**, inside the
   `came_online` branch, while the comment beside it claimed "first heartbeat /
-  IP change". A machine already online when its agent first reports a URL never
+  IP change". A machine already online when its outpost first reports a URL never
   transitioned, so it was never registered. Registration is keyed on the URL now.
 - **Omitting a method does not remove it.** With `model:` set, Junction's
   Litestone base answers every CRUD verb the service leaves out — validated, so
@@ -513,7 +557,7 @@ Sierra SPA over every service. Phases and what each found: `docs/UI_PLAN.md`.
 - **Screens.** Setup wizard, login and a navigation guard; workspace switcher;
   Projects → Environments → Apps with environment variables; deployments with a
   live step timeline; the server fleet (drain/undrain/reboot/sync, event trail,
-  agent heartbeat); jobs with run history; an admin zone (members, audit trail,
+  outpost heartbeat); jobs with run history; an admin zone (members, audit trail,
   appliance adapters).
 - **`bun run verify`** — drives all of it in a real browser over CDP and asserts
   **90 facts**, including an accessibility pass on all ten screens. `--reset`
@@ -552,7 +596,7 @@ Sierra SPA over every service. Phases and what each found: `docs/UI_PLAN.md`.
 - **Four custom methods answered a partial row** — `setVariable`, the deployment
   engine's projection, `heartbeat`, `jobs.trigger` — each breaking a caller that
   assigned the result over the record it was rendering. All return the record.
-- **The agent heartbeat published to nothing**: `workspaceChannel` reads
+- **The outpost heartbeat published to nothing**: `workspaceChannel` reads
   `ctx.locals.workspaceId`, which `sessionScope` sets, and heartbeat is exempt
   from it. It now stamps the workspace from the server row.
 - **The job engine published nothing**, so a triggered job wrote its `JobRun`

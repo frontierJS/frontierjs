@@ -57,7 +57,7 @@ if (!existsSync(join(DIST, 'catalog', 'index.html'))) {
   process.exit(1)
 }
 try {
-  const r = await fetch(`${API}/health`)
+  const r = await fetch(`${API}/api/health`)
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
 } catch (e) {
   console.error(`Cannot reach the API at ${API} — is \`bun run api\` up? (${e.message})`)

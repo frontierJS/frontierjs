@@ -178,11 +178,14 @@ export function createHubService(app: BasecampApp) {
         // tile that reads "no targets registered" on a hub with twelve. Found
         // by the typechecker, not by the browser: both answers render.
         conduitTargets:  (await app.conduit?.list())?.length ?? 0,
-        // The in-process bus can say WHETHER anything is listening and not how
-        // much — IEventBus exposes hasListeners() and no count. The mock's
-        // "Event subscribers" number does not exist; this is the true half of
-        // it and the screen says which (FJS-143).
+        // Subscribers, by event. `stats()` answers the count the mock's
+        // "Event subscribers" tile always wanted; the bus used to expose
+        // hasListeners() and nothing else, so the card stated the gap rather
+        // than printing a number it could not measure (FJS-143, closed).
+        // `eventBusActive` is kept because it is the question the badge asks,
+        // and deriving it here means one shape reaches the screen.
         eventBusActive:  app.events.hasListeners(),
+        eventBus:        app.events.stats(),
         queues:          app.jobs.stats(),
         counts:          { workspaces, users, servers, apps, projects },
       }

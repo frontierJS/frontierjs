@@ -17,12 +17,12 @@ title: Activity
   // makes this screen worth having.
   //
   // **Two sources, one feed.** `AuditEvent` is what PEOPLE did; `ServerEvent`
-  // is what the MACHINES did — an agent going unreachable, a heartbeat coming
+  // is what the MACHINES did — an outpost going unreachable, a heartbeat coming
   // back — and the second was unreadable at workspace scope until
   // `servers.feed` landed (`FJS-104`): events were per-server only, so a fleet
   // view meant one request per server, merged in the browser. They are merged
   // here, by time, because an operator reading "what happened" does not care
-  // which table it came from — and a drain followed by the agent confirming it
+  // which table it came from — and a drain followed by the outpost confirming it
   // only reads as one story if they sit next to each other.
   import { session }    from '../../session.js'
   import { audit }      from '../../resources/AuditEvent.mesa'
@@ -81,7 +81,7 @@ title: Activity
           id:          `srv-${e.id}`,
           createdAt:   e.createdAt,
           actorId:     null,
-          actorType:   'agent',
+          actorType:   'outpost',
           action:      `servers.${e.kind}`,
           subjectType: 'servers',
           subjectId:   e.serverId,

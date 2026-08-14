@@ -1,7 +1,7 @@
 # cli (`fli`) — package map
 
 **A markdown-native command runtime.** A command is a `.md` file: prose and
-fenced code, compiled to JavaScript and run. 197 command files. Scaffolds,
+fenced code, compiled to JavaScript and run. 202 command files. Scaffolds,
 deploy, the workspace/release commands and the port broker live here.
 `bun run test` (bun).
 
@@ -16,13 +16,14 @@ core/
   runtime.js    executes a compiled command
   registry.js   command discovery and resolution
   prose.js      the markdown side
+  checks.js     the architecture rules — shared with scripts/ci.mjs
   config.js · bootstrap.js · ports.js · utils.js · server.js
 commands/  one directory per namespace — db, auth, api, web, site, deploy, git,
            github, npm, env, make, project, ports, browser, crypto, fetch, ai,
            cloudflare, caprover, completion, admin, literate, utils, fli
 cli/src/   the CLI's own source tree
 web/       the browser-facing side
-tests/     compiler · runtime · registry · server · deploy · project-root · steps
+tests/     compiler · checks · runtime · registry · server · deploy · project-root · steps
 ```
 
 ---
@@ -73,8 +74,19 @@ tests/     compiler · runtime · registry · server · deploy · project-root �
   that is not (`FJS-166`).
 - The port broker implements the FJS port scheme; the scheme itself is documented
   in `packages/jetty/src/dev/fjs-ports.js`.
+- **`core/checks.js` has two callers and one of them is not in this package.**
+  `scripts/ci.mjs` imports it by relative path and runs it over this repo as the
+  `structure` phase. Loosening a rule here loosens it for every app on the next
+  release, and tightening one can fail the repo's own CI — which is the point.
+  Zero dependencies, plain ESM, node or bun; a package import would break the
+  `ci.mjs` caller, which runs on plain node before anything is installed.
+- **A rule belongs there only if it is SILENT when broken.** A violation that
+  already raises an error belongs in the thing that raises it. `--list` prints
+  the table with the invariant each rule comes from.
 
 ## Proving a change
 
 `bun run test`. There is no browser drive for `fli` — a change to a scaffold is
-proved by scaffolding into a temp directory and running what comes out.
+proved by scaffolding into a temp directory and running what comes out. A change
+to `core/checks.js` also needs `node scripts/ci.mjs --fast`, because the repo is
+its other caller.

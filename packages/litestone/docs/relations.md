@@ -182,6 +182,17 @@ name of the relation field. `@from(orders, …)` fails with *"unknown model 'ord
 **`first:`/`last:` return the whole related row**, so the field is typed as the target
 model — `Order?`, not `DateTime`. Reach into it in application code (`account.lastOrder.createdAt`).
 
+The row is a **properly read row**: it carries the target's own `@computed` and `@from`
+fields and is stripped of its `@guarded`, `@omit` and `@encrypted` ones, exactly as a
+direct read or an `include` of that row would be. The subquery resolves the row's id and
+one batched query fetches the rows — so a `findMany` of a hundred parents costs one extra
+query, not a hundred.
+
+Two consequences worth knowing. The target's **row policy applies**, the same way it does
+to an `include`, so a `@@allow` on the target can make the field `null`. And because the
+pick happens in SQL before the policy is known, a row the caller may not read makes the
+field `null` rather than falling through to the next visible one (`FJS-224`).
+
 `@from` fields appear automatically in query results — no extra `include` needed. They are
 read-only, are not stored in SQLite, and disable the `findUnique` fast path (see `performance.md`).
 
@@ -193,7 +204,41 @@ Model 'Account', field 'orderCount': @from(Order, ...) — no relation from 'Ord
 ```
 
 The correlation is inferred from the target's `@relation`, so it follows `references:` rather
-than assuming the primary key — an FK pointing at a non-PK `@unique` column works.
+than assuming the primary key — an FK pointing at a non-PK `@unique` column works. The
+subquery aliases the target, so a model may derive from **itself** — a task counting its
+own subtasks correlates a table to itself, and without the alias the correlation is
+captured by the subquery's own `FROM` and every row answers `0`.
+
+### `via:` — which relation, when there is more than one
+
+Two relations can join one pair of models, and then the target model name is not enough to
+say which one a `@from` reads. That is **refused**, naming both and the cure:
+
+```
+Model 'User', field 'msgCount': @from(Message, ...) is ambiguous — 2 relations join
+'User' and 'Message' (Message.sender, Message.recipient). Say which with via: —
+@from(Message, ..., via: sender)
+```
+
+```prisma
+model User {
+  id       Int       @id
+  sent     Message[] @relation("sent")
+  received Message[] @relation("received")
+
+  sentCount Int @from(Message, count: true, via: sent)        // the field on THIS model
+  gotCount  Int @from(Message, count: true, via: recipient)   // or the field on the target
+}
+```
+
+`via` names either side — the relation field on this model, the one on the target, the
+`@relation` name they share, or the FK column itself. A name matching none of them is
+refused with the candidates listed.
+
+This is routine on a self-relational model: `parent` + `children` is **one** relation and
+needs no `via`, but add a second (`blocker`/`blocked`) and both need naming. Picking the
+first that fits was the old behaviour, and the count it returned answered a different
+question with nothing in the value to say so.
 
 ### Operations
 
@@ -221,43 +266,95 @@ Note the two different empties: `sum` coalesces to `0`, `max` stays `null`.
 
 ## Recursive tree queries
 
-Self-referential relations support CTE-based tree traversal:
+A model with a relation to itself — a task with subtasks, a category with
+subcategories — is walked with `recursive`:
 
 ```prisma
-model Category {
-  id       Int     @id
-  name     String
-  parent   categories? @relation(fields: [parentId], references: [id])
+model Task {
+  id       Int    @id
+  title    String
   parentId Int?
-  children categories[]
+  parent   Task?  @relation(fields: [parentId], references: [id])
+  children Task[]
 }
 ```
 
 ```js
-// All descendants of node 5
-const subtree = await db.category.findMany({
-  where:     { id: 5 },
-  recursive: true,   // direction: 'descendants' (default)
-})
+// Everything below task 5
+const subtree = await db.task.findMany({ where: { id: 5 }, recursive: true })
 
-// All ancestors (breadcrumb path to root)
-const path = await db.category.findMany({
+// The path up to the root — a breadcrumb
+const path = await db.task.findMany({
   where:     { id: 42 },
   recursive: { direction: 'ancestors' },
 })
 
-// Nested structure — each node has a children array
-const tree = await db.category.findMany({
+// A tree: each node carries a `children` array
+const tree = await db.task.findMany({
   where:     { parentId: null },
   recursive: { direction: 'descendants', nested: true, maxDepth: 3 },
 })
 
-// Multiple self-relations — disambiguate with via:
-const reports = await db.employees.findMany({
+// Two self-relations on one model — say which
+const reports = await db.employee.findMany({
   where:     { id: 1 },
   recursive: { direction: 'descendants', via: 'reports' },
 })
 ```
+
+Every row carries `_depth`, its distance from the anchor — `1` for a direct
+child or the immediate parent, counting outward in both directions. The anchor
+itself is never in its own result, and `orderBy: { _depth: 'desc' }` sorts by it
+(only on a tree read; `_depth` is not a column).
+
+### A tree read is an ordinary read
+
+The `@@gate`, the `@@allow` row policies and `@@softDelete` all apply, and they
+apply **at every level, not just to the row you named**. A node the caller
+cannot see hides its whole subtree:
+
+```js
+// @@allow('read', ownerId == auth().id)
+await me.task.findMany({ where: { id: 1 }, recursive: true })
+// → the walk stops at the first row the policy refuses; its children are not
+//   reachable through it. Same for a soft-deleted node — `withDeleted: true`
+//   opts the walk back in, exactly as it does a flat read.
+```
+
+That is the deliberate reading of a hidden node: it takes its branch with it,
+matching what `@@softDelete(cascade)` already does on the write side. The
+alternative — reparenting orphans up to the visible tree — would hand back the
+children of a row the caller was refused.
+
+`select`, `include`, `@computed` and `@from` all behave as they do on any other
+`findMany`, because the tree query resolves ids and the rows come back through
+the ordinary read path.
+
+### What it will not do
+
+Only `findMany` walks a tree. `count`, `findFirst`, `findUnique`, `exists`,
+`aggregate` and `groupBy` **refuse `recursive` by name** rather than quietly
+answering about the anchor row alone. `nested: true` refuses `limit`/`offset`
+for the same reason — they would cut branches out of the middle of a tree. Use
+`maxDepth`, or page the flat result.
+
+### Cycles
+
+A row cannot be made its own ancestor. The write is refused, naming the field:
+
+```js
+await db.task.update({ where: { id: 1 }, data: { parentId: 1 } })
+// ValidationError: parentId points at the row itself — a row cannot be its own parent
+
+await db.task.update({ where: { id: 1 }, data: { parentId: 3 } })   // 3 is below 1
+// ValidationError: parentId would make "1" its own ancestor — the parent chain
+// above 3 already passes through it
+```
+
+Refused at the write because that is the only place that can name the field
+that was wrong. A loop already in the table — written before this guard, or
+through raw SQL — is survived rather than trusted: the walk tracks the path it
+came by and visits each row once.
 
 ## Relation orderBy
 

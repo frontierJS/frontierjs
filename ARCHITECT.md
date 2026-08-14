@@ -113,6 +113,18 @@ two jobs. Arguments in `drift-report.md` §synthesis; status in `DECISIONS.md`
 - **Edge** (app↔world seam) vs Boundary (realm↔realm); Deployment noun →
   **Release** (ceding "Manifest" to MV3); **Slice** (a package shape that
   crosses all realms deliberately — auth, notifications).
+- **The Deployment realm's four nouns**, proposed in
+  `IDEAS/release-transitions.md` and unbuilt: a **Release** is immutable and
+  environment-independent (image, config values, secret *references*, schema
+  version, asset manifest, declared pivot); an **Environment** is mutable but
+  generational and provides bindings only; an **Audience** is a named set of
+  principals a Release may be served to — cohort routing, not a percentage
+  canary; a **Pivot** is the transition at which N-1 compatibility ends, which
+  is the same test for a contract migration, a client retention window and a
+  gradual rollout. Two open collisions before any of it is settled: Audience is
+  a set of principals and may belong to the Data realm beside the Trust
+  Hierarchy, and *binding* is already claimed by Mesa's reactive seam in the
+  list above.
 
 ---
 
@@ -219,6 +231,12 @@ Report these accurately; don't treat them as bugs.
 - **Query params** — `$limit`/`$offset` at UI/API vs `limit`/`offset` in
   Litestone; the gap is exactly the `$` prefix (`$skip` exists nowhere).
 - **`@@strict`** — per-model escalation of read-warnings to errors: parked.
+- **Deployment** — the realm with no package. What a deploy may *promise* is
+  argued in `IDEAS/release-transitions.md` (five invariants, a phased build, and
+  two claims from the research that were falsified and are recorded as such);
+  what a Release may *be* is argued in `IDEAS/offline-first-and-release.md`
+  (artefact kinds). Neither is ruled. The one line both agree on: provisioning
+  must degrade to nothing, or the portable path becomes the special case.
 
 ---
 

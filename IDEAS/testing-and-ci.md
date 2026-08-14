@@ -1,5 +1,11 @@
 # Idea — A testing environment and automated CI
 
+**Gap B is superseded by `IDEAS/testing-realm.md`** (2026-08-11), which turns it into
+an ordered plan and revises two of its conclusions against research into how other
+frameworks fail at this. Read this file for how the question was first framed;
+read that one for what to do. § Design — the Suite realm and § Design — derived
+suites are the parts that moved.
+
 **Status: gap A is BUILT, gap B is still an idea.** Dated 2026-08-03; gap A shipped
 2026-08-10 as `scripts/ci.mjs` + `scripts/hooks/pre-push` + `.github/workflows/ci.yml`
 — read the script, not the § Design — CI sketch below, which is what was proposed

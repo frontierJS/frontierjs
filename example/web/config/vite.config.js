@@ -50,12 +50,11 @@ export default defineConfig({
     // also what lets the Junction client derive its WebSocket URL from the same
     // base as its HTTP calls, and it means no CORS.
     proxy: {
+      // One entry covers the whole API: apiPrefix moves every route the app
+      // registers, raw ones included — auth, the session probe and Caravan's
+      // admin routes are all under /api. /ws is the socket, which is not a
+      // route.
       '/api':     { target: API, changeOrigin: true },
-      '/auth':    { target: API, changeOrigin: true },
-      '/session': { target: API, changeOrigin: true },
-      // Caravan's admin routes. Raw app.get routes take no apiPrefix, so this
-      // is /jobs and not /api/jobs — its own proxy entry, not a sub-path of one.
-      '/jobs':    { target: API, changeOrigin: true },
       '/ws':      { target: API, ws: true },
     },
   },

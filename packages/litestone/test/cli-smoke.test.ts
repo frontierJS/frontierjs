@@ -460,7 +460,11 @@ describe('CLI smoke — long-running servers', () => {
       dir,
       ['studio', `--port=${port}`],
       (buf) => buf.includes('Studio at'),
-      { timeoutMs: 6_000 },
+      // Generous because this is a cold process start under whatever else the
+      // run is doing. At 6s it failed inside `bun run ci` — five phases and
+      // every package's suite in flight — and passed on its own, which is the
+      // shape that gets a green suite called flaky and then ignored.
+      { timeoutMs: 20_000 },
     )
     expect(output).toContain(`http://localhost:${port}`)
     expect(await waitForPort(port)).toBe(true)

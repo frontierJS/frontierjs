@@ -221,3 +221,7 @@ wants it.
 - `state-machines.md` — `@@transitions`, the field-level half of item 4.
 - `compliance-from-the-seed.md` — the same argument (`@pii`/`@retain`) applied
   to a category this file does not cover.
+- `time-and-recurrence.md` — item 3 arrives there from the other direction. This
+  file asks *which clock does a row record*; that one asks *what kind of time is
+  this column*, and they are the same question. **Settle them together**, or one
+  will fix a vocabulary the other has to live inside.

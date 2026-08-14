@@ -178,6 +178,15 @@ function executableStatements(stmts) {
 // Runs statements inside one owned transaction. `record` (optional) runs as
 // the final step INSIDE the transaction, so the migration bookkeeping commits
 // atomically with the schema change itself.
+// The executable statements of one migration file, comments and the in-file
+// transaction control already removed. Exported so anything that replays a
+// migration outside apply() — the test template builder — strips it the same
+// way rather than carrying a second copy of a rule whose whole point is that
+// getting it wrong leaves a connection inside an open transaction.
+export function migrationStatements(filePath) {
+  return executableStatements(loadMigrationSql(filePath).stmts)
+}
+
 function runInTransaction(rawDb, stmts, record = null) {
   rawDb.run('PRAGMA foreign_keys = OFF')
   rawDb.run('BEGIN')

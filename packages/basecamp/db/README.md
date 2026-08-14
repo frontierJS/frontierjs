@@ -103,7 +103,7 @@ the same person here is `owner` in one workspace and `viewer` in the next.
 | `admin` | ADMINISTRATOR (5) |
 | `owner` | OWNER (6) |
 | `User.isSystemAdmin` | SYSADMIN (7) |
-| `asSystem()` | SYSTEM (8) — engines, agents, the seed, migrations |
+| `asSystem()` | SYSTEM (8) — engines, outposts, the seed, migrations |
 
 CREATOR(3) is unused: the narrowest role reads and the next one up writes.
 
@@ -133,7 +133,7 @@ picture, which is the only way to tell the policy from the where-clause.
 **A policy filters where a gate refuses**, and that is the whole risk in the
 remaining 36. A read that legitimately crosses a workspace and is not
 `asSystem()` matches nothing — no error, an empty screen. The paths that do
-cross are the three engines, the hub and the agent's heartbeat, and every one of
+cross are the three engines, the hub and the outpost's heartbeat, and every one of
 them already takes `asSystem()`. Do one model at a time and run `bun run verify`
 between them.
 

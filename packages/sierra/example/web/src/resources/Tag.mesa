@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Tag.mesa — the Resource layer.
+  //
+  // `Lead.tags` is an implicit many-to-many, so the tag list is its own noun and
+  // its own file.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const tags = createResource('tags')
+</script>

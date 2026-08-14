@@ -3,7 +3,7 @@
 //
 // This is the DECLARED half of the pair a recipe completes. A cleanup never
 // carries a command: it names targets from this list, the API refuses anything
-// else by name, and the agent is asked for exactly these. So the destructive
+// else by name, and the outpost is asked for exactly these. So the destructive
 // thing an operator does daily needs no arbitrary code, and the arbitrary path
 // (`/recipes/`) needs a role.
 //
@@ -27,7 +27,7 @@
 export type ReclaimEstimate = 'images' | 'containers' | 'volumes' | 'build_cache'
 
 export interface ReclaimTargetSpec {
-  /** The wire name — stored on `CleanupRun.targets` and sent to the agent. */
+  /** The wire name — stored on `CleanupRun.targets` and sent to the outpost. */
   target:      string
   label:       string
   description: string
@@ -96,7 +96,7 @@ export const RECLAIM_TARGET_NAMES = RECLAIM_TARGETS.map(t => t.target)
 export const RECLAIM_TARGET_BY_NAME: Record<string, ReclaimTargetSpec> =
   Object.fromEntries(RECLAIM_TARGETS.map(t => [t.target, t]))
 
-/** The reclaimable figures a server has, in the units the agent reported. */
+/** The reclaimable figures a server has, in the units the outpost reported. */
 export interface ReclaimFigures {
   images:      number
   containers:  number

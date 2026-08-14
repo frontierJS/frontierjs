@@ -4,6 +4,12 @@
 implements any of it, and no package depends on MCP. Do not cite this file as
 describing behavior — see `VERIFYING.md`.
 
+**"Agent" in this file means an AI caller, and now means nothing else in the
+repo.** `FJS-D29` (2026-08-13) gave the word to this side and renamed the fleet
+process Basecamp installs to **Outpost**, under the rule *infrastructure takes
+place nouns, AI takes personified nouns*. So a grep for `agent` outside historical
+files is a grep for this proposal.
+
 ---
 
 ## The claim

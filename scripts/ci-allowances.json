@@ -3,12 +3,19 @@
 
   "//exemptPackages": "Directories under packages/ (plus the two example apps) with no `test` script. Without this list a package with no tests is indistinguishable from a passing one, which is the failure mode CI is aimed at. Key is the repo-relative directory.",
   "exemptPackages": {
-    "packages/datetime-kit": "Claimed, not built — a README and no package.json. FJS-D14 asks what to do with it.",
+    "packages/datetime-kit": "A README, with the prototype parked under `mockup/`. Its suite was removed 2026-08-12 — six files failed outright, `format.js` passed only in MST and failed on a UTC runner, and the two that passed held no assertions. Being rebuilt to IDEAS/datetime-kit.md (reduced Temporal plus a schema declaration); the new suite is zone-explicit, so this entry goes when that lands.",
     "packages/oracle": "A mockup/ directory and nothing else; nothing in the repo references it. FJS-D14.",
     "packages/orion": "Claimed, not built — basecamp's partner app. FJS-D14.",
     "packages/toolbelt": "Claimed, not built. FJS-D14.",
     "example": "A runnable app, not a package. Its six browser drives need `bun run api` + `bun run web` started by hand and sign in against a login rate limit (10 per 15 min), so they cannot run unattended. Covered by hand per CLAUDE.md § Running things.",
     "packages/sierra/example": "Same — a runnable app whose drives need servers started by hand."
+  },
+
+  "//structure": "Architecture-rule exceptions for the `structure` phase, which runs packages/cli/core/checks.js — the same engine `fli check` gives a client app. Keyed by app directory (or `.` for the repo-wide package rules), then by `<rule>:<path-relative-to-that-root>`. A rule is what every app gets on the next release, so an exception is never a loosened rule: it is one named path with a reason, and a stale one is reported.",
+  "structure": {
+    ".": {
+      "package-root-md:packages/css": "AGENTS.md. Invariant 17 names four files and this is a fifth, but it is the same KIND of thing as CLAUDE.md — a root-level agent-facing document whose whole value is being findable at the root, under a name other tools have converged on. Either the invariant grows to name it or this file moves; unruled, so it is an allowance rather than a quiet edit to the invariant."
+    }
   },
 
   "//generatedIgnored": "Files that .gitignore excludes and that a source-extension sweep therefore flags. Each one must be GENERATED — a source file in this list is the `build/`-in-.gitignore incident happening again, where 20 files of Sierra's build pipeline were invisible to a fresh clone.",
@@ -20,11 +27,14 @@
   "//nonMembers": "Directories holding a package.json that the `packages/*` glob cannot see, kept out of the workspace on purpose. Uninstalled means untested and unrunnable (FJS-026), so each one has to say why that is acceptable. A NEW nested package is a note, because the default answer is that it should be a member.",
   "nonMembers": {
     "packages/mesa/mesa-bench": "A js-framework-benchmark harness, `private: true`, pinning vite 5.4.11 against mesa's own 8.x plus its own remark chain. Making it a member installs a second toolchain for something CI has nothing to assert about. It is run by hand, from its own directory.",
-    "packages/orion/mockup/api-engine": "Real TypeScript with vitest tests and a typecheck script, inside a package that is otherwise claimed-not-built. Whether orion becomes a workspace member is FJS-D14's question, not CI's."
+    "packages/orion/mockup/api-engine": "Real TypeScript with vitest tests and a typecheck script, inside a package that is otherwise claimed-not-built. Whether orion becomes a workspace member is FJS-D14's question, not CI's.",
+    "packages/oracle/mockup": "The entity/pattern recogniser, exported from a Claude artifact and made runnable under the same `mockup/` convention orion and datetime-kit use. Deliberately not a member: it is React, d3 and its own vite, and this repo's UI substrate is Mesa — installing it would put a second UI stack on the workspace's import paths for something CI has nothing to assert about. Run by hand from its own directory. FJS-D14.",
+    "packages/datetime-kit/mockup": "The prototype the package is being rebuilt from, parked 2026-08-12 under the same `mockup/` convention orion uses. Deliberately not a member: `extend()` throws on every call, `add(d, '1 day')` throws, and `src/cron.js` is a stale fork of the fixed one in caravan — installing it would put that on an import path. Reference for the rebuild described in IDEAS/datetime-kit.md, deleted when it lands."
   },
 
   "//knownTestFailures": "Packages whose own suite exits non-zero today. Listed so that a NEW failure is loud rather than lost in an already-red run. An entry whose suite now passes fails CI until it is removed — that is the ratchet, and `--update` removes it for you.",
   "knownTestFailures": {
-    "packages/jetty": "FJS-030 — phase8 asserts the built islands/demo.js parses as a classic script and it does not: `Cannot use 'import.meta' outside a module`. MV3 content scripts are classic scripts. The other nine phases pass."
+    "packages/jetty": "FJS-030 — phase8 asserts the built islands/demo.js parses as a classic script and it does not: `Cannot use 'import.meta' outside a module`. MV3 content scripts are classic scripts. The other nine phases pass.",
+    "packages/basecamp": "FJS-177 — one assertion in db/test/schema.test.ts expects auth's User to be unreadable below SYSTEM, and auth's shipped fragment moved from @@gate(\"8\") to \"4.4.4.5\" on 2026-08-11, so the read now succeeds. The test is asserting against auth's model rather than basecamp's own. The other 65 pass."
   }
 }

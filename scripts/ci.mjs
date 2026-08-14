@@ -2,7 +2,7 @@
 // ============================================================
 // Workspace CI runner — the whole of FJS-009 that is not a YAML file
 //
-//   node scripts/ci.mjs              # everything: hygiene, coverage, typecheck, tests
+//   node scripts/ci.mjs              # everything: hygiene, access, coverage, typecheck, tests
 //   node scripts/ci.mjs --fast       # everything except the test suites (the pre-push tier)
 //   node scripts/ci.mjs --tests-only # just the suites
 //   node scripts/ci.mjs --update     # write ratchet improvements back to ci-allowances.json
@@ -23,6 +23,9 @@
 //   4. A known-failing suite is named, so a NEW failure is loud. One package
 //      failing today makes the aggregate exit 1 forever, which trains everyone
 //      to ignore the exit code.
+//   5. A committed access snapshot that no longer matches its schema is a
+//      FAILURE. Gates and row policies are enforced below the API, so a gate
+//      that moved is invisible to every suite until production refuses someone.
 //
 // Every allowance lives in scripts/ci-allowances.json, keyed by name with a
 // reason, so widening the net is a diff and narrowing it is automatic.
@@ -32,6 +35,12 @@ import { spawnSync }                       from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { join, dirname, relative }         from 'node:path'
 import { fileURLToPath }                   from 'node:url'
+
+// The SAME module `fli check` runs against a client app. Imported by relative
+// path rather than reimplemented, because a framework that breaks its own stated
+// rules is worse than one that never stated them — and the way that happens is
+// two copies where only one of them is ever re-derived.
+import { runChecks, findApps, formatFindings } from '../packages/cli/core/checks.js'
 
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')
@@ -73,6 +82,8 @@ const started = Date.now()
 function main() {
   if (!testsOnly) {
     hygiene()
+    structure()
+    access()
     coverage()
     typecheck()
   }
@@ -127,7 +138,112 @@ function hygiene() {
   if (!unexpected.length) ok(`${ignoredSource.length} ignored source file(s), all accounted for`)
 }
 
-// ─── phase 2 · coverage ─────────────────────────────────────
+// ─── phase 2 · structure ────────────────────────────────────
+// The architecture rules, run over this repo's own apps and packages with the
+// same engine `fli check` gives a client app. Nothing here is stylistic: every
+// rule is silent when broken, which is the membership test.
+//
+// It found three things on its first run — a resource file named `leads.mesa`
+// with three Resources in it, and an `index.html` whose comment mentioned the
+// body tag, so the sierra example's production build shipped no JavaScript at
+// all and had been doing so unnoticed.
+
+function structure() {
+  const from = phase('structure')
+
+  const allow = allowances.structure ?? {}
+  const apps  = findApps(ROOT)
+  let  checked = 0
+
+  // Errors carry their own detail rather than going to `notes`, which print at
+  // the very bottom — a failure that says "see above" for lines that appear
+  // below is how a run gets read as a mystery.
+  const report = (label, result, base) => {
+    checked += result.ran.length
+
+    const errors = result.findings.filter(f => f.severity === 'error')
+    const warns  = result.findings.filter(f => f.severity !== 'error')
+
+    if (errors.length) fail(
+      `${label} — ${errors.length} architecture error(s)\n` +
+      formatFindings(errors, base).map(l => `    ${l}`).join('\n') + '\n' +
+      `      \`fli check\` runs these same rules against a client app; \`--list\` prints the table.\n` +
+      `      A genuine exception is a named entry under "structure" in scripts/ci-allowances.json.`
+    )
+    for (const line of formatFindings(warns, base)) note(`${label} ${line.trim()}`)
+    for (const key of result.stale) {
+      note(`structure allowance is stale — nothing under ${label} matches ${key}. Remove it.`)
+    }
+  }
+
+  for (const app of apps) {
+    const label = relative(ROOT, app) || '.'
+    report(label, runChecks({ root: app, allow: allow[label] ?? {} }), app)
+  }
+
+  report('packages', runChecks({ root: ROOT, scope: 'repo', allow: allow['.'] ?? {} }), ROOT)
+
+  if (clean(from)) ok(`${apps.length} app(s), ${checked} rule run(s), no architecture errors`)
+}
+
+// ─── phase 3 · access ───────────────────────────────────────
+// An app's access rules live in its schema and are enforced below the API, so a
+// gate that moved is invisible until something is refused in production. The
+// committed access.snapshot.md is the reviewable form of them; this is what
+// makes it a gate rather than a document.
+//
+// Opt-in by committing the file. An app with no snapshot is not asked for one —
+// a check that fails a repo for not adopting a convention gets disabled.
+
+function access() {
+  const from = phase('access')
+
+  const snapshots = git(['ls-files', '*access.snapshot.md']).split('\n').filter(Boolean)
+
+  if (!snapshots.length) {
+    note('no access snapshot is committed anywhere — `litestone access` writes one beside a schema')
+    return
+  }
+
+  for (const snapshot of snapshots) {
+    const dir    = dirname(snapshot)
+    const schema = join(dir, 'schema.lite')
+
+    if (!existsSync(join(ROOT, schema))) {
+      fail(`${snapshot} has no schema beside it — expected ${schema}`)
+      continue
+    }
+
+    // The litestone CLI is reached through the workspace rather than by a
+    // relative path into packages/: a consuming app runs this same check with
+    // litestone installed from the registry.
+    const result = spawnSync('bunx', ['litestone', 'access', '--schema', schema, '--check'], {
+      cwd:        ROOT,
+      encoding:   'utf8',
+      shell:      false,
+      maxBuffer:  MAX_BUFFER,
+      timeout:    TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+      env:        { ...process.env, CI: '1', FORCE_COLOR: '0' },
+    })
+
+    if (result.status !== 0) {
+      fail(
+        `${snapshot} no longer matches ${schema}\n` +
+        `      Access changed. Run \`litestone access --schema ${schema}\` and read the diff\n` +
+        `      before committing — a line that moved without a schema change you meant to\n` +
+        `      make is a shipped security bug.`,
+        { stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
+      )
+    }
+  }
+
+  // Guarded on the whole phase — a green summary printed beside a red line is
+  // how a failure gets read as noise.
+  if (clean(from)) ok(`${snapshots.length} access snapshot(s) current`)
+}
+
+// ─── phase 4 · coverage ─────────────────────────────────────
 // Skipped is not passed. The aggregate `--filter '*'` walks straight past a
 // package with no `test` script and prints nothing at all about it.
 
@@ -187,7 +303,7 @@ function coverage() {
   if (clean(from)) ok(`${workspaceDirs().length} workspace member(s), ${Object.keys(exempt).length} exempt by name`)
 }
 
-// ─── phase 3 · typecheck ────────────────────────────────────
+// ─── phase 5 · typecheck ────────────────────────────────────
 // Two halves: the direction of the ratchet (a git question) and the count
 // itself (each package's own script already answers that, and exits 1 above
 // its ceiling).
@@ -251,7 +367,7 @@ function checkBaselineDirection() {
   if (!raised) ok(`baselines never raised against ${ref}`)
 }
 
-// ─── phase 4 · tests ────────────────────────────────────────
+// ─── phase 6 · tests ────────────────────────────────────────
 // Sequential on purpose: several suites bind ports and start real servers, and
 // interleaved output from four different runners is unreadable when one fails.
 

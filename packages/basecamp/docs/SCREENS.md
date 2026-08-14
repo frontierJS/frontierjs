@@ -114,13 +114,13 @@ None of these exists in `db/schema.lite`.
 | `WorkspaceFlagsView` + 2 modals | 505 + 152 + 71 | **Built** — `/flags/`, over `FeatureFlag` + `FlagOverride`. The mock keyed per-environment state by TIER NAME; an override points at a real `Environment` row. See § Phase 5 |
 | `FlagsView` (sys) | 59 | **Built** — `/hub/flags/`, the same models read across every tenant and grouped by the prefix convention in the key. Toggling changes the flag's own default, never an override — a hub screen has no environment in hand. See § Phase 10 |
 | `RegistryView` | 112 | `RegistryImage` — or an adapter read, if the registry is the source of truth |
-| `VolumesView` | 120 | **Built** — `/volumes/`, over `Volume`. The first OBSERVED model here: no `create`, a row appears because an agent reported it, and deleting one asks that agent to delete the disk before the record is forgotten. See § Phase 7 |
+| `VolumesView` | 120 | **Built** — `/volumes/`, over `Volume`. The first OBSERVED model here: no `create`, a row appears because an outpost reported it, and deleting one asks that outpost to delete the disk before the record is forgotten. See § Phase 7 |
 | `DiskCleanupView` | 431 | **Built** — `/cleanup/`, over `DiskUsage` (observed, one row per server) + `CleanupRun` (what a sweep actually freed). A sweep names targets from a list the service owns and never carries a command. See § Phase 9 |
 | `BlueprintMarketplaceView` + `BlueprintDeployModal` | 216 + 147 | `Blueprint` |
 | `RecipesView` | 191 | **Built** — `/recipes/`, over `Recipe` + `RecipeRun`. Arbitrary code on a machine, so authoring is admin and every run keeps the script it ran, one row per server. See § Phase 9 |
 | `HubBackupView` | 179 | `Backup` |
 | `HubSettingsView` | 115 | Hub-level settings store |
-| `SysOverviewView` | 77 | **Built** — `/hub/`, read at request time from the thing that owns each number (Caravan, Conduit, the channel manager, SQLite). Two of the mock's tiles do not survive contact with the runtime and say so instead: an event-subscriber COUNT the bus cannot produce (`FJS-143`), and CPU, which nothing here samples. See § Phase 10 |
+| `SysOverviewView` | 77 | **Built** — `/hub/`, read at request time from the thing that owns each number (Caravan, Conduit, the channel manager, SQLite). One of the mock's tiles does not survive contact with the runtime and says so instead: CPU, which nothing here samples. The event-subscriber count was the other until the bus grew `stats()` (`FJS-143`). See § Phase 10 |
 | `OnboardingView` | 427 | Onboarding progress. Derivable from what exists, if it is checks rather than rows |
 | `UserSettingsView` | 318 | Mostly `User` + `Session` (both exist) — but preferences, MFA and the API-token half do not |
 
@@ -203,7 +203,7 @@ Three things this settled, all of them convention rather than feature:
   once per *workspace* and a server reporting pressure reaches the notice bar
   with nothing asking again. The home screen's queue subscribes to the same
   stores and issues no request of its own. The verify check that pins this
-  drives an agent heartbeat and asserts the notice appears **with no reload**.
+  drives an outpost heartbeat and asserts the notice appears **with no reload**.
 - **The whole shell is `@frontierjs/ui`.** It was raw `.badge` / `.pill` /
   `.btn` / `.field` classes; the vocabulary is the same, but the components are
   where the accessible name, the tone mapping and the form seam already live.
@@ -223,7 +223,7 @@ Three things this settled, all of them convention rather than feature:
    `Record<string, unknown>` in `HeartbeatData`. The pressure rules read
    `health.cpu` and `health.memory` because that is what `verify.mjs` posts and
    what `servers/[id]` renders — a de-facto contract that both types would let
-   an agent break silently by sending `mem`. `db/seed.js` writes no health at
+   an outpost break silently by sending `mem`. `db/seed.js` writes no health at
    all, so a seeded fleet raises no pressure notices.
 4. **Four of the mock's notice categories have no data**: certificates (no
    Domain model), alerts (`AlertRule`/`AlertEvent` have no service), disk
@@ -271,7 +271,7 @@ It now runs as `after: { all }` and decides what counts the same way Junction
 decides what to announce on a channel: everything except `find`/`get`, and a
 read-shaped action opts out with `ctx.dispatch = false`. Two things fell out:
 
-- **`servers.heartbeat` is excluded by name.** An agent checks in on a timer, so
+- **`servers.heartbeat` is excluded by name.** An outpost checks in on a timer, so
   a fleet of fifty would write six figures of rows a day and bury every human
   action. Deliberately *not* `dispatch = false` — that would also silence the
   channel, and the live status pill is fed by exactly that publish.
@@ -280,7 +280,7 @@ read-shaped action opts out with `ctx.dispatch = false`. Two things fell out:
   `subjectId: 'unknown'` — a trail entry that cannot be joined to its subject.
 
 Also: an actor-less write is now `actorType: 'system'`, not the `'user'` default.
-The engine, a job and an agent are not anonymous people.
+The engine, a job and an outpost are not anonymous people.
 
 ### Gaps found, not closed
 
@@ -609,26 +609,26 @@ neither an adapter nor a metric source.
 ### `/volumes/` — a picture, not a record
 
 Every other model in this app is something a person created and Basecamp then
-acts on. A volume is the other direction: Docker made it, an agent found it,
+acts on. A volume is the other direction: Docker made it, an outpost found it,
 and the table is Basecamp's picture of what is out there. That one difference
 decides the whole shape:
 
-- **No `create`.** A row appears because a machine reported it. The agent's
+- **No `create`.** A row appears because a machine reported it. The outpost's
   method is `report`, addressing the collection, carrying `server_id` and the
   server's whole set — so a volume missing from a report is a volume that no
   longer exists. It is exempted from `sessionScope` **by name**, the way
   `servers.heartbeat` is, and excluded from the audit trail by name for the
-  same reason: an agent on a timer buries every action a person took.
+  same reason: an outpost on a timer buries every action a person took.
 - **Absence is declared, not implied.** `model:` brings Junction's Litestone
   base, which answers every CRUD verb the service leaves out — `POST /volumes`
   wrote a row until `methods: [...]` said which six exist.
 - **Deleting a row is not deleting a volume.** `remove` and `prune` go through
-  `app.conduit` to the `agent:<id>` target a heartbeat registers, and forget the
+  `app.conduit` to the `outpost:<id>` target a heartbeat registers, and forget the
   row only once the machine confirms. `prune` forgets exactly the names the
-  agent returns, never the ones it was asked about — an agent that could delete
+  outpost returns, never the ones it was asked about — an outpost that could delete
   three of five leaves the fourth on disk, and forgetting it makes it invisible.
 - **Two refusals, both in words.** A mounted volume names the containers holding
-  it; a server with no registered agent keeps its row and says so.
+  it; a server with no registered outpost keeps its row and says so.
 - **No `workspaceId`.** A volume is meaningless without its server, so the scope
   is the join — the same two indexed queries `servers.feed` runs.
 - **Bytes, not gigabytes.** The screen decides MB or GB; a rounded number stored
@@ -636,12 +636,12 @@ decides the whole shape:
 
 ### What it found
 
-**Nothing had ever sent to an agent, and it could not have.** The conduit target
+**Nothing had ever sent to an outpost, and it could not have.** The conduit target
 was registered with the secret inline (`{ type: 'hmac', secret }`) where the
 signer reads `ref`, so every call failed `auth_failed` — and the shared secret
 sat in the registry in plaintext, which `GET /conduit-targets` returns. It was
 also registered only inside the `came_online` branch, so a machine already
-online when its agent first reported a URL was never registered at all.
+online when its outpost first reported a URL was never registered at all.
 
 **`bun run db:seed --force` could not run on a database that had never been
 seeded**, and its delete list was missing eleven models.
@@ -654,7 +654,7 @@ call is made. Not worked around here; the last `verify` check reads a fresh
 navigation instead, and the live path is proven by its own check above it.
 
 **The mock's per-server disk-usage bars are not built.** They need what the
-agent reports about the filesystem, not about volumes — that is
+outpost reports about the filesystem, not about volumes — that is
 `DiskCleanupView`'s data, and it acts as well as reports, so it wants the job
 queue.
 
@@ -748,7 +748,7 @@ screen, not to this phase.
 ## Phase 9 — the two ways to act on a machine ✅ done 2026-08-10
 
 `RecipesView` and `DiskCleanupView`, built together because they are a pair and
-neither makes sense alone. Both act on a server through its agent, both queue
+neither makes sense alone. Both act on a server through its outpost, both queue
 through Caravan, and each is the other's argument.
 
 ### The ruling — a vocabulary cannot bound a script, so the record does
@@ -760,8 +760,8 @@ not transfer, and why it does not is the phase.**
 A stored query is dangerous because it is executed at the Data boundary, where
 `@@gate` and `@@allow` grade a CALLER against a MODEL and a string cannot be
 graded. A script is not executed at that boundary at all — it is handed to an
-agent and run on a machine, where there is no model, no caller and no grade. It
-runs at whatever the agent has, for everyone, every time. A vocabulary of
+outpost and run on a machine, where there is no model, no caller and no grade. It
+runs at whatever the outpost has, for everyone, every time. A vocabulary of
 allowed scripts buys nothing against that.
 
 So the two screens carry opposite safeguards, and the split is deliberate:
@@ -772,7 +772,7 @@ So the two screens carry opposite safeguards, and the split is deliberate:
 | Refusal possible | yes — unknown target, by name | no |
 | Authoring | developer | **admin or owner** |
 | Running | developer | developer |
-| The record | what the agent said it freed | the script AS RUN, per server |
+| The record | what the outpost said it freed | the script AS RUN, per server |
 
 **Authoring and running split on purpose.** Writing the script is the privileged
 act; running a vetted one is what somebody on the pager does at 3am. Collapsing
@@ -788,15 +788,15 @@ the script into a terminal instead. Ruled in the repo's `DECISIONS.md`.
   reference: a recipe is editable, so output read against a script that has
   since changed is not evidence of anything. A data test edits a recipe and
   asserts the old run is untouched.
-- **A machine with no agent is refused at the click**, naming the machine,
+- **A machine with no outpost is refused at the click**, naming the machine,
   rather than queued and failed a minute later where nobody is looking.
 - **A non-zero exit is recorded, never retried.** Caravan's retry covers a
   transport failure; retrying `rm -rf` because it exited 1 is how a retry policy
   makes things worse. A timeout is its own state — a script may well have
   finished the work and lost the answer.
 - **Nothing is simulated.** The mock streams invented output from a fixed table
-  keyed by recipe id; here the output is what the agent returned, capped at 32 KB
-  per stream from the TAIL, because an agent that cats a log file answers
+  keyed by recipe id; here the output is what the outpost returned, capped at 32 KB
+  per stream from the TAIL, because an outpost that cats a log file answers
   megabytes and the end is the part anyone reads.
 
 ### `/cleanup/` — the declared half
@@ -813,9 +813,9 @@ the script into a terminal instead. Ruled in the repo's `DECISIONS.md`.
 - **Unused volumes are off by default** — the one target here that destroys
   something no registry can hand back, and `/volumes/` is where a person deletes
   one knowing its name.
-- **Absence is a state.** A machine whose agent has never reported says so
+- **Absence is a state.** A machine whose outpost has never reported says so
   rather than rendering zeroes, which read as "nothing to reclaim".
-- **The sweep's answer is a fresh picture.** The agent has just run
+- **The sweep's answer is a fresh picture.** The outpost has just run
   `docker system df` to work out what it freed, so its response carries a `usage`
   snapshot, written through the same function the report endpoint uses — one
   owner, so the two cannot disagree about which key means what. Volumes it
@@ -849,7 +849,7 @@ and both screens say why they do not: a sweep or a recipe on a timer is a `Job`
 with a cron expression, and a second scheduler on either screen would be a
 second owner of when the fleet gets touched.
 
-**The mock's per-server disk BARS are not built.** They need what the agent
+**The mock's per-server disk BARS are not built.** They need what the outpost
 reports about the filesystem — free space on `/` — which is a different reading
 from `docker system df` and belongs with the health payload rather than here.
 

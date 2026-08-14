@@ -193,7 +193,7 @@ const FIELD_ATTRS = [
   // Security
   '@omit', '@omit(all)',
   '@guarded', '@guarded(all)',
-  '@encrypted', '@encrypted(searchable: true)',
+  '@encrypted', '@encrypted(deterministic: true)', '@hashed',
   '@secret', '@secret(rotate: false)',
   // Audit
   '@log',
@@ -417,11 +417,14 @@ const ATTR_DOCS: Record<string, string> = {
   '@encrypted':
     'Encrypts the value at rest using AES-256-GCM. Requires `encryptionKey` (64-char hex) in `createClient()`.\n\nImplies `@guarded(all)` — only readable via `asSystem()`.',
 
-  '@encrypted(searchable: true)':
-    'Stores an HMAC of the encrypted value alongside the ciphertext, so equality `where` filters work without decrypting.\n\n```\nemail String @encrypted(searchable: true)\n// WHERE email = \'alice@example.com\'  ✓ works\n```',
+  '@encrypted(deterministic: true)':
+    'AES-256-GCM with the IV derived from the plaintext, so the same value always stores the same bytes — equality `where` filters work, and the value still decrypts.\n\n```\nemail String @encrypted(deterministic: true)\n// WHERE email = \'alice@example.com\'  ✓ works\n// user.email                          ✓ reads back\n```\n\nTrade-off: equal values are visibly equal in the column to anyone holding the database file.',
+
+  '@hashed':
+    'HMAC-SHA256. **One-way** — no ciphertext, no key recovers it, `$rotateKey` cannot touch it.\n\nEquality `where` filters work; the value never comes back, `asSystem()` included. Naming it in a `select`, `groupBy` or aggregate throws.\n\n```\nloginToken String @hashed\n// WHERE loginToken = tok   ✓ matches\n// user.loginToken          → undefined\n```\n\nString columns only. Does not compose with `@encrypted`, `@secret`, `@guarded` or `@allow`.',
 
   '@secret':
-    'Composite attribute — expands to `@encrypted + @guarded(all) + @log(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit logger database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()`.',
+    'Composite attribute — expands to `@encrypted + @guarded(all) + @log(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit logger database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()`, or `@secret(deterministic: true)` for a secret that must also be looked up by value.',
 
   '@log':
     'Logs reads and writes of this field to a `logger` database.\n\n```\napiKey String @secret   // @log(audit) is implicit via @secret\nsalary Float @log(audit)\n```\n\nSee also: `@@log` for model-level logging.',

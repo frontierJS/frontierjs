@@ -126,3 +126,76 @@ describe('routePaths', () => {
     expect(app.http.router.routePaths('TRACE')).toEqual([])
   })
 })
+
+// ─── buildRoutes — the whole surface, in one answer (FJS-091) ─────────────
+//
+// routePaths() answered one method at a time and nothing assembled it, so
+// "what is mounted" had no cheap answer: services auto-mount, plugins register
+// their own, and hasRoute() matches rather than exists. FJS-012 is what that
+// cost — a plugin route sitting somewhere nobody looked, for months.
+
+import { buildRoutes, manifestPlugin } from '../src/plugins/manifest/index.ts'
+import { createService } from '../src/core/service.ts'
+
+describe('buildRoutes', () => {
+
+  async function mkApp() {
+    const app = await createTestApp({
+      services: [() => createService({ name: 'notes', find: async () => [] })],
+    })
+    app.configure(healthPlugin())
+    app.get('/custom/thing', (ctx) => ctx.json({ ok: true }))
+    await app._startForTest()
+    app.http.router.build()
+    return app
+  }
+
+  it('separates the auto-mounted service routes from everything else', async () => {
+    const routes = buildRoutes(await mkApp())
+
+    const raw = routes.filter(r => r.kind === 'raw').map(r => `${r.method} ${r.path}`)
+    expect(raw).toContain('GET /custom/thing')
+    expect(raw).toContain('GET /health')
+
+    // The CRUD handler is registered against the template, so a service route
+    // names all of them rather than one.
+    expect(routes.some(r => r.kind === 'service' && r.path === '/{service}')).toBe(true)
+    expect(raw.some(p => p.includes('{service}'))).toBe(false)
+  })
+
+  it('covers every method, not just GET', async () => {
+    const routes = buildRoutes(await mkApp())
+    const methods = new Set(routes.map(r => r.method))
+    for (const m of ['GET', 'POST', 'PATCH', 'PUT', 'DELETE']) expect(methods.has(m)).toBe(true)
+  })
+
+  it('reports where a route actually landed, prefix included', async () => {
+    const app = await createTestApp({ config: { apiPrefix: '/api' } })
+    app.configure(healthPlugin())
+    app.get('/custom/thing', (ctx) => ctx.json({ ok: true }))
+    await app._startForTest()
+    app.http.router.build()
+
+    const paths = buildRoutes(app).map(r => r.path)
+    expect(paths).toContain('/api/health')
+    expect(paths).toContain('/api/custom/thing')
+    expect(paths).not.toContain('/health')
+  })
+
+  it('rides the manifest, so a running app can be asked over HTTP', async () => {
+    const app = await createTestApp({
+      services: [() => createService({ name: 'notes', find: async () => [] })],
+    })
+    app.configure(manifestPlugin())
+    app.get('/custom/thing', (ctx) => ctx.json({ ok: true }))
+
+    const body = (await request(app).get('/manifest')).body as {
+      routes: { method: string; path: string; kind: string }[]
+    }
+    expect(body.routes.some(r => r.path === '/custom/thing' && r.kind === 'raw')).toBe(true)
+  })
+
+  it('answers [] rather than throwing when there is no router to ask', () => {
+    expect(buildRoutes({} as never)).toEqual([])
+  })
+})

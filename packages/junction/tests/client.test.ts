@@ -746,11 +746,24 @@ describe('authPrefix', () => {
     restore()
   })
 
-  it('is independent of apiPrefix — the auth plugin is not moved by it', async () => {
+  it('composes with apiPrefix — the plugin registers with app.post(), which applies it', async () => {
+    // FJS-012: apiPrefix used to move the service routes and nothing else, so
+    // an app under /api served its login at /auth. Every route an app
+    // registers is now mounted under apiPrefix, auth's included, and this side
+    // has to agree or the two defaults never meet.
     const { restore, mock: m } = mockFetch({ token: 't', user: {}, workspaceId: null })
     await createJunctionClient({ url: 'http://localhost:3000', apiPrefix: '/api' })
       .authenticate({ email: 'a@b.c', password: 'x' })
-    expect(pathOf(m)).toBe('/auth/login')
+    expect(pathOf(m)).toBe('/api/auth/login')
+    restore()
+  })
+
+  it('the plugin prefix stays relative to apiPrefix when both are set', async () => {
+    const { restore, mock: m } = mockFetch({ token: 't', user: {}, workspaceId: null })
+    await createJunctionClient({
+      url: 'http://localhost:3000', apiPrefix: '/api', authPrefix: '/account',
+    }).authenticate({ email: 'a@b.c', password: 'x' })
+    expect(pathOf(m)).toBe('/api/account/login')
     restore()
   })
 

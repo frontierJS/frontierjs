@@ -2,7 +2,7 @@
 title: Leads
 ---
 <script>
-  import { leads } from '../../resources/leads.mesa'
+  import { leads } from '../../resources/Lead.mesa'
   import { session } from '../../session.js'
   import { useStore } from '@frontierjs/sierra/junction'
   import { $onDestroy } from '@frontierjs/mesa/runtime'

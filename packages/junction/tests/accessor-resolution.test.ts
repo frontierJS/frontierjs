@@ -162,6 +162,66 @@ describe('validation must not fail open on a naming slip', () => {
   }
 })
 
+// ─── a $defs miss on a model-backed service is loud (FJS-013) ────────────────
+//
+// The half of FJS-013 that survived the accessor fix: when the lookup misses
+// anyway — a table the generated schema has no definition for, or a definition
+// that will not compile — autoValidate stored null and said nothing, so the
+// service accepted unvalidated input in silence. A boundary that can answer 400
+// choosing silence instead is the same shape as FJS-109.
+
+describe('a model-backed service with no field rules says so', () => {
+
+  // A client whose `widget` table is real but undeclared in $schema: the write
+  // reaches a model, and nothing validates it.
+  function mkUndeclared() {
+    const c = mkClient() as Record<string, unknown>
+    c.widget = { create: async (a: { data: unknown }) => a.data }
+    return c
+  }
+
+  async function warningsFrom(accessor: string, client: Record<string, unknown>) {
+    const seen: string[] = []
+    const original = console.warn
+    console.warn = (...args: unknown[]) => { seen.push(args.join(' ')) }
+    try {
+      const c = ctx('widgets', 'create', { data: { id: '1' }, locals: { db: client } })
+      await autoValidate(accessor, 'create')(c).catch(() => {})
+    } finally {
+      console.warn = original
+    }
+    return seen
+  }
+
+  test('a table with no definition warns, naming the service and the model', async () => {
+    const warnings = await warningsFrom('widget', mkUndeclared())
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("service 'widgets'")
+    expect(warnings[0]).toContain('widget')
+    expect(warnings[0]).toContain('NOT validated')
+  })
+
+  test('it warns once per model, not once per request', async () => {
+    // Compiled schemas are cached per client, so the second call takes the
+    // cache path — a warning per write would be unreadable in a log anyway.
+    const client = mkUndeclared()
+    expect(await warningsFrom('widget', client)).toHaveLength(1)
+    expect(await warningsFrom('widget', client)).toHaveLength(0)
+  })
+
+  test('a service with no model at all stays quiet', async () => {
+    // Custom actions only, or its own create(). getTable's diagnostic covers a
+    // genuinely missing model when an unused CRUD method is called; warning
+    // here would fire on every service that legitimately has no table.
+    expect(await warningsFrom('ghost', mkUndeclared())).toHaveLength(0)
+  })
+
+  test('a model that DOES resolve stays quiet', async () => {
+    const warnings = await warningsFrom('post', mkUndeclared())
+    expect(warnings).toEqual([])
+  })
+})
+
 // ─── against a real client, not a shaped object (FJS-014) ────────────────────
 //
 // Every test above uses mkClient(), a plain object. That is what let the

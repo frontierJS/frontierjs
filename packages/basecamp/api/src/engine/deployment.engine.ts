@@ -4,10 +4,10 @@
 // Lifecycle:
 //   Caravan dispatches 'deployment:run'
 //   → Engine picks it up, transitions pending → building
-//   → For each step, calls the agent via Conduit, updates step status
+//   → For each step, calls the outpost via Conduit, updates step status
 //   → On completion, marks success/failed, pushes WS update
 //
-// Agent protocol (Conduit → agent:<server-id>):
+// Outpost protocol (Conduit → outpost:<server-id>):
 //   POST /pull         { image }                    → pull image
 //   POST /deploy       { deployment_id, image, cfg } → start container
 //   POST /stop         { container_id }              → stop old container
@@ -116,7 +116,7 @@ export function createDeploymentEngine(app: BasecampApp) {
     }
 
     const serverId    = await resolveServer(deploy.appId)
-    const agentTarget = serverId ? `agent:${serverId}` : null
+    const outpostTarget = serverId ? `outpost:${serverId}` : null
     // configSnapshot is a Json column — already an object, never JSON.parse'd.
     const config      = deploy.configSnapshot ?? {}
 
@@ -124,7 +124,7 @@ export function createDeploymentEngine(app: BasecampApp) {
       id:        deploymentId,
       service:   service.name,
       steps:     steps.length,
-      agent:     agentTarget ?? 'none',
+      outpost:     outpostTarget ?? 'none',
     })
 
     try {
@@ -132,7 +132,7 @@ export function createDeploymentEngine(app: BasecampApp) {
         await startStep(step.id)
         await pushUpdate(deploymentId, deploy.workspaceId)
 
-        await runStep(step, { deploy, service, config, agentTarget })
+        await runStep(step, { deploy, service, config, outpostTarget })
 
         await setStepStatus(step.id, 'success')
         await pushUpdate(deploymentId, deploy.workspaceId)
@@ -163,20 +163,20 @@ export function createDeploymentEngine(app: BasecampApp) {
 
   async function runStep(
     step:  StepRow,
-    ctx:   { deploy: DeploymentRow; service: ServiceRow; config: Record<string, unknown>; agentTarget: string | null }
+    ctx:   { deploy: DeploymentRow; service: ServiceRow; config: Record<string, unknown>; outpostTarget: string | null }
   ): Promise<void> {
-    const { deploy, service, agentTarget } = ctx
+    const { deploy, service, outpostTarget } = ctx
     const name = step.name.toLowerCase()
 
-    if (!agentTarget) {
-      // No agent — log only, don't fail (supports local/stub mode)
-      log.debug(`step skipped — no agent`, { step: step.name })
+    if (!outpostTarget) {
+      // No outpost — log only, don't fail (supports local/stub mode)
+      log.debug(`step skipped — no outpost`, { step: step.name })
       return
     }
 
     if (name.includes('pull')) {
       const result = await app.conduit.send({
-        target: agentTarget,
+        target: outpostTarget,
         method: 'POST',
         path:   '/pull',
         body:   { image: deploy.toImage ?? service.name },
@@ -185,7 +185,7 @@ export function createDeploymentEngine(app: BasecampApp) {
 
     } else if (name.includes('stop')) {
       await app.conduit.send({
-        target: agentTarget,
+        target: outpostTarget,
         method: 'POST',
         path:   '/stop',
         body:   { app_id: deploy.appId },
@@ -194,7 +194,7 @@ export function createDeploymentEngine(app: BasecampApp) {
 
     } else if (name.includes('start') || name.includes('deploy')) {
       const result = await app.conduit.send({
-        target: agentTarget,
+        target: outpostTarget,
         method: 'POST',
         path:   '/deploy',
         body:   {
@@ -211,7 +211,7 @@ export function createDeploymentEngine(app: BasecampApp) {
       let healthy = false
       for (let i = 0; i < 10; i++) {
         const result = await app.conduit.send({
-          target:     agentTarget,
+          target:     outpostTarget,
           method:     'POST',
           path:       '/health-check',
           body:       { app_id: deploy.appId },
@@ -226,9 +226,9 @@ export function createDeploymentEngine(app: BasecampApp) {
       if (!healthy) throw new Error('Health check failed after 10 attempts')
 
     } else {
-      // Build, migration, CDN steps etc. — forward to agent as generic exec
+      // Build, migration, CDN steps etc. — forward to outpost as generic exec
       const result = await app.conduit.send({
-        target: agentTarget,
+        target: outpostTarget,
         method: 'POST',
         path:   '/exec',
         body:   { step: step.name, deployment_id: deploy.id },

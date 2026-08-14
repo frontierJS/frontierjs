@@ -310,6 +310,13 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
 
     const fieldSchema = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
 
+    // @hashed — writable, never readable. `writeOnly` is the standard keyword for
+    // exactly this, and it is the one protection where the read side cannot be
+    // unlocked by anything, so a form generator can render an input and must never
+    // render a value. NOT excluded from the client audience like @guarded: a
+    // password is submitted by the person it belongs to.
+    if (field.attributes.some(a => a.kind === 'hashed')) fieldSchema.writeOnly = true
+
     // Inject doc comment as "description"
     if (field.comments?.length) {
       fieldSchema.description = field.comments.join(' ')
@@ -533,11 +540,13 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
 function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false) {
   if (type.kind === 'enum') {
     // inlineEnums: true → emit values directly so consumers don't need $ref resolution
-    if (inlineEnums && enumDefs[type.name]) {
-      return { type: 'string', enum: enumDefs[type.name].enum }
-    }
-    // Default: reference the enum definition
-    return { '$ref': `#/$defs/${type.name}` }
+    const item = inlineEnums && enumDefs[type.name]
+      ? { type: 'string', enum: enumDefs[type.name].enum }
+      : { '$ref': `#/$defs/${type.name}` }
+    // An enum ARRAY is a set of the declared values. The $ref belongs on the
+    // items, not on the field — a picker reading the field's own schema would
+    // otherwise offer one choice for a column that holds several.
+    return type.array ? { type: 'array', items: item } : item
   }
 
   // Array types — String[] / Int[]

@@ -447,11 +447,13 @@ export function channels(setup?: ChannelSetupFn): Plugin {
       let _bridge:    typeof import('./bridge.ts')      | null = null
       let _callSvc:   typeof import('../core/service.ts') | null = null
       let _errUtils:  typeof import('../core/errors.ts')  | null = null
+      let _runWithMeta: typeof import('../core/context.ts').runWithMeta | null = null
 
       async function ensureDeps() {
         if (!_bridge)   _bridge   = await import('./bridge.ts')
         if (!_callSvc)  _callSvc  = await import('../core/service.ts')
         if (!_errUtils) _errUtils = await import('../core/errors.ts')
+        if (!_runWithMeta) _runWithMeta = (await import('../core/context.ts')).runWithMeta
       }
 
       // Pre-warm on next tick so the first WS message isn't slow
@@ -581,7 +583,13 @@ export function channels(setup?: ChannelSetupFn): Plugin {
               const wsQuery = (extra.query ?? {}) as Record<string, unknown>
               // workspaceId is lifted onto ctx.client.headers below, so it does
               // not also belong in locals — one owner per translation.
-              const { query: _q, workspaceId: _ws, ...restExtra } = extra
+              // correlationId/idempotencyKey become request metadata, which is
+              // an ALS store rather than a context field.
+              const {
+                query: _q, workspaceId: _ws,
+                correlationId: _cid, idempotencyKey: _idk,
+                ...restExtra
+              } = extra
 
               const svcCtx = _bridge2.internal(
                 serviceName as string,
@@ -616,11 +624,31 @@ export function channels(setup?: ChannelSetupFn): Plugin {
               svcCtx.method    = method as string
               svcCtx.transport = 'websocket'
 
+              // A STRING, as over HTTP. There the id is a path segment and can be
+              // nothing else; here it is whatever JSON type the client wrote, so
+              // `patch(42, …)` handed a service the number and `PATCH /x/42`
+              // handed it the string. A handler comparing `ctx.id` to a row's own
+              // id, or using it as a Map key, then answered differently depending
+              // on whether a socket happened to be connected.
               const paramId = extra?.id ?? (data as Record<string, unknown>)?.id
-              if (paramId) svcCtx.id = paramId as string
+              if (paramId) svcCtx.id = String(paramId)
+
+              // Request metadata is an AsyncLocalStorage store the HTTP handler
+              // wraps its pipeline run in, and this path wrapped nothing — so
+              // requestMeta() was undefined for every socket call and anything
+              // reading it (a correlation id in a log, the Idempotency-Key that
+              // decides whether a create runs twice) silently applied to half
+              // the transports. The frame carries them under `meta`, the same
+              // place it carries the id and the workspace.
+              const meta: import('../core/context.ts').RequestMeta = {
+                correlationId:  (extra.correlationId as string) ?? crypto.randomUUID(),
+                idempotencyKey: extra.idempotencyKey as string | undefined,
+                origin:         'websocket',
+              }
 
               try {
-                await _call(svc, svcCtx, app._appHooks, app.events, app.telemetry)
+                await _runWithMeta!(meta, () =>
+                  _call(svc, svcCtx, app._appHooks, app.events, app.telemetry))
                 // The second hand-copy of the bridge's rule. Both now call it.
                 ctx.send({ type: 'service_result', id: callId, result: unwrapResult(svcCtx.result) })
               } catch (err: unknown) {
@@ -702,8 +730,8 @@ export function channels(setup?: ChannelSetupFn): Plugin {
       })
 
       // ── WS stats route ───────────────────────────────────────────
-      const apiPrefix = (app.config as import('../config/index.ts').AppConfig).apiPrefix ?? ''
-      app.get(`${apiPrefix}/channels/stats`, (ctx) => {
+      // app.get applies apiPrefix — see the route shortcuts in core/app.ts.
+      app.get('/channels/stats', (ctx) => {
         if (!ctx.user) return ctx.json({ error: 'Unauthorized' }, 401)
         return ctx.json(manager.stats())
       })

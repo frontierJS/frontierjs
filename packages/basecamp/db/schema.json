@@ -743,13 +743,13 @@
             "null"
           ]
         },
-        "agentVersion": {
+        "outpostVersion": {
           "type": [
             "string",
             "null"
           ]
         },
-        "agentUrl": {
+        "outpostUrl": {
           "type": [
             "string",
             "null"

@@ -1,0 +1,26 @@
+// A small vertical: one gated model, one row policy, one enum.
+// Small enough to read in full; every rule here is asserted by a test.
+
+model Account {
+  id    Int    @id
+  name  String
+  leads Lead[]
+}
+
+model Lead {
+  id        Int      @id
+  name      String
+  email     String?  @email
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id])
+  ownerId   String?
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  // R=READER(2), C=USER(4), U=USER(4), D=ADMINISTRATOR(5)
+  @@gate("2.4.4.5")
+  // A row policy, so a principal that arrives undefined filters to nothing
+  // rather than raising — the failure this whole tier exists to make visible.
+  @@allow('read', ownerId == auth().id || ownerId == null)
+  @@softDelete
+}

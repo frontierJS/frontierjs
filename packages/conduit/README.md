@@ -2,7 +2,7 @@
 
 Outbound transport layer for FrontierJS Junction apps.
 
-Junction handles everything inbound — routing, hooks, WebSocket channels, auth. Conduit handles the other direction: **any request your app needs to make to something outside itself**. Provider APIs, remote agents, local sidecars — you register a destination once, then call it by name from anywhere in your app.
+Junction handles everything inbound — routing, hooks, WebSocket channels, auth. Conduit handles the other direction: **any request your app needs to make to something outside itself**. Provider APIs, remote outposts, local sidecars — you register a destination once, then call it by name from anywhere in your app.
 
 ```
 Browser / API  ──►  Junction (inbound)
@@ -10,9 +10,9 @@ Browser / API  ──►  Junction (inbound)
                     app.conduit
                          │
               ┌──────────┴──────────┐
-        agent:srv-abc        provider:hetzner
+        outpost:srv-abc        provider:hetzner
               │                     │
-        hub-agent:7700        api.hetzner.cloud
+        hub-outpost:7700        api.hetzner.cloud
 ```
 
 ---
@@ -78,8 +78,8 @@ A **target** is a named remote endpoint. Every call goes through a target — yo
 
 ```ts
 interface TargetDescriptor {
-  id:            string      // "provider:hetzner" | "agent:srv-abc"
-  kind:          'provider' | 'agent' | 'local'
+  id:            string      // "provider:hetzner" | "outpost:srv-abc"
+  kind:          'provider' | 'outpost' | 'local'
   protocol:      'http' | 'websocket' | 'unix'
   address:       string      // base URL or socket path
   auth:          TargetAuth
@@ -121,7 +121,7 @@ X-Hub-Nonce:     <uuid>
 
 This binds each signature to one method and one path, so a captured signature cannot be replayed against a different endpoint on the same target, and the timestamp and nonce let the receiver reject stale or repeated requests. Requests with no body sign the hash of the empty string, so `POST /reboot` and `DELETE /servers/42` are signed like anything else.
 
-**The receiving agent must do its part:** recompute the same canonical string, compare in constant time, reject signatures outside a freshness window (60s is typical), and remember recent nonces. A signature check that ignores the timestamp gives you no replay protection.
+**The receiving outpost must do its part:** recompute the same canonical string, compare in constant time, reject signatures outside a freshness window (60s is typical), and remember recent nonces. A signature check that ignores the timestamp gives you no replay protection.
 
 #### WebSocket auth
 
@@ -168,8 +168,8 @@ Transports resolve once per attempt, so a retried request calls the resolver up 
 
 | protocol    | status | used for |
 |-------------|--------|----------|
-| `http`      | ✅ v1  | Provider REST APIs, remote agents |
-| `websocket` | ✅ v1  | Persistent agent connections with reconnect |
+| `http`      | ✅ v1  | Provider REST APIs, remote outposts |
+| `websocket` | ✅ v1  | Persistent outpost connections with reconnect |
 | `unix`      | ✅ v1  | Local sidecar processes |
 | `ssh`       | 🔜 future | — |
 | `nats`      | 🔜 future | — |
@@ -303,7 +303,7 @@ Stream responses from a target. Throws `ConduitStreamError` if setup fails.
 
 ```ts
 try {
-  for await (const chunk of app.conduit.stream({ target: 'agent:srv-abc', method: 'logs' })) {
+  for await (const chunk of app.conduit.stream({ target: 'outpost:srv-abc', method: 'logs' })) {
     console.log(chunk.data, chunk.sequence)
   }
 } catch (err) {
@@ -318,26 +318,26 @@ try {
 Register or update a target at runtime. Evicts any pooled connection for that target so the next `send()` uses the updated config.
 
 ```ts
-// Typically called when an agent sends its first heartbeat
+// Typically called when an outpost sends its first heartbeat
 await app.conduit.register({
-  id:            `agent:${serverId}`,
-  kind:          'agent',
+  id:            `outpost:${serverId}`,
+  kind:          'outpost',
   protocol:      'http',
-  address:       data.agent_url,
-  auth:          { type: 'hmac', ref: `agent-secret:${serverId}` },
+  address:       data.outpost_url,
+  auth:          { type: 'hmac', ref: `outpost-secret:${serverId}` },
   registered_at: Date.now(),
   last_seen_at:  Date.now(),
 })
 ```
 
-The agent's secret itself goes wherever your `CredentialResolver` reads from — not into the descriptor.
+The outpost's secret itself goes wherever your `CredentialResolver` reads from — not into the descriptor.
 
 ### `app.conduit.touch(id)`
 
-The heartbeat path. Refreshes `last_seen_at` without rewriting the descriptor and without evicting the pooled connection — an agent saying "still here" should not tear down the socket it said it on.
+The heartbeat path. Refreshes `last_seen_at` without rewriting the descriptor and without evicting the pooled connection — an outpost saying "still here" should not tear down the socket it said it on.
 
 ```ts
-await app.conduit.touch(`agent:${serverId}`)
+await app.conduit.touch(`outpost:${serverId}`)
 ```
 
 Static targets from `opts.targets` keep whatever `last_seen_at` the store already holds across a restart, so rebooting does not wipe heartbeat state.
@@ -432,7 +432,7 @@ conduit() // in-memory is the default
 
 ### SQLite
 
-Targets survive restarts. Use when agents register dynamically at runtime and you need them to survive a Hub restart.
+Targets survive restarts. Use when outposts register dynamically at runtime and you need them to survive a Hub restart.
 
 ```ts
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
@@ -445,7 +445,7 @@ Creates a `conduit_targets` table automatically on first boot.
 
 ### Custom
 
-Every `ConduitStore` method is async, so a networked registry — Redis, Postgres, an HTTP service — is implementable. This is what lets more than one replica share a set of dynamically registered agents.
+Every `ConduitStore` method is async, so a networked registry — Redis, Postgres, an HTTP service — is implementable. This is what lets more than one replica share a set of dynamically registered outposts.
 
 ```ts
 interface ConduitStore {
@@ -505,7 +505,7 @@ Hooks may be `async`. They are **never awaited** — an exporter that takes 200 
 
 ### Trace context
 
-Nothing otherwise ties a Hub request to the agent call it produced. `createTraceContext()` emits a W3C `traceparent` and a correlation id on every outbound request:
+Nothing otherwise ties a Hub request to the outpost call it produced. `createTraceContext()` emits a W3C `traceparent` and a correlation id on every outbound request:
 
 ```ts
 import { createTraceContext } from '@frontierjs/conduit'
@@ -576,7 +576,7 @@ Use `createTestConduit` for unit and integration tests. It gives you a fully wir
 import { createTestConduit } from '@frontierjs/conduit/testing'
 
 const { conduit, stubs } = await createTestConduit({
-  'agent:srv-abc': {
+  'outpost:srv-abc': {
     '/pull':         { ok: true },
     '/deploy':       { deployed: true },
     '/health-check': { healthy: true },
@@ -590,12 +590,12 @@ const { conduit, stubs } = await createTestConduit({
 await deploymentEngine.run(conduit, 'srv-abc')
 
 // Assert on recorded calls
-expect(stubs['agent:srv-abc'].calls).toHaveLength(3)
-expect(stubs['agent:srv-abc'].calls[0].path).toBe('/pull')
-expect(stubs['agent:srv-abc'].calls[1].path).toBe('/deploy')
+expect(stubs['outpost:srv-abc'].calls).toHaveLength(3)
+expect(stubs['outpost:srv-abc'].calls[0].path).toBe('/pull')
+expect(stubs['outpost:srv-abc'].calls[1].path).toBe('/deploy')
 
 // Reset between test cases
-stubs['agent:srv-abc'].reset()
+stubs['outpost:srv-abc'].reset()
 ```
 
 It is `await`ed because the store is async. Stubbed targets are registered in the store as well as intercepted, so `resolve()`, `list()` and `stats()` see them — code that calls `send()` alongside `resolve()` is testable in one place.
@@ -605,7 +605,7 @@ It is `await`ed because the store is async. Stubbed targets are registered in th
 Stubs are not success-only. This is what makes retry logic, the error taxonomy and timeout handling testable:
 
 ```ts
-const stub = stubs['agent:srv-abc']
+const stub = stubs['outpost:srv-abc']
 
 stub.mockError('POST /deploy', 'timeout', { retryable: true })
 stub.mock('/slow', { ok: true }, { delay_ms: 500 })     // exercise timeouts
@@ -619,7 +619,7 @@ Mocks are keyed on **method + path** when you qualify them, so `GET /servers/42`
 
 ```ts
 const { conduit } = await createTestConduit(
-  { 'agent:stubbed': { '/ping': { pong: true } } },
+  { 'outpost:stubbed': { '/ping': { pong: true } } },
   { targets: [hetznerDescriptor] },   // registered, not stubbed
 )
 ```
@@ -630,7 +630,7 @@ Hooks work in tests too:
 const errors: ConduitError[] = []
 
 const { conduit } = await createTestConduit(
-  { 'agent:srv-abc': {} },
+  { 'outpost:srv-abc': {} },
   { hooks: { onError: (_req, err) => errors.push(err) } }
 )
 ```

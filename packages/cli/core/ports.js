@@ -70,10 +70,11 @@ export const PROJECTS = {
   css:             4,   // the guide/demo server — frontend only
   'junction-example': 5,
   'litestone-example': 6,
+  oracle:             7,   // packages/oracle/mockup — frontend only
 }
 
 /** Lowest project id claimSession() may hand out. Below this is assigned above. */
-export const DYNAMIC_PROJECT_FLOOR = 7
+export const DYNAMIC_PROJECT_FLOOR = 8
 
 // ─── Formula ─────────────────────────────────────────────────────────────────
 

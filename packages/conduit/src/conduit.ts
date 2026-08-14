@@ -337,13 +337,13 @@ export function createConduit(
     if (previous) countTarget(previous, -1)
     router.evict(target)
     // Drop breaker state too — a re-registered target (new address, new
-    // agent) must not inherit the old one's trip count.
+    // outpost) must not inherit the old one's trip count.
     resilience.forget(target)
     safe('onDeregistered', () => hooks.onDeregistered?.(target))
   }
 
   // The heartbeat path. Deliberately does not evict the pooled connection —
-  // an agent saying "still here" should not tear down the socket it said it on.
+  // an outpost saying "still here" should not tear down the socket it said it on.
   async function touch(target: string): Promise<void> {
     await store.touch(target)
   }

@@ -1,0 +1,14 @@
+<script module>
+  // src/resources/Account.mesa — the Resource layer.
+  //
+  // It exists to populate the picker for Lead.accountId, and it lives in its own
+  // file anyway: a lookup resource folded into the one that happens to need it
+  // first is how the directory stops being the index of what this app has.
+  //
+  // Which resource the picker reaches for is not written in the form either —
+  // create.mesa derives it from `leads.relations.account.model`.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const accounts = createResource('accounts')
+</script>

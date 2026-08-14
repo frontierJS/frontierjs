@@ -2,6 +2,271 @@
 
 Litestone ships a `/testing` subpath with everything needed for fast, deterministic test suites: in-memory clients, factories, seeders, and schema-derived test case generators.
 
+## createTestEnv
+
+A migrated database, a client, factories and a principal, in one call.
+
+```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({
+  schema:  'db/schema.lite',          // the text, or a path to it
+  plugins: [new GatePlugin({ getLevel: myAppsResolver })],
+})
+
+const doc = await env.factories.doc.withParents().createOne()   // arrange, below the boundary
+await expect(env.actingAs(viewer).doc.delete({ where: { id: doc.id } })).rejects.toThrow()
+env.close()
+```
+
+**The tables arrive as a file copy.** The DDL is applied once per schema per
+process into a template, and every env after the first is `copyFileSync`. On
+basecamp's 37-model schema that is 476ms → 13ms per database. Migration cost is
+what dominates a test suite; in SQLite, a database per test is a file copy.
+
+### migrations — test the database a deploy produces
+
+```js
+const env = await createTestEnv({ schema: 'db/schema.lite', migrations: 'db/migrations' })
+```
+
+Builds the template by replaying the committed migration files instead of
+generating DDL from the schema. Takes a directory, a `.sql` path, or an array of
+either; a directory contributes every `.sql` it holds, **sorted by filename**.
+
+Worth reaching for whenever the migrations are the thing you ship. Without it a
+suite proves the schema works, and says nothing about whether the migration that
+builds production agrees with it — which is a question with an answer:
+
+```js
+const fromMigrations = await createTestEnv({ schema, migrations: 'db/migrations' })
+const fromSchema     = await createTestEnv({ schema })
+// introspect both and compare — basecamp does exactly this
+```
+
+A directory here is read more loosely than `litestone migrate apply` reads one:
+every `.sql` counts, not only litestone's generated `<14-digit>_<label>.sql`. A
+hand-written `001_initial.sql` is a real migration someone means to replay, and a
+template that skipped it would produce an empty database and a wall of *no such
+table*. A `.js` migration is **refused by name** rather than skipped — it is
+handed a client, and a template is built on a raw connection.
+
+### The two auth doors are separate
+
+| | Grades through | Use it for |
+| --- | --- | --- |
+| `env.actingAs(user)` | the app's own `getLevel` | anything about behaviour |
+| `env.atLevel(n)` | a synthetic resolver | walking the gate grid |
+
+**Conflating them is the failure this exists to prevent.** A matrix driven by
+`atLevel` passes in full while the app's resolver is broken, because the resolver
+was never called. `atLevel` builds a second client — a level is fixed when a
+client is constructed, so it cannot be a property of a call — dropping any
+`GatePlugin` you installed and keeping every other plugin. `atLevel(8)` is
+`asSystem()`, because `getLevel` is clamped to 0–7 and SYSTEM is not reachable
+through it.
+
+### verifyReadLadder
+
+```js
+expect(await env.verifyReadLadder()).toEqual([])
+```
+
+Executes the read column of every gated model at every level against a real
+client — 333 assertions on basecamp, **with no fixtures**, because a read either
+refuses or answers. It is `verifyGateLadder({ ops: ['read'] })`, kept as its own
+name because it is the cheap half and the position where being wrong is a
+disclosure rather than a failed write.
+
+Each returned row is already a sentence:
+
+```
+Server.read at level 1 (VISITOR) — the schema says deny, the client says allow
+```
+
+**A read that throws something that is not a refusal is a mismatch**, not a
+`deny`. Counting every throw as a refusal is a false green: an `@@external`
+model emits no DDL, so its reads fail with *no such table* at every level, and
+the ladder would have called that a pass everywhere the gate refuses.
+
+**What it does and does not prove.** It grades the *enforcement path* against the
+*declared gate* — a regression in the plugin, a model whose read is not graded at
+all, a plugin swallowing the refusal. It says nothing about the app's own
+`getLevel` (that is `actingAs`) and nothing about `@@allow`, which filters rows
+rather than refusing, so a policy matching nothing still reads as `allow`.
+
+### phases — Arrange / Act / Assert, scoped rather than commented
+
+```js
+const t = env.phases({ as: developer })
+
+const lead = await t.arrange(({ factories }) => factories.lead.createOne())
+await t.act(as => as.lead.remove({ where: { id: lead.id } }))
+await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
+```
+
+The body stays linear — nothing threaded through return values, and a line can
+still be commented out to bisect. What the phases buy is not tidiness:
+
+| Phase | Reaches | Why |
+| --- | --- | --- |
+| `arrange` | the **system** client + factories | fixtures are set up below the boundary, so a gate that refuses the principal does not refuse the setup |
+| `act` | the **principal's** client | graded by the app's own `getLevel`. **One per scenario** |
+| `assert` | the principal's **read-only** client | graded, so *the row exists* cannot stand in for *this user can see it*; read-only, so retrying the scenario is sound |
+
+`arrange` after `act` is refused, because setup after the act is part of the act
+— and the two being separable is what lets `arrange` be hoisted and cached.
+
+Not tied to a runner: call it inside whatever `test()` the package uses.
+
+### verifyGateLadder
+
+```js
+expect(await env.verifyGateLadder()).toEqual([])      // all four operations
+await env.verifyGateLadder({ ops: ['read'] })          // == verifyReadLadder()
+```
+
+Every gated model's ladder, executed: each declared level against a real client,
+for read, create, update and delete. Fixtures are built as SYSTEM, so a gate
+refusing the principal cannot refuse the setup.
+
+| `got` | Means |
+| --- | --- |
+| `allow` / `deny` | the client's verdict, compared against the schema's |
+| `error` | the call threw something that is not a refusal — nothing was proven |
+| `skipped` | a row policy covers this operation, so the gate cannot be isolated |
+
+**`skipped` is one-directional.** A policy *filters*, so it can turn an allow into
+a deny and never the reverse — an `allow` where the schema said `deny` is the gate
+letting something through and no policy explains it. Skipping both directions
+stops a lowered gate on a policied model being graded at all.
+
+### verifyFieldProtection
+
+```js
+expect(await env.verifyFieldProtection()).toEqual([])
+```
+
+Every `@guarded` / `@encrypted` / `@secret` field, actually read. The gate ladder
+says who may read the **row**; this says which **columns** come back when they do.
+They are separate boundaries and a model can pass one while failing the other —
+basecamp's `Secret.data` is `@guarded` under a gate that admits ADMINISTRATOR(5),
+so the field policy is the only thing between an admin and a private key.
+
+Asserts **absence**, not nullity: `@guarded` removes the key, and a `null` would
+be a value the caller could still act on. It also asserts the column comes back
+to `asSystem()`, because one absent for everyone is broken rather than protected.
+
+### verifyConstraints
+
+```js
+expect(await env.verifyConstraints()).toEqual([])   // rows are already sentences
+await env.verifyConstraints('Lead')                 // one model
+```
+
+`generateValidationCases` describes what a schema declares; this executes it. The
+oracle is **structural, not textual** — the schema declares a rule, so a value
+violating it must be refused, and the message is not asserted. A rule that
+reaches the browser through `x-messages` and is ignored by the server is the
+failure it exists to find.
+
+Runs as SYSTEM: the question is enforcement, and a `@@gate` refusing the write
+first would answer *rejected* for every case including the ones nothing
+validates. Rolls its rows back, so it is safe to call mid-suite. Models nothing
+can write to — `@@external`, `jsonl`, `logger` — are skipped.
+
+**Three outcomes.** A write that fails for an unrelated reason is `error`, never
+`rejected`; calling it a refusal makes a broken validator look enforced. It is
+reported rather than swallowed, because a case that could not run is a hole in
+the coverage the count implies.
+
+| `got` | Means |
+| --- | --- |
+| `rejected` | a `ValidationError` — the rule fired |
+| `accepted` | the write succeeded. If the case was `invalid`, the rule is not enforced |
+| `error` | the write failed before validation could refuse it — this case proves nothing |
+
+### setup — the arrange every scenario shares
+
+```js
+const fx = await env.setup(({ factories }) => factories.account.createOne())
+
+test('a developer archives a lead', async () => {
+  const t = env.phases({ as: developer })     // rows are back at fx
+  const lead = await t.arrange(({ factories }) => factories.lead.createOne({ accountId: fx.id }))
+  …
+})
+```
+
+`setup` takes the **same tools** `arrange` takes — `{ system, factories, db }` —
+so hoisting a line out of a test is a move rather than a rewrite. It runs once;
+its rows are snapshotted, and every later `phases()` call restores them.
+
+That restore is a truncate + bulk re-insert of the exact rows, which beats
+re-running factories through validation, hooks, gates and FTS. Once
+template-clone has removed the migration cost, the fixture is what dominates a
+suite's runtime, and this is the part that stops paying it per test.
+
+The value `setup` returns **stays valid across restores**: rows go back with the
+ids they had, so a captured `fx.id` still names that row.
+
+Two refusals, both the same failure — a baseline that does not describe what the
+tests around it started from, which is order-dependent and therefore silent:
+
+- a **second** `setup` would replace the first one's baseline
+- a `setup` declared **after a scenario has run** never applied to it
+
+`seal`/`reset` stay independent. A suite driving them by hand keeps its own
+snapshot; `phases()` restores `setup`'s baseline and nothing else.
+
+### readOnly
+
+```js
+import { readOnly } from '@frontierjs/litestone/testing'
+const read = readOnly(db)
+```
+
+Read methods are an **allow-list**, so a write method added to litestone later
+cannot pass through unnoticed. The doors back out to a writable client are
+refused by name — `asSystem`, `$setAuth`, `sql`, `$rawDbs`, `$transaction` —
+since each of them hands back something that can write. A typo still raises the
+client's own *not a table in this schema* error, which is better than anything
+this could say.
+
+### seal / reset
+
+```js
+await seedTheWorld(env.system)
+env.seal()
+beforeEach(() => env.reset())
+```
+
+### sampleWrites — a row and its payloads, per model
+
+```js
+import { sampleWrites } from '@frontierjs/litestone/testing'
+
+const s = await sampleWrites(env.schema, env.system)
+s.Lead    // → { idField: 'id', row: {…}, create: {…}, patch: {…} }
+```
+
+One seeded row per model, plus the payloads a create and a patch would carry —
+every required FK pointed at a parent the same call made. `{ models: [...] }`
+narrows it.
+
+The create payload has no server-owned columns in it. Over the wire those are
+`readOnly` in the model's JSON Schema, so sending one is a 400 about the fixture
+rather than an answer about whatever was under test.
+
+**A model that cannot be seeded comes back as `{ error }` rather than missing.**
+An absent key reads as *this model has nothing to test*, which is how a derived
+suite silently stops covering the model whose fixture broke.
+
+This exists so something above the Data boundary can derive a call list: mapping
+a model onto the service that exposes it is an API-realm fact, and litestone
+cannot see it. `@frontierjs/testing`'s `verifyTransportParity()` is the first
+consumer.
+
 ## makeTestClient
 
 The primary entry point for tests. Creates an in-memory Litestone client:
@@ -366,30 +631,86 @@ test, which is why it is the primitive here.
 
 ## generateGateMatrix — permission test cases
 
+The second argument is the **model** name — PascalCase singular, `'Post'` and not
+`'posts'`. Three resolvers depend on the two spellings not being confused.
+
 ```js
 import { generateGateMatrix } from '@frontierjs/litestone/testing'
 
-const matrix = generateGateMatrix(schema, 'posts')
-// → [{ op: 'read', level: 1, label: 'VISITOR', expect: 'allow' }, ...]
+const matrix = generateGateMatrix(schema, 'Post')
+// → [{ op: 'read', required: 1, level: 0, label: 'STRANGER', expect: 'deny' }, ...]
+```
 
-for (const { op, level, label, expect: expected } of matrix) {
-  test(`${op} as ${label} → ${expected}`, async () => {
-    const userDb = db.$setAuth({ id: 1, level })
-    if (expected === 'allow') {
-      await expect(userDb.posts[op === 'read' ? 'findMany' : op]({})).resolves.toBeDefined()
-    } else {
-      await expect(userDb.posts[op === 'read' ? 'findMany' : op]({})).rejects.toThrow()
-    }
-  })
+**Every operation against every reachable level (0–8), by default** — 36 cases per
+model. `{ levels: 'edges' }` narrows it to the required level and the one below,
+which is 8 cases and proves only the comparison operator. A gate that grants at 6
+and again at 2 passes the edges and is a hole.
+
+**A level does not live on the user object.** `$setAuth({ id: 1, level })` grades
+whatever the installed `getLevel` says it grades, and the extra key is ignored —
+the level comes from the plugin. Drive it from there:
+
+```js
+let level = 0
+const { db } = await makeTestClient(SCHEMA, {
+  plugins: [new GatePlugin({ getLevel: () => level })]
+})
+
+for (const c of generateGateMatrix(schema, 'Post')) {
+  level = c.level
+  // getLevel is clamped to 0–7, so SYSTEM is not reachable through it at all.
+  const as = c.level === 8 ? db.asSystem() : db.$setAuth({ id: 1 })
+  const run = () => c.op === 'read' ? as.post.findMany() : as.post[c.op](args[c.op])
+
+  if (c.expect === 'allow') await expect(run()).resolves.toBeDefined()
+  else                      await expect(run()).rejects.toThrow(/requires level/i)
 }
 ```
+
+The verdicts are the plugin's own — `generateGateMatrix` asks `levelPasses()`
+rather than restating the comparison, so a matrix cannot certify access the app
+does not grant.
+
+## The access snapshot
+
+`deriveAccess(schema)` reads the whole declared access surface back out — every
+`@@gate`, `@@allow`, `@@deny`, `@guarded`, `@encrypted`, `@secret`, field `@allow`
+and `@@transitions` gate — and `renderAccessSnapshot()` turns it into one markdown
+file to commit.
+
+```bash
+litestone access            # → access.snapshot.md beside the schema
+litestone access --check    # exit 1 if the committed file is stale  (CI)
+litestone access --json     # the structured table instead
+```
+
+**Commit it and read its diff.** A gate change is otherwise invisible until
+something is refused in production: `@@gate` refuses and `@@allow` filters, both
+below the API, and a wrong policy is an empty screen with a 200 rather than an
+error. The snapshot is tens of lines and names exactly which access moved.
+
+```js
+import { deriveAccess, gateLadder } from '@frontierjs/litestone/testing'
+
+const access = deriveAccess(schema)
+access.counts        // { models, gated, unrestricted, policied, protected, transitions }
+access.models        // sorted by name — inserting a model does not shift every row
+
+for (const model of access.models)
+  for (const { op, level, expect } of gateLadder(model)) { /* … */ }
+```
+
+Models are sorted rather than left in schema order, and empty sections are omitted:
+both exist so the diff is small and localised. The first section is **Unrestricted**
+— models declaring neither `@@gate` nor `@@allow`, which every caller reaches
+including an unauthenticated one.
 
 ## generateValidationCases — constraint boundary data
 
 ```js
 import { generateValidationCases } from '@frontierjs/litestone/testing'
 
-const { valid, invalid, boundary } = generateValidationCases(schema, 'leads')
+const { valid, invalid, boundary } = generateValidationCases(schema, 'Lead')
 // valid    — complete valid record (correct by construction)
 // invalid  — one failing case per constraint: { field, value, rule, expect: 'fail', message }
 // boundary — edge values that should pass: { field, value, rule, expect: 'pass' }
@@ -406,6 +727,21 @@ for (const c of invalid) {
 }
 ```
 
+**`c.message` is the field's own message where it declares one.** `@email("Use
+your work address")` predicts that sentence, not the default wording — the same
+string `x-messages` carries to Junction and Sierra.
+
+Covered: `@email`, `@url`, `@phone`, `@date`, `@datetime`, `@time`, `@regex`,
+`@length`, `@gte`/`@gt`/`@lte`/`@lt`, `@startsWith`, `@endsWith`, `@contains`,
+and on array columns `@minItems`, `@maxItems`, `@uniqueItems`.
+
+**Every case is executed against a real client in litestone's own suite** —
+invalid ones must be refused with the message they predicted, boundary ones must
+be accepted, and every field carrying an attribute must produce a case. That test
+is what the category is worth: unit tests over the generator's *output* passed
+for a long time while `valid` was not valid, authored messages were ignored, and
+three rule families generated nothing at all.
+
 ## Auto-factories
 
 When `autoFactories: true`, `makeTestClient` generates factories for every SQLite model automatically. Access them via `factories`:
@@ -418,3 +754,101 @@ await factories.account.admin().createMany(3)
 ```
 
 Auto-factories use `generateFactory` under the hood — sensible defaults, no manual definition required.
+
+## Schema mutation testing
+
+```js
+import { createTestEnv, mutationScore, schemaMutants } from '@frontierjs/litestone/testing'
+
+const r = await mutationScore({
+  schema,
+  build: (text) => createTestEnv({ schema: text }),
+})
+// { total, graded, killed, score, survived, refused, errored }
+```
+
+**Mutate the schema, not the code.** Drop a `@@gate`, grade one down, remove a
+`@guarded`, widen a `@length`, delete an `@@allow` — then run the suite derived
+from the **original** schema against a database built from the mutant. A mutant
+nothing notices is a hole, and it names itself.
+
+A `.lite` file is small and declarative, so the mutation space is **enumerable**
+rather than combinatorial: one mutant per attribute occurrence, 30 for `example`
+and 232 for `basecamp`.
+
+### The direction is the whole design
+
+Expectations come from the ORIGINAL schema; the database comes from the MUTANT.
+That is why `verifyGateLadder`, `verifyConstraints` and `verifyFieldProtection`
+all take `{ against }`. Deriving both from the mutant is the oracle problem at
+its purest — drop a `@@gate` and the ladder loses the rows that would have caught
+it, so every mutant survives and the score reads 100%.
+
+### Outcomes
+
+| | Counts as | Means |
+| --- | --- | --- |
+| verdict disagreement | **kill** | the suite saw the change |
+| parser refused it | **kill** | the schema does not parse |
+| the framework refused to load it | **kill** | such a schema cannot ship |
+| `survived` | — | nothing in the derived suite can see this change |
+| `errored` | **ungraded** | the suite fell over; says nothing either way |
+
+**An `error` or `skipped` row never counts as a kill.** Every mutant once came
+back with the same 22 error rows and the score read 93% while four mutations went
+completely unnoticed. A mutation score that counts its own harness failures as
+successes is the oracle problem wearing a percentage.
+
+### What a survivor means
+
+Not *the schema is wrong* — it is a fact about the **suite**. Two are known and
+named rather than hidden:
+
+- **`allow-drop`** — row policies need rows on both sides of a predicate, and
+  nothing executed asks.
+- **`unique-drop` on a nullable column** — SQLite accepts any number of NULLs in
+  a UNIQUE column, so there is no duplicate to try.
+
+### Kinds
+
+`gate-drop` · `gate-lower` · `allow-drop` · `deny-drop` · `guarded-drop` ·
+`encrypted-drop` · `unique-drop` · `validator-drop` · `validator-widen`
+
+Pass `{ kinds: [...] }` to narrow. Mutation is **code-only and quote-aware**: an
+attribute named inside a doc comment is prose, and editing it produces a mutant
+identical to the original that survives everything.
+
+## verifyRowPolicies
+
+```js
+expect(await env.verifyRowPolicies()).toEqual([])
+await env.verifyRowPolicies({ ops: ['read'] })
+```
+
+Every `@@allow`/`@@deny`, executed against rows on **both sides** of its
+predicate. A gate refuses and a policy filters, so a wrong policy raises nothing
+anywhere — it returns more rows, and more rows is not an error.
+
+**The oracle is a second implementation.** Litestone compiles a policy twice:
+`compileSql` for reads (a WHERE) and `evalJs` for creates (JavaScript). This
+reads through the compiled WHERE and asks `evalJs` which rows should have come
+back. Independent implementations of one rule, so one can grade the other — the
+opposite of the oracle problem, and the comparison that found FJS-195.
+
+Covers `read`, `update` and `delete`. **`create` is absent on purpose**: it is
+checked by `evalJs` alone, so grading it with `evalJs` would be circular.
+
+| `got` | Means |
+| --- | --- |
+| `admitted` / `filtered` | the client's answer, compared against the evaluator's |
+| `error` | the rows could not be built, or all fell on one side |
+| `skipped` | a `check()` predicate, or a gate above SYSADMIN(7) |
+
+**Rows on one side only are reported, not passed.** A policy that admits
+everything and a policy that is not applied at all are the same observation when
+every row matches — which is the exact shape this realm exists to stop.
+
+Values are taken off the predicate: the principal's own value for an `auth()`
+comparison, the literal for a literal one. Where that field is a **foreign key**
+— `workspaceId == auth().workspaceId` is the common case — the parent row is
+created first, or the candidate would break the FK and never exist.

@@ -58,7 +58,7 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
       add({
         id: `server-unreachable-${s.id}`, priority: 'critical', category: 'fleet',
         title: `${s.name} is unreachable`,
-        detail: 'The agent has not responded. Check the server or restart the agent.',
+        detail: 'The outpost has not responded. Check the server or restart the outpost.',
         href: `/servers/${s.id}/`, action: 'View server',
       })
       continue  // an unreachable server's heartbeat being stale is the same fact
@@ -69,13 +69,13 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
       add({
         id: `server-heartbeat-${s.id}`, priority: 'warning', category: 'fleet',
         title: `${s.name} heartbeat overdue`,
-        detail: `Last seen ${ageLabel(beat)} — it may have lost the agent connection.`,
+        detail: `Last seen ${ageLabel(beat)} — it may have lost the outpost connection.`,
         href: `/servers/${s.id}/`, action: 'View server',
       })
     }
 
     // Pressure. `Server.health` is written by servers.heartbeat from whatever
-    // the agent reported — see the note at the foot of this file about the
+    // the outpost reported — see the note at the foot of this file about the
     // shape not being declared anywhere.
     const cpu = Number(s.health?.cpu)
     if (Number.isFinite(cpu) && cpu >= CPU_WARN) {
@@ -176,7 +176,7 @@ export function noticeCounts(notices) {
 //   `Server.health` is `Json?` in the schema and `Record<string, unknown>` in
 //   `HeartbeatData` — nothing anywhere says the keys are `cpu` and `memory`.
 //   That spelling is the de-facto contract because it is what `web/test/
-//   verify.mjs` posts and what `servers/[id]` renders; an agent sending `mem`
+//   verify.mjs` posts and what `servers/[id]` renders; an outpost sending `mem`
 //   would satisfy both types and silently never raise a notice. The fix is a
 //   declared health shape, not a rule here. `db/seed.js` also writes no health
 //   at all, so a seeded fleet raises no pressure notices.

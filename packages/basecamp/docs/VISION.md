@@ -113,6 +113,14 @@ Basecamp needs nouns. Every one is a threat to the mental model, so the bar is: 
 | **Manifest**        | The declared shape of a deployment                                   | **Reused** — Deployment realm |
 | **Release**         | A manifest realized at a point in time                               | **Reused** — Deployment realm |
 | **Trust Hierarchy** | Who may do what in Basecamp itself                                   | **Reused** — 0–9 scale        |
+| **Outpost**         | The process a Server runs so Basecamp can reach it — heartbeat, health, exec | **Settled** — `FJS-D29` |
+
+**Outpost is the only new noun here that is settled**, and the rule it came from
+is worth keeping when the next one is argued: **infrastructure takes place nouns,
+AI takes personified nouns.** It replaced *agent*, which this repo had already
+spent on the MCP surface (`IDEAS/agent-surface.md`) in a schema that has a
+`UserKind.ai`. The name is settled; whether there is a resident process at all is
+the open question below.
 
 ### One name deliberately avoided
 
@@ -191,7 +199,7 @@ Recorded honestly rather than resolved prematurely.
 - **Domain placement.** Rename Domain 7, split it, or accept that Basecamp spans domains. Determines what Basecamp may absorb next.
 - **The appliance noun.** Blocking, because it appears in the UI the moment installs ship.
 - **Self-hosted or managed.** Basecamp is a tool developers run themselves — but a fleet tool that is itself part of the fleet has a bootstrapping problem. Who deploys Basecamp?
-- **Agent or agentless.** Does Basecamp push over SSH, or does each server run something that reports back? Push is simpler and keeps servers dumb; agents make health and logs far better. This choice constrains everything in the Know group.
+- **Outpost or SSH-only.** Does Basecamp push over SSH, or does each server run an **Outpost** that reports back? Push is simpler and keeps servers dumb; an Outpost makes health and logs far better. This choice constrains everything in the Know group. **The name is settled and the architecture is not** (`FJS-D29`): *Outpost* is reserved for the resident process if there is one, and the word *agent* is retired here because FJS will have AI agents. `IDEAS/deploy-plane.md` argues for keeping both — Outpost as the design, SSH as the degrade path — and notes that the schema (`outpostVersion`, `lastHeartbeatAt`, `installing`) and both engines have already chosen.
 - **Multi-user and teams.** The trust hierarchy handles *what level*, but a fleet tool needs *which projects*. Record-level authorization is deferred to Litestone V2 — Basecamp is likely its first real consumer, and may be what forces the timeline.
 - **Where observability data lives.** Basecamp surfacing signals is settled. Basecamp *storing* time-series data is not, and pulls it toward becoming an APM.
 

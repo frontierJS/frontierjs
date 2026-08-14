@@ -1,5 +1,16 @@
 # Changes — @frontierjs/conduit
 
+## 2026-08-13 — `TargetKind`'s `'agent'` member is now `'outpost'`
+
+`FJS-D29` retires *agent* for infrastructure across the repo, because the word
+already meant two things here and one of them is going to be an AI. Conduit is
+affected beyond prose: **`testing.ts` derives a target's kind from its id prefix**
+(`agent:` → `'agent'`), so a caller that renamed its ids without renaming the union
+would have had every target graded as the wrong kind, silently.
+
+Breaking for anything constructing `kind: 'agent'` — which is Basecamp, renamed the
+same day. 193/193 tests pass, junction integration included.
+
 ## 2026-08-08 — a non-JSON response is not a broken target
 
 The HTTP transport refused every content type that was not JSON. The check was

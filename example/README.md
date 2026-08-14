@@ -18,7 +18,7 @@ bun run web     # terminal 2 — Sierra + Vite on :8010
 Open <http://localhost:8010> and sign in from the header.
 
 **Two processes, two terminals — both are required.** Vite serves the UI and
-proxies `/api`, `/auth`, `/session` and `/ws` to the API; with the API down every
+proxies `/api` and `/ws` to the API; with the API down every
 one of those is a 502 and the app says so rather than rendering plausible empty
 tables.
 
@@ -36,7 +36,7 @@ tables.
 | `bun run email:preview` | render the transactional emails to files you can open |
 | `bun run build` | production build to `web/dist/client/` |
 | `bun run verify:build` | build, then drive **the built app** with the same 37 assertions (needs `bun run api`) |
-| `bun run preview` | serve `web/dist/client/` on :8011 with `/api` `/auth` `/session` `/ws` proxied — `vite preview` carries no proxy |
+| `bun run preview` | serve `web/dist/client/` on :8011 with `/api` `/ws` proxied — `vite preview` carries no proxy |
 | `bun run reset` | delete the database and start the seed over |
 
 Sign in as **`sam@shop.test`** (level 4) or **`alex@shop.test`** (level 5), both

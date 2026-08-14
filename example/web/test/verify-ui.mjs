@@ -37,7 +37,7 @@ const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
-for (const [name, url] of [['api (bun run api)', `${API}/health`], ['web (bun run web)', UI]]) {
+for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]]) {
   try {
     const r = await fetch(url)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)

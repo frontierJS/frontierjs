@@ -16,8 +16,15 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 | `File` | `TEXT` JSON ref | bytes in S3/R2/local (FileStorage plugin) |
 | `File[]` | `TEXT` JSON array | multiple files |
 | `EnumName` | `TEXT` + CHECK | `string` |
+| `EnumName[]` | `TEXT` JSON, no CHECK | `string[]` — a set of declared values |
 | `Type[]` | `TEXT` JSON | `Array` (auto-parsed) |
 | `Type?` | nullable | `null` when absent |
+
+An array column is JSON text with a `json_type = 'array'` CHECK, and the empty
+array is its null state — every array field is `NOT NULL DEFAULT '[]'`, so an
+absent one reads back as `[]` rather than `null`. A `@default` on one must
+therefore be a JSON array string (`@default("[]")`); anything else is a schema
+error, because the DDL would emit a default its own CHECK rejects.
 
 ## Field attributes
 
@@ -127,7 +134,8 @@ open editor correctly stale after one lands.
 @guarded                         excluded unless asSystem()
 @guarded(all)                    excluded from all operations unless asSystem()
 @encrypted                       AES-256-GCM at rest (implies @guarded(all))
-@encrypted(searchable: true)     HMAC-indexed — equality WHERE still works encrypted
+@encrypted(deterministic: true)  IV derived from the value — equality WHERE works, and it reads back
+@hashed                          HMAC-SHA256, one-way — matchable in a WHERE, never readable
 @secret                          @encrypted + @guarded(all) + @log(auditDb)
 @secret(rotate: false)           same but excluded from $rotateKey
 ```
@@ -163,24 +171,65 @@ filtered (`where: { orderCount: { gt: 5 } }`) and sorted
 already-fetched row, so it can be neither — see
 [sorting.md](./sorting.md#what-can-be-sorted).
 
-### Computed fields resolve their own dependencies
+**None of them can be written.** Passing a `@computed` or `@generated` field in a
+`create` or `update` is refused naming the field and saying which it is; the value
+comes from its expression or its function, and a write that appeared to succeed
+would be a write that never landed. An *unknown* key is still stripped silently —
+that is the mass-assignment protection, and it is a different thing.
 
-You never list what a `@computed` field reads. Selecting one sets
-`needsAllDbCols`, which widens the SQL to every column of the row, and the
-result is trimmed back to what you asked for afterwards:
+### Computed fields may declare what they read
+
+A computed function written bare resolves its own dependencies, and pays for it:
+naming the field in a `select` widens the SQL to every column of the row, plus
+every `@from` subquery on the model, and the result is trimmed back afterwards.
 
 ```js
-db.client.findMany({ select: { chattiness: true } })   // → { chattiness: 20 }
-// fetched every column plus the @from subqueries, ran the fn, then trimmed
+// computed.js
+export default {
+  Client: {
+    chattiness: row => row.noteCount * 2,                       // → SELECT *
+  },
+}
 ```
 
-`@from` values are resolved before computed functions run, so a `@computed`
-field may read one. The cost is worth knowing: **naming one computed field in a
-`select` turns it into a `SELECT *`.** There is no way to declare a narrower
-dependency set.
+Declaring the inputs narrows the fetch to exactly them:
 
-Both hold on every read path — `findMany`, `findFirst`, `findUnique`,
-`findManyAndCount`, `findManyCursor`, and a model reached through `include`.
+```js
+export default {
+  Client: {
+    chattiness: {
+      needs:   ['noteCount'],                                   // stored columns and @from fields
+      compute: row => row.noteCount * 2,
+    },
+  },
+}
+
+db.client.findMany({ select: { chattiness: true } })
+// SELECT (SELECT COUNT(*) …) AS "noteCount" FROM "client"   → [{ chattiness: 20 }]
+```
+
+The dependency is fetched and then trimmed — asking for a computed field never
+smuggles its inputs into the result.
+
+**A declared fn is handed only what it declared, and reading anything else
+throws** naming the field and the list. Without that the declaration would be a
+footgun: add a line to the fn, forget the list, and the value goes quietly wrong
+instead of failing. `'x' in row` is left alone, so feature-detection still works.
+A `needs` naming something that is not a readable field of the model is refused
+at `createClient`.
+
+Undeclared has to mean *fetch everything*, since nothing can know what a bare fn
+will touch — so **one bare fn in a `select` widens it for the declared ones too.**
+
+`@from` values are resolved before computed functions run, so a computed field
+may read one, declared or not.
+
+**A computed field the `select` did not ask for is not computed at all.** With no
+`select`, every computed field runs over the whole row.
+
+All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
+`findManyAndCount`, `findManyCursor`, `search`, and a model reached through
+`include`.
 
 ### File storage
 ```
@@ -369,6 +418,42 @@ model User {
   plan Plan @default(starter)
   role Role @default(member)
 }
+```
+
+### A set of enum values
+
+A field can hold *several* of the declared values. It is one declaration, and it
+feeds the column, the API validation and the picker the same way a single-valued
+enum does:
+
+```prisma
+enum ReclaimTarget { logs  cache  artifacts }
+
+model ReclaimRule {
+  id      Int @id
+  targets ReclaimTarget[]
+}
+```
+
+Stored as a JSON TEXT column, typed `ReclaimTarget[]`, and published as
+`{"type":"array","items":{"$ref":"#/$defs/ReclaimTarget"}}` — the `$ref` on the
+items, so a picker reading the field's schema offers the whole vocabulary rather
+than one choice. Membership is checked on every create and update, naming every
+value that is not in the enum.
+
+**There is no membership CHECK, and there cannot be.** Reading the elements of a
+JSON array needs `json_each`, which is a table-valued function, and SQLite
+forbids a subquery inside a CHECK. So the client is the boundary here — the same
+tier `@minItems`, `@uniqueItems` and `Int[]` element typing already sit at. Raw
+SQL (`db.asSystem().sql`) can write anything into the column.
+
+Filter it like any other array column — see
+[filtering.md](./filtering.md#array-fields):
+
+```js
+db.reclaimRule.findMany({ where: { targets: { has: 'logs' } } })          // holds this one
+db.reclaimRule.findMany({ where: { targets: ['logs', 'cache'] } })        // holds either
+db.reclaimRule.findMany({ where: { targets: { equals: ['logs'] } } })     // is exactly this
 ```
 
 ### State machines

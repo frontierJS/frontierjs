@@ -5,14 +5,14 @@ title: Volumes
   // The mock's VolumesView, over the first OBSERVED model in this app.
   //
   // Everything else on these screens is something a person created here. A
-  // volume is the other direction: Docker made it, an agent found it, and this
+  // volume is the other direction: Docker made it, an outpost found it, and this
   // screen is Basecamp's picture of what is out there. So there is no "New
   // volume" button — the only way a row appears is a report from a machine, and
-  // an empty list means either no disks or no agent, which the empty state says
+  // an empty list means either no disks or no outpost, which the empty state says
   // rather than leaving to be guessed.
   //
   // Deleting a row is not deleting a volume, so both destructive buttons go
-  // through the agent and fail in words when nothing answers. The screen never
+  // through the outpost and fail in words when nothing answers. The screen never
   // pre-empts that refusal by disabling itself: the decision is the server's.
   import { session } from '../../session.js'
   import { volumes } from '../../resources/Volume.mesa'
@@ -38,7 +38,7 @@ title: Volumes
 
   // Every load is numbered, and only the newest may write to the screen. This
   // is the one screen fed by a machine on a timer rather than by a person
-  // clicking: several agents reporting at once start several loads, and a
+  // clicking: several outposts reporting at once start several loads, and a
   // slower earlier one landing last shows the fleet's disks as they were two
   // reports ago.
   const inflight = { seq: 0 }
@@ -68,7 +68,7 @@ title: Volumes
   load()
   $: session.workspaceId, () => load()
 
-  // A report from any agent in the workspace lands here as a push — which is
+  // A report from any outpost in the workspace lands here as a push — which is
   // the whole reason the report method publishes. Without it the picture is
   // only as fresh as the last time somebody navigated.
   //
@@ -93,7 +93,7 @@ title: Volumes
       toasts.success(`${volume.name} removed`, `Freed ${size(volume.sizeBytes)} on ${volume.serverName}`)
       await load()
     } catch (e) {
-      // 'mounted by pg-data, api — stop the container first' and 'no agent is
+      // 'mounted by pg-data, api — stop the container first' and 'no outpost is
       // registered' both arrive here. Neither is guessable from the row.
       error = e.message
     } finally {
@@ -107,7 +107,7 @@ title: Volumes
       const res = await volumes.service.action('prune', null, server ? { serverId: server } : {})
       toasts.success(
         `Pruned ${res.forgotten.length} volume(s)`,
-        `Freed ${size(res.freedBytes)}` + (res.unreachable.length ? ` · no agent on ${res.unreachable.join(', ')}` : ''),
+        `Freed ${size(res.freedBytes)}` + (res.unreachable.length ? ` · no outpost on ${res.unreachable.join(', ')}` : ''),
       )
       await load()
     } catch (e) {
@@ -144,7 +144,7 @@ title: Volumes
 
 <p class="text-body">
   Persistent Docker volumes across the fleet — observed, not declared. A row is here
-  because an agent reported it, and removing one asks that agent to delete the disk
+  because an outpost reported it, and removing one asks that outpost to delete the disk
   before the record is forgotten.
 </p>
 
@@ -183,8 +183,8 @@ title: Volumes
   <p class="text-sm text-muted">Loading…</p>
 {:else if !rows.length}
   <EmptyState title="No volumes">
-    Nothing has been reported here yet. A volume appears when an agent checks in with one —
-    an empty list is either a fleet with no disks or a fleet with no agent.
+    Nothing has been reported here yet. A volume appears when an outpost checks in with one —
+    an empty list is either a fleet with no disks or a fleet with no outpost.
   </EmptyState>
 {:else}
   <div class="stack" id="volume-list">

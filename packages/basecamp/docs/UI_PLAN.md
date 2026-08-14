@@ -257,10 +257,10 @@ chronological stream that happens to you. Caught by looking at a screenshot.
 The richest service.
 
 - Custom methods `events` / `reboot` / `drain` / `undrain` / `sync`, JSON
-  columns, agent heartbeat, provisioning wizard.
+  columns, outpost heartbeat, provisioning wizard.
 
 **Checkpoint — met.** `bun run verify --reset`, **67/67**. Import a server, watch
-an agent heartbeat bring it online **with no reload**, drain it, cancel the
+an outpost heartbeat bring it online **with no reload**, drain it, cancel the
 drain, and be refused when removing it while online — the service's words, shown
 rather than pre-empted.
 
@@ -268,9 +268,9 @@ Screens: `routes/servers/{index,create}.mesa`, `routes/servers/[id]/index.mesa`.
 
 Three findings, all about the same seam — what a client is actually told:
 
-- **The agent heartbeat published to nothing.** `workspaceChannel` reads
+- **The outpost heartbeat published to nothing.** `workspaceChannel` reads
   `ctx.locals.workspaceId`, which `sessionScope` sets — and heartbeat is
-  deliberately exempt from it, because an agent carries no session and no
+  deliberately exempt from it, because an outpost carries no session and no
   workspace header. So the one update in this app that arrives without a person
   clicking was the one nobody could see. The server row knows its own workspace;
   heartbeat now stamps `ctx.locals.workspaceId` from it, which is the right

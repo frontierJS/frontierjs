@@ -82,6 +82,12 @@ await app.start()
 
 ## Routes
 
+Paths below are the plugin's own `prefix` (default `/auth`). They are
+registered with `app.post`/`app.get`, so the app's `apiPrefix` applies to them
+like it does to every other route — an app configured with `apiPrefix: '/api'`
+serves login at `/api/auth/login`, and the browser client's `authPrefix` stays
+relative to `apiPrefix` for the same reason.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/auth/register` | Create account + issue session |

@@ -1,0 +1,102 @@
+# Access snapshot
+
+Generated from `schema.lite` by `fli test:access`. **Do not edit.**
+
+Every line below is a rule the Data boundary enforces on every caller —
+`@@gate` refuses, `@@allow`/`@@deny` filter. Regenerate after a schema change
+and read the diff: it names exactly which access moved. A line that changed
+without a schema change you meant to make is a shipped security bug.
+
+```
+37 models · 37 gated · 0 unrestricted
+1 with row policies · 4 with protected fields · 0 gated transitions
+```
+
+## Gates
+
+Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
+`LOCKED` is reachable by nothing, `asSystem()` included.
+
+| Model | Read | Create | Update | Delete |
+| --- | --- | --- | --- | --- |
+| `Account` | 6 OWNER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AlertEvent` | 2 READER | 8 SYSTEM | 4 USER | 8 SYSTEM |
+| `AlertRule` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `AlertRuleChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `ApiKey` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `App` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `AppNetwork` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AppServer` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AuditEvent` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
+| `CleanupRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
+| `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Dashboard` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `DashboardWidget` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `Deployment` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `DeploymentStep` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
+| `DiskUsage` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Domain` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Environment` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `FeatureFlag` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `FlagOverride` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `Job` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `JobRun` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Network` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `NotificationChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Project` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Recipe` | 4 USER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `RecipeRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
+| `Secret` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Server` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `ServerEvent` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
+| `ServerNetwork` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `User` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Volume` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Workspace` | 1 VISITOR | 1 VISITOR | 5 ADMINISTRATOR | 6 OWNER |
+| `WorkspaceMember` | 1 VISITOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+
+## Row policies
+
+A policy compiles into the WHERE clause. It never raises — a wrong one is an
+empty result with a 200, so read these as "which rows", not "which callers".
+An operation with no `@@allow` is unrestricted at this layer.
+
+### `Server`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+## Protected fields
+
+`@guarded` needs a system context. `@encrypted`/`@secret` are ciphertext at rest
+and log as `[redacted]` in the audit trail. A field `@allow` strips the column
+rather than refusing the row.
+
+| Model | Field | Rule |
+| --- | --- | --- |
+| `Credential` | `value` | `@guarded(all)` |
+| `Credential` | `accessToken` | `@guarded(all)` |
+| `Credential` | `refreshToken` | `@guarded(all)` |
+| `Secret` | `data` | `@encrypted` |
+| `Session` | `token` | `@guarded(all)` |
+| `Verification` | `value` | `@guarded(all)` |
+
+## Levels
+
+| # | Name | Who |
+| --- | --- | --- |
+| 0 | STRANGER | unauthenticated |
+| 1 | VISITOR | authenticated, unverified |
+| 2 | READER | verified, read-only |
+| 3 | CREATOR | can submit, cannot manage |
+| 4 | USER | full member |
+| 5 | ADMINISTRATOR | app admin |
+| 6 | OWNER | account/tenant owner |
+| 7 | SYSADMIN | global system admin — a real, revocable human |
+| 8 | SYSTEM | `asSystem()` only — jobs, migrations. No identity, no audit trail |
+| 9 | LOCKED | nothing passes |

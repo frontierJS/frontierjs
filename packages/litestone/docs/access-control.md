@@ -48,11 +48,39 @@ Rules:
 auth()                — current auth object (null if unauthenticated)
 auth().field          — field on auth object (e.g. auth().id, auth().role)
 auth() != null        — authenticated check
-now()                 — current UTC timestamp
+now()                 — current UTC timestamp, ONE instant per evaluation
 check(field)          — delegates to related model's read policy
 field == value        field != value  field > value  field >= value  field < value  field <= value
 expr1 && expr2        expr1 || expr2  !expr
 ```
+
+### `now()` and the clock
+
+`now()` resolves **once per policy evaluation**, not once per occurrence — so
+`@@allow('read', startAt < now() && now() < endAt)` compares both sides against
+the same instant. Without that a query has no single "as of" moment and can
+return a row satisfying a contradiction, which matters far more for a report
+than for an access check.
+
+The clock is injectable:
+
+```js
+const db = await createClient({ path: './schema.lite', now: () => new Date('2026-01-01T00:00:00Z') })
+```
+
+`now` takes a function returning a `Date` or an ISO string; absent, it is the
+wall clock. It reaches both halves of the policy compiler — the WHERE and the
+JS evaluator a `create` policy uses — and `@@softDelete`'s stamp, so a frozen
+clock freezes every timestamp litestone writes rather than only the ones a
+policy compares against.
+
+**Do not reach for SQLite's own clock in a `$raw` predicate.** `datetime('now')`
+answers `2026-08-13 07:38:31` — a space, no milliseconds, no `Z` — while
+litestone stores `2026-08-13T07:38:31.984Z`. The comparison is string-wise and
+`'T'` sorts after a space, so `dueAt < datetime('now')` is right for rows from
+earlier days and silently wrong for rows from today (`FJS-226`). Use the
+structured form, `{ dueAt: { lt: new Date().toISOString() } }`, or
+`strftime('%Y-%m-%dT%H:%M:%fZ','now')`.
 
 ### Applying policies
 

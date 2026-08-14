@@ -1,7 +1,7 @@
 // ============================================================
 // Conduit — Trace context propagation
 //
-// Nothing tied a Hub request to the agent call it produced. These emit
+// Nothing tied a Hub request to the outpost call it produced. These emit
 // headers that let a downstream target's logs join yours.
 //
 //   createConduit({ trace: createTraceContext() })

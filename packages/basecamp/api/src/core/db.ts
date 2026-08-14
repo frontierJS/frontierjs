@@ -16,10 +16,9 @@
 //
 // What it deliberately does NOT pass is `db`. The database file is declared in
 // the schema — `database main { path env("DATABASE_URL", "./db/basecamp.db") }`
-// — and that declaration WINS: createClient({ db }) is ignored when it is
-// present, with no error and no warning. Passing both reads like the option
-// decides the path, which is how a test that believed it was in-memory ended up
-// writing the declared file.
+// — and that declaration is the one statement of it. `db` OVERRIDES it, so
+// passing both here would mean the deployment's DATABASE_URL is read and then
+// ignored.
 //
 // Both declared paths resolve against the PROCESS CWD, not this file — the
 // database and the audit trail alike. Start the API from the package root or

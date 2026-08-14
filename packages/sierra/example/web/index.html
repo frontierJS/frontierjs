@@ -4,9 +4,13 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <title>Sierra example</title>
 <!--
-  `app` + a theme go on <body>. The theme is one class on any ancestor —
-  swap it for theme-dark / theme-forest / theme-midnight and every component
-  below follows, because it is all custom-property inheritance.
+  `app` + a theme go on the element below. The theme is one class on any
+  ancestor — swap it for theme-dark / theme-forest / theme-midnight and every
+  component below follows, because it is all custom-property inheritance.
+
+  Never write the body tag inside a comment: vite injects the built <script> at
+  the first TEXTUAL match for it and does not skip comments, so the build
+  succeeds, this file looks right, and the page loads no JavaScript.
 -->
 <body class="app theme-default">
   <div id="app"></div>

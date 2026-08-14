@@ -6,7 +6,7 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { existsSync, unlinkSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { existsSync, unlinkSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs'
 import { resolve, join }  from 'path'
 import { tmpdir }          from 'os'
 
@@ -23,7 +23,7 @@ import { buildWhere, buildOrderBy, sql,
          normaliseOrderBy, buildCursorWhere,
          isNamedAgg, buildNamedAggExpr } from '../src/core/query.js'
 import { create, apply, status,
-         verify }                     from '../src/core/migrations.js'
+         verify, autoMigrate }        from '../src/core/migrations.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2618,6 +2618,19 @@ describe('client — FTS search', () => {
     expect(db.user.search('alice')).rejects.toThrow()
   })
 
+  // Step 3 rejoins the fetched rows to the FTS hits by id, so a select that did
+  // not name the id joined nothing and the search answered [] — a query with
+  // results reporting none, with nothing to say why.
+  test('a select that omits the id still returns the matching rows', async () => {
+    const r = await db.message.search('sqlite', { select: { title: true } })
+    expect(r).toEqual([{ title: 'SQLite intro' }])
+  })
+
+  test('the id injected for that join is not returned', async () => {
+    const r = await db.message.search('sqlite', { select: { body: true } })
+    expect(Object.keys(r[0])).toEqual(['body'])
+  })
+
   test('phrase search', async () => {
     const r = await db.message.search('"full text"')
     expect(r.length).toBe(1)
@@ -2847,6 +2860,162 @@ describe('client — @@fts + @@softDelete', () => {
       if (!stmt.startsWith('PRAGMA')) raw.run(stmt + ';')
 
     expect(triggers()).toEqual(wanted)
+    raw.close()
+  })
+})
+
+// ─── migrations — schema objects litestone did not create ────────────────────
+//
+// Every index litestone generates for a model table is `idx_<table>_<fields>`.
+// One with any other name was created by the app, and a diff that treats it as
+// stale removes it on the next schema change of ANY kind — no rebuild, no
+// error, just a query plan that silently collapses. What litestone owns it may
+// drop; what it did not create it leaves alone.
+
+describe('migrations — an index the app created', () => {
+  const V1  = `model Note { id Int @id  title String  body String }`
+  const V2  = `model Note { id Int @id  title String  body String  extra String? }`
+  const IDX = `model Note { id Int @id  title String  body String\n  @@index([title]) }`
+
+  const boot = (schemaText: string, extras: string[] = []) => {
+    const raw = new Database(tmpDb('own-idx' + Math.random().toString(36).slice(2)))
+    for (const stmt of splitStatements(generateDDL(parse(schemaText).schema)))
+      if (!stmt.startsWith('PRAGMA')) raw.run(stmt)
+    for (const s of extras) raw.run(s)
+    return raw
+  }
+  const indexes = (raw: any) => raw
+    .query(`SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'`)
+    .all().map((r: any) => r.name).sort()
+
+  const migrate = (raw: any, schemaText: string) =>
+    autoMigrate({ $rawDbs: { main: raw } } as any, parse(schemaText)).main
+
+  test('it survives an unrelated schema change', async () => {
+    const raw = boot(V1, [`CREATE INDEX "note_title_idx" ON "note" ("title")`])
+    expect(migrate(raw, V2).state).toBe('migrated')
+    expect(indexes(raw)).toEqual(['note_title_idx'])
+    raw.close()
+  })
+
+  // Its mere presence used to count as a change, so the drop landed on a
+  // migration where the schema had not moved at all.
+  test('its presence is not itself a schema change', async () => {
+    const raw = boot(V1, [`CREATE INDEX "note_title_idx" ON "note" ("title")`])
+    expect(migrate(raw, V1).state).toBe('in-sync')
+    expect(indexes(raw)).toEqual(['note_title_idx'])
+    raw.close()
+  })
+
+  // The other direction, which the ownership rule must not break: an index
+  // litestone DID generate is still dropped when the schema stops declaring it.
+  test('an index litestone generated is still dropped when @@index goes away', async () => {
+    const raw = boot(IDX)
+    expect(indexes(raw)).toEqual(['idx_note_title'])
+    expect(migrate(raw, V1).state).toBe('migrated')
+    expect(indexes(raw)).toEqual([])
+    raw.close()
+  })
+
+  // A rebuild drops the table and takes both with it. Litestone cannot restate
+  // what it did not create (FJS-183), so it says what it is about to destroy.
+  test('a rebuild names the app-created objects it will destroy', async () => {
+    const withCol = `model Note { id Int @id  title String  scratch String }`
+    const without = `model Note { id Int @id  title String }`
+    const raw = boot(withCol, [
+      `CREATE INDEX "note_title_idx" ON "note" ("title")`,
+      `CREATE TRIGGER "note_audit" AFTER INSERT ON "note" BEGIN SELECT 1; END`,
+    ])
+    const { sql } = migrate(raw, without)
+    expect(sql).toContain('this rebuild DROPS the table, which destroys:')
+    expect(sql).toContain('trigger "note_audit"')
+    expect(sql).toContain('index "note_title_idx"')
+    raw.close()
+  })
+})
+
+// ─── migrations — a view over a rebuilt table ────────────────────────────────
+//
+// A rebuild ends in ALTER TABLE … RENAME, which reparses every view in the
+// schema — so a view pointing at the table that was just dropped is not merely
+// stale, it takes the whole migration down. That made a model carrying a `view`
+// over it un-rebuildable, litestone's own feature against litestone's own
+// migrations. Unlike a trigger, a view is a stored SELECT with no state, so it
+// can be dropped and put back verbatim.
+
+describe('migrations — a view over a rebuilt table', () => {
+  const boot = (schemaText: string, extras: string[] = []) => {
+    const parsed = parse(schemaText)
+    if (!parsed.valid) throw new Error(parsed.errors.join('\n'))
+    const raw = new Database(tmpDb('view-rb' + Math.random().toString(36).slice(2)))
+    for (const stmt of splitStatements(generateDDL(parsed.schema)))
+      if (!stmt.startsWith('PRAGMA')) raw.run(stmt)
+    for (const s of extras) raw.run(s)
+    return raw
+  }
+  const objects = (raw: any) => raw
+    .query(`SELECT type || ':' || name AS o FROM sqlite_master
+            WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestone%' ORDER BY 1`)
+    .all().map((r: any) => r.o)
+  const migrate = (raw: any, schemaText: string) =>
+    autoMigrate({ $rawDbs: { main: raw } } as any, parse(schemaText)).main
+
+  const V1 = `model Note { id Int @id  title String  scratch String }`
+  const V2 = `model Note { id Int @id  title String }`
+
+  test('a view declared in the schema survives the rebuild', async () => {
+    const withView = (m: string) => `${m}\nview NoteV {\n  title String\n  @@sql("SELECT title FROM note")\n}`
+    const raw = boot(withView(V1))
+    expect(migrate(raw, withView(V2)).state).toBe('migrated')
+    expect(objects(raw)).toEqual(['table:note', 'view:NoteV'])
+    expect(raw.query(`PRAGMA table_info("note")`).all().map((c: any) => c.name)).toEqual(['id', 'title'])
+    raw.close()
+  })
+
+  test('a view the app created survives it too', async () => {
+    const raw = boot(V1, [`CREATE VIEW "v_titles" AS SELECT title FROM note`])
+    expect(migrate(raw, V2).state).toBe('migrated')
+    expect(objects(raw)).toEqual(['table:note', 'view:v_titles'])
+    raw.close()
+  })
+
+  test('a view over another table is not touched', async () => {
+    const two1 = `${V1}\nmodel Tag { id Int @id  label String }`
+    const two2 = `${V2}\nmodel Tag { id Int @id  label String }`
+    const raw = boot(two1, [`CREATE VIEW "v_tags" AS SELECT label FROM tag`])
+    expect(migrate(raw, two2).state).toBe('migrated')
+    expect(objects(raw)).toContain('view:v_tags')
+    raw.close()
+  })
+
+  // Restoring the OLD body here would fail on exactly the change the new body
+  // was written for, so a view the schema is redefining is left to the
+  // changed-views block at the end of the migration.
+  test('a view redefined in the same migration gets its new body, not the old one back', async () => {
+    const before = `${V1}\nview NoteV {\n  scratch String\n  @@sql("SELECT scratch FROM note")\n}`
+    const after  = `${V2}\nview NoteV {\n  title String\n  @@sql("SELECT title FROM note")\n}`
+    const raw = boot(before)
+    expect(migrate(raw, after).state).toBe('migrated')
+    expect(raw.query(`SELECT sql FROM sqlite_master WHERE name='NoteV'`).get().sql)
+      .toContain('SELECT title FROM note')
+    raw.close()
+  })
+
+  // SQLite does not resolve a view body at CREATE time, so a view invalidated
+  // by the rebuild comes back without complaint and fails months later, in
+  // whatever reads it. Reading zero rows from it inside the transaction is what
+  // turns that into a migration that refuses.
+  test('a view the rebuild invalidates fails the migration instead of coming back broken', async () => {
+    const raw = boot(V1, [`CREATE VIEW "v_scratch" AS SELECT scratch FROM note`])
+    expect(() => migrate(raw, V2)).toThrow('no such column: scratch')
+    expect(raw.query(`PRAGMA table_info("note")`).all().map((c: any) => c.name))
+      .toEqual(['id', 'title', 'scratch'])   // rolled back whole
+    raw.close()
+  })
+
+  test('a rebuild with no view over it emits no view SQL', async () => {
+    const raw = boot(V1)
+    expect(migrate(raw, V2).sql).not.toContain('DROP VIEW')
     raw.close()
   })
 })
@@ -4178,6 +4347,234 @@ describe('computed: inline object', () => {
 
 })
 
+// ─── computed: needs ─────────────────────────────────────────────────────────
+//
+// A computed fn either declares what it reads or it does not. Undeclared is the
+// original behaviour and stays: naming the field in a `select` fetches every
+// column, because nothing can know what the fn will touch.
+//
+// The declared form is not only an optimisation. Before it, a computed fn ran
+// on EVERY read whether or not the select asked for it — over a row narrowed by
+// that same select, so a fn reading a column the caller had not selected saw
+// undefined and answered something plausible. That is the same failure the
+// @from work chased twice (see § @from — on the paths that build their own SQL);
+// the third instance was the select path itself.
+
+// The @computed set comes from the SCHEMA and the functions come from
+// createClient, so a test adding a fn has to add the field too — the schema is
+// generated from the harness's own key list to keep the two from drifting.
+const needsSchema = (extra: string[]) => `
+  model Author {
+    id        Int    @id
+    name      String
+    email     String
+    bio       String
+    books     Book[]
+    bookCount Int    @from(Book, count: true)
+    initials  String @computed
+    summary   String @computed
+${extra.map(f => `    ${f} String @computed`).join('\n')}
+    @@fts([name])
+  }
+  model Book {
+    id       Int    @id
+    title    String
+    authorId Int
+    author   Author @relation(fields: [authorId], references: [id])
+  }
+`
+
+// Counts every compute call so a test can assert a fn did NOT run, and records
+// the SQL so it can assert which columns were actually fetched.
+function needsHarness(overrides: Record<string, any> = {}) {
+  const calls: Record<string, number> = { initials: 0, summary: 0 }
+  const sql: string[] = []
+  const computed = {
+    Author: {
+      initials: {
+        needs:   ['name'],
+        compute: (row: any) => { calls.initials++; return row.name.split(' ').map((w: string) => w[0]).join('') },
+      },
+      summary: {
+        needs:   ['name', 'bookCount'],
+        compute: (row: any) => { calls.summary++; return `${row.name} (${row.bookCount})` },
+      },
+      ...overrides,
+    },
+  }
+  return { calls, sql, computed, extra: Object.keys(overrides), onQuery: (e: any) => sql.push(e.sql) }
+}
+
+async function needsClient(h: ReturnType<typeof needsHarness>) {
+  const { db } = await makeTestClient(needsSchema(h.extra), {
+    computed: h.computed,
+    onQuery:  h.onQuery,
+    data: async (db: any) => {
+      await db.author.createMany({ data: [
+        { id: 1, name: 'Ada Lovelace',  email: 'ada@x.com',  bio: 'x'.repeat(200) },
+        { id: 2, name: 'Alan Turing',   email: 'alan@x.com', bio: 'y'.repeat(200) },
+      ]})
+      await db.book.createMany({ data: [
+        { id: 1, title: 'b1', authorId: 1 },
+        { id: 2, title: 'b2', authorId: 1 },
+        { id: 3, title: 'b3', authorId: 2 },
+      ]})
+    },
+  })
+  // Seeding reads rows back, which computes; a test asserts about its own call.
+  h.calls.initials = 0
+  h.calls.summary  = 0
+  h.sql.length     = 0
+  return db
+}
+
+describe('computed: needs', () => {
+
+  test('a computed field the select did not ask for is not computed', async () => {
+    const h  = needsHarness()
+    const db = await needsClient(h)
+    const rows = await db.author.findMany({ select: { id: true, name: true } })
+    expect(rows).toEqual([{ id: 1, name: 'Ada Lovelace' }, { id: 2, name: 'Alan Turing' }])
+    expect(h.calls).toEqual({ initials: 0, summary: 0 })
+    db.$close()
+  })
+
+  test('needs narrows the SELECT to the declared columns', async () => {
+    const h  = needsHarness()
+    const db = await needsClient(h)
+    const rows = await db.author.findMany({ select: { initials: true } })
+    expect(rows).toEqual([{ initials: 'AL' }, { initials: 'AT' }])
+    const stmt = h.sql.find(s => s.includes('FROM "author"'))!
+    expect(stmt).toContain('"name"')
+    expect(stmt).not.toContain('*')
+    expect(stmt).not.toContain('"bio"')
+    db.$close()
+  })
+
+  test('a dependency is fetched but not returned', async () => {
+    const h  = needsHarness()
+    const db = await needsClient(h)
+    const rows = await db.author.findMany({ select: { initials: true } })
+    expect(Object.keys(rows[0])).toEqual(['initials'])
+    db.$close()
+  })
+
+  test('needs may name a @from field, and the subquery is emitted', async () => {
+    const h  = needsHarness()
+    const db = await needsClient(h)
+    const rows = await db.author.findMany({ select: { summary: true }, orderBy: { id: 'asc' } })
+    expect(rows).toEqual([{ summary: 'Ada Lovelace (2)' }, { summary: 'Alan Turing (1)' }])
+    const stmt = h.sql.find(s => s.includes('FROM "author"'))!
+    expect(stmt).toContain('COUNT(*)')
+    db.$close()
+  })
+
+  test('a fn that declares nothing still widens the whole SELECT', async () => {
+    const h  = needsHarness({ raw: (row: any) => row.bio.length })
+    const db = await needsClient(h)
+    const rows = await db.author.findMany({ select: { raw: true } })
+    expect(rows).toEqual([{ raw: 200 }, { raw: 200 }])
+    expect(h.sql.find(s => s.includes('FROM "author"'))).toContain('*')
+    db.$close()
+  })
+
+  // The widening is a property of the SELECT, not of one field: a declared fn
+  // sharing a select with an undeclared one cannot narrow anything.
+  test('one undeclared fn in the select widens it for the declared ones too', async () => {
+    const h  = needsHarness({ raw: (row: any) => row.bio.length })
+    const db = await needsClient(h)
+    const rows = await db.author.findMany({ select: { initials: true, raw: true } })
+    expect(rows).toEqual([{ initials: 'AL', raw: 200 }, { initials: 'AT', raw: 200 }])
+    expect(h.sql.find(s => s.includes('FROM "author"'))).toContain('*')
+    db.$close()
+  })
+
+  test('no select at all computes every field, over the whole row', async () => {
+    const h  = needsHarness()
+    const db = await needsClient(h)
+    const rows = await db.author.findMany({ orderBy: { id: 'asc' } })
+    expect(rows[0].initials).toBe('AL')
+    expect(rows[0].summary).toBe('Ada Lovelace (2)')
+    expect(h.calls).toEqual({ initials: 2, summary: 2 })
+    db.$close()
+  })
+
+  // Without this the declaration is a footgun: adding a line to the fn and
+  // forgetting the list would answer undefined instead of failing.
+  test('reading an undeclared field throws, naming the field and the list', async () => {
+    const h  = needsHarness({ bad: { needs: ['name'], compute: (row: any) => `${row.name}${row.email}` } })
+    const db = await needsClient(h)
+    await expect(db.author.findMany({ select: { bad: true } }))
+      .rejects.toThrow(/'Author.bad' read 'email'.*needs: \['name'\]/)
+    db.$close()
+  })
+
+  test('`in` on an undeclared field answers false rather than throwing', async () => {
+    const h  = needsHarness({ probe: { needs: ['name'], compute: (row: any) => ('email' in row ? 'yes' : 'no') } })
+    const db = await needsClient(h)
+    expect(await db.author.findMany({ select: { probe: true }, orderBy: { id: 'asc' } }))
+      .toEqual([{ probe: 'no' }, { probe: 'no' }])
+    db.$close()
+  })
+
+  test('a needs naming something that is not a readable field is refused at startup', async () => {
+    const h = needsHarness({ broken: { needs: ['nmae', 'books'], compute: () => 1 } })
+    await expect(needsClient(h)).rejects.toThrow(/'Author.broken': needs 'nmae', 'books'/)
+  })
+
+  test('a spec with no needs array is refused at startup', async () => {
+    const h = needsHarness({ broken: { compute: () => 1 } })
+    await expect(needsClient(h)).rejects.toThrow(/'Author.broken': 'needs' must be an array/)
+  })
+
+  test('a spec that is neither a function nor a compute object is refused', async () => {
+    const h = needsHarness({ broken: 'nope' })
+    await expect(needsClient(h)).rejects.toThrow(/'Author.broken' must be a function/)
+  })
+
+  // findManyCursor builds its own SELECT below the query pipeline — the same
+  // place @from was dropped twice.
+  test('the cursor path narrows and agrees with findMany', async () => {
+    const h  = needsHarness()
+    const db = await needsClient(h)
+    const { items } = await db.author.findManyCursor({ limit: 10, orderBy: { id: 'asc' }, select: { summary: true } })
+    expect(items).toEqual([{ summary: 'Ada Lovelace (2)' }, { summary: 'Alan Turing (1)' }])
+    expect(h.sql.find(s => s.includes('FROM "author"'))).not.toContain('"bio"')
+    db.$close()
+  })
+
+  test('an included row narrows too, and agrees with a direct read', async () => {
+    const h  = needsHarness()
+    const db = await needsClient(h)
+    const [book]  = await db.book.findMany({ where: { id: 1 }, include: { author: { select: { summary: true } } } })
+    const [direct] = await db.author.findMany({ where: { id: 1 }, select: { summary: true } })
+    expect(book.author).toEqual({ summary: 'Ada Lovelace (2)' })
+    expect(book.author).toEqual(direct)
+    db.$close()
+  })
+
+  // search() builds its own step-2 SELECT and rejoins by id. Narrowing it and
+  // injecting that id are the same edit, so this asserts both halves land: the
+  // row comes back at all, and only the asked-for computed field ran.
+  test('search() narrows, and its own id injection survives the trim', async () => {
+    const h  = needsHarness()
+    const db = await needsClient(h)
+    const rows = await db.author.search('Ada', { select: { initials: true } })
+    expect(rows).toEqual([{ initials: 'AL' }])
+    expect(h.calls).toEqual({ initials: 1, summary: 0 })
+    db.$close()
+  })
+
+  test('a bare fn and a declared one produce the same value', async () => {
+    const h  = needsHarness({ initialsBare: (row: any) => row.name.split(' ').map((w: string) => w[0]).join('') })
+    const db = await needsClient(h)
+    const [row] = await db.author.findMany({ where: { id: 1 } })
+    expect(row.initials).toBe(row.initialsBare)
+    db.$close()
+  })
+
+})
+
 // ─── createClient — new single-arg forms ─────────────────────────────────────
 
 
@@ -4299,7 +4696,8 @@ describe('@omit / @guarded field policy', () => {
 //   1. Non-system WHERE on @guarded(all) field: filters correctly, field stripped from result
 //   2. asSystem() WHERE on @guarded(all) field: filters correctly, field visible in result
 //   3. @guarded(all) + @encrypted (i.e. @secret): WHERE on non-secret field works,
-//      plaintext WHERE on non-searchable encrypted field silently returns null (expected),
+//      plaintext WHERE on a non-searchable encrypted field is REFUSED (it can never
+//      match, and answering null looked like "no such row"),
 //      asSystem() returns decrypted value
 
 
@@ -4390,12 +4788,14 @@ describe('@guarded(all) + WHERE clause', () => {
 
   // ── Case 3: @encrypted + @guarded(all) WHERE edge cases ───────────────────
 
-  test('@encrypted @guarded(all): plaintext WHERE on non-searchable field silently returns null', async () => {
-    // token is @encrypted without searchable:true — the stored ciphertext never
-    // equals the plaintext, so the WHERE never matches. This is expected and correct.
-    // It does NOT throw; it just returns null like any non-matching query.
-    const row = await db.asSystem().user.findFirst({ where: { token: 'tok_alice' } })
-    expect(row).toBeNull()
+  test('@encrypted @guarded(all): plaintext WHERE on a random-IV field is refused', async () => {
+    // token is plain @encrypted, so the stored ciphertext can never equal the
+    // plaintext and this filter matches nothing whatever the data is. It used to
+    // answer null, indistinguishable from "no such row" — the caller then looks
+    // for the missing record rather than the missing index. The schema knows, and
+    // names both cures.
+    await expect(db.asSystem().user.findFirst({ where: { token: 'tok_alice' } }))
+      .rejects.toThrow(/deterministic: true/)
   })
 
   test('@encrypted @guarded(all): non-system context strips encrypted+guarded field from result', async () => {
@@ -4434,11 +4834,12 @@ describe('@encrypted field policy', () => {
         id    Int @id
         name  String
         ssn   String    @encrypted
-        email String    @encrypted(searchable: true)
+        email String    @encrypted(deterministic: true)
+        token String    @hashed
       }
     `, 'encrypted', { encryptionKey: ENC_KEY })
-    await db.user.create({ data: { id: 1, name: 'Alice', ssn: '123-45-6789', email: 'alice@example.com' } })
-    await db.user.create({ data: { id: 2, name: 'Bob',   ssn: '987-65-4321', email: 'bob@example.com' } })
+    await db.user.create({ data: { id: 1, name: 'Alice', ssn: '123-45-6789', email: 'alice@example.com', token: 'tok-alice' } })
+    await db.user.create({ data: { id: 2, name: 'Bob',   ssn: '987-65-4321', email: 'bob@example.com',   token: 'tok-bob'   } })
   })
   afterAll(() => db.$close())
 
@@ -4451,34 +4852,53 @@ describe('@encrypted field policy', () => {
     const row = await db.user.findUnique({ where: { id: 1 } })
     expect('ssn' in row).toBe(false)
   })
-  test('@encrypted: asSystem() returns decrypted value', async () => {
+  test('@encrypted: asSystem() returns decrypted value — deterministic included', async () => {
     const row = await db.asSystem().user.findUnique({ where: { id: 1 } })
     expect(row.ssn).toBe('123-45-6789')
-    // searchable fields are stored as HMAC — not decryptable, but usable in WHERE
-    expect(row.email).toBeDefined()
-    expect(row.email.startsWith('v1s.')).toBe(true)
+    // The whole point of the mode: it is still ciphertext, so it reads back. The
+    // old searchable:true asserted the OPPOSITE here — a digest, `v1s.…`, handed
+    // back as if it were the address (FJS-211).
+    expect(row.email).toBe('alice@example.com')
+    // @hashed is the one protection asSystem() does not lift, because there is
+    // nothing to lift it to.
+    expect('token' in row).toBe(false)
   })
   test('@encrypted: stored as ciphertext in DB', async () => {
     // asSystem(), not db.sql: this schema declares @encrypted, so raw SQL is
     // available through the documented bypass only (FJS-005). Peeking at the
     // stored column IS a deliberate bypass, so saying so is right — this test
     // was the first caller the refusal caught.
-    const raw = await db.asSystem().sql`SELECT ssn, email FROM user WHERE id = 1`
+    const raw = await db.asSystem().sql`SELECT ssn, email, token FROM user WHERE id = 1`
     expect(raw[0].ssn.startsWith('v1.')).toBe(true)
-    expect(raw[0].email.startsWith('v1s.')).toBe(true)
+    expect(raw[0].email.startsWith('v1d.')).toBe(true)
+    expect(raw[0].token.startsWith('v1h.')).toBe(true)
   })
-  test('@encrypted(searchable): WHERE equality works', async () => {
+  test('deterministic: the same plaintext encrypts to the same bytes, and that is the mechanism', async () => {
+    await db.asSystem().user.create({ data: { id: 3, name: 'Alice2', ssn: 'x', email: 'alice@example.com', token: 'tok-3' } })
+    const raw = await db.asSystem().sql`SELECT id, email FROM user WHERE id IN (1, 3) ORDER BY id`
+    expect(raw[0].email).toBe(raw[1].email)
+    await db.asSystem().user.delete({ where: { id: 3 } })
+  })
+  test('@encrypted(deterministic): WHERE equality works', async () => {
     const row = await db.asSystem().user.findFirst({ where: { email: 'alice@example.com' } })
     expect(row?.id).toBe(1)
     expect(row?.name).toBe('Alice')
   })
-  test('@encrypted(searchable): wrong value returns null', async () => {
+  test('@encrypted(deterministic): wrong value returns null', async () => {
     const row = await db.asSystem().user.findFirst({ where: { email: 'nobody@nowhere.com' } })
     expect(row).toBeNull()
   })
-  test('@encrypted(non-searchable): WHERE silently returns null', async () => {
-    const row = await db.asSystem().user.findFirst({ where: { ssn: '123-45-6789' } })
-    expect(row).toBeNull()
+  test('@hashed: WHERE equality works, and a miss is a miss', async () => {
+    expect((await db.asSystem().user.findFirst({ where: { token: 'tok-bob' } }))?.id).toBe(2)
+    expect(await db.asSystem().user.findFirst({ where: { token: 'wrong' } })).toBeNull()
+  })
+  test('@hashed: selecting it by name throws rather than handing back the digest', async () => {
+    await expect(db.asSystem().user.findUnique({ where: { id: 1 }, select: { token: true } }))
+      .rejects.toThrow(/one-way digest/)
+  })
+  test('@encrypted (random IV): WHERE is refused, naming both cures', async () => {
+    await expect(db.asSystem().user.findFirst({ where: { ssn: '123-45-6789' } }))
+      .rejects.toThrow(/@encrypted\(deterministic: true\).*@hashed/s)
   })
   test('createClient throws without encryption key if @encrypted fields exist', async () => {
     const r = parse(`model T { id Int @id
@@ -5898,6 +6318,68 @@ describe('@@allow / @@deny row-level policies', () => {
     const rows = await db.$setAuth({ id: 1 }).post.findMany()
     expect(rows).toHaveLength(1)
     expect((rows[0] as any).title).toBe('visible')
+    db.$close()
+  })
+
+  test('field == null in a policy is IS NULL, not = NULL', async () => {
+    // `"ownerId" = NULL` is NULL in SQLite — never true — so this policy used to
+    // filter every unowned row out and raise nothing. An empty screen with a
+    // 200, which is the failure mode @@allow has by design and the reason a
+    // wrong one is so hard to see.
+    const db = await makeDb(`
+      model Post {
+        id      Int    @id
+        ownerId Int?
+        title   String
+        @@allow('read', ownerId == auth().id || ownerId == null)
+      }
+    `, 'policy-null-cmp')
+    const sys = db.asSystem()
+    await sys.post.create({ data: { ownerId: 1,    title: 'mine' } })
+    await sys.post.create({ data: { ownerId: 2,    title: 'theirs' } })
+    await sys.post.create({ data: { ownerId: null, title: 'unowned' } })
+
+    const rows = await db.$setAuth({ id: 1 }).post.findMany()
+    expect(rows.map((r: any) => r.title).sort()).toEqual(['mine', 'unowned'])
+    db.$close()
+  })
+
+  test('field != null in a policy is IS NOT NULL', async () => {
+    const db = await makeDb(`
+      model Post {
+        id      Int    @id
+        ownerId Int?
+        title   String
+        @@allow('read', ownerId != null)
+      }
+    `, 'policy-notnull-cmp')
+    const sys = db.asSystem()
+    await sys.post.create({ data: { ownerId: 1,    title: 'owned' } })
+    await sys.post.create({ data: { ownerId: null, title: 'unowned' } })
+
+    const rows = await db.$setAuth({ id: 1 }).post.findMany()
+    expect(rows.map((r: any) => r.title)).toEqual(['owned'])
+    db.$close()
+  })
+
+  test('the SQL and JS policy paths agree about null', async () => {
+    // They did not. Create is evaluated in JS (`=== null`, correct); read is
+    // compiled into the WHERE (`= NULL`, never true). So a row was created
+    // successfully and then invisible to the caller that created it — the two
+    // halves of one rule disagreeing is worse than either being wrong.
+    const db = await makeDb(`
+      model Post {
+        id      Int    @id
+        ownerId Int?
+        title   String
+        @@allow('create', ownerId == null)
+        @@allow('read',   ownerId == null)
+      }
+    `, 'policy-null-agree')
+    const user = db.$setAuth({ id: 1 })
+    const made = await user.post.create({ data: { title: 'unowned' } })
+    expect(made.id).toBeDefined()
+    expect(await user.post.findMany()).toHaveLength(1)
     db.$close()
   })
 
@@ -10465,9 +10947,13 @@ describe('Seeder.once()', () => {
 // NOTE: This file is getting long (~550 lines of test suites added this session).
 //       Consider splitting into testing.test.ts in a future cleanup pass.
 
-import { generateFactory, generateGateMatrix, generateValidationCases, factoryFrom }
+import { generateFactory, generateGateMatrix, generateValidationCases, factoryFrom,
+         deriveAccess, renderAccessSnapshot, gateLadder, policyExprToString,
+         expectedVerdict, REACHABLE_LEVELS, createTestEnv, readOnly, sampleWrites }
   from '../src/testing.js'
-import { GatePlugin, LEVELS }    from '../src/plugins/gate.js'
+import { GatePlugin, LEVELS, levelPasses } from '../src/plugins/gate.js'
+import { Plugin } from '../src/core/plugin.js'
+import { _resetTemplates }       from '../src/testdb.js'
 import { DEFAULT_MESSAGES }      from '../src/core/validate.js'
 
 // ── Shared schema for utility tests ──────────────────────────────────────────
@@ -10842,23 +11328,39 @@ describe('generateGateMatrix', () => {
     expect(matrix).toEqual([])
   })
 
-  test('returns 8 cases for standard gate (2 per op)', () => {
-    const matrix = generateGateMatrix(schema, 'Post')  // @@gate("1.3.4.6")
-    expect(matrix.length).toBe(8)
+  test('rejects an unknown levels option', () => {
+    expect(() => generateGateMatrix(schema, 'Post', { levels: 'both' as never })).toThrow('must be "full" or "edges"')
   })
 
-  test('correct allow/deny for read (level 1 = VISITOR)', () => {
+  test('full is the default — every op against every reachable level', () => {
+    const matrix = generateGateMatrix(schema, 'Post')  // @@gate("1.3.4.6")
+    expect(matrix.length).toBe(36)                      // 4 ops × levels 0–8
+    expect(matrix).toEqual(generateGateMatrix(schema, 'Post', { levels: 'full' }))
+  })
+
+  test('full ladder flips exactly once, at the declared level', () => {
     const matrix = generateGateMatrix(schema, 'Post')
+    for (const [op, required] of [['read', 1], ['create', 3], ['update', 4], ['delete', 6]] as const) {
+      const ladder = matrix.filter(c => c.op === op).sort((a, b) => a.level - b.level)
+      expect(ladder.map(c => c.level)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
+      expect(ladder.map(c => c.expect)).toEqual(
+        ladder.map(c => (c.level >= required ? 'allow' : 'deny'))
+      )
+      expect(ladder.every(c => c.required === required)).toBe(true)
+    }
+  })
+
+  test('edges: 2 cases per op, the required level and the one below', () => {
+    const matrix = generateGateMatrix(schema, 'Post', { levels: 'edges' })
+    expect(matrix.length).toBe(8)
+
     const readAllow = matrix.find(c => c.op === 'read' && c.expect === 'allow')
     const readDeny  = matrix.find(c => c.op === 'read' && c.expect === 'deny')
     expect(readAllow?.level).toBe(1)
     expect(readAllow?.label).toBe('VISITOR')
     expect(readDeny?.level).toBe(0)
     expect(readDeny?.label).toBe('STRANGER')
-  })
 
-  test('correct allow/deny for delete (level 6 = OWNER)', () => {
-    const matrix = generateGateMatrix(schema, 'Post')
     const delAllow = matrix.find(c => c.op === 'delete' && c.expect === 'allow')
     const delDeny  = matrix.find(c => c.op === 'delete' && c.expect === 'deny')
     expect(delAllow?.level).toBe(6)
@@ -10867,18 +11369,34 @@ describe('generateGateMatrix', () => {
     expect(delDeny?.label).toBe('ADMINISTRATOR')
   })
 
-  test('LOCKED gate (9): only deny cases, no allow', () => {
+  test('LOCKED gate (9): every level denied, SYSTEM included', () => {
     const matrix = generateGateMatrix(schema, 'Locked')  // @@gate("9")
+    expect(matrix.length).toBe(36)
     expect(matrix.every(c => c.expect === 'deny')).toBe(true)
-    expect(matrix.length).toBe(4)   // one deny per op
-    expect(matrix.every(c => c.level === 8)).toBe(true)  // SYSTEM
+    expect(matrix.some(c => c.level === 8)).toBe(true)
+
+    const edges = generateGateMatrix(schema, 'Locked', { levels: 'edges' })
+    expect(edges.length).toBe(4)                          // one deny per op
+    expect(edges.every(c => c.level === 8)).toBe(true)    // SYSTEM
   })
 
-  test('STRANGER gate (0): only allow cases, no deny', () => {
+  test('STRANGER gate (0): every level allowed', () => {
     const matrix = generateGateMatrix(schema, 'Open')    // @@gate("0")
+    expect(matrix.length).toBe(36)
     expect(matrix.every(c => c.expect === 'allow')).toBe(true)
-    expect(matrix.length).toBe(4)
-    expect(matrix.every(c => c.level === 0)).toBe(true)
+
+    const edges = generateGateMatrix(schema, 'Open', { levels: 'edges' })
+    expect(edges.length).toBe(4)                          // no level below STRANGER to deny at
+    expect(edges.every(c => c.level === 0)).toBe(true)
+  })
+
+  test('SYSTEM gate (8): SYSADMIN is denied, only asSystem() passes', () => {
+    const { schema: s } = parse(`
+      model Vault { id Int @id; name String; @@gate("8") }
+    `)
+    const ladder = generateGateMatrix(s, 'Vault').filter(c => c.op === 'read')
+    expect(ladder.find(c => c.level === 7)?.expect).toBe('deny')
+    expect(ladder.find(c => c.level === 8)?.expect).toBe('allow')
   })
 
   test('all ops covered', () => {
@@ -10896,44 +11414,1075 @@ describe('generateGateMatrix', () => {
     }
   })
 
-  test('matrix is usable with GatePlugin in makeTestClient', async () => {
+  // The whole point of the matrix is that its verdicts are the plugin's. Every
+  // case in the full ladder is run against a real client — a generated suite
+  // that disagreed with enforcement would certify access the app does not grant.
+  test('every case in the full matrix matches GatePlugin', async () => {
     const { schema: s } = parse(UTIL_SCHEMA)
     const matrix = generateGateMatrix(s, 'Post')
 
-    for (const { op, level, expect: expected } of matrix) {
-      const { db } = await makeTestClient(UTIL_SCHEMA, {
-        plugins: [new GatePlugin({ getLevel: () => level })]
-      })
-      const sys    = db.asSystem()
-      const scoped = db.$setAuth({ id: 1 })
+    // getLevel clamps to 0–7, so SYSTEM is not reachable through it at all.
+    // asSystem() is the only door, which is exactly what the level-8 case says.
+    let level = 0
+    const { db } = await makeTestClient(UTIL_SCHEMA, {
+      plugins: [new GatePlugin({ getLevel: () => level })]
+    })
+    const sys = db.asSystem()
+    await sys.account.create({ data: { id: 1, name: 'Test' } })
 
-      // Seed data needed for non-create ops
-      if (op !== 'create') {
-        await sys.account.create({ data: { id: 1, name: 'Test' } })
-        await sys.post.create({ data: { id: 1, accountId: 1, title: 'T', published: false, views: 0, rating: 0 } })
-      }
+    let nextId = 100
+    for (const c of matrix) {
+      level = c.level
+      const scoped = c.level === 8 ? db.asSystem() : db.$setAuth({ id: 1 })
+
+      await sys.post.deleteMany({})
+      await sys.post.create({ data: { id: 1, accountId: 1, title: 'T', published: false, views: 0, rating: 0 } })
 
       const run = async () => {
-        switch (op) {
+        switch (c.op) {
           case 'read':   return scoped.post.findMany()
-          case 'create': return scoped.post.create({ data: { id: 99, accountId: 1, title: 'X', published: false, views: 0, rating: 0 } })
+          case 'create': return scoped.post.create({ data: { id: nextId++, accountId: 1, title: 'X', published: false, views: 0, rating: 0 } })
           case 'update': return scoped.post.update({ where: { id: 1 }, data: { title: 'Y' } })
           case 'delete': return scoped.post.delete({ where: { id: 1 } })
         }
       }
 
-      if (expected === 'allow') {
-        await expect(run()).resolves.toBeDefined()
-      } else {
-        await expect(run()).rejects.toThrow(/requires level/i)
-      }
-      db.$close()
+      if (c.expect === 'allow') await expect(run()).resolves.toBeDefined()
+      else                      await expect(run()).rejects.toThrow(/requires level/i)
     }
+    db.$close()
+  })
+})
+
+// ─── deriveAccess / renderAccessSnapshot ─────────────────────────────────────
+//
+// The access snapshot is a security artefact — it is read to decide whether a
+// gate change was intended. Two properties carry that weight: it must describe
+// what the plugin actually enforces, and its diff must name only what moved.
+
+const ACCESS_SCHEMA = `
+  enum Stage { draft review published }
+
+  model Reference {
+    id   Int @id
+    code String
+  }
+
+  model Doc {
+    id        Int      @id
+    ownerId   Int
+    stage     Stage    @default(draft)
+    title     String
+    salary    Float?    @allow('read', auth().role == 'admin')
+    deletedAt DateTime?
+
+    @@gate("2.4.4.6")
+    @@softDelete
+    @@allow('read', ownerId == auth().id || stage == 'published')
+    @@deny('update', stage == 'published', "A published doc is frozen")
+    @@transitions(stage,
+      review:    draft -> review,
+      publish:   review -> published @gate(5),
+    )
+  }
+
+  model Vault {
+    id     Int    @id
+    name   String
+    token  String  @guarded(all)
+    pin    String  @encrypted
+    apiKey String  @secret
+    @@gate("8")
+  }
+
+  model Ledger {
+    id   Int @id
+    note String
+    @@gate("9")
+  }
+`
+
+describe('deriveAccess', () => {
+  const { schema } = parse(ACCESS_SCHEMA)
+  const access = deriveAccess(schema)
+  const byName = (n: string) => access.models.find(m => m.name === n)!
+
+  test('models come back sorted by name, not in schema order', () => {
+    // Diff stability: a model inserted mid-file otherwise shifts every row below
+    // it and the diff stops naming what actually changed.
+    expect(access.models.map(m => m.name)).toEqual(['Doc', 'Ledger', 'Reference', 'Vault'])
+  })
+
+  test('counts the surface', () => {
+    expect(access.counts).toMatchObject({
+      models: 4, gated: 3, unrestricted: 1, policied: 1, protected: 2, transitions: 2,
+    })
+  })
+
+  test('a model with neither @@gate nor @@allow is flagged unrestricted', () => {
+    expect(byName('Reference').unrestricted).toBe(true)
+    expect(byName('Reference').gate).toBe(null)
+    expect(byName('Doc').unrestricted).toBe(false)
+  })
+
+  test('the gate is the parsed tuple, and the declared string is kept', () => {
+    expect(byName('Doc').gate).toEqual({ read: 2, create: 4, update: 4, delete: 6 })
+    expect(byName('Doc').gateSource).toBe('2.4.4.6')
+  })
+
+  test('policies keep their operation, predicate and custom message', () => {
+    const p = byName('Doc').policies
+    expect(p.read.allows).toEqual([{ expr: `ownerId == auth().id || stage == 'published'`, message: null }])
+    expect(p.update.denies).toEqual([{ expr: `stage == 'published'`, message: 'A published doc is frozen' }])
+    // No @@allow('create') was written, so nothing claims create is restricted.
+    expect(p.create).toBeUndefined()
+  })
+
+  test('@secret is reported as @secret, not as the pair it expands to', () => {
+    // @secret desugars to @encrypted + @guarded(all) at parse time and keeps its
+    // own attribute, so the field carries all three. Report what was written.
+    const fields = Object.fromEntries(byName('Vault').fields.map(f => [f.name, f.protection]))
+    expect(fields).toEqual({ token: '@guarded(all)', pin: '@encrypted', apiKey: '@secret' })
+  })
+
+  test('a field @allow is reported with its operations', () => {
+    expect(byName('Doc').fields).toContainEqual({
+      name: 'salary', protection: null,
+      allows: [{ operations: ['read'], expr: `auth().role == 'admin'` }],
+    })
+  })
+
+  test('transitions carry their gate, and an ungated move reports null', () => {
+    expect(byName('Doc').transitions).toEqual([
+      { field: 'stage', name: 'review',  from: ['draft'],  to: 'review',    gate: null },
+      { field: 'stage', name: 'publish', from: ['review'], to: 'published', gate: 5 },
+    ])
+  })
+
+  test('softDelete is carried, because remove() is graded at the update position', () => {
+    expect(byName('Doc').softDelete).toBe(true)
+    expect(byName('Vault').softDelete).toBe(false)
+  })
+})
+
+describe('gateLadder', () => {
+  const { schema } = parse(ACCESS_SCHEMA)
+  const access = deriveAccess(schema)
+  const byName = (n: string) => access.models.find(m => m.name === n)!
+
+  test('an ungated model has no ladder at all', () => {
+    expect(gateLadder(byName('Reference'))).toEqual([])
+  })
+
+  test('every verdict agrees with the plugin predicate', () => {
+    // The whole value of the artefact is that it does not restate the rule.
+    for (const model of access.models) {
+      for (const row of gateLadder(model))
+        expect(row.expect).toBe(levelPasses(row.required, row.level) ? 'allow' : 'deny')
+    }
+  })
+
+  test('SYSTEM(8) refuses SYSADMIN(7); LOCKED(9) refuses everything', () => {
+    const vault  = gateLadder(byName('Vault')).filter(r => r.op === 'read')
+    expect(vault.find(r => r.level === 7)?.expect).toBe('deny')
+    expect(vault.find(r => r.level === 8)?.expect).toBe('allow')
+
+    expect(gateLadder(byName('Ledger')).every(r => r.expect === 'deny')).toBe(true)
+  })
+})
+
+describe('expectedVerdict', () => {
+  // The oracle is stated in access.js and the enforcement in gate.js, and they
+  // must not share a definition — an expected value read off the code under test
+  // cannot fail. This is the single place the two are held together, so a
+  // divergence surfaces here rather than as a suite that quietly stops asserting.
+  test('agrees with the gate plugin over every (required, level) pair', () => {
+    for (let required = 0; required <= 9; required++) {
+      for (const level of REACHABLE_LEVELS) {
+        expect(`${required}/${level}:${expectedVerdict(required, level)}`)
+          .toBe(`${required}/${level}:${levelPasses(required, level) ? 'allow' : 'deny'}`)
+      }
+    }
+  })
+
+  test('states the two sentinels', () => {
+    expect(expectedVerdict(9, 8)).toBe('deny')    // LOCKED — asSystem() included
+    expect(expectedVerdict(8, 7)).toBe('deny')    // SYSTEM — SYSADMIN is not it
+    expect(expectedVerdict(8, 8)).toBe('allow')
+    expect(expectedVerdict(0, 0)).toBe('allow')
+  })
+})
+
+describe('policyExprToString', () => {
+  // A snapshot of the wrong predicate is worse than no snapshot, so the printer
+  // is checked by round trip rather than against hand-written strings.
+  const roundTrip = (src: string) => {
+    const render = (s: string) => {
+      const { schema } = parse(`model P { id Int @id; a Int; b Int; @@allow('read', ${s}) }`)
+      return policyExprToString((schema.models[0].attributes as any[]).find(x => x.kind === 'allow').expr)
+    }
+    const once = render(src)
+    expect(render(once)).toBe(once)   // re-parsing the output yields the same output
+    return once
+  }
+
+  test('and binds tighter than or, and the parens say so', () => {
+    expect(roundTrip('a == 1 || b == 2 && a == 3')).toBe('a == 1 || b == 2 && a == 3')
+    expect(roundTrip('(a == 1 || b == 2) && a == 3')).toBe('(a == 1 || b == 2) && a == 3')
+  })
+
+  test('auth, now, check, null, booleans and strings', () => {
+    expect(roundTrip('auth() != null')).toBe('auth() != null')
+    expect(roundTrip('auth().workspaceId == b')).toBe('auth().workspaceId == b')
+    expect(roundTrip('a < now()')).toBe('a < now()')
+    expect(roundTrip("check(b, 'update')")).toBe("check(b, 'update')")
+    expect(roundTrip('a == true')).toBe('a == true')
+    expect(roundTrip("a == 'draft'")).toBe("a == 'draft'")
+  })
+
+  test('negation of a comparison is parenthesised and re-parses the same', () => {
+    expect(roundTrip('!(a == 1)')).toBe('!(a == 1)')
+    expect(roundTrip('!(a == 1 && b == 2)')).toBe('!(a == 1 && b == 2)')
+  })
+})
+
+describe('renderAccessSnapshot', () => {
+  const { schema } = parse(ACCESS_SCHEMA)
+  const md = renderAccessSnapshot(deriveAccess(schema), { source: 'db/schema.lite' })
+
+  test('is deterministic — the same schema renders byte-identical', () => {
+    // --check compares the whole file. Any instability makes it cry wolf, and a
+    // check that cries wolf gets disabled.
+    expect(renderAccessSnapshot(deriveAccess(parse(ACCESS_SCHEMA).schema), { source: 'db/schema.lite' })).toBe(md)
+  })
+
+  test('reordering models in the source does not change the snapshot', () => {
+    const reordered = ACCESS_SCHEMA
+      .replace(/model Reference \{[\s\S]*?\n  \}\n/, '')
+      .concat('\n  model Reference {\n    id   Int @id\n    code String\n  }\n')
+    expect(renderAccessSnapshot(deriveAccess(parse(reordered).schema), { source: 'db/schema.lite' })).toBe(md)
+  })
+
+  test('names the unrestricted model first — it is the loudest thing here', () => {
+    expect(md.indexOf('## Unrestricted')).toBeLessThan(md.indexOf('## Gates'))
+    expect(md).toContain('- `Reference`')
+  })
+
+  test('carries the gate table, the predicates, the fields and the moves', () => {
+    expect(md).toContain('| `Doc` | 2 READER | 4 USER | 4 USER | 6 OWNER |')
+    expect(md).toContain('allow **read** — `ownerId == auth().id || stage == \'published\'`')
+    expect(md).toContain('A published doc is frozen')
+    expect(md).toContain('| `Vault` | `apiKey` | `@secret` |')
+    expect(md).toContain('| `Doc` | `stage` | `publish` | review → published | 5 ADMINISTRATOR |')
+  })
+
+  test('a section with nothing in it is omitted, not left empty', () => {
+    const bare = renderAccessSnapshot(deriveAccess(parse(`model A { id Int @id; n String }`).schema))
+    expect(bare).toContain('## Unrestricted')
+    expect(bare).not.toContain('## Gates')
+    expect(bare).not.toContain('## Row policies')
+    expect(bare).not.toContain('## State transitions')
+  })
+})
+
+// ─── createTestEnv ───────────────────────────────────────────────────────────
+
+const ENV_SCHEMA = `
+  model Account { id Int @id; name String }
+  model Doc {
+    id      Int    @id
+    title   String
+    @@gate("2.4.4.6")
+  }
+  model Vault { id Int @id; secret String; @@gate("8") }
+`
+
+// For verifyConstraints: rules of several shapes, a @unique to collide on, and a
+// required parent — the three things that made the runner's own harness wrong
+// before they were in a fixture.
+const RULES_ENV_SCHEMA = `
+  model Team {
+    id     Int    @id
+    slug   String @unique
+    name   String
+    people Person[]
+  }
+  model Person {
+    id     Int    @id
+    email  String @email @unique
+    handle String @length(3, 12)
+    age    Int    @gte(18) @lte(120)
+    teamId Int
+    team   Team   @relation(fields: [teamId], references: [id])
+  }
+`
+
+const LADDER_SCHEMA = `
+  model Team { id Int @id  slug String @unique  name String  people Person[] }
+  model Person {
+    id     Int    @id
+    handle String @length(3, 12)
+    teamId Int
+    team   Team   @relation(fields: [teamId], references: [id])
+    @@gate("2.4.4.5")
+  }
+`
+
+// A CREATE policy, because that is the operation where a policy raises. A read
+// policy compiles into the WHERE and filters — it never refuses, which is the
+// whole reason a wrong one is an empty screen rather than an error.
+const POLICY_LADDER_SCHEMA = `
+  model Note {
+    id      Int    @id
+    ownerId String
+    title   String
+    @@gate("2.4.4.5")
+    @@allow('create', ownerId == auth().id)
+  }
+`
+
+// A discriminating read policy over a NULLABLE column, so rows land on both
+// sides. `title != null` on a required column admits everything and proves
+// nothing, which the runner says out loud.
+const POLICY_SCHEMA = `
+  model Post {
+    id      Int     @id
+    ownerId String?
+    status  String  @default("draft")
+    title   String
+    @@allow('read',   ownerId == auth().id || ownerId == null || status == 'published')
+    @@allow('update', ownerId == auth().id)
+    @@deny('read',    status == 'archived')
+  }
+`
+
+// A required belongsTo, so a derived create payload has an FK it must fill from
+// a parent that actually exists.
+const RELATED_SCHEMA = `
+  model Account {
+    id    Int    @id
+    name  String
+    leads Lead[]
+  }
+
+  model Lead {
+    id        Int      @id
+    name      String
+    accountId Int
+    account   Account  @relation(fields: [accountId], references: [id])
+    createdAt DateTime @default(now())
+  }
+`
+
+const GUARDED_SCHEMA = `
+  model Vaulted {
+    id     Int    @id
+    name   String
+    token  String @guarded
+  }
+`
+
+describe('createTestEnv', () => {
+  test('refuses to guess a schema', async () => {
+    await expect(createTestEnv({})).rejects.toThrow(/pass `schema`/)
+  })
+
+  test('takes a path as readily as the text', async () => {
+    const env = await createTestEnv({ schema: join(import.meta.dir, 'fixtures', 'env-schema.lite') })
+    expect(env.schema.models.map((m: any) => m.name)).toContain('Doc')
+    env.close()
+  })
+
+  test('two envs on one schema share a template and nothing else', async () => {
+    // The template-clone claim in full: the DDL is applied once, and a write in
+    // one env is invisible to the other. A shared template that leaked rows
+    // would be worse than re-migrating.
+    const a = await createTestEnv({ schema: ENV_SCHEMA })
+    const b = await createTestEnv({ schema: ENV_SCHEMA })
+
+    await a.system.account.create({ data: { id: 1, name: 'only in a' } })
+    expect(await a.system.account.count()).toBe(1)
+    expect(await b.system.account.count()).toBe(0)
+
+    a.close(); b.close()
+  })
+
+  test('a template is built once per schema, not once per env', async () => {
+    _resetTemplates()
+    const first = await createTestEnv({ schema: ENV_SCHEMA })
+    const at    = Date.now()
+    const rest  = await Promise.all([1, 2, 3, 4, 5].map(() => createTestEnv({ schema: ENV_SCHEMA })))
+    const ms    = Date.now() - at
+
+    // Five clones of an already-migrated template. The assertion is loose on
+    // purpose — it is here to catch the cache being bypassed entirely, not to
+    // police a millisecond count on someone else's laptop.
+    expect(ms).toBeLessThan(2000)
+    for (const env of rest) expect(await env.system.account.count()).toBe(0)
+
+    first.close()
+    for (const env of rest) env.close()
+  })
+
+  test('atLevel grades synthetically and ignores the app resolver', async () => {
+    // The resolver here would grade everyone OWNER. atLevel must not call it —
+    // a grid driven through the app's own getLevel proves nothing about the gate.
+    let resolverCalls = 0
+    const env = await createTestEnv({
+      schema:  ENV_SCHEMA,
+      plugins: [new GatePlugin({ getLevel: () => { resolverCalls++; return 6 } })],
+    })
+
+    const reader = await env.atLevel(2)
+    expect(await reader.doc.findMany()).toEqual([])
+    await expect(reader.doc.create({ data: { id: 1, title: 't' } })).rejects.toThrow(/requires level 4/)
+    expect(resolverCalls).toBe(0)
+
+    env.close()
+  })
+
+  test('actingAs goes through the app resolver — the other door', async () => {
+    let seen: unknown = 'never called'
+    const env = await createTestEnv({
+      schema:  ENV_SCHEMA,
+      plugins: [new GatePlugin({ getLevel: (user: any) => { seen = user; return user?.role === 'admin' ? 6 : 0 } })],
+    })
+
+    const admin = env.actingAs({ id: 1, role: 'admin' })
+    expect(await admin.doc.findMany()).toEqual([])
+    expect(seen).toMatchObject({ role: 'admin' })
+
+    await expect(env.actingAs({ id: 2, role: 'guest' }).doc.findMany()).rejects.toThrow(/requires level 2/)
+    env.close()
+  })
+
+  test('atLevel(8) is asSystem(), because getLevel cannot reach SYSTEM', async () => {
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    await expect((await env.atLevel(7)).vault.findMany()).rejects.toThrow(/SYSTEM access/)
+    expect(await (await env.atLevel(8)).vault.findMany()).toEqual([])
+    env.close()
+  })
+
+  test('gateMatrix covers the gated models and skips the rest', async () => {
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    const rows = env.gateMatrix()
+
+    expect([...new Set(rows.map((r: any) => r.model))].sort()).toEqual(['Doc', 'Vault'])
+    expect(rows.length).toBe(2 * 4 * 9)
+    expect(env.gateMatrix('Doc').length).toBe(36)
+    env.close()
+  })
+
+  test('verifyReadLadder runs the read column against a real client, no fixtures', async () => {
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    expect(await env.verifyReadLadder()).toEqual([])
+    env.close()
+  })
+
+  test('a read that fails for a NON-gate reason is a mismatch, not a pass', async () => {
+    // The false green this exists to stop: `@@external` means the table is
+    // managed elsewhere, so no DDL is emitted and every read throws "no such
+    // table". Counting any throw as a refusal made that model PASS at all six
+    // levels its gate refuses — the read was broken and the ladder said fine.
+    const env = await createTestEnv({ schema: `
+      model Ghost {
+        id   Int    @id
+        name String
+        @@gate("2.4.4.6")
+        @@external
+      }
+    ` })
+
+    const rows = await env.verifyReadLadder()
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((r: any) => r.got === 'error')).toBe(true)
+    expect(rows[0].message).toMatch(/Ghost\.read at level \d \(\w+\) — expected (allow|deny), but the call threw something that is not a refusal: .*no such table/)
+    env.close()
+  })
+
+  test('a genuine refusal still reads as deny, not as an error', async () => {
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    const rows = await env.verifyReadLadder()
+    expect(rows).toEqual([])   // every deny above was an AccessDeniedError
+    env.close()
+  })
+
+  test('migrations: builds the template from the committed files, in order', async () => {
+    // `note` only exists after 002, so a template that replayed one file or
+    // replayed them out of order fails here rather than somewhere downstream.
+    const env = await createTestEnv({
+      schema:     `model Account { id Int @id; name String; note String? }`,
+      migrations: join(import.meta.dir, 'fixtures', 'migrations'),
+    })
+
+    const row = await env.system.account.create({ data: { id: 1, name: 'a', note: 'n' } })
+    expect(row.note).toBe('n')
+    env.close()
+  })
+
+  test('migrations: takes a single .sql file as readily as a directory', async () => {
+    const env = await createTestEnv({
+      schema:     `model Account { id Int @id; name String }`,
+      migrations: join(import.meta.dir, 'fixtures', 'migrations', '001_init.sql'),
+    })
+    expect(await env.system.account.count()).toBe(0)
+    env.close()
+  })
+
+  test('a DDL template and a migration template are not the same template', async () => {
+    // Both are keyed off the same schema text. Sharing one would hand a test
+    // asking for the migrated database whichever was built first.
+    const schema = `model Account { id Int @id; name String; note String? }`
+
+    const fromDDL = await createTestEnv({ schema })
+    const fromMig = await createTestEnv({ schema, migrations: join(import.meta.dir, 'fixtures', 'migrations') })
+
+    // 002 adds `note` as plain TEXT; the schema's own DDL declares it too, so
+    // what separates them is the table list — the migration knows only Account.
+    expect(fromDDL.db.$rawDbs.main.query("SELECT count(*) c FROM sqlite_master WHERE type='table'").get().c)
+      .toBe(fromMig.db.$rawDbs.main.query("SELECT count(*) c FROM sqlite_master WHERE type='table'").get().c)
+
+    fromDDL.close(); fromMig.close()
+  })
+
+  test('a missing migrations path is refused by name', async () => {
+    await expect(createTestEnv({
+      schema:     `model Account { id Int @id; name String }`,
+      migrations: join(import.meta.dir, 'fixtures', 'nope'),
+    })).rejects.toThrow(/no migrations at .*nope/)
+  })
+
+  test('a JS migration is refused rather than skipped', async () => {
+    // Skipping it silently is the failure: a JS migration that creates a table
+    // would leave the template missing it, and every test would report a
+    // missing table instead of a missing migration.
+    const dir = mkdtempSync(join(tmpdir(), 'litestone-jsmig-'))
+    writeFileSync(join(dir, '001_init.sql'), 'CREATE TABLE "account" ("id" INTEGER PRIMARY KEY, "name" TEXT NOT NULL) STRICT;')
+    writeFileSync(join(dir, '002_backfill.js'), 'export async function up() {}')
+
+    await expect(createTestEnv({
+      schema:     `model Account { id Int @id; name String }`,
+      migrations: dir,
+    })).rejects.toThrow(/is a JS migration/)
+
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('readOnly refuses every write, by allow-list', async () => {
+    // An allow-list, so a write method added to litestone later cannot pass
+    // through unnoticed. Every mutating method on a table is checked by name.
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    const read = readOnly(env.db)
+
+    const writes = ['create', 'createMany', 'update', 'updateMany', 'upsert', 'upsertMany',
+                    'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'optimizeFts']
+    for (const method of writes)
+      expect(() => read.account[method]({})).toThrow(new RegExp(`readOnly: account\\.${method}`))
+
+    env.close()
+  })
+
+  test('readOnly still reads, and still throws on a typo', async () => {
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    const read = readOnly(env.db)
+
+    await env.system.account.create({ data: { id: 1, name: 'a' } })
+    expect(await read.account.count()).toBe(1)
+    expect(await read.account.findMany()).toHaveLength(1)
+    expect(read.$schema).toBeTruthy()
+    // The client's own "not a table" error is better than anything this could
+    // say, so it is left to speak.
+    expect(() => read.nope.findMany()).toThrow(/not a table in this schema/)
+    env.close()
+  })
+
+  test('readOnly closes the doors back out to a writable client', async () => {
+    // The hole this would otherwise have: asSystem() and $setAuth() both hand
+    // back a fresh, fully writable client, and sql writes directly enforcing
+    // nothing. asSystem is not $-prefixed, so it needs naming.
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    const read = readOnly(env.db)
+
+    for (const escape of ['asSystem', 'sql', '$setAuth', '$rawDbs', '$transaction'])
+      expect(() => read[escape]).toThrow(`readOnly: ${escape} is not available`)
+
+    env.close()
+  })
+
+  test('phases scope each part of a scenario to what it may reach', async () => {
+    const env = await createTestEnv({
+      schema:        ENV_SCHEMA,
+      autoFactories: true,
+      plugins:       [new GatePlugin({ getLevel: (u: any) => (u?.role === 'dev' ? 4 : 2) })],
+    })
+
+    const t = env.phases({ as: { id: 1, role: 'dev' } })
+
+    const doc = await t.arrange(({ system }: any) => system.doc.create({ data: { id: 1, title: 'a' } }))
+    await t.act((as: any) => as.doc.update({ where: { id: doc.id }, data: { title: 'b' } }))
+    await t.assert(async (read: any) => {
+      expect((await read.doc.findUnique({ where: { id: 1 } })).title).toBe('b')
+      // Graded AND read-only — the two halves the assert phase needs.
+      expect(() => read.doc.update({ where: { id: 1 }, data: { title: 'c' } })).toThrow(/readOnly/)
+    })
+
+    env.close()
+  })
+
+  test('one act per scenario, and arrange may not follow it', async () => {
+    // Not tidiness. A second act makes the failure message unable to say which
+    // one the assertion was about, and setup after the act is part of the act —
+    // which is what stops arrange being hoistable and cacheable.
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    const t   = env.phases()
+
+    await t.act(async () => {})
+    await expect(t.act(async () => {})).rejects.toThrow(/one act per scenario/)
+    await expect(t.arrange(async () => {})).rejects.toThrow(/arrange cannot follow act/)
+    env.close()
+  })
+
+  test('arrange gets the system client, not the principal', async () => {
+    // Fixtures are set up below the boundary: a gate that refuses the principal
+    // must not refuse the setup, or every scenario starts by fighting its own
+    // access rules.
+    const env = await createTestEnv({
+      schema:  ENV_SCHEMA,
+      plugins: [new GatePlugin({ getLevel: () => 0 })],   // refuses everyone
+    })
+    const t = env.phases({ as: { id: 1 } })
+
+    const doc = await t.arrange(({ system }: any) => system.doc.create({ data: { id: 1, title: 'a' } }))
+    expect(doc.id).toBe(1)
+    await expect(t.act((as: any) => as.doc.findMany())).rejects.toThrow(/requires level 2/)
+    env.close()
+  })
+
+  test('verifyGateLadder executes all four operations, not just read', async () => {
+    // Read needs no fixture; create needs a valid row, update and delete need
+    // one already there. Until they had one, lowering a create or delete gate
+    // was a mutation nothing in the derived suite could see.
+    const env = await createTestEnv({ schema: LADDER_SCHEMA })
+    expect(await env.verifyGateLadder()).toEqual([])
+    const ops = new Set(env.gateMatrix().map((r: any) => r.op))
+    expect([...ops].sort()).toEqual(['create', 'delete', 'read', 'update'])
+    env.close()
+  })
+
+  test('verifyGateLadder catches a gate the client grades differently', async () => {
+    // The mutation-testing direction: expectations from one schema, database
+    // from another. Here the client is built with delete at ADMINISTRATOR(5)
+    // and asked against a schema that declares OWNER(6).
+    const env = await createTestEnv({ schema: LADDER_SCHEMA })
+    const stricter = parse(LADDER_SCHEMA.replace('@@gate("2.4.4.5")', '@@gate("2.4.4.6")')).schema
+    const bad = await env.verifyGateLadder({ against: stricter })
+
+    expect(bad.length).toBeGreaterThan(0)
+    expect(bad.every((m: any) => m.op === 'delete' && m.level === 5)).toBe(true)
+    expect(bad[0].message).toMatch(/the schema says deny, the client says allow/)
+    env.close()
+  })
+
+  test('a row policy makes one direction ungradeable, and only that one', async () => {
+    // A policy FILTERS, so it can turn an allow into a deny and never the
+    // reverse. Skipping both directions stopped a lowered gate on a policied
+    // model being graded at all — the mutant survived and the score rose.
+    const env = await createTestEnv({ schema: POLICY_LADDER_SCHEMA })
+    const bad = await env.verifyGateLadder({ ops: ['create'] })
+    expect(bad.length).toBeGreaterThan(0)
+    expect(bad.every((m: any) => m.got === 'skipped')).toBe(true)
+    expect(bad[0].message).toMatch(/not graded: the model declares a row policy/)
+
+    // The other direction still grades: the client's gate is lower than the
+    // schema under test, so it allows where the schema says deny.
+    const stricter = parse(POLICY_LADDER_SCHEMA.replace('@@gate("2.4.4.5")', '@@gate("3.4.4.5")')).schema
+    const caught = await env.verifyGateLadder({ against: stricter, ops: ['read'] })
+    expect(caught.some((m: any) => m.got === 'allow' && m.expect === 'deny')).toBe(true)
+    env.close()
+  })
+
+  test('sampleWrites seeds a row per model and payloads whose FKs point at it', async () => {
+    // The Data-realm half of deriving a call list. What it has to get right is
+    // the FK: a create payload naming a parent that does not exist fails at the
+    // database, and a derived suite reads that as the model refusing the write.
+    const env = await createTestEnv({ schema: RELATED_SCHEMA })
+    const s: any = await sampleWrites(env.schema, env.system)
+
+    expect(Object.keys(s).sort()).toEqual(['Account', 'Lead'])
+    expect(s.Lead.error).toBeUndefined()
+    expect(s.Lead.row.id).toBeDefined()
+
+    // Server-owned columns are absent from the create payload: over the wire
+    // they are `readOnly` in the model's JSON Schema, so sending one is a 400
+    // about the fixture rather than an answer about the rule under test.
+    expect(s.Lead.create).not.toHaveProperty('id')
+    expect(s.Lead.create).not.toHaveProperty('createdAt')
+
+    // And the payload is creatable, which is the only claim that matters.
+    await env.system.lead.create({ data: s.Lead.create })
+
+    // A patch that re-states a scalar the row already holds — a real update
+    // that cannot collide with a `@unique`.
+    expect(Object.keys(s.Lead.patch).length).toBeGreaterThan(0)
+    env.close()
+  })
+
+  test('sampleWrites reports a model it could not seed instead of dropping it', async () => {
+    // An absent key reads as "this model has nothing to test", which is how a
+    // derived suite silently stops covering the model whose fixture broke.
+    const env = await createTestEnv({ schema: RELATED_SCHEMA })
+    const s: any = await sampleWrites(env.schema, env.system, { models: ['Lead'] })
+    expect(Object.keys(s)).toEqual(['Lead'])
+    env.close()
+  })
+
+  test('verifyRowPolicies grades the compiled WHERE against the JS evaluator', async () => {
+    // Litestone compiles a policy TWICE, into two languages — a WHERE for reads
+    // and JavaScript for creates. They are independent implementations of one
+    // rule, so one can grade the other. That is the opposite of the oracle
+    // problem, and the exact comparison that found FJS-195.
+    const env = await createTestEnv({ schema: POLICY_SCHEMA })
+    expect(await env.verifyRowPolicies()).toEqual([])
+    env.close()
+  })
+
+  test('verifyRowPolicies refuses to grade rows that all fall on one side', async () => {
+    // A policy that admits everything and a policy that is not applied at all
+    // are the same observation when every row matches. Said out loud rather
+    // than counted as a pass.
+    const env = await createTestEnv({ schema: `
+      model Note {
+        id     Int    @id
+        title  String
+        @@allow('read', title != null)
+      }
+    ` })
+    const bad = await env.verifyRowPolicies()
+    expect(bad.length).toBeGreaterThan(0)
+    expect(bad.every((m: any) => m.got === 'error')).toBe(true)
+    expect(bad[0].message).toMatch(/fall on the same side of the policy \(all admitted\)/)
+    env.close()
+  })
+
+  test('verifyRowPolicies reports a check() predicate rather than guessing', async () => {
+    const env = await createTestEnv({ schema: `
+      model Team { id Int @id  name String  notes Note[]  @@allow('read', name != null) }
+      model Note {
+        id     Int    @id
+        title  String
+        teamId Int
+        team   Team   @relation(fields: [teamId], references: [id])
+        @@allow('read', check(team))
+      }
+    ` })
+    const bad = await env.verifyRowPolicies()
+    expect(bad.some((m: any) => m.model === 'Note' && m.got === 'skipped')).toBe(true)
+    expect(bad.find((m: any) => m.model === 'Note').message).toMatch(/uses check\(\)/)
+    env.close()
+  })
+
+  test('verifyFieldProtection asks which COLUMNS come back, not who may read', async () => {
+    // A separate boundary from the gate: basecamp's Secret.data is @guarded
+    // under a gate that admits ADMINISTRATOR(5), so the field policy is the
+    // only thing between an admin and a private key.
+    const env = await createTestEnv({ schema: GUARDED_SCHEMA })
+    expect(await env.verifyFieldProtection()).toEqual([])
+
+    // Asked against a schema that declares a protection the client does not
+    // have — the shape of a @guarded someone deleted.
+    const stricter = parse(GUARDED_SCHEMA.replace('name   String', 'name   String @guarded')).schema
+    const bad = await env.verifyFieldProtection({ against: stricter })
+    expect(bad.some((m: any) => m.field === 'name' && m.got === 'exposed')).toBe(true)
+    expect(bad[0].message).toMatch(/came back to a SYSADMIN\(7\) reader/)
+    env.close()
+  })
+
+  test('verifyConstraints checks @unique, which is the one rule needing an existing row', async () => {
+    const env = await createTestEnv({ schema: RULES_ENV_SCHEMA })
+    expect(await env.verifyConstraints()).toEqual([])
+
+    // A nullable @unique whose value came out null has no duplicate to try —
+    // SQLite accepts any number of NULLs in a UNIQUE column, and reporting one
+    // was a false finding on example's Product.barcode.
+    const nullable = await createTestEnv({ schema: `
+      model Thing { id Int @id  code String? @unique  name String }
+    ` })
+    expect(await nullable.verifyConstraints()).toEqual([])
+    env.close(); nullable.close()
+  })
+
+  test('verifyConstraints finds nothing on a schema whose rules are enforced', async () => {
+    const env = await createTestEnv({ schema: RULES_ENV_SCHEMA })
+    expect(await env.verifyConstraints()).toEqual([])
+    env.close()
+  })
+
+  test('verifyConstraints reports enforcement STRICTER than the schema declares', async () => {
+    // The other direction, and the one that is stageable: a boundary value the
+    // rule allows, refused anyway. Field validation runs before plugins, so an
+    // ignored rule cannot be simulated from inside a schema — that branch is
+    // proven by mutation instead (disable @gte, @length or @email in
+    // validate.js and this reports 2/10, 8/46 and 1/1 on example and basecamp).
+    const refuseTwelve = new (class extends Plugin {
+      async onBeforeCreate(_m: string, args: any) {
+        if (args?.data?.handle?.length === 12) throw Object.assign(
+          new Error('handle: too long, really'), { name: 'ValidationError' })
+      }
+    })()
+
+    const env = await createTestEnv({ schema: RULES_ENV_SCHEMA, plugins: [refuseTwelve] })
+    const bad = await env.verifyConstraints('Person')
+    expect(bad.length).toBeGreaterThan(0)
+    expect(bad.every((m: any) => m.field === 'handle' && m.expect === 'accepted')).toBe(true)
+    expect(bad[0].message).toMatch(/allows this value and the write was refused/)
+    env.close()
+  })
+
+  test('verifyConstraints separates "not refused" from "never reached the validator"', async () => {
+    // A write that fails for a different reason proves nothing either way, and
+    // calling it a refusal is the whole trap: it would make a broken validator
+    // look enforced. It is reported as `error` rather than swallowed, because a
+    // case that cannot run is a hole in the coverage the count implies.
+    const boom = new (class extends Plugin {
+      async onBeforeCreate() { throw new Error('unrelated boom') }
+    })()
+    const env = await createTestEnv({ schema: RULES_ENV_SCHEMA, plugins: [boom] })
+    const bad = await env.verifyConstraints('Person')
+    expect(bad.length).toBeGreaterThan(0)
+    expect(bad.every((m: any) => m.got === 'error')).toBe(true)
+    expect(bad.some((m: any) => /failed before validation could refuse it: unrelated boom/.test(m.message))).toBe(true)
+    env.close()
+  })
+
+  test('a model whose row cannot be built does not abandon the rest', async () => {
+    // A required self-reference cannot be satisfied by creating more rows. One
+    // model this cannot check is not a reason to stop checking the others —
+    // and it is reported, because a silent skip makes the count a lie.
+    const env = await createTestEnv({ schema: `
+      model Node   { id Int @id  handle String @length(3, 12)  parentId Int  parent Node @relation(fields: [parentId], references: [id]) }
+      model Simple { id Int @id  handle String @length(3, 12) }
+    ` })
+    const bad = await env.verifyConstraints()
+    expect(bad).toHaveLength(1)
+    expect(bad[0].model).toBe('Node')
+    expect(bad[0].got).toBe('error')
+    expect(bad[0].message).toMatch(/no valid row could be built, so none of its \d+ case\(s\) ran/)
+    env.close()
+  })
+
+  test('verifyConstraints leaves the database as it found it', async () => {
+    const env = await createTestEnv({ schema: RULES_ENV_SCHEMA })
+    await env.system.team.create({ data: { id: 1, slug: 'seed', name: 'seed' } })
+    await env.verifyConstraints()
+    expect(await env.system.team.count()).toBe(1)
+    expect(await env.system.person.count()).toBe(0)
+    env.close()
+  })
+
+  test('verifyConstraints skips models no write can reach', async () => {
+    // @@external emits no DDL and jsonl runs no validation — their "failures"
+    // would be *no such table*, which says nothing about a rule.
+    const env = await createTestEnv({ schema: `
+      database main { path "./main.db" }
+      database logs { path "./logs/" driver jsonl }
+      model Kept    { id Int @id  handle String @length(3, 12) }
+      model Outside { id Int @id  handle String @length(3, 12)  @@external }
+      model Line    { id Int @id  handle String @length(3, 12)  @@db(logs) }
+    ` })
+    const models = new Set((await env.verifyConstraints()).map((m: any) => m.model))
+    expect(models.has('Outside')).toBe(false)
+    expect(models.has('Line')).toBe(false)
+    env.close()
+  })
+
+  test('setup runs once and every scenario starts from its rows', async () => {
+    const env = await createTestEnv({ schema: ENV_SCHEMA, autoFactories: true })
+
+    let runs = 0
+    const fx = await env.setup(async ({ system }: any) => {
+      runs++
+      return system.account.create({ data: { id: 7, name: 'acme' } })
+    })
+
+    // Scenario one dirties the database.
+    const a = env.phases()
+    await a.act(async ({} = {}) => env.system.account.create({ data: { id: 8, name: 'junk' } }))
+    expect(await env.system.account.count()).toBe(2)
+
+    // Scenario two must not see it, and must still see the fixture — with the
+    // id the caller captured, since a restore puts rows back as they were.
+    env.phases()
+    expect(await env.system.account.count()).toBe(1)
+    expect((await env.system.account.findUnique({ where: { id: fx.id } })).name).toBe('acme')
+    expect(runs).toBe(1)
+
+    env.close()
+  })
+
+  test('setup takes the same tools arrange takes', async () => {
+    // The whole point of the hoist: moving a line from arrange into setup is a
+    // move, not a rewrite. Both are handed { system, factories, db }.
+    const env = await createTestEnv({ schema: ENV_SCHEMA, autoFactories: true })
+    const seen: string[][] = []
+
+    await env.setup(async (tools: any) => { seen.push(Object.keys(tools).sort()) })
+    await env.phases().arrange(async (tools: any) => { seen.push(Object.keys(tools).sort()) })
+
+    expect(seen[0]).toEqual(['db', 'factories', 'system'])
+    expect(seen[0]).toEqual(seen[1])
+    env.close()
+  })
+
+  test('setup is refused twice, and refused after a scenario has run', async () => {
+    // Both are the same failure: a baseline that does not describe what the
+    // tests around it actually started from. Order-dependent, so silent.
+    const a = await createTestEnv({ schema: ENV_SCHEMA })
+    await a.setup(async () => {})
+    await expect(a.setup(async () => {})).rejects.toThrow(/already declared/)
+    a.close()
+
+    const b = await createTestEnv({ schema: ENV_SCHEMA })
+    b.phases()
+    await expect(b.setup(async () => {})).rejects.toThrow(/scenario\(s\) have already run/)
+    b.close()
+  })
+
+  test('phases restores nothing when no setup was declared', async () => {
+    // seal/reset is the manual pair and must stay independent — a suite driving
+    // it by hand cannot have phases() quietly restoring a different snapshot.
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    await env.system.account.create({ data: { id: 1, name: 'a' } })
+    env.seal()
+    await env.system.account.create({ data: { id: 2, name: 'b' } })
+
+    env.phases()
+    expect(await env.system.account.count()).toBe(2)
+    env.reset()
+    expect(await env.system.account.count()).toBe(1)
+    env.close()
+  })
+
+  test('seal/reset returns the database to the sealed rows', async () => {
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    await env.system.account.create({ data: { id: 1, name: 'seeded' } })
+    env.seal()
+
+    await env.system.account.create({ data: { id: 2, name: 'from a test' } })
+    expect(await env.system.account.count()).toBe(2)
+
+    env.reset()
+    expect(await env.system.account.count()).toBe(1)
+    env.close()
+  })
+
+  test('reset before seal says so rather than silently doing nothing', async () => {
+    const env = await createTestEnv({ schema: ENV_SCHEMA })
+    expect(() => env.reset()).toThrow(/seal\(\) before reset\(\)/)
+    env.close()
   })
 })
 
 // ─── generateValidationCases ──────────────────────────────────────────────────
 
+
+// Every rule the client enforces, in one model. A validator added to
+// validate.js or to writeData's array block and not to the generator shows up
+// here as a rule with no case rather than as silence.
+const RULES_SCHEMA = `
+  model Lead {
+    id     Int      @id
+    email  String   @email("Use your work address")
+    site   String   @url
+    code   String   @length(3, 6, "A code is 3 to 6 characters")
+    ref    String   @regex("^[A-Z]{3}$")
+    phone  String   @phone
+    slot   String   @time
+    stamp  String   @time(seconds: true)
+    day    String    @date
+    at     String    @datetime
+    pre    String   @startsWith("x-")
+    post   String   @endsWith("-z")
+    mid    String   @contains("mid")
+    score  Int      @gte(0) @lte(100)
+    ratio  Float    @gt(0) @lt(1)
+    tags   String[] @minItems(1) @maxItems(3) @uniqueItems
+  }
+`
+
+describe('generateValidationCases — conformance against a real client', () => {
+  // The oracle question, answered by running rather than by reading. Every
+  // generated case is executed: the invalid ones must be refused *with the
+  // message the case predicted*, and the boundary ones must be accepted.
+  //
+  // Five defects were live when this was first run, and each was invisible to
+  // any assertion that did not do this. `cases.valid` itself was invalid for a
+  // @time field, so every case failed naming a field it was not testing;
+  // custom messages were ignored, so a field with @email("…") predicted the
+  // DEFAULT wording and failed against a correct client; and @phone, @time and
+  // every array rule generated no case at all.
+  const { schema } = parse(RULES_SCHEMA)
+  const cases = generateValidationCases(schema, 'Lead')
+
+  let db: any
+  let nextId = 1
+  const row = (over: Record<string, unknown> = {}) => ({ ...cases.valid, id: ++nextId + 1000, ...over })
+
+  beforeAll(async () => { ({ db } = await makeTestClient(RULES_SCHEMA)) })
+  afterAll(() => db?.$close())
+
+  test('the valid baseline is actually valid', async () => {
+    // "correct by construction" is a claim, and this is the only thing that
+    // makes it one. Everything below is `{ ...valid, [field]: bad }`, so a
+    // broken baseline turns every case into a false failure elsewhere.
+    expect(await db.lead.create({ data: row() })).toBeTruthy()
+  })
+
+  test('every declared rule produces at least one case', async () => {
+    const covered = new Set(cases.invalid.map((c: any) => c.field))
+    const declared = schema.models[0].fields
+      .filter((f: any) => f.name !== 'id' && f.attributes.length > 0)
+      .map((f: any) => f.name)
+    expect(declared.filter((f: string) => !covered.has(f))).toEqual([])
+  })
+
+  test('every invalid case is refused, with the message it predicted', async () => {
+    const wrong: string[] = []
+    for (const c of cases.invalid) {
+      try {
+        await db.lead.create({ data: row({ [c.field]: c.value }) })
+        wrong.push(`${c.field} ${c.rule}: accepted ${JSON.stringify(c.value)}`)
+      } catch (err: any) {
+        if (!err.message.includes(c.message))
+          wrong.push(`${c.field} ${c.rule}: wanted "${c.message}", got "${err.message}"`)
+      }
+    }
+    expect(wrong).toEqual([])
+  })
+
+  test('every boundary case is accepted', async () => {
+    const wrong: string[] = []
+    for (const c of cases.boundary) {
+      try { await db.lead.create({ data: row({ [c.field]: c.value }) }) }
+      catch (err: any) { wrong.push(`${c.field} ${c.rule} ${JSON.stringify(c.value)}: ${err.message}`) }
+    }
+    expect(wrong).toEqual([])
+  })
+
+  test('a schema-authored message wins over the default wording', () => {
+    // The field's own message is the independent statement of intent here, and
+    // it is what Junction and Sierra show through `x-messages`. Predicting the
+    // default instead made the generated test fail against a correct client.
+    const emailCase = cases.invalid.find((c: any) => c.field === 'email')
+    expect(emailCase.message).toBe('Use your work address')
+    const codeCase = cases.invalid.find((c: any) => c.field === 'code')
+    expect(codeCase.message).toBe('A code is 3 to 6 characters')
+  })
+
+  test('array rules are covered, not skipped for being arrays', () => {
+    const rules = cases.invalid.filter((c: any) => c.field === 'tags').map((c: any) => c.rule).sort()
+    expect(rules).toEqual(['@maxItems(3)', '@minItems(1)', '@uniqueItems'])
+  })
+})
 
 describe('generateValidationCases', () => {
   const { schema } = parse(UTIL_SCHEMA)
@@ -12197,6 +13746,369 @@ describe('@from — derived relation fields', () => {
     `)
     expect(r.valid).toBe(false)
     expect(r.errors.some((e: string) => e.includes('Int'))).toBe(true)
+  })
+})
+
+// ─── @from — a relation to the SAME model ────────────────────────────────────
+// The subquery correlates a table to itself, so an unaliased target captured
+// its own correlation: `WHERE "taskId" = "task"."id"` read `"task"` as the
+// subquery's own FROM and counted self-parented rows. FJS-220.
+
+// ─── @from(first/last) — the row goes through a real read ────────────────────
+// The subquery encoded the row as json_object over the target's columns, which
+// is the one @from shape that returned a row read() never saw: the target's
+// @computed and @from fields were missing and its @guarded / @omit / @encrypted
+// ones were present. FJS-222 / FJS-223.
+
+// ─── now() — one instant per evaluation, and injectable ──────────────────────
+// `now()` resolved where it was REACHED, so two of them in one expression bound
+// two timestamps and a report had no single "as of" moment. FJS-227.
+
+describe('now() is one instant per evaluation', () => {
+  const EVENTS = `
+    model Event { id Int @id  title String  startAt DateTime  endAt DateTime
+      @@allow('read', startAt < now() && now() < endAt) }
+  `
+  const iso = (offset: number) => new Date(Date.now() + offset).toISOString()
+
+  test('two now() in one predicate agree', async () => {
+    const db = await makeDb(EVENTS, 'now-one-instant')
+    await db.asSystem().event.createMany({ data: [
+      { id: 1, title: 'running',     startAt: iso(-3600e3), endAt: iso(3600e3) },
+      { id: 2, title: 'finished',    startAt: iso(-7200e3), endAt: iso(-3600e3) },
+      { id: 3, title: 'not started', startAt: iso(3600e3),  endAt: iso(7200e3) },
+    ]})
+    expect((await db.$setAuth({ id: 1 }).event.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.id))
+      .toEqual([1])
+    db.$close()
+  })
+
+  test('an injected clock decides what now() means', async () => {
+    const start = iso(-3600e3), end = iso(3600e3)
+    const at = async (when: string) => {
+      const db = await makeDb(EVENTS, `now-frozen-${when.slice(11, 19)}`, { now: () => new Date(when) })
+      await db.asSystem().event.create({ data: { id: 1, title: 'e', startAt: start, endAt: end } })
+      const seen = (await db.$setAuth({ id: 1 }).event.findMany()).map((r: any) => r.id)
+      db.$close()
+      return seen
+    }
+    expect(await at(iso(0))).toEqual([1])          // inside the window
+    expect(await at(iso(7200e3))).toEqual([])      // after it
+    expect(await at(iso(-7200e3))).toEqual([])     // before it
+  })
+
+  test('a create policy reads the same clock — evalJs, not the WHERE', async () => {
+    // read compiles to SQL, create is evaluated in JS. Two implementations of
+    // one rule, so the clock has to reach both.
+    const BOOKING = `
+      model Booking { id Int @id  opensAt DateTime  closesAt DateTime
+        @@allow('create', opensAt < now() && now() < closesAt)
+        @@allow('read', true) }
+    `
+    const iso = (offset: number) => new Date(Date.now() + offset).toISOString()
+    const opensAt = iso(-3600e3), closesAt = iso(3600e3)
+
+    const inside = await makeDb(BOOKING, 'now-create-inside', { now: () => new Date(iso(0)) })
+    await expect(inside.$setAuth({ id: 1 }).booking.create({ data: { id: 1, opensAt, closesAt } }))
+      .resolves.toBeTruthy()
+    inside.$close()
+
+    const after = await makeDb(BOOKING, 'now-create-after', { now: () => new Date(iso(7200e3)) })
+    await expect(after.$setAuth({ id: 1 }).booking.create({ data: { id: 1, opensAt, closesAt } }))
+      .rejects.toThrow()
+    after.$close()
+  })
+
+  test('the injected clock also stamps a soft delete', async () => {
+    const when = '2020-01-02T03:04:05.678Z'
+    const db = await makeDb(
+      `model Doc { id Int @id  deletedAt DateTime?  @@softDelete }`,
+      'now-soft-delete', { now: () => new Date(when) })
+    await db.doc.create({ data: { id: 1 } })
+    await db.doc.remove({ where: { id: 1 } })
+    expect((await db.doc.findFirst({ where: { id: 1 }, onlyDeleted: true })).deletedAt).toBe(when)
+    db.$close()
+  })
+})
+
+describe('@from — first/last returns a properly read row', () => {
+  const SHOP = `
+    model Company { id Int @id  name String  accounts Account[] }
+    model Account {
+      id Int @id  name String  companyId Int?
+      company Company? @relation(fields: [companyId], references: [id])
+      orders  Order[]
+      lastOrder Order? @from(Order, last: true)
+    }
+    model Order {
+      id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
+      amount Float
+      secretNote String? @guarded(all)
+      hiddenNote String? @omit(all)
+      card       String? @encrypted
+      label      String  @computed
+      lines      Line[]
+      lineCount  Int @from(Line, count: true)
+    }
+    model Line { id Int @id  orderId Int  order Order @relation(fields: [orderId], references: [id]) }
+  `
+  const shop = async (label: string) => {
+    const db = await makeDb(SHOP, label, {
+      encryptionKey: 'a'.repeat(64),
+      computed: { Order: { label: (r: any) => `#${r.id}` } },
+    })
+    await db.company.create({ data: { id: 1, name: 'c' } })
+    await db.account.create({ data: { id: 1, name: 'acme', companyId: 1 } })
+    await db.order.createMany({ data: [
+      { id: 1, accountId: 1, amount: 5, secretNote: 'S1', hiddenNote: 'H1', card: '4111' },
+      { id: 2, accountId: 1, amount: 9, secretNote: 'S2', hiddenNote: 'H2', card: '4222' },
+    ]})
+    await db.line.createMany({ data: [{ id: 1, orderId: 2 }, { id: 2, orderId: 2 }] })
+    return db
+  }
+
+  test('the row it returns is the row a direct read returns', async () => {
+    const db = await shop('from-row-agree')
+    const u = db.$setAuth({ id: 9, role: 'member' })
+    const keys = (o: any) => Object.keys(o).sort()
+
+    const direct   = await u.order.findUnique({ where: { id: 2 } })
+    const included = (await u.account.findUnique({ where: { id: 1 }, include: { orders: true } }))
+      .orders.find((o: any) => o.id === 2)
+    const viaFrom  = (await u.account.findUnique({ where: { id: 1 } })).lastOrder
+
+    // three ways to the same row, one shape
+    expect(keys(viaFrom)).toEqual(keys(direct))
+    expect(keys(viaFrom)).toEqual(keys(included))
+  })
+
+  test('protected fields do not come back through it', async () => {
+    const db = await shop('from-row-guarded')
+    const last = (await db.$setAuth({ id: 9 }).account.findUnique({ where: { id: 1 } })).lastOrder
+    expect(last.secretNote).toBeUndefined()   // @guarded(all)
+    expect(last.hiddenNote).toBeUndefined()   // @omit(all)
+    expect(last.card).toBeUndefined()         // @encrypted implies @guarded(all)
+    expect(last.amount).toBe(9)
+    db.$close()
+  })
+
+  test('the target\'s own derived fields come back through it', async () => {
+    const db = await shop('from-row-derived')
+    const last = (await db.account.findUnique({ where: { id: 1 } })).lastOrder
+    expect(last.label).toBe('#2')      // @computed on the target
+    expect(last.lineCount).toBe(2)     // @from on the target
+    db.$close()
+  })
+
+  test('it resolves through an include, and on the cursor path', async () => {
+    const db = await shop('from-row-nested')
+    const viaInclude = (await db.company.findUnique({ where: { id: 1 }, include: { accounts: true } }))
+      .accounts[0].lastOrder
+    expect(viaInclude?.id).toBe(2)
+    expect(viaInclude?.lineCount).toBe(2)
+
+    const page = await db.account.findManyCursor({ limit: 2, orderBy: { id: 'asc' } })
+    expect(page.items[0].lastOrder?.id).toBe(2)
+    db.$close()
+  })
+
+  test('a @computed on the PARENT sees the row, not its id', async () => {
+    const db = await makeDb(`
+      model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true)  lastAmount Float @computed }
+      model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  amount Float }
+    `, 'from-row-parent-computed', {
+      computed: { Account: { lastAmount: (r: any) => r.lastOrder?.amount ?? 0 } },
+    })
+    await db.account.create({ data: { id: 1 } })
+    await db.order.createMany({ data: [{ id: 1, accountId: 1, amount: 5 }, { id: 2, accountId: 1, amount: 9 }] })
+    expect((await db.account.findUnique({ where: { id: 1 } })).lastAmount).toBe(9)
+    db.$close()
+  })
+
+  test('no matching row is null, and the target policy applies', async () => {
+    const db = await makeDb(`
+      model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true) }
+      model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  ownerId Int
+                      @@allow('read', ownerId == auth().id) }
+    `, 'from-row-policy')
+    await db.asSystem().account.createMany({ data: [{ id: 1 }, { id: 2 }] })
+    await db.asSystem().order.create({ data: { id: 1, accountId: 1, ownerId: 7 } })
+
+    expect((await db.$setAuth({ id: 7 }).account.findUnique({ where: { id: 1 } })).lastOrder?.id).toBe(1)
+    // refused by the target's own read policy — null, not the row (FJS-224)
+    expect((await db.$setAuth({ id: 8 }).account.findUnique({ where: { id: 1 } })).lastOrder).toBeNull()
+    // no orders at all
+    expect((await db.asSystem().account.findUnique({ where: { id: 2 } })).lastOrder).toBeNull()
+    db.$close()
+  })
+})
+
+describe('@from — a self-relation', () => {
+  const SELF = `
+    model Task {
+      id          Int @id
+      title       String
+      taskId      Int?
+      parent      Task?  @relation(fields: [taskId], references: [id])
+      children    Task[]
+      completedAt DateTime?
+      deletedAt   DateTime?
+
+      childCount  Int       @from(Task, count: true)
+      doneCount   Int       @from(Task, count: true, where: "completedAt IS NOT NULL")
+      anyKids     Boolean   @from(Task, exists: true)
+      newestKid   Task?     @from(Task, last: true)
+      @@softDelete
+    }
+  `
+
+  const seed = async (db: any) => {
+    await db.task.createMany({ data: [
+      { id: 1, title: 'parent' },
+      { id: 2, title: 'kid a', taskId: 1, completedAt: '2026-01-01T00:00:00.000Z' },
+      { id: 3, title: 'kid b', taskId: 1 },
+      { id: 4, title: 'kid c', taskId: 1 },
+      { id: 5, title: 'lonely' },
+    ]})
+    await db.task.remove({ where: { id: 4 } })   // soft-deleted child
+  }
+
+  test('two @from to different tables, and one nested inside a relation', async () => {
+    // Every @from subquery uses one alias. Siblings are separate scopes; a
+    // nested one shadows the name harmlessly, because a correlation names the
+    // outer TABLE and never the alias.
+    const db = await makeDb(`
+      model Account {
+        id Int @id  name String
+        orders Order[]  notes Note[]
+        orderCount Int @from(Order, count: true)
+        noteCount  Int @from(Note,  count: true)
+      }
+      model Order {
+        id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
+        lines Line[]
+        lineCount Int @from(Line, count: true)
+      }
+      model Line { id Int @id  orderId Int  order Order @relation(fields: [orderId], references: [id]) }
+      model Note { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id]) }
+    `, 'from-two-targets')
+    await db.account.create({ data: { id: 1, name: 'acme' } })
+    await db.order.createMany({ data: [{ id: 1, accountId: 1 }, { id: 2, accountId: 1 }] })
+    await db.line.createMany({ data: [{ id: 1, orderId: 1 }, { id: 2, orderId: 2 }, { id: 3, orderId: 2 }] })
+    await db.note.create({ data: { id: 1, accountId: 1 } })
+
+    const a = await db.account.findUnique({ where: { id: 1 } })
+    expect(a.orderCount).toBe(2)
+    expect(a.noteCount).toBe(1)
+
+    // the target's own @from, resolved inside the include's nested SELECT
+    const inc = await db.account.findUnique({ where: { id: 1 }, include: { orders: true } })
+    expect(inc.orders.map((o: any) => o.lineCount).sort()).toEqual([1, 2])
+    db.$close()
+  })
+
+  test('counts the children, not the rows that are their own parent', async () => {
+    const db = await makeDb(SELF, 'from-self-count')
+    await seed(db)
+    const p = await db.task.findUnique({ where: { id: 1 } })
+    expect(p.childCount).toBe(2)      // the soft-deleted one does not count
+    expect(p.doneCount).toBe(1)
+    expect(p.anyKids).toBe(true)
+    const lonely = await db.task.findUnique({ where: { id: 5 } })
+    expect(lonely.childCount).toBe(0)
+    expect(lonely.anyKids).toBe(false)
+    db.$close()
+  })
+
+  test('a self @from filters and sorts in SQL', async () => {
+    const db = await makeDb(SELF, 'from-self-query')
+    await seed(db)
+    expect((await db.task.findMany({ where: { childCount: { gt: 0 } } })).map((r: any) => r.id)).toEqual([1])
+    expect((await db.task.findMany({ where: { doneCount: 0 }, orderBy: { id: 'asc' } })).map((r: any) => r.id))
+      .toEqual([2, 3, 5])
+    expect((await db.task.findMany({ orderBy: [{ childCount: 'desc' }, { id: 'asc' }] })).map((r: any) => r.id)[0]).toBe(1)
+    db.$close()
+  })
+
+  test('first/last hydrate a whole row through the alias', async () => {
+    const db = await makeDb(SELF, 'from-self-last')
+    await seed(db)
+    const p = await db.task.findUnique({ where: { id: 1 } })
+    expect(p.newestKid?.id).toBe(3)          // 4 is soft-deleted
+    expect(p.newestKid?.title).toBe('kid b')
+    db.$close()
+  })
+})
+
+// ─── @from — which relation it means ─────────────────────────────────────────
+// Two relations can join one pair of models — sender/recipient, parent/children.
+// @from used to take the first that fit and say nothing, so the other one was
+// unaskable and the count that came back answered a different question. FJS-221.
+
+describe('@from — via', () => {
+  const MSG = (extra: string) => `
+    model User { id Int @id  name String
+      sent     Message[] @relation("sent")
+      received Message[] @relation("received")
+      ${extra} }
+    model Message { id Int @id  body String
+      senderId    Int  sender    User @relation("sent",     fields: [senderId],    references: [id])
+      recipientId Int  recipient User @relation("received", fields: [recipientId], references: [id]) }
+  `
+  const seeded = async (extra: string, label: string) => {
+    const db = await makeDb(MSG(extra), label)
+    await db.user.createMany({ data: [{ id: 1, name: 'ann' }, { id: 2, name: 'bob' }] })
+    await db.message.createMany({ data: [
+      { id: 1, body: 'x', senderId: 1, recipientId: 2 },
+      { id: 2, body: 'y', senderId: 1, recipientId: 2 },
+      { id: 3, body: 'z', senderId: 2, recipientId: 1 },
+    ]})
+    return db
+  }
+
+  test('an ambiguous @from is refused, naming the candidates and the cure', async () => {
+    await expect(makeDb(MSG('n Int @from(Message, count: true)'), 'from-ambig'))
+      .rejects.toThrow(/ambiguous — 2 relations join 'User' and 'Message' \(Message\.sender, Message\.recipient\)/)
+    await expect(makeDb(MSG('n Int @from(Message, count: true)'), 'from-ambig2'))
+      .rejects.toThrow(/via: sender/)
+  })
+
+  test('via names either side of the relation', async () => {
+    // the field on this model, the field on the target, and the FK column
+    for (const [via, expected] of [['sent', [2, 1]], ['sender', [2, 1]], ['received', [1, 2]], ['recipientId', [1, 2]]] as const) {
+      const db = await seeded(`n Int @from(Message, count: true, via: ${via})`, `from-via-${via}`)
+      expect((await db.user.findMany({ orderBy: { id: 'asc' } })).map((u: any) => u.n)).toEqual([...expected])
+      db.$close()
+    }
+  })
+
+  test('a via that names nothing is refused, listing what would work', async () => {
+    await expect(makeDb(MSG('n Int @from(Message, count: true, via: nope)'), 'from-via-bad'))
+      .rejects.toThrow(/'nope' names no relation between 'User' and 'Message'. Candidates: Message\.sender, Message\.recipient/)
+  })
+
+  test('one relation still needs no via, two self-relations do', async () => {
+    const TREE = (extra: string) => `
+      model Task { id Int @id  title String
+        taskId    Int?  parent  Task? @relation("tree",  fields: [taskId],    references: [id])  children Task[] @relation("tree")
+        ${extra} }
+    `
+    const ok = await makeDb(TREE('childCount Int @from(Task, count: true)'), 'from-self-one')
+    ok.$close()
+
+    const BOTH = (extra: string) => `
+      model Task { id Int @id  title String
+        taskId    Int?  parent  Task? @relation("tree",  fields: [taskId],    references: [id])  children Task[] @relation("tree")
+        blockerId Int?  blocker Task? @relation("block", fields: [blockerId], references: [id])  blocked  Task[] @relation("block")
+        ${extra} }
+    `
+    await expect(makeDb(BOTH('childCount Int @from(Task, count: true)'), 'from-self-ambig'))
+      .rejects.toThrow(/ambiguous — 2 relations join 'Task' and 'Task'/)
+
+    const db = await makeDb(BOTH('childCount Int @from(Task, count: true, via: children)'), 'from-self-via')
+    await db.task.createMany({ data: [{ id: 1, title: 'p' }, { id: 2, title: 'a', taskId: 1 }, { id: 3, title: 'b', taskId: 1 }] })
+    expect((await db.task.findUnique({ where: { id: 1 } })).childCount).toBe(2)
+    db.$close()
   })
 })
 
@@ -16801,6 +18713,142 @@ describe('findMany — recursive', () => {
 })
 
 
+// ─── recursive — the same read as any other ──────────────────────────────────
+// A tree read used to be a second implementation of findMany: it never reached
+// the plugin door, and it applied the row policy and the soft-delete filter to
+// the anchor and to nothing below it. FJS-216/217/218/219.
+
+describe('findMany — recursive is a read, not a bypass', () => {
+  const TREE = (extra = '', model = '') => `
+    model Task {
+      id       Int @id
+      title    String
+      ownerId  Int?
+      parentId Int?
+      parent   Task?  @relation(fields: [parentId], references: [id])
+      children Task[]
+      ${extra}
+      ${model}
+    }
+  `
+
+  test('@@gate refuses a recursive read, not only a plain one', async () => {
+    const db = await makeDb(TREE('', '@@gate("5.5.5.5")'), 'rec-gate')
+    await db.asSystem().task.createMany({ data: [
+      { id: 1, title: 'root' }, { id: 2, title: 'SECRET', parentId: 1 },
+    ]})
+    await expect(db.task.findMany()).rejects.toThrow(/requires level 5/)
+    await expect(db.task.findMany({ where: { id: 1 }, recursive: true })).rejects.toThrow(/requires level 5/)
+    db.$close()
+  })
+
+  test('a refused read never runs the tree query', async () => {
+    const seen: string[] = []
+    const db = await makeDb(TREE('', '@@gate("5.5.5.5")'), 'rec-gate-order', {
+      onQuery: (e: any) => seen.push(String(e.sql)),
+    })
+    await db.asSystem().task.createMany({ data: [{ id: 1, title: 'root' }, { id: 2, title: 'x', parentId: 1 }] })
+    seen.length = 0
+    await expect(db.task.findMany({ where: { id: 1 }, recursive: true })).rejects.toThrow(/requires level 5/)
+    // The gate is asked before the walk, not after it — a refused caller must
+    // not reach the table at all.
+    expect(seen.filter(q => q.includes('WITH RECURSIVE'))).toEqual([])
+    db.$close()
+  })
+
+  test('a row policy hides a subtree, not just the row it refuses', async () => {
+    const db = await makeDb(TREE('', `@@allow('read', ownerId == auth().id)`), 'rec-policy')
+    await db.asSystem().task.createMany({ data: [
+      { id: 1, title: 'mine',   ownerId: 1 },
+      { id: 2, title: 'theirs', ownerId: 2, parentId: 1 },
+      { id: 3, title: 'theirs', ownerId: 2, parentId: 2 },
+    ]})
+    const me = db.$setAuth({ id: 1 })
+    expect((await me.task.findMany()).map((r: any) => r.id)).toEqual([1])
+    // Row 2 is refused, so row 3 — its child — is unreachable through it.
+    expect(await me.task.findMany({ where: { id: 1 }, recursive: true })).toEqual([])
+    db.$close()
+  })
+
+  test('a soft-deleted node hides its subtree', async () => {
+    const db = await makeDb(TREE('deletedAt DateTime?', '@@softDelete'), 'rec-sd')
+    await db.task.createMany({ data: [
+      { id: 1, title: 'a' }, { id: 2, title: 'b', parentId: 1 }, { id: 3, title: 'c', parentId: 2 },
+    ]})
+    await db.task.remove({ where: { id: 2 } })
+    expect(await db.task.findMany({ where: { id: 1 }, recursive: true })).toEqual([])
+    // withDeleted opts the walk back in, the same way it does a flat read
+    const all = await db.task.findMany({ where: { id: 1 }, recursive: true, withDeleted: true })
+    expect(all.map((r: any) => r.id).sort()).toEqual([2, 3])
+    db.$close()
+  })
+
+  test('a cycle answers each row once instead of walking to maxDepth', async () => {
+    const db = await makeDb(TREE(), 'rec-cycle')
+    await db.task.createMany({ data: [{ id: 1, title: 'a' }, { id: 2, title: 'b', parentId: 1 }] })
+    // Reach around the write guard — the read must survive a loop already stored
+    db.asSystem().sql`UPDATE "Task" SET "parentId" = 2 WHERE "id" = 1`
+    const rows = await db.task.findMany({ where: { id: 1 }, recursive: true })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBe(2)
+    const up = await db.task.findMany({ where: { id: 1 }, recursive: { direction: 'ancestors' } })
+    expect(up).toHaveLength(1)
+    db.$close()
+  })
+
+  test('a write that closes a loop is refused, naming the field', async () => {
+    const db = await makeDb(TREE(), 'rec-write-cycle')
+    await db.task.createMany({ data: [
+      { id: 1, title: 'a' }, { id: 2, title: 'b', parentId: 1 }, { id: 3, title: 'c', parentId: 2 },
+    ]})
+    await expect(db.task.update({ where: { id: 1 }, data: { parentId: 1 } }))
+      .rejects.toThrow(/parentId.*its own parent/)
+    await expect(db.task.update({ where: { id: 1 }, data: { parentId: 3 } }))
+      .rejects.toThrow(/parentId.*its own ancestor/)
+    await expect(db.task.create({ data: { id: 9, title: 'x', parentId: 9 } }))
+      .rejects.toThrow(/parentId.*its own parent/)
+    // and a legal move still moves
+    const moved = await db.task.update({ where: { id: 3 }, data: { parentId: 1 } })
+    expect(moved.parentId).toBe(1)
+    db.$close()
+  })
+
+  test('select and @computed apply on a recursive read', async () => {
+    const db = await makeDb(TREE(), 'rec-select', {
+      computed: { Task: { shout: (r: any) => String(r.title).toUpperCase() } },
+    })
+    await db.task.createMany({ data: [{ id: 1, title: 'a' }, { id: 2, title: 'b', parentId: 1 }] })
+    const [narrow] = await db.task.findMany({ where: { id: 1 }, recursive: true, select: { id: true } })
+    expect(Object.keys(narrow).sort()).toEqual(['_depth', 'id'])
+    db.$close()
+  })
+
+  test('a read that cannot walk a tree refuses recursive by name', async () => {
+    const db = await makeDb(TREE(), 'rec-refuse')
+    await db.task.createMany({ data: [{ id: 1, title: 'a' }, { id: 2, title: 'b', parentId: 1 }] })
+    for (const m of ['count', 'findFirst', 'findUnique', 'exists', 'aggregate']) {
+      await expect((db.task as any)[m]({ where: { id: 1 }, recursive: true }))
+        .rejects.toThrow(/does not take 'recursive'/)
+    }
+    await expect(db.task.findMany({ where: { id: 1 }, recursive: { nested: true }, limit: 1 }))
+      .rejects.toThrow(/cannot take limit or offset/)
+    db.$close()
+  })
+
+  test('orderBy _depth sorts the tree, and is sortable only on a tree read', async () => {
+    const db = await makeDb(TREE(), 'rec-depth-sort')
+    await db.task.createMany({ data: [
+      { id: 1, title: 'a' }, { id: 2, title: 'b', parentId: 1 }, { id: 3, title: 'c', parentId: 2 },
+    ]})
+    const rows = await db.task.findMany({ where: { id: 1 }, recursive: true, orderBy: { _depth: 'desc' } })
+    expect(rows.map((r: any) => r._depth)).toEqual([2, 1])
+    await expect(db.task.findMany({ orderBy: { _depth: 'asc' } }))
+      .rejects.toThrow(/Unknown orderBy field '_depth'/)
+    db.$close()
+  })
+})
+
+
 // ─── ExternalRefPlugin ────────────────────────────────────────────────────────
 
 describe('ExternalRefPlugin', () => {
@@ -19262,5 +21310,1173 @@ describe('$checkWhere', () => {
       expect(c.$checkWhere('widget', { anything: 1 }), name).toEqual([])
     }
     db.$close()
+  })
+})
+
+// ─── Bulk writes over rows of different shapes (FJS-175) ──────────────────────
+// The column list used to come from row 0, so row 0 decided what every other
+// row in the batch was allowed to write.
+
+describe('createMany / upsertMany — rows of different shapes', () => {
+  const SCHEMA = `
+    model Post {
+      id       Int    @id
+      title    String
+      subtitle String?
+      tag      String?
+      views    Int    @default(0)
+    }
+  `
+
+  const narrow = { title: 'a' }
+  const wide   = { title: 'b', subtitle: 'HELLO', tag: 'x', views: 99 }
+
+  let db: any
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'many-shapes') })
+  afterAll(() => db.$close())
+  beforeEach(async () => { await db.post.deleteMany({ where: {} }) })
+
+  test('a wider row after a narrow one keeps its columns', async () => {
+    const r = await db.post.createMany({ data: [{ id: 1, ...narrow }, { id: 2, ...wide }] })
+    expect(r.count).toBe(2)
+    const rows = await db.post.findMany({ orderBy: { id: 'asc' } })
+    expect(rows[1]).toMatchObject({ subtitle: 'HELLO', tag: 'x', views: 99 })
+  })
+
+  test('a narrower row after a wide one takes its DDL defaults, not NULL', async () => {
+    const r = await db.post.createMany({ data: [{ id: 1, ...wide }, { id: 2, ...narrow }] })
+    expect(r.count).toBe(2)
+    const rows = await db.post.findMany({ orderBy: { id: 'asc' } })
+    expect(rows[1]).toMatchObject({ subtitle: null, tag: null, views: 0 })
+  })
+
+  test('the same two rows write the same thing in either order', async () => {
+    await db.post.createMany({ data: [{ id: 1, ...narrow }, { id: 2, ...wide }] })
+    const forward = await db.post.findMany({ orderBy: { id: 'asc' } })
+    await db.post.deleteMany({ where: {} })
+    await db.post.createMany({ data: [{ id: 2, ...wide }, { id: 1, ...narrow }] })
+    const reversed = await db.post.findMany({ orderBy: { id: 'asc' } })
+    expect(reversed).toEqual(forward)
+  })
+
+  test('rows are inserted in caller order, not grouped by shape', async () => {
+    // An @id @default(autoincrement()) is assigned in insert order, so grouping
+    // the batch by shape would renumber the rows the caller handed over.
+    const sql: string[] = []
+    const d2 = await makeDb(SCHEMA, 'many-order', {
+      onQuery: (q: any) => { if (q.sql) sql.push(q.sql) },
+    })
+    await d2.post.createMany({ data: [
+      { id: 1, ...narrow }, { id: 2, ...wide }, { id: 3, ...narrow },
+    ]})
+    const rows = await d2.post.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.title)).toEqual(['a', 'b', 'a'])
+    // Two shapes, three rows — the narrow statement is prepared once and reused.
+    const reported = sql.find(s => s.includes('INSERT INTO "post"'))
+    expect(reported?.split('\n').length).toBe(2)
+    d2.$close()
+  })
+
+  test('a uniform batch still reports one statement', async () => {
+    const sql: string[] = []
+    const d2 = await makeDb(SCHEMA, 'many-uniform', {
+      onQuery: (q: any) => { if (q.sql) sql.push(q.sql) },
+    })
+    await d2.post.createMany({ data: [{ id: 1, ...narrow }, { id: 2, ...narrow }] })
+    const reported = sql.find(s => s.includes('INSERT INTO "post"'))
+    expect(reported?.includes('\n')).toBe(false)
+    d2.$close()
+  })
+
+  test('upsertMany: a column only the second row carries is still written', async () => {
+    await db.post.upsertMany({ data: [{ id: 1, ...narrow }, { id: 2, ...wide }] })
+    const rows = await db.post.findMany({ orderBy: { id: 'asc' } })
+    expect(rows[1]).toMatchObject({ subtitle: 'HELLO', views: 99 })
+  })
+
+  test('upsertMany: a conflicting wide row updates the columns row 0 omits', async () => {
+    await db.post.createMany({ data: [{ id: 1, ...narrow }] })
+    await db.post.upsertMany({ data: [{ id: 9, ...narrow }, { id: 1, ...wide }] })
+    const row = await db.post.findUnique({ where: { id: 1 } })
+    expect(row).toMatchObject({ title: 'b', subtitle: 'HELLO', views: 99 })
+  })
+})
+
+// ─── A key set to `undefined` means absent, not NULL (FJS-175) ────────────────
+
+describe('write payload — an explicitly undefined key', () => {
+  const SCHEMA = `
+    model Post {
+      id    Int    @id
+      title String
+      note  String?
+      views Int    @default(0)
+    }
+  `
+
+  let db: any
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'undef-keys') })
+  afterAll(() => db.$close())
+  beforeEach(async () => { await db.post.deleteMany({ where: {} }) })
+
+  test('create: it does not defeat the column default', async () => {
+    const row = await db.post.create({ data: { id: 1, title: 'a', views: undefined } })
+    expect(row.views).toBe(0)
+  })
+
+  test('createMany: same', async () => {
+    await db.post.createMany({ data: [{ id: 1, title: 'a', views: undefined }] })
+    const row = await db.post.findUnique({ where: { id: 1 } })
+    expect(row.views).toBe(0)
+  })
+
+  test('update: it leaves the column alone — only null clears', async () => {
+    await db.post.create({ data: { id: 1, title: 'a', note: 'keep' } })
+    await db.post.update({ where: { id: 1 }, data: { note: undefined } })
+    expect((await db.post.findUnique({ where: { id: 1 } })).note).toBe('keep')
+    await db.post.update({ where: { id: 1 }, data: { note: null } })
+    expect((await db.post.findUnique({ where: { id: 1 } })).note).toBeNull()
+  })
+})
+
+// ─── `db` names main's path, declared or not (FJS-015) ────────────────────────
+
+describe('createClient({ db }) against a declared `database main`', () => {
+  const declared = join(TMP, 'fjs015-declared.db')
+  const SCHEMA = `
+    database main { path "${declared}" }
+    model Post { id Int @id  title String }
+  `
+
+  beforeEach(() => {
+    rmSync(declared, { force: true })
+    rmSync(join(TMP, 'fjs015-explicit.db'), { force: true })
+    rmSync(join(TMP, 'fjs015-override.db'), { force: true })
+  })
+
+  test('db: \':memory:\' does not touch the declared file', async () => {
+    // The declaration used to win in silence, so a test believing it was
+    // in-memory accumulated state in the declared file across runs.
+    const db = await createClient({ schema: SCHEMA, db: ':memory:' })
+    autoMigrate(db)
+    await db.post.create({ data: { id: 1, title: 'a' } })
+    db.$close()
+    expect(existsSync(declared)).toBe(false)
+  })
+
+  test('db: a path writes that path, not the declared one', async () => {
+    const explicit = join(TMP, 'fjs015-explicit.db')
+    const db = await createClient({ schema: SCHEMA, db: explicit })
+    autoMigrate(db)
+    db.$close()
+    expect(existsSync(explicit)).toBe(true)
+    expect(existsSync(declared)).toBe(false)
+  })
+
+  test('no db option — the declaration still decides', async () => {
+    const db = await createClient({ schema: SCHEMA })
+    autoMigrate(db)
+    db.$close()
+    expect(existsSync(declared)).toBe(true)
+  })
+
+  test('databases: { main } is the more specific channel and wins over db', async () => {
+    const override = join(TMP, 'fjs015-override.db')
+    const db = await createClient({
+      schema:    SCHEMA,
+      db:        join(TMP, 'fjs015-explicit.db'),
+      databases: { main: { path: override } },
+    })
+    autoMigrate(db)
+    db.$close()
+    expect(existsSync(override)).toBe(true)
+    expect(existsSync(join(TMP, 'fjs015-explicit.db'))).toBe(false)
+  })
+
+  test('db does not reach a second declared database', async () => {
+    // It names MAIN. Everything else keeps its declaration — `databases:
+    // ':memory:'` is the shorthand that moves them all.
+    const other = join(TMP, 'fjs015-other.db')
+    rmSync(other, { force: true })
+    const db = await createClient({
+      schema: `
+        database main  { path "${declared}" }
+        database other { path "${other}" }
+        model Post { id Int @id  title String }
+        model Note { id Int @id  body  String  @@db(other) }
+      `,
+      db: ':memory:',
+    })
+    autoMigrate(db)
+    db.$close()
+    expect(existsSync(declared)).toBe(false)
+    expect(existsSync(other)).toBe(true)
+  })
+})
+
+// ─── A set-valued enum is a column (FJS-141) ──────────────────────────────────
+// `targets ReclaimTarget[]` used to be refused at parse time, so a declared set
+// had no home in the seed: an app wrote String[] and validated the members
+// somewhere else, which is how AlertRule.severity defaulted to a value its own
+// API refused.
+
+describe('enum arrays', () => {
+  const SCHEMA = `
+    enum ReclaimTarget { logs cache artifacts }
+    model Rule {
+      id      Int @id
+      name    String
+      targets ReclaimTarget[]
+    }
+  `
+
+  let db: any
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'enum-array') })
+  afterAll(() => db.$close())
+  beforeEach(async () => { await db.rule.deleteMany({ where: {} }) })
+
+  test('the schema parses and the field is an enum array', () => {
+    const r = parse(SCHEMA)
+    expect(r.valid).toBe(true)
+    const f = r.schema.models[0].fields.find((x: any) => x.name === 'targets')
+    expect(f.type.kind).toBe('enum')
+    expect(f.type.array).toBe(true)
+  })
+
+  test('the column is JSON text with no membership CHECK', () => {
+    // SQLite cannot read the elements of a JSON array without json_each, and a
+    // CHECK may not contain the subquery that would take. `IN (...)` would
+    // compare the whole document against one value and fail every non-empty
+    // array, so the constraint is left off rather than emitted wrong.
+    const ddl = generateDDL(parse(SCHEMA).schema)
+    expect(ddl).toContain(`"targets" TEXT NOT NULL DEFAULT '[]'`)
+    expect(ddl).toContain(`json_type("targets") = 'array'`)
+    expect(ddl).not.toContain(`"targets" IN (`)
+  })
+
+  test('round-trips a set of values', async () => {
+    await db.rule.create({ data: { id: 1, name: 'a', targets: ['logs', 'cache'] } })
+    const row = await db.rule.findUnique({ where: { id: 1 } })
+    expect(row.targets).toEqual(['logs', 'cache'])
+  })
+
+  test('an absent set is the empty array, not null', async () => {
+    const row = await db.rule.create({ data: { id: 1, name: 'a' } })
+    expect(row.targets).toEqual([])
+  })
+
+  test('a member outside the enum is refused, and named', async () => {
+    let err: any = null
+    try {
+      await db.rule.create({ data: { id: 1, name: 'a', targets: ['logs', 'nope'] } })
+    } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(err.errors[0].path).toEqual(['targets'])
+    expect(err.message).toContain('"nope"')
+    expect(err.message).toContain('logs, cache, artifacts')
+    expect(await db.rule.count({})).toBe(0)
+  })
+
+  test('every bad member is named, not just the first', async () => {
+    let err: any = null
+    try {
+      await db.rule.create({ data: { id: 1, name: 'a', targets: ['nope', 'nah'] } })
+    } catch (e) { err = e }
+    expect(err.message).toContain('"nope"')
+    expect(err.message).toContain('"nah"')
+  })
+
+  test('an update is checked too', async () => {
+    await db.rule.create({ data: { id: 1, name: 'a', targets: ['logs'] } })
+    await expect(db.rule.update({ where: { id: 1 }, data: { targets: ['bogus'] } }))
+      .rejects.toThrow(/bogus/)
+    expect((await db.rule.findUnique({ where: { id: 1 } })).targets).toEqual(['logs'])
+  })
+
+  test('`has` filters by membership', async () => {
+    await db.rule.createMany({ data: [
+      { id: 1, name: 'a', targets: ['logs', 'cache'] },
+      { id: 2, name: 'b', targets: ['artifacts'] },
+    ]})
+    const rows = await db.rule.findMany({ where: { targets: { has: 'logs' } } })
+    expect(rows.map((r: any) => r.id)).toEqual([1])
+  })
+
+  test('JSON Schema puts the $ref on the items, not the field', () => {
+    // A picker reads the field's own schema. A bare $ref there would offer one
+    // choice for a column that holds several.
+    const js: any = generateJsonSchema(parse(SCHEMA).schema)
+    expect(js.$defs.Rule.properties.targets).toEqual({
+      type:  'array',
+      items: { $ref: '#/$defs/ReclaimTarget' },
+    })
+    expect(js.$defs.ReclaimTarget.enum).toEqual(['logs', 'cache', 'artifacts'])
+  })
+
+  test('an unknown array element type is still refused, and the message lists enums', () => {
+    const r = parse(`model M { id Int @id\n f Float[] }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('an enum name')
+  })
+})
+
+// ─── @default on an array field must be a JSON array ──────────────────────────
+
+describe('array fields — @default', () => {
+  const bad = (t: string) => parse(`enum T { a b }\nmodel M { id Int @id\n f ${t} }`)
+
+  test('a non-array default is a schema error, not a runtime CHECK failure', () => {
+    // The default is emitted into the DDL verbatim, so @default("x") parsed,
+    // migrated, and failed json_type on the first insert that relied on it.
+    for (const t of ['String[] @default("x")', 'T[] @default(a)', 'Int[] @default(1)']) {
+      const r = bad(t)
+      expect(r.valid, t).toBe(false)
+      expect(r.errors.join('\n'), t).toContain('must be a JSON array string')
+    }
+  })
+
+  test('a JSON array default is accepted', () => {
+    expect(bad('String[] @default("[]")').valid).toBe(true)
+    expect(bad('T[] @default("[\\"a\\"]")').valid).toBe(true)
+  })
+})
+
+// ─── A bare array in a `where` on an array column (FJS-189) ───────────────────
+// The shorthand says one thing on both column kinds — the column's value is in
+// this list. A scalar has one value; an array column supplies its elements, so
+// the IN moves inside json_each. It used to compile to `"tags" IN (?, ?)`,
+// which asks a JSON document whether it equals 'x', and answered nothing.
+
+describe('where on an array column', () => {
+  const SCHEMA = `
+    enum Kind { a b c }
+    model M {
+      id    Int @id
+      name  String
+      tags  String[]
+      kinds Kind[]
+      posts P[]
+    }
+    model P {
+      id    Int @id
+      title String
+      mid   Int
+      m     M @relation(fields: [mid], references: [id])
+    }
+  `
+
+  let db: any
+  beforeAll(async () => {
+    db = await makeDb(SCHEMA, 'where-array')
+    await db.m.createMany({ data: [
+      { id: 1, name: 'a', tags: ['x', 'y'], kinds: ['a', 'b'] },
+      { id: 2, name: 'b', tags: ['y', 'z'], kinds: ['c'] },
+      { id: 3, name: 'c', tags: [],         kinds: [] },
+    ]})
+    await db.p.create({ data: { id: 1, title: 't', mid: 1 } })
+  })
+  afterAll(() => db.$close())
+
+  const ids = (rows: any[]) => rows.map(r => r.id)
+  const find = async (where: any) => ids(await db.m.findMany({ where, orderBy: { id: 'asc' } }))
+
+  test('a bare array matches a row holding ANY of the values', async () => {
+    expect(await find({ tags: ['x', 'y'] })).toEqual([1, 2])
+    expect(await find({ tags: ['z'] })).toEqual([2])
+  })
+
+  test('it compiles to an IN, inside json_each', async () => {
+    const sql: string[] = []
+    const d2 = await makeDb(SCHEMA, 'where-array-sql', { onQuery: (q: any) => q.sql && sql.push(q.sql) })
+    await d2.m.findMany({ where: { tags: ['x'] } })
+    expect(sql.some(s => s.includes(`json_each("tags")`) && s.includes('value IN (?)'))).toBe(true)
+    d2.$close()
+  })
+
+  test('an empty bare array matches nothing, like `in: []`', async () => {
+    expect(await find({ tags: [] })).toEqual([])
+  })
+
+  test('a scalar column still reads a bare array as IN', async () => {
+    expect(await find({ id: [1, 2] })).toEqual([1, 2])
+    expect(await find({ name: ['a', 'b'] })).toEqual([1, 2])
+  })
+
+  test('`equals` is the exact set, and it is ordered', async () => {
+    expect(await find({ tags: { equals: ['x', 'y'] } })).toEqual([1])
+    expect(await find({ tags: { equals: ['y', 'x'] } })).toEqual([])
+  })
+
+  test('`equals: []` finds the empty ones', async () => {
+    expect(await find({ tags: { equals: [] } })).toEqual([3])
+  })
+
+  test('`equals` still means equality on a scalar column', async () => {
+    expect(await find({ name: { equals: 'b' } })).toEqual([2])
+    expect(await find({ name: { equals: null } })).toEqual([])
+  })
+
+  test('`not` with an array is NOT the exact set', async () => {
+    // It used to fall into `col != ?` with one placeholder and N bindings, and
+    // SQLite answered about placeholder counts rather than about the field.
+    expect(await find({ tags: { not: ['x', 'y'] } })).toEqual([2, 3])
+  })
+
+  test('`not` with an array on a SCALAR column is NOT IN', async () => {
+    expect(await find({ name: { not: ['a', 'b'] } })).toEqual([3])
+  })
+
+  test('`hasNone`', async () => {
+    expect(await find({ tags: { hasNone: ['x'] } })).toEqual([2, 3])
+    expect(await find({ tags: { hasNone: ['x', 'y', 'z'] } })).toEqual([3])
+  })
+
+  test('the operators that were already there still answer', async () => {
+    expect(await find({ tags: { has: 'y' } })).toEqual([1, 2])
+    expect(await find({ tags: { hasEvery: ['x', 'y'] } })).toEqual([1])
+    expect(await find({ tags: { hasSome: ['x', 'z'] } })).toEqual([1, 2])
+    expect(await find({ tags: { isEmpty: true } })).toEqual([3])
+  })
+
+  test('an array operator on a scalar column names both, not "malformed JSON"', async () => {
+    // json_each raises on a column that is not a JSON document, and its message
+    // names neither the field nor the operator.
+    await expect(db.m.findMany({ where: { name: { has: 'x' } } }))
+      .rejects.toThrow(/"has" is an array operator and "name" is not an array field/)
+  })
+
+  test('an enum array reads the same way', async () => {
+    expect(await find({ kinds: ['a', 'c'] })).toEqual([1, 2])
+    expect(await find({ kinds: { equals: ['a', 'b'] } })).toEqual([1])
+    expect(await find({ kinds: { has: 'c' } })).toEqual([2])
+  })
+
+  test('it survives AND / OR / NOT groups', async () => {
+    expect(await find({ OR: [{ tags: ['x'] }, { tags: ['z'] }] })).toEqual([1, 2])
+    expect(await find({ NOT: { tags: ['x'] } })).toEqual([2, 3])
+    expect(await find({ AND: [{ tags: ['y'] }, { name: 'b' }] })).toEqual([2])
+  })
+
+  test('it reaches the paths that build their own WHERE', async () => {
+    // A relation filter, an include filter and deleteMany each call buildWhere
+    // themselves; the array map has to reach the model each one is about.
+    expect(ids(await db.p.findMany({ where: { m: { is: { tags: ['x'] } } } }))).toEqual([1])
+
+    const withPosts = await db.m.findMany({ where: { id: 1 }, include: { posts: { where: { title: 't' } } } })
+    expect(withPosts[0].posts.length).toBe(1)
+
+    const d2 = await makeDb(SCHEMA, 'where-array-del')
+    await d2.m.createMany({ data: [
+      { id: 1, name: 'a', tags: ['x'] },
+      { id: 2, name: 'b', tags: ['z'] },
+    ]})
+    expect((await d2.m.deleteMany({ where: { tags: ['z'] } })).count).toBe(1)
+    expect(ids(await d2.m.findMany({}))).toEqual([1])
+    d2.$close()
+  })
+})
+
+// ─── schema mutation testing ─────────────────────────────────────────────────
+// Mutate the schema, run the ORIGINAL schema's derived checks against a database
+// built from the mutant, and see what nobody noticed.
+
+describe('schemaMutants', () => {
+  const S = `
+model Team { id Int @id  slug String @unique  name String @length(2, 40)  people Person[] }
+model Person {
+  id     Int    @id
+  email  String @email @unique
+  handle String @length(3, 12)
+  token  String @guarded
+  teamId Int
+  team   Team   @relation(fields: [teamId], references: [id])
+  @@gate("2.4.4.5")
+}
+`
+
+  test('one mutant per attribute occurrence, each carrying whole schema text', async () => {
+    const { schemaMutants } = await import('../src/mutate.js')
+    const all = schemaMutants(S)
+    const kinds = new Set(all.map((m: any) => m.kind))
+
+    expect(kinds.has('gate-drop')).toBe(true)
+    expect(kinds.has('gate-lower')).toBe(true)
+    expect(kinds.has('guarded-drop')).toBe(true)
+    expect(kinds.has('unique-drop')).toBe(true)
+    expect(kinds.has('validator-drop')).toBe(true)
+    expect(kinds.has('validator-widen')).toBe(true)
+    // Each is a complete schema, not a diff — a caller builds a client from it
+    // without knowing anything about how it was made.
+    for (const m of all) expect(m.text).toContain('model Person')
+    // A field carrying two rules is two separate holes.
+    expect(all.filter((m: any) => m.kind === 'validator-widen').length).toBe(2)
+  })
+
+  test('a gate lowered out of order is refused by the parser, and counted as a kill', async () => {
+    const { schemaMutants } = await import('../src/mutate.js')
+    // Levels must be non-decreasing in R.C.U.D order, so lowering `update`
+    // below `create` produces a schema the framework will not load. That is a
+    // kill — it cannot ship — but one nothing in the suite had to make.
+    const lowered = schemaMutants(S, { kinds: ['gate-lower'] })
+    expect(lowered.length).toBe(4)
+    expect(lowered.every((m: any) => m.text.includes('@@gate'))).toBe(true)
+  })
+
+  test('only the models are mutated — a database block is not a model', async () => {
+    const { schemaMutants } = await import('../src/mutate.js')
+    const withDb = `
+database main { path "./x.db" }
+enum Kind { a b }
+model One { id Int @id  name String @length(1, 5) }
+enum After { x y }
+`
+    const all = schemaMutants(withDb)
+    // `model One` opens and closes on one line. Left open it would swallow
+    // whatever came next — the enum below it is the case that proves it does not.
+    expect(all.every((m: any) => m.model === 'One')).toBe(true)
+    expect(all.length).toBe(1)
+  })
+
+  test('an attribute inside a doc comment is prose, not a mutation site', async () => {
+    // A mutant that edits a comment is behaviourally identical to the original
+    // and survives everything, so a well-commented schema scored WORSE. Found on
+    // `example`, whose Customer model documents what @guarded is not.
+    const { schemaMutants } = await import('../src/mutate.js')
+    const commented = `
+model Doc {
+  id   Int    @id
+  /// NOT @guarded — that is a system-context lock, and @guarded(5) does not parse.
+  name String @length(1, 5)   // @unique would be wrong here
+}
+`
+    const all = schemaMutants(commented)
+    expect(all.map((m: any) => m.kind)).toEqual(['validator-widen'])
+    // The comment survives the mutation it sits beside.
+    expect(all[0].text).toContain('// @unique would be wrong here')
+  })
+
+  test('a quoted // is not a comment', async () => {
+    // Truncating there produces a mutant that fails to parse, which counts as a
+    // kill — so the noise would have looked like coverage.
+    const { schemaMutants } = await import('../src/mutate.js')
+    const all = schemaMutants(`
+model Site { id Int @id  url String @default("http://x.test") @length(1, 200) }
+`)
+    expect(all.length).toBeGreaterThan(0)
+    for (const m of all) expect(m.text).toContain('http://x.test')
+    expect(all.every((m: any) => m.parses)).toBe(true)
+  })
+})
+
+describe('mutationScore', () => {
+  const S = `
+model Team { id Int @id  slug String @unique  name String @length(2, 40)  people Person[] }
+model Person {
+  id     Int    @id
+  email  String @email @unique
+  handle String @length(3, 12)
+  age    Int    @gte(18) @lte(120)
+  token  String @guarded
+  teamId Int
+  team   Team   @relation(fields: [teamId], references: [id])
+  @@gate("2.4.4.5")
+  @@allow('read', handle != null)
+}
+`
+
+  test('the derived checks catch the access and constraint mutations', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    const r = await mutationScore({ schema: S, build: (t: string) => createTestEnv({ schema: t }) })
+
+    expect(r.total).toBeGreaterThan(10)
+    expect(r.errored).toHaveLength(0)
+    expect(r.score).toBeGreaterThan(0.8)
+
+    // The one that survives is `@@allow('read', handle != null)` over a
+    // NON-optional column — a policy that admits every row there can ever be, so
+    // deleting it changes nothing anything could observe. A correct survival,
+    // and the reason `verifyRowPolicies` reports a one-sided predicate rather
+    // than passing it.
+    expect(r.survived.map((m: any) => m.kind)).toEqual(['allow-drop'])
+  }, 120_000)
+
+  test('an error row never counts as a kill', async () => {
+    // The trap this whole thing can fall into. Every mutant came back with the
+    // same 22 error rows once, and the score read 93% while four mutations went
+    // completely unnoticed — a mutation score counting its own harness failures
+    // as successes is the oracle problem wearing a percentage.
+    const { mutationScore } = await import('../src/mutate.js')
+    const r = await mutationScore({
+      schema: S,
+      // The check is stubbed, so breadth buys nothing here and every mutant
+      // costs a database.
+      kinds:  ['gate-drop', 'allow-drop'],
+      build:  (t: string) => createTestEnv({ schema: t }),
+      // Every mutant "fails" — but only in the ungraded outcomes.
+      check:  async () => [
+        { got: 'error',   message: 'could not run' },
+        { got: 'skipped', message: 'not graded' },
+      ],
+    })
+    expect(r.killed).toBe(r.refused.length)      // only the parser/loader kills
+    expect(r.survived.length).toBe(r.graded - r.refused.length)
+  }, 120_000)
+
+  test('a mutant the framework refuses to load is a kill, not an error', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    const r = await mutationScore({
+      schema: S,
+      kinds:  ['gate-lower'],
+      build:  (t: string) => createTestEnv({ schema: t }),
+    })
+    // A non-monotonic @@gate parses and the gate plugin refuses it at
+    // construction — the two halves of "is this schema legal" do not agree, and
+    // only the second is reached here.
+    expect(r.refused.length).toBeGreaterThan(0)
+    expect(r.errored).toHaveLength(0)
+  }, 120_000)
+})
+
+// ─── Batch 1: values, virtual fields, empty writes, array membership ──────────
+
+describe('a write value that cannot be bound', () => {
+  const S = `model Post {
+    id    Int    @id @default(autoincrement())
+    title String
+    views Int    @default(0)
+  }`
+
+  test('every write path refuses an object by name, and writes nothing', async () => {
+    const db = await makeDb(S, 'bind-write')
+    await db.post.create({ data: { title: 'a', views: 5 } })
+
+    // The shape a caller arriving from Prisma writes first. Before the guard,
+    // bun:sqlite read it as a bag of named params and dropped EVERY binding —
+    // so `update` matched no row and reported it as "no such row".
+    const bad = { views: { increment: 1 } }
+    await expect(db.post.update({ where: { id: 1 }, data: bad })).rejects.toThrow(/views/)
+    await expect(db.post.updateMany({ where: {}, data: bad })).rejects.toThrow(/views/)
+    await expect(db.post.create({ data: { title: 'b', views: { increment: 1 } } })).rejects.toThrow(/views/)
+    await expect(db.post.upsert({ where: { id: 1 }, create: { title: 'c' }, update: bad })).rejects.toThrow(/views/)
+    await expect(db.post.createMany({ data: [{ title: 'd', views: { increment: 1 } }] })).rejects.toThrow(/views/)
+
+    const rows = await db.post.findMany()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].views).toBe(5)
+  })
+
+  test('the message says there are no atomic operators', async () => {
+    const db = await makeDb(S, 'bind-msg')
+    await db.post.create({ data: { title: 'a' } })
+    await expect(db.post.update({ where: { id: 1 }, data: { views: { increment: 1 } } }))
+      .rejects.toThrow(/atomic update operators/)
+  })
+
+  test('a read refuses an object operand by name rather than answering nothing', async () => {
+    const db = await makeDb(S, 'bind-read')
+    await db.post.create({ data: { title: 'a', views: 5 } })
+    // A read has no `changes` to notice, so this one answered [] forever.
+    await expect(db.post.findMany({ where: { views: { equals: { n: 1 } } } })).rejects.toThrow(/views/)
+    await expect(db.post.findMany({ where: { title: { x: 1 } } })).rejects.toThrow(/title/)
+  })
+
+  test('functions and symbols are named too, not left to the driver', async () => {
+    const db = await makeDb(S, 'bind-fn')
+    await expect(db.post.create({ data: { title: () => 'x' } })).rejects.toThrow(/title/)
+    await expect(db.post.create({ data: { title: Symbol('x') } })).rejects.toThrow(/title/)
+  })
+
+  test('legitimate object-valued columns still write', async () => {
+    const db = await makeDb(`model Doc {
+      id    Int      @id @default(autoincrement())
+      meta  Json?
+      words String[] @default("[]")
+      when  DateTime
+    }`, 'bind-ok')
+    const row = await db.doc.create({ data: { meta: { a: 1 }, words: ['x'], when: new Date('2024-01-01') } })
+    expect(row.meta).toEqual({ a: 1 })
+    expect(row.words).toEqual(['x'])
+  })
+})
+
+describe('a field the database owns cannot be written', () => {
+  const S = `model Post {
+    id    Int    @id @default(autoincrement())
+    title String
+    slug  String @computed
+    upper String @generated("upper(title)")
+  }`
+
+  test('@generated and @computed are refused by name on every write path', async () => {
+    const db = await makeDb(S, 'virtual-write', { computed: { Post: { slug: r => r.title } } })
+    await db.post.create({ data: { title: 'a' } })
+    await expect(db.post.update({ where: { id: 1 }, data: { upper: 'ZZZ' } })).rejects.toThrow(/upper/)
+    await expect(db.post.update({ where: { id: 1 }, data: { slug: 'zzz' } })).rejects.toThrow(/slug/)
+    await expect(db.post.updateMany({ where: {}, data: { upper: 'ZZZ' } })).rejects.toThrow(/upper/)
+    await expect(db.post.create({ data: { title: 'b', upper: 'ZZZ' } })).rejects.toThrow(/upper/)
+    expect((await db.post.findFirst({ where: { id: 1 } })).upper).toBe('A')
+  })
+
+  test('the refusal says WHY, so the caller knows it is not a typo', async () => {
+    const db = await makeDb(S, 'virtual-why', { computed: { Post: { slug: r => r.title } } })
+    await db.post.create({ data: { title: 'a' } })
+    await expect(db.post.update({ where: { id: 1 }, data: { upper: 'Z' } })).rejects.toThrow(/@generated/)
+    await expect(db.post.update({ where: { id: 1 }, data: { slug: 'z' } })).rejects.toThrow(/@computed/)
+  })
+
+  test('an UNKNOWN key is still stripped silently — mass assignment stays protected', async () => {
+    const db = await makeDb(S, 'virtual-mass', { computed: { Post: { slug: r => r.title } } })
+    const row = await db.post.create({ data: { title: 'a', notAColumn: 'x', isAdmin: true } })
+    expect(row.title).toBe('a')
+    expect('notAColumn' in row).toBe(false)
+  })
+})
+
+describe('an update with nothing left to set', () => {
+  const S = `model Post {
+    id    Int    @id @default(autoincrement())
+    title String
+  }`
+
+  test('updateMany answers the matched count instead of emitting invalid SQL', async () => {
+    const db = await makeDb(S, 'empty-set')
+    await db.post.create({ data: { title: 'a' } })
+    await db.post.create({ data: { title: 'b' } })
+
+    // `SET  WHERE` is a syntax error. Reachable from an ordinary form post whose
+    // fields no longer match the model, because stripping unknown keys is the
+    // mass-assignment protection working as designed.
+    expect(await db.post.updateMany({ where: {}, data: {} })).toEqual({ count: 2 })
+    expect(await db.post.updateMany({ where: { id: 1 }, data: { bogus: 1 } })).toEqual({ count: 1 })
+    expect(await db.post.updateMany({ where: { id: 999 }, data: {} })).toEqual({ count: 0 })
+    expect((await db.post.findMany()).map(r => r.title)).toEqual(['a', 'b'])
+  })
+
+  test('a real updateMany still binds SET before WHERE', async () => {
+    const db = await makeDb(S, 'empty-set-ok')
+    await db.post.create({ data: { title: 'a' } })
+    await db.post.create({ data: { title: 'b' } })
+    expect(await db.post.updateMany({ where: { id: 2 }, data: { title: 'z' } })).toEqual({ count: 1 })
+    expect((await db.post.findMany()).map(r => r.title)).toEqual(['a', 'z'])
+  })
+})
+
+describe('in / notIn on an array column', () => {
+  const S = `model Post {
+    id    Int      @id @default(autoincrement())
+    name  String
+    words String[] @default("[]")
+  }`
+  const seed = async (db: any) => {
+    await db.post.create({ data: { name: 'a', words: ['x', 'y'] } })
+    await db.post.create({ data: { name: 'b', words: ['z'] } })
+    await db.post.create({ data: { name: 'c', words: [] } })
+  }
+
+  test('`in` says what the documented shorthand says', async () => {
+    const db = await makeDb(S, 'array-in'); await seed(db)
+    const ids = async (where: any) => (await db.post.findMany({ where })).map((r: any) => r.id)
+    // filtering.md documents the bare array AS `in`. It answered and `in` did not.
+    expect(await ids({ words: { in: ['x', 'y'] } })).toEqual([1])
+    expect(await ids({ words: ['x', 'y'] })).toEqual([1])
+    expect(await ids({ words: { hasSome: ['x', 'y'] } })).toEqual([1])
+    expect(await ids({ words: { in: ['y', 'z'] } })).toEqual([1, 2])
+    expect(await ids({ words: { in: [] } })).toEqual([])
+  })
+
+  test('`notIn` is its negation, and an empty array row counts as excluded from neither', async () => {
+    const db = await makeDb(S, 'array-notin'); await seed(db)
+    const ids = async (where: any) => (await db.post.findMany({ where })).map((r: any) => r.id)
+    expect(await ids({ words: { notIn: ['x'] } })).toEqual([2, 3])
+    expect(await ids({ words: { notIn: ['x', 'z'] } })).toEqual([3])
+  })
+
+  test('a scalar column is untouched by the change', async () => {
+    const db = await makeDb(S, 'array-in-scalar'); await seed(db)
+    const ids = async (where: any) => (await db.post.findMany({ where })).map((r: any) => r.id)
+    expect(await ids({ name: { in: ['a', 'b'] } })).toEqual([1, 2])
+    expect(await ids({ name: { notIn: ['a'] } })).toEqual([2, 3])
+  })
+})
+
+describe('a grouped or aggregated value keeps the type a row read gives it', () => {
+  const S = `model Post {
+    id    Int      @id @default(autoincrement())
+    flag  Boolean  @default(false)
+    words String[] @default("[]")
+    meta  Json?
+    num   Int      @default(0)
+  }`
+
+  test('groupBy and _max hydrate like findMany', async () => {
+    const db = await makeDb(S, 'hydrate')
+    await db.post.create({ data: { flag: true,  words: ['x'], meta: { t: 1 }, num: 1 } })
+    await db.post.create({ data: { flag: false, words: ['z'], meta: { t: 2 }, num: 2 } })
+
+    const g = await db.post.groupBy({ by: ['flag'], _count: true })
+    expect(g.map((r: any) => r.flag).sort()).toEqual([false, true])
+
+    const gw = await db.post.groupBy({ by: ['words'], _count: true })
+    expect(gw.every((r: any) => Array.isArray(r.words))).toBe(true)
+
+    const gm = await db.post.groupBy({ by: ['meta'], _count: true })
+    expect(gm.every((r: any) => typeof r.meta === 'object' && r.meta !== null)).toBe(true)
+
+    const a = await db.post.aggregate({ _max: { flag: true, words: true } })
+    expect(typeof a._max.flag).toBe('boolean')
+    expect(Array.isArray(a._max.words)).toBe(true)
+  })
+
+  test('_sum and _avg are NOT coerced — the sum of a Boolean column is a count', async () => {
+    const db = await makeDb(S, 'hydrate-sum')
+    await db.post.create({ data: { flag: true,  num: 1 } })
+    await db.post.create({ data: { flag: true,  num: 2 } })
+    await db.post.create({ data: { flag: false, num: 3 } })
+    const a = await db.post.aggregate({ _sum: { flag: true, num: true }, _avg: { flag: true } })
+    expect(a._sum.flag).toBe(2)      // not `true`
+    expect(a._sum.num).toBe(6)
+    expect(a._avg.flag).toBeCloseTo(2 / 3)
+  })
+})
+
+// ─── Tier 1 + 2: a filter that cannot match is answerable, and refused early ──
+
+describe('$checkWhere says WHY a key cannot be filtered', () => {
+  const S = `model Post {
+    id    Int     @id @default(autoincrement())
+    title String
+    comp  String? @computed
+    enc   String? @encrypted
+    encs  String? @encrypted(deterministic: true)
+    hsh   String? @hashed
+  }`
+
+  test('reasons match $checkOrderBy\'s contract', async () => {
+    const db = await makeDb(S, 'cw-reasons', {
+      encryptionKey: 'a'.repeat(64),
+      computed: { Post: { comp: (r: any) => r.title } },
+    })
+    expect(db.$checkWhere('post', { title: 'x' })).toEqual([])
+    expect(db.$checkWhere('post', { encs:  'x' })).toEqual([])   // deterministic IS filterable
+    expect(db.$checkWhere('post', { hsh:   'x' })).toEqual([])   // so is a digest
+
+    const [comp] = db.$checkWhere('post', { comp: 'A' })
+    expect(comp.reason).toBe('computed')
+    expect(comp.message).toContain('@computed')
+
+    const [enc] = db.$checkWhere('post', { enc: 'x' })
+    expect(enc.reason).toBe('encrypted')
+    expect(enc.message).toContain('deterministic: true')
+    expect(enc.message).toContain('@hashed')
+
+    const [unk] = db.$checkWhere('post', { bogus: 1 })
+    expect(unk.reason).toBe('unknown')
+  })
+
+  test('an unfilterable key is not offered as valid', async () => {
+    const db = await makeDb(S, 'cw-allowed', {
+      encryptionKey: 'a'.repeat(64),
+      computed: { Post: { comp: (r: any) => r.title } },
+    })
+    const [unk] = db.$checkWhere('post', { bogus: 1 })
+    expect(unk.allowed).not.toContain('comp')
+    expect(unk.allowed).not.toContain('enc')
+    expect(unk.allowed).toContain('title')
+  })
+
+  test('every flavour of client answers identically — filterability is schema, not auth', async () => {
+    const db = await makeDb(S, 'cw-flavours', {
+      encryptionKey: 'a'.repeat(64),
+      computed: { Post: { comp: (r: any) => r.title } },
+    })
+    const q = { comp: 'A' }
+    const r = JSON.stringify(db.$checkWhere('post', q))
+    expect(JSON.stringify(db.asSystem().$checkWhere('post', q))).toBe(r)
+    expect(JSON.stringify(db.$setAuth({ id: 1 }).$checkWhere('post', q))).toBe(r)
+  })
+
+  test('a WRITE refuses such a where, as it already did for an unknown key', async () => {
+    const db = await makeDb(S, 'cw-write', {
+      encryptionKey: 'a'.repeat(64),
+      computed: { Post: { comp: (r: any) => r.title } },
+    })
+    await db.post.create({ data: { title: 'a' } })
+    await expect(db.post.updateMany({ where: { comp: 'A' }, data: { title: 'z' } })).rejects.toThrow(/@computed/)
+  })
+})
+
+describe('a predicate that can never match is refused at startup', () => {
+  test('a global filter over a @computed field', async () => {
+    const schema = `model Post {
+      id Int @id @default(autoincrement())
+      title String
+      comp String? @computed
+    }`
+    // Silently filtered every row out of every read, forever.
+    await expect(makeDb(schema, 'tier2-filter', {
+      computed: { Post: { comp: (r: any) => r.title } },
+      filters:  { post: { comp: 'A' } },
+    })).rejects.toThrow(/global filter.*cannot match/s)
+  })
+
+  test('a @@allow policy comparing a protected field — every mode of it', async () => {
+    // policy.js compiles predicates without the operand rewrite a where gets, so
+    // the plaintext is compared against stored bytes. Fails CLOSED: the model reads
+    // as empty for every caller, which looks like a table with no data. True of all
+    // three modes — a stable encoding is still not the plaintext (FJS-214).
+    const mk = (decl: string) => `model Doc {
+      id Int @id @default(autoincrement())
+      title String
+      owner String ${decl}
+      @@allow('read', owner == auth().email)
+    }`
+    await expect(makeDb(mk('@encrypted(deterministic: true)'), 'tier2-pol-d', { encryptionKey: 'a'.repeat(64) }))
+      .rejects.toThrow(/policy compares a value no row can satisfy/)
+    await expect(makeDb(mk('@hashed'), 'tier2-pol-h', { encryptionKey: 'a'.repeat(64) }))
+      .rejects.toThrow(/policy compares a value no row can satisfy/)
+    await expect(makeDb(mk('@encrypted'), 'tier2-pol', { encryptionKey: 'a'.repeat(64) }))
+      .rejects.toThrow(/@encrypted/)
+  })
+
+  test('an ordinary policy and an ordinary global filter still build', async () => {
+    const db = await makeDb(`model Doc {
+      id Int @id @default(autoincrement())
+      title String
+      ownerId Int
+      status String
+      @@allow('read', ownerId == auth().id)
+    }`, 'tier2-ok', { filters: { doc: { status: 'live' } } })
+    await db.asSystem().doc.create({ data: { title: 'a', ownerId: 1, status: 'live' } })
+    expect(await db.$setAuth({ id: 1 }).doc.count()).toBe(1)
+  })
+
+  test('a function-form global filter is left alone — it needs a ctx to judge', async () => {
+    const db = await makeDb(`model Post {
+      id Int @id @default(autoincrement())
+      title String
+      comp String? @computed
+    }`, 'tier2-fn', {
+      computed: { Post: { comp: (r: any) => r.title } },
+      filters:  { post: () => ({ title: 'a' }) },
+    })
+    await db.post.create({ data: { title: 'a' } })
+    expect(await db.post.count()).toBe(1)
+  })
+})
+
+// ─── Tier 3: a filter that cannot match throws on a read, not just a write ────
+
+describe('an impossible filter is refused on a read', () => {
+  const S = `model Post {
+    id    Int     @id @default(autoincrement())
+    title String
+    comp  String? @computed
+    enc   String? @encrypted
+    encs  String? @encrypted(deterministic: true)
+    hsh   String? @hashed
+  }`
+  const mk = (n: string) => makeDb(S, n, {
+    encryptionKey: 'a'.repeat(64),
+    computed: { Post: { comp: (r: any) => r.title?.toUpperCase() ?? null } },
+  })
+
+  test('@computed — because the alternative is not "fewer rows", it is the wrong rows', async () => {
+    const db = await mk('t3-computed')
+    const sys = db.asSystem()
+    for (const t of ['a', 'b']) await sys.post.create({ data: { title: t } })
+    // `comp` is not a column, so SQLite reads the quoted identifier as a string
+    // literal and compares two constants: { comp: 'comp' } was TRUE for every
+    // row, including rows whose computed value is 'A'.
+    await expect(sys.post.findMany({ where: { comp: 'A' } })).rejects.toThrow(/@computed/)
+    await expect(sys.post.findMany({ where: { comp: 'comp' } })).rejects.toThrow(/@computed/)
+    await expect(sys.post.count({ where: { comp: 'A' } })).rejects.toThrow(/@computed/)
+  })
+
+  test('@encrypted under a random IV — naming both cures', async () => {
+    const db = await mk('t3-enc')
+    const sys = db.asSystem()
+    await sys.post.create({ data: { title: 'a', enc: 'e1' } })
+    await expect(sys.post.findMany({ where: { enc: 'e1' } })).rejects.toThrow(/deterministic: true/)
+    await expect(sys.post.findMany({ where: { enc: 'e1' } })).rejects.toThrow(/@hashed/)
+  })
+
+  test('an UNKNOWN key still only warns on a read — that trade was ruled on separately', async () => {
+    const db = await mk('t3-unknown')
+    await db.post.create({ data: { title: 'a' } })
+    expect(await db.post.findMany({ where: { bogus: 1 } })).toEqual([])
+  })
+
+  test('a legitimate filter is untouched', async () => {
+    const db = await mk('t3-ok')
+    const sys = db.asSystem()
+    await sys.post.create({ data: { title: 'a', encs: 's1' } })
+    expect((await sys.post.findMany({ where: { title: 'a' } })).length).toBe(1)
+    expect((await sys.post.findMany({ where: { encs: 's1' } })).length).toBe(1)
+  })
+})
+
+describe('both matchable modes answer every spelling of equality', () => {
+  // One body, two modes. The rewrite is shared on purpose — encode the operand the
+  // way the column was encoded — so the suite asks the same questions of both
+  // rather than trusting that a second encoder inherited the first one's fixes.
+  const S = `model User {
+    id    Int    @id @default(autoincrement())
+    name  String
+    email String @encrypted(deterministic: true)
+    token String @hashed
+  }`
+
+  const each: [string, 'email' | 'token'][] = [['@encrypted(deterministic)', 'email'], ['@hashed', 'token']]
+
+  for (const [label, col] of each) {
+    test(`${label}: in / notIn / not / the bare array all encode their operands`, async () => {
+      const db = await makeDb(S, `enc-eq-${col}`, { encryptionKey: 'c'.repeat(64) })
+      const sys = db.asSystem()
+      await sys.user.create({ data: { name: 'a', email: 'a@x.io', token: 'ta' } })
+      await sys.user.create({ data: { name: 'b', email: 'b@x.io', token: 'tb' } })
+      const [A, B] = col === 'email' ? ['a@x.io', 'b@x.io'] : ['ta', 'tb']
+      const ids = async (where: any) => (await sys.user.findMany({ where })).map((r: any) => r.id)
+
+      // Only `{ col: value }` used to be encoded. `in` compared plaintext against
+      // stored bytes and answered nothing; `not` answered EVERY row, the excluded
+      // one included, because plaintext never equals ciphertext.
+      expect(await ids({ [col]: A })).toEqual([1])
+      expect(await ids({ [col]: { equals: A } })).toEqual([1])
+      expect(await ids({ [col]: { in: [A] } })).toEqual([1])
+      expect(await ids({ [col]: [A, B] })).toEqual([1, 2])
+      expect(await ids({ [col]: { not: A } })).toEqual([2])
+      expect(await ids({ [col]: { notIn: [A] } })).toEqual([2])
+    })
+
+    test(`${label}: an operator the encoding cannot answer is refused, not silently wrong`, async () => {
+      const db = await makeDb(S, `enc-ops-${col}`, { encryptionKey: 'c'.repeat(64) })
+      const sys = db.asSystem()
+      await sys.user.create({ data: { name: 'a', email: 'a@x.io', token: 'ta' } })
+      for (const op of [{ contains: 'x' }, { startsWith: 'a' }, { gt: 'a' }])
+        await expect(sys.user.findMany({ where: { [col]: op } })).rejects.toThrow(/equality/)
+    })
+  }
+})
+
+// ─── @hashed and @encrypted(deterministic) — the declaration side ─────────────
+//
+// FJS-211. The old `@encrypted(searchable: true)` stored an HMAC under a name that
+// promises the value comes back, destroyed the plaintext on write, and handed the
+// digest to `asSystem()` as if it were the value. It is replaced by two attributes
+// that each say what they do, along the one axis that matters — can this be read
+// back? — and the old spelling is refused rather than translated, because guessing
+// which of the two a schema meant is how the value was lost in the first place.
+
+describe('@encrypted(deterministic) / @hashed — declaration', () => {
+  const K = { encryptionKey: 'd'.repeat(64) }
+
+  test('the old spelling is refused, and names both replacements', () => {
+    const r = parse(`model U { id Int @id  email String @encrypted(searchable: true) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/deterministic: true/)
+    expect(r.errors.join(' ')).toMatch(/@hashed/)
+  })
+
+  test('an unknown @encrypted option is refused by name', () => {
+    expect(parse(`model U { id Int @id  e String @encrypted(algorithm: true) }`).errors.join(' '))
+      .toMatch(/only accepts \(deterministic: true\/false\)/)
+  })
+
+  test('@hashed does not compose with anything that implies a readable value', async () => {
+    const cases: [string, RegExp][] = [
+      ['t String @hashed @encrypted',            /conflicts with @encrypted/],
+      ['t String @hashed @secret',               /conflicts with @secret/],
+      ['t String @hashed @guarded(all)',         /conflicts with @guarded/],
+      [`t String @hashed @allow('read', true)`,  /conflicts with @allow/],
+      ['t Int    @hashed',                       /requires a String field/],
+      ['t String[] @hashed',                     /cannot be applied to an array/],
+    ]
+    for (const [decl, re] of cases) {
+      const r = parse(`model U { id Int @id\n  ${decl} }`)
+      expect(r.valid).toBe(false)
+      expect(r.errors.join(' ')).toMatch(re)
+    }
+  })
+
+  test('a digest is never handed to any caller, by any path', async () => {
+    const db = await makeDb(`model U { id Int @id  name String  pw String @hashed }`, 'hashed-paths', K)
+    const sys = db.asSystem()
+    await sys.u.create({ data: { id: 1, name: 'a', pw: 'hunter2' } })
+
+    // The row path strips it — including asSystem(), which lifts every other lock.
+    expect('pw' in (await sys.u.findUnique({ where: { id: 1 } }))).toBe(false)
+    expect('pw' in (await sys.u.findMany())[0]).toBe(false)
+    expect('pw' in (await sys.u.findMany({ distinct: ['pw'] }))[0]).toBe(false)
+
+    // And the paths that project a column without building a row. These answered
+    // the digest — a read of a value declared unreadable, and silent.
+    await expect(sys.u.findUnique({ where: { id: 1 }, select: { pw: true } })).rejects.toThrow(/one-way digest/)
+    await expect(sys.u.groupBy({ by: ['pw'], _count: true })).rejects.toThrow(/one-way digest/)
+    await expect(sys.u.aggregate({ _max: { pw: true } })).rejects.toThrow(/one-way digest/)
+    db.$close()
+  })
+
+  test('@hashed still matches, which is the only thing it promises', async () => {
+    const db = await makeDb(`model U { id Int @id  name String  pw String @hashed }`, 'hashed-match', K)
+    const sys = db.asSystem()
+    await sys.u.create({ data: { id: 1, name: 'a', pw: 'hunter2' } })
+    expect((await sys.u.findFirst({ where: { pw: 'hunter2' } }))?.name).toBe('a')
+    expect(await sys.u.findFirst({ where: { pw: 'wrong' } })).toBeNull()
+
+    // A rewrite is still a write, and the new value matches while the old stops.
+    await sys.u.update({ where: { id: 1 }, data: { pw: 'letmein' } })
+    expect((await sys.u.findFirst({ where: { pw: 'letmein' } }))?.id).toBe(1)
+    expect(await sys.u.findFirst({ where: { pw: 'hunter2' } })).toBeNull()
+    db.$close()
+  })
+
+  test('the two encodings are not each other — a digest is not a deterministic ciphertext', async () => {
+    const db = await makeDb(`model U { id Int @id  a String @encrypted(deterministic: true)  b String @hashed }`, 'enc-sep', K)
+    await db.asSystem().u.create({ data: { id: 1, a: 'same', b: 'same' } })
+    const raw = (await db.asSystem().sql`SELECT a, b FROM u WHERE id = 1`)[0] as any
+    // Same plaintext, same key, different domain — the IV is derived under its own
+    // salt, so the digest cannot be read off the front of the ciphertext.
+    expect(raw.a.startsWith('v1d.')).toBe(true)
+    expect(raw.b.startsWith('v1h.')).toBe(true)
+    expect(raw.a.slice(4)).not.toContain(raw.b.slice(4))
+    db.$close()
+  })
+
+  test('a JSON Schema marks @hashed writeOnly and still offers it on create', async () => {
+    const r = parse(`model U { id Int @id  name String  pw String @hashed }`)
+    const js: any = generateJsonSchema(r.schema, { mode: 'create', audience: 'client' })
+    // A password is submitted by the person it belongs to, so unlike @guarded it is
+    // NOT withheld from the client — it is marked as never coming back.
+    expect(js.$defs.U.properties.pw.writeOnly).toBe(true)
+    expect(js.$defs.U.required).toContain('pw')
+  })
+
+  test('@secret(deterministic: true) rotates AND looks up', async () => {
+    const schema = `model K { id Int @id  label String  token String @secret(deterministic: true) }`
+    const r = parse(schema)
+    expect(r.valid).toBe(true)
+    const path = tmpDb('secret-det' + Math.random().toString(36).slice(2))
+    const { Database: BunDb } = await import('bun:sqlite')
+    const raw = new BunDb(path)
+    for (const s of splitStatements(generateDDL(r.schema))) if (!s.startsWith('PRAGMA')) raw.run(s)
+    raw.close()
+
+    const dbOld = await createClient({ parsed: r, db: path, encryptionKey: 'd'.repeat(64) })
+    await (dbOld as any).asSystem().k.create({ data: { id: 1, label: 'k1', token: 'tok-abc' } })
+    expect((await (dbOld as any).asSystem().k.findFirst({ where: { token: 'tok-abc' } }))?.label).toBe('k1')
+    await dbOld.$rotateKey('e'.repeat(64))
+    dbOld.$close()
+
+    // A fresh client, because the rotating one cannot read its own output — that is
+    // FJS-236 and it predates this attribute. What is asserted here is the half this
+    // change owns: the column was re-encrypted in the mode it was DECLARED with, so
+    // it is still both readable and matchable under the new key.
+    const dbNew = await createClient({ parsed: r, db: path, encryptionKey: 'e'.repeat(64) })
+    const sys   = (dbNew as any).asSystem()
+    expect((await sys.k.findFirst({ where: { id: 1 } }))?.token).toBe('tok-abc')
+    expect((await sys.k.findFirst({ where: { token: 'tok-abc' } }))?.label).toBe('k1')
+    const col = (await sys.sql`SELECT token FROM k WHERE id = 1`)[0] as any
+    expect(col.token.startsWith('v1d.')).toBe(true)
+    dbNew.$close()
   })
 })

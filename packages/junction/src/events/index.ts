@@ -23,6 +23,24 @@ export interface IEventBus {
    *  Lets hot paths skip event-object allocation entirely when nobody
    *  is subscribed (the common case for telemetry). */
   hasListeners(event?: string):                                  boolean
+  /** How many are listening, and to what.
+   *
+   *  `hasListeners` answers a yes/no, which is the wrong question for anyone
+   *  looking at a missing announcement: *the bus is idle* and *four things are
+   *  subscribed to three events* are the same answer. The handler map is
+   *  closure-private, so an operations screen could not count them (`FJS-143`).
+   *
+   *  The two wildcard channels are reported under their own keys rather than
+   *  spread across the event names they would receive, because a subscriber to
+   *  everything is a different fact from a subscriber to one thing. */
+  stats():                                                       EventBusStats
+}
+
+export interface EventBusStats {
+  /** Subscriber count per event name, including `'*'` and `'__any__'`. */
+  events: Record<string, number>
+  /** Every subscriber on the bus, wildcards included. */
+  total:  number
 }
 
 // ─── In-process implementation ────────────────────────────────────────────
@@ -167,6 +185,22 @@ export function createEventBus(): IEventBus {
         if (set.size) return true
       }
       return false
+    },
+
+    // ── stats ────────────────────────────────────────────────────
+
+    stats(): EventBusStats {
+      const events: Record<string, number> = {}
+      let total = 0
+      for (const [event, set] of handlers) {
+        // An event whose last handler unsubscribed keeps an empty Set — off()
+        // deletes the handler, not the key. Reporting it would say something
+        // is subscribed to an event nothing is subscribed to.
+        if (!set.size) continue
+        events[event] = set.size
+        total += set.size
+      }
+      return { events, total }
     }
   }
 }

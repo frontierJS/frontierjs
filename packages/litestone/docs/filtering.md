@@ -48,13 +48,137 @@
 
 ## Array fields
 
+An array field (`String[]`, `Int[]`, `Enum[]`) is a JSON column, and every
+operator below reads its elements.
+
 ```js
-// JSON array fields (String[] etc.)
-{ tags: { has: 'sqlite' } }                  // contains element
-{ tags: { hasEvery: ['sqlite', 'bun'] } }    // contains all
+{ tags: { has: 'sqlite' } }                  // contains this element
+{ tags: { hasEvery: ['sqlite', 'bun'] } }    // contains all of them
 { tags: { hasSome: ['sqlite', 'mysql'] } }   // contains at least one
-{ tags: { isEmpty: true } }                  // empty array
+{ tags: { hasNone: ['mysql'] } }             // contains none of them
+{ tags: { in:     ['sqlite', 'mysql'] } }    // same question as hasSome
+{ tags: { notIn:  ['mysql'] } }              // same question as hasNone
+{ tags: { isEmpty: true } }                  // no elements
+{ tags: { equals: ['sqlite', 'bun'] } }      // IS exactly this, in this order
+{ tags: { not:    ['sqlite', 'bun'] } }      // is anything else
 ```
+
+`in` and `notIn` read the elements, like every other operator here — on a scalar
+column they compare its one value, on an array column its several. That is what
+makes the bare-array shorthand below exactly `in`, in both places.
+
+### A bare array
+
+The shorthand means the same thing on both kinds of column — **the column's
+value is in this list**:
+
+```js
+{ status: ['active', 'pending'] }   // status IN (…)                one value
+{ tags:   ['sqlite', 'bun'] }       // any element IN (…)           several
+```
+
+A scalar column has one value to test; an array column supplies its elements, so
+the `IN` moves inside `json_each`. On an array column it is therefore the same
+question as `hasSome`, reached without a new word.
+
+**It is not `equals`.** `{ tags: ['sqlite', 'bun'] }` matches a row tagged
+`['sqlite', 'bun', 'wal']`; `{ tags: { equals: [...] } }` does not. Prisma reads
+the bare array the other way, as an exact match — worth knowing if you are coming
+from it. Litestone chose the wider reading because the two mistakes fail
+differently: asking for a set and getting a superset is visible, and asking for
+membership and getting an empty result is not.
+
+`equals` and `not` compare the whole document, so they are **order-sensitive**:
+`['bun', 'sqlite']` does not match a row stored as `['sqlite', 'bun']`. For an
+order-independent exact match, pair `hasEvery` with a length check.
+
+An array operator on a column that is not an array is refused by name:
+
+```
+where clause: "has" is an array operator and "name" is not an array field
+```
+
+## Values a filter cannot take
+
+A filter value has to be something SQLite can bind. An object is not, and it is
+refused naming the field:
+
+```js
+db.post.findMany({ where: { views: { equals: { n: 1 } } } })
+// Error: where clause: field "views" was given an object where a value was
+// expected — an operator object belongs one level up (`views: { gt: 1 }`), and
+// a nested object needs @type(...) on the column
+```
+
+This is worth a rule of its own because of how it used to fail. `bun:sqlite`
+reads a plain object as a bag of **named** parameters; a statement built with
+positional `?` matches none of its keys, so it ran with *every* binding dropped —
+including the WHERE — and raised nothing. The read answered `[]` and the
+equivalent write changed nothing while reporting "no such row".
+
+## What cannot be filtered
+
+A key can be a real field and still be unfilterable, and the two cases fail the
+same way — no rows, no error:
+
+| | why |
+| --- | --- |
+| `@computed` | not a column. SQLite reads an unresolvable `"comp"` as the **string literal** `'comp'`, so the predicate compares two constants: `{ comp: 'A' }` matches nothing and `{ comp: 'comp' }` matches **everything** |
+| `@encrypted` (random IV) | the column holds AES-GCM ciphertext under a random IV, so no plaintext can equal it |
+
+`@encrypted(deterministic: true)` and `@hashed` **are** filterable by equality — the
+query value is encoded the same way the column was before comparing. Both answer
+`equals` / `not` / `in` / `notIn` and the bare-array shorthand, and both **refuse**
+anything else by name (`contains`, `startsWith`, `gt`, …), because an encoding
+preserves equality and nothing else.
+
+### Asking without running the query
+
+```js
+db.$checkWhere('post', { comp: 'A' })
+// → [{ key: 'comp', reason: 'computed', suggestion: null,
+//      allowed: [...], message: "'comp' is a @computed field on Post — …" }]
+```
+
+`$checkOrderBy`'s sibling, same contract: `[]` means no problems, an unknown
+accessor also answers `[]` (*I cannot judge this* is not *this is wrong*), and
+every flavour of client — root, `$setAuth`, `asSystem`, `$scopedBy` — answers
+identically, because filterability is a fact about the schema. `reason` is
+`'computed'`, `'encrypted'` or `'unknown'`, so a boundary can say different
+sentences for each, and `allowed` lists only keys that can actually be filtered.
+
+**An unfilterable key throws**, on reads and writes alike:
+
+```js
+db.post.findMany({ where: { comp: 'A' } })
+// ValidationError: 'comp' is a @computed field on Post.findMany — it is derived
+// in JS after the row is read, so SQLite cannot filter by it. …
+```
+
+An **unknown** key still only warns on a read (and throws on a write, as it
+always did). The two are treated differently on purpose: a typo returns fewer
+rows and leaves the caller something to notice, while a key that is real and
+spelled correctly leaves nothing at all — `{ comp: 'A' }` answers `[]`, which
+reads as *no data*, and `{ comp: 'comp' }` answers **every row**, because SQLite
+compares two string constants. A filter that returns rows not matching it cannot
+be reported by a warning in a log nobody is reading.
+
+### Refused before the first query
+
+Two places name a filter once and use it for every read, so a mistake there is
+permanent and invisible. Both are checked when the client is built:
+
+```js
+createClient({ filters: { post: { comp: 'A' } } })
+// Error: createClient: the global filter for "post" cannot match any row — …
+
+// @@allow('read', owner == auth().email)  where owner is @encrypted
+// Error: Doc: the @@allow('read', …) policy compares a value no row can
+// satisfy, so every caller would read this model as empty — …
+```
+
+A policy predicate is compiled without the rewrite a `where` gets, so an
+encrypted or hashed column cannot appear in one at all, in any mode (`FJS-214`).
 
 ## Soft delete
 

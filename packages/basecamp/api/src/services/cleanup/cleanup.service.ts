@@ -4,23 +4,23 @@
 // Mounted at /cleanup. Custom methods dispatch on X-Service-Method:
 //   usage   — per-server reclaim candidates, read-shaped, addresses the COLLECTION
 //   targets — the vocabulary, fetched rather than shipped in the bundle
-//   report  — the agent's, no session, replaces that server's picture
+//   report  — the outpost's, no session, replaces that server's picture
 //   run     — queue a sweep on one server or on every reachable one
 //
 // The pair this completes is `/recipes/`: a recipe is arbitrary code and needs
 // a role to author, a cleanup names targets from `targets.ts` and can be run by
-// anyone holding the pager. Same machines, same agent, opposite safeguards —
+// anyone holding the pager. Same machines, same outpost, opposite safeguards —
 // which is the whole reason both exist rather than one screen that runs
 // `docker system prune` as a saved script.
 //
 // **What is here is a picture, not a record**, exactly like `Volume`: a
-// `DiskUsage` row exists because an agent reported it, and the numbers are
+// `DiskUsage` row exists because an outpost reported it, and the numbers are
 // `docker system df`'s own. Nothing estimates: the mock multiplied a count by
 // an average and printed gigabytes, and an invented figure beside a measured
 // one is worse than no figure, because nothing on screen says which is which.
 //
 // **A run is not carried out here.** `run` writes rows and queues them;
-// `engine/fleet.engine.ts` asks the agent and records what came back. A sweep
+// `engine/fleet.engine.ts` asks the outpost and records what came back. A sweep
 // that deletes forty gigabytes is not an HTTP request, and one that dies
 // mid-fleet leaves half the machines done with nothing saying which half.
 //
@@ -37,7 +37,7 @@ import type { ReclaimFigures } from './targets.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
-// ─── The agent's wire contract ───────────────────────────────────────────
+// ─── The outpost's wire contract ───────────────────────────────────────────
 // snake_case, like the heartbeat and the volume report and unlike every other
 // call into this app: the schema's camelCase applies to MODEL fields, and these
 // are `docker system df`'s words relayed. A mis-spelled key here does not
@@ -53,10 +53,10 @@ export interface DiskReport {
 const int = (n: unknown): number => Math.max(0, Math.round(Number(n) || 0))
 
 /**
- * Write what an agent reported about one machine's disk.
+ * Write what an outpost reported about one machine's disk.
  *
  * Exported because two callers have it: this service's `report` method, and the
- * engine, when a prune answers with a fresh `usage` snapshot — the agent has
+ * engine, when a prune answers with a fresh `usage` snapshot — the outpost has
  * just run `docker system df` to work out what it freed, so asking it again a
  * second later would be a second answer to the same question. One owner, so the
  * two cannot disagree about which key means what.
@@ -224,7 +224,7 @@ export function createCleanupService(app: BasecampApp) {
         return {
           serverId:   id,
           serverName: fleet.get(id) ?? id,
-          // Absent, not zeroed. A machine whose agent has never reported is not
+          // Absent, not zeroed. A machine whose outpost has never reported is not
           // a machine with nothing to reclaim, and the screen says so.
           reported:   !!disk,
           reportedAt: disk?.reportedAt ?? null,
@@ -246,10 +246,10 @@ export function createCleanupService(app: BasecampApp) {
     },
 
     // ── report — POST /cleanup  X-Service-Method: report ──────────────
-    // The agent's endpoint, and the only way a DiskUsage row gets here.
+    // The outpost's endpoint, and the only way a DiskUsage row gets here.
     //
     // It addresses the COLLECTION and names the server in the body, the same
-    // shape `volumes.report` takes: the agent knows which machine it is and not
+    // shape `volumes.report` takes: the outpost knows which machine it is and not
     // which rows Basecamp holds. Exempted from sessionScope by NAME below — a
     // comment claiming exemption is not one, and that mistake 401'd every
     // server check-in once.
@@ -258,7 +258,7 @@ export function createCleanupService(app: BasecampApp) {
       const serverId = data?.server_id
       if (!serverId) throw new BadRequest('server_id is required')
 
-      // asSystem(): an agent holds no session and there is no user to scope to.
+      // asSystem(): an outpost holds no session and there is no user to scope to.
       const server = await sys().server.findUnique({ where: { id: serverId } })
       if (!server) throw new NotFound(`Server '${serverId}' not found`)
 
@@ -273,7 +273,7 @@ export function createCleanupService(app: BasecampApp) {
 
     // ── run — POST /cleanup  X-Service-Method: run ────────────────────
     // Queue a sweep. `{ serverId }` names one machine, omitting it means every
-    // machine an agent has registered for; `{ targets }` is a subset of the
+    // machine an outpost has registered for; `{ targets }` is a subset of the
     // vocabulary and defaults to the ones marked on in `targets.ts`.
     async run(ctx: ServiceContext) {
       const data     = (ctx.data ?? {}) as { serverId?: string; targets?: string[]; keepImages?: number }
@@ -304,14 +304,14 @@ export function createCleanupService(app: BasecampApp) {
       const reachable: string[] = []
       const unreachable: string[] = []
       for (const id of candidates) {
-        if (await app.conduit.resolve(`agent:${id}`)) reachable.push(id)
+        if (await app.conduit.resolve(`outpost:${id}`)) reachable.push(id)
         else unreachable.push(fleet.get(id) as string)
       }
 
       if (!reachable.length)
         throw new BadRequest(
-          `No agent is registered for ${unreachable.join(', ') || 'any server in this workspace'} — ` +
-          'nothing was swept. An agent registers itself on its first heartbeat.'
+          `No outpost is registered for ${unreachable.join(', ') || 'any server in this workspace'} — ` +
+          'nothing was swept. An outpost registers itself on its first heartbeat.'
         )
 
       const actor = actorOf(ctx)
@@ -333,7 +333,7 @@ export function createCleanupService(app: BasecampApp) {
 
     hooks: {
       before: {
-        // `report` is the agent's endpoint — no session, no workspace header.
+        // `report` is the outpost's endpoint — no session, no workspace header.
         all:    [sessionScope(app, { except: ['report'] })],
         // A sweep deletes data on a machine, but it deletes only what the
         // vocabulary allows, which is why it sits at the developer bar rather

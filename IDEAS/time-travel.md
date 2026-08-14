@@ -181,6 +181,42 @@ cost (a million-row update would write a million snapshots) and it belongs to
 whoever builds replay. The cheap middle is an opt-in per model — `@@log(audit,
 snapshots: all)` — rather than a global default.
 
+## Backup is the other question, and it has no owner
+
+Added 2026-08-12, from an ecosystem sweep of the app lifecycle. Checkpoints answer
+*what changed and can I go back to a moment I named*. They do not answer **the file is
+gone**, and nothing in this repo does.
+
+**Every competing framework inherits this from a vendor and FJS cannot.** A Rails app
+on RDS, a Next app on Neon, anything on PlanetScale — the database is somebody's
+product and backups arrive with it. FJS's whole pitch is one binary beside one file,
+self-hosted, no account required (`IDEAS/offline-first-and-release.md`). The corollary
+nobody has written down: **there is no vendor to inherit backups from, so it is the
+framework's problem or it is nobody's.** For a self-hoster, losing the file is losing
+the company.
+
+It is also the missing counterpart to the Release realm. `IDEAS/release-transitions.md`
+makes its central honest claim *revert restores serving state, not database history* —
+which is only an acceptable thing to say if something else answers data. Today nothing
+does, so the two records leave a hole between them rather than each covering their half.
+
+What makes it FJS-shaped rather than a wrapper around `cp`:
+
+- **The Data realm is a file**, so a snapshot is a file copy plus the WAL discipline
+  SQLite already documents. Cheap, and the same substrate this whole record is built on.
+- **A multi-database app is a set of files** — tenants are db-per-tenant, a logger
+  database is a database — which is the same partial-restore failure mode the open
+  question below already raises for checkpoints. One answer should serve both.
+- **The verify half is the part everyone skips, and it is the part FJS can do.** An
+  unrestored backup is a rumour. The framework owns the test harness, so a restore can
+  be *proven*: restore into a temporary database, run the app's own suite against it,
+  report. No other framework can offer "your backup is known-good" because no other
+  framework owns both ends of that sentence.
+
+Deliberately not in scope: offsite transport policy, retention schedules, encryption at
+rest as a bespoke mechanism. Those are configuration and a destination, and the escape
+hatch is that the snapshot is a file — pipe it wherever you already send files.
+
 ## Open questions
 
 - **Is a checkpoint a Data-realm noun, or a Release-realm one?** `fli db:checkpoint`

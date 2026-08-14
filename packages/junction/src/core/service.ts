@@ -5,10 +5,13 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
+import { requestMeta } from './context.ts'
+import { claimIdempotency } from './idempotency.ts'
 import {
   resolvePipelines,
   mergeHookMaps,
   runPipeline,
+  type Hook,
   type HookMap,
   type ResolvedPipeline
 } from './hooks.ts'
@@ -21,6 +24,7 @@ import { wrapResult, isServiceResult, resultData } from './envelope.ts'
 import { createSchema } from './schema.ts'
 import {
   createLitestoneBase, autoValidate, gateAuth, autoFilter, autoSort,
+  markDerived, isDerivedHook,
   jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload,
 } from './litestone.ts'
 
@@ -160,6 +164,27 @@ export type PublishDeclaration =
   | false
   | ((data: unknown, ctx: ServiceContext) => unknown)
 
+/**
+ * A service, described. Everything a reader outside the core needs, and nothing
+ * that is an implementation detail of how the service was built.
+ */
+export interface ServiceDescription {
+  name:       string
+  model:      string
+  /** Declared actions, before the method policy. */
+  actions:    string[]
+  /** What the service will answer, policy applied. */
+  methods:    string[]
+  allowBulk:  boolean
+  softDelete: string | null
+  cache:      boolean
+  idField:    string
+  /** The merged hook declaration — what ran, not how it was resolved. */
+  hooks:      HookMap
+  /** Present when the service was given an explicit schema. */
+  schemas?:   { create?: unknown; patch?: unknown }
+}
+
 export interface Service {
   name:     string
   model?:   string   // model name — used in result envelope object field
@@ -203,6 +228,26 @@ export interface Service {
   // Hook registration — can be called multiple times, hooks accumulate
   hooks:    (map: HookMap) => void
 
+  /**
+   * The resolved pipelines for these app-level hooks.
+   *
+   * The one owner. Memoised on the app map's identity and a version this
+   * service's own `hooks()` bumps, so both inputs are in the key and a stale
+   * answer cannot be handed out. Callers pass the app hooks they intend to run;
+   * they get pipelines that include them.
+   */
+  pipelines: (appHooks?: HookMap | null) => Record<string, ResolvedPipeline>
+
+  /**
+   * What this service IS — the one answer, for anything that describes it.
+   *
+   * /manifest, the OpenAPI generator and /metrics each used to reach into
+   * `_meta`, `_schemas`, `_hookMap` and the action rule directly, casting on the
+   * way in. Three readers of four internals is three chances to read a
+   * different service than the one that answers the request.
+   */
+  describe: () => ServiceDescription
+
   // ── Hook-bypass methods (à la Feathers _find/_get) ───────────────────────────────
   // Call the underlying method directly — no hook pipeline, no events, no cache.
   // Intentional escape hatch for:
@@ -218,17 +263,20 @@ export interface Service {
   _remove:  (ctx: ServiceContext) => Promise<unknown>
   _restore: (ctx: ServiceContext) => Promise<unknown>
 
-  // Internal
-  _hookMap:   HookMap
-  _pipelines: Record<string, ResolvedPipeline>
-  // Pre-baked merge of app-level + service-level hooks. Set by app.start()
-  // after all plugins have registered. Eliminates per-request mergeHookMaps().
-  _compiledPipelines?: Record<string, ResolvedPipeline>
+  // Internal. The merged declaration — read by pipelines() and by /manifest.
+  // There is no separate resolved copy: one existed, and keeping the two
+  // agreeing was a hand job with four writers.
+  _hookMap: HookMap
 
-  // Custom methods — defined directly on the service alongside CRUD
-  // e.g. createService({ name: 'servers', reboot: async (ctx) => { ... } })
-  // Routed as POST {apiPrefix}/{service}/{id}/{method} or GET {apiPrefix}/{service}/{id}/{method}
-  [method: string]: unknown
+  /**
+   * The service's actions, resolved once at construction.
+   *
+   * Dispatch and the three advertisers (manifest, OpenAPI, /metrics) read this
+   * rather than re-deciding what counts as an action. Actions are also own keys
+   * on the service, so `svc.reboot` still works and a spread still carries them
+   * — the table is what is authoritative.
+   */
+  _actions: ActionMap
 }
 
 // ─── Service call entry point ─────────────────────────────────────────────
@@ -303,6 +351,36 @@ export const AUTO_EVENT_MAP: Record<string, string> = {
 
 const CRUD_METHODS = new Set(['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'])
 
+// Warned once per service+action, so a table miss is loud but not a per-request
+// log flood.
+const _warnedUntabled = new Set<string>()
+
+/**
+ * The function behind an action name, or undefined.
+ *
+ * The table is the answer. The fallback to an own key is a transition: an action
+ * attached to a service object AFTER construction was never a supported shape,
+ * but nothing refused it either, and a silent 404 is the worst way to find out.
+ */
+function actionFn(service: Service, method: string): ActionFn | undefined {
+  const declared = service._actions?.[method]
+  if (declared) return declared
+
+  const attached = (service as unknown as Record<string, unknown>)[method]
+  if (typeof attached !== 'function') return undefined
+
+  const key = `${service.name}.${method}`
+  if (!_warnedUntabled.has(key)) {
+    _warnedUntabled.add(key)
+    console.warn(
+      `[Junction] service '${service.name}': action '${method}' is on the service ` +
+      `object but not in its action table, so it was attached after construction. ` +
+      `Declare it on the definition — a later release dispatches from the table alone.`
+    )
+  }
+  return attached as ActionFn
+}
+
 export async function callService(
   service:    Service,
   ctx:        ServiceContext,
@@ -342,8 +420,29 @@ export async function callService(
   }
 
   // For custom methods, check the service has it registered
-  if (isAction && typeof (service as Record<string, unknown>)[method as string] !== 'function') {
+  if (isAction && !actionFn(service, method as string)) {
     throw new NotFound(`Method '${method}' not found on service '${service.name}'`)
+  }
+
+  // ── Idempotency-Key ──────────────────────────────────────────────────
+  // Claimed HERE for the same reason the method policy is: callService is the
+  // one path every caller takes, and a guarantee that holds over HTTP but not
+  // over a socket is not a guarantee. A replay answers the FIRST call's result
+  // without running the pipeline, so nothing after this line happens twice —
+  // no hook, no write, no announcement.
+  //
+  // Nothing is claimed unless the request carried a key, so an app that never
+  // sends one is on exactly the path it was on before.
+  const idem = claimIdempotency(
+    ctx,
+    requestMeta()?.idempotencyKey,
+    (ctx.app as { config?: { idempotency?: import('./idempotency.ts').IdempotencyConfig } } | undefined)
+      ?.config?.idempotency
+  )
+
+  if (idem?.replay) {
+    ctx.result = idem.result as ServiceContext['result']
+    return
   }
 
   // ── Telemetry: stamp correlation ID + emit start ───────────────────
@@ -361,13 +460,10 @@ export async function callService(
     } satisfies CallStartEvent)
   }
 
-  // Use pre-baked pipelines from app.start() when available.
-  // Falls back to per-request merge only if start() hasn't compiled yet
-  // (e.g. direct callService usage in tests before app.start()).
-  const pipelineSource = service._compiledPipelines
-    ?? (appHooks
-      ? resolvePipelines(mergeHookMaps(appHooks, service._hookMap))
-      : service._pipelines)
+  // One owner, memoised on the app hooks it was HANDED — so a call always runs
+  // the hooks its caller passed, which the old compiled-cache rung could not
+  // promise.
+  const pipelineSource = service.pipelines(appHooks)
 
   // Hook-less custom actions fall back to the '*' pipeline (app/service
   // 'all' hooks only) — never to an empty one, which would silently skip
@@ -377,7 +473,7 @@ export async function callService(
     ?? { around: [], before: [], after: [], error: [] }
 
   const methodFn = (isAction
-    ? (service as Record<string, unknown>)[method as string]
+    ? actionFn(service, method as string)
     : service[method as ServiceMethod]) as (ctx: ServiceContext) => Promise<unknown>
 
   let pipelineError: unknown = null
@@ -515,6 +611,11 @@ export async function callService(
       }
     }
   }
+
+  // Settle the key AFTER the announcement, so a replay cannot arrive between
+  // the write and the broadcast and be told the call is finished while the
+  // open tabs have not heard about it. A failed call releases the key.
+  idem?.settle(!ctx.error && !pipelineError, ctx.result)
 
   // Re-throw any pipeline error AFTER telemetry / cleanups have run.
   if (pipelineError) throw pipelineError
@@ -662,9 +763,93 @@ export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
 export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
   '_find', '_get', '_create', '_update', '_patch', '_remove', '_restore',
-  '_hookMap', '_pipelines', '_compiledPipelines', '_meta', '_schemas',
-  '_methods',
+  '_hookMap', '_meta', '_schemas', '_methods', '_actions',
+  'pipelines', 'describe',
 ])
+
+// ─── Actions: the one parse step ──────────────────────────────────────────
+//
+// An action used to be recognised by EXCLUSION — a function whose key is in
+// neither reserved set — and six consumers re-applied that rule: dispatch twice,
+// the method policy, the manifest, the OpenAPI spec and /metrics. Six copies of
+// one question, none of them able to answer it any better than the deny-lists
+// happened to be that day, and the deny-lists had already drifted across five
+// copies once.
+//
+// It is answered once now, at construction, and everything downstream reads the
+// resulting table. The exclusion rule survives as this function's fallback, so
+// nothing written today changes shape — but `methods:` DECLARES, and a
+// declaration beats a guess:
+//
+//   methods: ['find', 'get', 'reboot']   → 'reboot' is an action, stated
+//   (no methods:)                        → scan, exactly as before
+//
+// The declaration is also the only way to name an action after an option key.
+// `cache`, `schema`, `channel` and the rest of SERVICE_OPTION_KEYS are eaten by
+// the scan with no error, so `async cache(ctx)` was simply impossible. It still
+// costs a cast in TypeScript where the option is typed — `cache` is declared as
+// a CacheDeclaration and cannot also be a function — so the runtime honours the
+// declaration and the type does not know about it.
+
+export type ActionFn  = (ctx: ServiceContext) => Promise<unknown> | unknown
+export type ActionMap = Record<string, ActionFn>
+
+/**
+ * The actions a definition declares, resolved to functions.
+ *
+ * `declared` is the `methods:` list when there is one. Names in it that are not
+ * CRUD are actions and are resolved off the source; a name with no function
+ * behind it throws, because the alternative is a 405 in production for a method
+ * the author believed they had shipped.
+ */
+export function collectActions(
+  source:      object,
+  serviceName: string,
+  declared?:   MethodPolicy,
+): ActionMap {
+  const src = source as Record<string, unknown>
+  const out: ActionMap = {}
+
+  if (Array.isArray(declared)) {
+    for (const name of declared) {
+      if (CRUD_METHODS.has(name)) continue
+      const fn = src[name]
+      if (typeof fn !== 'function') {
+        // Name what IS on offer. A typo'd allow-list entry (`'fnid'`) is the
+        // common case, and the message that only repeats what the caller wrote
+        // is the least useful moment to be terse.
+        const available = [
+          ...CRUD_METHODS,
+          ...Object.entries(src).filter(([k, v]) => isCustomMethod(k, v)).map(([k]) => k),
+        ].sort().join(', ')
+
+        throw new TypeError(
+          `[Junction] service '${serviceName}': methods lists '${name}', which is ` +
+          (fn === undefined
+            ? `not defined on this service.`
+            : `a ${typeof fn}, not a method — rename the option or the action, ` +
+              `a name cannot be both.`) +
+          ` Available: ${available}`
+        )
+      }
+      out[name] = fn as ActionFn
+    }
+    return out
+  }
+
+  // No declaration — the historical scan. Kept because 60-odd services in this
+  // repo alone are written that way and none of them is wrong.
+  for (const [key, val] of Object.entries(src)) {
+    if (isCustomMethod(key, val)) out[key] = val as ActionFn
+  }
+  return out
+}
+
+/** The action names on a built service (or, for a definition, by scanning). */
+export function actionNames(svc: object): string[] {
+  const table = (svc as { _actions?: ActionMap })._actions
+  return table ? Object.keys(table) : customMethodNames(svc)
+}
 
 // ─── The method policy (FJS-004 / FJS-D07) ────────────────────────────────
 //
@@ -734,9 +919,15 @@ export function resolveMethodPolicy(
   return new Set(policy)
 }
 
-/** Every method name a service could answer — CRUD plus its own actions. */
+/**
+ * Every method name a service could answer — CRUD plus its own actions.
+ *
+ * Through `actionNames`, so a DECLARED action counts: `methods: ['find','cache']`
+ * puts `cache` in the table, and validating the same list against a scan that
+ * cannot see it would refuse the declaration for not matching the guess.
+ */
 export function serviceMethodNames(svc: object): string[] {
-  return [...CRUD_METHODS, ...customMethodNames(svc)]
+  return [...CRUD_METHODS, ...actionNames(svc)]
 }
 
 /**
@@ -776,7 +967,7 @@ export function customMethodNames(obj: object): string[] {
 
 export function createBaseService(
   opts: BaseServiceOptions
-): Omit<Service, 'name' | '_pipelines' | 'hooks'> & Partial<Pick<Service, 'name' | 'hooks'>> {
+): Omit<Service, 'name' | 'hooks' | 'pipelines'> & Partial<Pick<Service, 'name' | 'hooks'>> {
 
   // ── Single CRUD code path ─────────────────────────────────────────────
   // createBaseService used to carry its own parallel find/get/create/...
@@ -838,11 +1029,9 @@ export function createBaseService(
     return fn(ctx)
   }
 
-  // Custom methods — any extra function-valued option.
-  const customMethods: Record<string, unknown> = {}
-  for (const [key, val] of Object.entries(opts)) {
-    if (isCustomMethod(key, val)) customMethods[key] = val
-  }
+  // Actions — declared by `methods:` when it is there, scanned for when it is
+  // not. One parse step; everything downstream reads the table.
+  const customMethods = collectActions(opts, name ?? model ?? 'service', methods)
 
   // Schema validation, derived rather than declared.
   //
@@ -859,26 +1048,48 @@ export function createBaseService(
   // declaring `@@gate("0.4")` has public reads and authenticated writes with no
   // service-level declaration at all. Runs before validation: rejecting an
   // anonymous request costs less than parsing its body.
+  //
+  // Marked as they are built, so BOTH branches of the merge below emit marked
+  // hooks — an unmarked one is invisible to the dedupe and installs itself a
+  // second time.
+  const derived = (...fns: Hook[]): Hook[] => fns.map(markDerived)
+
   const derivedHooks: HookMap = {
     before: {
-      find:   [gateAuth(model, 'read'), autoFilter(model), autoSort(model)],
-      get:    [gateAuth(model, 'read'), autoFilter(model)],
-      create: [gateAuth(model, 'create'), autoValidate(model, 'create')],
-      patch:  [gateAuth(model, 'update'), autoValidate(model, 'patch')],
-      update: [gateAuth(model, 'update'), autoValidate(model, 'create')],
-      remove: [gateAuth(model, 'delete')],
+      find:   derived(gateAuth(model, 'read'),   autoFilter(model), autoSort(model)),
+      get:    derived(gateAuth(model, 'read'),   autoFilter(model)),
+      create: derived(gateAuth(model, 'create'), autoValidate(model, 'create')),
+      patch:  derived(gateAuth(model, 'update'), autoValidate(model, 'patch')),
+      update: derived(gateAuth(model, 'update'), autoValidate(model, 'create')),
+      remove: derived(gateAuth(model, 'delete')),
     },
   }
 
   // User hooks run first, so a before/create hook can still shape ctx.data
   // before it is validated, and an app can add its own checks ahead of these.
+  //
+  // A hook map reaching here may ALREADY carry this layer: the autoloader
+  // spreads a built base back through createService, and a base returns the
+  // merged map, not the caller's. Appending unconditionally then ran the gate
+  // and the validator twice on every request to every autoloaded service
+  // (`FJS-231`). Skip a derived hook whose name is already present among the
+  // MARKED hooks — a user hook of the same name is not one of ours and does not
+  // suppress it.
   const mergedHooks: HookMap = hooks
     ? {
         ...hooks,
         before: (() => {
           const out: Record<string, unknown[]> = { ...(hooks.before as Record<string, unknown[]> ?? {}) }
-          for (const [method, derived] of Object.entries(derivedHooks.before!)) {
-            out[method] = [...(out[method] ?? []), ...(derived as unknown[])]
+          for (const [method, derivedForMethod] of Object.entries(derivedHooks.before!)) {
+            const present = new Set(
+              (out[method] ?? [])
+                .filter(isDerivedHook)
+                .map(h => (h as Function).name)
+            )
+            out[method] = [
+              ...(out[method] ?? []),
+              ...(derivedForMethod as unknown[]).filter(h => !present.has((h as Function).name)),
+            ]
           }
           return out
         })() as HookMap['before'],
@@ -932,7 +1143,12 @@ export function createBaseService(
     patch:   withDb(base.patch),
     remove:  withDb(base.remove),
     restore: withDb(base.restore as Method),
+    // Actions land twice on purpose: as own keys, which is how a spread carries
+    // them and how a caller reaches `svc.reboot`, and as the table, which is
+    // what createService reads instead of re-scanning a shape that by then
+    // includes CRUD, `_meta` and every other runtime key.
     ...customMethods,
+    _actions: customMethods,
     ...(name    !== undefined ? { name }    : {}),
     ...(channel !== undefined ? { channel } : {}),
     // Carried through, not resolved here: the loader spreads this object into
@@ -955,7 +1171,7 @@ export function createBaseService(
       cache:      !!cache,
       idField:    idField ?? 'id',
     },
-  } as Omit<Service, 'name' | '_pipelines' | 'hooks'> & Partial<Pick<Service, 'name' | 'hooks'>>
+  } as Omit<Service, 'name' | 'hooks' | 'pipelines'> & Partial<Pick<Service, 'name' | 'hooks'>>
 }
 
 // ─── Plain-client adapter ─────────────────────────────────────────────────
@@ -1133,7 +1349,22 @@ function makeBypass(
 // a framework detail a test about USER hooks does not own. Filter by this.
 export const DERIVED_HOOKS = new Set(['gateAuth', 'autoValidate', 'autoFilter', 'autoSort'])
 
+// Stamped on a service createService has already built. Non-enumerable, so a
+// spread does NOT carry it — which is the correct answer: `{...svc}` is a copy
+// of the fields, not a built service, and the loader has to be able to tell.
+const BUILT = Symbol.for('junction.service')
+
+/** Has createService already built this? */
+export function isBuiltService(value: unknown): boolean {
+  return !!value && typeof value === 'object' && (value as Record<symbol, unknown>)[BUILT] === true
+}
+
 export function createService(def: ServiceDefinition): Service {
+  // Idempotent, the way Feathers' wrapService is. Building twice would re-run
+  // createBaseService and rebuild the hook state around an object that already
+  // has one.
+  if (isBuiltService(def)) return def as unknown as Service
+
 
   // db is optional — the base falls back to ctx.app.db at call time, so
   // `createService({ name: 'posts', model: 'posts' })` is a complete service.
@@ -1250,7 +1481,33 @@ export function createService(def: ServiceDefinition): Service {
   }
 
   let mergedMap = mergeHookMaps(...hookMaps)
-  let pipelines = resolvePipelines(mergedMap)
+
+  // ── The pipeline, and its one owner ───────────────────────────────────────
+  //
+  // Memoised on BOTH inputs: the app's hook map by identity, and the service's
+  // own by a version that `hooks()` bumps. That is what makes staleness
+  // impossible rather than remembered — there used to be a `_compiledPipelines`
+  // cache with four writers, a hand invalidation, a registry that monkey-patched
+  // `hooks()` to recompile, and a three-way ladder in callService where the
+  // cache beat the app hooks the transport had just handed over. A stale entry
+  // was therefore a wrong answer, not a slow one.
+  //
+  // `app.hooks()` REASSIGNS app._appHooks to a fresh map rather than mutating
+  // it, so identity is a sound key. Anything that starts mutating it in place
+  // silently defeats this.
+  let hookVersion = 0
+  let memoKey:     HookMap | null = null
+  let memoVersion  = -1
+  let memo:        Record<string, ResolvedPipeline> | null = null
+
+  function pipelinesFor(appHooks?: HookMap | null): Record<string, ResolvedPipeline> {
+    const key = appHooks ?? null
+    if (memo && memoVersion === hookVersion && memoKey === key) return memo
+    memoKey     = key
+    memoVersion = hookVersion
+    memo = resolvePipelines(key ? mergeHookMaps(key, mergedMap) : mergedMap)
+    return memo
+  }
 
   const service: Service = {
     name:  defName,
@@ -1281,22 +1538,38 @@ export function createService(def: ServiceDefinition): Service {
     _remove:  makeBypass(defName, 'remove',  def.remove  ?? base.remove),
     _restore: makeBypass(defName, 'restore', def.restore ?? base.restore),
 
+    // Push, merge, bump. One merge and no resolve — the resolve happens on the
+    // next read, for whichever app hooks that read carries. Nothing here has to
+    // remember to invalidate anything.
     hooks(map: HookMap): void {
       hookMaps.push(map)
-      mergedMap          = mergeHookMaps(...hookMaps)
-      pipelines          = resolvePipelines(mergedMap)
-      service._hookMap   = mergedMap
-      service._pipelines = pipelines
-      // Invalidate the start()-compiled pipeline cache — it baked in the old
-      // hook map and would otherwise silently win over these new hooks in
-      // callService(). The registry re-compiles on its next setAppHooks(),
-      // and ServiceRegistry.register() wraps this method to recompile
-      // immediately for registered services.
-      service._compiledPipelines = undefined
+      mergedMap        = mergeHookMaps(...hookMaps)
+      service._hookMap = mergedMap
+      hookVersion++
     },
 
-    _hookMap:   mergedMap,
-    _pipelines: pipelines,
+    pipelines: pipelinesFor,
+
+    describe(): ServiceDescription {
+      const meta = ((service as unknown as { _meta?: Record<string, unknown> })._meta) ?? {}
+      const schemas = (service as unknown as { _schemas?: { create?: unknown; patch?: unknown } })._schemas
+      return {
+        name:       service.name,
+        model:      service.model ?? service.name,
+        actions:    actionNames(service),
+        // Policy applied: advertising a verb the service answers 405 to is
+        // worse than not advertising it, because a generated client calls it.
+        methods:    allowedMethodNames(service),
+        allowBulk:  !!service.allowBulk,
+        softDelete: (meta.softDelete as string | null) ?? null,
+        cache:      !!meta.cache,
+        idField:    (meta.idField as string) ?? 'id',
+        hooks:      service._hookMap,
+        ...(schemas ? { schemas } : {}),
+      }
+    },
+
+    _hookMap: mergedMap,
 
     // Metadata built by createBaseService. Not copied through, these were lost
     // on the createService path — the primary public factory — so /manifest
@@ -1311,11 +1584,21 @@ export function createService(def: ServiceDefinition): Service {
     })(),
   }
 
-  // Copy custom methods from def directly onto the service object.
-  // Anything that is a function and not a reserved key becomes a callable method.
-  for (const [key, val] of Object.entries(def)) {
-    if (isCustomMethod(key, val)) (service as Record<string, unknown>)[key] = val
+  // The actions, resolved once. A base reached through the loader's spread has
+  // already built its own table and put it on `def`; taking that over rescanning
+  // matters because by then `def` also carries CRUD, the bypass twins and
+  // `_meta`, and the scan would have to be right about all of them again.
+  const actions: ActionMap = {
+    ...((def as { _actions?: ActionMap })._actions ?? {}),
+    ...collectActions(def, defName ?? '(unnamed)', def.methods),
   }
+
+  // On the object as well as in the table: a spread has to carry them, and
+  // `svc.reboot` is a shape callers already use.
+  for (const [key, fn] of Object.entries(actions)) {
+    (service as Record<string, unknown>)[key] = fn
+  }
+  ;(service as Service)._actions = actions
 
   // Resolve the method policy AFTER the actions are on, because an allow-list
   // may name one and the unknown-name check has to be able to see it.
@@ -1324,6 +1607,8 @@ export function createService(def: ServiceDefinition): Service {
     serviceMethodNames(service),
     defName ?? '(unnamed)',
   )
+
+  Object.defineProperty(service, BUILT, { value: true, enumerable: false })
 
   return service
 }
@@ -1349,43 +1634,26 @@ export class ServiceRegistry {
   // Called by app.start() once all plugins and app-level hooks are finalised.
   setAppHooks(hooks: HookMap): void {
     this._appHooks = hooks
-    // Recompile pipelines for every already-registered service so that
-    // calling setAppHooks() after services are registered (e.g. app.hooks()
-    // after start()) doesn't leave stale compiled pipelines.
-    this._recompileAll()
+    // Warm every registered service so the first request after start() does not
+    // pay for the resolve. A warm, not a write: the service owns its own memo
+    // and keys it on both inputs, so warming the wrong thing is impossible
+    // rather than merely unlikely.
+    this._warmAll()
   }
 
-  private _recompileAll(): void {
+  private _warmAll(): void {
     if (!this._appHooks) return
-    for (const svc of this._map.values()) {
-      svc._compiledPipelines = resolvePipelines(
-        mergeHookMaps(this._appHooks, svc._hookMap)
-      )
-    }
+    for (const svc of this._map.values()) svc.pipelines(this._appHooks)
   }
 
   register(service: Service): void {
     this._map.set(service.name, service)
-    // If app-level hooks are already known (registered after start()),
-    // compile immediately so this service never hits the per-request fallback.
-    if (this._appHooks) {
-      service._compiledPipelines = resolvePipelines(
-        mergeHookMaps(this._appHooks, service._hookMap)
-      )
-    }
-    // Wrap hooks() so hooks added AFTER registration (including after
-    // app.start()) recompile this service's pipeline cache immediately.
-    // Without this, callService() keeps using the stale compiled pipelines
-    // and late-added hooks silently never run.
-    const origHooks = service.hooks.bind(service)
-    service.hooks = (map) => {
-      origHooks(map)
-      if (this._appHooks) {
-        service._compiledPipelines = resolvePipelines(
-          mergeHookMaps(this._appHooks, service._hookMap)
-        )
-      }
-    }
+    // Registered after start() — warm it here so it is on the same footing as
+    // everything registered before. This used to also monkey-patch hooks() on
+    // the instance, because a late svc.hooks() left a compiled cache that
+    // silently outranked it; the version key in pipelines() is what removed the
+    // need, and with it the double merge-and-resolve every hooks() call paid.
+    if (this._appHooks) service.pipelines(this._appHooks)
   }
 
   get(name: string): Service | undefined {

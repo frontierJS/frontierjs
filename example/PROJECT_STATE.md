@@ -79,8 +79,8 @@ Each of these is an assertion in one of the three drives, or a line in the READM
 
 The dev server is not the only thing that has to work, and it hid an inert
 build for as long as this app existed. `web/dist/client/` is static; drive it
-with any server that serves the SPA fallback and proxies `/api`, `/auth`,
-`/session` **and `/ws`** to :8110, then point the drive at it:
+with any server that serves the SPA fallback and proxies `/api` **and `/ws`**
+to :8110, then point the drive at it:
 
 ```bash
 bun run verify:build        # builds, serves dist/, runs the 37 assertions
@@ -112,7 +112,7 @@ example/
 │   │                         schema fragments rather than pasting a copy
 │   ├── gate.ts             ← the ONE place a session becomes a number
 │   ├── seed.ts             ← 4 products, 2 customers, 3 orders, 2 demo users
-│   ├── app.ts              ← createApp, auth plugin, caravan, channels, GET /session
+│   ├── app.ts              ← createApp, auth plugin, caravan, channels, GET /api/session
 │   ├── app-ref.ts          ← how a job reaches app.service() (FJS-093)
 │   ├── jobs/               ← book-courier + announce-payment (autoloaded), sweep-abandoned (cron)
 │   ├── mailer.ts           ← IMail over app.conduit.send() — the provider is a TARGET
@@ -436,7 +436,7 @@ Out of scope by design: jetty (a different container) and the VS Code extension.
 
 ## Working notes for a cold start
 
-- **Two processes.** With the API down, Vite answers `/api`, `/auth`, `/session`
+- **Two processes.** With the API down, Vite answers `/api`
   with an empty-bodied 502 and the app says which process is missing rather than
   rendering plausible empty tables.
 - **`bun run reset`** deletes the database; the seed runs again on next boot.

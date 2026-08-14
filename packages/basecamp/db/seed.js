@@ -122,7 +122,7 @@ class ServerFactory extends Factory {
       ipAddress:    `10.0.${n % 250}.${10 + (n % 40)}`,
       sshPort:      22,
       sshUser:      'root',
-      agentVersion: '0.4.1',
+      outpostVersion: '0.4.1',
       plan:         { vcpu: 4, ramGb: 8, diskGb: 160 },
       labels:       { seeded: 'true' },
     }
@@ -194,7 +194,7 @@ class SecretFactory extends Factory {
 class VolumeFactory extends Factory {
   model = 'Volume'
   // The only model here whose rows a person never authors — a volume exists
-  // because an agent reported it, so what this factory imitates is a report.
+  // because an outpost reported it, so what this factory imitates is a report.
   // Sizes are BYTES, the column's own unit: seeding gigabytes would put a
   // number in the database that the screen then divides again.
   definition(_seq, rng) {
@@ -224,7 +224,7 @@ class AlertRuleFactory extends Factory {
     const specs = [
       { name: 'Disk above 85%',      metricName: 'disk.used_percent', severity: 'warning', condition: { op: '>', value: 85 } },
       { name: 'Memory above 90%',    metricName: 'mem.used_percent',  severity: 'warning', condition: { op: '>', value: 90 } },
-      { name: 'Agent silent 10m',    metricName: 'agent.heartbeat',   severity: 'critical', condition: { op: 'stale', minutes: 10 } },
+      { name: 'Outpost silent 10m',    metricName: 'outpost.heartbeat',   severity: 'critical', condition: { op: 'stale', minutes: 10 } },
     ]
     const spec = specs[seq % specs.length]
     // No `channels` here. It was a `Json` array of ids for rows no model
@@ -538,10 +538,10 @@ export class BasecampSeeder extends Seeder {
           data:  { lastRunAt: new Date(Date.now() - 3_600_000).toISOString(), runCount: 2 },
         })
 
-        // ── What the agents said about the disks ──────────────────────
+        // ── What the outposts said about the disks ──────────────────────
         // `docker system df`'s own figures, and only for the machines whose
-        // agent has reported: a fleet where every server has a picture makes
-        // "never reported" — the state that means no agent rather than no
+        // outpost has reported: a fleet where every server has a picture makes
+        // "never reported" — the state that means no outpost rather than no
         // rubbish — impossible to see on the screen.
         for (const [index, server] of servers.slice(0, Math.max(1, servers.length - 1)).entries()) {
           const heavy = index === 0        // one build runner, and it shows

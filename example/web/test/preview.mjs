@@ -1,7 +1,8 @@
 /**
  * web/test/preview.mjs — serve the PRODUCTION build the way `bun run web`
- * serves the source: static files, SPA fallback, and `/api` `/auth` `/session`
- * `/ws` proxied to Junction on :8110.
+ * serves the source: static files, SPA fallback, and `/api` + `/ws` proxied to
+ * Junction on :8110. One API entry covers everything, auth and the session
+ * probe included — apiPrefix moves every route the app registers.
  *
  *   bun run build
  *   node web/test/preview.mjs &            # :8011
@@ -39,7 +40,7 @@ const TYPES = {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
 
-  if (/^\/(api|auth|session)\b/.test(url.pathname)) {
+  if (/^\/api\b/.test(url.pathname)) {
     const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await readBody(req)
     try {
       const upstream = await fetch(API + url.pathname + url.search, {

@@ -5,7 +5,7 @@
 // Manual registration always takes precedence.
 
 import { join }              from 'node:path'
-import { createService }     from './service.ts'
+import { createService, isBuiltService } from './service.ts'
 import type { Service }     from './service.ts'
 import type { ServiceRegistry } from './service.ts'
 
@@ -49,7 +49,13 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
       //   }
       //
       // fully registrable: name from the filename, db from app.db.
-      if (service && typeof service === 'object' && typeof service.hooks !== 'function') {
+      //
+      // The test is a MARKER createService stamps, not the shape of one field.
+      // It used to ask `typeof service.hooks !== 'function'` — answering "was
+      // this built?" by inspecting a single key's type, which is the same
+      // by-exclusion reasoning the action table exists to replace, and which
+      // wrapped anything that happened to carry a `hooks` map.
+      if (service && typeof service === 'object' && !isBuiltService(service)) {
         service = createService({
           name: deriveName(filename),
           ...(service as unknown as Record<string, unknown>),

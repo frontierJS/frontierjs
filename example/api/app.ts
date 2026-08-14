@@ -6,7 +6,7 @@
 // becomes a number). This file only assembles them.
 
 import {
-  createApp, channels, healthPlugin,
+  createApp, channels, healthPlugin, manifestPlugin,
   type App,
 } from '@frontierjs/junction'
 
@@ -50,9 +50,16 @@ const app = createApp({
 
 app.configure(healthPlugin())
 
-// Mounts POST /auth/register, /auth/login, /auth/logout, GET /auth/me and the
-// password-reset + email-verify routes. Deliberately NOT services: login cannot
-// be gated by login.
+// GET /api/manifest — what this app IS, read off live runtime state: services,
+// their methods and hooks, channels, plugins, and every route the router will
+// answer. `fli api:routes` reads the last of those, which is the only way to
+// ask a Junction app what it serves: the surface is emergent, so it cannot be
+// read off the source. devOnly by default, so a production build 404s here.
+app.configure(manifestPlugin({ db }))
+
+// Mounts POST /api/auth/register, /api/auth/login, /api/auth/logout,
+// GET /api/auth/me and the password-reset + email-verify routes. Deliberately
+// NOT services: login cannot be gated by login.
 //
 // The login limiter is real and stays on — but its production default is 10 per
 // 15 minutes, and this app's own five drives sign in SEVEN times per full
@@ -73,10 +80,10 @@ app.configure(createAuthPlugin(auth, {
 // autoloads `api/jobs/*.job.ts`.
 //
 // `admin: true` mounts GET /jobs, GET /jobs/schedules, GET /jobs/{id} and the
-// retry/cancel posts. They are RAW routes, so `apiPrefix` does not apply to
-// them (FJS-012) — the path is /jobs, not /api/jobs, and web/config/vite.config.js
-// proxies it as its own entry. No secret here because this is a demo shop on
-// localhost; `admin: { secret }` is the option that stops it being public.
+// retry/cancel posts — under this app's apiPrefix like everything else, so the
+// URLs are /api/jobs/… and one proxy entry in web/config/vite.config.js covers
+// them. No secret here because this is a demo shop on localhost;
+// `admin: { secret }` is the option that stops it being public.
 
 const queue = createCaravan({
   db:      './db/jobs.db',
@@ -163,7 +170,10 @@ app.configure(channels((a: App) => {
   })
 }))
 
-// ─── GET /session ─────────────────────────────────────────────────────────
+// ─── GET /api/session ─────────────────────────────────────────────────────
+//
+// Registered as '/session': app.get applies this app's apiPrefix, the same as
+// it does to every service route and to the auth plugin's own.
 //
 // The browser needs the caller's gate level to decide which buttons to offer.
 // It could compute one from `role`, but then the role→level mapping would exist

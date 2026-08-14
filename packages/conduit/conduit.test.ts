@@ -30,10 +30,10 @@ import type {
 
 // ─── Fixtures ────────────────────────────────────────────────
 
-function agentTarget(overrides: Partial<TargetDescriptor> = {}): TargetDescriptor {
+function outpostTarget(overrides: Partial<TargetDescriptor> = {}): TargetDescriptor {
   return {
-    id:            'agent:srv-test',
-    kind:          'agent',
+    id:            'outpost:srv-test',
+    kind:          'outpost',
     protocol:      'http',
     address:       'http://10.0.0.5:7700',
     auth:          { type: 'hmac', ref: 'AGENT_SECRET' },
@@ -72,7 +72,7 @@ describe('createMemoryStore', () => {
 
   it('stores and retrieves a target', async () => {
     const store  = createMemoryStore()
-    const target = agentTarget()
+    const target = outpostTarget()
     await store.init()
     await store.set(target)
     expect(await store.get(target.id)).toEqual(target)
@@ -80,7 +80,7 @@ describe('createMemoryStore', () => {
 
   it('preserves registered_at on upsert', async () => {
     const store  = createMemoryStore()
-    const target = agentTarget({ registered_at: 1000 })
+    const target = outpostTarget({ registered_at: 1000 })
     await store.init()
     await store.set(target)
     // Re-register with a different registered_at — should not overwrite
@@ -90,7 +90,7 @@ describe('createMemoryStore', () => {
 
   it('updates address on upsert', async () => {
     const store  = createMemoryStore()
-    const target = agentTarget()
+    const target = outpostTarget()
     await store.init()
     await store.set(target)
     await store.set({ ...target, address: 'http://10.0.0.99:7700' })
@@ -99,7 +99,7 @@ describe('createMemoryStore', () => {
 
   it('deletes a target', async () => {
     const store  = createMemoryStore()
-    const target = agentTarget()
+    const target = outpostTarget()
     await store.init()
     await store.set(target)
     await store.delete(target.id)
@@ -109,16 +109,16 @@ describe('createMemoryStore', () => {
   it('lists targets ordered by registered_at', async () => {
     const store = createMemoryStore()
     await store.init()
-    await store.set(agentTarget({ id: 'agent:b', registered_at: 200 }))
-    await store.set(agentTarget({ id: 'agent:a', registered_at: 100 }))
-    await store.set(agentTarget({ id: 'agent:c', registered_at: 300 }))
+    await store.set(outpostTarget({ id: 'outpost:b', registered_at: 200 }))
+    await store.set(outpostTarget({ id: 'outpost:a', registered_at: 100 }))
+    await store.set(outpostTarget({ id: 'outpost:c', registered_at: 300 }))
     const ids = (await store.list()).map(t => t.id)
-    expect(ids).toEqual(['agent:a', 'agent:b', 'agent:c'])
+    expect(ids).toEqual(['outpost:a', 'outpost:b', 'outpost:c'])
   })
 
   it('touch updates last_seen_at', async () => {
     const store  = createMemoryStore()
-    const target = agentTarget({ last_seen_at: null })
+    const target = outpostTarget({ last_seen_at: null })
     await store.init()
     await store.set(target)
     const before = Date.now()
@@ -141,13 +141,13 @@ describe('createMemoryStore', () => {
   it('get() returns a copy, not the stored object', async () => {
     const store = createMemoryStore()
     await store.init()
-    await store.set(agentTarget())
+    await store.set(outpostTarget())
 
-    const first = (await store.get('agent:srv-test'))!
+    const first = (await store.get('outpost:srv-test'))!
     first.address = 'http://mutated'
     ;(first.auth as { ref: string }).ref = 'MUTATED'
 
-    const second = (await store.get('agent:srv-test'))!
+    const second = (await store.get('outpost:srv-test'))!
     expect(second.address).toBe('http://10.0.0.5:7700')
     expect((second.auth as { ref: string }).ref).toBe('AGENT_SECRET')
   })
@@ -155,17 +155,17 @@ describe('createMemoryStore', () => {
   it('list() returns copies with distinct identity from get()', async () => {
     const store = createMemoryStore()
     await store.init()
-    await store.set(agentTarget())
+    await store.set(outpostTarget())
 
     const fromList = (await store.list())[0]
-    const fromGet  = (await store.get('agent:srv-test'))!
+    const fromGet  = (await store.get('outpost:srv-test'))!
     expect(fromList).toEqual(fromGet)
     expect(fromList).not.toBe(fromGet)
   })
 
   it('set() copies the caller object — later mutation does not reach the store', async () => {
     const store  = createMemoryStore()
-    const target = agentTarget()
+    const target = outpostTarget()
     await store.init()
     await store.set(target)
 
@@ -555,11 +555,11 @@ describe('secrets stay out of the registry', () => {
 // ─── StubTransport ───────────────────────────────────────────
 
 describe('StubTransport', () => {
-  const descriptor = agentTarget()
+  const descriptor = outpostTarget()
 
   it('records calls', async () => {
     const stub = new StubTransport(descriptor)
-    const req: ConduitRequest = { target: 'agent:srv-test', method: 'POST', path: '/deploy', body: { image: 'api:v2' } }
+    const req: ConduitRequest = { target: 'outpost:srv-test', method: 'POST', path: '/deploy', body: { image: 'api:v2' } }
     await stub.send(req)
     expect(stub.calls).toHaveLength(1)
     expect(stub.calls[0]).toEqual(req)
@@ -568,7 +568,7 @@ describe('StubTransport', () => {
   it('returns path-specific mock response', async () => {
     const stub = new StubTransport(descriptor)
     stub.mock('/deploy', { deployed: true })
-    const result = await stub.send({ target: 'agent:srv-test', method: 'POST', path: '/deploy' })
+    const result = await stub.send({ target: 'outpost:srv-test', method: 'POST', path: '/deploy' })
     expect(result.error).toBeNull()
     expect(result.data).toEqual({ deployed: true })
   })
@@ -576,7 +576,7 @@ describe('StubTransport', () => {
   it('falls back to default response for unregistered path', async () => {
     const stub = new StubTransport(descriptor)
     stub.mock('/deploy', { deployed: true })
-    const result = await stub.send({ target: 'agent:srv-test', method: 'POST', path: '/other' })
+    const result = await stub.send({ target: 'outpost:srv-test', method: 'POST', path: '/other' })
     expect(result.error).toBeNull()
     expect(result.data).toEqual({ ok: true }) // default
   })
@@ -584,18 +584,18 @@ describe('StubTransport', () => {
   it('mockDefault overrides the fallback', async () => {
     const stub = new StubTransport(descriptor)
     stub.mockDefault({ custom: 'default' })
-    const result = await stub.send({ target: 'agent:srv-test', method: 'GET', path: '/health' })
+    const result = await stub.send({ target: 'outpost:srv-test', method: 'GET', path: '/health' })
     expect(result.data).toEqual({ custom: 'default' })
   })
 
   it('reset clears calls and mocks', async () => {
     const stub = new StubTransport(descriptor)
     stub.mock('/deploy', { deployed: true })
-    await stub.send({ target: 'agent:srv-test', method: 'POST', path: '/deploy' })
+    await stub.send({ target: 'outpost:srv-test', method: 'POST', path: '/deploy' })
     stub.reset()
     expect(stub.calls).toHaveLength(0)
     // Mock is gone — should fall back to default
-    const result = await stub.send({ target: 'agent:srv-test', method: 'POST', path: '/deploy' })
+    const result = await stub.send({ target: 'outpost:srv-test', method: 'POST', path: '/deploy' })
     expect(result.data).toEqual({ ok: true })
   })
 
@@ -611,54 +611,54 @@ describe('StubTransport', () => {
 describe('createTestConduit', () => {
   it('routes send() to the correct stub', async () => {
     const { conduit } = await createTestConduit({
-      'agent:srv-abc': { '/deploy': { deployed: true } },
+      'outpost:srv-abc': { '/deploy': { deployed: true } },
     })
 
-    const result = await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/deploy' })
+    const result = await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/deploy' })
     expect(result.error).toBeNull()
     expect(result.data).toEqual({ deployed: true })
   })
 
   it('returns typed stubs keyed by target id', async () => {
     const { conduit, stubs } = await createTestConduit({
-      'agent:srv-abc': { '/deploy': { deployed: true } },
+      'outpost:srv-abc': { '/deploy': { deployed: true } },
       'provider:hetzner': { '/servers/42': { id: 42, status: 'running' } },
     })
 
-    await conduit.send({ target: 'agent:srv-abc',     method: 'POST', path: '/deploy' })
+    await conduit.send({ target: 'outpost:srv-abc',     method: 'POST', path: '/deploy' })
     await conduit.send({ target: 'provider:hetzner',  method: 'GET',  path: '/servers/42' })
 
-    expect(stubs['agent:srv-abc'].calls).toHaveLength(1)
+    expect(stubs['outpost:srv-abc'].calls).toHaveLength(1)
     expect(stubs['provider:hetzner'].calls).toHaveLength(1)
   })
 
   it('records multiple calls in order', async () => {
     const { conduit, stubs } = await createTestConduit({
-      'agent:srv-abc': {
+      'outpost:srv-abc': {
         '/pull':         { ok: true },
         '/deploy':       { deployed: true },
         '/health-check': { healthy: true },
       },
     })
 
-    await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/pull' })
-    await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/deploy' })
-    await conduit.send({ target: 'agent:srv-abc', method: 'GET',  path: '/health-check' })
+    await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/pull' })
+    await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/deploy' })
+    await conduit.send({ target: 'outpost:srv-abc', method: 'GET',  path: '/health-check' })
 
-    const paths = stubs['agent:srv-abc'].calls.map(c => c.path)
+    const paths = stubs['outpost:srv-abc'].calls.map(c => c.path)
     expect(paths).toEqual(['/pull', '/deploy', '/health-check'])
   })
 
   it('reset between test cases clears call history', async () => {
     const { conduit, stubs } = await createTestConduit({
-      'agent:srv-abc': { '/deploy': { deployed: true } },
+      'outpost:srv-abc': { '/deploy': { deployed: true } },
     })
 
-    await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/deploy' })
-    expect(stubs['agent:srv-abc'].calls).toHaveLength(1)
+    await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/deploy' })
+    expect(stubs['outpost:srv-abc'].calls).toHaveLength(1)
 
-    stubs['agent:srv-abc'].reset()
-    expect(stubs['agent:srv-abc'].calls).toHaveLength(0)
+    stubs['outpost:srv-abc'].reset()
+    expect(stubs['outpost:srv-abc'].calls).toHaveLength(0)
   })
 
   // Stubs used to bypass the store entirely, so resolve()/list()/stats()
@@ -668,30 +668,30 @@ describe('createTestConduit', () => {
   it('stubbed targets are resolvable, with kind inferred from the id prefix', async () => {
     const { conduit } = await createTestConduit({
       'provider:stripe': {},
-      'agent:srv-1':     {},
+      'outpost:srv-1':     {},
       'local:sidecar':   {},
     })
 
     expect((await conduit.resolve('provider:stripe'))!.kind).toBe('provider')
-    expect((await conduit.resolve('agent:srv-1'))!.kind).toBe('agent')
+    expect((await conduit.resolve('outpost:srv-1'))!.kind).toBe('outpost')
     expect((await conduit.resolve('local:sidecar'))!.kind).toBe('local')
   })
 
   it('stubbed targets appear in list() and stats()', async () => {
     const { conduit } = await createTestConduit({
       'provider:stripe': {},
-      'agent:srv-1':     {},
+      'outpost:srv-1':     {},
     })
 
     expect((await conduit.list()).map(t => t.id).sort())
-      .toEqual(['agent:srv-1', 'provider:stripe'])
+      .toEqual(['outpost:srv-1', 'provider:stripe'])
     expect(conduit.stats().targets.total).toBe(2)
     expect(conduit.stats().targets.byKind.provider).toBe(1)
   })
 
   it('mixes stubbed targets with plain registered ones', async () => {
     const { conduit, stubs } = await createTestConduit(
-      { 'agent:stubbed': { '/ping': { pong: true } } },
+      { 'outpost:stubbed': { '/ping': { pong: true } } },
       { targets: [providerTarget()] },
     )
 
@@ -699,16 +699,16 @@ describe('createTestConduit', () => {
     expect((await conduit.resolve('provider:hetzner'))!.address)
       .toBe('https://api.hetzner.cloud/v1')
     // ...and the stub still intercepts send()
-    const result = await conduit.send({ target: 'agent:stubbed', method: 'POST', path: '/ping' })
+    const result = await conduit.send({ target: 'outpost:stubbed', method: 'POST', path: '/ping' })
     expect(result.data).toEqual({ pong: true })
-    expect(stubs['agent:stubbed'].calls).toHaveLength(1)
+    expect(stubs['outpost:stubbed'].calls).toHaveLength(1)
   })
 })
 
 // ─── StubTransport can simulate failure ──────────────────────
 
 describe('StubTransport failure simulation', () => {
-  const descriptor = agentTarget()
+  const descriptor = outpostTarget()
 
   it('mockError returns a typed conduit error', async () => {
     const stub = new StubTransport(descriptor)
@@ -789,7 +789,7 @@ describe('StubTransport failure simulation', () => {
 
   it('a mocked stream error throws ConduitStreamError', async () => {
     const stub = new StubTransport(descriptor, 'websocket')
-    stub.mockError('/logs', 'stream_error', { message: 'agent vanished' })
+    stub.mockError('/logs', 'stream_error', { message: 'outpost vanished' })
 
     await expect(
       stub.stream({ target: descriptor.id, method: 'logs', path: '/logs' })[Symbol.asyncIterator]().next()
@@ -834,21 +834,21 @@ describe('createSQLiteStore', () => {
   it('round-trips a descriptor including the auth ref', async () => {
     const { store: s } = store()
     await s.init()
-    await s.set(agentTarget())
+    await s.set(outpostTarget())
 
-    const found = (await s.get('agent:srv-test'))!
+    const found = (await s.get('outpost:srv-test'))!
     expect(found.address).toBe('http://10.0.0.5:7700')
     expect(found.auth).toEqual({ type: 'hmac', ref: 'AGENT_SECRET' })
-    expect(found.kind).toBe('agent')
+    expect(found.kind).toBe('outpost')
   })
 
   it('preserves registered_at on upsert but updates the rest', async () => {
     const { store: s } = store()
     await s.init()
-    await s.set(agentTarget({ registered_at: 1000 }))
-    await s.set(agentTarget({ registered_at: 9999, address: 'http://new' }))
+    await s.set(outpostTarget({ registered_at: 1000 }))
+    await s.set(outpostTarget({ registered_at: 9999, address: 'http://new' }))
 
-    const found = (await s.get('agent:srv-test'))!
+    const found = (await s.get('outpost:srv-test'))!
     expect(found.registered_at).toBe(1000)
     expect(found.address).toBe('http://new')
   })
@@ -856,40 +856,40 @@ describe('createSQLiteStore', () => {
   it('lists ordered by registered_at', async () => {
     const { store: s } = store()
     await s.init()
-    await s.set(agentTarget({ id: 'agent:b', registered_at: 200 }))
-    await s.set(agentTarget({ id: 'agent:a', registered_at: 100 }))
+    await s.set(outpostTarget({ id: 'outpost:b', registered_at: 200 }))
+    await s.set(outpostTarget({ id: 'outpost:a', registered_at: 100 }))
 
-    expect((await s.list()).map(t => t.id)).toEqual(['agent:a', 'agent:b'])
+    expect((await s.list()).map(t => t.id)).toEqual(['outpost:a', 'outpost:b'])
   })
 
   it('deletes', async () => {
     const { store: s } = store()
     await s.init()
-    await s.set(agentTarget())
-    await s.delete('agent:srv-test')
-    expect(await s.get('agent:srv-test')).toBeNull()
+    await s.set(outpostTarget())
+    await s.delete('outpost:srv-test')
+    expect(await s.get('outpost:srv-test')).toBeNull()
   })
 
   it('touch updates last_seen_at', async () => {
     const { store: s } = store()
     await s.init()
-    await s.set(agentTarget({ last_seen_at: null }))
+    await s.set(outpostTarget({ last_seen_at: null }))
 
     const before = Date.now()
-    await s.touch('agent:srv-test')
-    expect((await s.get('agent:srv-test'))!.last_seen_at).toBeGreaterThanOrEqual(before)
+    await s.touch('outpost:srv-test')
+    expect((await s.get('outpost:srv-test'))!.last_seen_at).toBeGreaterThanOrEqual(before)
   })
 
   it('init is idempotent across restarts against the same file', async () => {
     const db = new Database(':memory:')
     const a  = createSQLiteStore(db)
     await a.init()
-    await a.set(agentTarget())
+    await a.set(outpostTarget())
 
     // A second store over the same handle — as happens on a process restart
     const b = createSQLiteStore(db)
     await b.init()
-    expect((await b.get('agent:srv-test'))!.id).toBe('agent:srv-test')
+    expect((await b.get('outpost:srv-test'))!.id).toBe('outpost:srv-test')
   })
 
   it('survives a conduit restart with counters seeded', async () => {
@@ -914,7 +914,7 @@ describe('conduit.send()', () => {
     const c = createConduit()
     await c.init()
 
-    const result = await c.send({ target: 'agent:unknown', method: 'POST', path: '/deploy' })
+    const result = await c.send({ target: 'outpost:unknown', method: 'POST', path: '/deploy' })
     expect(result.error).not.toBeNull()
     expect(result.error!.kind).toBe('target_not_found')
     expect(result.error!.retryable).toBe(false)
@@ -925,25 +925,25 @@ describe('conduit.send()', () => {
     const c = createConduit()
     await c.init()
 
-    const result = await c.send({ target: 'agent:missing', method: 'GET', path: '/health' })
-    expect(result.meta.target).toBe('agent:missing')
+    const result = await c.send({ target: 'outpost:missing', method: 'GET', path: '/health' })
+    expect(result.meta.target).toBe('outpost:missing')
     expect(result.meta.duration_ms).toBe(0)
   })
 
   it('routes to stub after register()', async () => {
     const { conduit, stubs } = await createTestConduit({
-      'agent:srv-abc': { '/status': { running: true } },
+      'outpost:srv-abc': { '/status': { running: true } },
     })
 
     const result = await conduit.send<{ running: boolean }>({
-      target: 'agent:srv-abc',
+      target: 'outpost:srv-abc',
       method: 'GET',
       path:   '/status',
     })
 
     expect(result.error).toBeNull()
     expect(result.data?.running).toBe(true)
-    expect(stubs['agent:srv-abc'].calls).toHaveLength(1)
+    expect(stubs['outpost:srv-abc'].calls).toHaveLength(1)
   })
 })
 
@@ -952,7 +952,7 @@ describe('conduit.send()', () => {
 describe('conduit.register() / deregister()', () => {
   it('registered target is resolvable', async () => {
     const c      = createConduit()
-    const target = agentTarget()
+    const target = outpostTarget()
     await c.init()
     await c.register(target)
     const resolved = await c.resolve(target.id)
@@ -962,7 +962,7 @@ describe('conduit.register() / deregister()', () => {
 
   it('deregistered target is no longer resolvable', async () => {
     const c      = createConduit()
-    const target = agentTarget()
+    const target = outpostTarget()
     await c.init()
     await c.register(target)
     await c.deregister(target.id)
@@ -972,16 +972,16 @@ describe('conduit.register() / deregister()', () => {
   it('list() returns all registered targets', async () => {
     const c = createConduit()
     await c.init()
-    await c.register(agentTarget({ id: 'agent:a' }))
-    await c.register(agentTarget({ id: 'agent:b' }))
+    await c.register(outpostTarget({ id: 'outpost:a' }))
+    await c.register(outpostTarget({ id: 'outpost:b' }))
     const targets = await c.list()
-    expect(targets.map(t => t.id).sort()).toEqual(['agent:a', 'agent:b'])
+    expect(targets.map(t => t.id).sort()).toEqual(['outpost:a', 'outpost:b'])
   })
 
   it('deregister on unknown id is a no-op', async () => {
     const c = createConduit()
     await c.init()
-    await expect(c.deregister('agent:never-existed')).resolves.toBeUndefined()
+    await expect(c.deregister('outpost:never-existed')).resolves.toBeUndefined()
   })
 })
 
@@ -992,7 +992,7 @@ describe('conduit.stream()', () => {
     const c = createConduit()
     await c.init()
 
-    const gen = c.stream({ target: 'agent:missing', method: 'logs' })[Symbol.asyncIterator]()
+    const gen = c.stream({ target: 'outpost:missing', method: 'logs' })[Symbol.asyncIterator]()
     await expect(gen.next()).rejects.toBeInstanceOf(ConduitStreamError)
   })
 
@@ -1001,12 +1001,12 @@ describe('conduit.stream()', () => {
     await c.init()
 
     try {
-      await c.stream({ target: 'agent:missing', method: 'logs' })[Symbol.asyncIterator]().next()
+      await c.stream({ target: 'outpost:missing', method: 'logs' })[Symbol.asyncIterator]().next()
       expect.unreachable('should have thrown')
     } catch (err) {
       expect(err).toBeInstanceOf(ConduitStreamError)
       expect((err as ConduitStreamError).conduit.kind).toBe('target_not_found')
-      expect((err as ConduitStreamError).conduit.target).toBe('agent:missing')
+      expect((err as ConduitStreamError).conduit.target).toBe('outpost:missing')
     }
   })
 })
@@ -1018,11 +1018,11 @@ describe('conduit hooks', () => {
     const seen: ConduitRequest[] = []
 
     const { conduit } = await createTestConduit(
-      { 'agent:srv-abc': { '/ping': { pong: true } } },
+      { 'outpost:srv-abc': { '/ping': { pong: true } } },
       { hooks: { onRequest: (req) => seen.push(req) } }
     )
 
-    await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
+    await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
     expect(seen).toHaveLength(1)
     expect(seen[0].path).toBe('/ping')
   })
@@ -1034,7 +1034,7 @@ describe('conduit hooks', () => {
     })
     await c.init()
 
-    await c.send({ target: 'agent:missing', method: 'POST' })
+    await c.send({ target: 'outpost:missing', method: 'POST' })
     expect(errors).toHaveLength(1)
     expect(errors[0].kind).toBe('target_not_found')
   })
@@ -1045,8 +1045,8 @@ describe('conduit hooks', () => {
       hooks: { onRegistered: (d) => registered.push(d.id) }
     })
     await c.init()
-    await c.register(agentTarget())
-    expect(registered).toContain('agent:srv-test')
+    await c.register(outpostTarget())
+    expect(registered).toContain('outpost:srv-test')
   })
 
   it('onDeregistered fires when a target is removed', async () => {
@@ -1055,9 +1055,9 @@ describe('conduit hooks', () => {
       hooks: { onDeregistered: (id) => removed.push(id) }
     })
     await c.init()
-    await c.register(agentTarget())
-    await c.deregister('agent:srv-test')
-    expect(removed).toContain('agent:srv-test')
+    await c.register(outpostTarget())
+    await c.deregister('outpost:srv-test')
+    expect(removed).toContain('outpost:srv-test')
   })
 })
 
@@ -1074,10 +1074,10 @@ describe('static targets (opts.targets)', () => {
   })
 
   it('static targets appear in list()', async () => {
-    const c = createConduit({ targets: [agentTarget(), providerTarget()] })
+    const c = createConduit({ targets: [outpostTarget(), providerTarget()] })
     await c.init()
     const ids = (await c.list()).map(t => t.id)
-    expect(ids).toContain('agent:srv-test')
+    expect(ids).toContain('outpost:srv-test')
     expect(ids).toContain('provider:hetzner')
   })
 })
@@ -1098,20 +1098,20 @@ describe('conduit.stats()', () => {
   it('counts targets by kind', async () => {
     const c = createConduit()
     await c.init()
-    await c.register(agentTarget({ id: 'agent:a' }))
-    await c.register(agentTarget({ id: 'agent:b' }))
+    await c.register(outpostTarget({ id: 'outpost:a' }))
+    await c.register(outpostTarget({ id: 'outpost:b' }))
     await c.register(providerTarget())
     const s = c.stats()
     expect(s.targets.total).toBe(3)
-    expect(s.targets.byKind.agent).toBe(2)
+    expect(s.targets.byKind.outpost).toBe(2)
     expect(s.targets.byKind.provider).toBe(1)
   })
 
   it('counts targets by protocol', async () => {
     const c = createConduit()
     await c.init()
-    await c.register(agentTarget({ id: 'agent:a', protocol: 'http' }))
-    await c.register(agentTarget({ id: 'agent:b', protocol: 'websocket' }))
+    await c.register(outpostTarget({ id: 'outpost:a', protocol: 'http' }))
+    await c.register(outpostTarget({ id: 'outpost:b', protocol: 'websocket' }))
     await c.register(providerTarget({ protocol: 'http' }))
     const s = c.stats()
     expect(s.targets.byProtocol.http).toBe(2)
@@ -1121,8 +1121,8 @@ describe('conduit.stats()', () => {
   it('updates after deregister', async () => {
     const c = createConduit()
     await c.init()
-    await c.register(agentTarget())
-    await c.deregister('agent:srv-test')
+    await c.register(outpostTarget())
+    await c.deregister('outpost:srv-test')
     expect(c.stats().targets.total).toBe(0)
   })
 
@@ -1140,18 +1140,18 @@ describe('conduit.stats()', () => {
   it('re-registering the same id does not double-count', async () => {
     const c = createConduit()
     await c.init()
-    await c.register(agentTarget())
-    await c.register(agentTarget({ address: 'http://10.0.0.9:7700' }))
+    await c.register(outpostTarget())
+    await c.register(outpostTarget({ address: 'http://10.0.0.9:7700' }))
 
     expect(c.stats().targets.total).toBe(1)
-    expect(c.stats().targets.byKind.agent).toBe(1)
+    expect(c.stats().targets.byKind.outpost).toBe(1)
   })
 
   it('re-registering with a new protocol moves the count', async () => {
     const c = createConduit()
     await c.init()
-    await c.register(agentTarget({ protocol: 'http' }))
-    await c.register(agentTarget({ protocol: 'websocket' }))
+    await c.register(outpostTarget({ protocol: 'http' }))
+    await c.register(outpostTarget({ protocol: 'websocket' }))
 
     const s = c.stats()
     expect(s.targets.byProtocol.websocket).toBe(1)
@@ -1162,7 +1162,7 @@ describe('conduit.stats()', () => {
   it('seeds target counts from a store that already has entries', async () => {
     const store = createMemoryStore()
     await store.init()
-    await store.set(agentTarget({ id: 'agent:pre-existing' }))
+    await store.set(outpostTarget({ id: 'outpost:pre-existing' }))
     await store.set(providerTarget())
 
     const c = createConduit({ store })
@@ -1170,17 +1170,17 @@ describe('conduit.stats()', () => {
 
     const s = c.stats()
     expect(s.targets.total).toBe(2)
-    expect(s.targets.byKind.agent).toBe(1)
+    expect(s.targets.byKind.outpost).toBe(1)
     expect(s.targets.byKind.provider).toBe(1)
   })
 
   it('counts successful requests and records latency', async () => {
     const { conduit } = await createTestConduit({
-      'agent:srv-abc': { '/ping': { pong: true } },
+      'outpost:srv-abc': { '/ping': { pong: true } },
     })
 
-    await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
-    await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
+    await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
+    await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
 
     const s = conduit.stats()
     expect(s.requests.total).toBe(2)
@@ -1195,8 +1195,8 @@ describe('conduit.stats()', () => {
     const c = createConduit()
     await c.init()
 
-    await c.send({ target: 'agent:missing',   method: 'POST' })
-    await c.send({ target: 'agent:missing-2', method: 'POST' })
+    await c.send({ target: 'outpost:missing',   method: 'POST' })
+    await c.send({ target: 'outpost:missing-2', method: 'POST' })
 
     const s = c.stats()
     expect(s.requests.total).toBe(2)
@@ -1210,7 +1210,7 @@ describe('conduit.stats()', () => {
     await c.init()
 
     // target_not_found returns through the same accounting path
-    await c.send({ target: 'agent:missing', method: 'POST' })
+    await c.send({ target: 'outpost:missing', method: 'POST' })
     expect(c.stats().requests.in_flight).toBe(0)
   })
 
@@ -1219,7 +1219,7 @@ describe('conduit.stats()', () => {
     await c.init()
 
     await expect(
-      c.stream({ target: 'agent:missing', method: 'logs' })[Symbol.asyncIterator]().next()
+      c.stream({ target: 'outpost:missing', method: 'logs' })[Symbol.asyncIterator]().next()
     ).rejects.toBeInstanceOf(ConduitStreamError)
 
     const s = c.stats()
@@ -1230,9 +1230,9 @@ describe('conduit.stats()', () => {
   })
 
   it('counts opened streams', async () => {
-    const { conduit } = await createTestConduit({ 'agent:srv-abc': {} })
+    const { conduit } = await createTestConduit({ 'outpost:srv-abc': {} })
 
-    for await (const _ of conduit.stream({ target: 'agent:srv-abc', method: 'logs' })) {
+    for await (const _ of conduit.stream({ target: 'outpost:srv-abc', method: 'logs' })) {
       // stub yields nothing
     }
 
@@ -1252,7 +1252,7 @@ describe('conduit.destroy()', () => {
   })
 
   it('resolves without throwing when targets are registered but no connections made', async () => {
-    const c = createConduit({ targets: [agentTarget(), providerTarget()] })
+    const c = createConduit({ targets: [outpostTarget(), providerTarget()] })
     await c.init()
     await expect(c.destroy()).resolves.toBeUndefined()
   })
@@ -1277,12 +1277,12 @@ describe('conduit.destroy()', () => {
   })
 
   it('stream() after destroy() throws ConduitStreamError', async () => {
-    const c = createConduit({ targets: [agentTarget()] })
+    const c = createConduit({ targets: [outpostTarget()] })
     await c.init()
     await c.destroy()
 
     await expect(
-      c.stream({ target: 'agent:srv-test', method: 'logs' })[Symbol.asyncIterator]().next()
+      c.stream({ target: 'outpost:srv-test', method: 'logs' })[Symbol.asyncIterator]().next()
     ).rejects.toBeInstanceOf(ConduitStreamError)
   })
 
@@ -1293,8 +1293,8 @@ describe('conduit.destroy()', () => {
 describe('WebSocket transport — stream()', () => {
   it('throws ConduitStreamError when the target is unreachable', async () => {
     // Previously this returned a silently-empty iterator, making
-    // "agent unreachable" indistinguishable from "agent had no logs".
-    const target = agentTarget({ protocol: 'websocket', address: 'ws://127.0.0.1:1' })
+    // "outpost unreachable" indistinguishable from "outpost had no logs".
+    const target = outpostTarget({ protocol: 'websocket', address: 'ws://127.0.0.1:1' })
     const t = new WebSocketTransport(target, createNullResolver())
 
     try {
@@ -1323,7 +1323,7 @@ describe('WebSocket transport — stream()', () => {
       }
     })
 
-    const target = agentTarget({
+    const target = outpostTarget({
       protocol: 'websocket',
       address:  `ws://localhost:${server.port}`,
     })
@@ -1362,7 +1362,7 @@ describe('WebSocket transport — stream()', () => {
       }
     })
 
-    const target = agentTarget({
+    const target = outpostTarget({
       protocol: 'websocket',
       address:  `ws://localhost:${server.port}`,
     })
@@ -1384,7 +1384,7 @@ describe('WebSocket transport — stream()', () => {
 // ─── WebSocket authentication (§1.1) ─────────────────────────
 
 // Spins up a WS server that records upgrade headers and ends any stream
-// immediately. `reject` refuses the upgrade, simulating an agent enforcing auth.
+// immediately. `reject` refuses the upgrade, simulating an outpost enforcing auth.
 function wsRecorder(opts: { reject?: boolean } = {}) {
   const upgrades: Record<string, string>[] = []
   const frames:   Record<string, unknown>[] = []
@@ -1423,7 +1423,7 @@ describe('WebSocket transport — auth on the upgrade', () => {
 
   it('signs the upgrade for an hmac target', async () => {
     const s = wsRecorder()
-    const target = agentTarget({ protocol: 'websocket', address: s.url })
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
     const t = new WebSocketTransport(target, secrets())
 
     try {
@@ -1440,7 +1440,7 @@ describe('WebSocket transport — auth on the upgrade', () => {
   // unauthenticated traffic over WebSocket, silently.
   it('never opens a connection when the credential cannot be resolved', async () => {
     const s = wsRecorder()
-    const target = agentTarget({ protocol: 'websocket', address: s.url })
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
     const t = new WebSocketTransport(target, createNullResolver())
 
     try {
@@ -1452,9 +1452,9 @@ describe('WebSocket transport — auth on the upgrade', () => {
     } finally { t.destroy(); s.stop() }
   })
 
-  it('an agent rejecting the upgrade surfaces as connection_failed', async () => {
+  it('an outpost rejecting the upgrade surfaces as connection_failed', async () => {
     const s = wsRecorder({ reject: true })
-    const target = agentTarget({ protocol: 'websocket', address: s.url })
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
     const t = new WebSocketTransport(target, secrets())
 
     try {
@@ -1483,7 +1483,7 @@ describe('WebSocket transport — connection lifecycle', () => {
       }
     })
 
-    const target = agentTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
+    const target = outpostTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
     const t = new WebSocketTransport(target, secrets())
 
     try {
@@ -1514,7 +1514,7 @@ describe('WebSocket transport — connection lifecycle', () => {
       }
     })
 
-    const target = agentTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
+    const target = outpostTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
     const t = new WebSocketTransport(target, secrets())
     const chunks: unknown[] = []
 
@@ -1679,7 +1679,7 @@ describe('hmac signing', () => {
   async function headersFor(req: Partial<ConduitRequest>, address: string) {
     const s = recorder(() => Response.json({ ok: true }))
     try {
-      const target = agentTarget({ address: address || s.url })
+      const target = outpostTarget({ address: address || s.url })
       const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
       await t.send({ target: target.id, method: 'GET', ...req })
       return s.seen[0].headers
@@ -1724,7 +1724,7 @@ describe('hmac signing', () => {
   it('honours a custom header prefix', async () => {
     const s = recorder(() => Response.json({ ok: true }))
     try {
-      const target = agentTarget({
+      const target = outpostTarget({
         address: s.url,
         auth: { type: 'hmac', ref: 'AGENT_SECRET', header_prefix: 'X-Frontier' },
       })
@@ -1750,7 +1750,7 @@ describe('unix transport', () => {
     })
 
     try {
-      const target = agentTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
+      const target = outpostTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
       const t = new UnixTransport(target, secrets())
 
       const result = await t.send({
@@ -1777,7 +1777,7 @@ describe('unix transport', () => {
     })
 
     try {
-      const target = agentTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
+      const target = outpostTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
       const t = new UnixTransport(target, secrets())
 
       await t.send({ target: target.id, method: 'POST', path: '/deploy', body: { image: 'v2' } })
@@ -1788,7 +1788,7 @@ describe('unix transport', () => {
   })
 
   it('fails closed when the credential cannot be resolved', async () => {
-    const target = agentTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
+    const target = outpostTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
     const t = new UnixTransport(target, createNullResolver())
 
     const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
@@ -1796,7 +1796,7 @@ describe('unix transport', () => {
   })
 
   it('streaming throws rather than yielding nothing', async () => {
-    const target = agentTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
+    const target = outpostTarget({ protocol: 'unix', address: SOCK, kind: 'local' })
     const t = new UnixTransport(target, secrets())
 
     await expect(
@@ -1811,9 +1811,9 @@ describe('NotImplementedTransport', () => {
   it('send() fails immediately and clearly for an ssh target', async () => {
     const c = createConduit({ credentials: secrets() })
     await c.init()
-    await c.register(agentTarget({ protocol: 'ssh', address: 'ssh://host' }))
+    await c.register(outpostTarget({ protocol: 'ssh', address: 'ssh://host' }))
 
-    const result = await c.send({ target: 'agent:srv-test', method: 'POST', path: '/x' })
+    const result = await c.send({ target: 'outpost:srv-test', method: 'POST', path: '/x' })
 
     expect(result.error!.kind).toBe('not_implemented')
     expect(result.error!.retryable).toBe(false)
@@ -1823,10 +1823,10 @@ describe('NotImplementedTransport', () => {
   it('stream() throws rather than yielding nothing', async () => {
     const c = createConduit({ credentials: secrets() })
     await c.init()
-    await c.register(agentTarget({ protocol: 'nats', address: 'nats://host' }))
+    await c.register(outpostTarget({ protocol: 'nats', address: 'nats://host' }))
 
     await expect(
-      c.stream({ target: 'agent:srv-test', method: 'logs' })[Symbol.asyncIterator]().next()
+      c.stream({ target: 'outpost:srv-test', method: 'logs' })[Symbol.asyncIterator]().next()
     ).rejects.toBeInstanceOf(ConduitStreamError)
   })
 })
@@ -1839,22 +1839,22 @@ describe('conduit.touch()', () => {
   it('refreshes last_seen_at without re-registering', async () => {
     const c = createConduit({ credentials: secrets() })
     await c.init()
-    await c.register(agentTarget({ last_seen_at: null }))
+    await c.register(outpostTarget({ last_seen_at: null }))
 
     const before = Date.now()
-    await c.touch('agent:srv-test')
+    await c.touch('outpost:srv-test')
 
-    const found = (await c.resolve('agent:srv-test'))!
+    const found = (await c.resolve('outpost:srv-test'))!
     expect(found.last_seen_at).toBeGreaterThanOrEqual(before)
   })
 
   it('does not disturb the rest of the descriptor', async () => {
     const c = createConduit({ credentials: secrets() })
     await c.init()
-    await c.register(agentTarget({ registered_at: 1000 }))
-    await c.touch('agent:srv-test')
+    await c.register(outpostTarget({ registered_at: 1000 }))
+    await c.touch('outpost:srv-test')
 
-    const found = (await c.resolve('agent:srv-test'))!
+    const found = (await c.resolve('outpost:srv-test'))!
     expect(found.registered_at).toBe(1000)
     expect(found.address).toBe('http://10.0.0.5:7700')
   })
@@ -1862,7 +1862,7 @@ describe('conduit.touch()', () => {
   it('is a no-op for an unknown target', async () => {
     const c = createConduit()
     await c.init()
-    await expect(c.touch('agent:never-existed')).resolves.toBeUndefined()
+    await expect(c.touch('outpost:never-existed')).resolves.toBeUndefined()
   })
 
   it('a restart does not wipe heartbeat state for a static target', async () => {
@@ -1988,11 +1988,11 @@ describe('unknown HTTP methods', () => {
 
   it('protocol-specific methods still work on a websocket target', async () => {
     // 'logs' is meaningless to HTTP but valid over the WS wire protocol
-    const stub = new StubTransport(agentTarget(), 'websocket')
+    const stub = new StubTransport(outpostTarget(), 'websocket')
     stub.mockStream('/logs', ['line-1'])
 
     const chunks: unknown[] = []
-    for await (const c of stub.stream({ target: 'agent:srv-test', method: 'logs', path: '/logs' })) {
+    for await (const c of stub.stream({ target: 'outpost:srv-test', method: 'logs', path: '/logs' })) {
       chunks.push(c.data)
     }
     expect(chunks).toEqual(['line-1'])
@@ -2005,7 +2005,7 @@ describe('stream lifecycle hooks', () => {
   it('onStreamStart and onStreamEnd report the chunk count', async () => {
     const events: string[] = []
     const { conduit, stubs } = await createTestConduit(
-      { 'agent:srv-abc': {} },
+      { 'outpost:srv-abc': {} },
       {
         hooks: {
           onStreamStart: () => events.push('start'),
@@ -2013,9 +2013,9 @@ describe('stream lifecycle hooks', () => {
         }
       }
     )
-    stubs['agent:srv-abc'].mockStream('/logs', ['a', 'b', 'c'])
+    stubs['outpost:srv-abc'].mockStream('/logs', ['a', 'b', 'c'])
 
-    for await (const _ of conduit.stream({ target: 'agent:srv-abc', method: 'logs', path: '/logs' })) {
+    for await (const _ of conduit.stream({ target: 'outpost:srv-abc', method: 'logs', path: '/logs' })) {
       // drain
     }
 
@@ -2025,13 +2025,13 @@ describe('stream lifecycle hooks', () => {
   it('a stream that fails mid-flight reports through onError', async () => {
     const errors: ConduitError[] = []
     const { conduit, stubs } = await createTestConduit(
-      { 'agent:srv-abc': {} },
+      { 'outpost:srv-abc': {} },
       { hooks: { onError: (_req, err) => errors.push(err) } }
     )
-    stubs['agent:srv-abc'].mockError('/logs', 'stream_error', { message: 'agent vanished' })
+    stubs['outpost:srv-abc'].mockError('/logs', 'stream_error', { message: 'outpost vanished' })
 
     await expect((async () => {
-      for await (const _ of conduit.stream({ target: 'agent:srv-abc', method: 'logs', path: '/logs' })) {
+      for await (const _ of conduit.stream({ target: 'outpost:srv-abc', method: 'logs', path: '/logs' })) {
         // never reached
       }
     })()).rejects.toBeInstanceOf(ConduitStreamError)
@@ -2448,22 +2448,22 @@ describe('trace context', () => {
 describe('a throwing hook does not take down the caller', () => {
   it('onRequest', async () => {
     const { conduit } = await createTestConduit(
-      { 'agent:srv-abc': { '/ping': { pong: true } } },
+      { 'outpost:srv-abc': { '/ping': { pong: true } } },
       { hooks: { onRequest() { throw new Error('boom') } } }
     )
 
-    const result = await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
+    const result = await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
     expect(result.error).toBeNull()
     expect(result.data).toEqual({ pong: true })
   })
 
   it('onResponse', async () => {
     const { conduit } = await createTestConduit(
-      { 'agent:srv-abc': { '/ping': { pong: true } } },
+      { 'outpost:srv-abc': { '/ping': { pong: true } } },
       { hooks: { onResponse() { throw new Error('boom') } } }
     )
 
-    const result = await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
+    const result = await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
     expect(result.error).toBeNull()
   })
 
@@ -2471,17 +2471,17 @@ describe('a throwing hook does not take down the caller', () => {
     const c = createConduit({ hooks: { onError() { throw new Error('boom') } } })
     await c.init()
 
-    const result = await c.send({ target: 'agent:missing', method: 'POST' })
+    const result = await c.send({ target: 'outpost:missing', method: 'POST' })
     expect(result.error!.kind).toBe('target_not_found')
   })
 
   it('an async hook that rejects is caught, not left unhandled', async () => {
     const { conduit } = await createTestConduit(
-      { 'agent:srv-abc': { '/ping': { pong: true } } },
+      { 'outpost:srv-abc': { '/ping': { pong: true } } },
       { hooks: { onResponse: async () => { throw new Error('async boom') } } }
     )
 
-    const result = await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
+    const result = await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
     expect(result.error).toBeNull()
     // Give the rejection a tick to surface if it were unhandled
     await new Promise(r => setTimeout(r, 10))
@@ -2490,7 +2490,7 @@ describe('a throwing hook does not take down the caller', () => {
   it('an async hook is not awaited by send()', async () => {
     let hookDone = false
     const { conduit } = await createTestConduit(
-      { 'agent:srv-abc': { '/ping': { pong: true } } },
+      { 'outpost:srv-abc': { '/ping': { pong: true } } },
       {
         hooks: {
           onResponse: async () => {
@@ -2501,7 +2501,7 @@ describe('a throwing hook does not take down the caller', () => {
       }
     )
 
-    await conduit.send({ target: 'agent:srv-abc', method: 'POST', path: '/ping' })
+    await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
     // send() returned without waiting for the 200ms hook
     expect(hookDone).toBe(false)
   })
@@ -2515,8 +2515,8 @@ describe('a throwing hook does not take down the caller', () => {
     })
     await c.init()
 
-    await expect(c.register(agentTarget())).resolves.toBeUndefined()
-    await expect(c.deregister('agent:srv-test')).resolves.toBeUndefined()
+    await expect(c.register(outpostTarget())).resolves.toBeUndefined()
+    await expect(c.deregister('outpost:srv-test')).resolves.toBeUndefined()
   })
 })
 

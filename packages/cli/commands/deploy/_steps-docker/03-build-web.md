@@ -12,6 +12,20 @@ const { host, serverPath, commit, deployConf } = context.config
 const keepReleases = deployConf.web?.keep_releases ?? 3
 const releaseDir   = `${serverPath}/releases/${commit}`
 
+// ─── Install dependencies ─────────────────────────────────────────────────────
+// Step 02 pulled new source but not new node_modules, and vite resolves imports
+// against whatever is on disk — so a deploy that adds a dependency either builds
+// against the previous tree or dies mid-build, with the deploy lock already held.
+// The API side never had this problem: its Dockerfile installs inside the image.
+//
+// --frozen-lockfile is the point of the step, not a flag on it. A resolve on the
+// server would produce a tree the lockfile never described and nothing downstream
+// could tell you it had happened.
+log.info('Installing dependencies on server...')
+context.exec({
+  command: `ssh ${host} "cd ${serverPath} && bun install --frozen-lockfile"`,
+})
+
 // ─── Build on server ──────────────────────────────────────────────────────────
 // Code is already current from step 02 (git pull).
 // Run bun build inside the web sub-directory.

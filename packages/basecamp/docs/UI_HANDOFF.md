@@ -201,7 +201,7 @@ Suggested order — follow the data, not the mock's nav:
 2. **Workspace switcher** — everything else needs `X-Workspace-Id`.
 3. **Projects → Environments → Apps** — the core hierarchy, all three CRUD-complete.
 4. **Deployments** — the interesting one: steps stream, engine advances status.
-5. **Servers** — richest service (custom methods, JSON columns, agent heartbeat).
+5. **Servers** — richest service (custom methods, JSON columns, outpost heartbeat).
 6. Jobs, then the sysadmin zone.
 
 ---

@@ -14,7 +14,7 @@
 // (DECISIONS.md). `POST /servers/:id/drain` is a 404; the call is
 // `POST /servers/:id` with `X-Service-Method: drain`.
 //   events · reboot · drain · undrain · sync
-//   heartbeat — the agent's, HMAC at the transport, exempted from sessionScope
+//   heartbeat — the outpost's, HMAC at the transport, exempted from sessionScope
 //
 // The wire contract is the SCHEMA's field names, because autoValidate strips
 // anything else: `ipAddress`, not `ip_address`. A snake_case key does not
@@ -54,11 +54,11 @@ import type { TargetDescriptor } from '@frontierjs/conduit'
 // ─── Types ───────────────────────────────────────────────────────────────
 
 export interface HeartbeatData {
-  agent_version: string
+  outpost_version: string
   health:        Record<string, unknown>
   specs?:        Record<string, unknown>
   docker?:       Record<string, unknown>
-  agent_url?:    string
+  outpost_url?:    string
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ export function createServersService(app: BasecampApp) {
     },
 
     // ── heartbeat — POST /servers/:id  X-Service-Method: heartbeat ────
-    // Called by the Basecamp agent, which holds no session — it authenticates
+    // Called by the Basecamp outpost, which holds no session — it authenticates
     // by HMAC at the transport. asSystem() is therefore the correct client
     // here and NOT a shortcut: there is no user to scope to, and the request
     // legitimately writes to a server in any workspace.
@@ -315,7 +315,7 @@ export function createServersService(app: BasecampApp) {
 
       // The after-hook publishes to `workspace:${ctx.locals.workspaceId}`, and
       // sessionScope — the hook that normally sets it — deliberately skips
-      // heartbeat, because an agent carries no session and no workspace header.
+      // heartbeat, because an outpost carries no session and no workspace header.
       // So every check-in published to nothing: the one update in this app that
       // arrives without a person clicking was the one nobody could see.
       //
@@ -339,10 +339,10 @@ export function createServersService(app: BasecampApp) {
         where: { id },
         data: {
           status:          newStatus,
-          agentVersion:    data.agent_version,
+          outpostVersion:    data.outpost_version,
           health:          { ...data.health, checked_at: now },
           lastHeartbeatAt: now,
-          // Only overwrite when the agent actually reported — the old SQL used
+          // Only overwrite when the outpost actually reported — the old SQL used
           // COALESCE(?, col) for exactly this.
           ...(data.specs  ? { actualSpecs: data.specs  } : {}),
           ...(data.docker ? { dockerState: data.docker } : {}),
@@ -351,39 +351,39 @@ export function createServersService(app: BasecampApp) {
 
       if (newStatus !== server.status) {
         await sys.serverEvent.create({
-          data: { serverId: id, kind: 'came_online', message: 'Agent connected',
-                  metadata: { agent_version: data.agent_version } },
+          data: { serverId: id, kind: 'came_online', message: 'Outpost connected',
+                  metadata: { outpost_version: data.outpost_version } },
         })
       }
 
-      // The agent as a Conduit target — the address anything outbound reaches
+      // The outpost as a Conduit target — the address anything outbound reaches
       // this machine at, and what `volumes.remove` refuses to act without.
       //
       // Keyed on the URL, NOT on the status transition it used to sit inside.
-      // A machine that is already online when its agent first reports a URL —
+      // A machine that is already online when its outpost first reports a URL —
       // or that moves address without going unreachable in between — never
       // transitions, so it was never registered, and every outbound call to it
       // failed as `target_not_found` while the server screen showed it healthy.
-      const target = `agent:${id}`
+      const target = `outpost:${id}`
       const known  = await app.conduit.resolve(target).catch(() => null)
 
-      if (data.agent_url && known?.address !== data.agent_url) {
+      if (data.outpost_url && known?.address !== data.outpost_url) {
         await app.conduit.register({
           id:            target,
-          kind:          'agent',
+          kind:          'outpost',
           protocol:      'http',
-          address:       data.agent_url,
+          address:       data.outpost_url,
           // A REF, resolved at send time. This carried the secret itself
           // (`{ secret: … }`) until 2026-08-09, which was wrong twice: conduit's
           // hmac signer reads `ref` and nothing else, so every outbound call to
-          // an agent failed `auth_failed` naming credential `undefined`; and the
+          // an outpost failed `auth_failed` naming credential `undefined`; and the
           // material was written into the registry, where `GET /conduit-targets`
-          // hands it back. Nothing had ever sent to an agent, so neither showed.
-          auth:          { type: 'hmac', ref: envRef('AGENT_SECRET') },
+          // hands it back. Nothing had ever sent to an outpost, so neither showed.
+          auth:          { type: 'hmac', ref: envRef('OUTPOST_SECRET') },
           registered_at: Date.now(),
           last_seen_at:  Date.now(),
         } as TargetDescriptor)
-        app.logger.info('conduit: agent registered', { server_id: id, url: data.agent_url })
+        app.logger.info('conduit: outpost registered', { server_id: id, url: data.outpost_url })
       } else if (known) {
         // Touch last_seen_at on every other heartbeat (non-critical).
         app.conduit.register({ ...known, last_seen_at: Date.now() }).catch(() => {})
@@ -394,7 +394,7 @@ export function createServersService(app: BasecampApp) {
 
     hooks: {
       before: {
-        // heartbeat is the agent's endpoint — no session, HMAC at the
+        // heartbeat is the outpost's endpoint — no session, HMAC at the
         // transport. It must be exempted HERE; a comment on the method is not
         // an exemption, and it used to 401 every check-in.
         all:       [sessionScope(app, { except: ['heartbeat'] })],

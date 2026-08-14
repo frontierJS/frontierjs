@@ -40,9 +40,10 @@ export interface JunctionClientOptions {
   // Default '' — the server default, which registers services at /{service}.
   // Set to '/api' or '/api/v1' only when the app sets apiPrefix to the same.
   apiPrefix?: string
-  // URL prefix for the auth plugin's routes, default '/auth'. Independent of
-  // apiPrefix: @frontierjs/auth mounts its routes with app.post() directly, so
-  // they are not moved by apiPrefix. Match the plugin's own `prefix` option.
+  // The auth plugin's own prefix, default '/auth' — RELATIVE to apiPrefix, the
+  // same way the plugin's `prefix` option is, because every route an app
+  // registers is mounted under apiPrefix. Match the plugin's option and leave
+  // apiPrefix to say where the app lives.
   authPrefix?: string
 }
 
@@ -52,6 +53,22 @@ export interface FindParams {
   limit?: number
   orderBy?: string | Record<string, 'asc' | 'desc'> | Record<string, 'asc' | 'desc'>[]
   select?: string | string[]
+  /**
+   * Relations to load with the rows — `$populate` on the wire.
+   *
+   *   populate: 'customer'                  the whole related row
+   *   populate: ['customer', 'items']       several
+   *   populate: 'customer:name+email'       named fields of one
+   *
+   * The `:` and `+` spelling is the server's own (`parsePopulate` in
+   * core/litestone.ts) and travels unchanged, so there is one grammar rather
+   * than a client dialect that has to be translated.
+   *
+   * Litestone batches includes — one `IN` per relation level, no N+1 — which is
+   * what makes it safe to let a component declare its own shape instead of
+   * over-fetching server-side to cover every caller (`FJS-084`).
+   */
+  populate?: string | string[]
 }
 
 /**
@@ -206,10 +223,16 @@ export class ServiceProxy<
       const qs = buildQueryString({ ...params, query: { ...idOrQuery, $first: 'true' } })
       return this._client._request('GET', `${this._base}${qs}`) as Promise<T>
     }
+    // params travels on a by-id get too. It used to be accepted and dropped on
+    // both transports, so `get(id, { populate: 'customer' })` — the shape a
+    // detail page wants most — silently answered the bare row.
     if (this._client._wsReady) {
-      return this._client._wsCall(this.name, 'get', idOrQuery, null) as Promise<T>
+      return this._client._wsCall(
+        this.name, 'get', idOrQuery, null, params ? buildWsQuery(params) : undefined
+      ) as Promise<T>
     }
-    return this._client._request('GET', `${this._base}/${idOrQuery}`) as Promise<T>
+    const qs = params ? buildQueryString(params) : ''
+    return this._client._request('GET', `${this._base}/${idOrQuery}${qs}`) as Promise<T>
   }
 
   // create(data, params?) → T
@@ -403,7 +426,10 @@ export class JunctionClient extends EventEmitter {
     this._reconnectDelay = opts.reconnectDelay ?? 1_000
     this._reconnectMax = opts.reconnectMax ?? 30_000
     this._apiPrefix = _normalizePrefix(opts.apiPrefix, '')
-    this._authPrefix = _normalizePrefix(opts.authPrefix, '/auth')
+    // Auth routes are registered with app.post(), which applies apiPrefix like
+    // every other route — so the two prefixes compose here rather than the auth
+    // one standing alone (FJS-012).
+    this._authPrefix = this._apiPrefix + _normalizePrefix(opts.authPrefix, '/auth')
     this.token = opts.token ?? null
     this.workspaceId = opts.workspaceId ?? null
   }
@@ -414,9 +440,7 @@ export class JunctionClient extends EventEmitter {
     email: string
     password: string
   }): Promise<{ token: string; user: unknown; workspaceId: string | null }> {
-    // The auth plugin's own prefix, not apiPrefix — @frontierjs/auth registers
-    // these with app.post() directly, so apiPrefix does not move them. This
-    // used to point at '/api/auth/login', which the plugin has never served.
+    // _authPrefix already carries apiPrefix — see the constructor.
     const result = await this._request('POST', `${this._authPrefix}/login`, credentials, {
       skipAuth: true
     })
@@ -863,7 +887,10 @@ export class JunctionClient extends EventEmitter {
         // fetched the entire unfiltered collection.
         return svc.find(query ?? undefined)
       case 'get':
-        return svc.get(id!)
+        // Same thread-through as find above: the frame's query holds the
+        // directives ($populate, $select) already in wire spelling, and
+        // buildQueryString emits a params.query entry verbatim.
+        return svc.get(id!, query ? { query } : undefined)
       case 'create':
         return svc.create(data ?? {})
       case 'patch':
@@ -942,6 +969,12 @@ function buildWsQuery(params: FindParams): Record<string, unknown> {
   if (params.select != null) {
     q['$select'] = Array.isArray(params.select) ? params.select.join(',') : params.select
   }
+  // Every directive the HTTP builder sends has to be here too: the client
+  // prefers the socket whenever one is up, so a directive on one path only is
+  // a difference nothing can see from the call site.
+  if (params.populate != null) {
+    q['$populate'] = Array.isArray(params.populate) ? params.populate.join(',') : params.populate
+  }
   return q
 }
 
@@ -972,6 +1005,10 @@ function buildQueryString(params: FindParams): string {
 
   if (params.select != null) {
     p['$select'] = Array.isArray(params.select) ? params.select.join(',') : params.select
+  }
+
+  if (params.populate != null) {
+    p['$populate'] = Array.isArray(params.populate) ? params.populate.join(',') : params.populate
   }
 
   if (params.query) {

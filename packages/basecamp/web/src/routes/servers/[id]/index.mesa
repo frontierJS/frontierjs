@@ -32,7 +32,7 @@ title: Server
   load()
   $: page.params.id, () => load()
 
-  // Live. A drain from another tab, or an agent checking in, changes this page
+  // Live. A drain from another tab, or an outpost checking in, changes this page
   // without anyone touching it.
   // The event is named after the method — `servers heartbeat`, `servers drain`
   // — so this listens to all of them and filters out the READS. That filter is
@@ -159,7 +159,7 @@ title: Server
     <dt>Region</dt>        <dd>{server.region}</dd>
     <dt>Address</dt>       <dd><code>{server.ipAddress ?? '—'}</code></dd>
     <dt>SSH</dt>           <dd><code>{server.sshUser}@{server.ipAddress ?? '—'}:{server.sshPort}</code></dd>
-    <dt>Agent</dt>         <dd>{server.agentVersion ?? 'not installed'}</dd>
+    <dt>Outpost</dt>         <dd>{server.outpostVersion ?? 'not installed'}</dd>
     <dt>Last heartbeat</dt><dd id="server-heartbeat">{when(server.lastHeartbeatAt)}</dd>
   </dl>
 
@@ -186,7 +186,7 @@ title: Server
           {/each}
         </dl>
       {:else}
-        <p class="text-sm text-muted">Nothing reported — the agent fills this in on heartbeat.</p>
+        <p class="text-sm text-muted">Nothing reported — the outpost fills this in on heartbeat.</p>
       {/if}
     </article>
 

@@ -13,7 +13,7 @@
 //   `secret:<id>[#field]` — a Secret row, which is what a person typed into a
 //                           form. Encrypted at rest, resolved here.
 //   `env:<NAME>`          — a process-wide shared secret with no row and no
-//                           owner. The agent HMAC key is the only one: every
+//                           owner. The outpost HMAC key is the only one: every
 //                           machine in the fleet signs with it, so there is
 //                           nothing per-target to store.
 //
@@ -23,7 +23,7 @@
 //
 // Both are REFS. A descriptor that carried the material instead would put it in
 // the registry and on the `GET /conduit-targets` answer, which is where the
-// agent secret sat until 2026-08-09 — in plaintext, and unusable besides,
+// outpost secret sat until 2026-08-09 — in plaintext, and unusable besides,
 // because conduit's hmac auth reads `ref` and nothing else.
 //
 // asSystem(): `Secret.data` is `@encrypted`, so a scoped client does not merely

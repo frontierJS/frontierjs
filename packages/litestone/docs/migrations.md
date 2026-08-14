@@ -114,19 +114,68 @@ Unlike Prisma, Litestone does not create a shadow database. It builds a pristine
 The diff covers tables, columns, indexes, foreign keys, STRICT, views and
 triggers.
 
-## Triggers
+## Schema objects Litestone did not create
 
 Litestone generates triggers for `@@fts` (index sync) and for an `updatedAt`
-field. They are diffed like anything else: a trigger whose body no longer
-matches the schema is dropped and recreated, and one the schema no longer
-generates is dropped.
+field, and indexes for `@@index` and `@@softDelete`. They are diffed like
+anything else: one whose body no longer matches the schema is dropped and
+recreated, and one the schema no longer declares is dropped.
 
-**Only names Litestone generates are ever dropped** — `<table>_fts_*` and
-`<table>_updatedAt`. A trigger you wrote is not in the pristine database, so
-nothing here touches it.
+**Only names Litestone generates are ever dropped:**
 
-One exception, and it is destructive: a change needing a **table rebuild**
-(dropping a column, changing a type, changing a foreign key) drops the table,
-which takes every trigger on it. Litestone's own are restated afterwards; a
-trigger you wrote is gone, and the migration says nothing. Recreate it in a JS
-migration that runs after.
+| Object  | Names Litestone owns                          |
+| ------- | --------------------------------------------- |
+| Trigger | `<table>_fts_*`, `<table>_updatedAt`          |
+| Index   | `idx_<table>_<fields>`                        |
+
+Anything else — a trigger or index you created in a JS migration or straight
+against the database — is left alone by an ordinary migration.
+
+Two consequences worth knowing:
+
+An index you name `idx_<table>_something` **is** treated as Litestone's, because
+that is the name it would generate for the same `@@index`. Name your own
+differently.
+
+**A table rebuild is destructive, and Litestone does not support carrying your
+own schema objects through one.** A change needing a rebuild — dropping a
+column, changing a type, changing a foreign key, changing `@@strict` — drops the
+table, which takes every trigger and index on it. Litestone's own are
+regenerable from the schema and are restated afterwards. Yours exist only in the
+live database, so there is nothing to restate them from: they are gone.
+
+The generated migration says so, before the SQL that does it:
+
+```sql
+-- "note": this rebuild DROPS the table, which destroys:
+--     trigger "note_audit"
+--     index "note_title_idx"
+-- Litestone did not create these and cannot restate them — recreate
+-- them below, or in a JS migration that runs after this file.
+```
+
+`autoMigrate` applies the same SQL without showing it to you. If a table carries
+schema objects you created, use file migrations for it, or run
+`litestone migrate dry-run` first.
+
+**A view is not in that class and does survive.** A view is a stored `SELECT`
+with no state, so Litestone drops every view over the table before the rebuild
+and puts it back verbatim afterwards — one you declared in the schema and one
+you created by hand alike. A view the schema redefines in the same migration
+gets its new body instead.
+
+The one thing a rebuild cannot survive is a view that reads a column the rebuild
+removes. SQLite does not resolve a view body at `CREATE` time, so such a view
+comes back without complaint and fails in whatever reads it — so each restored
+view is read once inside the migration's transaction, and one the schema change
+invalidated refuses the migration:
+
+```
+error: no such column: scratch
+```
+
+Fix the view body in the same change. Note the limit: a body written
+`SELECT "scratch"` with the column **double-quoted** is not caught, because
+SQLite resolves an unknown double-quoted identifier as a string literal rather
+than an error — the view then returns the string `'scratch'` for every row.
+Quote identifiers in a view body only when you must.
