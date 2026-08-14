@@ -34,7 +34,7 @@ if (!deployConf) {
 }
 
 const appId      = deployConf.app_id ?? context.paths.root.split('/').pop()
-const dockerfile = deployConf.api?.dockerfile ?? 'api/deploy/Dockerfile'
+const dockerfile = deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
 const healthPath = deployConf.api?.health ?? '/health'
 const port       = flag.port
 const envFile    = flag['env-file']
@@ -100,6 +100,11 @@ const runCmd = [
   `-p 127.0.0.1:${port}:3000`,
   `--volume ${resolve(context.paths.root, dbDir)}:/db`,
   envArg,
+  // AFTER --env-file, so it wins. The image EXPOSEs 3000 and the port mapping
+  // targets 3000, but the app binds whatever PORT says — and the scaffold's .env
+  // says 8100, so without this the container listens on a port nothing forwards
+  // and the health check reports "unreachable" as though the app were broken.
+  `--env PORT=3000`,
   `--env NODE_ENV=production`,
   tag,
 ].filter(Boolean).join(' ')

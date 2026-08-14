@@ -149,7 +149,7 @@ if (app.db) {
 // Global middleware — applied to all routes (register first so they cover everything)
 app.configure(correlationId())           // X-Request-ID on every response
 app.configure(requestLogger())           // method path status ms - ip
-app.configure(rateLimit({ limit: 200, window: 60_000 }))
+app.configure(rateLimit({ max: 200, window: '1 minute' }))
 
 // Health + metrics at /health and /metrics
 app.configure(healthPlugin({

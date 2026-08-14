@@ -1,12 +1,14 @@
 ---
 title: 06-swap
 description: Stop old container, start new one — migrations run in entrypoint
+skip: "!context.config.doApi"
 ---
 
 ```js
 if (context.config.abort) return
 
-const { host, serverPath, imageTag, appId, apiPort, deployConf } = context.config
+const { imageTag, appId, apiPort, deployConf } = context.config
+const { host, path: serverPath } = context.config.api
 const dbPath    = deployConf.db?.path   ?? `${serverPath}/db`
 const envFile   = deployConf.api?.env   ?? `${serverPath}/.env.production`
 const container = `${appId}-api`
@@ -54,6 +56,11 @@ const runCmd = [
   `-p 127.0.0.1:${apiPort}:3000`,
   `--volume ${dbPath}:/db`,
   `--env-file ${envFile}`,
+  // AFTER --env-file so it wins: the mapping above targets 3000 inside the
+  // container, and the app binds whatever PORT says. A PORT in .env.production
+  // otherwise leaves the container listening where nothing forwards, which the
+  // health step then reports as a sick application.
+  `--env PORT=3000`,
   `--env NODE_ENV=production`,
   imageTag,
 ].join(' ')

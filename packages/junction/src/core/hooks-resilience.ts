@@ -6,9 +6,10 @@
 
 import type { ServiceContext } from './context.ts'
 import type { Hook, AroundHook } from './hooks.ts'
-import { Unavailable, TooManyRequests } from './errors.ts'
-import { parseTtl } from '../config/index.ts'
+import { Unavailable } from './errors.ts'
 import type { RateLimitHookOptions } from '../auth/types.ts'
+import { createRateLimiter, refuseLegacyRateLimitOptions, type RateLimitOptions } from './rate-limit.ts'
+import { clientIp } from './context.ts'
 
 export type { RateLimitHookOptions }
 
@@ -117,48 +118,26 @@ export function circuitBreaker(opts: CircuitBreakerOptions = {}): AroundHook {
 
 
 export function rateLimit(opts: RateLimitHookOptions): Hook {
-  const windowMs = parseTtl(opts.window)
-  const counters  = new Map<string, { count: number; resetAt: number }>()
+  refuseLegacyRateLimitOptions(opts as unknown as Record<string, unknown>)
 
-  // GC: sweep expired buckets on the window interval to prevent unbounded growth
-  const gc = setInterval(() => {
-    const now = Date.now()
-    for (const [key, bucket] of counters) {
-      if (bucket.resetAt < now) counters.delete(key)
-    }
-  }, windowMs)
-  if (gc.unref) gc.unref()
+  // Authenticated callers get their own bucket regardless of IP; anonymous ones
+  // share a bucket per address.
+  //
+  // `auth` is reached optionally because this hook is also the limiter
+  // @frontierjs/auth uses on its own /auth/* routes, and those are plain HTTP
+  // handlers holding a TransportContext — no principal, by definition, since
+  // signing in is what produces one. Reaching through `ctx.auth.user` directly
+  // would throw there, which is the difference auth forked over (FJS-017).
+  const limiter = createRateLimiter<ServiceContext>(
+    opts as RateLimitOptions<ServiceContext>,
+    (ctx) => (ctx.auth?.user?.userId as string) ?? clientIp(ctx),
+  )
 
-  return (ctx: ServiceContext): void => {
-    const key = opts.key
-      ? opts.key(ctx)
-      // Default: key on the authenticated user when present, falling back to
-      // client IP for anonymous callers. (Authenticated users get their own
-      // bucket regardless of IP; anonymous callers share per-IP buckets.)
-      : (ctx.auth.user?.userId as string) ?? (ctx.client.ip as string) ?? 'unknown'
-
-    const now    = Date.now()
-    const bucket = counters.get(key)
-
-    // Fresh / expired bucket — start a new window at count 1.
-    if (!bucket || now > bucket.resetAt) {
-      counters.set(key, { count: 1, resetAt: now + windowMs })
-      // Even the first request must respect the limit (e.g. max: 0 blocks all).
-      if (1 > opts.max) {
-        throw new TooManyRequests(
-          opts.message ?? `Rate limit exceeded — max ${opts.max} requests per ${opts.window}`
-        )
-      }
-      return
-    }
-
-    bucket.count++
-
-    if (bucket.count > opts.max) {
-      throw new TooManyRequests(
-        opts.message ?? `Rate limit exceeded — max ${opts.max} requests per ${opts.window}`
-      )
-    }
-  }
+  const hook = (ctx: ServiceContext): void => { limiter.check(ctx) }
+  // Exposed so a caller holding the hook can stop its sweep timer. The transport
+  // adapter wires this into a plugin shutdown(); a service-level hook lives as
+  // long as the service, so there is nothing to hang it off automatically.
+  ;(hook as unknown as { dispose(): void }).dispose = () => limiter.dispose()
+  return hook
 }
 

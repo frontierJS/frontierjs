@@ -366,17 +366,45 @@ const deployment = await factories.deployment.withParents().createOne()
 
 Reads the schema and auto-creates a parent for every **required** belongsTo, then
 does the same for that parent, down the chain. Relation cycles (self-references,
-`A → B → A`) are skipped rather than followed — no number of rows satisfies them.
+`A → B → A`) are refused by name rather than followed — no number of rows satisfies
+them, and the error states both cures.
 
 ```js
 withParents({ optional: true })   // nullable relations get parents too (default: skipped)
 withParents({ fresh: true })      // a new parent per row instead of one shared
 withParents({ depth: 3 })         // backstop; cycles are what actually terminate it
+withParents({ pins: { Account: acct } })   // reuse a row you already have
 ```
 
 Without this, an `Int` FK falls back to `1` and a `String`/uuid FK gets placeholder
 text that no foreign key will accept — which is why a uuid-keyed schema could not be
 auto-seeded at all.
+
+#### pins — one parent, shared by everything below
+
+```js
+const account = await factories.account.createOne()
+// Every generated row lands inside that one Account, however deep it sits
+await factories.deployment.withParents({ pins: { Account: account } }).createOne()
+await factories.user.withParents({ pins: { Account: account } }).createOne()
+```
+
+**Keyed by model, applied at every depth.** That is the difference from `.for()`,
+which wires one relation on one factory and so cannot reach a grandparent: a
+`Deployment` has no `accountId` of its own, and pinning an Account with `.for()` on
+its factory does nothing while `withParents()` builds a fresh one five hops down.
+
+Precedence: an explicit `.for()` wins over a pin for the same relation. A pin for a
+model that is not in the chain is unused rather than an error, so one pin map can be
+reused across factories.
+
+A pin is also the cure for a **required** cyclic relation, which is why pins are
+consulted before the cycle check:
+
+```js
+const root  = await db.node.create({ data: { name: 'root', parentId: 1 } })
+const child = await factories.node.withParents({ pins: { Node: root } }).createOne()
+```
 
 ### has() — hasMany children
 

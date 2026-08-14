@@ -67,6 +67,76 @@ src/
   the stored result and runs **no hooks**, so anything an app does in a hook does
   not happen on the replay. A failed call releases the key; an in-flight
   duplicate is a retryable 409. `config.idempotency.enabled: false` turns it off.
+- **`transactional: true` wraps the WHOLE pipeline in one transaction** — before
+  hooks, the method, and the after hooks — so a later `after` hook throwing rolls
+  the write back instead of leaving a committed row behind a rejected response.
+  `around` is the only phase that reaches the after hooks, which is what makes it
+  a commit scope rather than a longer before hook. `true`, `false`, or a list of
+  method names; `find`/`get` are never wrapped whatever is declared, the same way
+  the announcement excludes them by name. Declaring it without a Litestone client
+  on `ctx.locals.db` **throws naming the service** rather than quietly doing
+  nothing. It reports through `describe()`.
+  - **It does not make side effects atomic.** A transaction rolls back rows, not
+    SMTP — an email an earlier `after` hook already sent stays sent (`FJS-089`).
+  - **It holds SQLite's single write lock for the whole pipeline**, `after` hooks
+    included, so an `after` hook doing network I/O serialises every write in the
+    app behind it. Off by default for that reason, and the same reason
+    irreversible work belongs in Caravan.
+  - Two orderings carry it and both already held: `withLitestoneDb` is an
+    APP-level around hook so it runs OUTSIDE this one (the transaction opens on
+    the caller-scoped client, so row policies and `auth()` survive), and the
+    announcement happens after `runPipeline`, so the lock is released before
+    anything fans out to a socket.
+- **One rate limiter, and it takes one set of option names** —
+  `max`/`window`/`key`/`message`/`skip`, `window` accepting a TTL string or ms.
+  `core/rate-limit.ts` owns counting, the window, the sweep and the teardown; the
+  transport middleware and the pipeline hook are adapters differing only in how
+  they read a key and whether they can set `x-ratelimit-*` headers. The old
+  transport names (`limit`/`keyFn`/`skipFn`) **throw**: silently ignoring `limit`
+  would leave `max` undefined and `count > undefined` is never true, so the
+  limiter would accept everything and say nothing.
+- **`clientIp(ctx)` reads either context shape.** A TransportContext carries `ip`
+  at the top level; a ServiceContext splits client facts into `ctx.client`. That
+  one-line gap is what grew a third limiter inside `@frontierjs/auth`, whose
+  comment blamed `ctx.params.ip` — a field a ServiceContext does not have. The
+  hook reaches `auth` optionally for the same reason: a sign-in route has no
+  principal, because signing in is what produces one.
+- **A route can be registered once. A second registration throws, naming it.**
+  Keyed on the route's SHAPE, so `/a/{id}` and `/a/{name}` are the same route —
+  the param name is read by the handler and by nothing that matches. It used to
+  be silent, and which copy survived depended on the path: a FIXED path is
+  overwritten in `build()` so the LAST won, a DYNAMIC one is scanned in order so
+  the FIRST won and the later handler never ran. Doubled CORS is what surfaced it
+  (`FJS-225`); the refusal covers any plugin claiming a path another owns.
+- **A service broadcasts through `channel:` OR the `publish()` hook, never both.**
+  `svc.pipelines()` refuses the pair, naming the method — it is the one place the
+  full effective chain is known, so an app-level `after: { all: [publish(…)] }` is
+  caught as well as a service-level hook. The check matches **marked** hooks, not
+  names: an app may call its own hook `publish`, and suppressing a real one on a
+  name collision would silently stop broadcasting (`FJS-045`).
+- **A filtered bulk PATCH/REMOVE writes one row at a time, and that is what
+  enforces the schema.** Litestone skips `@@transitions` on `updateMany` by
+  design (a power tool, caller takes responsibility) and bumps `@version`
+  without requiring it — so calling `updateMany` from the bulk branch meant
+  `PATCH /orders/1` was refused by the state machine and
+  `PATCH /orders?status=draft` was not, for the identical move (`FJS-044`).
+  Both are properties of `update()`. Selecting the targets and calling it per
+  row brings them back and produces the `{ data, errors }` envelope bulk create
+  already answered. Three things follow:
+  - **`bulkMax`, default 1000** — one statement per row means an unbounded
+    filter is unbounded work under SQLite's single write lock. Over it, refused
+    naming the count, before any write.
+  - **Only rows the caller can READ are touched** — the target select applies
+    the read policy, the write applies the update/delete one.
+  - **A caller-supplied `@version` is refused by name.** One value cannot be
+    right for N rows; each row is written against the version selected with it,
+    so a row that moved is a `VersionConflictError` in `errors`.
+  Gate and row policy always applied on the bulk path, and `removeMany`
+  cascaded correctly — neither changed. **`restore` is not looped**: nothing
+  per-row to enforce, and `restore({ where })` already answers the rows. It
+  called a `restoreMany` a Litestone table does not have, so every filtered
+  restore was a 500 (`FJS-245`) — declared on `LitestoneTable`, which is why
+  nothing typed it.
 - **`hasRoute()` is a matching question, not an existence one** — every app
   registers `GET /{service}`, which matches almost anything. Use
   `hasExactRoute(method, path)` / `routePaths(method)`. For the whole surface at

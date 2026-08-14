@@ -30,6 +30,16 @@ import { resolve, dirname } from 'path'
 
 // ─── Dockerfile ───────────────────────────────────────────────────────────────
 
+// The layout is the one in the root README § Project Structure, which is
+// canonical (Invariant 3) and is what `fli new` writes: ONE manifest at the app
+// root, `api/index.ts` as the entry, and the schema under `db/`. This template
+// used to assume an `api/package.json`, an `api/tsconfig.json` and an
+// `api/src/server.ts` — none of which the scaffold produces — so `fli new` →
+// `fli make:deploy` → `fli deploy` could never have completed once (FJS-232).
+//
+// `db/` is copied, not just `api/`: the entrypoint migrates and the deploy's
+// pre-swap backup runs `litestone backup`, and both resolve databases by
+// reading the schema.
 const makeDockerfile = (appId) => `# FrontierJS API — ${appId}
 # Built on the server via: docker build -t ${appId}:latest -f deploy/Dockerfile .
 # No registry required — image lives on the server.
@@ -37,13 +47,16 @@ const makeDockerfile = (appId) => `# FrontierJS API — ${appId}
 FROM oven/bun:1 AS base
 WORKDIR /app
 
-# Install dependencies
-COPY api/package.json api/bun.lockb* ./
+# Dependencies — the app root holds the only manifest. bun 1.x writes the text
+# bun.lock; the glob also matches the older binary bun.lockb.
+COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile --production
 
-# Copy source
-COPY api/src ./src
-COPY api/tsconfig*.json ./
+# Source. db/ carries schema.lite and migrations/ — the entrypoint and the
+# deploy's backup both read the schema to find the databases.
+COPY tsconfig*.json ./
+COPY api ./api
+COPY db  ./db
 
 # Runtime image
 FROM oven/bun:1-slim
@@ -51,15 +64,17 @@ WORKDIR /app
 
 COPY --from=base /app .
 
-# DB directory — mounted at runtime via --volume ./db:/db
+# Mount point for the live database — the deploy runs --volume {db path}:/db.
+# The database files themselves are NOT in the image: point DATABASE_URL at /db
+# in .env.production, or the app opens a copy inside the container and every
+# write is lost on the next swap.
 RUN mkdir -p /db
 
 EXPOSE 3000
 
-# Entrypoint: run migrations first, then start the server.
-# If migrations fail, the container exits non-zero — deploy pipeline
-# detects the failed health check and rolls back automatically.
-CMD ["sh", "-c", "bun run db:migrate && bun run src/server.ts"]
+# Migrate, then serve. A failed migration exits non-zero, the health check fails
+# and the pipeline restores the previous container.
+CMD ["sh", "-c", "bun run db:migrate && bun run start"]
 `
 
 // ─── Health endpoint hint ─────────────────────────────────────────────────────
@@ -74,7 +89,30 @@ const healthHint = `// Add this route to your Junction API server (api/src/serve
 
 // ─── frontier.config.js deploy block ─────────────────────────────────────────
 
-const makeDeployBlock = (appId, server, domain) => {
+// ─── resolveHealthPath ────────────────────────────────────────────────────────
+// `healthPlugin()` registers through app.get(), which is the one owner of
+// apiPrefix — so an app with a prefix serves health at `{prefix}/health` and
+// NOTHING a caller writes through the shortcuts can answer at a bare `/health`.
+// Writing the wrong path here does not fail loudly: the deploy's health step
+// polls a 404 for twenty seconds and then rolls back an API that was running.
+//
+// createApp() merges opts.config over config/junction.config.js, so app.ts wins
+// where it states a prefix. Read in that order, then fall back to no prefix.
+const resolveHealthPath = (root) => {
+  const sources = [
+    resolve(root, 'api/src/app.ts'),
+    resolve(root, 'api/src/app.js'),
+    resolve(root, 'api/config/junction.config.js'),
+  ]
+  for (const file of sources) {
+    if (!existsSync(file)) continue
+    const found = readFileSync(file, 'utf8').match(/apiPrefix\s*:\s*['"`]([^'"`]*)['"`]/)
+    if (found) return { path: `${found[1]}/health`, from: file, prefix: found[1] }
+  }
+  return { path: '/health', from: null, prefix: '' }
+}
+
+const makeDeployBlock = (appId, server, domain, healthPath) => {
   const serverLine = server ? `    server: '${server}',` : `    server: 'your-server.com',   // ← set this`
   const domainLine = domain ? `      domain: '${domain}',` : `      domain: 'your-app.com',   // ← set this`
 
@@ -86,7 +124,9 @@ ${serverLine}
 
     api: {
       port:       3000,
-      health:     '/health',
+      // Must include the app's apiPrefix — healthPlugin() registers through
+      // app.get(), which moves with it. A wrong path here rolls back a good deploy.
+      health:     '${healthPath}',
       dockerfile: 'deploy/Dockerfile',
       env:        '/apps/${appId}/.env.production',
 
@@ -185,7 +225,8 @@ if (existsSync(dockerignorePath)) {
 
 // ─── 3. frontier.config.js deploy block ──────────────────────────────────────
 const configPath = resolve(context.paths.root, 'frontier.config.js')
-const deployBlock = makeDeployBlock(appId, server, domain)
+const health      = resolveHealthPath(context.paths.root)
+const deployBlock = makeDeployBlock(appId, server, domain, health.path)
 
 if (!existsSync(configPath)) {
   // Create a minimal frontier.config.js
@@ -220,23 +261,31 @@ if (!existsSync(envExamplePath)) {
 }
 
 // ─── 5. Health endpoint reminder ─────────────────────────────────────────────
-const serverPath  = resolve(context.paths.root, 'api/src/server.ts')
-const serverPathJ = resolve(context.paths.root, 'api/src/server.js')
-const hasServer   = existsSync(serverPath) || existsSync(serverPathJ)
+// The scaffold's own entry is api/src/app.ts; server.ts is checked because an
+// app may have split them. What matters is that SOMETHING answers health.path,
+// and the remedy offered has to be one that can actually produce that path —
+// `app.get('/health')` cannot, in an app with a prefix.
+const entryCandidates = ['api/src/app.ts', 'api/src/app.js', 'api/src/server.ts', 'api/src/server.js']
+  .map(p => ({ rel: p, abs: resolve(context.paths.root, p) }))
+  .filter(c => existsSync(c.abs))
 
-if (hasServer) {
-  const serverFile = existsSync(serverPath) ? serverPath : serverPathJ
-  const content    = readFileSync(serverFile, 'utf8')
-  if (/\/health/.test(content)) {
-    log.success(`Health endpoint: found in ${existsSync(serverPath) ? 'api/src/server.ts' : 'api/src/server.js'} ✓`)
-  } else {
-    log.warn(`Health endpoint not found in your API server`)
-    log.info('  Add this line to api/src/server.ts:')
-    log.info(`  app.get('/health', (ctx) => ctx.json({ ok: true }))`)
-  }
+const declaresHealth = entryCandidates.some(c =>
+  /healthPlugin\s*\(|['"`]\/health/.test(readFileSync(c.abs, 'utf8')))
+
+if (health.from) {
+  log.info(`Health path: ${health.path}  (apiPrefix '${health.prefix}' read from ${health.from.replace(context.paths.root + '/', '')})`)
+}
+
+if (declaresHealth) {
+  log.success(`Health endpoint: declared ✓ — the deploy will poll ${health.path}`)
+} else if (entryCandidates.length) {
+  log.warn(`Health endpoint not found in ${entryCandidates[0].rel}`)
+  log.info(`  Add:  app.configure(healthPlugin())`)
+  log.info(`  It serves ${health.path} — apiPrefix moves it, which is why the`)
+  log.info(`  deploy block above names the full path rather than '/health'.`)
 } else {
-  log.info('Health endpoint: add to your server when ready:')
-  log.info(`  app.get('/health', (ctx) => ctx.json({ ok: true }))`)
+  log.info(`Health endpoint: add app.configure(healthPlugin()) to your API entry`)
+  log.info(`  The deploy polls ${health.path}`)
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
@@ -245,7 +294,7 @@ log.success('Done. Next steps:')
 echo('')
 echo('  1. Review deploy/Dockerfile and adjust for your app')
 echo('  2. Set server/domain in frontier.config.js deploy block')
-echo('  3. Add /health to your Junction server if not present')
+echo(`  3. Make sure something answers ${health.path} (app.configure(healthPlugin()))`)
 echo('  4. Create .env.example with your required env keys')
 echo('  5. Test locally:      fli deploy:local')
 echo('  6. Set up server:     fli deploy:setup')

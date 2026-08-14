@@ -145,7 +145,7 @@ if (appId) {
 // ─── Dockerfile ───────────────────────────────────────────────────────────
 renderHeader('API container')
 
-const dockerfile = deployConf.api?.dockerfile ?? 'api/deploy/Dockerfile'
+const dockerfile = deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
 const dockerfilePath = resolvePath(context.paths.root, dockerfile)
 if (existsSync(dockerfilePath)) {
   renderCheck(`Dockerfile at ${dockerfile}`, 'pass')
@@ -158,17 +158,37 @@ if (existsSync(dockerfilePath)) {
 // ─── api/package.json — db:migrate script ─────────────────────────────────
 // The Dockerfile's CMD runs `bun run db:migrate && bun run src/server.ts`.
 // If db:migrate is missing, the container exits non-zero on every start.
-const apiPkgPath = resolvePath(context.paths.root, 'api', 'package.json')
-const apiPkg     = readJson(apiPkgPath)
-if (!apiPkg) {
-  renderCheck('api/package.json', 'warn', 'not found — entrypoint may not work')
-  warn()
-} else if (!apiPkg.scripts?.['db:migrate']) {
-  renderCheck(`api/package.json has 'db:migrate' script`, 'warn',
-    `the Dockerfile entrypoint runs 'bun run db:migrate' on every start. Add a no-op or real script.`)
-  warn()
+// The app root holds the only manifest — root README § Project Structure. This
+// looked in api/ and so warned "entrypoint may not work" on every app fli new
+// has ever produced, while being right that the entrypoint would not work
+// (FJS-232).
+const rootPkgPath = resolvePath(context.paths.root, 'package.json')
+const rootPkg     = readJson(rootPkgPath)
+if (!rootPkg) {
+  renderCheck('package.json', 'fail', 'no manifest at the app root — the image cannot install anything')
+  fail()
+} else if (!rootPkg.scripts?.['db:migrate']) {
+  renderCheck(`package.json has 'db:migrate' script`, 'fail',
+    `the Dockerfile entrypoint runs 'bun run db:migrate' before it serves — without it the container exits non-zero on every start`)
+  fail()
+} else if (!rootPkg.scripts?.['start']) {
+  renderCheck(`package.json has 'start' script`, 'fail',
+    `the Dockerfile entrypoint runs 'bun run start' — add it, or change deploy/Dockerfile's CMD`)
+  fail()
 } else {
-  renderCheck(`api/package.json has 'db:migrate' script`, 'pass')
+  renderCheck(`package.json has 'db:migrate' + 'start'`, 'pass')
+}
+
+// ─── The schema must be in the image ──────────────────────────────────────────
+// Both the entrypoint's migration and the deploy's pre-swap backup resolve
+// databases by reading the schema, so `COPY db ./db` is load-bearing.
+const dockerfileSrc = existsSync(dockerfilePath) ? readFileSync(dockerfilePath, 'utf8') : ''
+if (dockerfileSrc && !/^\s*COPY\s+db\b/m.test(dockerfileSrc)) {
+  renderCheck('Dockerfile copies db/', 'warn',
+    `no 'COPY db' — migrations and 'litestone backup' both read db/schema.lite inside the container`)
+  warn()
+} else if (dockerfileSrc) {
+  renderCheck('Dockerfile copies db/', 'pass')
 }
 
 // ─── /health route — required for auto-rollback ───────────────────────────
@@ -184,8 +204,11 @@ const apiSrcCandidates = [
 const healthPath = deployConf.api?.health ?? '/health'
 // healthPlugin() registers /health without the path ever appearing as a literal,
 // so a plugin-wired app would fail a string search while answering correctly.
+// The plugin serves `{apiPrefix}/health`, so ANY configured path ending in
+// /health is satisfied by it — testing for the bare '/health' instead reported a
+// missing route on every app that sets a prefix, which is the recommended shape.
 const hasHealth  = fileContains(apiSrcCandidates, new RegExp(`['"\`]${healthPath.replace(/\//g, '\\/')}['"\`]`))
-  || (healthPath === '/health' && fileContains(apiSrcCandidates, /healthPlugin\s*\(/))
+  || (healthPath.endsWith('/health') && fileContains(apiSrcCandidates, /healthPlugin\s*\(/))
 if (hasHealth) {
   renderCheck(`${healthPath} route in api source`, 'pass')
 } else {
@@ -216,8 +239,7 @@ if (envCheckOn) {
 }
 
 // ─── Junction detection ───────────────────────────────────────────────────
-const junctionDep = hasDep(apiPkg, '@frontierjs/junction')
-                  || hasDep(readJson(resolvePath(context.paths.root, 'package.json')), '@frontierjs/junction')
+const junctionDep = hasDep(rootPkg, '@frontierjs/junction')
 const junctionImport = fileContains(apiSrcCandidates, /from\s+['"]@frontierjs\/junction['"]/)
 const isJunction = junctionDep || junctionImport
 

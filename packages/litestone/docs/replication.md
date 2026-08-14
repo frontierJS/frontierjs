@@ -4,10 +4,17 @@ Litestone wraps Litestream for continuous WAL replication to S3-compatible stora
 
 ## Setup
 
+Nothing to configure if you pass the replica url:
+
+```bash
+litestone replicate --schema db/schema.lite --url s3://mybucket/myapp
+```
+
+Or put it in `litestone.config.js` and run `litestone replicate`:
+
 ```js
-// litestone.config.js
-export let config = {
-  db: './production.db',
+export default {
+  schema: './db/schema.lite',
   replicate: {
     url:             's3://mybucket/myapp',
     syncInterval:    '10s',
@@ -17,9 +24,57 @@ export let config = {
 }
 ```
 
-```bash
-litestone replicate litestone.config.js
+Flags override the config: `--url`, `--interval`, `--retention`, `--l0`.
+
+## Every declared database, one replica each
+
+The schema is the source of truth for what exists, so `litestone replicate`
+reads it the way `litestone backup` does. A schema declaring `main` and
+`analytics` replicates both, each to its own path under the url:
+
 ```
+s3://mybucket/myapp/main
+s3://mybucket/myapp/analytics
+```
+
+The suffix is not cosmetic — two databases sharing one replica url would
+overwrite each other's generations. It is also what a restore names:
+
+```bash
+litestream restore -o ./main.db s3://mybucket/myapp/main
+```
+
+`--db main` replicates one of them.
+
+**Litestream replicates SQLite.** A `jsonl` or `logger` database is a directory
+of append-only files with no WAL, so it cannot be replicated here at all —
+`litestone replicate` names any it finds and carries on. Cover those with
+`litestone backup` on a schedule, or sync the directory to object storage.
+
+## Which Litestream
+
+**v0.5 or newer**, and `litestone replicate` refuses anything older rather than
+warning.
+
+Litestone emits STRICT tables (`@@strict` is on by default) and litestream 0.3.x
+bundles a SQLite that cannot parse them. Pointed at a litestone database it
+starts, prints `replicating to:`, and then loops forever on
+
+```
+sync error: malformed database schema (user) - near "STRICT": syntax error
+```
+
+without ever exiting — a live process, an empty replica, and any check that asks
+`pgrep` reporting a healthy replica. That is the failure the version guard
+exists to prevent. `l0Retention` is also v0.5, and older builds ignore it, so
+time-travel would silently not be there either.
+
+`LITESTREAM_BIN=/path/to/litestream` points at a specific build.
+
+Litestream is not vendored, forked or republished, and there is no
+`@frontierjs/litestream` — see `DECISIONS.md` `FJS-D31`. Install it from
+[litestream.io/install](https://litestream.io/install); Litestone drives the
+binary you provide.
 
 ## How it works
 

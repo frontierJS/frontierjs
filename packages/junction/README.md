@@ -315,12 +315,34 @@ createService({
 **`after` means after the METHOD, not after the call succeeded.** Hooks run in
 sequence, so an `after` hook that sends an email runs, and a *later* `after`
 hook throwing then makes the whole call report failure — the client sees a
-rejected create whose email has already gone. There is no commit-scoped phase to
-put the effect in: Junction is not aware of a transaction, and `$transaction` on
-the Litestone client relates to no hook phase. Rails states the choice as
-`after_save` vs `after_commit`; Junction offers only the first. Put an
-irreversible effect **last** in the `after` chain, or dispatch it to
-`@frontierjs/caravan` and let the queue own delivery. `FJS-089` is the open row.
+rejected create whose email has already gone.
+
+For the **write**, declare `transactional:` on the service:
+
+```typescript
+createService({ name: 'orders', model: 'Order', transactional: true })
+createService({ name: 'orders', model: 'Order', transactional: ['create', 'pay'] })
+```
+
+One transaction spans the whole pipeline — before hooks, the method, and the
+after hooks — so a later `after` hook throwing rolls the write back instead of
+leaving a committed row behind a rejected response. `find`/`get` are never
+wrapped. Declaring it without a Litestone client on `ctx.locals.db` throws,
+naming the service.
+
+Two things it does not do, and both matter:
+
+- **It does not make side effects atomic.** A transaction rolls back rows, not
+  SMTP. An email an earlier `after` hook already sent stays sent. Put an
+  irreversible effect **last** in the `after` chain, or dispatch it to
+  `@frontierjs/caravan` and let the queue own delivery — noting that Caravan's
+  queue is its own SQLite file, so dispatching buys retries, not atomicity.
+- **It holds SQLite's single write lock for the whole pipeline**, `after` hooks
+  included, so an `after` hook doing network I/O serialises every write in the
+  app behind it. That is why it is off by default, and why irreversible work
+  belongs in a job rather than in an `after` hook.
+
+`FJS-089` stays open for the side-effect half.
 
 **Built-in hooks**: `authenticate`, `requireRole`, `paginate`, `protect`, `allow`, `timestamps`, `logTiming`, `circuitBreaker`, `rateLimit`.
 
@@ -731,10 +753,25 @@ Bulk `patch` and `remove` without an `id` are disabled by default — a guard ag
 createService({
   name:      'logs',
   allowBulk: true,    // opt in explicitly
+  bulkMax:   1000,    // optional — rows one filtered write may touch (default 1000)
 })
 // DELETE /logs?status=archived  ← now allowed
 // DELETE /logs                  ← still rejected (no filter conditions)
 ```
+
+**A filtered write runs one statement per row**, and answers the same envelope a bulk create does — the rows it wrote in `data`, one `{ data, error }` pair per row it could not in `errors`:
+
+```json
+{ "kind": "list", "data": [ { "id": 1, "status": "shipped" } ], "total": 1,
+  "errors": [ { "data": { "id": 2 }, "error": { "name": "TransitionViolationError", "message": "…" } } ] }
+```
+
+Row by row rather than one `UPDATE` because that is what applies the schema. Litestone skips `@@transitions` on `updateMany` and bumps `@version` without requiring it, so a single `UPDATE` walks past a state machine that refuses the same move by id. What follows from the loop:
+
+- **`bulkMax` refuses before it writes.** One statement per row means an unbounded filter is unbounded work under SQLite's single write lock. Over the cap the call is a 400 naming the count.
+- **Only rows the caller can read are touched.** Selecting the targets applies the read policy; the write applies the update/delete one.
+- **A caller-supplied `@version` is refused** — one value cannot be right for N rows. Each row is written against the version selected with it, so a row that moved underneath lands in `errors` as a `VersionConflictError` instead of being overwritten.
+- **No atomicity**, the same trade bulk create makes. `transactional: true` on the service buys all-or-nothing back, at the cost of partial success.
 
 ---
 
@@ -978,6 +1015,7 @@ app.services.register(createService({
   schema:     jsonSchema,   // optional — enables auto-validation
   softDelete: 'deletedAt',  // optional — soft-delete via a nullable DateTime field
   allowBulk:  false,        // optional — default false, blocks bulk patch/delete
+  bulkMax:    1000,         // optional — rows one filtered patch/remove may touch
   cache:      true,         // optional — cache find/get responses, bust on writes
   methods:    ['find','get'],  // optional — narrow what this service answers.
                                //   Omitted = everything. See below.
@@ -1410,13 +1448,13 @@ const full    = await posts.get(1, { populate: 'author' })
 // create(data) → T
 const newPost = await posts.create({ title: 'Hello', body: 'World' })
 
-// patch(id, data) or patch(query, data) → T | T[]
+// patch(id, data) → T  /  patch(query, data) → ListResult<T>
 await posts.patch(1, { title: 'Updated' })
-await posts.patch({ status: 'draft' }, { status: 'published' })  // bulk → T[]
+await posts.patch({ status: 'draft' }, { status: 'published' })  // bulk → { data, errors }
 
-// remove(id) → T  /  remove(query) → string[]  (ids)
+// remove(id) → T  /  remove(query) → ListResult<T>, the removed rows
 await posts.remove(1)
-await posts.remove({ status: 'archived' })   // bulk → id[]
+await posts.remove({ status: 'archived' })   // bulk → { data, errors }
 
 // restore(id) or restore(query) — soft-delete reversal
 await posts.restore(1)

@@ -85,6 +85,9 @@ if (hasReplaced) {
     `-p 127.0.0.1:${apiPort}:3000`,
     `--volume ${dbPath}:/db`,
     `--env-file ${envFile}`,
+    // Same contract as 06-swap: the mapping targets 3000, so the app is told to
+    // bind 3000 whatever the env file says.
+    `--env PORT=3000`,
     `--env NODE_ENV=production`,
     previousImage,
   ].join(' ')

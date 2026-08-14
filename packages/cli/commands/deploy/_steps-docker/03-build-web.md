@@ -2,13 +2,14 @@
 title: 03-build-web
 description: Build web on the server and create versioned release
 optional: true
-skip: "context.config.deployConf.web === false"
+skip: "!context.config.doWeb"
 ---
 
 ```js
 if (context.config.abort) return
 
-const { host, serverPath, commit, deployConf } = context.config
+const { commit, deployConf } = context.config
+const { host, path: serverPath } = context.config.web
 const keepReleases = deployConf.web?.keep_releases ?? 3
 const releaseDir   = `${serverPath}/releases/${commit}`
 

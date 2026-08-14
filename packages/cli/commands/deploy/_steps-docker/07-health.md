@@ -1,12 +1,14 @@
 ---
 title: 07-health
 description: Health check new container — rolls back to _replaced on failure
+skip: "!context.config.doApi"
 ---
 
 ```js
 if (context.config.abort) return
 
-const { host, apiPort, healthPath, container, replaced, imageTag } = context.config
+const { apiPort, healthPath, container, replaced, imageTag } = context.config
+const { host } = context.config.api
 const attempts = 10
 const intervalS = 2
 
@@ -36,7 +38,14 @@ try {
 
 if (!healthy) {
   // ── Rollback ────────────────────────────────────────────────────────────────
+  // Name the URL. The most common cause is not a sick app but a health path that
+  // omits the app's apiPrefix — healthPlugin() registers through app.get(), which
+  // moves with the prefix, so an app serving /api/health polls 404 here and a
+  // working release gets reverted. Without the URL in the message that reads as
+  // the app's fault.
   log.error(`Health check failed after ${attempts * intervalS}s — rolling back`)
+  log.error(`  polled: http://localhost:${apiPort}${healthPath}`)
+  log.info(`  if the API is healthy, check deploy.api.health includes your apiPrefix`)
 
   const rollbackCmd = `
     docker stop ${container} || true;

@@ -10553,6 +10553,99 @@ describe('Factory — relations (has / attach / withParents)', () => {
     r.db.$close()
   })
 
+  // ── pins ───────────────────────────────────────────────────────────────────
+  // A pin reuses a row you already have instead of creating one, keyed by MODEL
+  // and applied at EVERY depth. That last part is the whole feature: .for()
+  // wires one relation on one factory, so it cannot reach a grandparent.
+
+  const CHAIN = `
+    model Org  { id Int @id @default(autoincrement()); name String }
+    model Team { id Int @id @default(autoincrement()); name String; orgId Int
+                 org Org @relation(fields: [orgId], references: [id]) }
+    model User { id Int @id @default(autoincrement()); name String; teamId Int
+                 team Team @relation(fields: [teamId], references: [id]) }
+  `
+
+  test('a pin reaches a GRANDparent, which .for() cannot', async () => {
+    const r = await makeTestClient(CHAIN, { autoFactories: true })
+    const org = await r.factories.org.createOne()
+    // User → Team → Org: the pin is two hops up, so User has no orgId to wire
+    const user = await r.factories.user.withParents({ pins: { Org: org } }).createOne()
+    const team = await r.db.team.findUnique({ where: { id: user.teamId } })
+    expect(team.orgId).toBe(org.id)
+    expect(await r.db.org.count()).toBe(1)   // the pin, and no second Org
+    r.db.$close()
+  })
+
+  test('pins at two depths are both honoured', async () => {
+    const r = await makeTestClient(CHAIN, { autoFactories: true })
+    const org  = await r.factories.org.createOne()
+    const team = await r.factories.team.withParents({ pins: { Org: org } }).createOne()
+    const user = await r.factories.user.withParents({ pins: { Org: org, Team: team } }).createOne()
+    expect(user.teamId).toBe(team.id)
+    expect(await r.db.team.count()).toBe(1)
+    expect(await r.db.org.count()).toBe(1)
+    r.db.$close()
+  })
+
+  test('a pin for a model not in the chain is unused, not an error', async () => {
+    const r = await makeTestClient(CHAIN, { autoFactories: true })
+    const org = await r.factories.org.createOne()
+    const t = await r.factories.team.withParents({ pins: { Org: org, User: { id: 999 } } }).createOne()
+    expect(t.orgId).toBe(org.id)
+    r.db.$close()
+  })
+
+  test('an explicit .for() beats a pin for the same relation', async () => {
+    const r = await makeTestClient(CHAIN, { autoFactories: true })
+    const pinned = await r.factories.org.createOne()
+    const stated = await r.factories.org.createOne()
+    const team = await r.factories.team
+      .for('org', stated, 'orgId')
+      .withParents({ pins: { Org: pinned } })
+      .createOne()
+    expect(team.orgId).toBe(stated.id)
+    r.db.$close()
+  })
+
+  test('no pins behaves exactly as before', async () => {
+    const r = await makeTestClient(CHAIN, { autoFactories: true })
+    const user = await r.factories.user.withParents().createOne()
+    expect(user.teamId).toBeGreaterThan(0)
+    expect(await r.db.org.count()).toBe(1)
+    r.db.$close()
+  })
+
+  // The cycle error tells you to pass the root with .for(). It threw the same
+  // error when you did, because the guard ran before the wiring check.
+  const CYCLE = `
+    model Node { id Int @id @default(autoincrement()); name String; parentId Int
+                 parent Node @relation(fields: [parentId], references: [id]) }
+  `
+
+  test('a REQUIRED cycle still refuses, and names both cures', async () => {
+    const r = await makeTestClient(CYCLE, { autoFactories: true })
+    expect(() => r.factories.node.withParents()).toThrow(/cannot be satisfied/)
+    expect(() => r.factories.node.withParents()).toThrow(/pins: \{ Node: rootRow \}/)
+    r.db.$close()
+  })
+
+  test('the cycle error\'s own advice works — .for() cures it', async () => {
+    const r = await makeTestClient(CYCLE, { autoFactories: true })
+    const root = await r.db.node.create({ data: { name: 'root', parentId: 1 } })
+    const child = await r.factories.node.for('parent', root, 'parentId').withParents().createOne()
+    expect(child.parentId).toBe(root.id)
+    r.db.$close()
+  })
+
+  test('a pin cures the same cycle', async () => {
+    const r = await makeTestClient(CYCLE, { autoFactories: true })
+    const root = await r.db.node.create({ data: { name: 'root', parentId: 1 } })
+    const child = await r.factories.node.withParents({ pins: { Node: root } }).createOne()
+    expect(child.parentId).toBe(root.id)
+    r.db.$close()
+  })
+
   test('asSystem() propagates through the whole wired graph', async () => {
     // A schema with any @@gate auto-installs GatePlugin — an unauthenticated
     // factory grades STRANGER and cannot create the parent, let alone the child.
@@ -22478,5 +22571,115 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
     const col = (await sys.sql`SELECT token FROM k WHERE id = 1`)[0] as any
     expect(col.token.startsWith('v1d.')).toBe(true)
     dbNew.$close()
+  })
+})
+
+// ─── $transaction under concurrency (FJS-237) ────────────────────────────────
+//
+// The depth counter is per CLIENT and one connection holds one transaction, so
+// "am I nested?" could not be answered by the counter: a second REQUEST arriving
+// while the first awaited looked exactly like a genuinely nested call, and was
+// treated as one.
+//
+//   A: begin()  → BEGIN IMMEDIATE, awaits
+//   B: begin()  → sees depth 1 → SAVEPOINT INSIDE A's transaction
+//   B: commit() → RELEASE            ← B's caller told it succeeded
+//   A: rollback → ROLLBACK           ← B's rows gone
+//
+// Re-entrancy is now asked of AsyncLocalStorage — a nested call runs inside the
+// outer callback and inherits its store, a concurrent request does not. These
+// assert BOTH halves, because a fix that serialised everything would deadlock
+// basecamp's /setup and a fix that nested everything is the original bug.
+
+describe('$transaction under concurrency', () => {
+  const S = `model Row { id Int @id @default(autoincrement())  tag String }`
+
+  test("a concurrent caller is not enrolled in someone else's rollback", async () => {
+    const db  = await makeDb(S, 'tx-race')
+    const sys = db.asSystem()
+    let release: () => void
+    const paused = new Promise<void>(r => { release = r })
+
+    const A = sys.$transaction(async (tx: any) => {
+      await tx.row.create({ data: { tag: 'A' } })
+      await paused
+      throw new Error('A rolls back')
+    }).catch((e: Error) => e.message)
+
+    // Start B while A is open. It must WAIT, not nest.
+    await new Promise(r => setTimeout(r, 10))
+    const B = sys.$transaction(async (tx: any) => {
+      await tx.row.create({ data: { tag: 'B' } })
+      return 'B committed'
+    })
+
+    release!()
+    expect(await A).toBe('A rolls back')
+    expect(await B).toBe('B committed')
+
+    // The whole point: B was told it committed, so B's row must exist.
+    expect((await sys.row.findMany({})).map((r: any) => r.tag)).toEqual(['B'])
+    db.$close()
+  })
+
+  test('a genuinely nested $transaction still takes a SAVEPOINT rather than waiting', async () => {
+    // If re-entrancy were decided by the lock instead of the async context this
+    // would deadlock — which is what basecamp's /setup does, four models deep.
+    const db  = await makeDb(S, 'tx-nested')
+    const sys = db.asSystem()
+    await sys.$transaction(async (tx: any) => {
+      await tx.row.create({ data: { tag: 'outer' } })
+      await tx.$transaction(async (tx2: any) => {
+        await tx2.row.create({ data: { tag: 'inner' } })
+      })
+    })
+    expect((await sys.row.findMany({})).map((r: any) => r.tag)).toEqual(['outer', 'inner'])
+    db.$close()
+  })
+
+  test('an inner rollback leaves the outer transaction usable', async () => {
+    const db  = await makeDb(S, 'tx-inner-rollback')
+    const sys = db.asSystem()
+    await sys.$transaction(async (tx: any) => {
+      await tx.row.create({ data: { tag: 'kept' } })
+      await tx.$transaction(async (tx2: any) => {
+        await tx2.row.create({ data: { tag: 'discarded' } })
+        throw new Error('inner fails')
+      }).catch(() => {})
+      await tx.row.create({ data: { tag: 'also-kept' } })
+    })
+    expect((await sys.row.findMany({})).map((r: any) => r.tag)).toEqual(['kept', 'also-kept'])
+    db.$close()
+  })
+
+  test('a bulk write inside a transaction still batches, and one outside waits its turn', async () => {
+    // createMany wraps its batch synchronously. Arriving during another
+    // request's transaction it used to join that transaction and be lost on its
+    // rollback; the acquire is awaited now while the batch body stays sync.
+    const db  = await makeDb(S, 'tx-bulk')
+    const sys = db.asSystem()
+
+    await sys.$transaction(async (tx: any) => {
+      await tx.row.createMany({ data: [{ tag: 'b1' }, { tag: 'b2' }] })
+    })
+    expect(await sys.row.count({})).toBe(2)
+
+    let release: () => void
+    const paused = new Promise<void>(r => { release = r })
+    const A = sys.$transaction(async (tx: any) => {
+      await tx.row.create({ data: { tag: 'A' } })
+      await paused
+      throw new Error('A rolls back')
+    }).catch(() => 'rolled back')
+
+    await new Promise(r => setTimeout(r, 10))
+    const bulk = sys.row.createMany({ data: [{ tag: 'c1' }, { tag: 'c2' }] })
+
+    release!()
+    await A
+    await bulk
+    expect(await sys.row.count({ where: { tag: { in: ['c1', 'c2'] } } })).toBe(2)
+    expect(await sys.row.count({ where: { tag: 'A' } })).toBe(0)
+    db.$close()
   })
 })

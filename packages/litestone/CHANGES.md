@@ -1,5 +1,252 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-14 — `backup` copied the wrong databases; `replicate` covered one
+
+`FJS-246`, `FJS-242`, `FJS-243`. Found by making `replicate` schema-driven and
+hitting the same wall `backup` was already standing behind.
+
+**`createClient({ db })` names MAIN and overrides a declared `database main`**,
+and `loadConfig()` always answers a `db` — `./development.db` when nothing said
+otherwise. Six commands forwarded it blindly: studio, seed, optimize, backup,
+replicate, db push. So `litestone backup` opened a client at a file the schema
+never named, createClient created it, and the empty result was snapshotted as
+`main` with a `✓` beside it. Proven with a marker row — the backup did not have
+it, the real database did.
+
+Underneath that, the SQLite arm reopened a client **per database**:
+
+```js
+createClient({ parsed, db: info.path })   // ← still names MAIN
+```
+
+so each client was main-at-another-database's-path *and* held every declared
+SQLite connection open, which tripped `$backup`'s multi-database branch. The
+output was `bk/main.db/` and `bk/analytics.db/` as **directories**, each holding
+a copy of both, and `bk/analytics.db/main.db` was analytics filed as main.
+
+Fixed at the owners rather than at the call sites. `declaresDatabases()` /
+`clientDb()` is the rule `openSqliteDbs` has always applied for the migrate
+commands, now shared: **when the schema declares databases, the declaration owns
+the paths.** `$backup(dest, { only })` lets one client answer for one database,
+so nothing needs a client per database again. `--db` was overloaded by the same
+confusion — a name filter on a multi-database schema, a path on a single one —
+and read as a name it matched nothing (`No databases found matching --db=./app.db`).
+
+**This is what a deploy's `05-backup` calls for its pre-migration snapshot**, so
+the one guard against a bad migration was writing a wrong or empty file and
+reporting success. It sits directly beneath `FJS-240`, which made a *partial*
+backup fail loudly; this one was not partial, it was wrong.
+
+**`litestone replicate` is schema-driven now**, the same resolution for the same
+reason — it read one `db:` path out of a transform-pipeline config, so an app
+with a `main` plus an `audit` logger replicated its rows and silently not its
+trail. One `dbs:` entry per declared SQLite database, each to `<url>/<name>` so
+two databases cannot overwrite each other's generations:
+
+```
+litestone replicate --schema db/schema.lite --url s3://bucket/myapp
+litestone replicate --db main
+litestone replicate ./litestone.config.js
+```
+
+`--schema` and `--url` mean it runs against a scaffolded app with no config file
+at all, which is what it could never do before. Resolution moved to `cli.js`,
+which owns `loadSchema`/`createClient`; `replicate.js` is the litestream driver.
+
+**Litestream replicates SQLite, so a jsonl or logger database cannot be covered
+at all** — reported by name with what to use instead, because a replication
+report that lists only what it did reads as though it did everything.
+
+**And it refuses litestream below v0.5.** Not a warning: this machine carries
+v0.3.4, and against a litestone database it starts, announces `replicating to:`,
+then loops forever on
+
+```
+sync error: malformed database schema (user) - near "STRICT": syntax error
+```
+
+because litestone emits STRICT tables and 0.3.x bundles a SQLite too old to
+parse them. It never exits — a live process, an empty replica, and every deploy
+check in the repo saying healthy because they ask `pgrep`. `LITESTREAM_BIN` is
+the hatch. Litestream is not forked or republished (`DECISIONS.md` `FJS-D31`);
+this is how the version is controlled without becoming its distributor.
+
+## 2026-08-14 — `$transaction` is safe under concurrency
+
+Two concurrent `$transaction` calls silently became one. The depth counter is per
+CLIENT and one connection holds one transaction, so *am I nested?* could not be
+answered by the counter: a second REQUEST arriving while the first awaited looked
+exactly like a genuinely nested call, and was treated as one.
+
+```
+A: begin()  → depth 0→1, BEGIN IMMEDIATE, awaits
+B: begin()  → sees depth 1 → SAVEPOINT sp_1 INSIDE A's transaction
+B: commit() → RELEASE sp_1        ← B's caller is told it succeeded
+A: rollback → ROLLBACK            ← B's rows are gone
+```
+
+B could also read A's uncommitted rows, because the read router sends every read
+to the write connection while `depth > 0`. Reproduced before fixing.
+
+**Re-entrancy is now asked of the async context, not the counter.** A module-level
+`AsyncLocalStorage` holds the `txState` objects the current context owns, so a
+nested call — which runs inside the outer callback and inherits the store — still
+takes a SAVEPOINT, and anything else waits on a per-client FIFO lock. Both halves
+matter in opposite directions: serialising everything would deadlock a genuine
+nesting (basecamp's `/setup`, four models deep), and nesting everything is the
+original defect.
+
+`tx.wrap` — the **synchronous** batch wrapper behind `createMany`/`upsertMany` —
+had the same hole. Its callers are already async, so the acquire is awaited while
+the batch body stays synchronous.
+
+This serialises only what SQLite already serialises: two `BEGIN IMMEDIATE`s
+cannot overlap on one connection, and the old code avoided the error by enrolling
+the second caller in a transaction it could not see. `FJS-244`.
+
+## 2026-08-13 — `litestone backup` no longer calls a partial copy a success
+
+`FJS-240`. Every failure arm in `cmdBackup` logged and continued — a `$backup`
+throw, a logger directory that is not there, a failed zip — and then the summary
+line printed unconditionally and the command exited 0.
+
+Found by pointing a deploy's pre-migration snapshot at it. From the wrong
+directory it copied `main`, warned on `audit`, printed `✓ backup complete` and
+returned 0. **Database paths resolve against the process CWD, not the schema
+file** — `example/db/schema.lite` says so in its own comment — so the wrong cwd
+gives a partial backup rather than an error, and over SSH nobody reads the ⚠,
+only the exit code.
+
+It now collects what did not make it and refuses:
+
+```
+✗  backup INCOMPLETE   1 of 2 database(s) not backed up
+   audit (…/db/audit not found — paths resolve against CWD)
+
+Whatever was written is a PARTIAL copy. Do not treat it as a restore point.
+```
+
+Exit 1. The success path is unchanged, which is the half that had to be checked
+too: from the app root with `--schema db/schema.lite`, `example` backs up `main`
+and `audit` and exits 0. 1954/1955 suite unaffected.
+
+## 2026-08-13 — Schema Advisor: a fix that edits the schema, and a corrected reason
+
+**The advisor's stated reason for indexing a foreign key was backwards.** It claimed
+`include({ environment: true })` would scan — that reads the *parent* and resolves by
+primary key, and `EXPLAIN QUERY PLAN` confirms it never scanned. What scans is
+everything starting from the other side: the parent's `hasMany`, a `where` on the FK
+column, and `ON DELETE CASCADE`. Right conclusion, wrong argument, which is the kind
+of advice that teaches the wrong model of the database.
+
+The conclusion is now backed by numbers rather than assertion, measured on 50k rows:
+2,000 lookups by the FK are **4,023ms unindexed against 56ms indexed**, a cascade
+delete of 200 parents **656ms against 8ms**, bought for 1.7× on insert and ~60% more
+disk.
+
+**An issue that has a known fix now carries it as data** (`fix: { kind: 'index',
+model, columns }`) and Studio renders a button that writes `@@index([col])` into the
+right model in `schema.lite` — brace-depth located rather than regex-matched, since a
+doc comment inside a model may contain braces; indentation taken from the block;
+placed with the other `@@` attributes; parsed before saving; duplicates refused.
+
+**It deliberately does not create the index.** The schema now states something the
+database does not, so the toast says `migrate to create it` and offers the Migrations
+panel, and the advisor keeps reporting the issue until a migration builds it. The raw
+`CREATE INDEX` stays for a database you cannot redeploy, but the schema is the better
+route for the reason above: a migration only drops what litestone named.
+
+`bench/studio-advisor-fix.mjs` ends where it should — after the edit it builds a
+migration from the edited schema and asserts SQLite now answers
+`SEARCH deployment USING INDEX idx_deployment_environmentId (environmentId=?)`.
+Asserting the text landed in the file would prove the button typed, not that it
+helped.
+
+## 2026-08-13 — Studio's schema advisor was reporting every foreign key as unindexed
+
+**It queried `sqlite_master` by MODEL name.** `WHERE tbl_name = 'User'` against a
+table created as `user` — SQL string equality is case-sensitive even though SQLite
+resolves identifiers case-insensitively — matched nothing, so the advisor saw zero
+indexes on every model and reported **all 48 FK columns on basecamp** while 60
+indexes existed. It also called every declared `@@index`/`@@unique` "pending, run a
+migration". Reported from Studio against a `User` whose schema declares
+`@@index([accountId])` and whose database holds `idx_user_accountId`.
+
+Four more defects in the same twenty lines, each found by the one after it:
+
+- **Implicit unique indexes were invisible.** The query filtered `sql IS NOT NULL`,
+  and an index SQLite creates for a `@@unique` has `sql = NULL`. Now read through
+  `PRAGMA index_list` / `index_info`, which also returns columns already ordered
+  instead of a regex over DDL text that has to survive partial-index predicates.
+- **Every column of an index counted as indexed.** SQLite uses a leftmost prefix, so
+  an index on `(workspaceId, userId)` does nothing for a lookup on `userId` — a
+  false negative hiding a real scan, which is what a performance advisor exists to
+  find. `WorkspaceMember.userId` is a true positive it was missing.
+- **Suggested SQL used a name litestone does not manage.** `CREATE INDEX
+  "User_accountId_idx"` is Prisma's convention; a migration only drops what it
+  named (`idx_<table>_<cols>`), so following the advice left an index no later
+  migration would ever touch. The note now says to declare `@@index([col])`.
+- **Multi-database and tenant handles were mixed.** Indexes were read from the base
+  connection while row counts came from the active tenant's, and a model in a
+  `logger`/`jsonl` database was audited for SQLite indexes it cannot have.
+
+`bench/studio-advisor.mjs` grades every verdict against `EXPLAIN QUERY PLAN` in
+**both** directions — a checker that only proves its own complaints cannot catch
+what it misses. Two traps the oracle itself fell into and now documents: litestone
+always carries `deletedAt IS NULL`, so a probe without it cannot use a partial index
+and blames the advisor; and `USING INDEX` is not enough, because SQLite will use
+`idx_<t>_deletedAt` for the predicate while still scanning for the column asked
+about. 48 reported → 18, then 14, all 14 confirmed real scans.
+
+## 2026-08-13 — Studio: the query behind a view, a generated row, pinned parents
+
+Four additions to Studio and two repairs it turned up, all driven in a real browser
+by `bench/studio-{query-view,sidebar,factory,factory-click}.mjs`, which start Studio
+and Chrome themselves and work on a tmpdir copy of the database.
+
+**`{ } Query`** renders the Litestone query Browse already builds on every load and
+then throws away, to copy or send to the REPL. It emits the **client** alongside the
+arguments, because a view browsed as a user and the same arguments through
+`asSystem()` return different rows. `findMany` rather than `findManyCursor` — a
+pasted opaque cursor means nothing elsewhere, so the query describes page one of the
+same filter and sort, and says so when you are past it.
+
+**`🎲 Random`** generates one row from the schema with `factoryFrom` + `withParents`,
+runs as the principal the sidebar selects, and reports every table it touched — a
+generated `App` on basecamp also writes an Account, Workspace, Project and
+Environment, and a button that does that silently is how a scratch database stops
+being one. A gate refusal is shown in full with a **Retry as system** offer attached
+to the toast; the escalation is never taken for you, and the resulting row says
+`(as system)`. The offer is discriminated on `AccessDeniedError`, not on message
+wording, so a validation failure gets none.
+
+**Pinning.** `withParents({ pins: { Account: row } })` reuses rows you already have,
+keyed by model and applied **at every depth** — which is the whole point, since
+`.for()` wires one relation on one factory and cannot reach a grandparent. Studio
+exposes it as 📌 on a row's detail drawer plus chips in the toolbar, holding only the
+id and re-reading it through the client it is about to write with, so a pin cannot
+hand a principal a row its own policy hides.
+
+**`withParents()`'s cycle error gave advice that did not work.** It told you to pass
+the root with `.for('parent', rootRow, fk)`, and doing exactly that threw the
+identical error, because the cycle guard ran before the check for an
+explicitly-wired relation. Both cures — `.for()` and now `pins` — are consulted
+first, and the message names both.
+
+**Four `onclick` handlers were dead**, found because a fifth one written the same way
+did not fire. `onclick="fn(${JSON.stringify(x)})"` inside a double-quoted attribute
+ends the attribute at the JSON's first quote, so the browser saw `copyCell(`. It
+silenced the ⎘ copy button on **every grid cell**, both `open →`/`view →` links in
+the row-detail drawer, and Copy SQL on a diagnostics issue. `esc()` already existed
+and two neighbouring call sites already used it. Nothing threw, in any of them.
+
+**The sidebar could not scroll.** `.app` clips its overflow and nothing below it
+declared `overflow-y`, so basecamp's 38 models pushed the Tools nav past the fold and
+out of reach. The table list scrolls now and the fixed sections stay put; `min-height:
+0` is what makes a flex child shrink at all. A first fix passed at 700px and gave a
+**0px-tall table list** at 420px — the list being the only shrinkable child — so it
+also carries a floor, and the drive runs at five viewport heights.
+
 ## 2026-08-13 — `@encrypted(searchable: true)` is gone; `@encrypted(deterministic: true)` and `@hashed` replace it
 
 **The old attribute stored an HMAC and no ciphertext, under a name that promises

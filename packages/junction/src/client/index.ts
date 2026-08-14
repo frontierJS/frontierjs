@@ -243,8 +243,14 @@ export class ServiceProxy<
     return this._client._request('POST', this._base, data) as Promise<T>
   }
 
-  // patch(id, data, params?) → T
-  // patch(query, data, params?) → T[]
+  // patch(id, data, params?)    → T
+  // patch(query, data, params?)  → ListResult<T>, `errors` per rejected row
+  //
+  // A filtered patch is a BULK write and answers the bulk envelope — the rows
+  // it wrote in `data`, and one `{ data, error }` per row it could not, because
+  // it writes them individually so that `@@transitions` and `@version` apply.
+  // These overloads used to promise `T[]` against a server that answered
+  // `{ count }`, so the declared type described a shape nothing ever sent.
   async patch(
     id: string | number,
     data: Partial<T> & Record<string, unknown>,
@@ -254,15 +260,15 @@ export class ServiceProxy<
     query: Record<string, unknown>,
     data: Partial<T> & Record<string, unknown>,
     params?: FindParams
-  ): Promise<T[]>
+  ): Promise<ListResult<T>>
   async patch(
     idOrQuery: string | number | Record<string, unknown>,
     data: Partial<T> & Record<string, unknown>,
     params?: FindParams
-  ): Promise<T | T[]> {
+  ): Promise<T | ListResult<T>> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString({ ...params, query: idOrQuery })
-      return this._client._request('PATCH', `${this._base}${qs}`, data) as Promise<T[]>
+      return this._client._request('PATCH', `${this._base}${qs}`, data) as Promise<ListResult<T>>
     }
     if (this._client._wsReady && !_hasFiles(data)) {
       return this._client._wsCall(this.name, 'patch', idOrQuery, data) as Promise<T>
@@ -274,17 +280,21 @@ export class ServiceProxy<
     ) as Promise<T>
   }
 
-  // remove(id, params?) → T
-  // remove(query, params?) → string[]  (ids)
+  // remove(id, params?)    → T
+  // remove(query, params?)  → ListResult<T>, the removed ROWS
+  //
+  // Rows, not ids: a filtered remove deletes one row at a time and each one
+  // answers itself, so a subscriber has the record it lost rather than a key to
+  // go and look one up that is no longer there.
   async remove(id: string | number, params?: FindParams): Promise<T>
-  async remove(query: Record<string, unknown>, params?: FindParams): Promise<string[]>
+  async remove(query: Record<string, unknown>, params?: FindParams): Promise<ListResult<T>>
   async remove(
     idOrQuery: string | number | Record<string, unknown>,
     params?: FindParams
-  ): Promise<T | string[]> {
+  ): Promise<T | ListResult<T>> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString({ ...params, query: idOrQuery })
-      return this._client._request('DELETE', `${this._base}${qs}`) as Promise<string[]>
+      return this._client._request('DELETE', `${this._base}${qs}`) as Promise<ListResult<T>>
     }
     if (this._client._wsReady) {
       return this._client._wsCall(this.name, 'remove', idOrQuery, null) as Promise<T>

@@ -63,7 +63,6 @@ interface LitestoneTable {
   delete:           (args:  Record<string, unknown>) => Promise<unknown>     // always hard
   deleteMany:       (args:  Record<string, unknown>) => Promise<{ count: number }>
   restore:          (args:  Record<string, unknown>) => Promise<unknown>     // @@softDelete models only
-  restoreMany:      (args:  Record<string, unknown>) => Promise<{ count: number }>
   search:           (query: string, args?: Record<string, unknown>) => Promise<{ rows: unknown[]; total: number }>  // @@fts models only
 }
 
@@ -331,6 +330,14 @@ export interface LitestoneServiceOptions {
   paginate?:   { default: number; max: number }
   softDelete?: string
   allowBulk?:  boolean
+  /**
+   * How many rows one filtered bulk patch/remove may touch. Default 1000.
+   *
+   * A filtered bulk write runs one statement per row (see `bulkByRow`), so
+   * without a bound a single request can hold the write lock for the length of
+   * the table. Over it, the call is refused naming the count.
+   */
+  bulkMax?:    number
 }
 
 export function createLitestoneBase(opts: LitestoneServiceOptions) {
@@ -340,6 +347,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     paginate   = { default: 20, max: 100 },
     softDelete,
     allowBulk  = true,
+    bulkMax    = 1000,
   } = opts
 
   function getTable(ctx: ServiceContext): LitestoneTable {
@@ -456,7 +464,12 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     }
 
     ensureBulkAllowed('restore')
-    return table.restoreMany({ where: q.where })
+    // `restore` already takes a multi-row where and answers the rows, so this
+    // needs no per-row loop — and unlike patch/remove there is nothing for the
+    // loop to enforce. It called restoreMany, which a Litestone table does not
+    // have: every filtered restore was a 500 naming the missing function, on
+    // every service, since the method was written.
+    return table.restore({ where: q.where })
   }
 
   function softDeleteFilter(): Record<string, unknown> {
@@ -469,6 +482,79 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         `Bulk ${op} is disabled on this service (set allowBulk: true to enable)`
       )
     }
+  }
+
+  // ─── Filtered bulk writes ─────────────────────────────────────────────────
+  //
+  // A bulk patch or remove selects its rows and then writes them ONE AT A TIME,
+  // for the same reason bulk create does: partial success needs a per-row
+  // outcome, and `updateMany`/`removeMany` answer `{ count }`.
+  //
+  // The rest of the reason is enforcement. Litestone does not run `@@transitions`
+  // on `updateMany` — deliberately, as a power tool whose caller "takes
+  // responsibility", and its own note says to loop `update()` where transition
+  // safety matters. Junction is that caller and had not: `PATCH /orders/1` was
+  // refused by the state machine and `PATCH /orders?status=draft` was not, for
+  // the identical move (`FJS-044`). `@version` went the same way — bumped on a
+  // bulk write, never required — so optimistic concurrency was off for exactly
+  // the writes that touch the most rows. Both are properties of `update()`, so
+  // both come back by calling it.
+  //
+  // Two consequences worth stating rather than discovering:
+  //
+  //   • **No atomicity.** Same trade as bulk create — a failure leaves earlier
+  //     rows written. `transactional:` on the service is how a caller gets
+  //     all-or-nothing back, at the cost of partial success.
+  //   • **Only rows the caller can READ are touched.** Selecting the targets
+  //     applies the read policy; the write then applies the update/delete one.
+  //     A row updatable but unreadable was reached by `updateMany` and is not
+  //     reached now.
+  async function bulkByRow(
+    ctx:   ServiceContext,
+    op:    'patch' | 'remove',
+    table: LitestoneTable,
+    where: Record<string, unknown>,
+    apply: (id: unknown, version: Record<string, unknown>) => Promise<unknown>
+  ): Promise<unknown> {
+    const matched = await table.count({ where })
+    if (matched > bulkMax) {
+      throw new BadRequest(
+        `Bulk ${op} matched ${matched} rows, above this service's limit of ${bulkMax}. ` +
+        `A filtered bulk write runs one statement per row, so the limit is what stops one ` +
+        `request holding the write lock for the length of the table. Narrow the filter, ` +
+        `or raise bulkMax on the service.`
+      )
+    }
+
+    const versionField = await modelVersionField(ctx.locals.db, model ?? ctx.service)
+
+    const select: Record<string, unknown> = { [idField]: true }
+    if (versionField) select[versionField] = true
+
+    const targets = await table.findMany({ where, select }) as Record<string, unknown>[]
+
+    // Not seeded from ctx.locals[BULK_FAILURES]: a filtered write carries ONE
+    // payload, so validation validates it once and throws rather than parking
+    // anything. Only bulk create has rows to partition.
+    const data:   unknown[]     = []
+    const errors: BulkFailure[] = []
+
+    for (const target of targets) {
+      const id = target[idField]
+      try {
+        // The version travels from the row just selected, which is what makes
+        // this a read-modify-write rather than a blind one: a row that moved
+        // between the select and the update is a VersionConflictError in
+        // `errors`, not a silent overwrite.
+        const row = await apply(id, versionField ? { [versionField]: target[versionField] } : {})
+        if (row) data.push(row)
+      } catch (err) {
+        errors.push(toBulkFailure({ [idField]: id }, err))
+      }
+    }
+
+    // Shape recognised by wrapResult → a list envelope carrying errors.
+    return { data, total: data.length, errors }
   }
 
   return {
@@ -643,8 +729,25 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       }
 
       ensureBulkAllowed('patch')
+
+      const versionField = await modelVersionField(ctx.locals.db, model ?? ctx.service)
+      if (versionField && versionField in (ctx.data as Record<string, unknown>)) {
+        // One supplied version cannot be right for N rows: it would conflict on
+        // every row but the one it was read from. bulkByRow reads each row's own.
+        throw new BadRequest(
+          `A bulk patch cannot carry ${versionField} — @version is per row, and one value ` +
+          `would conflict on every row but one. Patch by id to use it, or drop it and let ` +
+          `each row's own version be read.`
+        )
+      }
+
       const where = { ...q.where, ...softDeleteFilter() }
-      return table.updateMany({ where, data: ctx.data })
+      return bulkByRow(ctx, 'patch', table, where, (id, version) =>
+        table.update({
+          where: { [idField]: id },
+          data:  { ...(ctx.data as Record<string, unknown>), ...version },
+        })
+      )
     },
 
     async remove(ctx: ServiceContext): Promise<unknown> {
@@ -684,13 +787,20 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       const where = { ...q.where, ...softDeleteFilter() }
 
       if (softDelete) {
-        return table.updateMany({
-          where,
-          data: { [softDelete]: new Date().toISOString() },
-        })
+        // One stamp for the whole call, so a bulk soft-delete is one moment in
+        // the data rather than a spread of them.
+        const stamp = new Date().toISOString()
+        return bulkByRow(ctx, 'remove', table, where, (id, version) =>
+          table.update({
+            where: { [idField]: id },
+            data:  { [softDelete]: stamp, ...version },
+          })
+        )
       }
 
-      return table.removeMany({ where })
+      return bulkByRow(ctx, 'remove', table, where, (id) =>
+        table.remove({ where: { [idField]: id } })
+      )
     },
 
     // restore() — complement to remove() for @@softDelete models.
@@ -1001,6 +1111,32 @@ async function modelColumns(client: unknown, accessor: string): Promise<Set<stri
 
   perModel.set(accessor, cols)
   return cols
+}
+
+const _versionFor = new WeakMap<object, Map<string, string | null>>()
+
+/**
+ * The `@version` column this model declares, or null.
+ *
+ * `x-version` is the declared bridge for this and the browser client already
+ * reads it — asking the generated schema rather than walking `$schema` keeps
+ * one definition of *which column is the version*.
+ */
+async function modelVersionField(client: unknown, accessor: string): Promise<string | null> {
+  const c = client as { $schema?: unknown } | null
+  if (!c || typeof c !== 'object') return null
+
+  let perModel = _versionFor.get(c as object)
+  if (!perModel) { perModel = new Map(); _versionFor.set(c as object, perModel) }
+  if (perModel.has(accessor)) return perModel.get(accessor)!
+
+  const jsonSchema = await _deriveJsonSchema(client)
+  const defsKey    = jsonSchema ? resolveDefsKey(jsonSchema, accessor, c.$schema) : null
+  const def        = defsKey ? jsonSchema!.$defs[defsKey] as { 'x-version'?: string } : null
+  const field      = typeof def?.['x-version'] === 'string' ? def['x-version'] : null
+
+  perModel.set(accessor, field)
+  return field
 }
 
 /** The accessor's table on this client, without tripping the throw-on-unknown proxy. */

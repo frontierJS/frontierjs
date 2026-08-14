@@ -630,6 +630,32 @@ test('tabs: .vertical turns the strip and moves the indicator', function () {
   );
 });
 
+test('tabs: a scrolling strip does not grow a scrollbar on the other axis', function () {
+  /*
+   * Found in @frontierjs/litestone's Studio, and it had shipped for four
+   * versions looking like a stray widget in the corner rather than like a
+   * scrollbar.
+   *
+   * `.tablist` scrolls sideways when there are more tabs than room. A box
+   * with ONE axis non-visible promotes the other from `visible` to `auto`,
+   * and `.tab` bleeds -1px so its underline lands on the strip's rule — so
+   * the content is one pixel taller than the box and the horizontal strip
+   * renders a VERTICAL scrollbar. Both axes therefore have to be stated.
+   *
+   * The vertical variant is the same defect turned ninety degrees: it needs
+   * neither axis, and resetting only `overflow-x` there would leave
+   * `overflow-y: hidden` standing and draw a horizontal bar instead.
+   */
+  var h = el(TABS, '.tablist');
+  assert.equal(style(h, 'overflow-x'), 'auto', 'a crowded tab strip cannot scroll to its last tab');
+  assert.equal(style(h, 'overflow-y'), 'hidden', 'the strip will draw a vertical scrollbar over its own underline');
+  cleanup();
+
+  var v = el(TABS.replace('class="tabs"', 'class="tabs vertical"'), '.tablist');
+  assert.equal(style(v, 'overflow-x'), 'visible', 'a vertical strip will draw a horizontal scrollbar');
+  assert.equal(style(v, 'overflow-y'), 'visible', 'a vertical strip clips its own tabs');
+});
+
 test('tabs: a vertical panel cannot blow the layout out sideways', function () {
   /*
    * A flex item defaults to min-inline-size: auto, so a wide table inside

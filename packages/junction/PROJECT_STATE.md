@@ -85,10 +85,9 @@ Open items for this package are in the repo-wide register, not here:
 **`FJS-034`** typecheck baseline ·
 **`FJS-043`** `/metrics` `actions: []` ·
 **`FJS-044`** bulk patch/remove ·
-**`FJS-045`** double broadcast ·
 **`FJS-046`** export tiering ·
 **`FJS-047`** sibling ownership.
-Decisions waiting: **`FJS-D01`**, **`FJS-D02`**,
+Decisions waiting: **`FJS-D02`**,
 **`FJS-D10`**, **`FJS-D11`**, **`FJS-D13`**.
 
 Add a new one to `../../ISSUES.md`, not to this file.

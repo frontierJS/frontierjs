@@ -2,13 +2,14 @@
 title: 08-release-web
 description: Point nginx at the new web release via symlink
 optional: true
-skip: "context.config.deployConf.web === false"
+skip: "!context.config.doWeb"
 ---
 
 ```js
 if (context.config.abort) return
 
-const { host, serverPath, releaseDir } = context.config
+const { releaseDir } = context.config
+const { host, path: serverPath } = context.config.web
 const currentLink = `${serverPath}/current`
 
 // Atomic symlink swap — ln -sfn is atomic on Linux

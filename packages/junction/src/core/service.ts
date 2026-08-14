@@ -12,6 +12,7 @@ import {
   mergeHookMaps,
   runPipeline,
   type Hook,
+  type AroundHook,
   type HookMap,
   type ResolvedPipeline
 } from './hooks.ts'
@@ -22,6 +23,7 @@ import { wrapResult, isServiceResult, resultData } from './envelope.ts'
 // litestone imports createService (used only inside functions) and this
 // module imports createLitestoneBase (used only inside createBaseService).
 import { createSchema } from './schema.ts'
+import { isPublishHook } from '../transport/channels.ts'
 import {
   createLitestoneBase, autoValidate, gateAuth, autoFilter, autoSort,
   markDerived, isDerivedHook,
@@ -176,20 +178,38 @@ export interface ServiceDescription {
   /** What the service will answer, policy applied. */
   methods:    string[]
   allowBulk:  boolean
+  /** Row cap on one filtered bulk patch/remove. */
+  bulkMax:    number
   softDelete: string | null
   cache:      boolean
   idField:    string
+  /** Methods that run inside a transaction spanning the whole pipeline. */
+  transactional: string[]
   /** The merged hook declaration — what ran, not how it was resolved. */
   hooks:      HookMap
   /** Present when the service was given an explicit schema. */
   schemas?:   { create?: unknown; patch?: unknown }
 }
 
+/**
+ * Which methods run inside a database transaction spanning the WHOLE pipeline.
+ *
+ *   transactional: true                every mutating method
+ *   transactional: ['create', 'pay']   these, named
+ *   transactional: false               declared opt-out
+ *
+ * `find`/`get` are never wrapped whatever is declared — a read taking
+ * `BEGIN IMMEDIATE` would serialise every reader behind every other.
+ */
+export type TransactionalDeclaration = boolean | string[]
+
 export interface Service {
   name:     string
   model?:   string   // model name — used in result envelope object field
   /** Channel(s) to broadcast mutations to. Omitted = no broadcast. */
   channel?: PublishDeclaration
+  /** Methods wrapped in a transaction, resolved from the declaration. */
+  _transactional?: readonly string[]
   /**
    * Whether bulk (query-targeted, id-less) writes are permitted.
    *
@@ -199,6 +219,12 @@ export interface Service {
    * every service, including ones configured `allowBulk: true`.
    */
   allowBulk?: boolean
+
+  /**
+   * Row cap on one filtered bulk patch/remove, carried for the same reason
+   * `allowBulk` is: `/metrics` and `describe()` report it.
+   */
+  bulkMax?: number
 
   /**
    * The DECLARATION, as written — `['find','get']` or `'readOnly'`.
@@ -651,6 +677,9 @@ export interface BaseServiceOptions {
   /** Channel(s) to broadcast mutations to. See ServiceDefinition.channel. */
   channel?:  PublishDeclaration
 
+  /** See ServiceDefinition.transactional. */
+  transactional?: TransactionalDeclaration
+
   /**
    * Narrow what this service answers — `['find','get']`, or `'readOnly'`.
    *
@@ -698,6 +727,15 @@ export interface BaseServiceOptions {
   // Must be explicitly true to allow DELETE/PATCH without an id.
   // Protects against accidental whole-table wipes from a missing id param.
   allowBulk?: boolean
+
+  /**
+   * How many rows one filtered bulk patch/remove may touch. Default 1000.
+   *
+   * Those run one statement per row so that `@@transitions` and `@version` are
+   * enforced and each row gets its own outcome — which means an unbounded
+   * filter is an unbounded number of statements under the write lock.
+   */
+  bulkMax?: number
 
   /**
    * Primary key field. Default 'id'.
@@ -750,20 +788,21 @@ export interface BaseServiceOptions {
 
 /** Option keys consumed by the service factories — never custom methods. */
 export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
-  'name', 'model', 'db', 'paginate', 'allowBulk',
+  'name', 'model', 'db', 'paginate', 'allowBulk', 'bulkMax',
   'idField', 'softDelete', 'cache', 'schema', 'hooks',
   // `publish` accepts a function, so without this a service declaring
   // `publish: (rows, ctx) => …` would have had it copied on as a callable
   // custom method and routed over HTTP as an action.
   'channel',
   'methods',
+  'transactional',
 ])
 
 /** Keys present on a *built* Service — CRUD, bypass twins, and internals. */
 export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
   '_find', '_get', '_create', '_update', '_patch', '_remove', '_restore',
-  '_hookMap', '_meta', '_schemas', '_methods', '_actions',
+  '_hookMap', '_meta', '_schemas', '_methods', '_actions', '_transactional',
   'pipelines', 'describe',
 ])
 
@@ -849,6 +888,102 @@ export function collectActions(
 export function actionNames(svc: object): string[] {
   const table = (svc as { _actions?: ActionMap })._actions
   return table ? Object.keys(table) : customMethodNames(svc)
+}
+
+// ─── The transaction scope ────────────────────────────────────────────────
+//
+// `around` is the only phase that wraps the after hooks, which is what makes
+// this a commit scope rather than a longer before hook: the transaction covers
+// before → method → after, so a later `after` hook throwing rolls the write
+// back instead of leaving a committed row behind a rejected response.
+//
+// Two orderings carry it, and both already hold:
+//
+//   · `withLitestoneDb` is an APP-level around hook and app hooks merge first,
+//     so it runs outside this one — `ctx.locals.db` is already the caller-scoped
+//     client, and `$setAuth(u).$transaction(…)` passes its own proxy through, so
+//     row policies and auth() survive into the transaction.
+//   · the announcement happens in callService AFTER runPipeline, so the write
+//     lock is released before anything fans out to a socket.
+//
+// A nested `app.service('x')` call needs no propagation: every client flavour
+// shares one write connection and one depth counter, so its writes land inside
+// this transaction and its reads see them (litestone `FJS-237` is what keeps
+// that true under concurrency).
+//
+// Reads are excluded BY NAME rather than by guessing from the method's shape —
+// the same rule the announcement uses. A read taking BEGIN IMMEDIATE would
+// serialise every reader behind every other.
+const NON_TRANSACTIONAL_METHODS = new Set(['find', 'get'])
+
+export function resolveTransactional(
+  decl:    TransactionalDeclaration | undefined,
+  methods: readonly string[]
+): readonly string[] {
+  if (decl === undefined || decl === false) return []
+  const wanted = decl === true ? methods : decl
+  return wanted.filter(m => !NON_TRANSACTIONAL_METHODS.has(m))
+}
+
+function transactionScopeHook(serviceName: string, decl: TransactionalDeclaration): AroundHook {
+  return markDerived(async function transactionScope(ctx: ServiceContext, next: () => Promise<void>) {
+    // Registered on `all` and filtered here rather than expanded into a
+    // per-method map at construction: the full method list is not resolved until
+    // after the hooks are pushed, and one runtime check is cheaper than keeping
+    // two derivations of "which methods" in step.
+    const method = ctx.method as string
+    if (NON_TRANSACTIONAL_METHODS.has(method)) return next()
+    if (Array.isArray(decl) && !decl.includes(method)) return next()
+
+    type TxClient = NonNullable<typeof ctx.locals.db>
+    const db = ctx.locals.db as { $transaction?: (fn: (tx: TxClient) => Promise<void>) => Promise<void> }
+    if (typeof db?.$transaction !== 'function')
+      throw new Error(
+        `Service '${serviceName}' declares transactional: but ctx.locals.db has no $transaction. ` +
+        `The scope comes from the Litestone client — build the app with createApp({ db }), or drop the declaration. ` +
+        `Silently running without one would report a transaction nobody opened.`
+      )
+    await db.$transaction(async (tx) => {
+      // The whole trick, and the reason this is a framework hook rather than a
+      // recipe: the method and every later hook must WRITE through the tx
+      // client. Omit this by hand and the transaction is empty, the writes
+      // commit outside it, and every test still passes.
+      ctx.locals.db = tx
+      await next()
+    })
+  })
+}
+
+// ─── One announcement per mutation ────────────────────────────────────────
+//
+// Two mechanisms broadcast, and a service can carry both: `channel:` is
+// announced by callService at the single announcement point, and the exported
+// `publish()` hook sends its own frame from `after`. Together they put the same
+// record on the wire twice — every subscribed tab applies it twice, and a
+// non-idempotent client handler (an append, a counter, a toast) shows it twice.
+//
+// It was tracked as "grep before merging" (FJS-045), which is a rule nobody can
+// be relied on to follow and which no test can check. This is the same question
+// asked where it can be answered: the resolved pipeline is the only place the
+// FULL effective chain is known — service hooks, and the app-level hooks a
+// `after: { all: [publish(…)] }` would apply to every service at once.
+//
+// Marked hooks, never names: an app is free to call its own hook `publish`, and
+// suppressing a real one on a name match would silently stop broadcasting.
+function refuseDoubleBroadcast(
+  name:      string,
+  channel:   PublishDeclaration | undefined,
+  pipelines: Record<string, ResolvedPipeline>
+): void {
+  if (channel === undefined || channel === false) return
+  for (const [method, p] of Object.entries(pipelines)) {
+    if (!p.after?.some(isPublishHook)) continue
+    throw new Error(
+      `Service '${name}' declares channel: and also runs a publish() hook on '${method}'. ` +
+      `Both broadcast, so every mutation would go out twice and each subscriber would apply it twice. ` +
+      `Keep channel: and drop the hook, or drop channel: and keep the hook — not both.`
+    )
+  }
 }
 
 // ─── The method policy (FJS-004 / FJS-D07) ────────────────────────────────
@@ -984,7 +1119,7 @@ export function createBaseService(
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
-  const { model, name, hooks, db, paginate, allowBulk, idField, softDelete, cache, schema, channel, methods } = opts
+  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, transactional } = opts
 
   const base = createLitestoneBase({
     model,
@@ -992,6 +1127,7 @@ export function createBaseService(
     softDelete,
     paginate:  paginate ?? { default: 20, max: 100 },
     allowBulk: allowBulk ?? false,
+    ...(bulkMax !== undefined ? { bulkMax } : {}),
   })
 
   type Method = (ctx: ServiceContext) => Promise<unknown>
@@ -1160,9 +1296,13 @@ export function createBaseService(
     // whether your method policy existed, exactly as it once decided whether
     // your row policies did.
     ...(methods !== undefined ? { methods } : {}),
+    // Same reason as `methods` above: createService is where the around hook is
+    // installed, so a base that drops this declares a transaction nobody opens.
+    ...(transactional !== undefined ? { transactional } : {}),
     hooks: mergedHooks,
     ...(cache      !== undefined ? { cache }      : {}),
     ...(allowBulk  !== undefined ? { allowBulk }  : {}),
+    ...(bulkMax    !== undefined ? { bulkMax }    : {}),
     // Consumed by the openapi plugin, which prefers an explicit schema.
     ...(explicitSchemas ? { _schemas: explicitSchemas } : {}),
     // Consumed by the devtools/manifest plugins, which read service metadata.
@@ -1250,6 +1390,7 @@ export interface ServiceDefinition {
   db?:        () => unknown
   paginate?:  { default: number; max: number }
   allowBulk?: boolean
+  bulkMax?:   number
 
   /**
    * Narrow what this service answers. Absent = everything.
@@ -1285,6 +1426,28 @@ export interface ServiceDefinition {
    * (publishes nothing without a publisher) and its generator (writes one).
    */
   channel?:   PublishDeclaration
+
+  /**
+   * Run every mutating method inside one database transaction that spans the
+   * WHOLE pipeline — before hooks, the method, and the after hooks.
+   *
+   *   transactional: true                every mutating method
+   *   transactional: ['create', 'pay']   these, named
+   *
+   * So an `after` hook that throws rolls the write back, instead of leaving a
+   * committed row behind a rejected response. Requires a Litestone client on
+   * `ctx.locals.db`; a service declaring it without one throws by name rather
+   * than quietly doing nothing.
+   *
+   * **It does not make side effects atomic.** An email an earlier `after` hook
+   * already sent stays sent — a transaction rolls back rows, not SMTP. Turning
+   * the effect into a row is what makes it coverable (`FJS-089`).
+   *
+   * **Cost:** `BEGIN IMMEDIATE` holds SQLite's single write lock for the whole
+   * pipeline, `after` hooks included, so an `after` hook doing network I/O
+   * serialises every write in the app behind it. Off by default for that reason.
+   */
+  transactional?: TransactionalDeclaration
 
   /**
    * Enable response caching for read methods (find, get).
@@ -1406,6 +1569,7 @@ export function createService(def: ServiceDefinition): Service {
     db:         def.db,
     paginate:   def.paginate,
     allowBulk:  def.allowBulk,
+    bulkMax:    def.bulkMax,
     idField:    def.idField    as string | undefined,
     softDelete: def.softDelete as string | undefined,
     schema:     def.schema     as import('./litestone.ts').LitestoneJsonSchema | undefined,
@@ -1466,6 +1630,13 @@ export function createService(def: ServiceDefinition): Service {
   const effectiveHooks = baseHooks ?? def.hooks
   if (effectiveHooks) hookMaps.push(effectiveHooks)
 
+  // Pushed LAST of the service's own layers so it is the innermost service-level
+  // around hook — outside every before/after hook it must cover, inside the
+  // app-level withLitestoneDb that scopes the client it opens the transaction on.
+  if (def.transactional !== undefined && def.transactional !== false) {
+    hookMaps.push({ around: { all: [transactionScopeHook(defName ?? '(unnamed)', def.transactional)] } })
+  }
+
   if (cacheHooks) {
     // Push after-cache hooks LAST — storeResult sees the fully transformed result
     hookMaps.push({
@@ -1506,6 +1677,7 @@ export function createService(def: ServiceDefinition): Service {
     memoKey     = key
     memoVersion = hookVersion
     memo = resolvePipelines(key ? mergeHookMaps(key, mergedMap) : mergedMap)
+    refuseDoubleBroadcast(defName, def.channel as PublishDeclaration | undefined, memo)
     return memo
   }
 
@@ -1518,6 +1690,7 @@ export function createService(def: ServiceDefinition): Service {
     // Same reason: declared, honoured internally, but previously not carried
     // onto the built service, so anything reading it back saw undefined.
     allowBulk: def.allowBulk ?? (base as { allowBulk?: boolean }).allowBulk ?? false,
+    bulkMax:   def.bulkMax   ?? (base as { bulkMax?: number }).bulkMax   ?? 1000,
 
     find:    def.find    ?? base.find,
     get:     def.get     ?? base.get,
@@ -1561,9 +1734,11 @@ export function createService(def: ServiceDefinition): Service {
         // worse than not advertising it, because a generated client calls it.
         methods:    allowedMethodNames(service),
         allowBulk:  !!service.allowBulk,
+        bulkMax:    service.bulkMax ?? 1000,
         softDelete: (meta.softDelete as string | null) ?? null,
         cache:      !!meta.cache,
         idField:    (meta.idField as string) ?? 'id',
+        transactional: [...(service._transactional ?? [])],
         hooks:      service._hookMap,
         ...(schemas ? { schemas } : {}),
       }
@@ -1606,6 +1781,13 @@ export function createService(def: ServiceDefinition): Service {
     def.methods,
     serviceMethodNames(service),
     defName ?? '(unnamed)',
+  )
+
+  // Resolved for describe() only — the hook itself filters at call time. Read
+  // off the policy so the answer is what the service will actually answer.
+  ;(service as Service)._transactional = resolveTransactional(
+    def.transactional,
+    [...((service as Service)._methods ?? serviceMethodNames(service))],
   )
 
   Object.defineProperty(service, BUILT, { value: true, enumerable: false })

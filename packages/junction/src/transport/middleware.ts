@@ -13,6 +13,12 @@
 import type { MiddlewareFn, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
 import { Forbidden }                            from '../core/errors.ts'
+import { clientIp }                             from '../core/context.ts'
+import {
+  createRateLimiter,
+  refuseLegacyRateLimitOptions,
+  type RateLimitOptions as CoreRateLimitOptions,
+} from '../core/rate-limit.ts'
 
 // ─── Shared origin type ───────────────────────────────────────────────────
 // cors() and csrf() both accept the same origin specification.
@@ -195,80 +201,43 @@ export function helmet(opts: HelmetOptions = {}) {
 
 // ─── Rate limiter ─────────────────────────────────────────────────────────
 
-export interface RateLimitOptions {
-  limit:         number      // requests per window
-  window:        number      // ms
-  keyFn?:        (ctx: TransportContext) => string   // default: IP
-  message?:      string
-  skipFn?:       (ctx: TransportContext) => boolean  // skip for certain requests
-}
+// The transport tier's own view of the shared options. Same names throughout —
+// `max`/`window`/`key`/`message`/`skip` — so what you learn here is what the
+// pipeline hook and @frontierjs/auth take (FJS-017). `window` accepts a TTL
+// string as well as milliseconds; this tier used to take only a number.
+export type RateLimitOptions = CoreRateLimitOptions<TransportContext>
 
 export function rateLimit(opts: RateLimitOptions) {
 
-  const {
-    limit,
-    window:  windowMs,
-    keyFn    = (ctx) => ctx.ip,
-    message  = 'Too Many Requests',
-    skipFn,
-  } = opts
+  refuseLegacyRateLimitOptions(opts as unknown as Record<string, unknown>)
 
-  // Per-key counters: key → { count, reset }
-  const counters = new Map<string, { count: number; reset: number }>()
-
-  // GC timer
-  const gc = setInterval(() => {
-    const now = Date.now()
-    for (const [key, rec] of counters) {
-      if (rec.reset < now) counters.delete(key)
-    }
-  }, windowMs)
-  if (gc.unref) gc.unref()
+  // At the transport there is no principal yet — that is the whole reason this
+  // tier exists, so a flood that never reaches a service is still counted. IP is
+  // the only thing to key on.
+  const limiter = createRateLimiter<TransportContext>(opts, clientIp)
 
   const middleware: MiddlewareFn = async (ctx, next) => {
-    if (skipFn?.(ctx)) { await next(); return }
+    const verdict = limiter.check(ctx)
 
-    const key = keyFn(ctx)
-    const now = Date.now()
-    let rec   = counters.get(key)
-
-    if (!rec || rec.reset < now) {
-      rec = { count: 0, reset: now + windowMs }
-      counters.set(key, rec)
-    }
-
-    rec.count++
-
-    if (rec.count > limit) {
-      const retryAfter = Math.ceil((rec.reset - now) / 1000)
-      throw Object.assign(new Error(message), {
-        code:          429,
-        name:          'TooManyRequests',
-        retryAfter,
-      })
-    }
-
-    // Expose headers for client
-    ;(ctx as Record<string, unknown>).__rateLimit = {
-      'x-ratelimit-limit':     String(limit),
-      'x-ratelimit-remaining': String(Math.max(0, limit - rec.count)),
-      'x-ratelimit-reset':     String(Math.ceil(rec.reset / 1000)),
+    // The header side is what this tier has and the hook does not: it runs where
+    // a response is still being assembled.
+    ;(ctx as unknown as Record<string, unknown>).__rateLimit = {
+      'x-ratelimit-limit':     String(verdict.limit),
+      'x-ratelimit-remaining': String(verdict.remaining),
+      'x-ratelimit-reset':     String(verdict.reset),
     }
 
     await next()
   }
 
-  // Returned as a full Plugin (not a bare PluginFn) so shutdown() can clear
-  // the GC timer — previously the interval had no teardown path and kept
-  // running against the counters map after app.stop().
+  // A full Plugin rather than a bare PluginFn so shutdown() can stop the sweep.
   return {
     name: 'rateLimit',
     register(app: App): void {
       patchRouterWithMiddleware(app, middleware)
     },
     shutdown(): void {
-      clearInterval(gc)
-      counters.clear()
+      limiter.dispose()
     },
   }
 }

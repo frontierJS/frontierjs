@@ -16,6 +16,14 @@ flags:
     type: boolean
     description: Deploy to stage (overrides branch detection)
     defaultValue: false
+  api:
+    type: boolean
+    description: Deploy the API only (skip web)
+    defaultValue: false
+  web:
+    type: boolean
+    description: Deploy the web only (skip API)
+    defaultValue: false
 ---
 
 Deploys via SSH. Environment resolved in order:
@@ -38,22 +46,47 @@ const deployConf     = frontierConfig?.deploy
 
 if (deployConf?.server) {
   // ── Docker/SSH/nginx deploy (frontier.config.js present) ──────────────────
-  const resolved = resolveDeployConf(deployConf, target)
-  if (!resolved) {
-    log.error(`deploy.server or deploy.path is not set in frontier.config.js for target: ${target}`)
-    log.info('Add a server address and path to the deploy block and try again')
+
+  // --api and --web are additive filters, matching deploy:rollback, which has
+  // had this split since before the deploy side could express it. Neither flag
+  // means both halves, which is what an unsplit config wants.
+  const bothSides = !flag.api && !flag.web
+  const doApi     = bothSides || flag.api
+  const doWeb     = (bothSides || flag.web) && deployConf.web !== false
+
+  const api = doApi ? resolveSide(deployConf, target, 'api') : null
+  const web = doWeb ? resolveSide(deployConf, target, 'web') : null
+
+  if ((doApi && !api) || (doWeb && !web)) {
+    const missing = doApi && !api ? 'api' : 'web'
+    log.error(`Cannot resolve a server and path for the ${missing} side on target: ${target}`)
+    log.info(`Set deploy.server + deploy.path, or deploy.${missing}.server + deploy.${missing}.path`)
     context.config.abort = true
     return
   }
-  const { server, user, path } = resolved
 
-  log.info(`Deploying to ${target} → ${user}@${server}:${path}${branchStr}`)
-  log.info('Mode: Docker/SSH/nginx (frontier.config.js)')
+  const hosts = distinctHosts([api, web])
+  const split = api && web && (api.host !== web.host || api.path !== web.path)
+
+  const scope = bothSides ? 'api + web' : doApi ? 'api only' : 'web only'
+  log.info(`Deploying ${scope} to ${target}${branchStr}`)
+  for (const h of hosts) log.info(`  ${h.host}:${h.path}`)
+  log.info(`Mode: Docker/SSH/nginx (frontier.config.js)${split ? ' — split across hosts' : ''}`)
 
   context.config.stepsDir   = '_steps-docker'
-  context.config.server     = server
-  context.config.user       = user
-  context.config.serverPath = path
+  context.config.api        = api
+  context.config.web        = web
+  context.config.doApi      = Boolean(api)
+  context.config.doWeb      = Boolean(web)
+  context.config.hosts      = hosts
+  context.config.split      = split
+  // The API side is the one that carries the database, the container and the
+  // health check, so it is what a step means when it says "the server" without
+  // qualifying. A web-only run has no API host at all — steps that need one are
+  // skipped by `doApi` rather than reading these.
+  context.config.server     = api?.server ?? web.server
+  context.config.user       = api?.user   ?? web.user
+  context.config.serverPath = api?.path   ?? web.path
   context.config.target     = target
   context.config.deployConf = deployConf
   context.config.startTime  = Date.now()

@@ -785,6 +785,17 @@ export function channels(setup?: ChannelSetupFn): Plugin {
 // Event name defaults to '<service> <method>' e.g. 'notes created'.
 // Override: publish(fn, 'note:published')
 
+// Every hook `publish()` ever produced. A service that declares `channel:` is
+// already announced by callService, so a publish hook on the same service sends
+// the frame a second time — and a name check cannot tell the two apart, because
+// an app is free to call its own hook `publish`. Marking is what makes the
+// conflict detectable (FJS-045).
+const _publishHooks = new WeakSet<Function>()
+
+export function isPublishHook(fn: unknown): boolean {
+  return typeof fn === 'function' && _publishHooks.has(fn as Function)
+}
+
 export function publish<T = unknown>(
   fn:     PublishFn<T>,
   event?: string
@@ -792,7 +803,7 @@ export function publish<T = unknown>(
 
   // Named so the dev-mode "anonymous hook" warning stays about USER hooks, and
   // so the telemetry waterfall reads 'publish' rather than 'anonymous'.
-  return async function publish(ctx: ServiceContext): Promise<void> {
+  const hook = async function publish(ctx: ServiceContext): Promise<void> {
 
     const manager = ctx.locals.__channels as
       ReturnType<typeof createChannelManager> | undefined
@@ -825,4 +836,7 @@ export function publish<T = unknown>(
 
     await manager.publish(eventName, payload, ctx, fn)
   }
+
+  _publishHooks.add(hook)
+  return hook
 }

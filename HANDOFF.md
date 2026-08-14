@@ -1,4 +1,4 @@
-# Handoff — 2026-08-13
+# Handoff — 2026-08-14
 
 > **Basecamp declares `@@gate` on all 37 models and `@@allow` on one** — `Server`,
 > as of 2026-08-10. The gate ladder is per WORKSPACE, not per user, which is why
@@ -14,6 +14,163 @@ verify something, it says so.
 **Sessions are recorded here, newest first.**
 
 ---
+
+## A bulk write that walked past the state machine (2026-08-14)
+
+**`FJS-044` was filed as an ergonomics gap and was not one.** The row said bulk
+partial success is creates-only — patch and remove answer `{ count }` while
+create answers `{ data, errors }`. True, and the smaller half.
+
+**Litestone does not enforce `@@transitions` on `updateMany`.** That is
+deliberate on its side: a power tool whose caller "takes responsibility", with a
+note in the source saying to loop `update()` where transition safety matters.
+Junction's bulk patch called `updateMany` directly, so nobody took it. Verified
+through a real service over a real client before changing anything:
+
+```
+PATCH /orders/1            {status:'shipped'}  → TransitionViolationError
+PATCH /orders?status=draft {status:'shipped'}  → {"count":2}, both rows written
+```
+
+Same forbidden move, reachable over HTTP by anyone on a service with
+`allowBulk: true`. `@version` was the same shape — bumped by a bulk write, never
+required — so optimistic concurrency was off for the writes touching the most
+rows. Gate and row policy were fine on the bulk path, and `removeMany` cascaded
+correctly; those were checked rather than assumed.
+
+Both holes are properties of `update()`, so calling it per row closes them —
+and calling it per row is also what produces a per-row outcome. One change, two
+reasons, which is what decided the `FJS-D11` ruling against the "scope partial
+success to creates" alternative.
+
+**Three consequences worth knowing before you touch a bulk service.**
+`bulkMax` (default 1000) refuses a filter matching more, before any write —
+that is the one place this can break a working app, since a filter matching 50k
+rows used to be one statement. Only rows the caller can READ are touched now,
+because selecting the targets applies the read policy. And a caller-supplied
+`@version` on a bulk patch is refused by name: one value cannot be right for N
+rows, so each row is written against the version selected with it.
+
+**The third filtered write had never worked.** Asking what `restore` does with a
+filter found `table.restoreMany({ where })` — a function a Litestone table does
+not have. `LitestoneTable` declared it, so nothing typed the mistake, and every
+`PUT /{service}?filter` was a 500 for the life of the method (`FJS-245`).
+`restore({ where })` already takes a multi-row where and answers rows, so the
+fix is one call.
+
+**No app in this repo sets `allowBulk`**, which is why no drive has ever
+exercised any of it and why the 15 tests are the whole proof. If you want the
+HTTP path covered, that is the gap.
+
+**Two register notes.** `FJS-243` collided — another session claimed it for a
+litestream row while my `$transaction` row already held it, so **mine is now
+`FJS-244`** and all seven references moved with it; theirs was left untouched.
+And I overwrote `tests/bulk-partial-success.test.ts` with `Write` without
+noticing it was tracked — recovered from `HEAD`, confirmed by the test count
+returning to exactly 1025, and my tests appended to it instead. **Check `git
+status` before `Write`ing a test file whose name you guessed.**
+
+---
+
+## A commit scope, and the transaction bug underneath it (2026-08-14)
+
+**`transactional: true` on a service** wraps the whole pipeline — before hooks,
+the method, the after hooks — in one `$transaction`, so a later `after` hook
+throwing rolls the write back instead of leaving a committed row behind a
+rejected response. `FJS-089`'s write half.
+
+`around` is the only phase that reaches the after hooks; that is the entire
+reason this is a commit scope and not a longer before hook. Two orderings carry
+it and both already held: `withLitestoneDb` is an APP-level around hook so it
+runs OUTSIDE this one (the transaction opens on the caller-scoped client, so row
+policies and `auth()` survive), and the announcement happens after `runPipeline`,
+so the write lock is released before anything fans out to a socket.
+
+**Planning found a blocker underneath it, and it was the bigger half.**
+`$transaction` treated a CONCURRENT caller as a nested one: the depth counter is
+per client, one connection holds one transaction, so a second request arriving
+while the first awaited took a SAVEPOINT inside it, was told it committed, and
+lost its rows to the first request's rollback (`FJS-244`). Reproduced before
+fixing. Latent only because few call sites use `$transaction` — but
+`transactional:` opens one on every mutating request, which would have made it
+the normal path.
+
+The fix asks the **async context**, not the counter: an `AsyncLocalStorage` holds
+the txStates the current context owns, so a nested call still SAVEPOINTs and
+anything else waits on a FIFO lock. Both directions are load-bearing —
+serialising everything deadlocks basecamp's `/setup` four models deep, nesting
+everything is the original bug. `tx.wrap` (the sync batch wrapper behind
+`createMany`) had the same hole and now awaits the acquire with its body still
+sync.
+
+**Two things worth carrying forward:**
+
+- **What this does NOT do.** A transaction rolls back rows, not SMTP. An email an
+  earlier `after` hook sent stays sent. `FJS-089` stays open for that, and the
+  route is the transactional outbox — turn the effect into a row, which this can
+  already roll back. The open decision is where that table lives: Caravan's queue
+  is its own SQLite file, so `app.jobs.dispatch()` from a hook buys retries and
+  **not** atomicity. Putting it in the app's own database — a schema fragment,
+  the way auth contributes `User`/`Session` — is what would make them one
+  transaction.
+- **The cost, which is why it is off by default.** `BEGIN IMMEDIATE` holds
+  SQLite's single write lock for the whole pipeline including the after hooks, so
+  one `after` hook doing network I/O serialises every write in the app.
+
+**Also:** `createBaseService` dropped a `transactional` declaration, so a service
+written with the base factory and spread through the autoloader declared a
+transaction nobody opened — the same silence that once made `methods:` do nothing
+through that factory. Found by a test that counted the opens rather than checking
+the outcome, because a doubled scope would still have been *correct*.
+
+**Note for whoever is next:** another session was writing to `ISSUES.md` during
+this work — ids 237-243 were claimed mid-session, so this row is `FJS-244`. Check
+the highest id immediately before filing, not at the start of a session.
+
+## Registered twice, and one accessor that grew a limiter (2026-08-13)
+
+Three Junction rows, all one shape: **something duplicated, and nothing said so.**
+
+**`FJS-225` — a route could be registered twice.** Which copy survived depended
+on something the caller cannot see: a FIXED path is written into a map by
+`build()` so the LAST registration won, while a DYNAMIC one is pushed onto a list
+`lookup()` scans in order, so the FIRST won and the later handler never ran. Same
+mistake, opposite outcome, decided by whether the path has a parameter.
+`Router.add()` now refuses at registration, keyed on the route's SHAPE — `/a/{id}`
+and `/a/{name}` accept the same requests and differ only in a name nothing that
+matches reads. Watch the encoding: `{}` is a legal static segment
+(`PARAM_PATTERN` needs a character between the braces), so a placeholder spelt
+`{}` made `/a/{}` collide with `/a/{id}`. Segments carry a type tag now.
+
+**`FJS-045` — `channel:` plus the `publish()` hook broadcast twice.** The
+register's remedy was *"grep before merging"*. Verified unrealised first: 17
+basecamp services use the hook and none also declares `channel:`. The check lives
+in `svc.pipelines()`, which is the only place the FULL effective chain is known —
+so an app-level `after: { all: [publish(…)] }`, the shape that doubles a whole app
+at once, is caught too. It matches **marked** hooks, never names: an app may call
+its own hook `publish`, and suppressing a real one on a name collision would
+silently stop broadcasting, which is the defect inverted.
+
+**`FJS-017` — three rate limiters.** The row read as *merge middleware and
+hooks*, which `FJS-D01` refused. It is not that: it names three concrete
+symptoms. `rateLimit` took `limit`/`keyFn`/`window: 60_000`, `rateLimitHook` took
+`max`/`key`/`window: '15 minutes'`, and `@frontierjs/auth` carried a third —
+whose comment justified the fork with *"ServiceContext, which has
+`ctx.params.ip`"*. **A ServiceContext has no `params` at all.** The real gap was
+one accessor, and the copy had already drifted: it returned before comparing on a
+fresh bucket, so `max: 0` let one request through.
+
+`core/rate-limit.ts` owns counting, the window, the sweep, the teardown and the
+refusal; the three call sites are adapters. `clientIp(ctx)` reads either context
+shape. The transport tier keeps `x-ratelimit-*` and stays a separate tier on
+purpose — it counts a flood that never reaches a service, which a pipeline hook
+cannot see. Old option names **throw**: a silently dropped `limit:` leaves `max`
+undefined, and `count > undefined` is never true, so the limiter would accept
+everything and say nothing.
+
+**If you pick this up:** the three closures added 23 tests and lowered the
+typecheck baseline 199 → 198. Junction's open list is now `FJS-010` (blocked on
+`FJS-D04`), `018`, `034`, `089` (ruled defer-and-document), `044`, `046`, `047`.
 
 ## The service split — FJS-D01 ruled and executed (2026-08-13)
 
@@ -76,8 +233,9 @@ jobs 8 · `basecamp` verify 271/271 — the last three re-run after Phase 3, not
 carried over from Phase 1.
 
 **Still open here:** `FJS-034` is now a corrected row — 199 errors, of which the
-bulk is tests and examples, not `service.ts`. `FJS-046` and `FJS-017` are
-untouched by the ruling.
+bulk is tests and examples, not `service.ts`. `FJS-046` and `FJS-017` were
+untouched by the ruling; `FJS-017` has since closed on its own terms (see the
+rate-limiter section), doing none of what the ruling refused.
 
 ---
 
@@ -103,8 +261,10 @@ That last one paid for itself on its first run: `fli api:routes` against a
 freshly scaffolded app printed `OPTIONS /*` **twice**. The scaffold configured
 CORS by hand *and* through `config.http.cors`, so every FJS app has been running
 doubled CORS middleware since the config path started working. Scaffold fixed;
-the framework half — a second registration of the same exact route is silent and
-the second handler shadows the first — is `FJS-225`.
+The framework half — a second registration of the same route was silent, and
+which copy survived depended on whether the path had a param — was `FJS-225`,
+**closed 2026-08-13**: `Router.add()` refuses a duplicate by name at registration,
+keyed on the route's shape rather than its literal path.
 
 **`IEventBus.stats()`** (`FJS-143`). `{ events, total }`. Basecamp's hub card
 stated the gap on the screen; it prints the number now.

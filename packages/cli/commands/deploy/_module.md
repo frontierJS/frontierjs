@@ -38,6 +38,51 @@ const resolveDeployConf = (deployConf, target) => {
   if (!server || !path) return null
   return { server, user, path }
 }
+
+// ─── resolveSide ──────────────────────────────────────────────────────────────
+// The same resolution, per SIDE — 'api' or 'web' — so the two halves of an app
+// can live on different machines. A split is the ordinary shape once the API is
+// its own origin (api.myapp.com), and the transport already assumes nothing
+// about co-location: the browser client takes an absolute url and /ws is
+// registered beneath the router, so it never carries apiPrefix either.
+//
+// Most specific wins, and a side that says nothing inherits the shared value —
+// so an unsplit config keeps behaving exactly as it did:
+//
+//   deploy[target][side]  →  deploy[side]  →  deploy[target]  →  deploy
+//
+// `deploy.web` already carries domain/keep_releases/ssl and `deploy.api` carries
+// port/health/dockerfile, so server/user/path join blocks that exist rather than
+// introducing a shape.
+//
+// Returns null when the side cannot be resolved; callers abort by name.
+const resolveSide = (deployConf, target, side) => {
+  if (!deployConf) return null
+  const t     = deployConf[target] ?? {}
+  const ts    = t[side] ?? {}
+  const s     = deployConf[side] ?? {}
+  const server = ts.server ?? s.server ?? t.server ?? deployConf.server
+  const user   = ts.user   ?? s.user   ?? t.user   ?? deployConf.user ?? 'deploy'
+  const path   = ts.path   ?? s.path   ?? t.path   ?? deployConf.path
+  if (!server || !path) return null
+  return { server, user, path, host: `${user}@${server}` }
+}
+
+// ─── distinctHosts ────────────────────────────────────────────────────────────
+// The machines a run touches, deduplicated by host AND path — the SSH check, the
+// deploy lock, the git pull and the cleanup are per machine, not per side, and
+// the common case is one machine wearing both hats. Deduplicating on the pair
+// matters: two apps sharing a host but not a path are two locks, and one app
+// split across two hosts is two pulls.
+const distinctHosts = (sides) => {
+  const seen = new Map()
+  for (const side of sides) {
+    if (!side) continue
+    const key = `${side.host}:${side.path}`
+    if (!seen.has(key)) seen.set(key, { host: side.host, path: side.path })
+  }
+  return [...seen.values()]
+}
 </script>
 
 ## Overview
@@ -54,6 +99,8 @@ fli deploy:local        ← build + run + health check locally (no server needed
 fli deploy              ← deploy to dev (or auto-detected from branch)
 fli deploy --production ← deploy to production
 fli deploy --stage      ← deploy to staging
+fli deploy --api        ← API only  (see § Splitting, below)
+fli deploy --web        ← web only
 
 fli deploy:status       ← check what's running on the server
 fli deploy:logs         ← stream or show API container logs
@@ -117,8 +164,11 @@ export default {
 
     api: {
       port:       3000,        // default: 3000
-      health:     '/health',   // default: '/health'
-      dockerfile: 'api/deploy/Dockerfile',
+      health:     '/health',    // must match the app: healthPlugin() serves
+                                // `{apiPrefix}/health`, and Junction's default
+                                // apiPrefix is '' — so this is '/health' unless
+                                // the app sets one. make:deploy reads it for you.
+      dockerfile: 'deploy/Dockerfile',   // the path make:deploy writes
       env:        '/apps/myapp/.env.production',
 
       // Validate server env against .env.example before deploying
@@ -148,6 +198,66 @@ export default {
 }
 ```
 
+### Splitting the API and the web onto different machines
+
+`api` and `web` may each carry their own `server` / `user` / `path`. A side that
+says nothing inherits the shared value, so the config above keeps behaving
+exactly as it did — the split is opt-in per side.
+
+```
+export default {
+  deploy: {
+    server: 'myapp.com',            // still the default for anything unstated
+    path:   '/apps/myapp',
+
+    api: {
+      server: 'api.myapp.com',      // ← the API lives on its own box
+      path:   '/apps/myapp-api',
+      port:   3000,
+      health: '/health',
+    },
+
+    web: {
+      domain: 'myapp.com',          // web stays on the shared server above
+    },
+
+    production: {
+      api: { server: 'api-prod.myapp.com' },   // per target AND per side
+    },
+  },
+}
+```
+
+Resolution, most specific first:
+
+```
+deploy[target][side]  →  deploy[side]  →  deploy[target]  →  deploy
+```
+
+Splitting is the ordinary shape once the API has its own origin, and nothing in
+the transport assumes co-location: the browser client takes an absolute `url`,
+and `/ws` is registered beneath the router so it never carries `apiPrefix`. What
+a split *does* need is CORS — Junction's default is `origins: []`, deliberately —
+and the WebSocket upgrade is an HTTP request, so it needs the same allowance.
+
+Deploy one side at a time:
+
+```
+fli deploy              → both halves
+fli deploy --api        → API only
+fli deploy --web        → web only
+fli deploy --api --production
+```
+
+The same `--web` / `--api` filters `deploy:rollback` has always had.
+
+**Each machine gets its own lock, keyed by host AND path**, so two apps sharing a
+server are two locks and one app split across two servers is two. A run that
+cannot take the second lock releases the first rather than stranding it. Both
+hosts are SSH-checked before anything moves, and **a split whose hosts are on
+different commits is refused** — shipping two versions under one release name is
+the failure this is most likely to cause.
+
 ## How a deploy works
 
 ```
@@ -158,7 +268,7 @@ export default {
 04-build-api   → docker build on server (no registry needed)
 05-backup      → hot backup of the database before any changes
 06-swap        → stop old container, start new (migrations run in entrypoint)
-07-health      → poll /health — rolls back to previous container on failure
+07-health      → poll deploy.api.health — rolls back to previous container on failure
 08-release-web → atomic symlink swap, nginx reload
 09-cleanup     → remove _replaced, prune images, release deploy lock
 ```

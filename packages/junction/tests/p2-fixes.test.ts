@@ -135,7 +135,7 @@ describe('P2: per-app service cache scoping', () => {
 describe('P2: plugin teardown', () => {
 
   it('rateLimit is a Plugin whose shutdown() clears its timer', () => {
-    const plugin = rateLimit({ limit: 10, window: 1000 })
+    const plugin = rateLimit({ max: 10, window: 1000 })
     expect(typeof plugin).toBe('object')
     expect((plugin as { name: string }).name).toBe('rateLimit')
     expect(typeof (plugin as { shutdown?: () => void }).shutdown).toBe('function')

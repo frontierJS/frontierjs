@@ -237,6 +237,15 @@ test/run.js        the harness
   reporting 200px in both. Measure the child (409px inside a 200px row), and
   give the title `nowrap`, because wrapping text never exceeds its container
   and the question does not exist without it.
+- **A box with one overflow axis set is not a box with one axis scrolling.**
+  Setting `overflow-x` alone promotes the other axis from `visible` to `auto`,
+  so `.tablist`'s sideways scroll plus `.tab`'s `-1px` underline bleed drew a
+  **vertical** scrollbar on a horizontal strip — for four versions, because it
+  reads as a stray widget in the corner rather than as a scrollbar. Found from
+  outside, in litestone's Studio. Both axes are now stated in both directions:
+  the vertical variant needs `overflow: visible` and not `overflow-x`, or the
+  hidden y-axis it inherits draws a horizontal bar instead. `components: a
+  scrolling strip does not grow a scrollbar on the other axis` holds all four.
 - **`.clamp-1/2/3` is a utility, and the two spellings are ordered on
   purpose.** `display: -webkit-box` is a whole box model, so the prefixed
   triple is the floor and `@supports (line-clamp: 2)` puts `display` back to

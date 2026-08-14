@@ -1765,9 +1765,57 @@ function needsHandler(modelName, field, needs) {
 
 // ─── Transaction manager ──────────────────────────────────────────────────────
 // Uses SAVEPOINTs for nesting so $transaction + createMany compose safely.
+//
+// The depth counter is per CLIENT, and one connection can hold one transaction.
+// So "am I nested?" cannot be answered by the counter alone: a second REQUEST
+// arriving while the first is awaiting sees depth > 0 and looks identical to a
+// genuinely nested call. It used to be treated as one, and that was `FJS-237`:
+//
+//   A: begin()  → depth 0→1, BEGIN IMMEDIATE, awaits
+//   B: begin()  → sees depth 1 → SAVEPOINT sp_1 INSIDE A's transaction
+//   B: commit() → RELEASE sp_1        ← B's caller is told it succeeded
+//   A: rollback → ROLLBACK            ← B's rows are gone
+//
+// B also read A's uncommitted rows, because makeReadRouter sends every read to
+// the write connection while depth > 0.
+//
+// The two cases need opposite treatment and only the async context can tell
+// them apart: a nested call runs INSIDE the outer callback and inherits its
+// store, a concurrent request does not. So re-entrancy is asked of
+// AsyncLocalStorage, and anything else waits for the lock.
+//
+// This serialises what SQLite already serialises — two BEGIN IMMEDIATEs cannot
+// overlap on one connection, and the old code avoided the error only by nesting
+// into someone else's transaction. What changes is that the second caller waits
+// instead of being silently enrolled in a transaction it cannot see.
+
+import { AsyncLocalStorage } from 'node:async_hooks'
+
+// The txState objects the CURRENT async context has an open transaction on.
+// A Set because a callback may hold transactions on more than one client.
+const _txOwned = new AsyncLocalStorage()
 
 function makeTxManager(db, state = { depth: 0 }) {
   let spCount = 0
+
+  // Lock as a promise chain. `tail` always resolves when the current holder
+  // releases, so awaiting it is FIFO and starvation-free.
+  let tail = Promise.resolve()
+
+  function acquire() {
+    let release
+    const prev = tail
+    tail = new Promise(r => { release = r })
+    return prev.then(() => release)
+  }
+
+  const isReentrant = () => _txOwned.getStore()?.has(state) ?? false
+
+  const withOwnership = (fn) => {
+    const store = new Set(_txOwned.getStore() ?? [])
+    store.add(state)
+    return _txOwned.run(store, fn)
+  }
 
   function begin() {
     // BEGIN IMMEDIATE (matching the $transaction doc comment): take the write
@@ -1797,7 +1845,37 @@ function makeTxManager(db, state = { depth: 0 }) {
     catch (e) { rollback(sp); throw e }
   }
 
-  return { begin, commit, rollback, wrap, state }
+  // The async entry point. `fn` may await; a nested call inherits the store and
+  // takes a SAVEPOINT without touching the lock, which is what stops a genuine
+  // nesting (basecamp's /setup) from waiting on a lock its own caller holds.
+  async function exclusive(fn) {
+    if (isReentrant()) {
+      const sp = begin()
+      try { const r = await fn(); commit(sp); return r }
+      catch (e) { rollback(sp); throw e }
+    }
+    const release = await acquire()
+    try {
+      return await withOwnership(async () => {
+        const sp = begin()
+        try { const r = await fn(); commit(sp); return r }
+        catch (e) { rollback(sp); throw e }
+      })
+    } finally { release() }
+  }
+
+  // The sync-body entry point, for bulk writes. The BODY stays synchronous —
+  // only the acquire is awaited, which the callers can do because every table
+  // method is already async. Without this a createMany arriving during another
+  // request's transaction joined it and was lost on that request's rollback.
+  async function wrapExclusive(fn) {
+    if (isReentrant()) return wrap(fn)
+    const release = await acquire()
+    try { return withOwnership(() => wrap(fn)) }
+    finally { release() }
+  }
+
+  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, state }
 }
 
 // ─── Read routing ─────────────────────────────────────────────────────────────
@@ -5077,7 +5155,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // transaction. Previously applySequences ran per row BEFORE the tx, so a
       // @sequence model paid 2 auto-commit statements per row (~16x slower) and
       // counter bumps stayed committed even if the batch insert failed.
-      tx.wrap(() => {
+      await tx.wrapExclusive(() => {
         rows = data.map(item => {
           let d = item
           if (autoId && (d == null || d[autoId.field] == null))
@@ -5530,7 +5608,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _nt = needsTiming()
       const _usT0 = _nt ? performance.now() : 0
       // Whole batch (incl. @sequence bumps) inside one transaction — see createMany.
-      tx.wrap(() => {
+      await tx.wrapExclusive(() => {
         const rows = data.map(item => {
           let d = item
           if (autoId && (d == null || d[autoId.field] == null))
@@ -7804,17 +7882,13 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // image, `db.$setAuth(u).$transaction(…)`, ran with `auth()` null, so every
   // @@allow matched nothing and every @createdBy stamped nobody. Both look like
   // the transaction body is wrong. Each proxy now passes itself.
+  //
+  // A CONCURRENT caller waits; a genuinely nested one takes a SAVEPOINT as it
+  // always did. Both used to nest, which meant a second request's writes rode
+  // the first request's rollback (`FJS-237`) — see makeTxManager.
   let clientProxy
   async function $transaction(fn, asProxy) {
-    const sp = tx.begin()
-    try {
-      const result = await fn(asProxy ?? clientProxy)
-      tx.commit(sp)
-      return result
-    } catch (e) {
-      tx.rollback(sp)
-      throw e
-    }
+    return tx.exclusive(() => fn(asProxy ?? clientProxy))
   }
 
   // ── query — multi-model dispatcher ─────────────────────────────────────────
@@ -8043,13 +8117,27 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return keys.length === 1 ? result[keys[0]] : result
   }
 
-  async function $backup(destPath, { vacuum = false } = {}) {
-    const abs = resolve(destPath)
+  // `only` narrows to named databases. Without it a caller wanting ONE database
+  // out of several had to open a client per database — and `createClient({ db })`
+  // names MAIN, so each of those clients backed up main under a different
+  // database's name. Asking here is the only way to ask truthfully.
+  async function $backup(destPath, { vacuum = false, only = null } = {}) {
+    const abs   = resolve(destPath)
+    const names = only == null ? null : (Array.isArray(only) ? only : [only])
 
     // SQLite-only — backs up all open SQLite connections.
     // For a full backup including JSONL/logger databases, use: litestone backup
     const sqliteDbs = Object.entries(dbRegistry)
-      .filter(([, conn]) => conn.driver === 'sqlite' && conn.rawWriteDb)
+      .filter(([name, conn]) => conn.driver === 'sqlite' && conn.rawWriteDb && (!names || names.includes(name)))
+
+    if (!sqliteDbs.length) {
+      const declared = Object.entries(dbRegistry).filter(([, c]) => c.driver === 'sqlite').map(([n]) => n)
+      throw new Error(
+        names
+          ? `$backup: no SQLite database named ${names.join(', ')}. Declared: ${declared.join(', ') || 'none'}`
+          : `$backup: this client has no SQLite database to back up`
+      )
+    }
 
     async function backupOne(db, dest) {
       if (vacuum) {
@@ -8077,7 +8165,9 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       return results
     }
 
-    const size = await backupOne(rawWriteDb, abs)
+    // sqliteDbs[0], not the closure's rawWriteDb — with `only` they differ, and
+    // the closure's is always main.
+    const size = await backupOne(sqliteDbs[0][1].rawWriteDb, abs)
     return { path: abs, size, vacuumed: vacuum }
   }
 

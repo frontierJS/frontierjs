@@ -1,5 +1,20 @@
 # Changes — @frontierjs/auth
 
+
+## 2026-08-13 — the rate limiter is junction's, not a copy of it
+
+`plugin.ts` carried its own limiter, on the stated grounds that junction's hook
+*"operates on ServiceContext, which has `ctx.params.ip`"* while `/auth/*` routes
+hold a TransportContext with `ctx.ip`. A ServiceContext has no `params` at all,
+so the premise was wrong; the real gap was one accessor, and junction's
+`clientIp()` now answers for both shapes. Its hook also reaches `auth`
+optionally, because a sign-in route has no principal by definition.
+
+The copy had already drifted: it returned before checking the limit on a fresh
+bucket, so `loginRateLimit: { max: 0 }` let one attempt through. `FJS-017`.
+
+The plugin gained a `shutdown()` that disposes both limiters' sweep timers.
+
 ## 2026-08-10 — the package is shippable (FJS-003)
 
 Three defects, one shape: the package was written as a folder in a workspace

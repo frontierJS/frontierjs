@@ -44,6 +44,11 @@ export class Router {
   private _routes: RouteDefinition[]     = []
   private _cache: MethodCache            = {}
   private _built = false
+  // Registration shapes seen so far → the path that claimed each. Keyed by
+  // shape rather than by literal path, because `/a/{id}` and `/a/{name}` match
+  // exactly the same requests and differ only in a name nothing outside the
+  // handler reads.
+  private _claimed = new Map<string, string>()
 
   // ─── Registration ───────────────────────────────────────────────────────
 
@@ -62,6 +67,28 @@ export class Router {
     const paramKeys = segments
       .filter((s): s is Extract<RouteSegment, { type: 'param' }> => s.type === 'param')
       .map(s => s.name)
+
+    // A second registration of the same shape used to be accepted in silence,
+    // and which copy survived depended on something the caller cannot see: a
+    // FIXED path is overwritten in build(), so the LAST registration wins, while
+    // a dynamic one is pushed onto a list lookup() scans in order, so the FIRST
+    // wins and the later one is dead weight forever. Same mistake, opposite
+    // outcome, decided by whether the path happens to contain a param.
+    //
+    // Configuring CORS twice is the case that surfaced it — `cors()` registers
+    // `OPTIONS /*`, and `fli new`'s own scaffold called it by hand beside the
+    // config entry that installs it at startup (FJS-225). Nothing said so; the
+    // headers came out right and the route list quietly listed the path twice.
+    const shape = routeShape(method, segments)
+    const owner = this._claimed.get(shape)
+    if (owner !== undefined) {
+      throw new Error(
+        `Route ${method} ${path} is already registered${owner === path ? '' : ` (as ${owner})`}. ` +
+        `Two registrations of one path cannot both answer: one of them will never run, and which one ` +
+        `depends on whether the path has a parameter. Register it once, or mount the second under its own path.`
+      )
+    }
+    this._claimed.set(shape, path)
 
     this._routes.push({
       method,
@@ -239,6 +266,20 @@ function splitPath(path: string): string[] {
   const p = path.startsWith('/') ? path.slice(1) : path
   const clean = p.endsWith('/') ? p.slice(0, -1) : p
   return clean ? clean.split('/') : []
+}
+
+// The identity of a registration, for the duplicate check. Param NAMES are
+// erased because they do not participate in matching: `/a/{id}` and `/a/{name}`
+// accept exactly the same requests.
+//
+// Each segment carries its TYPE rather than a placeholder string. `{}` is not a
+// param (PARAM_PATTERN needs at least one character between the braces), so it
+// is a legal static segment — and a placeholder spelt `{}` made `/a/{}` collide
+// with `/a/{id}`. A type tag cannot be spelt by the value it tags.
+function routeShape(method: string, segments: RouteSegment[]): string {
+  const parts = segments.map(s =>
+    s.type === 'static' ? 's:' + s.value : s.type === 'param' ? 'p:' : 'w:')
+  return method + ' ' + parts.join('/')
 }
 
 // normalize for cache key — strip leading slash

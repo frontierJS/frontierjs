@@ -596,11 +596,28 @@ export async function Command({ file, arg, flag, emit }) {
         groups.push({ type: 'parallel', entries: parallelBatch })
       }
 
-      // Execute groups in order — parallel groups use Promise.all
+      // Execute groups in order — parallel groups use Promise.all.
+      //
+      // A step that throws does NOT end the run: it sets the abort flag and the
+      // loop keeps going, so every remaining step self-skips except the ones
+      // that declared `runOnAbort: true`. The original error is re-thrown after
+      // the loop, so the exit code and the message are unchanged.
+      //
+      // Without this, `runOnAbort` only covered a step that set the flag and
+      // returned — and deploy's 07-health sets the flag and then throws, which
+      // skipped 09-cleanup and left `.deploy.lock` on the server. The next
+      // deploy then refused, naming a deploy that had finished minutes earlier.
+      let stepError = null
+
       for (const group of groups) {
         if (group.type === 'serial') {
           const { file, template } = group.entries[0]
-          await runOneStep(file, template)
+          try {
+            await runOneStep(file, template)
+          } catch (err) {
+            if (!stepError) stepError = err
+            config.config.abort = true
+          }
         } else {
           const names = group.entries.map(e => basename(e.file, '.md')).join(', ')
           config.log.info(`  [parallel] ${names}`)
@@ -623,6 +640,9 @@ export async function Command({ file, arg, flag, emit }) {
 
           try {
             await Promise.all(group.entries.map(({ file, template }) => runOneStep(file, template)))
+          } catch (err) {
+            if (!stepError) stepError = err
+            realConfig.abort = true
           } finally {
             config.config = realConfig
             // Report any keys written more than once
@@ -634,6 +654,9 @@ export async function Command({ file, arg, flag, emit }) {
           }
         }
       }
+
+      // Cleanup has now had its turn; fail the command with the original error.
+      if (stepError) throw stepError
     }
 
     runSteps._stepRunner = true

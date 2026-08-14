@@ -214,7 +214,18 @@ export class Factory {
    *
    *   factories.deployment.withParents().createOne()
    *
-   * opts: { depth = 5, optional = false, fresh = false }
+   * `pins` reuses rows you already have instead of creating them, keyed by MODEL
+   * name, and it applies at every depth — which is the point. `.for()` wires one
+   * relation on THIS model, so it cannot reach an Account five hops up a chain;
+   * a pin rides the recursion down and is consulted wherever that model is the
+   * required parent.
+   *
+   *   factories.deployment.withParents({ pins: { Account: acct, Workspace: ws } })
+   *
+   * A pin is also the only cure for a required cyclic relation, so pins are
+   * consulted before the cycle check rather than after it.
+   *
+   * opts: { depth = 10, optional = false, fresh = false, pins = {} }
    *   optional: also create parents for nullable relations (default: skip them).
    */
   withParents(opts = {}) {
@@ -222,7 +233,7 @@ export class Factory {
     // rows); depth is only a backstop, so it is generous — basecamp's deepest
     // chain is DeploymentStep → Deployment → App → Environment → Project →
     // Workspace → Account, and a shallow default silently left the last FK unwired.
-    const { depth = 10, optional = false, fresh = false, _seen = new Set() } = opts
+    const { depth = 10, optional = false, fresh = false, pins = {}, _seen = new Set() } = opts
     const def = this._modelDef()
     if (!def) {
       throw new Error(
@@ -242,6 +253,19 @@ export class Factory {
       const fk     = rel.fields[0]
       const fkDef  = def.fields.find(f => f.name === fk)
       if (!optional && fkDef?.type.optional) continue
+      const pk = rel.references?.[0] ?? 'id'
+
+      // Both of these must be checked BEFORE the cycle guard, because both are
+      // the cure the guard's own message recommends. Ordered above it, .for()
+      // now works as advertised — it did not, and following the advice threw
+      // the identical error.
+      if (clone._relations[field.name]) continue   // already wired explicitly
+      const pinned = pins[field.type.name]
+      if (pinned) {
+        clone = clone.for(field.name, pinned, fk, pk)
+        continue
+      }
+
       // A cycle (self-reference, or A→B→A) cannot be satisfied by creating more
       // rows — each new parent needs a parent. Say so, rather than skipping
       // silently and letting it surface as an opaque FOREIGN KEY failure.
@@ -251,14 +275,14 @@ export class Factory {
           `"${field.type.name}", which is already in this parent chain ` +
           `(${[...seen].join(' → ')}). A cycle cannot be satisfied by creating more rows — ` +
           `create the root first and pass it: .for('${field.name}', rootRow, '${fk}'), ` +
+          `pin it for the whole chain: withParents({ pins: { ${field.type.name}: rootRow } }), ` +
           `or make ${fk} optional.`
         )
       }
-      if (clone._relations[field.name]) continue   // already wired explicitly
 
       const parent = this._factoryFor(field.type.name)
         .withParents({ ...opts, depth: depth - 1, _seen: seen })
-      clone = clone.withRelation(field.name, parent, fk, rel.references?.[0] ?? 'id', { fresh })
+      clone = clone.withRelation(field.name, parent, fk, pk, { fresh })
     }
     return clone
   }

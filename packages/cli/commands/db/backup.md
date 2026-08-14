@@ -1,39 +1,51 @@
 ---
 title: db:backup
-description: Create a timestamped sqlite backup in db/backups/
+description: Hot backup of every database the schema declares, into db/backups/
 alias: db-backup
 examples:
   - fli db:backup
-  - fli db:backup --test
+  - fli db:backup --vacuum
+  - fli db:backup --zip
+  - fli db:backup --db main
   - fli db:backup --dry
 flags:
-  test:
-    char: t
+  vacuum:
     type: boolean
-    description: Back up the test database instead
+    description: Compact the SQLite files while copying (VACUUM INTO)
     defaultValue: false
+  zip:
+    type: boolean
+    description: Zip the backup directory
+    defaultValue: false
+  db:
+    type: string
+    description: Back up only this database by name
+    defaultValue: ''
 ---
 
-<script>
-import { mkdirSync } from 'fs'
-</script>
+Delegates to `litestone backup`, which reads `db/schema.lite` and copies **every**
+declared database — SQLite files hot through `$backup`, JSONL/logger directories
+beside them. The destination is a timestamped directory, not a file, because a
+schema declares as many databases as it likes.
 
 ```js
-const dbPath  = context.paths.db
+const dbPath = context.paths.db
 if (!dbPath) { log.error('DB path not configured'); return }
 
-const dbFile  = flag.test ? 'test.db' : 'development.db'
-const date    = new Date().toJSON().replace(/:/g, '').split('.')[0]
-const newFile = `${dbFile}-bak-${date}`
-const backups = `${dbPath}/backups`
+// This command used to run `sqlite3 {dbPath}/development.db '.backup …'`, which
+// was wrong in both halves: `development.db` is a name the CLI invented — a
+// litestone app's paths come from `database` blocks in the schema — and one
+// file is never the whole database anyway. `main` plus an `audit` logger is the
+// ordinary shape, so the trail was the part not being copied.
+const dest = `${dbPath}/backups`
 
-if (!existsSync(backups)) {
-  if (flag.dry) { log.dry(`Would create ${backups}`) }
-  else mkdirSync(backups, { recursive: true })
-}
+// Not `args` — the compiled command already destructures that from context.
+const argv = ['backup', dest]
+if (flag.vacuum) argv.push('--vacuum')
+if (flag.zip)    argv.push('--zip')
+if (flag.db)     argv.push('--db', flag.db)
 
-context.exec({ command: `sqlite3 ${dbPath}/${dbFile} '.backup ${backups}/${newFile}'`, dry: flag.dry })
-context.exec({ command: `du -sh ${backups}/`, dry: flag.dry })
+context.exec({ command: `bunx litestone ${argv.join(' ')}`, dry: flag.dry })
 
-if (!flag.dry) log.success(`Backed up to ${backups}/${newFile}`)
+if (!flag.dry) log.success(`Backed up every declared database → ${dest}`)
 ```

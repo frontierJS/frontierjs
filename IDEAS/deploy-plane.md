@@ -73,10 +73,19 @@ never ran `bun install` at all** (fixed, `packages/cli/CHANGES.md`). The API sid
 covered by accident because its Dockerfile installs inside the image; web built
 against whatever `node_modules` the server was carrying.
 
-**The pipeline's advertised path has also never been run end to end.** `fli
-make:deploy` writes a Dockerfile against a layout `fli new` does not produce —
-`FJS-232`. Worth stating plainly here because it is evidence about the whole seam,
-not one bad template: nothing has forced these two commands to agree.
+**The pipeline's advertised path has also never been run end to end.** Three
+separate defects say so, and they were all found by reading rather than by anything
+failing: `fli make:deploy` writes a Dockerfile against a layout `fli new` does not
+produce (`FJS-232`); it points the health check at `/health` while the scaffold
+serves health at `/api/health`, so the pipeline **rolls back a deployment that
+worked** (`FJS-238`); and a failed step leaks the deploy lock, because the
+`runOnAbort` flag written to prevent exactly that is defeated by a throw
+(`FJS-237`). Worth stating plainly here because it is evidence about the whole
+seam rather than three bad lines: nothing has ever forced these commands to agree,
+and **the cheapest fix for all three is one scaffold-and-deploy test in CI** —
+`fli new` into a temp directory, `make:deploy`, then `deploy:local`, which needs no
+server. That test is a precondition for the sequence below, not a follow-up to it:
+build-once is a change to a pipeline nobody can currently prove works.
 
 ---
 

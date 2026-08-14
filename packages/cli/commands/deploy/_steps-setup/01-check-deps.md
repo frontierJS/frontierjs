@@ -28,6 +28,11 @@ const deps = [
   { name: 'git',     check: 'git --version',       install: 'apt-get install -y git' },
   { name: 'bun',     check: 'bun --version',       install: 'curl -fsSL https://bun.sh/install | bash' },
   { name: 'rsync',   check: 'rsync --version',     install: 'apt-get install -y rsync' },
+  // Not required by the pipeline — 05-backup runs `litestone backup` inside the
+  // container, where the schema is. Installed because an operator on a box
+  // running SQLite will want a shell against it, and finding out at 3am that
+  // there isn't one is the wrong time.
+  { name: 'sqlite3', check: 'sqlite3 --version',   install: 'apt-get install -y sqlite3' },
 ]
 
 const missing = []

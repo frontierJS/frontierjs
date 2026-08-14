@@ -59,8 +59,18 @@
   gap:              var(--space-2xs);
   border-block-end: 1px solid var(--rule);
 
-  /* Many tabs on a narrow screen scroll rather than wrap or squash. */
+  /*
+   * Many tabs on a narrow screen scroll rather than wrap or squash.
+   *
+   * overflow-y is the other half and it is not redundant: a box with one axis
+   * non-visible promotes the other from `visible` to `auto`. `.tab` then bleeds
+   * -1px to sit its underline on the strip's rule, which makes the content one
+   * pixel taller than the box — so the strip grew a VERTICAL scrollbar, on
+   * every platform that draws a classic one. It reads as a stray widget in the
+   * corner rather than as a scrollbar, which is why it survived four versions.
+   */
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .tab {
@@ -173,8 +183,14 @@
   border-block-end:  none;
   border-inline-end: 1px solid var(--rule);
 
-  /* A vertical strip grows downward; it does not need to scroll sideways. */
-  overflow-x:      visible;
+  /*
+   * A vertical strip grows downward; it does not need to scroll on either
+   * axis. BOTH have to be restated: leaving `overflow-y: hidden` standing
+   * would promote this `visible` back to `auto`, and `.tab`'s -1px inline
+   * bleed would then draw a horizontal scrollbar on a vertical strip — the
+   * same defect the horizontal case has, turned ninety degrees.
+   */
+  overflow:        visible;
   flex-shrink:     0;
   min-inline-size: 11rem;
 }

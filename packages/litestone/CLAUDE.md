@@ -770,9 +770,21 @@ litestone tenant list|create|delete|migrate
 
 ## Litestream replication
 
+Schema-driven, like `backup` — every declared **SQLite** database, one replica
+each at `<url>/<name>`. jsonl/logger have no WAL and cannot be replicated; they
+are named and skipped. **Refuses litestream below v0.5** (0.3.x cannot parse
+STRICT tables and loops forever without exiting, so `pgrep` reports healthy
+against an empty replica). `LITESTREAM_BIN` overrides the lookup.
+
+```bash
+litestone replicate --schema db/schema.lite --url s3://mybucket/myapp
+litestone replicate --db main            # one database
+litestone replicate ./litestone.config.js
+```
+
 ```js
-export let config = {
-  db: './production.db',
+export default {
+  schema: './db/schema.lite',
   replicate: {
     url:             's3://mybucket/myapp',
     syncInterval:    '10s',
@@ -1089,6 +1101,16 @@ from belief asserts a wish.
   `@@allow`, `@guarded`, `@scoped` or `@@softDelete`; they all live above SQLite.
   ``where: { $raw: sql`…` }`` keeps every policy and is the escape hatch to reach
   for. A JS migration is exempt — the runner hands it the system client.
+- **`$transaction` serialises per client, and re-entrancy is decided by the async
+  context rather than by the depth counter.** One connection holds one
+  transaction, so a second REQUEST arriving while the first awaits used to look
+  exactly like a genuinely nested call: it took a SAVEPOINT inside the first
+  request's transaction, was told it committed, and lost its rows when that
+  request rolled back (`FJS-244`). A nested call inherits an `AsyncLocalStorage`
+  store and still SAVEPOINTs; anything else waits on a FIFO lock. This only
+  serialises what SQLite already does — two `BEGIN IMMEDIATE`s cannot overlap on
+  one connection. `createMany`/`upsertMany` go through the same lock, awaiting the
+  acquire while their batch body stays synchronous.
 - **`$setAuth(user)` RETURNS a scoped client, it does not mutate.** `db.$setAuth(u)`
   then `db.thing.create(…)` grades as anonymous, silently.
 - **A schema declaring any `@@gate` auto-installs `GatePlugin`.** You cannot run

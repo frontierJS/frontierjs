@@ -530,6 +530,41 @@ it only ever appears in a `WHERE`, it is `@@scope`.** A `@@scope` may reference 
 interpolated into a pattern — state that at the site, because it is exactly the
 shape the invariant warns about.
 
+**2026-08-14 · A commit scope is a declared wrapper, not a new hook phase.**
+`FJS-089` asked for a phase that means *the call succeeded*. Junction gets
+`transactional: true` on a service definition instead — a derived `around` hook
+that wraps the whole pipeline in one `$transaction`.
+
+**Why not an `afterCommit` phase.** It would promise durability it cannot
+deliver. Rails' `after_commit` fires after the transaction is gone, so a process
+that dies between the commit and the callback loses the effect and nothing
+reports it; Rails documents that a callback raising there does not roll anything
+back. A phase named for the commit invites people to put irreversible work in it
+on the strength of a guarantee it does not have. `transactional:` makes exactly
+one promise — the write is atomic with the rest of the pipeline — and keeps it.
+
+**Why `around` and not a longer `before`.** `around` is the only phase that
+reaches the after hooks, which is the whole point: an `after` hook throwing has
+to roll the write back.
+
+**What it deliberately leaves open.** A transaction rolls back rows, not SMTP.
+The side-effect half of `FJS-089` is unanswered, and the route to it is the
+transactional outbox — turn the effect into a row, which this can already roll
+back. Where that table lives is undecided: Caravan's queue is its own SQLite
+file today, so `app.jobs.dispatch()` from a hook buys retries and not atomicity,
+and putting the table in the app's own database (a schema fragment, the way auth
+contributes `User`/`Session`) is what would make the two one transaction.
+
+**Not the default.** `BEGIN IMMEDIATE` holds SQLite's single write lock for the
+whole pipeline including the after hooks, so an `after` hook doing network I/O
+serialises every write in the app behind it. Declaring it is how an app says
+that trade is worth making for a given service.
+
+**It required a Litestone fix first** (`FJS-244`): `$transaction` treated a
+concurrent caller as a nested one, so a second request's writes rode the first
+request's rollback. This feature opens a transaction on every mutating request
+and would have made that the normal path.
+
 ## Migrations (Litestone)
 
 **2026-08-01 · The executor owns the transaction.**
@@ -573,6 +608,15 @@ handed it** — so a stale entry was a wrong answer, not a slow one.
 **Ruled: go on the split, and only the split.** Export tiering (`FJS-046`) and
 the middleware/hook renaming (`FJS-017`) were part of the original proposal and
 are refused here; they stay open on their own merits.
+
+*Since:* `FJS-017` closed 2026-08-13 **without** doing what this ruling refused.
+It turned out to name three concrete symptoms — three rate limiters with three
+vocabularies, a third copy inside `@frontierjs/auth`, and `apiPrefix` resolved by
+hand in four files — not a request to merge the two tiers. The limiters became
+one definition with three adapters; middleware and hooks remain separate
+concepts, and the transport limiter is the argument for keeping them so: it
+counts a flood that never reaches a service, which a pipeline hook cannot see.
+This ruling stands.
 
 The shape is Feathers 5's, adapted rather than copied:
 
@@ -985,6 +1029,47 @@ so there is no all-or-nothing rollback — atomicity and partial success are
 mutually exclusive; wrap the call in a transaction if you want the former.
 *Lives in:* `packages/junction/src/core/envelope.ts` (`BulkFailure`,
 `toBulkFailure`, `partitionBulk`, `BULK_FAILURES`), `src/core/litestone.ts`.
+
+**2026-08-14 · Partial success extends to a filtered PATCH and REMOVE, and the
+reason is enforcement rather than symmetry** (`FJS-D11`, closing `FJS-044`).
+A bulk patch/remove selects its rows and writes them one at a time, answering
+the same `{ data, errors }` list envelope bulk create does. Symmetry was the
+weaker half of the argument. The stronger half: Litestone does not enforce
+`@@transitions` on `updateMany` — a deliberate power-tool exemption, whose own
+note says to loop `update()` where transition safety matters — and Junction was
+the caller that never did, so `PATCH /orders/1` was refused by the state machine
+and `PATCH /orders?status=draft` was not, for the identical move. `@version` was
+the same shape: bumped by a bulk write, never required, so optimistic
+concurrency was off for the writes touching the most rows. Both are properties
+of `update()`. Calling it per row is what brings them back AND what produces a
+per-row outcome — one change, two reasons, which is why this ruling is not the
+"scope it to creates" alternative it was written to consider.
+
+Three consequences, all deliberate:
+
+- **A row cap, `bulkMax`, default 1000.** One statement per row means an
+  unbounded filter is an unbounded number of statements under SQLite's single
+  write lock. Over the cap the call is refused naming the count, before anything
+  is written. This is the one place the change can break a working app — a
+  filter that matched 50k rows used to be one statement.
+- **Only rows the caller can READ are touched.** Selecting the targets applies
+  the read policy; the write then applies the update/delete one. A row updatable
+  but unreadable was reached by `updateMany` and is not reached now.
+- **Still no atomicity**, on the same terms as bulk create: `transactional:` on
+  the service is how a caller trades partial success back for all-or-nothing.
+
+A caller-supplied `@version` on a bulk patch is **refused by name** rather than
+applied: one value cannot be right for N rows, so it would conflict on every row
+but the one it was read from. Each row is written against the version selected
+with it, which makes the loop a read-modify-write and turns a row that moved
+underneath into a `VersionConflictError` in `errors` rather than a silent
+overwrite.
+
+`restore` is the third filtered write and is NOT looped — there is nothing
+per-row to enforce and `restore({ where })` already answers the rows. It called
+a `restoreMany` that does not exist (`FJS-245`).
+*Lives in:* `packages/junction/src/core/litestone.ts` (`bulkByRow`), tests in
+`packages/junction/tests/bulk-partial-success.test.ts`.
 
 **2026-08-02 · One event origin, and broadcasting is declared on the service.**
 A mutation is announced ONCE, in `callService`, and fans out to two consumers:
@@ -1578,6 +1663,48 @@ session past `VISITOR(1)`; `example/` disproved that by running it —
 verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstanding
 work, not a decision.)*
 
+## Dependencies & the ecosystem
+
+**2026-08-14 · `FJS-D31` — FrontierJS wraps third-party binaries, it does not
+fork or republish them. It controls the VERSION, never the artifact.** Asked of
+Litestream specifically, and the answer generalises.
+
+Litestream ships as GitHub release tarballs, `.deb`, Homebrew and a Docker image;
+there is no official npm channel. So publishing `@frontierjs/litestream` would
+not be mirroring — it would be **creating** a distribution channel and owning it
+forever: six-plus platform tarballs republished on every upstream release, bytes
+signed off that we did not build, and bug reports arriving at a name that reads
+as *FrontierJS's litestream*. That trade is bad in general and worst here,
+because Litestream is a **durability** tool: lagging behind a data-corruption fix
+is the one thing this dependency must never do. (The npm name is also already
+taken — by an unrelated stream utility, untouched since 2022 — so anyone typing
+`bun add litestream` today gets a stranger's package. That argues for documenting
+the real install, not for adding a fourth thing with the same name.)
+
+Forking the source is worse again: it means owning WAL parsing, checkpoint
+timing and S3 multipart, which is a product, not a feature.
+
+**What we own is the wrapping, and the wrapping is where being Litestone pays.**
+Litestream's config names *this file, that bucket*. Only Litestone knows that the
+schema declares three databases and one of them is the audit trail. That is the
+seam — Litestream owns the bytes, Litestone owns which databases and from where —
+and `litestone replicate` already sits on it: it generates the YAML, checks WAL
+mode, forwards `SIGINT`/`SIGTERM` so the binary flushes cleanly, and removes the
+generated config on exit.
+
+Control of the version is bought four ways, none of which make us a publisher: a
+single pinned supported range checked by running the binary; a fetch of that
+pinned upstream release with its checksum verified, from `deploy:setup` and
+`litestone replicate --install`; `$LITESTREAM_BIN` so an operator with a packaged
+copy is not fought; and a digest pin in the Dockerfile `make:deploy` writes.
+`FJS-243` is that work — today there is no version check at all.
+
+**Revisit only on a named trigger**: upstream goes unmaintained *and* a CVE
+lands; a patch we need is refused upstream; or "install a Go binary first"
+measurably costs adoption — and even then a per-platform downloader wrapper (the
+esbuild/biome shape) beats a fork, because it still ships upstream's bytes.
+*Lives in:* `litestone/src/tools/replicate.js`, `cli/commands/deploy/_steps-setup/`.
+
 ## Open (discussed, not yet ruled)
 
 **Moved to `ISSUES.md` § Needs a decision (2026-08-05)** — every unruled question
@@ -1585,6 +1712,7 @@ in the repo is listed there with an id, so that "what is waiting on me?" is one
 table rather than six. A ruling comes back **here** and closes the row there.
 
 What was listed here, by its new id: `FJS-D01` junction structural refactor ·
-`FJS-D11` bulk PATCH/REMOVE partial success · `FJS-D04` litestone `onEvent`
+`FJS-D11` bulk PATCH/REMOVE partial success (ruled 2026-08-14) · `FJS-D04`
+litestone `onEvent`
 post-construction subscribe · `FJS-D06` coherence-review vocabulary ·
 `FJS-D09` migrations second tier · `FJS-D10` the deferred API cluster.

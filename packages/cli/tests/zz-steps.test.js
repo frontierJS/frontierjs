@@ -166,6 +166,18 @@ describe('_steps/ — execution scenarios', () => {
     // Re-run with a patched fixture isn't practical here — covered by the error path
     // in runtime.js: existsSync check throws with a descriptive message.
 
+    // 11. A step that THROWS still lets a runOnAbort step clean up.
+    // deploy's 07-health sets the abort flag and then throws; before the fix the
+    // throw exited the group loop, 09-cleanup never ran, and the deploy lock was
+    // left on the server for the next deploy to trip over. The command must still
+    // fail — cleanup gets its turn, it does not swallow the error.
+    const cleanupFile = resolve(__dir, 'fixtures/cleanup-on-throw/index.md')
+    const ev11 = await runCommand(cleanupFile, [], {})
+    const lg11 = texts(ev11)
+    expect(lg11.some(t => t.includes('CLEANUP RAN'))).toBe(true)
+    expect(lg11.some(t => t.includes('NORMAL STEP RAN'))).toBe(false)
+    expect(ev11.some(e => e.type === 'error' && /health check failed/.test(e.text))).toBe(true)
+
     // TODO: scenarios 8-9 (optional/required step failures) are skipped here.
     // Node's ESM dynamic import() cache returns stale modules when the same
     // command is imported multiple times in one process with different temp filenames.

@@ -2,13 +2,14 @@
 title: 01b-env-check
 description: Validate that the server's .env.production has all required keys from .env.example
 optional: true
-skip: "!context.config.deployConf.api?.envCheck && !context.config.deployConf.api?.env_check"
+skip: "!context.config.doApi || (!context.config.deployConf.api?.envCheck && !context.config.deployConf.api?.env_check)"
 ---
 
 ```js
 if (context.config.abort) return
 
-const { host, serverPath, target, deployConf } = context.config
+const { target, deployConf } = context.config
+const { host, path: serverPath } = context.config.api
 const { existsSync, readFileSync } = await import('fs')
 const { resolve } = await import('path')
 

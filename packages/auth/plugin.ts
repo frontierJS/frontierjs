@@ -12,54 +12,24 @@
 // auth error raised from a SERVICE surfacing as a 500.
 
 import type { IAuth, SessionContext, RateLimitHookOptions }   from '@frontierjs/junction'
-import { parseTtl, Unauthorized, BadRequest, TooManyRequests } from '@frontierjs/junction'
+import { parseTtl, Unauthorized, BadRequest, rateLimitHook } from '@frontierjs/junction'
 import type { AuthPluginOptions }                             from './types.ts'
 
-// ─── Route-level rate limiter ─────────────────────────────────────────────
-// The rateLimitHook from core/hooks.ts operates on ServiceContext, which has
-// ctx.params.ip. Auth routes are plain HTTP handlers with TransportContext,
-// where the IP is at ctx.ip directly. This limiter works with both shapes.
+// Rate limiting is junction's `rateLimitHook`, not a copy of it.
 //
-// Note: this is an in-process Map — it does not survive a multi-process deploy
-// (multiple Bun workers, pm2 cluster, etc.). For horizontal scale, swap the
-// Map for a Redis-backed counter using the same interface.
-
-function makeRouteLimiter(opts: RateLimitHookOptions) {
-  const windowMs = parseTtl(opts.window)
-  const counters = new Map<string, { count: number; resetAt: number }>()
-
-  const gc = setInterval(() => {
-    const now = Date.now()
-    for (const [key, bucket] of counters) {
-      if (bucket.resetAt < now) counters.delete(key)
-    }
-  }, windowMs)
-  if ((gc as any).unref) (gc as any).unref()
-
-  return (ctx: any): void => {
-    const key = ctx.ip ?? 'unknown'
-    const now = Date.now()
-    let bucket = counters.get(key)
-
-    if (!bucket || now > bucket.resetAt) {
-      counters.set(key, { count: 1, resetAt: now + windowMs })
-      return
-    }
-
-    bucket.count++
-
-    if (bucket.count > opts.max) {
-      throw new TooManyRequests(
-        opts.message ?? `Rate limit exceeded — max ${opts.max} per ${opts.window}`
-      )
-    }
-  }
-}
+// This file used to carry its own, on the stated grounds that the shared hook
+// "operates on ServiceContext, which has ctx.params.ip" while these routes hold
+// a TransportContext with `ctx.ip`. A ServiceContext has no `params` at all, so
+// the premise was wrong and the real gap was one accessor — junction's
+// `clientIp()` now answers for both shapes, and the hook reaches `auth`
+// optionally because a sign-in route has no principal by definition. The copy
+// had already drifted: it returned before checking the limit on a fresh bucket,
+// so `max: 0` let one request through (FJS-017).
 
 export function createAuthPlugin(
   auth: IAuth,
   opts: AuthPluginOptions = {}
-): { name: string; register: (app: any) => void } {
+): { name: string; register: (app: any) => void; shutdown: () => void } {
 
   const {
     prefix            = '/auth',
@@ -75,11 +45,19 @@ export function createAuthPlugin(
   const sessionTtl   = opts.sessionTtl ?? (auth as IAuth & { _sessionTtl?: string })._sessionTtl ?? '30 days'
   const cookieMaxAge = Math.floor(parseTtl(sessionTtl) / 1000)
 
-  const loginLimiter    = makeRouteLimiter(loginRateLimit)
-  const registerLimiter = makeRouteLimiter(registerRateLimit)
+  const loginLimiter    = rateLimitHook(loginRateLimit)
+  const registerLimiter = rateLimitHook(registerRateLimit)
 
   return {
     name: '@frontierjs/auth',
+
+    // Both limiters own a sweep timer. They are unref'd so they never hold the
+    // process open, but a test process that builds many apps would otherwise
+    // leave one running per app against a live counter map.
+    shutdown() {
+      ;(loginLimiter    as unknown as { dispose?(): void }).dispose?.()
+      ;(registerLimiter as unknown as { dispose?(): void }).dispose?.()
+    },
 
     register(app: any) {
 

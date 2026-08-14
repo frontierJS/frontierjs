@@ -331,7 +331,7 @@ async function runAllChecks(): Promise<CheckResult[]> {
     status: rateLimitFiles.length > 0 ? 'ok' : (isProd ? 'warn' : 'skip'),
     detail: rateLimitFiles.length > 0 ? 'rateLimit() configured'
           : isProd ? 'Not configured — recommended for production' : 'Not configured',
-    fix: "app.configure(rateLimit({ limit: 100, window: 60_000 }))" })
+    fix: "app.configure(rateLimit({ max: 100, window: '1 minute' }))" })
 
   // Auth secret strength (only if AUTH_SECRET is set)
   if (process.env.AUTH_SECRET) {
@@ -727,7 +727,7 @@ async function runWizard(): Promise<void> {
       case 'security.rate_limit': {
         console.log(note('Add to your app setup:'))
         console.log(dim("    import { rateLimit } from '@frontierjs/junction'"))
-        console.log(dim("    app.configure(rateLimit({ limit: 100, window: 60_000 }))"))
+        console.log(dim("    app.configure(rateLimit({ max: 100, window: '1 minute' }))"))
         console.log()
         await ask('Press enter when done')
         break

@@ -30,7 +30,7 @@ flags:
     defaultValue: full-stack
   with:
     type: string
-    description: "Comma-list of additional FJS packages: conduit,caravan,notifications,litestream"
+    description: "Comma-list of additional FJS packages: conduit,caravan,notifications"
     defaultValue: ''
   minimal:
     type: boolean
@@ -89,7 +89,7 @@ flags:
     defaultValue: ''
   source:
     type: string
-    description: "Where @frontierjs packages install from: local (symlink to <root>/packages, live edits) | npm (published). Default: $FJS_SOURCE or local"
+    description: "Where @frontierjs packages install from: npm (published, default) | local (symlink to <root>/packages, live edits — dev only, cannot be containerised). Default: $FJS_SOURCE or npm"
     defaultValue: ''
 ---
 
@@ -125,7 +125,6 @@ const FJS_VERSIONS = {
   '@frontierjs/conduit':        'latest',
   '@frontierjs/caravan':        'latest',
   '@frontierjs/notifications':  'latest',
-  '@frontierjs/litestream':     'latest',
 }
 
 const VITE_VERSION = '^8.0.0'
@@ -174,6 +173,14 @@ function makePackageJson(spec) {
     scripts['dev']   = 'bun --watch run api/index.ts'
     scripts['start'] = 'bun run api/index.ts'
   }
+
+  // The deploy container's entrypoint is `bun run db:migrate && bun run start`,
+  // so this script is part of the contract with deploy/Dockerfile rather than a
+  // convenience — without it the container exits non-zero on every start.
+  // `--schema` also fixes the migrations directory: litestone resolves it as a
+  // sibling of the schema, so this finds db/migrations without a second flag.
+  scripts['db:migrate'] = 'bunx litestone migrate apply --schema db/schema.lite'
+  scripts['db:backup']  = 'bunx litestone backup db/backups --schema db/schema.lite'
 
   return JSON.stringify({
     name:    pkgName,
@@ -364,7 +371,15 @@ await app.start()
 `
 }
 
-function makeApiAppTs(useAuth) {
+// `apiPrefix` is only set for the full-stack template, and it is the web half
+// that needs it: the client talks to the page's own origin and the Vite dev
+// proxy carries ONE rule, `/api`. With no prefix the services mount at
+// /{service}, the proxy does not match, and the request falls through to Vite's
+// SPA handler — 200 with an HTML body, which the client reports as the API
+// answering nonsense. An api-only app has no proxy and no such need, so it takes
+// Junction's own default: no prefix, routes at /.
+function makeApiAppTs(useAuth, useWeb) {
+  const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
   if (useAuth) {
     return `// api/src/app.ts
 // The construction site — createApp + every plugin registration lives here.
@@ -382,8 +397,7 @@ import { env }              from './core/env.ts'
 const app = createApp({
   auth,
   config: {
-    port: env.PORT,
-    apiPrefix: '/api',
+    port: env.PORT,${prefixLine}
   },
 })
 
@@ -397,14 +411,15 @@ app.configure(correlationId())
 app.configure(requestLogger())
 
 // ─── Health ───────────────────────────────────────────────────────────────
-// GET /api/health and /api/metrics — under the app's apiPrefix, like every
-// route it registers. frontier.config.js points the deploy's health check at
-// the same path, and a deploy rolls back when it does not answer, so this is
-// load-bearing the first time the app leaves the laptop.
+// Serves {apiPrefix}/health and {apiPrefix}/metrics — app.get applies the
+// prefix to every route alike, and Junction's default prefix is none, so this
+// is /health unless the config above sets one. frontier.config.js points the
+// deploy's health check at the same path and a deploy ROLLS BACK when it does
+// not answer, so the two move together.
 app.configure(healthPlugin())
 
 // ─── Introspection ────────────────────────────────────────────────────────
-// GET /api/manifest — services, hooks, channels, plugins, and every route the
+// GET {apiPrefix}/manifest — services, hooks, channels, plugins, and every route the
 // router will answer, read off live runtime state. fli api:routes reads it:
 // the HTTP surface is emergent (services auto-mount, plugins register their
 // own), so running the app is the only way to ask what it serves. devOnly by
@@ -418,8 +433,8 @@ app.configure(manifestPlugin())
 app.configure(channels())
 
 // ─── Auth routes ──────────────────────────────────────────────────────────
-// Mounts /api/auth/register, /api/auth/login, /api/auth/logout, /api/auth/me,
-// etc. — apiPrefix moves the plugin's routes with everything else.
+// Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout, /auth/me and the
+// rest — apiPrefix moves the plugin's routes with everything else.
 app.configure(authPlugin)
 
 // ─── Per-request db scoping ──────────────────────────────────────────────
@@ -446,8 +461,7 @@ import { env }                                           from './core/env.ts'
 
 const app = createApp({
   config: {
-    port: env.PORT,
-    apiPrefix: '/api',
+    port: env.PORT,${prefixLine}
   },
 })
 
@@ -461,12 +475,13 @@ app.configure(correlationId())
 app.configure(requestLogger())
 
 // ─── Health ───────────────────────────────────────────────────────────────
-// GET /api/health and /api/metrics — under the app's apiPrefix. The deploy's
-// health check reads the same path and rolls back when it does not answer.
+// Serves {apiPrefix}/health and {apiPrefix}/metrics — Junction's default prefix
+// is none, so /health unless the config above sets one. The deploy's health
+// check reads the same path and rolls back when it does not answer.
 app.configure(healthPlugin())
 
 // ─── Introspection ────────────────────────────────────────────────────────
-// GET /api/manifest — services, hooks, channels, plugins, and every route the
+// GET {apiPrefix}/manifest — services, hooks, channels, plugins, and every route the
 // router will answer, read off live runtime state. fli api:routes reads it:
 // the HTTP surface is emergent (services auto-mount, plugins register their
 // own), so running the app is the only way to ask what it serves. devOnly by
@@ -595,7 +610,8 @@ export const authPlugin = createAuthPlugin(auth, {
 `
 }
 
-function makeJunctionConfig(appName) {
+function makeJunctionConfig(appName, useWeb) {
+  const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
   return `// api/config/junction.config.js
 // Loaded automatically by createApp() when called with no opts, or merged
 // with opts.config when both are present. Tells Junction's autoloaders
@@ -604,8 +620,7 @@ function makeJunctionConfig(appName) {
 
 export default {
   app: {
-    name:      '${appName}',
-    apiPrefix: '/api',
+    name:      '${appName}',${prefixLine}
   },
 
   services: {
@@ -892,8 +907,8 @@ function makeRouteLogin() {
 title: Sign in
 ---
 <script>
-  import { goto } from '@frontierjs/sierra/router'
-  import { login } from '@frontierjs/sierra/junction'
+  import { goto }      from '@frontierjs/sierra/router'
+  import { getClient } from '@frontierjs/sierra/junction'
 
   let email    = ''
   let password = ''
@@ -904,14 +919,11 @@ title: Sign in
     loading = true
     error   = ''
     try {
-      const res = await fetch('/api/auth/login', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email, password }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const { token } = await res.json()
-      login(token)
+      // The client composes apiPrefix + authPrefix itself and stores the token
+      // on success. A hand-written fetch('/api/auth/login') here would be a
+      // second copy of the prefix — correct only while the config happens to
+      // agree with it, and a silent 404 the moment somebody changes one.
+      await getClient().authenticate({ email, password })
       goto('/')
     } catch (e) {
       error = e.message
@@ -1008,10 +1020,22 @@ const skipPrompts = flag.yes === true || flag.minimal === true || flag.full === 
 
 // Parse --with packages
 const withInput = (flag.with || '').split(',').map(p => p.trim()).filter(Boolean)
-const validExtras = ['conduit', 'caravan', 'notifications', 'litestream']
+const validExtras = ['conduit', 'caravan', 'notifications']
+
+// `--with` names @frontierjs packages to add as dependencies, and litestream is
+// not one — it is a Go binary that runs beside the app on the server, driven by
+// `litestone replicate`. Listing it here put `@frontierjs/litestream` into
+// FJS_VERSIONS and therefore into the manifest, so `--full` aborted under
+// --source local (no packages/litestream) and 404'd at install under --source
+// npm. Recognised by name rather than dropped, so the flag says where it went.
+const notAPackage = {
+  litestream: 'a server binary, not a dependency — see `litestone replicate` and `fli deploy:setup`',
+}
+
 const withPkgs = []
 for (const pkg of withInput) {
   if (validExtras.includes(pkg)) withPkgs.push(pkg)
+  else if (notAPackage[pkg]) log.warn(`"${pkg}" is ${notAPackage[pkg]} — nothing to add here.`)
   else log.warn(`Unknown package "${pkg}" — skipping. Valid: ${validExtras.join(', ')}`)
 }
 if (flag.full) {
@@ -1065,10 +1089,20 @@ if (useWorkspace) {
   finalTarget = wsTarget
 }
 
-// ─── 6.5 FJS package source — local (symlink) or npm (published) ──────────────
-// Default resolves from $FJS_SOURCE (set once during buildout), else 'local'.
+// ─── 6.5 FJS package source — npm (published) or local (symlink) ──────────────
+// Default resolves from $FJS_SOURCE (set once during buildout), else 'npm'.
 // GitHub is not supported yet.
-const fjsSource = (flag.source || process.env.FJS_SOURCE || 'local').toLowerCase()
+//
+// npm is the default because a `link:` spec is a development affordance and not
+// a shippable one: it resolves to the workspace on the machine that made it and
+// to nothing anywhere else, so `bun install` inside a container fails on every
+// linked package. That made `fli deploy:local` — the command that proves an
+// image before it reaches a server — impossible to run against the scaffold this
+// repo produced, which is how four defects sat undetected on the deploy path
+// (FJS-232, 237, 238, 239 — all found by reading, none by anything failing).
+// `--source local` is still the right thing when testing a change to a package;
+// it is the wrong thing to hand somebody as a starting point.
+const fjsSource = (flag.source || process.env.FJS_SOURCE || 'npm').toLowerCase()
 
 if (fjsSource !== 'local' && fjsSource !== 'npm') {
   const hint = fjsSource === 'github'
@@ -1115,7 +1149,7 @@ echo('')
 log.info(`Creating ${appName} at ${finalTarget}`)
 echo('')
 echo(`  Template:  ${template}`)
-echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir}` : 'npm (published)'}`)
+echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (dev only, not containerisable)` : 'npm (published)'}`)
 echo(`  Auth:      ${useAuth ? 'yes' : 'no'}`)
 echo(`  Web:       ${useWeb ? 'yes (Sierra + Mesa + Vite)' : 'no'}`)
 echo(`  Deploy:    ${useDeploy ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'no'}`)
@@ -1168,11 +1202,11 @@ const filesToWrite = [
   ['README.md',                   makeReadme(spec)],
   ['db/schema.lite',              makeSchemaLiteEmpty()],
   ['api/index.ts',                makeApiIndexTs()],
-  ['api/src/app.ts',              makeApiAppTs(useAuth)],
+  ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb)],
   ['api/src/core/env.ts',         makeApiEnvTs()],
   ['api/src/core/db.ts',          makeApiCoreDbTs()],
   ['api/src/core/hooks.ts',       makeApiCoreHooksTs()],
-  ['api/config/junction.config.js', makeJunctionConfig(appName)],
+  ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb)],
 ]
 
 if (useAuth) {
@@ -1320,8 +1354,11 @@ echo('  bun run dev')
 echo('')
 if (fjsSource === 'local') {
   echo(`  @frontierjs packages are symlinked from ${packagesDir} — edits are live.`)
-  echo('  Heads-up: symlinked local packages can diverge from a real npm install —')
-  echo('  do a `--source npm` run before publishing to catch packaging issues.')
+  echo('  This app CANNOT be containerised: a `link:` spec resolves to your')
+  echo('  workspace and to nothing inside an image, so `bun install` fails there')
+  echo('  and `fli deploy:local` cannot run. Scaffold with `--source npm` for')
+  echo('  anything you intend to ship. Local sources can also diverge from a real')
+  echo('  npm install, so do an npm run before publishing either way.')
   echo('')
 }
 echo('  Then:')

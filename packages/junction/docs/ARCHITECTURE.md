@@ -223,7 +223,8 @@ things in two files.
   `undefined` means the app doesn't model that stage (not an objection);
   `null` means it does and this user hasn't reached it
 - Adapter details: `findManyAndCount` single-trip pagination; `offset`/`limit`
-  (not skip/take); `restore()` → `table.restore()`/`restoreMany()`;
+  (not skip/take); `restore()` → `table.restore()`, by id and by filter alike —
+  it already takes a multi-row where;
   `$withDeleted`/`$onlyDeleted` honoured on `find` **and** `findFirst`;
   `$search` → `table.search()` for FTS5 models
 

@@ -208,7 +208,7 @@ const HELP = `
     ${cyan('litestone optimize')} [table]            optimize FTS5 indexes (all or one table)
     ${cyan('litestone edge eject')} <Model>.<field>  promote an @edge/@scoped field to a real model [--apply]
     ${cyan('litestone backup')} [dest]               backup all databases (SQLite + JSONL/logger)
-    ${cyan('litestone replicate')} [config.js]       stream WAL to S3/R2 via litestream
+    ${cyan('litestone replicate')} [config.js]       stream every SQLite db's WAL to S3/R2 via litestream
     ${cyan('litestone rsync')} <dest>              sync all SQLite DBs to a destination via sqlite3_rsync
     ${cyan('litestone transform')} [config.js]      run a transform pipeline (DSL)
     ${cyan('litestone tenant list')}                list all tenants
@@ -240,7 +240,9 @@ const HELP = `
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-async function loadConfig() {
+// configOverride lets a command accept the config path positionally
+// (`litestone replicate ./litestone.config.js`) without a second resolver.
+async function loadConfig(configOverride) {
   // ── Resolution order ─────────────────────────────────────────────────────────
   //
   // schema:     --schema flag  →  config schema:  →  sibling to config  →  ./schema.lite in cwd
@@ -249,7 +251,7 @@ async function loadConfig() {
   //
   // --config must be a .js or .ts file — use --schema to point directly at a .lite file.
 
-  const configPath = getFlag('config')
+  const configPath = configOverride ?? getFlag('config')
   let   cfg        = {}
   let   cfgDir     = process.cwd()
 
@@ -301,6 +303,7 @@ async function loadConfig() {
     seedsDir:   fromCfg(cfg.seedsDir, 'seedsDir') ?? null,
     pluralize:  cfg.pluralize ?? false,
     tenants:    cfg.tenants ?? null,   // { dir, registry, migrationsDir } — used by tenant cmds + Studio
+    replicate:  cfg.replicate ?? null, // { url, syncInterval, ... } — used by cmdReplicate
   }
 }
 
@@ -396,9 +399,30 @@ function resolveDbPath(pathDef, fallback) {
 
 // Returns array of { name, rawDb, migrationsDir } for every sqlite database.
 // Opens raw Database connections — caller must close them.
+// ─── declaresDatabases / clientDb ─────────────────────────────────────────────
+// Does the schema own its own paths?
+//
+// `createClient({ db })` names MAIN's path and overrides a declared `database
+// main`, and loadConfig() ALWAYS answers a db — `./development.db` when nothing
+// said otherwise. So a command that forwards cfg.db unconditionally redirects
+// `main` at a file the schema never named, and createClient creates it on the
+// way, so nothing is missing and nothing complains. `litestone backup` was
+// snapshotting that empty file and reporting `✓ main`.
+//
+// openSqliteDbs has always asked this question; the commands that build a
+// client directly did not. One definition, both callers.
+
+const declaresDatabases = (parseResult) =>
+  parseResult.schema.databases.some(db => !db.driver || db.driver === 'sqlite')
+
+// The `db` argument for createClient — the declaration wins when there is one.
+// This is also what makes `--db` unambiguous: a name filter on a multi-database
+// schema, a path on a single-database one.
+const clientDb = (parseResult, cfg) => declaresDatabases(parseResult) ? undefined : cfg.db
+
 function openSqliteDbs(parseResult, cfg) {
   const schema = parseResult.schema
-  const hasDatabaseBlocks = schema.databases.some(db => !db.driver || db.driver === 'sqlite')
+  const hasDatabaseBlocks = declaresDatabases(parseResult)
 
   if (!hasDatabaseBlocks) {
     // Single-DB schema — just main, using cfg.db
@@ -1095,7 +1119,7 @@ async function cmdStudio(cfg) {
 
   const port        = parseInt(getFlag('port') ?? '5001')
   const parseResult = loadSchema(cfg.schema)
-  const db     = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
+  const db     = await createClient({ parsed: parseResult, db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
   const rawDb  = db.$db
   const rawDbs = db.$rawDbs
 
@@ -1346,6 +1370,9 @@ async function cmdStudio(cfg) {
   // JS source, not JSON: unquoted keys where legal, single quotes, so what is
   // copied can be pasted. JSON.stringify would quote every key and force the
   // reader to edit it before it matches anything else in the codebase.
+  // Bumped per generated row so two clicks are not the same row.
+  let factorySeq = 0
+
   const IDENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/
   function jsLiteral(v, indent = '') {
     if (v === null || v === undefined) return String(v)
@@ -1411,9 +1438,9 @@ async function cmdStudio(cfg) {
 
       // ── Read-only mode (--readonly) ─────────────────────────────────────────
       if (READONLY) {
-        const MUTATING = ['/api/row/', '/api/rows/', '/api/import', '/api/repl',
+        const MUTATING = ['/api/row/', '/api/rows/', '/api/import', '/api/repl', '/api/factory',
           '/api/migrations/apply', '/api/migrations/auto', '/api/migrations/create',
-          '/api/maint/', '/api/transform/run', '/api/tenants/migrate']
+          '/api/maint/', '/api/transform/run', '/api/tenants/migrate', '/api/perf/advisor/fix']
         if (MUTATING.some(p => path.startsWith(p)) && path !== '/api/maint/integrity')
           return json({ error: 'Studio is running in --readonly mode' }, 403)
         if (path === '/api/schema-source' && req.method !== 'GET')
@@ -2067,22 +2094,102 @@ async function cmdStudio(cfg) {
           return json({ valid: true, errors: [], warnings: result.warnings ?? [] })
         }
 
+        // POST /api/perf/advisor/fix — write an advisor's fix into schema.lite
+        //
+        // The schema is the source, so the fix belongs there rather than in a
+        // hand-run CREATE INDEX: an index litestone did not name is one no later
+        // migration will ever drop. Writing the attribute does NOT create the
+        // index — a migration still has to run, and the response says so rather
+        // than letting a green toast imply the table changed.
+        if (path === '/api/perf/advisor/fix') {
+          const { model: modelName, columns } = body
+          if (!modelName || !Array.isArray(columns) || !columns.length)
+            return json({ error: 'model and columns[] required' }, 400)
+          const absPath = resolve(cfg.schema)
+          try {
+            const source = readFileSync(absPath, 'utf8')
+            const lines  = source.split('\n')
+
+            // Locate the model block by brace depth rather than by regex over
+            // the whole file — a doc comment inside a model may contain braces,
+            // and `model X {` may sit anywhere in a multi-model file.
+            const openIdx = lines.findIndex(l => new RegExp(`^\\s*model\\s+${modelName}\\s*\\{`).test(l))
+            if (openIdx < 0) return json({ error: `model ${modelName} not found in ${absPath}` }, 400)
+            let depth = 0, closeIdx = -1
+            for (let i = openIdx; i < lines.length; i++) {
+              const bare = lines[i].replace(/\/\/.*$/, '').replace(/\/\/\/.*$/, '')
+              for (const ch of bare) { if (ch === '{') depth++; else if (ch === '}') depth-- }
+              if (depth === 0) { closeIdx = i; break }
+            }
+            if (closeIdx < 0) return json({ error: `model ${modelName} block is not closed` }, 400)
+
+            const attr = `@@index([${columns.join(', ')}])`
+            const body_ = lines.slice(openIdx + 1, closeIdx)
+            if (body_.some(l => l.replace(/\s/g, '').includes(attr.replace(/\s/g, ''))))
+              return json({ error: `${modelName} already declares ${attr}` }, 400)
+
+            // Sit with the other model attributes when there are any, so the
+            // block keeps the shape the rest of the file uses.
+            const lastAttr = body_.reduce((acc, l, i) => /^\s*@@/.test(l) ? i : acc, -1)
+            const at       = lastAttr >= 0 ? openIdx + 1 + lastAttr + 1 : closeIdx
+            const indent   = (body_.find(l => l.trim())?.match(/^\s*/)?.[0]) ?? '  '
+            const next     = [...lines]
+            next.splice(at, 0, `${indent}${attr}`)
+            const updated  = next.join('\n')
+
+            const parsed = parse(updated)
+            if (!parsed.valid) return json({ error: `Would not parse: ${parsed.errors?.[0]?.message ?? 'unknown'}` }, 400)
+            writeFileSync(absPath, updated, 'utf8')
+            return json({
+              ok: true, added: attr, model: modelName, line: at + 1, path: absPath,
+              note: 'Written to the schema. The index does not exist until a migration runs.',
+            })
+          } catch (e) { return json({ error: e.message }, 400) }
+        }
+
         // GET /api/perf/advisor — schema-level index analysis
         if (path === '/api/perf/advisor') {
           const issues = []
           const models = activeDb.$schema.models
+          const { modelToTableName } = await import('../core/ddl.js')
+          const pluralize = cfg.pluralize ?? false
 
           for (const model of models) {
-            const tableName = model.name
-            // Get existing indexes from live db
-            const existingIndexes = rawDb
-              .query(`SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL`)
-              .all(tableName)
-            const indexedCols = new Set()
-            for (const idx of existingIndexes) {
-              const m = idx.sql?.match(/\(([^)]+)\)/)
-              if (m) m[1].split(',').map(c => c.trim().replace(/^["'`]|["'`]$/g, '')).forEach(c => indexedCols.add(c))
-            }
+            // `sqlite_master.tbl_name` holds the name as written at CREATE TABLE
+            // time, and SQL string equality is case-sensitive even though SQLite
+            // resolves identifiers case-insensitively. Querying for the MODEL
+            // name ("User") against a table created as "user" matched nothing,
+            // so every index looked absent and every FK was reported unindexed.
+            const modelName = model.name
+            const tableName = modelToTableName(model, pluralize)
+
+            // A model assigned to a jsonl/logger database has no SQLite indexes
+            // to be missing, and lives in a different handle if it has any.
+            const dbName = model.attributes?.find(a => a.kind === 'db')?.name ?? 'main'
+            if ((activeDb.$databases?.[dbName]?.driver ?? 'sqlite') !== 'sqlite') continue
+            const handle = activeRawDbs?.[dbName] ?? activeRawDb
+            if (!handle) continue
+
+            // PRAGMA rather than parsing sqlite_master.sql, for two reasons:
+            // an implicit UNIQUE index has sql = NULL (so a `sql IS NOT NULL`
+            // filter hides every @@unique behind a false positive), and the
+            // pragma hands back columns already in order instead of a regex
+            // over DDL text that also has to survive partial-index predicates.
+            let existingIndexes = []
+            try {
+              existingIndexes = handle.query(`PRAGMA index_list("${tableName}")`).all().map(r => ({
+                name:    r.name,
+                unique:  Boolean(r.unique),
+                columns: handle.query(`PRAGMA index_info("${r.name}")`).all()
+                  .sort((a, b) => a.seqno - b.seqno).map(c => c.name).filter(Boolean),
+              }))
+            } catch { continue }   // table not created yet — migrations pending
+            const idxColumnsOf = idx => idx.columns
+            // Only the LEADING column of an index makes a lookup on that column
+            // fast — SQLite uses a leftmost prefix. Counting every column meant
+            // an index on (username, accountId) was read as covering accountId,
+            // which is the false negative that hides a real scan.
+            const indexedCols = new Set(existingIndexes.map(idx => idxColumnsOf(idx)[0]).filter(Boolean))
 
             // 1. FK columns without indexes
             const fkFields = model.fields.filter(f =>
@@ -2095,12 +2202,13 @@ async function cmdStudio(cfg) {
                 if (!indexedCols.has(col)) {
                   issues.push({
                     severity:    'red',
-                    title:       `Missing FK index on ${tableName}.${col}`,
-                    table:       tableName,
-                    description: `Foreign key column "${col}" on "${tableName}" has no index. Every include({ ${field.name}: true }) will do a full table scan to resolve this relation.`,
-                    impact:      'Full table scan on every related record lookup. With 10k rows this is ~10ms per query. With 100k rows it becomes noticeable.',
-                    sql:         `CREATE INDEX "${tableName}_${col}_idx" ON "${tableName}"("${col}");`,
-                    notes:       'SQLite does not automatically index foreign key columns — you must create them explicitly.',
+                    title:       `Missing FK index on ${modelName}.${col}`,
+                    table:       modelName,
+                    description: `Foreign key column "${col}" on "${modelName}" has no leading index, so any read that starts from the OTHER side scans this table — the parent's hasMany (include({ ${modelName.toLowerCase()}s: true })), a where on "${col}", and ON DELETE CASCADE. Reading the parent from here (include({ ${field.name}: true })) is not affected: that resolves by primary key.`,
+                    impact:      'Measured on 50k rows: 2,000 lookups by this column take 4.0s unindexed vs 56ms indexed (72×), and a cascade delete of 200 parents 656ms vs 8ms (83×). The index costs ~1.7× on insert and ~60% more disk.',
+                    fix:         { kind: 'index', model: modelName, columns: [col] },
+                    sql:         `CREATE INDEX "idx_${tableName}_${col}" ON "${tableName}" ("${col}");`,
+                    notes:       `SQLite does not index foreign key columns for you. Declare it — @@index([${col}]) on ${modelName} — and migrate, so the index carries the name litestone manages; one created by hand survives every later migration.`,
                   })
                 }
               }
@@ -2111,12 +2219,13 @@ async function cmdStudio(cfg) {
             if (hasSoftDelete && !indexedCols.has('deletedAt')) {
               issues.push({
                 severity:    'yellow',
-                title:       `No index on ${tableName}.deletedAt`,
-                table:       tableName,
-                description: `"${tableName}" uses @@softDelete but "deletedAt" is not indexed. Every query filters "WHERE deletedAt IS NULL" — without an index this scans the full table.`,
+                title:       `No index on ${modelName}.deletedAt`,
+                table:       modelName,
+                description: `"${modelName}" uses @@softDelete but "deletedAt" is not indexed. Every query filters "WHERE deletedAt IS NULL" — without an index this scans the full table.`,
                 impact:      'All findMany/findFirst/count calls filter on deletedAt. This becomes slower as rows accumulate.',
-                sql:         `CREATE INDEX "${tableName}_deleted_at_idx" ON "${tableName}"("deletedAt");`,
+                sql:         `CREATE INDEX "idx_${tableName}_deletedAt" ON "${tableName}" ("deletedAt");`,
                 notes:       'A partial index (WHERE deletedAt IS NULL) is even better but requires SQLite 3.8+.',
+                fix:         { kind: 'index', model: modelName, columns: ['deletedAt'] },
               })
             }
 
@@ -2127,20 +2236,18 @@ async function cmdStudio(cfg) {
               const isUnique = attr.kind === 'unique'
               // Check if any existing index covers exactly these cols
               const covered = existingIndexes.some(idx => {
-                const m = idx.sql?.match(/\(([^)]+)\)/)
-                if (!m) return false
-                const idxCols = m[1].split(',').map(c => c.trim().replace(/^["'`]|["'`]$/g, ''))
+                const idxCols = idxColumnsOf(idx)
                 return cols.length === idxCols.length && cols.every((c, i) => c === idxCols[i])
               })
               if (!covered && cols.length) {
-                const idxName = `${tableName}_${cols.join('_')}_idx`
+                const idxName = `idx_${tableName}_${cols.join('_')}`
                 issues.push({
                   severity:    'red',
-                  title:       `Pending ${isUnique ? 'unique ' : ''}index on ${tableName}`,
-                  table:       tableName,
-                  description: `Schema declares @@${isUnique ? 'unique' : 'index'}([${cols.join(', ')}]) on "${tableName}" but this index doesn't exist in the live database. Run a migration to create it.`,
+                  title:       `Pending ${isUnique ? 'unique ' : ''}index on ${modelName}`,
+                  table:       modelName,
+                  description: `Schema declares @@${isUnique ? 'unique' : 'index'}([${cols.join(', ')}]) on "${modelName}" but this index doesn't exist in the live database. Run a migration to create it.`,
                   impact:      'Queries filtering or sorting on these columns are doing full table scans.',
-                  sql:         `CREATE ${isUnique ? 'UNIQUE ' : ''}INDEX "${idxName}" ON "${tableName}"(${cols.map(c => `"${c}"`).join(', ')});`,
+                  sql:         `CREATE ${isUnique ? 'UNIQUE ' : ''}INDEX "${idxName}" ON "${tableName}" (${cols.map(c => `"${c}"`).join(', ')});`,
                   notes:       'Run "litestone migrate apply" to apply pending schema changes.',
                 })
               }
@@ -2148,14 +2255,14 @@ async function cmdStudio(cfg) {
 
             // 4. High row-count tables with no indexes at all (except PK)
             try {
-              const rowCount = activeRawDb.query(`SELECT COUNT(*) as n FROM "${tableName}"`).get().n
+              const rowCount = handle.query(`SELECT COUNT(*) as n FROM "${tableName}"`).get().n
               const nonPkIndexes = existingIndexes.filter(idx => !idx.name.startsWith('sqlite_'))
               if (rowCount > 5000 && nonPkIndexes.length === 0) {
                 issues.push({
                   severity:    'yellow',
-                  title:       `Large table with no indexes: ${tableName}`,
-                  table:       tableName,
-                  description: `"${tableName}" has ${rowCount.toLocaleString()} rows but only a primary key index. Any WHERE clause on non-PK columns will scan all rows.`,
+                  title:       `Large table with no indexes: ${modelName}`,
+                  table:       modelName,
+                  description: `"${modelName}" has ${rowCount.toLocaleString()} rows but only a primary key index. Any WHERE clause on non-PK columns will scan all rows.`,
                   impact:      'Queries filtering by non-PK columns are doing full table scans across all rows.',
                   sql:         null,
                   notes:       'Add @@index([column]) to your schema for columns you filter or sort by frequently.',
@@ -2380,6 +2487,84 @@ async function cmdStudio(cfg) {
             const result   = await tableDb[accessor].create({ data: rowData })
             return json({ ok: true, row: result })
           } catch (e) { return json({ error: e.message }, 400) }
+        }
+
+        // POST /api/factory — create one plausible row from the schema alone
+        //
+        // The same generator the test realm uses, pointed at the live database.
+        // Two properties are the point rather than conveniences:
+        //   · withParents() fills every required belongsTo recursively, so the
+        //     row satisfies its own FKs — which is why a click can write to
+        //     several tables and why the response says which ones.
+        //   · it runs as the principal the sidebar selects, so a @@gate refusal
+        //     here is the gate working, not the button failing.
+        if (path === '/api/factory') {
+          const { table, auth: authCtx, asSystem: forceSystem, pins } = body
+          if (!table) return json({ error: 'table required' }, 400)
+          try {
+            const { factoryFrom } = await import('../testing.js')
+            const schema = activeDb.$schema
+            const model  = schema.models.find(m => m.name === table || modelToAccessor(m.name) === table)
+            if (!model) return json({ error: `Unknown table: ${table}` }, 400)
+            // A model names its database with @@db(name); no attribute is main.
+            // There is no modelDbMap on $schema — the attribute is the mapping.
+            const dbName = model.attributes?.find(a => a.kind === 'db')?.name ?? 'main'
+            const driver = activeDb.$databases?.[dbName]?.driver ?? 'sqlite'
+            if (driver !== 'sqlite')
+              return json({ error: `${model.name} lives in a ${driver} database — append-only, nothing to generate into` }, 400)
+
+            // Asked for explicitly, never a silent fallback: the refusal is the
+            // useful answer, and a button that quietly escalates past a gate
+            // teaches you the gate is not there.
+            const factoryDb = (forceSystem || !authCtx) ? activeDb.asSystem() : activeDb.$setAuth(authCtx)
+            // withParents() resolves a parent through the registry, so every
+            // model needs an entry and they must share one object — the graph
+            // is cyclic and a factory built per lookup would recurse forever.
+            const registry = {}
+            for (const m of schema.models) registry[modelToAccessor(m.name)] = factoryFrom(schema, m.name, factoryDb, registry)
+
+            // Unseeded output is deliberately plain and deterministic; a seed is
+            // what makes fake.js hand back real words for known field names.
+            // Counter rather than a constant, so two clicks differ.
+            // A pin is sent as an id and re-read HERE, through the same client
+            // the factory will write with — otherwise pinning would be a side
+            // channel that hands a principal a row its own policy hides.
+            const pinRows = {}
+            for (const [pinModel, pinId] of Object.entries(pins ?? {})) {
+              const pm = schema.models.find(m => m.name === pinModel)
+              if (!pm) continue                       // stale pin for a model that went away
+              const idField = pm.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+              const seen = await factoryDb[modelToAccessor(pm.name)].findFirst({ where: { [idField]: pinId } })
+              if (!seen) return json({
+                error: `Pinned ${pinModel} is not visible to this principal — unpin it, or switch who you are acting as`,
+              }, 400)
+              pinRows[pinModel] = seen
+            }
+
+            const created = []
+            const stopTap = activeDb.$tapQuery(e => { if (e.operation === 'create') created.push(e.model) })
+            let row
+            try {
+              row = await registry[modelToAccessor(model.name)]
+                .seed(++factorySeq)
+                .withParents({ pins: pinRows })
+                .createOne()
+            } finally { stopTap() }
+
+            const tally = []
+            for (const t of created) {
+              const hit = tally.find(x => x.table === t)
+              if (hit) hit.count++
+              else tally.push({ table: t, count: 1 })
+            }
+            return json({ ok: true, row, created: tally, asSystem: Boolean(forceSystem || !authCtx) })
+          } catch (e) {
+            // A gate refusal is a different kind of answer from a bad row, and
+            // only it has a sensible retry. Discriminate on the error, never on
+            // the wording of its message.
+            const denied = e.name === 'AccessDeniedError' || e.code === 'ACCESS_DENIED'
+            return json({ error: e.message, retryAsSystem: denied && !forceSystem && Boolean(authCtx) }, 400)
+          }
         }
 
         // POST /api/row/delete — delete a single row
@@ -3204,7 +3389,7 @@ async function cmdSeed(seederArg, cfg) {
   const { createClient } = await import('../core/client.js')
   const { runSeeder }    = await import('../seeder.js')
 
-  const db = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
+  const db = await createClient({ parsed: parseResult, db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
 
   const mod         = await import(`file://${absSeeder}`)
   // Allow: default export, named export matching the file, or named DatabaseSeeder
@@ -3426,7 +3611,7 @@ async function cmdOptimize(targetTable, cfg) {
 
   const { createClient } = await import('../core/client.js')
   const parseResult = loadSchema(cfg.schema)
-  const db = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
+  const db = await createClient({ parsed: parseResult, db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
 
   // Find all models with @@fts
   const ftsModels = parseResult.schema.models.filter(m =>
@@ -3482,7 +3667,11 @@ async function cmdBackup(dest, cfg) {
   const parseResult = loadSchema(cfg.schema)
   const vacuum      = flag('vacuum')
   const zip         = flag('zip')
-  const onlyDb      = getFlag('db')
+  // --db is overloaded: a NAME filter when the schema declares databases, a
+  // PATH when it declares none (loadConfig already consumed it as one). Read as
+  // a name in the single-database case it matches nothing and reports
+  // "No databases found matching --db=./app.db".
+  const onlyDb      = declaresDatabases(parseResult) ? getFlag('db') : null
 
   // ── Destination: timestamped directory ─────────────────────────────────────
   const stamp        = new Date().toISOString().replace('T', '_').replace(/:/g, '').slice(0, 15)
@@ -3496,10 +3685,15 @@ async function cmdBackup(dest, cfg) {
 
   mkdirSync(resolvedDest, { recursive: true })
 
-  // ── Open client to resolve database paths ──────────────────────────────────
-  const db        = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
+  // ── Open ONE client ────────────────────────────────────────────────────────
+  // Held open for the whole run. It used to be opened to read $databases,
+  // closed, and then reopened once PER DATABASE as
+  // `createClient({ parsed, db: info.path })` — but that argument names MAIN, so
+  // every one of those clients backed up main, filed under a different
+  // database's name. `$backup(dest, { only: [name] })` asks the one client for
+  // the one database instead.
+  const db        = await createClient({ parsed: parseResult, db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
   const databases = db.$databases
-  db.$close()
 
   const targets = Object.entries(databases)
     .filter(([name]) => !onlyDb || name === onlyDb)
@@ -3515,6 +3709,13 @@ async function cmdBackup(dest, cfg) {
   let totalSize = 0
   const t0 = performance.now()
 
+  // A backup that copied SOME of the declared databases is not a backup. Every
+  // arm below used to console.log its failure and carry on to `✓ backup
+  // complete` with exit 0 — so a caller running this before something
+  // irreversible (a deploy's pre-migration snapshot) read success and had no
+  // audit trail. Collect what did not make it and refuse at the end.
+  const incomplete = []
+
   for (const [name, info] of targets) {
     const t1 = performance.now()
 
@@ -3522,9 +3723,7 @@ async function cmdBackup(dest, cfg) {
       // ── SQLite: hot backup ──────────────────────────────────────────────
       const destFile = resolve(resolvedDest, `${name}.db`)
       try {
-        const singleDb = await createClient({ parsed: parseResult, db: info.path, encryptionKey: getEncKey() })
-        const result   = await singleDb.$backup(destFile, { vacuum })
-        singleDb.$close()
+        const result = await db.$backup(destFile, { vacuum, only: [name] })
         totalSize += result.size ?? 0
         const mb = ((result.size ?? 0) / 1024 / 1024).toFixed(2)
         const ms = (performance.now() - t1).toFixed(0)
@@ -3532,18 +3731,24 @@ async function cmdBackup(dest, cfg) {
         console.log(`     ${dim(rel(destFile))}`)
       } catch (e) {
         console.log(`  ${red('✗')}  ${cyan(name)} failed: ${e.message}`)
+        incomplete.push(`${name} (${e.message})`)
       }
 
     } else if (info.driver === 'jsonl' || info.driver === 'logger') {
       // ── JSONL / logger: directory copy ──────────────────────────────────
       if (!info.path) {
         console.log(`  ${yellow('⚠')}  ${cyan(name)}: no path configured, skipping`)
+        incomplete.push(`${name} (no path configured)`)
         continue
       }
       const srcDir  = resolve(info.path)
       const destDir = resolve(resolvedDest, name)
       if (!existsSync(srcDir)) {
+        // Database paths resolve against the process CWD, not the schema file —
+        // so running this from the wrong directory silently produced a partial
+        // backup that reported success.
         console.log(`  ${yellow('⚠')}  ${cyan(name)}: ${dim(srcDir)} not found, skipping`)
+        incomplete.push(`${name} (${srcDir} not found — paths resolve against CWD)`)
         continue
       }
       try {
@@ -3562,6 +3767,7 @@ async function cmdBackup(dest, cfg) {
         console.log(`     ${dim(rel(destDir))}`)
       } catch (e) {
         console.log(`  ${red('✗')}  ${cyan(name)} failed: ${e.message}`)
+        incomplete.push(`${name} (${e.message})`)
       }
     }
 
@@ -3598,12 +3804,101 @@ async function cmdBackup(dest, cfg) {
     }
   }
 
+  db.$close()
+
   const totalMs = (performance.now() - t0).toFixed(0)
   const totalMb = (totalSize / 1024 / 1024).toFixed(2)
+
+  if (incomplete.length) {
+    console.log(`  ${red(bold('✗  backup INCOMPLETE'))}  ${dim(`${incomplete.length} of ${targets.length} database(s) not backed up`)}`)
+    for (const line of incomplete) console.log(`     ${dim(line)}`)
+    console.log()
+    console.log(`  ${dim('Whatever was written is a PARTIAL copy. Do not treat it as a restore point.')}`)
+    console.log()
+    process.exit(1)
+  }
+
   console.log(`  ${green(bold('✓  backup complete'))}  ${dim(`${totalMb} MB · ${totalMs}ms`)}`)
   console.log()
 }
 
+// ─── cmdReplicate ─────────────────────────────────────────────────────────────
+// Continuous WAL replication via litestream, over the databases the SCHEMA
+// declares — the same resolution cmdBackup does, for the same reason: this used
+// to read one `db:` path out of a transform-pipeline config, so an app with a
+// `main` plus an `audit` logger replicated its rows and silently not its trail.
+//
+//   litestone replicate                              → every declared SQLite db
+//   litestone replicate --url s3://bucket/myapp      → no config file needed
+//   litestone replicate --db main                    → one database
+//   litestone replicate ./litestone.config.js        → config path positionally
+//
+// Litestream replicates SQLite. A jsonl or logger database is a directory of
+// append-only files with no WAL, so it CANNOT be covered here — reported by
+// name rather than omitted, because a replication report that lists only what
+// it did reads as though it did everything.
+
+async function cmdReplicate(cfg) {
+  const { createClient } = await import('../core/client.js')
+  const { replicate }    = await import('./replicate.js')
+
+  const parseResult = loadSchema(cfg.schema)
+  // --db is overloaded: a NAME filter when the schema declares databases, a
+  // PATH when it declares none (loadConfig already consumed it as one). Read as
+  // a name in the single-database case it matches nothing and reports
+  // "No databases found matching --db=./app.db".
+  const onlyDb      = declaresDatabases(parseResult) ? getFlag('db') : null
+
+  const options = {
+    url:             getFlag('url')       ?? cfg.replicate?.url,
+    syncInterval:    getFlag('interval')   ?? cfg.replicate?.syncInterval,
+    retentionPeriod: getFlag('retention')  ?? cfg.replicate?.retentionPeriod,
+    l0Retention:     getFlag('l0')         ?? cfg.replicate?.l0Retention,
+  }
+
+  if (!options.url) {
+    fatal(
+      `No replica url.\n` +
+      `     Pass ${cyan('--url=s3://bucket/myapp')}, or add a ${cyan('replicate')} block to litestone.config.js:\n\n` +
+      `       replicate: {\n` +
+      `         url:             's3://bucket/myapp',\n` +
+      `         syncInterval:    '10s',    // optional\n` +
+      `         retentionPeriod: '720h',   // optional\n` +
+      `         l0Retention:     '24h',    // optional — time-travel window\n` +
+      `       }`
+    )
+  }
+
+  header('litestone replicate')
+
+  const db        = await createClient({ parsed: parseResult, db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
+  const databases = db.$databases
+  db.$close()
+
+  const declared = Object.entries(databases).filter(([name]) => !onlyDb || name === onlyDb)
+  if (!declared.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
+
+  const targets    = declared.filter(([, i]) => i.driver === 'sqlite').map(([name, i]) => ({ name, path: i.path }))
+  const unreplicable = declared.filter(([, i]) => i.driver !== 'sqlite')
+
+  if (unreplicable.length) {
+    console.log(`  ${yellow(bold('⚠  not replicated'))}  ${dim('litestream streams SQLite WAL only')}`)
+    for (const [name, info] of unreplicable)
+      console.log(`     ${cyan(name)} ${dim(`(${info.driver})`)}  ${dim(info.path ?? 'no path')}`)
+    console.log()
+    console.log(`  ${dim(`Cover these with ${cyan('litestone backup')} on a schedule, or sync the directory to object storage.`)}`)
+    console.log()
+  }
+
+  if (!targets.length) {
+    fatal(
+      `Nothing to replicate — no SQLite databases declared${onlyDb ? ` matching --db=${onlyDb}` : ''}.\n` +
+      `     litestream streams SQLite WAL; jsonl and logger databases need ${cyan('litestone backup')}.`
+    )
+  }
+
+  await replicate({ targets, options, dir: dirname(resolve(cfg.schema)) })
+}
 
 // ─── db push ─────────────────────────────────────────────────────────────────
 // Dev equivalent of prisma db push — diffs schema against live DB and applies
@@ -3621,7 +3916,7 @@ async function cmdDbPush(cfg) {
   const hasDbs      = schema.databases.some(db => !db.driver || db.driver === 'sqlite')
 
   // Open a temporary createClient just to get $rawDbs wired up correctly
-  const db = await createClient({ parsed: parseResult, db: cfg.db, encryptionKey: getEncKey() })
+  const db = await createClient({ parsed: parseResult, db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
 
   const t0      = performance.now()
   const results = autoMigrate(db)
@@ -3847,9 +4142,12 @@ async function main() {
   }
 
   if (cmd === 'replicate') {
-    const configPath = sub ?? './litestone.config.js'
-    const { replicate } = await import('./replicate.js')
-    replicate(configPath, { verbose: true }).catch(err => {
+    // A positional argument is the config path, kept from the original form.
+    // Anything else would be silently ignored, so it is refused by name.
+    if (sub && !/\.(js|ts)$/.test(sub))
+      fatal(`litestone replicate takes a config file positionally, got: ${sub}\n     To point at a schema, use ${cyan('--schema=path/to/schema.lite')}.`)
+    const cfg = await loadConfig(sub ?? undefined)
+    cmdReplicate(cfg).catch(err => {
       console.error(`\n  ${red('✗')}  ${err.message}\n`)
       if (flag('debug')) console.error(err.stack)
       process.exit(1)

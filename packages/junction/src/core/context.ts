@@ -242,3 +242,17 @@ export function freezeUser<T extends object>(user: T): T {
   }
   return Object.freeze(user)
 }
+
+// ─── The caller's IP, whichever context you are holding ───────────────────────
+//
+// A TransportContext carries `ip` at the top level, because at that point there
+// is nothing else — no service, no principal. A ServiceContext splits the client
+// facts into `ctx.client`, so the same value lives at `ctx.client.ip`.
+//
+// One accessor for both, because that one-line gap is what grew a third rate
+// limiter inside @frontierjs/auth (FJS-017). Anything that runs on both sides of
+// the bridge should ask this rather than pick a side.
+export function clientIp(ctx: unknown): string {
+  const c = ctx as { client?: { ip?: string }; ip?: string } | null | undefined
+  return c?.client?.ip ?? c?.ip ?? 'unknown'
+}

@@ -6,8 +6,8 @@ description: Validate config, check SSH, acquire deploy lock
 ```js
 if (context.config.abort) return
 
-const { server, user, serverPath, target } = context.config
-const host = `${user}@${server}`
+const { server, serverPath, target, hosts } = context.config
+const host = context.config.api?.host ?? context.config.web.host
 
 // ─── Validate required config ─────────────────────────────────────────────────
 const deployConf = context.config.deployConf
@@ -22,35 +22,50 @@ context.config.healthPath = healthPath
 context.config.commit     = context.git.branch() || 'unknown'
 
 // ─── Check SSH connectivity ───────────────────────────────────────────────────
-log.info(`Checking SSH → ${host}`)
-try {
-  context.exec({ command: `ssh -o ConnectTimeout=5 -o BatchMode=yes ${host} "echo ok" > /dev/null` })
-} catch {
-  log.error(`Cannot reach ${host} — check your SSH key and server address`)
-  context.config.abort = true
-  return
+// Every machine, not just the API's: a split deploy that can reach one host and
+// not the other should fail here rather than half-way through, with the web
+// released against an API that never moved.
+for (const h of hosts) {
+  log.info(`Checking SSH → ${h.host}`)
+  try {
+    context.exec({ command: `ssh -o ConnectTimeout=5 -o BatchMode=yes ${h.host} "echo ok" > /dev/null` })
+  } catch {
+    log.error(`Cannot reach ${h.host} — check your SSH key and server address`)
+    context.config.abort = true
+    return
+  }
 }
 
 // ─── Acquire deploy lock ──────────────────────────────────────────────────────
 // Prevents two deploys running simultaneously against the same server.
 // Lock file: {serverPath}/.deploy.lock
-const lockFile = `${serverPath}/.deploy.lock`
-const lockCmd  = `
-  if [ -f ${lockFile} ]; then
-    echo "LOCKED: $(cat ${lockFile})"
-    exit 1
-  fi
-  echo "$$:$(date -u +%Y-%m-%dT%H:%M:%SZ):${target}" > ${lockFile}
-  echo "ok"
-`.trim().replace(/\n\s*/g, '; ')
-
+// One lock per machine+path pair. A split app is two locks; an app whose halves
+// share a host is one, which is why distinctHosts() dedupes on the pair.
+const locked = []
 log.info('Acquiring deploy lock...')
-try {
-  context.exec({ command: `ssh ${host} "${lockCmd}"` })
-} catch {
-  log.error(`Deploy already in progress on ${server} — if this is stale, remove ${lockFile}`)
-  context.config.abort = true
-  return
+for (const h of hosts) {
+  const lockFile = `${h.path}/.deploy.lock`
+  const lockCmd  = `
+    if [ -f ${lockFile} ]; then
+      echo "LOCKED: $(cat ${lockFile})"
+      exit 1
+    fi
+    echo "$$:$(date -u +%Y-%m-%dT%H:%M:%SZ):${target}" > ${lockFile}
+    echo "ok"
+  `.trim().replace(/\n\s*/g, '; ')
+
+  try {
+    context.exec({ command: `ssh ${h.host} "${lockCmd}"` })
+    locked.push(h)
+  } catch {
+    log.error(`Deploy already in progress on ${h.host} — if this is stale, remove ${lockFile}`)
+    // Release the ones already taken, or a failed second lock strands the first.
+    for (const done of locked) {
+      try { context.exec({ command: `ssh ${done.host} "rm -f ${done.path}/.deploy.lock"` }) } catch {}
+    }
+    context.config.abort = true
+    return
+  }
 }
 
 context.config.lockAcquired = true
