@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/email-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Mesa email component kit — table-based email components with CSS inlining for transactional email",
   "main": "./index.js",

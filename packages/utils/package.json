@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/utils",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "FrontierJS pure functions — zero dependencies, no I/O, importable from any package",
   "type": "module",
   "scripts": {

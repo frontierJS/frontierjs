@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/css",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "FrontierJS CSS — a minimal, composable, semantics-first design system for Svelte/Vite/UnoCSS apps",
   "type": "module",
   "scripts": {
