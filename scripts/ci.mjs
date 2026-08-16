@@ -687,6 +687,36 @@ function registry() {
     )
   }
 
+  // Everything above asks whether a NAME resolves. A published manifest can
+  // also name a sibling VERSION that does not exist, and then the install fails
+  // for a package the registry is perfectly happy to serve. `bun publish`
+  // rewrites a `workspace:*` spec out of bun.lock rather than out of the
+  // sibling's manifest, so a release that bumps a sibling without refreshing
+  // the lock pins every dependent to the version it just bumped away — five
+  // packages shipped that way, each an install that could not resolve
+  // (FJS-314). Nothing but the `deploy` phase's npm branch would notice, and
+  // that costs Docker and minutes.
+  //
+  // npm is asked to resolve each spec rather than semver being reimplemented
+  // here: it answers a version for anything satisfiable, exact pin and range
+  // alike, and E404s when nothing is. A range resolving to something OLD is not
+  // a failure — it installs, which is the question being asked.
+  let pins = 0
+  for (const [name, version] of state) {
+    if (version === 'unpublished' || version === 'unreachable') continue
+    for (const [sibling, range] of publishedSiblingRanges(name)) {
+      pins++
+      if (npmSatisfiable(`${sibling}@${range}`)) continue
+      fail(
+        `${name}@${version} names ${sibling}@${range}, which npm cannot resolve\n` +
+        `      Every install of ${name} fails on it, and no check above this one can see that —\n` +
+        `      they ask whether a NAME resolves. A release that bumps a sibling without refreshing\n` +
+        `      bun.lock pins its dependents to the version it bumped away (FJS-314). Publish the\n` +
+        `      missing version, or republish ${name} against one that exists.`
+      )
+    }
+  }
+
   // The version gap is NOT a failure — a package ahead of the registry is the
   // normal state between releases. It is reported because it is the thing the
   // register cannot see: a scaffold template written against behaviour only the
@@ -703,7 +733,9 @@ function registry() {
     )
   }
 
-  if (clean(from)) ok(`${state.length} scaffolded package(s), every one of them installable`, Date.now() - t0)
+  if (clean(from)) ok(
+    `${state.length} scaffolded package(s), every one of them installable, ` +
+    `${pins} published sibling pin(s) resolve`, Date.now() - t0)
 }
 
 // `npm view` is the same question `fli ws:npm` asks; this is a plain-node
@@ -717,6 +749,38 @@ function npmVersion(name) {
   if (r.status === 0) return (r.stdout ?? '').trim()
   const text = `${r.stderr ?? ''}${r.stdout ?? ''}`
   return /E404|is not in this registry|404 Not Found/.test(text) ? 'unpublished' : 'unreachable'
+}
+
+// The sibling dependencies of a package's PUBLISHED latest — what an install
+// actually tries to resolve, which is not what the tree's manifest says. An
+// OPTIONAL peer is left out: it is allowed to go unmet, so an unresolvable one
+// is not a broken install. Answers `[]` for anything it could not read, since
+// the reachability story is told once, above.
+function publishedSiblingRanges(name) {
+  const r = spawnSync('npm', ['view', name, '--json'], {
+    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000,
+  })
+  if (r.status !== 0) return []
+  let doc
+  try { doc = JSON.parse(r.stdout) } catch { return [] }
+  if (Array.isArray(doc)) doc = doc[doc.length - 1]   // more than one dist-tag on a version
+  const optional = doc?.peerDependenciesMeta ?? {}
+  const peers    = Object.entries(doc?.peerDependencies ?? {}).filter(([n]) => !optional[n]?.optional)
+  return [...Object.entries(doc?.dependencies ?? {}), ...peers]
+    .filter(([dep]) => dep.startsWith('@frontierjs/') || dep === 'create-frontier')
+}
+
+// Can npm resolve this spec? Exact pin and range alike — npm does the semver so
+// this does not. **Unreachable counts as resolvable**: a network failure is
+// already reported once, above, and a second reading of it as a broken manifest
+// would be a false accusation against a package that is fine.
+function npmSatisfiable(spec) {
+  const r = spawnSync('npm', ['view', spec, 'version'], {
+    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000,
+  })
+  if (r.status === 0) return true
+  const text = `${r.stderr ?? ''}${r.stdout ?? ''}`
+  return !/E404|No match found for version|is not in this registry|404 Not Found/.test(text)
 }
 
 function localVersion(name) {
