@@ -2484,6 +2484,20 @@ export interface QueryEvent {
   args:      Record<string, unknown>
 }
 
+// ── write event ($tapEvents / onEvent) ───────────────────────────────────────
+
+export interface WriteEvent {
+  event:       'create' | 'update' | 'remove' | 'transition'
+  model:       string
+  operation?:  'create' | 'update' | 'remove'
+  result?:     unknown
+  transition?: string
+  field?:      string
+  from?:       string
+  to?:         string
+  record?:     unknown
+}
+
 // ── LitestoneClient ──────────────────────────────────────────────────────────
 
 export interface LitestoneClient {
@@ -2543,6 +2557,9 @@ export interface LitestoneClient {
 
   // Query tap (temporary capture)
   $tapQuery(fn: (event: QueryEvent) => void): () => void
+
+  // Write-event tap — onEvent's post-construction half
+  $tapEvents(fn: (event: WriteEvent) => void): () => void
 
   // Utilities
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ path: string; size: number }>
