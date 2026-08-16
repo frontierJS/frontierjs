@@ -15,7 +15,11 @@ const published = []
 const failures  = []
 
 for (const { name, dir, newVersion } of released) {
-  const parts = ['npm publish']
+  // bun, not npm: npm ships a `workspace:*` dependency spec verbatim, and no
+  // registry can resolve one — the package installs nowhere. bun's packer
+  // rewrites it to the sibling's version and drops devDependencies entirely.
+  // Same --tag/--otp/--access flags.
+  const parts = ['bun publish']
   if (tag !== 'latest') parts.push(`--tag ${tag}`)
   if (otp) parts.push(`--otp ${otp}`)
 
